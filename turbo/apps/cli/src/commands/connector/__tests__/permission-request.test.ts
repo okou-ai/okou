@@ -271,6 +271,68 @@ describe("okou connector permission-request command", () => {
     expect(logCalls).not.toContain("expiresIn=");
   });
 
+  it.each(["a", "继", "😀"])(
+    "accepts a trimmed callback prompt of exactly 200 characters (%s)",
+    async (character) => {
+      vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
+      const callbackPrompt = character.repeat(200);
+
+      await permissionRequestCommand.parseAsync([
+        "node",
+        "cli",
+        "slack",
+        "--permission",
+        SLACK_READ_PERMISSION,
+        "--url",
+        SLACK_READ_URL,
+        "--callback-prompt",
+        `  ${callbackPrompt}\n`,
+      ]);
+
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(
+        permissionActionUrl(output).searchParams.get("callbackPrompt"),
+      ).toBe(callbackPrompt);
+      expect(mockConsoleError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["a", "继", "😀"])(
+    "rejects a callback prompt over 200 characters with shortening guidance (%s)",
+    async (character) => {
+      vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
+      const callbackPrompt = character.repeat(201);
+
+      await expect(
+        permissionRequestCommand.parseAsync([
+          "node",
+          "cli",
+          "slack",
+          "--permission",
+          SLACK_READ_PERMISSION,
+          "--url",
+          SLACK_READ_URL,
+          "--callback-prompt",
+          callbackPrompt,
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      const errorOutput = mockConsoleError.mock.calls.flat().join("\n");
+      expect(errorOutput).toContain("--callback-prompt is too long");
+      expect(errorOutput).toContain("concise and within 200 characters");
+      expect(errorOutput).toContain(
+        "long URLs that are difficult to recognize",
+      );
+      expect(errorOutput).not.toContain(callbackPrompt);
+      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+        "[Manage",
+      );
+    },
+  );
+
   it("rejects callback prompts outside the current web chat", async () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_AGENT_ID", "agent-abc-123");

@@ -3,6 +3,9 @@ import { getOkouAgentId, getOkouChatThreadId } from "../../lib/okou-env";
 export const CALLBACK_PROMPT_PLACEHOLDER =
   "SOMETHING_AGENT_WANT_TO_BE_CALLBACK";
 
+export const CALLBACK_PROMPT_MAX_LENGTH = 200;
+export const CALLBACK_PROMPT_GUIDANCE = `Keep callback prompts concise and within ${CALLBACK_PROMPT_MAX_LENGTH} characters to avoid long URLs that are difficult to recognize. Do not include secrets.`;
+
 export function connectorActionCallbackAvailable(): boolean {
   return Boolean(getOkouChatThreadId()?.trim());
 }
@@ -47,6 +50,11 @@ export function finalizeActionUrl(
   const normalizedPrompt = callbackPrompt.trim();
   if (!normalizedPrompt) {
     throw new Error("--callback-prompt cannot be empty");
+  }
+  if ([...normalizedPrompt].length > CALLBACK_PROMPT_MAX_LENGTH) {
+    throw new Error(
+      `--callback-prompt is too long. ${CALLBACK_PROMPT_GUIDANCE}`,
+    );
   }
 
   const threadId = currentChatThreadId(agentId);
@@ -99,6 +107,7 @@ export function printCallbackActionUrlExample(
   console.log(
     "Or, if this is the only connector or permission action needed, use the callback URL below. After the user completes this action, Okou will automatically start the next round with the callback prompt:",
   );
+  console.log(CALLBACK_PROMPT_GUIDANCE);
   console.log(callbackUrl);
 }
 

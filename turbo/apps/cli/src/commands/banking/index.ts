@@ -8,6 +8,8 @@ import {
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../lib/okou-env";
 import {
+  CALLBACK_PROMPT_GUIDANCE,
+  CALLBACK_PROMPT_MAX_LENGTH,
   finalizeActionUrl,
   printCallbackTurnInstruction,
 } from "../connector/action-url";
@@ -83,8 +85,9 @@ const accessRequestCommand = new Command()
   .requiredOption("--reason <purpose>", "Why banking data is needed")
   .requiredOption(
     "--callback-prompt <prompt>",
-    "Start the next chat round with this prompt after the user continues",
+    `Start the next chat round with this prompt after the user continues (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
   )
+  .addHelpText("after", `\n${CALLBACK_PROMPT_GUIDANCE}`)
   .action(
     withErrorHandler(async (options: AccessRequestOptions) => {
       const agentId = getOkouAgentId()?.trim();

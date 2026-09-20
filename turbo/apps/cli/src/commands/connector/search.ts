@@ -37,6 +37,10 @@ import {
   type RunConnectorAccountLookup,
 } from "./run-account-context";
 import { connectorInspectionType } from "./inspection";
+import {
+  CALLBACK_PROMPT_GUIDANCE,
+  CALLBACK_PROMPT_MAX_LENGTH,
+} from "./action-url";
 
 const EXACT_MATCH_THRESHOLD = 80;
 
@@ -265,7 +269,7 @@ export const searchCommand = new Command()
   .option("--json", "Output connector matches and actions as JSON")
   .option(
     "--callback-prompt <prompt>",
-    "Continue the current web chat after one connector action (use --limit 1)",
+    `Continue the current web chat after one connector action (use --limit 1; max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
   )
   .option(
     "--limit <n>",
@@ -288,7 +292,7 @@ Callbacks:
   when the task needs exactly one connector action; use --limit 1.
   Only direct connection, reconnect, or Agent authorization actions support it.
   Custom connectors and other actions that open Connectors settings do not.
-  Keep the prompt free of secrets because it is included in the action URL.
+  ${CALLBACK_PROMPT_GUIDANCE}
 
 Examples:
   okou connector search github --limit 1
