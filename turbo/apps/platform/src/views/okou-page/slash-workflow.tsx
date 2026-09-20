@@ -177,6 +177,7 @@ export function SlashWorkflowMenu({
   showWorkflowsPageLink,
   onSelect,
   panel,
+  panelHasCovers = false,
 }: {
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
@@ -189,6 +190,14 @@ export function SlashWorkflowMenu({
    * owns its own scrolling, workflow rows and footer.
    */
   readonly panel?: ReactNode;
+  /**
+   * Whether that panel carries its covers pane. Stated here rather than
+   * measured, because the popover has to name one width: a content-width
+   * popover re-solves its collision whenever the content changes size, and
+   * near the boundary that swaps the alignment and walks the whole panel
+   * across the caret.
+   */
+  readonly panelHasCovers?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -198,6 +207,11 @@ export function SlashWorkflowMenu({
       align="start"
       sideOffset={8}
       collisionPadding={composerSuggestionCollisionPadding()}
+      // Shift rather than flip along the align axis. The menu is anchored to
+      // the caret, so flipping puts the whole list on the other side of it,
+      // and the widths below still differ between a filtered query and an
+      // unfiltered one. Shifting keeps that change to the overflow.
+      collisionAvoidance={{ align: "shift" }}
       updatePositionStrategy="always"
       // Keep focus in the TipTap editor: the menu's keyboard navigation is
       // handled there, so the popover must never steal focus when it opens.
@@ -207,7 +221,11 @@ export function SlashWorkflowMenu({
       className={cn(
         "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
         panel
-          ? "h-[min(380px,var(--available-height))] w-auto"
+          ? cn(
+              "h-[min(380px,var(--available-height))]",
+              // 260px index column plus the 320px covers pane the panel draws.
+              panelHasCovers ? "w-[580px]" : "w-[260px]",
+            )
           : "h-[min(16rem,var(--available-height))] w-[300px] md:h-[min(20rem,var(--available-height))]",
       )}
       data-testid="slash-workflow-menu"

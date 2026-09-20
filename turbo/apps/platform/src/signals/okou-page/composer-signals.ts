@@ -107,6 +107,8 @@ type ComposerSuggestionSignals = Pick<
   | "setSelectedSuggestionIndex$"
   | "previewSuggestionIndex$"
   | "previewSuggestion$"
+  | "previewedCategory$"
+  | "previewCategory$"
   | "closeSuggestionMenu$"
   | "clearSlashRange$"
   | "insertAgent$"
@@ -405,6 +407,8 @@ function composerSuggestionSignals(
     setSelectedSuggestionIndex$: composer.setSelectedSuggestionIndex$,
     previewSuggestionIndex$: composer.previewSuggestionIndex$,
     previewSuggestion$: composer.previewSuggestion$,
+    previewedCategory$: composer.previewedCategory$,
+    previewCategory$: composer.previewCategory$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     clearSlashRange$: composer.clearSlashRange$,
     insertAgent$: composer.insertAgent$,

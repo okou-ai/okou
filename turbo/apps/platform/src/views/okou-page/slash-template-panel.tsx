@@ -1,5 +1,10 @@
 // The two-pane slash panel. The left column indexes what you can make and the
-// workflows you have; the right pane previews a type independently of selection.
+// workflows you have; the right pane holds the covers of one type.
+// The covers belong to the Make section rather than to whichever row carries
+// the mark, so moving onto a workflow row leaves them where they are. That is
+// what keeps the panel one width: the popover is content-width, so a pane that
+// mounts and unmounts under the pointer re-solves the popover's collision and
+// walks the left column across the caret between two alignments.
 // Kept beside the flat menu in slash-workflow.tsx so both can render from the
 // same suggestion state while the feature switch decides which one is shown.
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
@@ -34,6 +39,9 @@ interface SlashTemplatePanelProps {
   /** The row the pointer is previewing, or null while the keyboard leads. */
   readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
+  /** Which type owns the covers, or null before any row has named one. */
+  readonly previewedCategory: SlashTemplateCategory | null;
+  readonly onPreviewCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
@@ -240,6 +248,77 @@ function SlashTemplateDetailPane({
   );
 }
 
+function SlashPanelCategoryList({
+  categories,
+  markedIndex,
+  currentCategory,
+  onPreview,
+  onPreviewCategory,
+  onSelectCategory,
+  categoryOptionId,
+}: {
+  readonly categories: readonly SlashTemplateCategory[];
+  /** Relative to the whole list, which the categories head. */
+  readonly markedIndex: number;
+  /** The type whose covers the pane is holding. */
+  readonly currentCategory: SlashTemplateCategory | null;
+  readonly onPreview: (index: number) => void;
+  readonly onPreviewCategory: (category: SlashTemplateCategory) => void;
+  readonly onSelectCategory: (category: SlashTemplateCategory) => void;
+  readonly categoryOptionId: (category: SlashTemplateCategory) => string;
+}) {
+  return (
+    <div className="px-1">
+      {categories.map((category, index) => {
+        const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
+        const label = slashTemplateCategoryLabel(category);
+        // Owning the covers is a second, quieter state than the mark: the mark
+        // says what Enter does, and a rule down the row's leading edge says
+        // where the covers came from. Both can land on the same row, so owning
+        // them does not touch the row's fill.
+        const ownsCovers = category === currentCategory;
+        return (
+          <button
+            key={category}
+            id={categoryOptionId(category)}
+            type="button"
+            aria-label={label}
+            data-active={markedIndex === index ? "true" : undefined}
+            data-current={ownsCovers ? "true" : undefined}
+            className={cn(
+              "relative flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
+              markedIndex === index
+                ? "bg-state-selected hover:bg-state-selected-hover"
+                : "hover:bg-state-hover",
+            )}
+            onMouseMove={() => {
+              onPreview(index);
+              onPreviewCategory(category);
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSelectCategory(category);
+            }}
+          >
+            {ownsCovers && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-1 left-0 w-0.5 rounded-full bg-brand-text"
+              />
+            )}
+            <Icon
+              size={16}
+              className="shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SlashPanelWorkflowList({
   workflows,
   loading,
@@ -321,6 +400,8 @@ export function SlashTemplatePanel({
   selectedIndex,
   previewIndex,
   onPreview,
+  previewedCategory,
+  onPreviewCategory,
   onSelectCategory,
   onSelectTemplate,
   onSelectWorkflow,
@@ -337,29 +418,32 @@ export function SlashTemplatePanel({
   // Each row publishes the result as `data-active`, so which row is marked is
   // readable without depending on the utility class that paints it.
   const markedIndex = previewIndex === null ? selectedIndex : -1;
-  // A workflow row indexes past the categories, so it previews nothing and the
-  // covers close.
-  const detailCategory = categories[previewIndex ?? selectedIndex] ?? null;
+  // Only a Make row names an owner, so a workflow row keeps the one it was
+  // handed. The typed query filters the list, so an owner it removed falls
+  // back to what is left rather than closing the pane and resizing the panel.
+  const detailCategory =
+    previewedCategory !== null && categories.includes(previewedCategory)
+      ? previewedCategory
+      : (categories[0] ?? null);
   return (
     <div
       className="flex h-[380px] overflow-hidden"
       data-slot="slash-panel"
       onMouseLeave={() => {
-        // A closed pane means the row under the pointer just narrowed the
-        // panel by the cover pane's width. The popover is content-width, so
-        // when the viewport edge has collision-shifted it, that narrowing
-        // re-pins it and the left column slides out from under a pointer that
-        // never moved — which the browser reports here as a leave. Restoring
-        // the keyboard preview would reopen the covers the pointer just
-        // closed and widen the panel back over it, so the row would stay
-        // hovered while another type kept the pane.
-        if (detailCategory === null) {
-          return;
-        }
         onPreview(null);
       }}
     >
-      <div className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-border/60">
+      {/*
+        The rule separates the two panes, so a query that filters every type
+        away drops it rather than drawing a hairline against the popover's own
+        right border.
+      */}
+      <div
+        className={cn(
+          "flex min-h-0 w-[260px] shrink-0 flex-col",
+          detailCategory !== null && "border-r border-border/60",
+        )}
+      >
         {/*
           Make and Workflows scroll as one list. Scrolling only the workflows
           left a row sliced in half under a pinned section label, and hid that
@@ -371,41 +455,15 @@ export function SlashTemplatePanel({
               return $.chat.composer.slashPanel.make;
             })}
           </SectionLabel>
-          <div className="px-1">
-            {categories.map((category, index) => {
-              const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
-              const label = slashTemplateCategoryLabel(category);
-              return (
-                <button
-                  key={category}
-                  id={categoryOptionId(category)}
-                  type="button"
-                  aria-label={label}
-                  data-active={markedIndex === index ? "true" : undefined}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
-                    markedIndex === index
-                      ? "bg-state-selected hover:bg-state-selected-hover"
-                      : "hover:bg-state-hover",
-                  )}
-                  onMouseMove={() => {
-                    onPreview(index);
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    onSelectCategory(category);
-                  }}
-                >
-                  <Icon
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
-                </button>
-              );
-            })}
-          </div>
+          <SlashPanelCategoryList
+            categories={categories}
+            markedIndex={markedIndex}
+            currentCategory={detailCategory}
+            onPreview={onPreview}
+            onPreviewCategory={onPreviewCategory}
+            onSelectCategory={onSelectCategory}
+            categoryOptionId={categoryOptionId}
+          />
           <SectionLabel>
             {t(($) => {
               return $.chat.composer.workflows.title;

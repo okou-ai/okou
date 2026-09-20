@@ -97,6 +97,7 @@ import {
 } from "./template-preview-runtime.ts";
 import { createComposerWorkflows } from "./composer-workflows.ts";
 import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
+import type { SlashTemplateCategory } from "../../views/okou-page/composer-template-catalog.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -215,6 +216,14 @@ export interface WorkflowComposerSignals {
   /** Null while the pointer is not previewing, so keyboard selection leads. */
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
+  /**
+   * Which type the slash panel's covers belong to. Held apart from the row
+   * index because only a Make row has covers: a workflow row carries the mark
+   * without taking the pane, so the pane keeps the type it was left on. Null
+   * until a row names one, and the panel falls back to its first type.
+   */
+  readonly previewedCategory$: Computed<SlashTemplateCategory | null>;
+  readonly previewCategory$: Command<void, [SlashTemplateCategory]>;
   readonly closeSuggestionMenu$: Command<void, []>;
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
@@ -2031,6 +2040,57 @@ interface WorkflowComposerOptions {
   readonly feedbackPlaceholder?: () => string;
 }
 
+interface SuggestionPreviewSignals {
+  readonly previewSuggestionIndexState$: State<number | null>;
+  readonly reset$: Command<void, []>;
+  readonly signals: Pick<
+    WorkflowComposerSignals,
+    | "previewSuggestionIndex$"
+    | "previewSuggestion$"
+    | "previewedCategory$"
+    | "previewCategory$"
+  >;
+}
+
+/**
+ * The slash menu's two previews. The index follows the pointer across every
+ * row, while the category only moves when a Make row names one, so the covers
+ * stay mounted while the mark crosses the workflow rows. Closing them there is
+ * what used to change the popover's width, and a content-width popover that
+ * changes width re-solves its collision and walks out from under a pointer
+ * that never moved.
+ */
+function createSuggestionPreviewSignals(): SuggestionPreviewSignals {
+  // Null means the preview follows the keyboard again, including when the
+  // menu reopens.
+  const previewSuggestionIndexState$ = state<number | null>(null);
+  const previewedCategoryState$ = state<SlashTemplateCategory | null>(null);
+  return {
+    previewSuggestionIndexState$,
+    reset$: command(({ set }) => {
+      set(previewSuggestionIndexState$, null);
+      set(previewedCategoryState$, null);
+    }),
+    signals: {
+      // Reported as-is rather than collapsed onto the keyboard index: the
+      // panel needs to know whether the pointer is the one driving, because
+      // that decides whether a row still carries the keyboard mark.
+      previewSuggestionIndex$: computed((get) => {
+        return get(previewSuggestionIndexState$);
+      }),
+      previewSuggestion$: command(({ set }, index: number | null) => {
+        set(previewSuggestionIndexState$, index);
+      }),
+      previewedCategory$: computed((get) => {
+        return get(previewedCategoryState$);
+      }),
+      previewCategory$: command(({ set }, category: SlashTemplateCategory) => {
+        set(previewedCategoryState$, category);
+      }),
+    },
+  };
+}
+
 function focusMountedEditorAtEnd(editor: Editor): void {
   editor.view.dispatch(
     editor.state.tr.setSelection(Selection.atEnd(editor.state.doc)),
@@ -2833,9 +2893,8 @@ export function createWorkflowComposerSignals<
   const caretIndex$ = state(-1);
   const editorFocusedState$ = state(false);
   const selectedSuggestionIndexState$ = state(0);
-  // A pointer preview is independent of keyboard selection. Null means the
-  // preview follows the keyboard again, including when the menu reopens.
-  const previewSuggestionIndexState$ = state<number | null>(null);
+  // A pointer preview is independent of keyboard selection.
+  const suggestionPreview = createSuggestionPreviewSignals();
   const runtime = createWorkflowComposerRuntime(
     options.feedbackPlaceholder ?? feedbackPlaceholder,
   );
@@ -2876,19 +2935,10 @@ export function createWorkflowComposerSignals<
   );
   const setSelectedSuggestionIndex$ = command(({ set }, index: number) => {
     set(selectedSuggestionIndexState$, index);
-    set(previewSuggestionIndexState$, null);
-  });
-  // Reported as-is rather than collapsed onto the keyboard index: the panel
-  // needs to know whether the pointer is the one driving, because that decides
-  // whether a row still carries the keyboard mark.
-  const previewSuggestionIndex$ = computed((get) => {
-    return get(previewSuggestionIndexState$);
-  });
-  const previewSuggestion$ = command(({ set }, index: number | null) => {
-    set(previewSuggestionIndexState$, index);
+    set(suggestionPreview.previewSuggestionIndexState$, null);
   });
   const closeSuggestionMenu$ = command(({ set }) => {
-    set(previewSuggestionIndexState$, null);
+    set(suggestionPreview.reset$);
     set(caretIndex$, -1);
   });
   const focus$ = command(() => {
@@ -2904,7 +2954,8 @@ export function createWorkflowComposerSignals<
     caretIndex$,
     editorFocusedState$,
     selectedSuggestionIndexState$,
-    previewSuggestionIndexState$,
+    previewSuggestionIndexState$:
+      suggestionPreview.previewSuggestionIndexState$,
     feedback,
     compositionGate,
     syncWorkflowNames$,
@@ -2942,8 +2993,7 @@ export function createWorkflowComposerSignals<
     reloadWorkflows$: reloadMountedComposerWorkflows$,
     selectedSuggestionIndex$,
     setSelectedSuggestionIndex$,
-    previewSuggestionIndex$,
-    previewSuggestion$,
+    ...suggestionPreview.signals,
     closeSuggestionMenu$,
     ...suggestionInsertionCommands,
     ...textCommands,

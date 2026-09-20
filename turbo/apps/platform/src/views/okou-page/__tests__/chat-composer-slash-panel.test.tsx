@@ -239,35 +239,79 @@ test("Hovering a website row previews the website catalog", async () => {
   ).toBeInTheDocument();
 });
 
-test("Hovering a workflow closes the preview pane", async () => {
+test("Hovering a workflow keeps the covers on the type the pointer left", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
-  expect(detailPane()).not.toBeNull();
-  await user.hover(slashButton(`/${WORKFLOW_NAME}`));
+  await user.hover(slashButton("Website"));
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(detailPane()).toHaveAttribute("data-category", "website");
   });
+
+  await user.hover(slashButton(`/${WORKFLOW_NAME}`));
+
+  // A workflow row has nothing to preview, so it takes the mark without
+  // taking the pane. Closing the pane here is what used to resize the popover.
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+  expect(slashButton("Website")).toHaveAttribute("data-current", "true");
 });
 
-test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+test("The popover keeps one width while the pointer crosses row kinds", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  const menu = screen.getByTestId("slash-workflow-menu");
+  const widthOnOpen = menu.className;
+
+  await user.hover(slashButton("Illustration"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+  });
+  expect(menu.className).toBe(widthOnOpen);
+
+  await user.hover(slashButton(`/${WORKFLOW_NAME}`));
+  expect(menu.className).toBe(widthOnOpen);
+});
+
+test("Only the type that owns the covers is marked as current", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  expect(slashButton("Presentation")).toHaveAttribute("data-current", "true");
+  expect(slashButton("Website")).not.toHaveAttribute("data-current");
+
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(slashButton("Website")).toHaveAttribute("data-current", "true");
+  });
+  expect(slashButton("Presentation")).not.toHaveAttribute("data-current");
+});
+
+test("A query that leaves no type drops the covers and narrows the panel", async () => {
+  await openSlashMenu(WORKFLOW_NAME);
+  expect(querySlashButton("Presentation")).toBeNull();
+  expect(detailPane()).toBeNull();
+  expect(screen.getByTestId("slash-workflow-menu").className).toContain(
+    "w-[260px]",
+  );
+});
+
+test("A still pointer on a workflow row keeps the panel where it is", async () => {
   await openSlashMenu();
   const workflow = slashButton(`/${WORKFLOW_NAME}`);
-  // The popover is content-width, so closing the pane narrows it. When the
-  // popover has been collision-shifted against a boundary, that narrowing
-  // re-pins it and the left column slides away from a pointer that never
-  // moved, which the browser reports as a leave at the move's own
-  // coordinates. Replayed here because jsdom has no layout to shift.
+  // The panel used to narrow here, which re-pinned a collision-shifted
+  // popover and slid the left column out from under a pointer that never
+  // moved — reported by the browser as a leave at the move's own coordinates.
+  // Replayed because jsdom has no layout to shift.
   const still = { clientX: 300, clientY: 470 };
   fireEvent.mouseOver(workflow, still);
   fireEvent.mouseMove(workflow, still);
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
   });
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
 
   fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
 
-  expect(detailPane()).toBeNull();
-  expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
 });
 
 test.each(WORKFLOW_NAVIGATION_CASES)(
@@ -445,7 +489,7 @@ test("Keyboard navigation restores its preview even at the first row boundary", 
   expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
 });
 
-test("Leaving the panel restores the keyboard-selected category preview", async () => {
+test("Leaving the panel restores the keyboard mark without moving the covers", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
   const website = slashButton("Website");
@@ -455,9 +499,14 @@ test("Leaving the panel restores the keyboard-selected category preview", async 
   });
 
   await user.unhover(website);
+
+  // The keyboard leads again, but the covers keep the type the pointer named:
+  // returning them would resize the popover from outside the panel.
   await waitFor(() => {
-    expect(detailPane()).toHaveAttribute("data-category", "slides");
+    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
   });
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+  expect(slashButton("Website")).toHaveAttribute("data-current", "true");
 });
 
 test("Changing the slash query resets the pointer preview to the filtered selection", async () => {
@@ -564,7 +613,10 @@ test("The keyboard selection is marked again once the pointer leaves", async () 
   await waitFor(() => {
     expect(presentation).toHaveAttribute("data-active", "true");
   });
-  expect(detailPane()).toHaveAttribute("data-category", "slides");
+  // The mark returns to the keyboard row, and the covers stay with the type
+  // that owns them: the two states are read off different rows on purpose.
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+  expect(website).toHaveAttribute("data-current", "true");
 });
 
 test("The panel emphasizes the typed query inside a workflow name", async () => {

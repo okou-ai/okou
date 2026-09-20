@@ -310,6 +310,8 @@ interface ComposerSuggestionMenuState {
   readonly panelCategories: readonly SlashTemplateCategory[];
   readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
+  readonly previewedCategory: SlashTemplateCategory | null;
+  readonly previewCategory: (category: SlashTemplateCategory) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (
     preview: SlashTemplatePreview,
@@ -556,6 +558,8 @@ function useComposerSuggestionMenu({
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
   const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
   const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
+  const previewedCategory = useGet(composer.suggestion.previewedCategory$);
+  const previewCategory = useSet(composer.suggestion.previewCategory$);
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
   );
@@ -613,6 +617,17 @@ function useComposerSuggestionMenu({
     }
   }
 
+  // The keyboard hands the covers their owner the same way the pointer does,
+  // so arrowing onto a workflow row leaves the covers on the type the arrows
+  // last passed through instead of closing them.
+  function markSuggestionIndex(index: number): void {
+    const category = panelCategories[index];
+    if (category) {
+      previewCategory(category);
+    }
+    setSelectedIndex(index);
+  }
+
   function handleKeyDown(event: KeyboardEvent): boolean {
     return handleComposerKeyDownCapture(event, {
       composer,
@@ -621,7 +636,7 @@ function useComposerSuggestionMenu({
       suggestionCount,
       selectedSuggestionIndex: selectedIndex,
       showSuggestionMenu: open,
-      setSelectedSuggestionIndex: setSelectedIndex,
+      setSelectedSuggestionIndex: markSuggestionIndex,
       closeSuggestionMenu: close,
       selectSuggestion,
       scrollSuggestionIntoView,
@@ -638,6 +653,8 @@ function useComposerSuggestionMenu({
     panelCategories,
     previewIndex,
     previewSuggestion,
+    previewedCategory,
+    previewCategory,
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
@@ -759,6 +776,7 @@ export function TiptapWorkflowComposer({
           selectedIndex={suggestionMenu.selectedIndex}
           showWorkflowsPageLink
           onSelect={suggestionMenu.selectWorkflow}
+          panelHasCovers={suggestionMenu.panelCategories.length > 0}
           panel={
             suggestionMenu.showTemplatePanel ? (
               <SlashTemplatePanel
@@ -768,6 +786,8 @@ export function TiptapWorkflowComposer({
                 selectedIndex={suggestionMenu.selectedIndex}
                 previewIndex={suggestionMenu.previewIndex}
                 onPreview={suggestionMenu.previewSuggestion}
+                previewedCategory={suggestionMenu.previewedCategory}
+                onPreviewCategory={suggestionMenu.previewCategory}
                 onSelectCategory={suggestionMenu.selectCategory}
                 onSelectTemplate={suggestionMenu.selectTemplate}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
