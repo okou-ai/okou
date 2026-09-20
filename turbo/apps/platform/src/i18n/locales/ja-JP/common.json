@@ -6290,7 +6290,7 @@
       "replace": "Service Token を置換",
       "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
       "select": "Cloudflare Access を選択",
-      "summary_other": "{{count}} 件設定済み",
+      "summary_other": "{{count}} 件の Cloudflare Access を設定済み",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
       "unavailable": "このアカウントでは Cloudflare Access を利用できません。",

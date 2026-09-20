@@ -6290,7 +6290,7 @@
       "replace": "Ganti Service Token",
       "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "select": "Pilih Cloudflare Access",
-      "summary_other": "{{count}} telah diatur",
+      "summary_other": "{{count}} Cloudflare Access telah diatur",
       "title": "Cloudflare Access",
       "tokenHelp": "Gunakan Service Token yang diizinkan kebijakan Service Auth aplikasi SSH Anda. Ini terpisah dari login SSH.",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",

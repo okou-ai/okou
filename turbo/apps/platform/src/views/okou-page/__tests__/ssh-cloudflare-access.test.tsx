@@ -315,7 +315,7 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
   await page();
   await screen.findByText("0 hosts configured");
   click(getAction("radio", "Cloudflare Access"));
-  await screen.findByText("0 configured");
+  await screen.findByText("0 Cloudflare Access configured");
   click(getAction("button", "Add Cloudflare Access"));
   let dialog = await screen.findByRole("dialog", {
     name: "Add Cloudflare Access",
@@ -323,7 +323,7 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
   await tokenFields(dialog);
   const secret = within(dialog).getByLabelText("Service Token Client Secret");
   click(getAction("button", "Save", dialog));
-  await screen.findByText("1 configured");
+  await screen.findByText("1 Cloudflare Access configured");
   expect(secret).toHaveValue("");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   click(getAction("radio", "Hosts"));
@@ -335,7 +335,7 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
     name: "Delete Cloudflare Access",
   });
   click(getAction("button", "Delete Cloudflare Access", dialog));
-  await screen.findByText("0 configured");
+  await screen.findByText("0 Cloudflare Access configured");
 });
 
 test("Direct and protected mode retain their port and configuration drafts but submit only active fields", async () => {
