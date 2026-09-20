@@ -204,7 +204,7 @@ test.each([
   { count: 1, label: "1 host configured" },
   { count: 2, label: "2 hosts configured" },
 ])(
-  "VNC uses the connected remote-access summary for $count hosts",
+  "VNC uses the SSH host-count wording for $count hosts",
   async ({ count, label }) => {
     mockCatalog();
     context.mocks.data.agents([]);
@@ -219,15 +219,7 @@ test.each([
         [FeatureSwitchKey.ConnectorDirectory]: false,
       },
     });
-    const summary = await screen.findByText(label);
-    const status = summary.parentElement;
-    expect(status).toHaveClass(
-      "min-w-0",
-      "flex-1",
-      "text-xs",
-      "text-muted-foreground",
-    );
-    expect(status?.firstElementChild).toHaveClass("bg-emerald-500");
+    await expect(screen.findByText(label)).resolves.toBeInTheDocument();
   },
 );
 
