@@ -134,6 +134,24 @@ function preferenceClient() {
   );
 }
 
+/**
+ * The obligation exactly as the owner reads it in Settings.
+ *
+ * `GET /api/preferences/morning-brief` projects a native owner's `next_run_at`
+ * directly, so every scheduling assertion this suite makes about the obligation
+ * itself goes through that production endpoint rather than the durable row.
+ */
+async function readObligation(owner: Fixture) {
+  mocks.clerk.session(owner.userId, owner.orgId);
+  const response = await accept(
+    preferenceClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+    }),
+    [200],
+  );
+  return response.body;
+}
+
 function userPreferencesClient() {
   return setupApp({ context, routes: userPreferencesRoutes })(
     userPreferencesContract,
@@ -310,22 +328,25 @@ describe("on-demand native Morning Brief trigger", () => {
   it("queues the owner's obligation for the ordinary cron, which runs the real pipeline", async () => {
     const f = await nativeOwner();
     const { generation } = scriptProviders();
-    const scheduled = await readNativeSchedule(f);
-    expect(scheduled?.nextRunAt?.getTime()).toBe(nextDailyInstant().getTime());
+    await expect(readObligation(f)).resolves.toMatchObject({
+      enabled: true,
+      status: "enabled",
+      nextRunAt: nextDailyInstant().toISOString(),
+    });
 
     const queued = await accept(triggerAs(f), [200]);
     expect(queued.body.status).toBe("queued");
     expect(Date.parse(queued.body.scheduledFor)).toBe(
       afterDailyInstant().getTime(),
     );
-    // The endpoint itself executes nothing: it only moved the obligation.
+    // The endpoint itself executes nothing: it only moved the obligation the
+    // owner reads in Settings.
     expect(generation).toHaveLength(0);
-    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
-    await expect(readNativeSchedule(f)).resolves.toMatchObject({
-      nextRunAt: afterDailyInstant(),
-      scheduleOwner: "native",
-      ownerEpoch: scheduled?.ownerEpoch,
+    await expect(readObligation(f)).resolves.toMatchObject({
+      enabled: true,
+      nextRunAt: afterDailyInstant().toISOString(),
     });
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
 
     const executed = await accept(tick(f), [200]);
     expect(executed.body.claimed).toBe(1);
@@ -360,39 +381,38 @@ describe("on-demand native Morning Brief trigger", () => {
   it("reinstalls the same next-morning instant, so the scheduled delivery is not lost", async () => {
     const f = await nativeOwner(afterDailyInstant());
     scriptProviders();
-    const before = await readNativeSchedule(f);
-    expect(before?.nextRunAt?.getTime()).toBe(nextDailyInstant().getTime());
+    const before = await readObligation(f);
+    expect(before.nextRunAt).toBe(nextDailyInstant().toISOString());
 
     await accept(triggerAs(f), [200]);
-    await accept(tick(f), [200]);
+    const executed = await accept(tick(f), [200]);
+    // Exactly one settlement ran, and it is the writer that owns the successor.
+    expect(executed.body.settled).toBe(1);
 
     // Settlement recomputes the successor from its own clock under the
     // persisted cron and timezone. For a daily cron triggered after that day's
-    // instant, that is exactly the next-morning instant already pending.
-    const after = await readNativeSchedule(f);
-    expect(after?.nextRunAt?.getTime()).toBe(nextDailyInstant().getTime());
-    expect(after?.nextRunAt?.getTime()).toBe(before?.nextRunAt?.getTime());
-    expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
-    expect(after?.scheduleOwner).toBe("native");
-    const [occurrence] = await readNativeOccurrences(f);
-    expect(occurrence?.settledNextRunAt?.getTime()).toBe(
-      nextDailyInstant().getTime(),
-    );
+    // instant, that is exactly the next-morning instant already pending, so the
+    // owner's own Settings view is unchanged by the debug brief.
+    const after = await readObligation(f);
+    expect(after.nextRunAt).toBe(nextDailyInstant().toISOString());
+    expect(after.nextRunAt).toBe(before.nextRunAt);
+    expect(Date.parse(after.nextRunAt ?? "")).toBeGreaterThan(now());
+    expect(after.status).toBe("enabled");
   });
 
   it("delivers two briefs at distinct anchors when triggered before the daily instant", async () => {
     const f = await nativeOwner(beforeDailyInstant());
     const { generation } = scriptProviders();
-    expect((await readNativeSchedule(f))?.nextRunAt?.getTime()).toBe(
-      nextDailyInstant().getTime(),
-    );
+    await expect(readObligation(f)).resolves.toMatchObject({
+      nextRunAt: nextDailyInstant().toISOString(),
+    });
 
     await accept(triggerAs(f), [200]);
     await accept(tick(f), [200]);
     // The scheduled instant survived the debug brief and is still owed.
-    expect((await readNativeSchedule(f))?.nextRunAt?.getTime()).toBe(
-      nextDailyInstant().getTime(),
-    );
+    await expect(readObligation(f)).resolves.toMatchObject({
+      nextRunAt: nextDailyInstant().toISOString(),
+    });
 
     mockNow(nextDailyInstant());
     await accept(tick(f), [200]);

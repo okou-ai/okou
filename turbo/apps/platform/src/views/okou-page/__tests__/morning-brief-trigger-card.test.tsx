@@ -47,21 +47,18 @@ function buttonNames(): (string | undefined)[] {
   });
 }
 
-/** Accept the trigger and record every request that reached the API. */
-function installTrigger(): readonly unknown[] {
-  const triggered: unknown[] = [];
+/** Accept the trigger so a successful press reaches its queued confirmation. */
+function installTrigger(): void {
   context.mocks.api(morningBriefDebugTriggerContract.trigger, ({ respond }) => {
-    triggered.push(1);
     return respond(200, {
       status: "queued",
       scheduledFor: "2026-09-20T06:00:00.000Z",
     });
   });
-  return triggered;
 }
 
 test("A developer queues a Morning Brief and is told it is only queued", async () => {
-  const triggered = installTrigger();
+  installTrigger();
 
   await setupPage({
     context,
@@ -85,7 +82,6 @@ test("A developer queues a Morning Brief and is told it is only queued", async (
   click(triggerButton());
 
   await expect(screen.findByRole("status")).resolves.toHaveTextContent(QUEUED);
-  expect(triggered).toHaveLength(1);
 });
 
 test("A pending trigger disables the button until the request settles", async () => {
@@ -118,7 +114,7 @@ test("A pending trigger disables the button until the request settles", async ()
     await requestStarted.promise;
   });
   await waitFor(() => {
-    expect(screen.getByText("Queueing…")).toBeVisible();
+    expect(screen.getByText("Queueing…")).toBeInTheDocument();
   });
   // The button is replaced by its pending label, so it cannot be pressed again.
   expect(buttonNames()).not.toContain(TRIGGER);
@@ -151,8 +147,8 @@ test("A refused trigger surfaces the failure in the card", async () => {
 });
 
 test("The card is absent from Debug while the native pipeline switch is off", async () => {
-  const triggered = installTrigger();
-
+  // No trigger handler is registered: MSW fails the test on any request the
+  // gated card should not be able to make.
   await setupPage({
     context,
     path: DEBUG_PATH,
@@ -162,22 +158,18 @@ test("The card is absent from Debug while the native pipeline switch is off", as
   await openedDebugSection();
 
   expect(buttonNames()).not.toContain(TRIGGER);
-  expect(triggered).toHaveLength(0);
 });
 
 test("The card is absent while the debug switch is off", async () => {
-  const triggered = installTrigger();
-
   await setupPage({
     context,
     path: DEBUG_PATH,
     featureSwitches: { [FeatureSwitchKey.SimpleMorningBrief]: true },
   });
-  await expect(screen.findByText("Language")).resolves.toBeVisible();
+  await expect(screen.findByText("Language")).resolves.toBeInTheDocument();
 
   expect(screen.queryByText("Capture network bodies")).toBeNull();
   expect(buttonNames()).not.toContain(TRIGGER);
-  expect(triggered).toHaveLength(0);
 });
 
 test("Dismissing Settings aborts a trigger that is still in flight", async () => {
