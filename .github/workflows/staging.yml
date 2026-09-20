@@ -1,0 +1,24 @@
+name: Staging
+
+on:
+  push:
+    branches:
+      - main
+
+# One commit owns the shared environment until deployment, E2E, and cleanup
+# finish. Benchmark runs have their own workflow and never acquire this lock.
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-test:
+    permissions:
+      actions: read
+      contents: read
+      deployments: write
+      id-token: write
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/turbo.yml
+    secrets: inherit
