@@ -39,7 +39,6 @@ import {
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
-import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -1468,9 +1467,8 @@ function ArtifactPreviewDialogContent({
           </div>
           <DialogBody className="overflow-hidden bg-background">
             {connectionProgressActive ? (
-              <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+              <div className="flex h-full items-center justify-center p-6">
                 <ConnectorConnectionStatus />
-                <ConnectorConnectionCancelButton />
               </div>
             ) : (
               <ArtifactPreviewBody

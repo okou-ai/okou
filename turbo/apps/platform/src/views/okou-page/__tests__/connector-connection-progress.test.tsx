@@ -87,6 +87,9 @@ async function expectProgressDialog(name = PROGRESS): Promise<HTMLElement> {
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   });
   expect(within(dialog).getByLabelText("Close")).toBeEnabled();
+  expect(
+    within(dialog).queryByText("Cancel", { selector: "button" }),
+  ).toBeNull();
   return dialog;
 }
 
@@ -126,7 +129,7 @@ async function closeCompletedConnection(
   connectorLabel: string,
   releaseDetails: () => void,
 ) {
-  click(within(dialog).getByText("Close"));
+  click(within(dialog).getByLabelText("Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -752,7 +755,7 @@ test.each([
   { custom: true, blocked: "start" },
   { custom: true, blocked: "completion" },
 ] as const)(
-  "Cancel a pending $blocked request and retry without stale cleanup (custom: $custom)",
+  "Close a pending $blocked request and retry without stale cleanup (custom: $custom)",
   async ({ custom, blocked }) => {
     const oldAttempt = crypto.randomUUID();
     const nextAttempt = crypto.randomUUID();
@@ -849,7 +852,7 @@ test.each([
       firstPopup.close();
     }
     await blockedRequest.promise;
-    click(getConnectorAction("button", "Cancel", firstDialog));
+    await dismissProgress(firstDialog, "Close");
     await waitFor(() => {
       expect(connect).toBeEnabled();
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -866,7 +869,7 @@ test.each([
     expect(nextDialog).toBeVisible();
     expect(connect).toBeDisabled();
     expect(screen.queryByRole("dialog", { name: /^Name your/ })).toBeNull();
-    click(getConnectorAction("button", "Cancel", nextDialog));
+    await dismissProgress(nextDialog, "Close");
     await waitFor(() => {
       expect(connect).toBeEnabled();
     });
