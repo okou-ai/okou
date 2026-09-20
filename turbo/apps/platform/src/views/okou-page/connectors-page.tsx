@@ -234,7 +234,7 @@ function ConnectorCategoryMenu({
   }
 
   return (
-    <aside className="pointer-events-none fixed right-6 top-[28vh] z-30 hidden w-44 min-[1332px]:block">
+    <aside className="pointer-events-none fixed right-safe-offset-6 top-[28vh] z-30 hidden w-44 min-[1332px]:block">
       <nav
         aria-label={t(($) => {
           return $.connectors.catalog.categoriesAria;
@@ -2323,7 +2323,7 @@ export function ConnectorsPage() {
 
       <main
         data-testid="connectors-scroll-content"
-        className="flex-1 px-4 sm:px-6 pt-6 pb-[max(4rem,var(--sab))]"
+        className="flex-1 px-4 sm:px-6 pt-6 pb-safe-or-16"
       >
         <div className="relative mx-auto w-full max-w-[900px]">
           {!shelfEnabled &&

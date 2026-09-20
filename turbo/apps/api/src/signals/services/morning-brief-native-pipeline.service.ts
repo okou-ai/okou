@@ -25,6 +25,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import { deliverMorningBriefResult$ } from "./morning-brief-delivery.service";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 import type { MorningBriefGenerationView } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
+import type { MorningBriefOccurrenceCollectionFacts } from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 
 import {
   executeMorningBriefComposedGeneration$,
@@ -295,55 +296,80 @@ async function proveNativeMorningBriefDrain(
 function nativeSettlementOfGeneration(
   execution: MorningBriefComposedExecution,
 ): NativeSlotExecution {
+  const collection = execution.collection;
   switch (execution.kind) {
     case "not-executed":
-    case "denied":
-    case "authority-changed": {
+    case "denied": {
       // Nothing was reserved and nothing was contacted, so this is the bounded
-      // pre-reservation configuration or authority branch.
-      return { kind: "defer", reason: "generation-not-admitted" };
+      // pre-reservation configuration branch. The exact refusal is named, not
+      // folded into one opaque reason shared with every other pre-reservation
+      // exit: a deferral nobody can explain is what #35656 settled as.
+      return {
+        kind: "defer",
+        reason: `${execution.kind}:${execution.reason}`,
+        collection,
+      };
+    }
+    case "authority-changed": {
+      return {
+        kind: "defer",
+        reason: `authority-changed:${execution.reason}`,
+        collection,
+      };
     }
     case "incomplete": {
-      return { kind: "collection-failed" };
+      return { kind: "collection-failed", collection };
     }
-    case "invalid-anchor":
+    case "invalid-anchor": {
+      return { kind: "defer", reason: "generation-invalid-anchor", collection };
+    }
     case "conflict": {
-      return { kind: "defer", reason: `generation-${execution.kind}` };
+      return {
+        kind: "defer",
+        reason: `generation-conflict:${execution.reason}`,
+        collection,
+      };
     }
     case "collection-failed": {
-      return { kind: "collection-failed" };
+      return { kind: "collection-failed", collection };
     }
     case "collection-completed-without-generation": {
       // The collection finished and held nothing worth a model request.
-      return { kind: "empty-skip" };
+      return { kind: "empty-skip", collection };
     }
     case "generated":
     case "already-generated": {
-      return mapGenerationState(execution.generation);
+      return mapGenerationState(execution.generation, collection);
     }
   }
 }
 
 function mapGenerationState(
   generation: MorningBriefGenerationView,
+  collection: MorningBriefOccurrenceCollectionFacts,
 ): NativeSlotExecution {
   switch (generation.state) {
     case "skipped_empty": {
-      return { kind: "empty-skip" };
+      return { kind: "empty-skip", collection };
     }
     case "skipped_incomplete": {
       // Honest incompleteness, never a healthy empty day.
-      return { kind: "collection-failed" };
+      return { kind: "collection-failed", collection };
     }
     case "succeeded": {
       return generation.result?.decision === "deliver"
-        ? { kind: "delivered", generationAttemptId: generation.attemptId }
-        : { kind: "model-skip" };
+        ? {
+            kind: "delivered",
+            generationAttemptId: generation.attemptId,
+            collection,
+          }
+        : { kind: "model-skip", collection };
     }
     case "invocation_outcome_unknown": {
       return {
         kind: "generation-unknown",
         generationAttemptId: generation.attemptId,
+        collection,
       };
     }
     default: {
@@ -351,6 +377,7 @@ function mapGenerationState(
       return {
         kind: "generation-failed",
         generationAttemptId: generation.attemptId,
+        collection,
       };
     }
   }
@@ -381,7 +408,15 @@ export const executeNativeMorningBriefSlot$ = command(
     if (leaseToken === null) {
       // The claim this slot was handed is gone, so there is nothing to execute
       // under. No collection, no reservation and no request happen.
-      return { kind: "defer", reason: "native-claim-lost" };
+      return {
+        kind: "defer",
+        reason: "native-claim-lost",
+        collection: {
+          outcome: "not-collected",
+          reason: "native-claim-lost",
+          sources: [],
+        },
+      };
     }
 
     // The native authority travels **into** S5, so its reservation transaction

@@ -7307,7 +7307,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       actor,
       {
         uploadId,
-        repo: "vm0-ai/vm0",
+        repo: "okou-ai/okou",
         issueNumber: 1,
         caption: "BDD GitHub upload",
       },

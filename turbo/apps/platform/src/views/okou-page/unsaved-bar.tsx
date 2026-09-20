@@ -11,7 +11,7 @@ import { surfaceVariants, Button, cn } from "@okouai/ui";
 type UnsavedBarPinning = "viewport" | "scrollport";
 
 const PINNINGS: Readonly<Record<UnsavedBarPinning, string>> = {
-  viewport: "fixed left-0 right-0 bottom-[max(1.5rem,var(--sab))] z-40",
+  viewport: "fixed left-0 right-0 bottom-safe-or-6 z-40",
   scrollport: "sticky bottom-6 z-10",
 };
 

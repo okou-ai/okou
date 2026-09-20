@@ -35,7 +35,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { and, eq, inArray, or } from "drizzle-orm";
 
 import { listSharedSlackChannelsPage } from "../../lib/slack-client";
-import { monotonicNow, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
@@ -53,15 +53,30 @@ import type { MorningBriefSourceKind } from "./morning-brief-source-item";
 import { loadSlackUserBinding } from "./slack-data.service";
 
 /**
- * The ceiling for the whole revalidation phase.
+ * What proving one retained source may spend.
  *
- * It is a phase bound, not a per-source one: the caller's own reservation
- * constrains it further, and whichever is nearer wins. Permission work is
- * counted inside it — re-proving a Slack workspace's shared conversations is
- * the same enumeration the collector spends, so it is bounded here rather than
- * given a budget of its own.
+ * A re-proof is real work: the shared authorizer re-derives the member's live
+ * membership, the canonical binding, the Agent's grants and the effective
+ * policy for every endpoint the source's material was read under, and native
+ * Slack re-enumerates the workspace conversations the member still shares.
  */
-const MORNING_BRIEF_REVALIDATION_PHASE_MS = 5000;
+const MORNING_BRIEF_REVALIDATION_PER_SOURCE_MS = 2000;
+
+/**
+ * The allowance a retained check gets for the sources it actually proves.
+ *
+ * A constant ceiling is a bound on one source dressed up as a bound on the
+ * phase: the more of the owner's sources answered, the more descriptors this
+ * has to prove, so a healthy five-source morning was strictly likelier to
+ * exhaust it than a quiet one and be discarded for it — the inversion #35656
+ * recorded in production. Two owner-level admissions bracket the per-source
+ * proofs, so the allowance covers them as well. Callers still cap this with
+ * their own absolute deadline, and the check still fails closed.
+ */
+export function morningBriefRetainedCheckBudgetMs(sources: number): number {
+  return MORNING_BRIEF_REVALIDATION_PER_SOURCE_MS * (Math.max(0, sources) + 2);
+}
+
 const RETAINED_LOCAL_DATABASE_CAPS = {
   lockTimeoutMs: 1000,
   statementTimeoutMs: 5000,
@@ -95,38 +110,16 @@ interface MorningBriefSlackAuthority {
 }
 
 /**
- * Start the one absolute retained-check allowance for this composition.
+ * Equality is expired even before the timeout callback gets a turn.
  *
- * Every finite replan receives this same object. The attempt's reservation may
- * be nearer than five seconds, and its existing signal remains part of the
- * interruption boundary rather than being replaced by a fresh timeout.
+ * The instant compared against is always supplied by the caller, and this
+ * opens no allowance of its own. A composing attempt hands it the attempt's
+ * own absolute deadline, because a second ceiling starting when the check
+ * starts is shorter than the phase the plan already reserved for it whenever
+ * collection finished early — and abandoning a complete collection with most
+ * of its own phase unspent is what #35656 observed in production.
  */
-export function startMorningBriefRetainedCheckDeadline(
-  reservation: Pick<MorningBriefSourceDeadline, "at" | "ioAt">,
-  reservationSignal: AbortSignal,
-): MorningBriefSourceDeadline {
-  const startedAt = nowDate().getTime();
-  const at = Math.min(
-    startedAt + MORNING_BRIEF_REVALIDATION_PHASE_MS,
-    reservation.at,
-  );
-  // Preserve the reservation's application/monotonic correspondence. The
-  // retained phase may shorten it, but a controlled application-clock jump is
-  // not real I/O time and must not manufacture a one-millisecond transaction.
-  const ioAt = reservation.ioAt - Math.max(0, reservation.at - at);
-  const ioRemainingMs = Math.max(0, Math.floor(ioAt - monotonicNow()));
-  return {
-    at,
-    ioAt,
-    signal: AbortSignal.any([
-      reservationSignal,
-      AbortSignal.timeout(ioRemainingMs),
-    ]),
-  };
-}
-
-/** Equality is expired even before the timeout callback gets a turn. */
-export function morningBriefRetainedCheckExpired(
+function morningBriefRetainedCheckExpired(
   deadlineAt: number,
   deadlineSignal: AbortSignal,
 ): boolean {
@@ -139,6 +132,11 @@ interface MorningBriefRevokedSource {
   readonly reason: string;
 }
 
+/** Why a retained check produced no answer at all. */
+type MorningBriefRevalidationUnresolved =
+  | "deadline-exceeded"
+  | "check-unavailable";
+
 type MorningBriefRevalidationOutcome =
   /**
    * The owner themselves is gone.
@@ -148,6 +146,18 @@ type MorningBriefRevalidationOutcome =
    * authority every source was admitted under, not one source's material.
    */
   | { readonly kind: "owner-lost"; readonly reason: string }
+  /**
+   * No authority answer was obtained.
+   *
+   * An exhausted attempt and an unavailable authorizer are not statements
+   * about the owner's authority, so they are reported as their own outcome.
+   * Collapsing them into `owner-lost` made a complete, healthy collection
+   * indistinguishable from a revoked one — the defect #35656 recorded.
+   */
+  | {
+      readonly kind: "unresolved";
+      readonly reason: MorningBriefRevalidationUnresolved;
+    }
   | {
       readonly kind: "checked";
       readonly revoked: readonly MorningBriefRevokedSource[];
@@ -177,25 +187,21 @@ export async function revalidateMorningBriefRetainedSources(
 ): Promise<MorningBriefRevalidationOutcome> {
   const { db, clerk, scope, deadline } = input;
   if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-    return { kind: "owner-lost", reason: "deadline-exceeded" };
+    return { kind: "unresolved", reason: "deadline-exceeded" };
   }
   const bounded = AbortSignal.any([signal, deadline.signal]);
 
   // The owner-level gate first: one answer covers every source, and a lost
   // owner makes the per-source answers irrelevant.
-  const initialOwnerLoss = await retainedOwnerLossReason(
-    input,
-    bounded,
-    signal,
-  );
+  const initialOwnerLoss = await retainedOwnerVerdict(input, bounded, signal);
   if (initialOwnerLoss !== null) {
-    return { kind: "owner-lost", reason: initialOwnerLoss };
+    return initialOwnerLoss;
   }
 
   const revoked: MorningBriefRevokedSource[] = [];
   for (const descriptor of input.descriptors) {
     if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-      return { kind: "owner-lost", reason: "deadline-exceeded" };
+      return { kind: "unresolved", reason: "deadline-exceeded" };
     }
     const reason = await settle(
       revalidateSource(
@@ -213,7 +219,7 @@ export async function revalidateMorningBriefRetainedSources(
     );
     signal.throwIfAborted();
     if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-      return { kind: "owner-lost", reason: "deadline-exceeded" };
+      return { kind: "unresolved", reason: "deadline-exceeded" };
     }
     // An unfinished check is not a proof of authority. A source whose answer
     // did not arrive inside the phase is withheld like a revoked one.
@@ -225,21 +231,22 @@ export async function revalidateMorningBriefRetainedSources(
   // Source checks may wait on provider I/O. Re-enter the same owner authorizer
   // afterwards so a membership, installation or Agent change committed during
   // the last wait cannot release the previous owner's material.
-  const finalOwnerLoss = await retainedOwnerLossReason(input, bounded, signal);
-  return finalOwnerLoss === null
-    ? { kind: "checked", revoked }
-    : { kind: "owner-lost", reason: finalOwnerLoss };
+  const finalOwnerLoss = await retainedOwnerVerdict(input, bounded, signal);
+  return finalOwnerLoss ?? { kind: "checked", revoked };
 }
 
 /** `null` means the exact original owner scope still holds. */
-async function retainedOwnerLossReason(
+async function retainedOwnerVerdict(
   input: MorningBriefRetainedRevalidationInput,
   bounded: AbortSignal,
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<Exclude<
+  MorningBriefRevalidationOutcome,
+  { kind: "checked" }
+> | null> {
   const deadline = input.deadline;
   if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-    return "deadline-exceeded";
+    return { kind: "unresolved", reason: "deadline-exceeded" };
   }
   const admissionArgs = {
     db: input.db,
@@ -260,13 +267,17 @@ async function retainedOwnerLossReason(
   );
   signal.throwIfAborted();
   if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-    return "deadline-exceeded";
+    return { kind: "unresolved", reason: "deadline-exceeded" };
   }
   if (!admitted.ok) {
-    return "check-unavailable";
+    return { kind: "unresolved", reason: "check-unavailable" };
+  }
+  if (admitted.value.kind === "unavailable") {
+    // The admission ran out of the attempt's own budget rather than answering.
+    return { kind: "unresolved", reason: "deadline-exceeded" };
   }
   if (admitted.value.kind !== "ok") {
-    return admitted.value.reason;
+    return { kind: "owner-lost", reason: admitted.value.reason };
   }
   const current = admitted.value.scope;
   return current.membershipId !== input.scope.membershipId ||
@@ -274,7 +285,7 @@ async function retainedOwnerLossReason(
     current.installationId !== input.scope.installationId ||
     current.automationId !== input.scope.automationId ||
     current.chatThreadId !== input.scope.chatThreadId
-    ? "owner-changed"
+    ? { kind: "owner-lost", reason: "owner-changed" }
     : null;
 }
 

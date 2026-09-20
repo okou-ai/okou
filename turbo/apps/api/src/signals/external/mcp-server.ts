@@ -612,16 +612,23 @@ function registerSearchAndStatusTools(
       description:
         "Observe input delivery, run state and readable output separately in your conversation. " +
         "Pass threadId and the complete original inputRef returned by send_chat_message; without " +
-        "inputRef, observes the latest run. Missing input associations never select another run. " +
+        "inputRef, observes the latest run. Set waitMs for an exact input only to add a bounded " +
+        "wait/read after the first observation; zero or omission stays immediate, and the server " +
+        "clamps positive waits to 8 seconds with at most 5 observations. wait reports ready, " +
+        "deadline or ordinary status; deadline and waiter capacity are successful current-state " +
+        "reads, not run outcomes. Missing input associations never select another run. " +
         "queued/reserved/associated do not prove delivery; delivered means an acknowledged active " +
         "input, not model compliance. deliveryMode is launch/steer only with evidence, otherwise unknown. " +
         "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
         "output, including cancellation recovery. ready means current materialized output is readable; " +
-        "late output may still arrive. Follow the messages tool handoff for content and pagination. " +
-        "Honor retryAfterMs and back off repeated polls. Original references survive live retention " +
+        "late output may still arrive. Positive waits return the first bounded messagePage on ready; " +
+        "follow its cursors and the messages tool handoff for complete content. Disconnect cancels " +
+        "only this read waiter, never the accepted run. Honor retryAfterMs and back off repeated polls. " +
+        "Original references survive live retention " +
         "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
         "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
-        "are explicit errors. This immediate read does not mark read, change execution or cancel runs.",
+        "are explicit errors. Status-only data is bounded to 16 KiB and status with messagePage to " +
+        "192 KiB. This read does not mark read, change execution or cancel runs.",
       inputSchema: mcpGetChatStatusInputSchema,
       outputSchema: mcpGetChatStatusOutputSchema,
       annotations: readAnnotations,

@@ -7,5 +7,5 @@ export interface RuleDocs {
 }
 
 export const createRule = ESLintUtils.RuleCreator<RuleDocs>((name) => {
-  return `https://github.com/vm0-ai/vm0/blob/main/docs/eslint/${name}.md`;
+  return `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`;
 });

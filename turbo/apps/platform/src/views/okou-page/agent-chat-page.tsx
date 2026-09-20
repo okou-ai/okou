@@ -390,15 +390,40 @@ export function AgentChatPage() {
     <div className="relative flex flex-1 flex-col min-h-0">
       <GrowthEntryHeader />
 
-      <main className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6">
+      <main className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6">
+        {/* Below `sm` the composer is the page's footer. Every text tool a
+            phone user already has puts the field within thumb reach at the
+            bottom of the screen, and this page was the one surface that asked
+            them to reach back up to the top of the viewport for it.
+
+            The reordering is CSS, not DOM: the composer keeps its authored
+            position so a screen reader still meets the field right after the
+            tagline that invites it, and `order` only decides where the box
+            paints. `flex-1` gives the column the scrollport's height so the
+            greeting's auto margins below have free space to take; the column
+            still grows past it when the content is taller, and auto margins
+            collapse to nothing there, so the composer scrolls with the page
+            instead of holding the floor. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-[900px] flex flex-col items-stretch gap-10 pt-8 pb-[max(3rem,var(--sab))] sm:pt-[20vh] sm:pb-[max(10vh,var(--sab))]"
+          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:flex-none sm:gap-10 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
         >
-          {/* The avatar is on the row before the line is: the tagline needs the
-              agent's name, so the frame stands alone for as long as that takes
-              to resolve. Centred alone and centred against a full line are two
-              different places, and the step between them is what this animates.
+          {/* The greeting keeps the space the composer left behind rather than
+              staying pinned under the header with a screen-deep hole under it.
+              Both margins are auto, so the free space is split above and below
+              it and the line lands in the middle of what is left.
+
+              While the offset below is on, the reserved line hangs past the
+              right edge; the scrollport above would answer that with a
+              horizontal scrollbar, so this row clips its own axis. `clip`
+              rather than `hidden` leaves the vertical axis visible for the pin
+              button. */}
+          <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
+            {/* The avatar is on the row before the line is: the tagline needs
+              the agent's name, so the frame stands alone for as long as that
+              takes to resolve. Centred alone and centred against a full line
+              are two different places, and the step between them is what this
+              animates.
 
               `calc(50% - 1.75rem)` is that step, written without measuring
               anything. 50% of this box puts its left edge on the row's centre,
@@ -426,13 +451,7 @@ export function AgentChatPage() {
               first third of the move before it began to advance. Half a sine
               over the typing run keeps the row slower than the text at every
               point, which leaves the line growing out of its own centre while
-              the avatar drifts off it.
-
-              While the offset is on, the reserved line hangs past the right
-              edge; the scrollport above would answer that with a horizontal
-              scrollbar, so the row clips its own axis. `clip` rather than
-              `hidden` leaves the vertical axis visible for the pin button. */}
-          <div className="flex w-full justify-center overflow-x-clip">
+              the avatar drifts off it. */}
             <div
               data-testid="chat-greeting"
               data-settled={tagline !== ""}
@@ -467,13 +486,26 @@ export function AgentChatPage() {
             </div>
           </div>
 
-          <ChatComposer signals={composerSignals} />
+          {/* The same two the thread page's footer carries.
+              `data-chat-composer` names the box the soft keyboard has to
+              reveal, and `pb-safe-or-2` takes the larger of the gutter and the
+              home indicator's reserve — the reserve being keyboard-aware, so
+              the card clears the gesture bar without floating above the
+              keyboard. */}
+          <div
+            data-chat-composer
+            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
+          >
+            <ChatComposer signals={composerSignals} />
+          </div>
 
-          {taskChipsEnabled ? (
-            <ComposerTaskChips signals={composerSignals} />
-          ) : (
-            <StartCards onSelectPrompt={handleInputChange} />
-          )}
+          <div className="order-2 sm:order-none">
+            {taskChipsEnabled ? (
+              <ComposerTaskChips signals={composerSignals} />
+            ) : (
+              <StartCards onSelectPrompt={handleInputChange} />
+            )}
+          </div>
         </div>
       </main>
       <PersonalClaudeCodeDeviceAuthDialog />

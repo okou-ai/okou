@@ -30,7 +30,7 @@ describe("Toaster", () => {
     expect(toaster).toHaveStyle({ zIndex: "2147483647" });
     expect(
       (toaster as HTMLElement).style.getPropertyValue("--mobile-offset-top"),
-    ).toBe("calc(var(--sat, 0px) + 12px)");
+    ).toBe("calc(var(--sat, env(safe-area-inset-top, 0px)) + 12px)");
     expect(
       (toaster as HTMLElement).style.getPropertyValue("--mobile-offset-left"),
     ).toBe("0px");
@@ -39,7 +39,7 @@ describe("Toaster", () => {
     ).toBe("0px");
     expect(
       (toaster as HTMLElement).style.getPropertyValue("--mobile-offset-bottom"),
-    ).toBe("calc(var(--sab, 0px) + 16px)");
+    ).toBe("calc(var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) + 16px)");
   });
 
   it("calls onReady only once when its callback identity changes", async () => {

@@ -136,7 +136,7 @@ const githubPullRequestAutomation = {
   eventConfig: {
     provider: "github",
     event: "pull_request",
-    repository: "vm0-ai/vm0",
+    repository: "okou-ai/okou",
     action: "closed",
     merged: true,
     filters: {
@@ -156,7 +156,7 @@ const githubWorkflowRunAutomation = {
     provider: "github",
     event: "workflow_run_completed",
     filters: {
-      repositories: ["vm0-ai/vm0"],
+      repositories: ["okou-ai/okou"],
       workflows: ["Turbo"],
       conclusions: ["failure", "startup_failure"],
       branches: ["main"],
@@ -732,7 +732,7 @@ describe("okou workflow automation commands", () => {
         WORKFLOW_ID,
         "github-pull-request",
         "--repository",
-        "vm0-ai/vm0",
+        "okou-ai/okou",
         "--action",
         "closed",
         "--merged",
@@ -748,7 +748,7 @@ describe("okou workflow automation commands", () => {
         eventConfig: {
           provider: "github",
           event: "pull_request",
-          repository: "vm0-ai/vm0",
+          repository: "okou-ai/okou",
           action: "closed",
           merged: true,
           filters: {
@@ -758,7 +758,7 @@ describe("okou workflow automation commands", () => {
       });
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("GitHub pull request");
-      expect(logCalls).toContain("vm0-ai/vm0");
+      expect(logCalls).toContain("okou-ai/okou");
       expect(logCalls).toContain("closed");
     });
 
@@ -772,7 +772,7 @@ describe("okou workflow automation commands", () => {
           WORKFLOW_ID,
           "github-pull-request",
           "--repository",
-          "vm0-ai/vm0",
+          "okou-ai/okou",
           "--action",
           "opened",
           "--merged",
@@ -795,7 +795,7 @@ describe("okou workflow automation commands", () => {
         WORKFLOW_ID,
         "github-workflow-run-completed",
         "--repository",
-        "vm0-ai/vm0",
+        "okou-ai/okou",
         "--workflow",
         "Turbo",
         "--conclusion",
@@ -815,7 +815,7 @@ describe("okou workflow automation commands", () => {
           provider: "github",
           event: "workflow_run_completed",
           filters: {
-            repositories: ["vm0-ai/vm0"],
+            repositories: ["okou-ai/okou"],
             workflows: ["Turbo"],
             conclusions: ["failure", "startup_failure"],
             branches: ["main"],
@@ -877,7 +877,7 @@ describe("okou workflow automation commands", () => {
           provider: "github",
           event: "issue_comment_created",
           filters: {
-            repositories: ["vm0-ai/vm0"],
+            repositories: ["okou-ai/okou"],
             subject: "pull_requests",
             trustedAuthors: ["e7h4n", "lancy"],
             commentPrefixes: ["/verify", "/deploy"],
@@ -896,7 +896,7 @@ describe("okou workflow automation commands", () => {
         WORKFLOW_ID,
         "github-issue-comment-created",
         "--repository",
-        "vm0-ai/vm0",
+        "okou-ai/okou",
         "--subject",
         "pull-requests",
         "--trusted-author",
@@ -912,7 +912,7 @@ describe("okou workflow automation commands", () => {
           provider: "github",
           event: "issue_comment_created",
           filters: {
-            repositories: ["vm0-ai/vm0"],
+            repositories: ["okou-ai/okou"],
             subject: "pull_requests",
             trustedAuthors: ["e7h4n", "lancy"],
             commentPrefixes: ["/verify", "/deploy"],
@@ -2037,7 +2037,7 @@ describe("okou workflow automation commands", () => {
         eventConfig: {
           provider: "github",
           event: "pull_request",
-          repository: "vm0-ai/vm0",
+          repository: "okou-ai/okou",
           action: "closed",
           merged: false,
           filters: {
@@ -2068,7 +2068,7 @@ describe("okou workflow automation commands", () => {
         eventConfig: {
           provider: "github",
           event: "pull_request",
-          repository: "vm0-ai/vm0",
+          repository: "okou-ai/okou",
           action: "closed",
           merged: false,
           filters: {
@@ -2114,7 +2114,7 @@ describe("okou workflow automation commands", () => {
           provider: "github",
           event: "workflow_run_completed",
           filters: {
-            repositories: ["vm0-ai/vm0"],
+            repositories: ["okou-ai/okou"],
             workflows: ["Turbo"],
             conclusions: ["success"],
             branches: undefined,
@@ -2244,7 +2244,7 @@ describe("okou workflow automation commands", () => {
       expect(logCalls).toContain("GitHub pull request closed");
       expect(logCalls).toContain("Notion page content updated");
       expect(logCalls).toContain("Release plan");
-      expect(logCalls).toContain("vm0-ai/vm0, merged");
+      expect(logCalls).toContain("okou-ai/okou, merged");
       expect(logCalls).toContain("New Notion child page");
       expect(logCalls).toContain("Product notes");
       expect(logCalls).toContain("New Notion database item");

@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.642.3](https://github.com/okou-ai/okou/compare/api-v1.642.2...api-v1.642.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* **api:** drain chat search gin between projection transactions ([#35633](https://github.com/okou-ai/okou/issues/35633)) ([8e1fe5d](https://github.com/okou-ai/okou/commit/8e1fe5dbad87087d540d26f4ba7ff10589cd08b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+    * @okouai/core bumped to 8.688.1
+    * @okouai/db bumped to 1.279.8
+    * @okouai/pi-agent-runtime bumped to 1.33.30
+
 ## [1.642.2](https://github.com/okou-ai/okou/compare/api-v1.642.1...api-v1.642.2) (2026-09-20)
 
 

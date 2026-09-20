@@ -121,9 +121,15 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
   await expect(status()).resolves.toMatchObject({
     claimedToday: true,
     nextResetAt: "2026-09-16T00:00:00.000Z",
+    checkinStreak: 1,
   });
   mockNow(new Date("2026-09-16T00:00:00.000Z"));
-  expect((await status()).claimedToday).toBeFalsy();
+  // A new UTC day has started and nothing is claimed in it yet, so the streak
+  // is still alive on yesterday rather than broken back to zero.
+  await expect(status()).resolves.toMatchObject({
+    claimedToday: false,
+    checkinStreak: 1,
+  });
   expect((await accept(client().checkin({ headers }), [200])).body.id).not.toBe(
     first?.id,
   );
@@ -132,6 +138,7 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
       return q.key === "checkin";
     })?.claimedCount,
   ).toBe(2);
+  expect((await status()).checkinStreak).toBe(2);
 });
 
 test("the shared getStartedQuests switch gates API rewards and supports the same persisted overrides", async () => {

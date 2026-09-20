@@ -1289,15 +1289,32 @@ function PermissionActionCardContent({
           <ConnectorIcon icon={icon} size={22} />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[0.9375rem] font-medium text-foreground">
-            {t(
-              ($) => {
-                return $.chat.permissions.connectorTitle;
-              },
-              {
-                connectorName: connectorLabel,
-              },
-            )}
+          <div className="flex min-w-0 items-center gap-1">
+            <div className="truncate text-[0.9375rem] font-medium text-foreground">
+              {t(
+                ($) => {
+                  return $.chat.permissions.connectorTitle;
+                },
+                {
+                  connectorName: connectorLabel,
+                },
+              )}
+            </div>
+            <ChatCardDetails compact title={connectorLabel}>
+              <p>
+                {t(
+                  ($) => {
+                    return $.chat.permissions.actionDescription;
+                  },
+                  {
+                    action: actionLabel,
+                    permissionName,
+                  },
+                )}
+              </p>
+              <PermissionActionInlineStatus status={status} />
+              {expiryText && <p>{expiryText}</p>}
+            </ChatCardDetails>
           </div>
           <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {t(
@@ -1320,21 +1337,6 @@ function PermissionActionCardContent({
             )
           )}
         </div>
-        <ChatCardDetails compact title={connectorLabel}>
-          <p>
-            {t(
-              ($) => {
-                return $.chat.permissions.actionDescription;
-              },
-              {
-                action: actionLabel,
-                permissionName,
-              },
-            )}
-          </p>
-          <PermissionActionInlineStatus status={status} />
-          {expiryText && <p>{expiryText}</p>}
-        </ChatCardDetails>
       </div>
       {permissionActionHasControls(status) && (
         <div

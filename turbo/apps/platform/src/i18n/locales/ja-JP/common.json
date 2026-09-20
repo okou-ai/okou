@@ -1420,6 +1420,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} 件追加済み",
+        "checkedIn": "チェックイン済み",
         "checkin": {
           "action": "チェックイン",
           "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
@@ -1429,11 +1431,12 @@
         "connector": {
           "action": "接続",
           "description": "Gmail、Notion など100以上",
-          "name": "コネクタを接続",
+          "name": "ツールを接続",
           "unit": "コネクタごと"
         },
+        "earned": "{{amount}} 獲得",
+        "howRewardsWork": "報酬の仕組み",
         "inReview": "確認中",
-        "inReviewDescription": "送信済み、確認待ち",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} クレジット",
@@ -1489,16 +1492,13 @@
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
-        "pendingInvitations": "承諾待ちの招待: {{amount}}",
-        "personalBalanceNote": "報酬は付与から7日後に失効します。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
-        "progressLabel": "セットアップの進捗",
-        "rejectedDescription": "この投稿は対象外です。Okou に言及した別の公開投稿を送信してください。",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "報酬獲得済みコネクタ: {{amount}}",
+        "notEligible": "対象外",
+        "pendingState": "{{amount}} 件承諾待ち",
+        "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "share": {
           "action": "シェア",
           "description": "投稿して、リンクを貼り付け",
-          "name": "{{assistantName}} を X でシェア"
+          "name": "X でシェア"
         },
         "shareDialog": {
           "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
@@ -1511,11 +1511,12 @@
         "slack": {
           "action": "追加",
           "description": "チームがすでに使っている場所へ",
-          "name": "{{assistantName}} を Slack に追加"
+          "name": "Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "タスクを試してクレジットを獲得。",
+        "streak": "{{amount}}日連続",
         "title": "はじめる",
+        "toGo": "残り {{amount}}",
         "workflow": {
           "action": "作成",
           "description": "繰り返しの作業を再利用できるスキルに変える",
@@ -7253,7 +7254,7 @@
         "refs": "参照",
         "refsPlaceholder": "メイン、v1.0.0",
         "repositories": "リポジトリ",
-        "repositoriesPlaceholder": "vm0-ai/vm0、所有者/別のリポジトリ",
+        "repositoriesPlaceholder": "okou-ai/okou、所有者/別のリポジトリ",
         "repositoriesSummary": "リポジトリ {{values}}",
         "repository": "リポジトリ",
         "repositoryPlaceholder": "owner/name",

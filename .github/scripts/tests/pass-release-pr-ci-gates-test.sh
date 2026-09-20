@@ -136,7 +136,7 @@ case "${1:-} ${2:-}" in
       cat "$MOCK_ADDITIONAL_CHANGED_FILES_PATH"
     fi
     ;;
-  "api repos/vm0-ai/vm0/check-runs")
+  "api repos/okou-ai/okou/check-runs")
     printf '%s\n' "$*" >>"$MOCK_GH_LOG"
     printf '{"id":1}\n'
     ;;
@@ -153,7 +153,7 @@ run_gates() {
   (
     cd "$CALLER"
     GH_TOKEN=test \
-      GITHUB_REPOSITORY=vm0-ai/vm0 \
+      GITHUB_REPOSITORY=okou-ai/okou \
       MOCK_GH_LOG="$GH_LOG" \
       MOCK_PR_HEAD="$head" \
       PATH="${FAKE_BIN}:$PATH" \

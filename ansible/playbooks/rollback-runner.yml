@@ -341,7 +341,7 @@
         # helper used by release-please.yml when uploading assets.
         - name: Download runner binary from GitHub Release
           get_url:
-            url: "https://github.com/vm0-ai/vm0/releases/download/{{ derived_runner_release_tag }}/{{ derived_runner_release_asset_name }}"
+            url: "https://github.com/okou-ai/okou/releases/download/{{ derived_runner_release_tag }}/{{ derived_runner_release_asset_name }}"
             dest: "{{ bin_dir }}/runner"
             mode: "0755"
             headers: "{{ download_headers }}"

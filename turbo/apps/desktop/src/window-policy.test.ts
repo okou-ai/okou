@@ -362,10 +362,10 @@ describe("window policy", () => {
 
   it("keeps ordinary GitHub links external", () => {
     expect(
-      decideWindowOpen("https://github.com/vm0-ai/vm0", allowedOrigins),
+      decideWindowOpen("https://github.com/okou-ai/okou", allowedOrigins),
     ).toStrictEqual({
       action: "open-external",
-      url: "https://github.com/vm0-ai/vm0",
+      url: "https://github.com/okou-ai/okou",
     });
   });
 

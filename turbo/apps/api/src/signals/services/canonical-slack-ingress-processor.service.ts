@@ -792,18 +792,6 @@ export const drainStaleCanonicalSlackIngress$ = command(
     const staleBefore = new Date(
       currentTime.getTime() - PROCESSING_STALE_AFTER_MS,
     );
-    // Older API versions treat `failed` as immediately retryable. Converting
-    // that legacy state also fences failures written during a rolling deploy.
-    await db
-      .update(slackChatIngress)
-      .set({
-        status: "terminal",
-        retryAt: null,
-        lastErrorClass: "legacy_terminal_failure",
-        updatedAt: currentTime,
-      })
-      .where(eq(slackChatIngress.status, "failed"));
-    signal.throwIfAborted();
     await db
       .update(slackChatIngress)
       .set({

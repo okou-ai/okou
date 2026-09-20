@@ -5,10 +5,7 @@
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
 import { cn, Popover, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import {
-  composerSuggestionCollisionPadding,
-  SlashWorkflowName,
-} from "./slash-workflow.tsx";
+import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
@@ -293,7 +290,6 @@ function SlashTemplateDetailFlyout({
         side="right"
         align="start"
         sideOffset={0}
-        collisionPadding={composerSuggestionCollisionPadding()}
         updatePositionStrategy="always"
         // The menu's keyboard navigation stays in the editor, and the row that
         // opened this flyout keeps its focus.

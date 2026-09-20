@@ -6,15 +6,21 @@ type ToasterProps = React.ComponentProps<typeof Sonner> & {
   readonly onReady?: () => void;
 };
 
+// Sonner takes its offsets as values rather than classes, so this is the one
+// safe-area consumer that cannot reach the shared utilities. It still reads the
+// keyboard-aware bottom, so a toast does not float above an open keyboard.
+const SAFE_TOP = "var(--sat, env(safe-area-inset-top, 0px))";
+const SAFE_BOTTOM = "var(--okou-safe-b, env(safe-area-inset-bottom, 0px))";
+
 const DEFAULT_TOASTER_OFFSET = {
-  top: "calc(var(--sat, 0px) + 24px)",
-  bottom: "calc(var(--sab, 0px) + 24px)",
+  top: `calc(${SAFE_TOP} + 24px)`,
+  bottom: `calc(${SAFE_BOTTOM} + 24px)`,
 } satisfies ToasterProps["offset"];
 
 const DEFAULT_TOASTER_MOBILE_OFFSET = {
-  top: "calc(var(--sat, 0px) + 12px)",
+  top: `calc(${SAFE_TOP} + 12px)`,
   right: "0px",
-  bottom: "calc(var(--sab, 0px) + 16px)",
+  bottom: `calc(${SAFE_BOTTOM} + 16px)`,
   left: "0px",
 } satisfies ToasterProps["mobileOffset"];
 
