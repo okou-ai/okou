@@ -266,13 +266,14 @@ test("The pane floats beside the index instead of sharing its box", async () => 
   const menu = screen.getByTestId("slash-workflow-menu");
   const pane = detailPane();
   // jsdom has no layout, so the invariant is read off the structure: the pane
-  // is not inside the box Base UI measures, and that box declares the index's
-  // own width. A pane that shared it made the popover content-width, and a
-  // popover that changes width re-pins itself out from under the pointer.
-  expect(menu.className).toContain("w-[260px]");
+  // lives in a floating box of its own rather than inside the one Base UI
+  // measures and pins. A pane that shared that box made the popover
+  // content-width, and a popover that changes width re-pins itself out from
+  // under the pointer.
   expect(pane).not.toBeNull();
   expect(menu.contains(pane)).toBeFalsy();
   expect(flyout()?.contains(pane)).toBeTruthy();
+  expect(menu.contains(flyout())).toBeFalsy();
 });
 
 test("Arrowing to a type opens its flyout too", async () => {
