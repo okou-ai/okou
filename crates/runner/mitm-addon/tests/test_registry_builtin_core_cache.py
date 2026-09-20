@@ -67,13 +67,13 @@ class TestRegistryBuiltinCoreCache:
         assert first_firewall_core(first_compiled) is first_firewall_core(second_compiled)
 
         first_result = matching.match_compiled_firewall_request(
-            "https://api.github.com/repos/vm0-ai/vm0",
+            "https://api.github.com/repos/okou-ai/okou",
             "GET",
             first_compiled,
             first_policies,
         )
         second_result = matching.match_compiled_firewall_request(
-            "https://api.github.com/repos/vm0-ai/vm0",
+            "https://api.github.com/repos/okou-ai/okou",
             "GET",
             second_compiled,
             second_policies,
@@ -146,7 +146,7 @@ class TestRegistryBuiltinCoreCache:
         ]
 
         builtin_result = matching.match_compiled_firewall_request(
-            "https://api.github.com/repos/vm0-ai/vm0",
+            "https://api.github.com/repos/okou-ai/okou",
             "GET",
             first_compiled,
             first_policies,
@@ -366,7 +366,7 @@ class TestRegistryBuiltinCoreCache:
         _, compiled_firewalls, compiled_policies = valid_context
         assert compiled_firewalls is not None
         result = matching.match_compiled_firewall_request(
-            "https://api.github.com/repos/vm0-ai/vm0",
+            "https://api.github.com/repos/okou-ai/okou",
             "GET",
             compiled_firewalls,
             compiled_policies,

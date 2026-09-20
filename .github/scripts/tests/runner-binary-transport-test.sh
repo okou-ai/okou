@@ -66,7 +66,7 @@ export PATH="${test_root}/bin:${PATH}"
 export AWS_STORE="${test_root}/store"
 export AWS_ACCESS_KEY_ID=fixture-access AWS_SECRET_ACCESS_KEY=fixture-secret
 export R2_ACCOUNT_ID=fixture-account R2_BUCKET_NAME=fixture-bucket
-export REPO=vm0-ai/vm0 CURRENT_RUN_ID=100 PRODUCER_RUN_ATTEMPT=1
+export REPO=okou-ai/okou CURRENT_RUN_ID=100 PRODUCER_RUN_ATTEMPT=1
 export PRODUCER_EVENT=pull_request PRODUCER_PR_NUMBER=123
 export PRODUCER_HEAD_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 guest_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

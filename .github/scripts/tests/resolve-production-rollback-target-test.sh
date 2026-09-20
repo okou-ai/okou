@@ -136,7 +136,7 @@ run_resolver() {
     AWS_METAL_RUNNER_HOSTS=arm-1,x86-1 \
     GH_TOKEN=test-github-token \
     GITHUB_OUTPUT="$output_file" \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
     TARGET_COMMIT="$target_commit" \

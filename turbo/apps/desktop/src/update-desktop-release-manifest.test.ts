@@ -12,7 +12,7 @@ const scriptPath = join(
   "update-desktop-release-manifest.mjs",
 );
 const zipUrl =
-  "https://github.com/vm0-ai/vm0/releases/download/test/Okou-darwin-arm64-1.2.3.zip";
+  "https://github.com/okou-ai/okou/releases/download/test/Okou-darwin-arm64-1.2.3.zip";
 
 function temporaryManifestPath(): string {
   const directory = mkdtempSync(join(tmpdir(), "desktop-manifest-"));

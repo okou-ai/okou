@@ -81,7 +81,7 @@ ${violations
   })
   .join("\n")}
 
-Do not commit this kind of asset to vm0. Add it to vm0-ai/static-files under static.vm0.io/platform/... using a versioned or content-hashed path.
+Do not commit this kind of asset to vm0. Add it to okou-ai/static-files under static.vm0.io/platform/... using a versioned or content-hashed path.
 
 static.vm0.io is append-only and hard cached for one year. Never overwrite, rename, or delete an existing published path; add a new unique path instead.
 

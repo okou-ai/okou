@@ -7253,7 +7253,7 @@
         "refs": "参照",
         "refsPlaceholder": "メイン、v1.0.0",
         "repositories": "リポジトリ",
-        "repositoriesPlaceholder": "vm0-ai/vm0、所有者/別のリポジトリ",
+        "repositoriesPlaceholder": "okou-ai/okou、所有者/別のリポジトリ",
         "repositoriesSummary": "リポジトリ {{values}}",
         "repository": "リポジトリ",
         "repositoryPlaceholder": "owner/name",

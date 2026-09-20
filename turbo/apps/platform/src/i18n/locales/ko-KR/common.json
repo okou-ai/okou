@@ -7253,7 +7253,7 @@
         "refs": "참조",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "저장소",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "저장소 {{values}}",
         "repository": "리포지토리",
         "repositoryPlaceholder": "owner/name",

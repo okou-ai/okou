@@ -5,7 +5,7 @@
   "description": "Okou command-line interface",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vm0-ai/vm0",
+    "url": "https://github.com/okou-ai/okou",
     "directory": "turbo/apps/cli"
   },
   "type": "module",

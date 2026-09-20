@@ -45,7 +45,7 @@ async function selectPRs(requested) {
       queried.push(pull_number);
       return { data: { state: pull_number === 43 ? 'open' : 'closed' } };
     } } } },
-    { repo: { owner: 'vm0-ai', repo: 'vm0' } },
+    { repo: { owner: 'okou-ai', repo: 'okou' } },
     { setOutput: (name, value) => { outputs[name] = value; } },
   );
   return { queried, numbers: JSON.parse(outputs.numbers), hasPRs: outputs['has-prs'] };
@@ -81,15 +81,15 @@ for argument in "$@"; do
 done
 
 case "$endpoint" in
-  repos/vm0-ai/vm0/pulls/*)
+  repos/okou-ai/okou/pulls/*)
     pr_number=${endpoint##*/}
     if [[ " $* " == *" --jq .state "* ]]; then
       printf 'closed\n'
     else
-      printf 'feature/pr-%s\tvm0-ai/vm0\n' "$pr_number"
+      printf 'feature/pr-%s\tokou-ai/okou\n' "$pr_number"
     fi
     ;;
-  repos/vm0-ai/vm0/actions/runs)
+  repos/okou-ai/okou/actions/runs)
     if [ "$MOCK_BLOCKED_PR" != "0" ] && [[ " $* " == *" status=queued "* ]]; then
       jq -nc --argjson pr "$MOCK_BLOCKED_PR" '[{workflow_runs: [{
         id: 100, name: "Runner Image", status: "queued", event: "pull_request",
@@ -100,7 +100,7 @@ case "$endpoint" in
       printf '[{"workflow_runs":[]}]\n'
     fi
     ;;
-  repos/vm0-ai/vm0/actions/runs/100)
+  repos/okou-ai/okou/actions/runs/100)
     printf 'queued\n'
     ;;
   *)
@@ -180,7 +180,7 @@ run_cleanup() {
       HOME="${HOME:-/tmp}" \
       GH_TOKEN=test-token \
       GITHUB_WORKSPACE="$repo_root" \
-      GITHUB_REPOSITORY=vm0-ai/vm0 \
+      GITHUB_REPOSITORY=okou-ai/okou \
       GITHUB_RUN_ID=900 \
       METAL_HOSTS=metal.example.test \
       METAL_USER=runner \
