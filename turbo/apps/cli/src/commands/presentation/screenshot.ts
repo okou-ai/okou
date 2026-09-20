@@ -6,7 +6,6 @@
  * through a browser. Both land on the same fixed page surface and write the
  * same ordered page-NNN.png.
  */
-import { execFileSync } from "child_process";
 import {
   cpSync,
   existsSync,
@@ -20,27 +19,30 @@ import {
   writeFileSync,
 } from "fs";
 import { homedir, hostname } from "os";
-import {
-  basename,
-  delimiter,
-  extname,
-  isAbsolute,
-  join,
-  normalize,
-  sep,
-} from "path";
+import { delimiter, extname, join } from "path";
 import { setTimeout as delay } from "timers/promises";
 import { pathToFileURL } from "url";
 
 import { Command, InvalidArgumentError } from "commander";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  browser,
+  childPath,
+  descendantPath,
+  htmlSources,
+  NEXT_FRAME,
+  operatorPath,
+  run,
+  runStreaming,
+  SETTLE,
+  TIMEOUT_MS,
+} from "./shared";
 
 const DEFAULT_WIDTH = 1600;
 const DEFAULT_HEIGHT = 900;
 const RETRIES = 2;
 const RENDER_DPI = "150";
-const TIMEOUT_MS = 300_000;
 const DECK_EXTENSIONS = [".ppt", ".pptx", ".pdf"];
 const DEPENDENCY_CACHE_VERSION = "v1";
 const INSTALL_LOCK_POLL_MS = 250;
@@ -74,39 +76,6 @@ const POPPLER: DeckDependency = {
   packageName: "poppler-utils",
 };
 
-/** Waits for fonts, images, and CSS background images, then two paint frames. */
-const SETTLE = `(async()=>{
-  const wait=(promise,label)=>new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>reject(new Error("Timed out waiting for "+label)),12000);
-    promise.then(value=>{clearTimeout(timer);resolve(value)},error=>{clearTimeout(timer);reject(error)});
-  });
-  const loadImage=src=>new Promise(resolve=>{
-    const image=new Image();
-    image.onload=image.onerror=resolve;
-    image.src=src;
-    if(image.complete) resolve();
-  });
-  await wait(document.fonts.ready,"fonts");
-  await wait(
-    Promise.all(Array.from(document.images).filter(image=>!image.complete).map(image=>new Promise(resolve=>{image.onload=image.onerror=resolve}))),
-    "images"
-  );
-  const backgroundUrls=[...new Set(
-    Array.from(document.querySelectorAll("*")).flatMap(node=>
-      Array.from(
-        getComputedStyle(node).backgroundImage.matchAll(/url\\((?:"([^"]*)"|'([^']*)'|([^)]*))\\)/gu),
-        match=>(match[1]??match[2]??match[3]??"").trim()
-      ).filter(Boolean)
-    )
-  )];
-  await wait(Promise.all(backgroundUrls.map(loadImage)),"CSS background images");
-  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  return 1;
-})()`;
-
-const NEXT_FRAME =
-  "(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return 1})()";
-
 interface Options {
   readonly input: string;
   readonly out: string;
@@ -114,59 +83,6 @@ interface Options {
   readonly height: number;
   readonly slides: string;
   readonly json?: boolean;
-}
-
-/**
- * Input and output paths are an explicit local-CLI trust boundary: the operator
- * chooses them and may intentionally address any location they can access.
- */
-function operatorPath(input: string): string {
-  return normalize(
-    isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`,
-  );
-}
-
-/** Resolve a single directory entry without allowing the entry to escape. */
-function childPath(directory: string, name: string): string {
-  if (name === "." || name === ".." || basename(name) !== name) {
-    throw new Error(`Invalid directory entry: ${name}`);
-  }
-  return normalize(`${directory}${sep}${name}`);
-}
-
-/** Resolve validated directory entries beneath a trusted directory. */
-function descendantPath(
-  directory: string,
-  ...names: readonly string[]
-): string {
-  return names.reduce((parent, name) => {
-    return childPath(parent, name);
-  }, directory);
-}
-
-function run(
-  command: string,
-  args: readonly string[],
-  environment?: NodeJS.ProcessEnv,
-): string {
-  return execFileSync(command, args, {
-    encoding: "utf8",
-    env: environment,
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: TIMEOUT_MS,
-  }).trim();
-}
-
-function runStreaming(
-  command: string,
-  args: readonly string[],
-  environment: NodeJS.ProcessEnv,
-): void {
-  execFileSync(command, args, {
-    env: environment,
-    stdio: ["ignore", "ignore", process.stderr],
-    timeout: TIMEOUT_MS,
-  });
 }
 
 /** PNG stores width and height in the IHDR chunk, always the first one. */
@@ -658,65 +574,6 @@ async function captureDeck(
 interface SlideTarget {
   readonly selector: string;
   readonly index: number;
-}
-
-function browser(session: string) {
-  const call = (args: readonly string[]): string => {
-    return run("agent-browser", [
-      "--session",
-      session,
-      "--allow-file-access",
-      ...args,
-    ]);
-  };
-  const quiet = (args: readonly string[]): void => {
-    try {
-      call(args);
-    } catch {
-      // Shaping calls only; the capture itself is what matters.
-    }
-  };
-  return {
-    call,
-    /** agent-browser prints the evaluated value JSON-encoded on the last line. */
-    evaluate: (expression: string): unknown => {
-      const last = call(["eval", expression]).split("\n").filter(Boolean).pop();
-      try {
-        const value: unknown = JSON.parse(last ?? "");
-        return typeof value === "string" ? JSON.parse(value) : value;
-      } catch {
-        return last;
-      }
-    },
-    quiet,
-  };
-}
-
-function htmlSources(input: string): { url: string; label: string }[] {
-  if (/^https?:\/\//u.test(input)) {
-    return [{ url: input, label: input }];
-  }
-  const path = operatorPath(input);
-  if (statSync(path).isDirectory()) {
-    const names = readdirSync(path)
-      .filter((name) => {
-        // `_shell.html` and friends are shared partials, not pages.
-        return extname(name).toLowerCase() === ".html" && !name.startsWith("_");
-      })
-      .sort((left, right) => {
-        return left.localeCompare(right, "en", { numeric: true });
-      });
-    if (names.length === 0) {
-      throw new Error(`No page-level .html files in ${path}`);
-    }
-    return names.map((name) => {
-      return { url: pathToFileURL(childPath(path, name)).href, label: name };
-    });
-  }
-  if (extname(path).toLowerCase() !== ".html") {
-    throw new Error(`Unsupported input extension: ${extname(path) || "none"}`);
-  }
-  return [{ url: pathToFileURL(path).href, label: basename(path) }];
 }
 
 function slideTargets(

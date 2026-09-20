@@ -140,7 +140,6 @@ lines.on('line', line => {
     fetchFeatureSwitches: () =>
       auth.fetchWithSessionAuth(new URL(`${api}/api/feature-switches`)),
     setFilesystemPluginFeatureEnabled: () => {},
-    setScreenRecordingFeatureEnabled: () => {},
     onChange: () => {},
   });
   const okou: ComputerUseDriver = {

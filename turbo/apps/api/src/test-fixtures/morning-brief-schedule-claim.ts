@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { asc, count, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
@@ -64,6 +64,29 @@ export async function readMorningBriefScheduleClaimsFixture(
     .from(morningBriefScheduleClaims)
     .where(eq(morningBriefScheduleClaims.automationId, automationId))
     .orderBy(asc(morningBriefScheduleClaims.claimSequence));
+}
+
+/**
+ * Remove the journal binding from a real claimed Run to reproduce a pre-S7a
+ * compatibility execution. Current production entry points always journal new
+ * Morning Brief Runs, so no external API can construct this retained state.
+ */
+export async function removeMorningBriefScheduleClaimForCompatibilityFixture(args: {
+  readonly automationId: string;
+  readonly runId: string;
+}): Promise<void> {
+  const removed = await db()
+    .delete(morningBriefScheduleClaims)
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.automationId, args.automationId),
+        eq(morningBriefScheduleClaims.runId, args.runId),
+      ),
+    )
+    .returning({ id: morningBriefScheduleClaims.id });
+  if (removed.length !== 1) {
+    throw new Error("Expected one Morning Brief compatibility claim");
+  }
 }
 
 /** The automation fields the late last-run write is allowed to touch. */

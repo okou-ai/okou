@@ -119,9 +119,6 @@ FAL_KEY=op://Development/fal/FAL_KEY
 JOGGAI_API_KEY=op://Development/joggai/JOGGAI_API_KEY
 JOGGAI_WEBHOOK_SECRET=op://Development/joggai/JOGGAI_WEBHOOK_SECRET
 
-# Optional: HeyGen Intro Video avatar rendering
-HEYGEN_API_KEY=op://Development/heygen/HEYGEN_API_KEY
-
 # Optional: BytePlus ModelArk video generation
 BYTEPLUS_API_KEY=op://Development/byteplus/BYTEPLUS_API_KEY
 

@@ -18,7 +18,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import type { TFunction } from "i18next";
-import { equalArrays } from "../../lib/equality.ts";
+import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
 import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -242,6 +242,7 @@ import type {
   ChatInputEvent,
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
+import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
@@ -4759,7 +4760,9 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  * credits-available state replaces the whole body without one. Below the card's
  * 640px breakpoint the body is a column, so mounting that row late would add its
  * own height plus the container gap and resize the transcript. Every billing
- * state therefore keeps this slot, filled or empty, at the shared action height.
+ * state therefore keeps this slot, filled or empty, at the shared action height,
+ * and the error card's pending state reserves the same box for its own details
+ * trigger.
  */
 const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
 
@@ -5183,6 +5186,16 @@ interface AssistantErrorCardContent {
   readonly testId?: string;
 }
 
+/**
+ * The classification behind this card resolves over two chained requests, so
+ * `pending` is the state before either landed. It keeps the settled card's own
+ * frame and reserves the title, supporting-line, and action boxes at their
+ * settled heights: `docs/chat-cards.md` requires the resolution to swap what
+ * fills those boxes without moving the transcript. Withholding the details
+ * trigger is the point of the state — the settled card decides whether that
+ * dialog offers a model switch, and offering it early would show a dialog whose
+ * contents change under the reader.
+ */
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5190,33 +5203,45 @@ function AssistantErrorCard({
   details,
   actions,
   testId,
-}: AssistantErrorCardContent) {
+  pending = false,
+}: AssistantErrorCardContent & { readonly pending?: boolean }) {
   return (
     <div
       role="status"
-      data-testid={testId}
+      data-testid={pending ? "assistant-error-card-loading" : testId}
       className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
-        <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        {pending ? (
+          <Loader2
+            size={16}
+            className="mt-1 shrink-0 animate-spin text-muted-foreground"
+          />
+        ) : (
+          <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        )}
         <div className="min-w-0">
-          <div className="truncate text-[0.9375rem] font-medium leading-6">
-            {title}
+          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
+            {pending ? null : title}
           </div>
-          {description !== "" && (
+          {(pending || description !== "") && (
             <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-              {description}
+              {pending ? null : description}
             </div>
           )}
         </div>
       </div>
-      {(description !== "" ||
-        details !== undefined ||
-        actions !== undefined) && (
-        <ChatCardDetails title={title}>
-          {details ?? <p>{description}</p>}
-          {actions}
-        </ChatCardDetails>
+      {pending ? (
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
+      ) : (
+        (description !== "" ||
+          details !== undefined ||
+          actions !== undefined) && (
+          <ChatCardDetails title={title}>
+            {details ?? <p>{description}</p>}
+            {actions}
+          </ChatCardDetails>
+        )
       )}
     </div>
   );
@@ -5529,18 +5554,30 @@ function AssistantErrorState({
   thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const resolved = useLastResolved(thread.assistantErrorRecovery$);
+  // `useLastLoadable` reports `loading` only for the first classification and
+  // keeps the settled value across later recomputations, so the spinner marks
+  // the one read the reader has to wait through instead of flashing on every
+  // appended event.
+  const loadable = useLastLoadable(thread.assistantErrorRecovery$);
+  const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
+  const fallback = assistantErrorFallbackContent(error, t);
+  if (fallback === null) {
+    return <InsufficientCreditsCard />;
+  }
+  const resolved = loadable.state === "hasData" ? loadable.data : null;
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;
   // The classification resolves after the first paint and selects contents,
   // not a component: choosing between two card components here would remove
   // the mounted card and move the transcript by its height.
   const content = recovery
     ? assistantErrorRecoveryContent(recovery, thread, t)
-    : assistantErrorFallbackContent(error, t);
-  if (content === null) {
-    return <InsufficientCreditsCard />;
-  }
-  return <AssistantErrorCard {...content} />;
+    : fallback;
+  return (
+    <AssistantErrorCard
+      {...content}
+      pending={loadable.state === "loading" && pendingEventId === eventId}
+    />
+  );
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
@@ -6098,11 +6135,6 @@ function generationTemplateTypeLabel(
         return $.artifacts.templates.avatar;
       });
     }
-    case "intro-video": {
-      return i18n.t(($) => {
-        return $.artifacts.templates.introVideo;
-      });
-    }
     case "video": {
       return i18n.t(($) => {
         return $.chat.templates.categories.video;
@@ -6141,6 +6173,7 @@ function generationTemplateTypeLabel(
 
 const annotationIconImgs = {
   feishu: settingsIconAssetUrl("lark"),
+  lark: settingsIconAssetUrl("lark"),
   teams: settingsIconAssetUrl("teams"),
   telegram: settingsIconAssetUrl("telegram"),
   github: settingsIconAssetUrl("github"),
@@ -6235,6 +6268,7 @@ function sourceMessageLinkText(
 ) {
   const opensChat =
     part.kind === "feishu" ||
+    part.kind === "lark" ||
     (part.kind === "telegram" &&
       /^https:\/\/t\.me\/[a-z\d_]+$/iu.test(part.href ?? "")) ||
     (part.kind === "teams" &&
@@ -6252,6 +6286,52 @@ function sourceMessageLinkText(
             return $.chat.origins.openMessage;
           });
   return { opensChat, openLabel };
+}
+
+function sourceMessageLabel(
+  t: TFunction<"common">,
+  kind: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"]["kind"],
+): string {
+  switch (kind) {
+    case "slack": {
+      return t(($) => {
+        return $.chat.origins.slack;
+      });
+    }
+    case "feishu": {
+      return t(($) => {
+        return $.chat.origins.feishu;
+      });
+    }
+    case "lark": {
+      return t(($) => {
+        return $.chat.origins.lark;
+      });
+    }
+    case "teams": {
+      return t(($) => {
+        return $.chat.origins.teams;
+      });
+    }
+    case "telegram": {
+      return t(($) => {
+        return $.chat.origins.telegram;
+      });
+    }
+    case "github": {
+      return t(($) => {
+        return $.chat.origins.github;
+      });
+    }
+    case "agentphone": {
+      return t(($) => {
+        return $.chat.origins.agentphone;
+      });
+    }
+  }
 }
 
 function SourceMessageAnnotation({
@@ -6272,70 +6352,53 @@ function SourceMessageAnnotation({
     );
   }
   const { part } = renderPart;
-  const isLark =
+  // Historical messages used "feishu" for both platforms; their link can
+  // identify Lark. New messages already carry the canonical source kind.
+  const sourceKind =
     part.kind === "feishu" &&
-    part.href?.startsWith("https://applink.larksuite.com/") === true;
-  const sourceLabel =
-    part.kind === "slack"
-      ? t(($) => {
-          return $.chat.origins.slack;
-        })
-      : part.kind === "feishu"
-        ? t(($) => {
-            return $.chat.origins[isLark ? "lark" : "feishu"];
-          })
-        : part.kind === "teams"
-          ? t(($) => {
-              return $.chat.origins.teams;
-            })
-          : part.kind === "telegram"
-            ? t(($) => {
-                return $.chat.origins.telegram;
-              })
-            : part.kind === "github"
-              ? t(($) => {
-                  return $.chat.origins.github;
-                })
-              : t(($) => {
-                  return $.chat.origins.agentphone;
-                });
+    part.href?.startsWith("https://applink.larksuite.com/") === true
+      ? "lark"
+      : part.kind;
+  const sourceLabel = sourceMessageLabel(t, sourceKind);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
-    opensChat && part.kind !== "feishu"
+    opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
       ? t(
           ($) => {
             return $.chat.origins.openChatIn;
           },
           { integration: sourceLabel },
         )
-      : part.kind === "slack"
+      : sourceKind === "slack"
         ? t(($) => {
             return $.chat.origins.openSlackMessage;
           })
-        : part.kind === "feishu"
+        : sourceKind === "feishu" || sourceKind === "lark"
           ? t(($) => {
-              return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
+              return $.chat.origins[
+                sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
+              ];
             })
-          : part.kind === "teams"
+          : sourceKind === "teams"
             ? t(($) => {
                 return $.chat.origins.openTeamsMessage;
               })
-            : part.kind === "telegram"
+            : sourceKind === "telegram"
               ? t(($) => {
                   return $.chat.origins.openTelegramMessage;
                 })
-              : part.kind === "github"
+              : sourceKind === "github"
                 ? t(($) => {
                     return $.chat.origins.openGithubMessage;
                   })
                 : openLabel;
   const content = (
     <>
-      {part.kind === "slack" ? (
+      {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
       ) : (
         <img
-          src={annotationIconImgs[part.kind]}
+          src={annotationIconImgs[sourceKind]}
           alt=""
           className="size-[15px] shrink-0 object-contain"
         />
@@ -6878,10 +6941,13 @@ function UserMessageContent({
   document,
   attachments,
   onImageClick,
+  leading,
 }: {
   document: UserMessageRenderDocument;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
+  /** Sits directly left of the bubble, for example the pending spinner. */
+  leading?: ReactNode;
 }) {
   // Attachments read as their own object, so they all sit above the bubble
   // instead of interrupting the sentence they were dropped into. Attachments
@@ -6908,14 +6974,20 @@ function UserMessageContent({
         onImageClick={onImageClick}
       />
       {hasBody ? (
-        <ChatUserMessageBubble>
-          <div className="px-4 py-3">
-            <UserMessageView
-              document={document}
-              elevatedFileIds={elevatedFileIds}
-            />
-          </div>
-        </ChatUserMessageBubble>
+        // The bubble gets its own full-width row so `leading` can sit against
+        // its left edge while the bubble's `max-w-[85%]` still resolves against
+        // the whole message width.
+        <div className="flex w-full items-start justify-end gap-2">
+          {leading}
+          <ChatUserMessageBubble>
+            <div className="px-4 py-3">
+              <UserMessageView
+                document={document}
+                elevatedFileIds={elevatedFileIds}
+              />
+            </div>
+          </ChatUserMessageBubble>
+        </div>
       ) : null}
     </>
   );
@@ -7029,6 +7101,46 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
     : undefined;
 }
 
+/**
+ * The message is still page-local until a persistent event with the same id
+ * replaces it, so the spinner subscribes on its own instead of making the whole
+ * message row re-render on every optimistic change.
+ */
+function OptimisticSpinner({ eventId }: { eventId: string }) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.OptimisticMessageSpinner] === true;
+  // Streaming deltas rebuild the optimistic buffer, so compare the ids instead
+  // of the set identity: a pending message keeps every other spinner idle.
+  const optimisticEventIds = useGet(optimisticEventIds$, {
+    equalityFn: equalSets,
+  });
+  // Only the presentation is gated: the message still renders and reconciles
+  // exactly as before, so a message keeps its layout while the switch is off.
+  if (!enabled) {
+    return null;
+  }
+  // The slot repeats the bubble's own padding and line metrics so the spinner
+  // centers on the first line of text however many lines the message wraps to.
+  // It stays reserved when the message is confirmed, so the bubble never
+  // reflows.
+  return (
+    <div
+      aria-hidden
+      className="flex shrink-0 py-3 text-[0.9375rem] leading-[1.7]"
+    >
+      <span className="flex h-[1.7em] w-3.5 items-center">
+        {optimisticEventIds.has(eventId) ? (
+          <Loader2
+            size={14}
+            data-optimistic-user-message
+            className="animate-spin text-muted-foreground"
+          />
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
 function PagedUserMessage({
   event,
   thread,
@@ -7122,6 +7234,7 @@ function PagedUserMessage({
                 document={renderDocument}
                 attachments={allAttachments}
                 onImageClick={openLightbox}
+                leading={<OptimisticSpinner eventId={event.id} />}
               />
               {/* The row belongs to the bubble, not to the button inside it.
                   Sharing hides the button and a message nobody can copy has

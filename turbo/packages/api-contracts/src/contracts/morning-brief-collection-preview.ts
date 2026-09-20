@@ -65,12 +65,19 @@ const morningBriefCollectionLimitSchema = z.enum([
   "scope-unproven",
 ]);
 
-const morningBriefCollectionOccurrenceSchema = z.object({
+export const morningBriefCollectionOccurrenceSchema = z.object({
   scheduledFor: z.string().datetime(),
   windowStart: z.string().datetime(),
   windowEnd: z.string().datetime(),
   timezone: z.string(),
-  collectionKind: z.literal("slack"),
+  /**
+   * The source scope this occurrence was admitted under.
+   *
+   * `slack` is the Slack-only collection. `sources` is the source-independent
+   * composition, which reads whichever of the five sources its owner actually
+   * has — including none but Chat.
+   */
+  collectionKind: z.enum(["slack", "sources"]),
   collectionVersion: z.number().int().positive(),
   attempt: z.number().int().positive(),
   status: z.enum(["completed", "failed"]),

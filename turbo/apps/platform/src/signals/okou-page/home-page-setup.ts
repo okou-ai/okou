@@ -1,14 +1,8 @@
 import { command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { defaultAgentId$ } from "../agent.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setupAgentsPage$ } from "../agents-page/agents-page-setup.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
-import {
-  desktopRecordingHandoffFeatureEnabled,
-  desktopRecordingHandoffParamNames,
-} from "./desktop-recording-handoff.ts";
 
 export const setupHomePage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -28,7 +22,6 @@ export const setupHomePage$ = command(
     const billingView = params.get("billingView");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
-      get(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true,
     );
     const forwardParams = new URLSearchParams();
     if (prompt) {
@@ -45,14 +38,6 @@ export const setupHomePage$ = command(
     }
     if (templatePicker) {
       forwardParams.set("templatePicker", templatePicker);
-    }
-    if (desktopRecordingHandoffFeatureEnabled(get(featureSwitch$))) {
-      for (const name of desktopRecordingHandoffParamNames) {
-        const value = params.get(name);
-        if (value) {
-          forwardParams.set(name, value);
-        }
-      }
     }
     set(detachedNavigateTo$, "/agents/:agentId/chat", {
       pathParams: { agentId: defaultAgentId },

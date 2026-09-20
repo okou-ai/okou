@@ -116,6 +116,7 @@
         "time": "Data e ora"
       },
       "log": "Log",
+      "manualReloadNotice": "Ricarica questa pagina per vedere i registri delle attività più recenti.",
       "modelProvidedBy": "{{model}} fornito da {{provider}}",
       "networkEmpty": {
         "description": "Nessun traffico di rete registrato per questa esecuzione.",
@@ -623,9 +624,7 @@
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
       "publicDescription": "Chiunque abbia il link può visualizzarlo",
-      "retry": "Riprova",
-      "savedAutomatically": "Le modifiche vengono salvate automaticamente",
-      "saving": "Salvataggio…"
+      "retry": "Riprova"
     },
     "sidebar": {
       "openSharedConversation": "Apri la conversazione condivisa",
@@ -642,7 +641,6 @@
       "categories": "Categorie di modelli",
       "category": "Categoria modello",
       "chooseVoice": "Scegli una voce per {{title}}",
-      "creativeVideo": "Video creativo",
       "filters": {
         "age": "Età",
         "all": "Tutti",
@@ -666,10 +664,8 @@
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa il tuo file",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "Riutilizza il design del tuo file",
       "importUnsupported": "Scegli un file {{formats}} per creare un modello.",
-      "introVideo": "Video introduttivo",
-      "introVideoUnavailable": "Questo modello video non è più disponibile. Rimuovilo per inviare il messaggio.",
       "multiAccent": "Multiaccento",
       "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
@@ -687,7 +683,6 @@
       "renameImportedTemplate": "Rinomina modello",
       "searchConnector": "Cerca modelli",
       "searchConnectors": "Cerca modelli",
-      "selected": "Selezionato",
       "selectStyle": "Seleziona lo stile {{style}}",
       "selectTemplate": "Seleziona il modello {{title}}",
       "selectVideo": "Seleziona il modello video {{title}}",
@@ -1466,6 +1461,53 @@
         },
         "inReview": "In revisione",
         "inReviewDescription": "Inviato, in attesa di revisione",
+        "intro": {
+          "checkin": {
+            "amount": "+{{amount}} crediti",
+            "confirm": "Torna al lavoro",
+            "description": "I crediti pagano il lavoro vero e proprio: ogni esecuzione, ogni artefatto, ogni workflow che parte da solo.",
+            "title": "Per oggi è fatta"
+          },
+          "connector": {
+            "confirm": "Vedi tutti i connettori",
+            "description": "Collega uno dei tuoi strumenti perché {{assistantName}} possa lavorarci dentro.",
+            "pickerFailed": "Impossibile caricare i connettori. Apri la pagina dei connettori per riprovare.",
+            "pickerLoading": "Caricamento dei connettori…",
+            "title": "{{assistantName}} lavora dentro gli strumenti che già usi"
+          },
+          "invite": {
+            "confirm": "Invita il team",
+            "description": "Invita i tuoi colleghi in questo spazio di lavoro.",
+            "note": "Quello che hai impostato una volta smette di essere solo tuo. Chi è arrivato stamattina può eseguirlo nel pomeriggio, senza chiederti come funziona.",
+            "title": "Quello che sa una persona, può eseguirlo tutto il team"
+          },
+          "later": "Più tardi",
+          "slack": {
+            "appBadge": "APP",
+            "confirm": "Aggiungi a Slack",
+            "description": "Aggiungi {{assistantName}} allo spazio Slack del tuo team.",
+            "note": "I colleghi non devono più passare da te. Lo chiedono nel canale e il lavoro torna nel thread, dove lo vedono tutti.",
+            "sampleChannel": "# growth",
+            "title": "Lavora con {{assistantName}} dove il team già parla"
+          },
+          "workflow": {
+            "browse": "Sfoglia i modelli",
+            "confirm": "Mostramene uno",
+            "description": "Trasforma un lavoro che ripeti in un workflow che il team può eseguire.",
+            "prompt": "Ogni lunedì mattina controlla cosa hanno pubblicato i miei concorrenti la settimana scorsa, raggruppalo per tema e preparami una tabella di confronto.",
+            "promptConfirm": "Invialo a {{assistantName}}",
+            "promptDescription": "Invialo così a {{assistantName}}, oppure cambia prima le parole.",
+            "promptOutcome": "Legge le fonti, raggruppa quello che trova e risponde con la tabella. Se il risultato va bene, ti propone di tenere l'esecuzione come workflow.",
+            "promptTitle": "Chiedilo come lo chiederesti a un collega",
+            "stepRun": "Eseguilo una volta",
+            "stepRunDescription": "Vedi il lavoro finito prima di impegnarti in qualcosa.",
+            "stepSave": "Salvalo e dagli una pianificazione",
+            "stepSaveDescription": "Parte senza che nessuno lo chieda e può eseguirlo qualunque collega.",
+            "stepTemplate": "Parti da un modello",
+            "stepTemplateDescription": "Scegline uno vicino al tuo lavoro invece di una pagina bianca.",
+            "title": "Una buona esecuzione diventa qualcosa che resta al team"
+          }
+        },
         "invite": {
           "action": "Invita",
           "description": "Ogni persona che aggiungi conta",
@@ -1923,71 +1965,6 @@
       "sent": "Inoltrato correttamente",
       "threads": "Chat",
       "title": "Inoltra a"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Scegli un avatar",
-        "label": "Avatar",
-        "none": "Nessun avatar",
-        "noneDetail": "Solo stile",
-        "previewLook": "Anteprima dell’aspetto {{name}}"
-      },
-      "catalog": {
-        "error": "Impossibile caricare il catalogo.",
-        "loading": "Caricamento di altre opzioni",
-        "reload": "Ricarica catalogo",
-        "retry": "Riprova"
-      },
-      "footer": {
-        "cancel": "Annulla"
-      },
-      "picker": {
-        "allPresenters": "Tutti i presentatori",
-        "allPresentersCount": "Tutti i presentatori ({{total}})",
-        "allVoices": "Tutte le voci",
-        "allVoicesCount": "Tutte le voci ({{total}})",
-        "autoVoiceDescription": "Una voce adatta al tuo stile",
-        "avatarVoice": "Voce dell’avatar",
-        "back": "Indietro",
-        "closeOptions": "Chiudi opzioni",
-        "done": "Fatto",
-        "moreOptions": "Altre opzioni",
-        "noMatches": "Nessun risultato.",
-        "optionsNote": "Puoi cambiarle in qualsiasi momento dal chip nella chat.",
-        "pickStyle": "Scegli uno stile",
-        "reset": "Reimposta",
-        "searchPresenters": "Cerca presentatori",
-        "searchStyles": "Cerca stili",
-        "searchVoices": "Cerca voci",
-        "selectedStyle": "Selezionato: {{name}}",
-        "settings": "Impostazioni del video introduttivo",
-        "styleCount_one": "{{count}} stile",
-        "styleCount_many": "{{count}} stili",
-        "styleCount_other": "{{count}} stili",
-        "styleCountOf": "{{shown}} di {{total}}",
-        "useStyle": "Usa {{name}}"
-      },
-      "style": {
-        "auto": "Lascia scegliere a Okou",
-        "browseGroups": "Esplora per stile",
-        "groups": {
-          "cinematic": "Cinema e fotografia",
-          "handmade": "Artigianato e materiali",
-          "iconic-artist": "Arte e design",
-          "other": "Altri stili",
-          "pop-culture": "Cultura pop",
-          "print": "Stampa ed editoria",
-          "retro-tech": "Tecnologia rétro e interfacce"
-        },
-        "preview": "Anteprima di {{title}}"
-      },
-      "voice": {
-        "auto": "Lascia scegliere a Okou",
-        "defaultDescription": "Usa la voce predefinita dell’avatar scelto",
-        "label": "Voce",
-        "none": "Nessuna voce fuori campo",
-        "noneShortDescription": "Mantieni l’audio originale"
-      }
     },
     "mail": {
       "bcc": "bcc",
@@ -3803,7 +3780,7 @@
           "iconAlt": "Icona facoltativa dell'app {{brandName}}",
           "iconHint": "oppure utilizza l'icona che preferisci.",
           "iconTitle": "Icona facoltativa dell'app {{brandName}}",
-          "imageAlt": "Feishu modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
+          "imageAlt": "Lark modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
           "title": "Crea un’app di tipo Agent"
         },
         "credentials": {
@@ -5935,10 +5912,6 @@
           "description": "Crea video con i modelli integrati.",
           "name": "Generazione di video"
         },
-        "video-rendering": {
-          "description": "Esegui il rendering di composizioni video nel cloud.",
-          "name": "Rendering video"
-        },
         "voice-generation": {
           "description": "Crea parlato con le voci integrate.",
           "name": "Generazione vocale"
@@ -6323,8 +6296,9 @@
     },
     "notFound": {
       "action": "Torna alla home",
-      "description": "La pagina che stai cercando non esiste.",
-      "title": "Pagina non trovata"
+      "browse": "Sfoglia i flussi di lavoro",
+      "description": "Potrebbe essere stata spostata o il link potrebbe essere vecchio. Tutto il resto è dove l'hai lasciato.",
+      "title": "Questa pagina non è qui."
     },
     "workerFailure": {
       "action": "Aggiorna",
@@ -6577,6 +6551,92 @@
       "thread_many": "{{value}} conversazioni",
       "thread_other": "{{value}} conversazioni"
     }
+  },
+  "vnc": {
+    "accessDescription": "Scegli quali agenti possono visualizzare e controllare i tuoi desktop VNC. L’accesso è indipendente da SSH.",
+    "accessHelp": "Consenti a questo agente di visualizzare e controllare tutti i tuoi desktop VNC configurati, attuali e futuri.",
+    "add": "Aggiungi host",
+    "cancel": "Annulla",
+    "close": "Chiudi",
+    "configurationHelp": "Il salvataggio di un host non verifica la connessione. Gli agenti scelgono la modalità condivisa o esclusiva all’avvio della sessione; il server VNC controlla l’ammissione.",
+    "configured": "Configurato",
+    "credential": {
+      "add": "Aggiungi credenziali",
+      "createNew": "Crea credenziali",
+      "delete": "Elimina credenziali",
+      "deleteHelp": "Eliminare queste credenziali inutilizzate? L’azione non può essere annullata.",
+      "edit": "Modifica credenziali",
+      "empty": "Nessuna credenziale VNC salvata.",
+      "inUse": "Elimina o riassegna gli host che usano queste credenziali prima di eliminarle.",
+      "label": "Credenziali",
+      "method": "Password VNC",
+      "name": "Nome delle credenziali",
+      "nameHint": "ad es. Accesso al desktop dell’ufficio",
+      "password": "Password VNC",
+      "passwordHelp": "Le password VNC classiche usano da 1 a 8 caratteri ASCII stampabili. Gli spazi vengono mantenuti.",
+      "passwordHint": "Inserisci la password VNC del server",
+      "replace": "Sostituisci password",
+      "replaceHelp": "Lascia questa opzione disattivata per mantenere la password salvata. La sostituzione interessa tutti gli host che usano queste credenziali.",
+      "select": "Seleziona una credenziale",
+      "sharedHelp_one": "Usate da {{count}} host. Le modifiche alla password interessano questo host.",
+      "sharedHelp_many": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
+      "sharedHelp_other": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
+      "unused": "Nessun host salvato usa queste credenziali."
+    },
+    "credentialsTab": "Credenziali",
+    "delete": "Elimina host",
+    "deleteHelp": "Eliminare questo host salvato? Le credenziali riutilizzabili verranno conservate.",
+    "description": "Consenti ai tuoi agenti di visualizzare e controllare i tuoi desktop remoti.",
+    "displayName": "Nome visualizzato",
+    "displayNameHint": "ad es. Desktop dell’ufficio",
+    "edit": "Modifica host",
+    "editHelp": "Le modifiche si applicano a questo host salvato e invalidano la sua configurazione di connessione attuale.",
+    "empty": "Aggiungi un host VNC per iniziare.",
+    "errors": {
+      "configurationChanged": "Questo host è cambiato da quando lo hai aperto.",
+      "credentialChanged": "Queste credenziali sono cambiate da quando le hai aperte.",
+      "credentialUnavailable": "Le credenziali selezionate non sono più disponibili.",
+      "failed": "Impossibile salvare la configurazione VNC.",
+      "hostUnavailable": "Questo host non è più disponibile.",
+      "invalidHost": "Inserisci un nome host o un indirizzo IP validi, senza URL, nome utente o porta.",
+      "invalidInput": "Controlla la configurazione VNC e riprova.",
+      "invalidTrust": "Inserisci un insieme valido di massimo 8 certificati CA pubblici, non superiore a 64 KiB.",
+      "ownerChanged": "Il tuo accesso allo spazio di lavoro è cambiato. Aggiorna prima di continuare.",
+      "revisionExhausted": "Questa configurazione non può più essere aggiornata. Creane una nuova."
+    },
+    "host": "Nome host o indirizzo IP",
+    "hostHint": "ad es. desktop.example.com",
+    "hostsTab": "Host",
+    "label": "VNC",
+    "loadFailed": "Impossibile caricare la configurazione VNC.",
+    "loading": "Caricamento della configurazione VNC…",
+    "loadingAccess": "Caricamento degli accessi degli agenti…",
+    "manage": "Gestisci VNC",
+    "port": "Porta",
+    "refresh": "Aggiorna",
+    "retry": "Riprova",
+    "save": "Salva",
+    "saveRecovery": {
+      "resourceIdConflict": "Impossibile creare questa risorsa. Chiudi questa finestra e riprova.",
+      "review": "La configurazione è stata aggiornata. Chiudi questa finestra e controlla i dati attuali prima di riprovare.",
+      "uncertain": "L’esito del salvataggio è sconosciuto. La bozza originale è bloccata. Riprova la stessa richiesta oppure chiudi e aggiorna per verificare la configurazione salvata."
+    },
+    "saving": "Salvataggio…",
+    "security": {
+      "caBundle": "Certificati CA (PEM)",
+      "caHelp": "Fino a 8 certificati CA, per un totale di 64 KiB. Non incollare una chiave privata né un certificato del server.",
+      "caHint": "Incolla i certificati CA pubblici che hanno emesso il certificato del server",
+      "custom": "Autorità di certificazione personalizzate",
+      "help": "Richiede un server VNC che supporti VeNCrypt X509Vnc. Il certificato del server deve corrispondere al nome host o all’indirizzo IP configurati.",
+      "profile": "VNC crittografato (X509Vnc)",
+      "system": "Autorità di certificazione del sistema",
+      "title": "Attendibilità del certificato del server"
+    },
+    "summary_one": "{{count}} host configurato",
+    "summary_many": "{{count}} host configurati",
+    "summary_other": "{{count}} host configurati",
+    "title": "Accesso remoto VNC",
+    "unavailable": "VNC non è disponibile in questo spazio di lavoro."
   },
   "workflows": {
     "automations": {
@@ -6930,6 +6990,7 @@
         "calendar": "Calendario",
         "email": "E-mail",
         "forms": "Google Forms",
+        "github": "GitHub",
         "integrations": "Integrazioni",
         "notion": "Notion",
         "schedule": "Programma"

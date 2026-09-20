@@ -38,7 +38,7 @@ import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { apiClient$ } from "../../signals/api-client.ts";
 import {
   connectorCatalogStatusBySlug$,
-  connectors$,
+  builtinConnectors$,
 } from "../../signals/external/connectors.ts";
 import { convertsToGoogleSlides } from "@okouai/core/google-slides-conversion";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -49,7 +49,7 @@ import {
   syncArtifactFileToGoogleDrive,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import {
-  connectConnectorOAuthAuthCodeWithDialogAndSettle$,
+  connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
   getOnlyAvailableCatalogBrowserAuthMethodDetail,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
@@ -224,11 +224,11 @@ export function ArtifactShareButton({
 function useGoogleDriveAvailability(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
 ) {
-  const connectorListLoadable = useLoadable(connectors$);
-  const lastConnectorList = useLastResolved(connectors$);
+  const connectorListLoadable = useLoadable(builtinConnectors$);
+  const lastConnectorList = useLastResolved(builtinConnectors$);
   const catalogBySlugLoadable = useLoadable(connectorCatalogStatusBySlug$);
   const lastCatalogBySlug = useLastResolved(connectorCatalogStatusBySlug$);
-  const connectorList =
+  const builtinConnectorList =
     connectorListLoadable.state === "hasData"
       ? connectorListLoadable.data
       : connectorListLoadable.state === "loading"
@@ -241,7 +241,7 @@ function useGoogleDriveAvailability(
         ? lastCatalogBySlug
         : undefined;
   const googleDriveConnected =
-    connectorList?.connectors.some((connector) => {
+    builtinConnectorList?.connectors.some((connector) => {
       return (
         connector.slug === GOOGLE_DRIVE_CONNECTOR_SLUG &&
         connector.connectionStatus === "connected"
@@ -258,7 +258,7 @@ function useGoogleDriveAvailability(
   return {
     connectorListLoaded:
       accountReady ||
-      (connectorList !== undefined &&
+      (builtinConnectorList !== undefined &&
         (googleDriveConnected || catalogBySlug !== undefined)),
     googleDriveAuthMethod,
     googleDriveConnected,
@@ -384,7 +384,7 @@ function useGoogleDriveMenuAction(
   const createClient = useGet(apiClient$);
   const pageSignal = useGet(pageSignal$);
   const connectGoogleDrive = useSet(
-    connectConnectorOAuthAuthCodeWithDialogAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeWithDialogAndSettle$,
   );
 
   return () => {

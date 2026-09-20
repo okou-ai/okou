@@ -4,24 +4,6 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-// Where a run originated. `chat` is web chat (trigger_source 'web'); known
-// trigger sources keep their surface, and unsupported values are grouped as
-// `other`.
-export const usageRecordSourceSchema = z.enum([
-  "chat",
-  "automation",
-  "slack",
-  "teams",
-  "telegram",
-  "email",
-  "agentphone",
-  "github",
-  "agent",
-  "other",
-]);
-
-export type UsageRecordSource = z.infer<typeof usageRecordSourceSchema>;
-
 export const usageRecordScopeSchema = z.enum(["mine", "team"]);
 export type UsageRecordScope = z.infer<typeof usageRecordScopeSchema>;
 
@@ -73,13 +55,8 @@ const usageRecordMemberSchema = z.object({
 // user/thread, independent of trigger source. Historical usage without a
 // recoverable thread id aggregates into one non-navigable fallback row.
 const usageRecordRowSchema = z.object({
-  // Old App -> new API rollout bridge for source-icon and run-link readers.
-  // New consumers must not use these fields. Remove after the replacement App
-  // is live and the client floor excludes those readers; tracked by #35077.
-  source: usageRecordSourceSchema,
   // Set for navigable thread usage.
   threadId: z.string().nullable(),
-  runId: z.string().nullable(),
   title: z.string().nullable(),
   credits: z.number(),
   tokens: z.number(),

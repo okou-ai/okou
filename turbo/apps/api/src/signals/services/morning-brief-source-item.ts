@@ -101,7 +101,7 @@ interface MorningBriefItemIdentity {
  * these, so a model cannot invent a URL, and no link in generated text is ever
  * fetched.
  */
-interface MorningBriefDisplayLink {
+export interface MorningBriefDisplayLink {
   readonly label: string;
   readonly url: string;
 }

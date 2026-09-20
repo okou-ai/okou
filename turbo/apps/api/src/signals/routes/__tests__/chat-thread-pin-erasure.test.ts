@@ -14,6 +14,7 @@ import {
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
+  readStoredChatThreadMetadataFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
@@ -110,6 +111,16 @@ async function readPinnedAt(fixture: PinFixture): Promise<string | null> {
   return metadata.pinnedAt;
 }
 
+async function readClosedPinnedAt(fixture: PinFixture): Promise<string | null> {
+  const response = await chat.requestReadThreadMetadata(
+    fixture.actor,
+    fixture.threadId,
+    [404],
+  );
+  expect(response.status).toBe(404);
+  return (await readStoredChatThreadMetadataFixture(fixture.threadId)).pinnedAt;
+}
+
 /** SQL snapshots omit the timezone suffix; those timestamps are still UTC. */
 function pinnedAtMs(pinnedAt: string | null): number | null {
   if (pinnedAt === null) {
@@ -189,7 +200,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
       [404],
     );
 
-    await expect(readPinnedAt(fixture)).resolves.toBe(pinnedAt);
+    await expect(readClosedPinnedAt(fixture)).resolves.toBe(pinnedAt);
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual(before);
 
     // The three denied attempts left the durable sequence untouched, so the
@@ -237,7 +248,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
       [404],
     );
 
-    await expect(readPinnedAt(fixture)).resolves.toBe(pinnedAt);
+    await expect(readClosedPinnedAt(fixture)).resolves.toBe(pinnedAt);
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual(before);
     await expect(compactedPinState(fixture)).resolves.toStrictEqual({
       pinnedAtMs: pinnedAtMs(pinnedAt),
@@ -267,7 +278,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
       [404],
     );
 
-    await expect(readPinnedAt(fixture)).resolves.toBe(pinnedAt);
+    await expect(readClosedPinnedAt(fixture)).resolves.toBe(pinnedAt);
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual(before);
     await expect(compactedPinState(fixture)).resolves.toStrictEqual({
       pinnedAtMs: pinnedAtMs(pinnedAt),
@@ -281,7 +292,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
     await closeSubject({ subjectKind: "user", subjectId: closed.actor.userId });
 
     await chat.requestPinThread(closed.actor, closed.threadId, [404]);
-    await expect(readPinnedAt(closed)).resolves.toBeNull();
+    await expect(readClosedPinnedAt(closed)).resolves.toBeNull();
 
     await chat.pinThread(unrelated.actor, unrelated.threadId, {
       pinOrder: "a0",
@@ -337,7 +348,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
       await removeErasureSubjectsFixture([closed.jobId]);
     });
 
-    const pinnedAt = await readPinnedAt(fixture);
+    const pinnedAt = await readClosedPinnedAt(fixture);
     expect(pinnedAt).not.toBeNull();
     const admitted = await sidebarPinEvents(fixture);
     expect(
@@ -349,7 +360,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
     // The closure landed behind the admitted write, so the next pin mutation
     // is rejected and changes nothing.
     await chat.requestUnpinThread(fixture.actor, fixture.threadId, [404]);
-    await expect(readPinnedAt(fixture)).resolves.toBe(pinnedAt);
+    await expect(readClosedPinnedAt(fixture)).resolves.toBe(pinnedAt);
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual(admitted);
   });
 
@@ -381,7 +392,7 @@ describe("account erasure fences chat-thread pin mutations", () => {
       context.signal,
     );
 
-    await expect(readPinnedAt(fixture)).resolves.toBeNull();
+    await expect(readClosedPinnedAt(fixture)).resolves.toBeNull();
     await expect(sidebarPinEvents(fixture)).resolves.toStrictEqual([]);
   });
 

@@ -18,7 +18,6 @@ import type { RestorableAttachment } from "./chat-draft.ts";
 import { formatFeedbackPrompt, type FeedbackSource } from "./chat-feedback.ts";
 import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { avatarTemplateSelection } from "./avatar-template-selection.ts";
-import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import {
   serializeAgentMention,
@@ -509,10 +508,6 @@ function templateCategory(template: GenerationTemplateRequest): string {
 function templatePreviewImageUrl(
   template: GenerationTemplateRequest,
 ): string | null {
-  const introVideo = introVideoTemplateOptions(template);
-  if (introVideo?.style.kind === "catalog") {
-    return introVideo.style.style.thumbnailUrl ?? null;
-  }
   if (template.type === "presentation") {
     return template.selection.previewUrl ?? null;
   }

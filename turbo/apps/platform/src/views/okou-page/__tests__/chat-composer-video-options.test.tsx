@@ -575,7 +575,6 @@ async function restoreTemplateDraft(
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.IntroVideo]: true,
       [FeatureSwitchKey.ComposerTaskChips]: surface === "chips",
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: surface === "command",
     },
@@ -598,27 +597,4 @@ test("A restored Creative Video draft keeps settings collapsed until requested",
   ).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   await expect(openVideoOptions("16:9 · 8s · 720p")).resolves.toBeVisible();
-});
-
-test("An Intro Video draft excludes settings even after choosing Create video", async () => {
-  const editor = await restoreTemplateDraft(
-    { type: "intro-video", selection: {} },
-    "command",
-  );
-  const user = userEvent.setup({ delay: null });
-  // Video has no Make row of its own, so the composer enters the one below
-  // Presentation and switches the type from there, keeping the saved draft.
-  await user.click(editor);
-  await user.paste(" /");
-  await screen.findByTestId("slash-workflow-menu");
-  await user.keyboard("{ArrowDown}{Enter}");
-  await closeTemplatePicker();
-  click(await screen.findByRole("combobox", { name: "Choose a type" }));
-  click(await screen.findByRole("option", { name: "Video" }));
-  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.getAttribute("aria-label")?.startsWith("Video options ");
-    }),
-  ).toBeFalsy();
 });

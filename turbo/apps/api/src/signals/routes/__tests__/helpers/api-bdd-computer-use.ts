@@ -27,6 +27,7 @@ import type { ComputerUseAnyPluginCallBody } from "@okouai/api-contracts/contrac
 
 import { now } from "../../../../lib/time";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { createDeferredPromise } from "../../../utils";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { signSandboxJwtForTests } from "../../../auth/tokens";
 import type { ApiTestUser } from "./api-bdd";
@@ -57,6 +58,8 @@ interface ComputerUseHostStartOptions {
   };
   readonly installationId?: string;
   readonly hostName?: string;
+  readonly appVersion?: string;
+  readonly osVersion?: string;
   readonly supportedCapabilities?: readonly string[];
 }
 
@@ -201,9 +204,37 @@ async function binaryResponseBodyToBuffer(body: unknown): Promise<Buffer> {
   throw new Error("Expected a binary computer-use plugin content body");
 }
 
-interface ComputerUseS3Fake {
+interface RecordedComputerUseS3Get {
+  readonly bucket: string;
+  readonly key: string;
+  readonly signal: AbortSignal | undefined;
+}
+
+export interface ComputerUseS3ReadBarrier {
+  readonly entered: Promise<{
+    readonly signal: AbortSignal | undefined;
+  }>;
+  readonly release: () => void;
+}
+
+export interface ComputerUseS3Fake {
   readonly puts: readonly RecordedComputerUseS3Put[];
+  readonly gets: readonly RecordedComputerUseS3Get[];
   readonly deletedKeys: readonly string[];
+  readonly holdNextGetObject: () => ComputerUseS3ReadBarrier;
+  readonly holdNextBody: () => ComputerUseS3ReadBarrier;
+  readonly failNextGetObject: (error: unknown) => void;
+  readonly failNextBody: (error: unknown) => void;
+}
+
+interface PendingComputerUseS3ReadBarrier {
+  readonly entered: ReturnType<
+    typeof createDeferredPromise<{
+      readonly signal: AbortSignal | undefined;
+    }>
+  >;
+  gate: ReturnType<typeof createDeferredPromise<void>> | undefined;
+  releaseRequested: boolean;
 }
 
 const DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES = [
@@ -238,8 +269,8 @@ function hostRuntimeBody(options: ComputerUseHostStartOptions = {}) {
       ? { installationId: options.installationId }
       : {}),
     hostName: options.hostName ?? "BDD Desktop",
-    appVersion: "0.1.0",
-    osVersion: "macOS 15",
+    appVersion: options.appVersion ?? "0.1.0",
+    osVersion: options.osVersion ?? "macOS 15",
     supportedCapabilities: [
       ...(options.supportedCapabilities ??
         DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES),
@@ -307,6 +338,80 @@ function bodyStream(buffer: Buffer): AsyncIterable<Uint8Array> {
   })();
 }
 
+function s3RequestSignal(options: unknown): AbortSignal | undefined {
+  if (
+    typeof options !== "object" ||
+    options === null ||
+    !("abortSignal" in options)
+  ) {
+    return undefined;
+  }
+  const signal = options.abortSignal;
+  return signal instanceof AbortSignal ? signal : undefined;
+}
+
+function pendingS3ReadBarrier(signal: AbortSignal): {
+  readonly pending: PendingComputerUseS3ReadBarrier;
+  readonly barrier: ComputerUseS3ReadBarrier;
+} {
+  const pending: PendingComputerUseS3ReadBarrier = {
+    entered: createDeferredPromise(signal),
+    gate: undefined,
+    releaseRequested: false,
+  };
+  return {
+    pending,
+    barrier: {
+      entered: pending.entered.promise,
+      release: () => {
+        if (pending.gate && !pending.gate.settled()) {
+          pending.gate.resolve(undefined);
+          return;
+        }
+        pending.releaseRequested = true;
+      },
+    },
+  };
+}
+
+async function waitAtS3ReadBarrier(
+  pending: PendingComputerUseS3ReadBarrier,
+  requestSignal: AbortSignal | undefined,
+  contextSignal: AbortSignal,
+): Promise<void> {
+  const operationSignal = requestSignal
+    ? AbortSignal.any([contextSignal, requestSignal])
+    : contextSignal;
+  pending.gate = createDeferredPromise(operationSignal);
+  pending.entered.resolve({ signal: requestSignal });
+  if (pending.releaseRequested && !pending.gate.settled()) {
+    pending.gate.resolve(undefined);
+  }
+  await pending.gate.promise;
+}
+
+function controlledBodyStream(
+  buffer: Buffer,
+  requestSignal: AbortSignal | undefined,
+  contextSignal: AbortSignal,
+  heldBody: PendingComputerUseS3ReadBarrier | undefined,
+  bodyFailure: unknown | undefined,
+): AsyncIterable<Uint8Array> {
+  return (async function* stream(): AsyncIterable<Uint8Array> {
+    const splitAt = Math.max(1, Math.floor(buffer.length / 2));
+    yield new Uint8Array(buffer.subarray(0, splitAt));
+    if (heldBody) {
+      await waitAtS3ReadBarrier(heldBody, requestSignal, contextSignal);
+    }
+    if (bodyFailure !== undefined) {
+      throw bodyFailure;
+    }
+    if (splitAt < buffer.length) {
+      yield new Uint8Array(buffer.subarray(splitAt));
+    }
+  })();
+}
+
 /**
  * Mint an agent run token directly, the same auth boundary production crosses
  * when agent-runs-create issues a token whose chat thread granted a
@@ -355,8 +460,8 @@ export function createComputerUseBddApi(context: TestContext) {
     return { authorization: "Bearer clerk-session" };
   }
 
-  function hostsClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function hostsClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseHostsContract,
     );
   }
@@ -367,20 +472,20 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function commandClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function commandClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseCommandContract,
     );
   }
 
-  function writeCommandClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function writeCommandClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseWriteCommandContract,
     );
   }
 
-  function pluginCommandClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function pluginCommandClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUsePluginCommandContract,
     );
   }
@@ -391,8 +496,8 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function auditEventsClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function auditEventsClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseAuditEventsContract,
     );
   }
@@ -424,42 +529,118 @@ export function createComputerUseBddApi(context: TestContext) {
         { readonly body: Buffer; readonly contentType: string }
       >();
       const puts: RecordedComputerUseS3Put[] = [];
+      const gets: RecordedComputerUseS3Get[] = [];
       const deletedKeys: string[] = [];
+      let heldGetObject: PendingComputerUseS3ReadBarrier | undefined;
+      let heldBody: PendingComputerUseS3ReadBarrier | undefined;
+      let getObjectFailure: unknown | undefined;
+      let bodyFailure: unknown | undefined;
 
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        const name = commandName(command);
-        const input = commandInput(command);
-        const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
-        const key = typeof input.Key === "string" ? input.Key : "";
-
-        if (name === "PutObjectCommand") {
-          const body = objectBytes(input.Body);
-          const contentType =
-            typeof input.ContentType === "string" ? input.ContentType : "";
-          store.set(`${bucket}/${key}`, { body, contentType });
-          puts.push({ bucket, key, body, contentType });
-          return Promise.resolve({});
+      const reserveBarrier = (
+        phase: "GetObject" | "body",
+      ): ComputerUseS3ReadBarrier => {
+        const occupied = phase === "GetObject" ? heldGetObject : heldBody;
+        if (occupied) {
+          throw new Error(`Computer-use S3 ${phase} barrier is already held`);
         }
-        if (name === "GetObjectCommand") {
-          const stored = store.get(`${bucket}/${key}`);
-          if (!stored) {
-            return Promise.reject(
-              new Error(`Computer-use S3 fake has no object ${bucket}/${key}`),
-            );
+        const created = pendingS3ReadBarrier(context.signal);
+        if (phase === "GetObject") {
+          heldGetObject = created.pending;
+        } else {
+          heldBody = created.pending;
+        }
+        return created.barrier;
+      };
+
+      context.mocks.s3.send.mockImplementation(
+        async (command: unknown, options?: unknown) => {
+          const name = commandName(command);
+          const input = commandInput(command);
+          const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
+          const key = typeof input.Key === "string" ? input.Key : "";
+
+          if (name === "PutObjectCommand") {
+            const body = objectBytes(input.Body);
+            const contentType =
+              typeof input.ContentType === "string" ? input.ContentType : "";
+            store.set(`${bucket}/${key}`, { body, contentType });
+            puts.push({ bucket, key, body, contentType });
+            return {};
           }
-          return Promise.resolve({ Body: bodyStream(stored.body) });
-        }
-        if (name === "DeleteObjectsCommand") {
-          for (const deletedKey of deleteObjectKeys(input)) {
-            deletedKeys.push(deletedKey);
-            store.delete(`${bucket}/${deletedKey}`);
+          if (name === "GetObjectCommand") {
+            const signal = s3RequestSignal(options);
+            gets.push({ bucket, key, signal });
+            const selectedGetObjectBarrier = heldGetObject;
+            heldGetObject = undefined;
+            if (selectedGetObjectBarrier) {
+              await waitAtS3ReadBarrier(
+                selectedGetObjectBarrier,
+                signal,
+                context.signal,
+              );
+            }
+            if (getObjectFailure !== undefined) {
+              const error = getObjectFailure;
+              getObjectFailure = undefined;
+              throw error;
+            }
+            const stored = store.get(`${bucket}/${key}`);
+            if (!stored) {
+              throw new Error(
+                `Computer-use S3 fake has no object ${bucket}/${key}`,
+              );
+            }
+            const selectedBodyBarrier = heldBody;
+            heldBody = undefined;
+            const selectedBodyFailure = bodyFailure;
+            bodyFailure = undefined;
+            return {
+              Body:
+                selectedBodyBarrier || selectedBodyFailure !== undefined
+                  ? controlledBodyStream(
+                      stored.body,
+                      signal,
+                      context.signal,
+                      selectedBodyBarrier,
+                      selectedBodyFailure,
+                    )
+                  : bodyStream(stored.body),
+            };
           }
-          return Promise.resolve({});
-        }
-        return Promise.resolve({});
-      });
+          if (name === "DeleteObjectsCommand") {
+            for (const deletedKey of deleteObjectKeys(input)) {
+              deletedKeys.push(deletedKey);
+              store.delete(`${bucket}/${deletedKey}`);
+            }
+            return {};
+          }
+          return {};
+        },
+      );
 
-      return { puts, deletedKeys };
+      return {
+        puts,
+        gets,
+        deletedKeys,
+        holdNextGetObject: () => {
+          return reserveBarrier("GetObject");
+        },
+        holdNextBody: () => {
+          return reserveBarrier("body");
+        },
+        failNextGetObject: (error) => {
+          if (getObjectFailure !== undefined) {
+            throw new Error("Computer-use S3 GetObject failure is already set");
+          }
+          getObjectFailure = error;
+        },
+        failNextBody: (error) => {
+          if (bodyFailure !== undefined) {
+            throw new Error("Computer-use S3 body failure is already set");
+          }
+          bodyFailure = error;
+        },
+      };
     },
 
     async startComputerUseHost(
@@ -477,13 +658,15 @@ export function createComputerUseBddApi(context: TestContext) {
     },
 
     async requestStartComputerUseHost(
-      actor: ApiTestUser | null,
+      actor: ComputerUseAuth,
       statuses: readonly (200 | 401 | 403 | 409)[],
+      options: ComputerUseHostStartOptions = {},
+      signal?: AbortSignal,
     ) {
       return await accept(
-        hostsClient().start({
+        hostsClient(signal).start({
           headers: authenticate(actor),
-          body: hostRuntimeBody(),
+          body: hostRuntimeBody(options),
         }),
         statuses,
       );
@@ -492,18 +675,20 @@ export function createComputerUseBddApi(context: TestContext) {
     async requestListComputerUseHosts(
       actor: ComputerUseAuth,
       statuses: readonly (200 | 401 | 403)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        hostsClient().list({ headers: authenticate(actor) }),
+        hostsClient(signal).list({ headers: authenticate(actor) }),
         statuses,
       );
     },
 
     async listComputerUseHosts(
       actor: ComputerUseAuth,
+      signal?: AbortSignal,
     ): Promise<ComputerUseHostListResponse> {
       const response = await accept(
-        hostsClient().list({ headers: authenticate(actor) }),
+        hostsClient(signal).list({ headers: authenticate(actor) }),
         [200],
       );
       return response.body;
@@ -565,9 +750,10 @@ export function createComputerUseBddApi(context: TestContext) {
     async createComputerUseReadCommand(
       auth: ComputerUseAuth,
       body: ComputerUseReadCommandBody,
+      signal?: AbortSignal,
     ): Promise<ComputerUseCommandCreateResponse> {
       const response = await accept(
-        commandClient().create({
+        commandClient(signal).create({
           headers: authenticate(auth),
           body: { timeoutMs: 60_000, ...body },
         }),
@@ -580,9 +766,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       body: ComputerUseReadCommandBody,
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        commandClient().create({
+        commandClient(signal).create({
           headers: authenticate(auth),
           body: { timeoutMs: 60_000, ...body },
         }),
@@ -593,9 +780,10 @@ export function createComputerUseBddApi(context: TestContext) {
     async createComputerUseWriteCommand(
       auth: ComputerUseAuth,
       body: ComputerUseWriteCommandBody = DEFAULT_WRITE_COMMAND_BODY,
+      signal?: AbortSignal,
     ): Promise<ComputerUseCommandCreateResponse> {
       const response = await accept(
-        writeCommandClient().create({
+        writeCommandClient(signal).create({
           headers: authenticate(auth),
           body: { timeoutMs: 60_000, ...body },
         }),
@@ -608,9 +796,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
       body: ComputerUseWriteCommandBody = DEFAULT_WRITE_COMMAND_BODY,
+      signal?: AbortSignal,
     ) {
       return await accept(
-        writeCommandClient().create({
+        writeCommandClient(signal).create({
           headers: authenticate(auth),
           body: { timeoutMs: 60_000, ...body },
         }),
@@ -621,9 +810,10 @@ export function createComputerUseBddApi(context: TestContext) {
     async createComputerUsePluginCommand(
       auth: ComputerUseAuth,
       body: ComputerUsePluginCommandBody,
+      signal?: AbortSignal,
     ): Promise<ComputerUseCommandCreateResponse> {
       const response = await accept(
-        pluginCommandClient().create({
+        pluginCommandClient(signal).create({
           headers: authenticate(auth),
           body: { ...body, timeoutMs: body.timeoutMs ?? 60_000 },
         }),
@@ -636,9 +826,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       body: ComputerUsePluginCommandBody,
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        pluginCommandClient().create({
+        pluginCommandClient(signal).create({
           headers: authenticate(auth),
           body: { ...body, timeoutMs: body.timeoutMs ?? 60_000 },
         }),
@@ -649,9 +840,10 @@ export function createComputerUseBddApi(context: TestContext) {
     async readComputerUseCommand(
       auth: ComputerUseAuth,
       commandId: string,
+      signal?: AbortSignal,
     ): Promise<ComputerUseCommandResponse> {
       const response = await accept(
-        commandClient().get({
+        commandClient(signal).get({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -664,9 +856,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       commandId: string,
       statuses: readonly (200 | 401 | 403 | 404)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        commandClient().get({
+        commandClient(signal).get({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -678,9 +871,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       commandId: string,
       statuses: readonly (200 | 401 | 403 | 404)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        commandClient().getScreenshot({
+        commandClient(signal).getScreenshot({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -692,9 +886,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       commandId: string,
       statuses: readonly (200 | 401 | 403 | 404)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        commandClient().getPluginContent({
+        commandClient(signal).getPluginContent({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -705,13 +900,17 @@ export function createComputerUseBddApi(context: TestContext) {
     async downloadComputerUsePluginContent(
       auth: ComputerUseAuth,
       commandId: string,
+      signal?: AbortSignal,
     ): Promise<{
       readonly contentType: string | null;
+      readonly contentLength: string | null;
+      readonly cacheControl: string | null;
+      readonly contentDisposition: string | null;
       readonly fileName: string | null;
       readonly bytes: Buffer;
     }> {
       const response = await accept(
-        commandClient().getPluginContent({
+        commandClient(signal).getPluginContent({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -722,6 +921,9 @@ export function createComputerUseBddApi(context: TestContext) {
       const contentDisposition = response.headers.get("content-disposition");
       return {
         contentType: response.headers.get("content-type"),
+        contentLength: response.headers.get("content-length"),
+        cacheControl: response.headers.get("cache-control"),
+        contentDisposition,
         fileName: contentDisposition
           ? (/filename="([^"]+)"/.exec(contentDisposition)?.[1] ?? null)
           : null,
@@ -732,12 +934,15 @@ export function createComputerUseBddApi(context: TestContext) {
     async downloadComputerUseScreenshot(
       auth: ComputerUseAuth,
       commandId: string,
+      signal?: AbortSignal,
     ): Promise<{
       readonly contentType: string | null;
+      readonly contentLength: string | null;
+      readonly cacheControl: string | null;
       readonly bytes: Buffer;
     }> {
       const response = await accept(
-        commandClient().getScreenshot({
+        commandClient(signal).getScreenshot({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -749,6 +954,8 @@ export function createComputerUseBddApi(context: TestContext) {
       }
       return {
         contentType: response.headers.get("content-type"),
+        contentLength: response.headers.get("content-length"),
+        cacheControl: response.headers.get("cache-control"),
         bytes: Buffer.from(await body.arrayBuffer()),
       };
     },
@@ -843,7 +1050,7 @@ export function createComputerUseBddApi(context: TestContext) {
     },
 
     async requestListComputerUseAuditEvents(
-      actor: ApiTestUser | null,
+      actor: ComputerUseAuth,
       query: {
         readonly commandId?: string;
         readonly hostId?: string;
@@ -851,9 +1058,10 @@ export function createComputerUseBddApi(context: TestContext) {
         readonly limit?: number;
       },
       statuses: readonly (200 | 401 | 403)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        auditEventsClient().list({
+        auditEventsClient(signal).list({
           headers: authenticate(actor),
           query,
         }),
@@ -862,16 +1070,17 @@ export function createComputerUseBddApi(context: TestContext) {
     },
 
     async listComputerUseAuditEvents(
-      actor: ApiTestUser,
+      actor: Exclude<ComputerUseAuth, null>,
       query: {
         readonly commandId?: string;
         readonly hostId?: string;
         readonly runId?: string;
         readonly limit?: number;
       } = {},
+      signal?: AbortSignal,
     ): Promise<ComputerUseAuditEventListResponse> {
       const response = await accept(
-        auditEventsClient().list({
+        auditEventsClient(signal).list({
           headers: authenticate(actor),
           query,
         }),

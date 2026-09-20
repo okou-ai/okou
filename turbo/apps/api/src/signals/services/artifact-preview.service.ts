@@ -47,10 +47,9 @@ const PREVIEW_WAF_COOKIE_NAME = "vm0_artifact_preview";
 // over the action itself: content extraction and the screenshot. Its own
 // ceiling is 5 minutes, but the render runs inside `waitUntil` on a Vercel
 // function budgeted at 300s, and a function killed mid-render loses the failure
-// record that #34591 exists to produce. The retry branch is the longest chain:
-// a 20s primary navigation timeout, then the retry's 15s navigation and 3s
-// settle window, then this budget, plus the surrounding storage and database
-// work. 120s puts that worst case near 175s and keeps the record.
+// record that #34591 exists to produce. Only the first request gets this
+// budget; the retries that can follow it are bounded separately, and the
+// request-budget comment below states the resulting ceiling.
 const SNAPSHOT_ACTION_TIMEOUT_MS = 120_000;
 const PRIMARY_NAVIGATION_OPTIONS = {
   gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
@@ -70,14 +69,17 @@ const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
   waitForTimeout: 3000,
 } as const;
 
-// A render gets three requests in total, and the navigation retry and the
-// rate limit retry both draw on that one budget so they cannot multiply into
+// A render gets three requests in total, and the navigation, rate limit and
+// action retries all draw on that one budget so they cannot multiply into
 // repeated render charges. The waiting ceilings come from the function
 // lifetime #34772 measured: the longest render observed in production is ~121s
 // and the surrounding storage and database work adds ~15s, so 45s of total
-// waiting keeps the worst case near 181s of the 300s budget. A wait that
-// outlives the function loses the failure record #34591 exists to produce,
-// which is why a stated wait past the ceiling stops instead of sleeping.
+// waiting keeps the longest chain near 211s of the 300s budget: a 20s primary
+// navigation timeout, the retry's 15s navigation, 3s settle and full action
+// budget, then an action retry on that same profile under the short budget.
+// A wait that outlives the function loses the failure record #34591 exists to
+// produce, which is why a stated wait past the ceiling stops instead of
+// sleeping.
 const MAX_SNAPSHOT_REQUESTS = 3;
 const RATE_LIMIT_MIN_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 30_000;
@@ -87,6 +89,20 @@ const RATE_LIMIT_TOTAL_DELAY_BUDGET_MS = 45_000;
 const RATE_LIMIT_BACKOFF_BASE_MS = 2000;
 const RATE_LIMIT_BACKOFF_FACTOR = 4;
 const RATE_LIMIT_MAX_JITTER_MS = 500;
+
+// The `detail` on an action-stage timeout. Unlike `Navigation timeout ...` and
+// `Waiting for selector ...` it names no timer, which is why it was previously
+// read as a stall no second request could fix.
+const SNAPSHOT_REQUEST_TIMEOUT_DETAIL = "Request timed out";
+// The action retry gets a short budget, for two independent reasons. A bounded
+// experiment replayed the four deployments that produced this failure on
+// 2026-09-17 with the identical request: all four returned in 3.7-8.2s, so a
+// session that is going to finish finishes far inside this. And the primary has
+// already spent 120s by the time this runs, so repeating that budget would put
+// a plain primary-then-retry render near 256s of the 300s function budget and
+// risk losing the failure record #34591 exists to produce. 20s keeps that
+// chain near 157s; the request-budget comment above states the longest chain.
+const ACTION_TIMEOUT_RETRY_MS = 20_000;
 
 const browserSnapshotSchema = z.object({
   meta: z.object({
@@ -252,6 +268,31 @@ function isNavigationTimeoutResponse(
   );
 }
 
+/**
+ * An action-stage timeout. The status and code alone cannot separate this from
+ * the navigation and selector timers, which share `6002`, so the exact detail
+ * is the gate. A rate limit is a 429 and never reaches here.
+ */
+function isActionTimeoutResponse(
+  status: number,
+  responseBody: string,
+): boolean {
+  if (status !== 422) {
+    return false;
+  }
+  const parsed = browserSnapshotErrorSchema.safeParse(
+    safeJsonParse(responseBody),
+  );
+  return (
+    parsed.success &&
+    parsed.data.errors.some((error) => {
+      return (
+        error.code === 6002 && error.detail === SNAPSHOT_REQUEST_TIMEOUT_DETAIL
+      );
+    })
+  );
+}
+
 type SnapshotNavigationOptions =
   | typeof PRIMARY_NAVIGATION_OPTIONS
   | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
@@ -262,6 +303,9 @@ interface FetchArtifactSnapshotArgs {
   readonly url: string;
   readonly previewUrl: URL;
   readonly navigationOptions: SnapshotNavigationOptions;
+  // Required rather than defaulted: the request loop is the only thing that
+  // decides a budget, and it always states one.
+  readonly actionTimeout: number;
 }
 
 function fetchArtifactSnapshot(
@@ -271,6 +315,7 @@ function fetchArtifactSnapshot(
     url,
     previewUrl,
     navigationOptions,
+    actionTimeout,
   }: FetchArtifactSnapshotArgs,
   signal: AbortSignal,
 ): Promise<Response> {
@@ -298,7 +343,7 @@ function fetchArtifactSnapshot(
         formats: ["content", "screenshot"],
         viewport: PREVIEW_VIEWPORT,
         ...navigationOptions,
-        actionTimeout: SNAPSHOT_ACTION_TIMEOUT_MS,
+        actionTimeout,
         screenshotOptions: { type: "webp", quality: 80 },
       }),
       signal,
@@ -306,8 +351,8 @@ function fetchArtifactSnapshot(
   );
 }
 
-/** Which of the two request profiles produced an observation. */
-type SnapshotAttempt = "primary" | "navigation-retry";
+/** Which request profile produced an observation. */
+type SnapshotAttempt = "primary" | "navigation-retry" | "action-retry";
 
 interface SnapshotFailure {
   readonly attempt: SnapshotAttempt;
@@ -476,24 +521,32 @@ async function observeArtifactSnapshot(
 }
 
 /**
- * Issue the snapshot request, absorbing the two failures another request can
+ * Issue the snapshot request, absorbing the three failures another request can
  * actually fix: a navigation-stage timeout, which needs a different navigation
- * profile, and a gateway rate limit, which needs time. Everything else stops
- * here, because action and request-stage timeouts need different fixes and
- * should not double cost.
+ * profile; a gateway rate limit, which needs time; and an action-stage timeout,
+ * which needs nothing but a second session. That last one used to stop here on
+ * the reasoning that it was a stall a repeat could not fix. A bounded
+ * experiment against the four deployments it hit on 2026-09-17 replayed the
+ * identical request and all four rendered in 3.7-8.2s, so the session is what
+ * fails, not the page. Everything else still stops here.
  */
 async function requestArtifactSnapshot(
-  requestArgs: Omit<FetchArtifactSnapshotArgs, "navigationOptions">,
+  requestArgs: Omit<
+    FetchArtifactSnapshotArgs,
+    "navigationOptions" | "actionTimeout"
+  >,
   signal: AbortSignal,
 ): Promise<Response> {
   let navigationOptions: SnapshotNavigationOptions = PRIMARY_NAVIGATION_OPTIONS;
   let attemptName: SnapshotAttempt = "primary";
+  let actionTimeout = SNAPSHOT_ACTION_TIMEOUT_MS;
   let navigationRetried = false;
+  let actionRetried = false;
   let rateLimitRetries = 0;
   let totalDelayMs = 0;
   for (let request = 1; ; request += 1) {
     const attempt = await observeArtifactSnapshot(
-      { ...requestArgs, navigationOptions },
+      { ...requestArgs, navigationOptions, actionTimeout },
       attemptName,
       signal,
     );
@@ -512,6 +565,20 @@ async function requestArtifactSnapshot(
       await delay(waitMs, { signal });
       totalDelayMs += waitMs;
       rateLimitRetries += 1;
+      continue;
+    }
+    if (isActionTimeoutResponse(failure.status, failure.body)) {
+      // A second full budget cannot fit in the function, so one repeat under
+      // the short budget is the whole allowance regardless of what remains of
+      // the shared request budget. Navigation already succeeded to reach the
+      // action stage, so this keeps whichever navigation profile the render had
+      // reached rather than resetting to the primary one.
+      if (actionRetried) {
+        throw new ArtifactSnapshotError(failure);
+      }
+      actionRetried = true;
+      actionTimeout = ACTION_TIMEOUT_RETRY_MS;
+      attemptName = "action-retry";
       continue;
     }
     if (

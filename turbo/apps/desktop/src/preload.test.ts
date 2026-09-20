@@ -90,7 +90,6 @@ describe("Desktop preload bridge", () => {
       "okouDesktopComputerUse",
       "okouDesktopDeveloperTools",
       "okouDesktopIdentity",
-      "okouDesktopRecorder",
     ]);
     expect(exposedApi<DesktopAuthApi>("vm0DesktopAuth")).toBeTruthy();
     expect(

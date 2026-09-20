@@ -1812,7 +1812,6 @@ pub(super) async fn register_proxy(
         capture_network_bodies: context.capture_network_bodies.unwrap_or(false),
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
-        x_resource_billing: context.x_resource_billing.as_ref(),
     };
     let publication = config
         .registry

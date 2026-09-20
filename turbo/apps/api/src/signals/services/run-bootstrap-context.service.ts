@@ -1,4 +1,3 @@
-import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { userPermissionGrantActionSchema } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -8,18 +7,19 @@ import type {
 } from "@okouai/connectors/firewall-metadata/policy";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import {
   nullableDriverValueDecoder,
+  pgBooleanDecoder,
   pgTextDecoder,
   zodDriverValueDecoder,
   zodEnumDriverValueDecoder,
@@ -27,7 +27,7 @@ import {
 import type { ReadonlyDb } from "../external/db";
 import {
   agentConnectorScopeFromRows,
-  type AgentConnectorScope,
+  type AgentConnectorScopeSnapshot,
   type AgentConnectorSlugRow,
   type AgentCustomConnectorRow,
 } from "./agent-connector-scope.service";
@@ -35,7 +35,7 @@ import {
   ORG_SENTINEL_USER_ID,
   userFeatureSwitchOverridesFromRows,
   type UserFeatureSwitchOverrideRow,
-} from "./feature-switches.service";
+} from "./feature-switch-scope";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 import {
@@ -65,14 +65,21 @@ const permissionGrantActionDecoder = zodEnumDriverValueDecoder(
   userPermissionGrantActionSchema,
 );
 const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
+const nullableBooleanDecoder = nullableDriverValueDecoder(pgBooleanDecoder);
 const nullableBootstrapMetadataSwitchesDecoder = nullableDriverValueDecoder(
   bootstrapMetadataSwitchesDecoder,
 );
 const nullablePermissionGrantActionDecoder = nullableDriverValueDecoder(
   permissionGrantActionDecoder,
 );
+const nullablePermissionGrantExpiresAtDecoder = nullableDriverValueDecoder(
+  userPermissionGrants.expiresAt,
+);
 const nullableCustomConnectorPermissionNamesDecoder =
   nullableDriverValueDecoder(customConnectorPermissionNamesDecoder);
+const nullableCustomConnectorStorageVersionDecoder = nullableDriverValueDecoder(
+  orgCustomConnectors.storageVersion,
+);
 
 interface BootstrapMetadataQueryRow {
   readonly kind: BootstrapMetadataRowKind;
@@ -86,6 +93,10 @@ interface BootstrapMetadataQueryRow {
   readonly action: FirewallPermissionGrantAction | null;
   readonly permissionNames: readonly string[] | null;
   readonly permissionBundleRef: string | null;
+  readonly storageVersion: number | null;
+  readonly skillStorageVersionId: string | null;
+  readonly isMcp: boolean | null;
+  readonly expiresAt: Date | null;
 }
 
 export interface UserInfo {
@@ -94,7 +105,6 @@ export interface UserInfo {
   readonly timezone: string | null;
   readonly slackDisplayName?: string;
   readonly slackUserId?: string;
-  readonly feishuPlatform?: FeishuPlatform;
   readonly feishuDisplayName?: string;
   readonly feishuOpenId?: string;
   readonly teamsUserDisplayName?: string;
@@ -107,11 +117,12 @@ export interface UserInfo {
   readonly agentphoneHandle?: string;
 }
 
-export interface RunBootstrapContext extends AgentConnectorScope {
+export interface RunBootstrapContext extends AgentConnectorScopeSnapshot {
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly workflows: readonly RunWorkflowRef[];
   readonly permissionGrants: readonly FirewallPermissionGrant[];
+  readonly permissionValidityHorizon: string | null;
   readonly connectorCatalogMetadataSlugs: readonly ConnectorSlug[];
 }
 
@@ -149,6 +160,16 @@ function emptyBootstrapMetadataFields() {
     permissionBundleRef: sql`NULL::text`
       .mapWith(nullableTextDecoder)
       .as("permission_bundle_ref"),
+    storageVersion: sql`NULL::bigint`
+      .mapWith(nullableCustomConnectorStorageVersionDecoder)
+      .as("storage_version"),
+    skillStorageVersionId: sql`NULL::text`
+      .mapWith(nullableTextDecoder)
+      .as("skill_storage_version_id"),
+    isMcp: sql`NULL::boolean`.mapWith(nullableBooleanDecoder).as("is_mcp"),
+    expiresAt: sql`NULL::timestamp`
+      .mapWith(nullablePermissionGrantExpiresAtDecoder)
+      .as("expires_at"),
   };
 }
 
@@ -165,12 +186,22 @@ function agentRunCustomConnectorMetadataQuery(
       id: sql`${userCustomConnectors.customConnectorId}::text`
         .mapWith(nullableTextDecoder)
         .as("id"),
+      detail: sql`${orgCustomConnectors.slug}`
+        .mapWith(nullableTextDecoder)
+        .as("detail"),
       permissionNames: sql`${userCustomConnectors.permissionNames}`
         .mapWith(nullableCustomConnectorPermissionNamesDecoder)
         .as("permission_names"),
       permissionBundleRef: sql`${orgCustomConnectors.permissionBundleRef}`
         .mapWith(nullableTextDecoder)
         .as("permission_bundle_ref"),
+      storageVersion: orgCustomConnectors.storageVersion,
+      skillStorageVersionId: sql`${orgCustomConnectors.skillStorageVersionId}`
+        .mapWith(nullableTextDecoder)
+        .as("skill_storage_version_id"),
+      isMcp: isNotNull(orgCustomConnectors.mcpEndpoint)
+        .mapWith(pgBooleanDecoder)
+        .as("is_mcp"),
     })
     .from(userCustomConnectors)
     .innerJoin(
@@ -242,16 +273,16 @@ async function queryRunBootstrapMetadataSnapshot(
         .mapWith(bootstrapMetadataRowKindDecoder)
         .as("kind"),
       ...emptyBootstrapMetadataFields(),
-      name: sql`${userConnectors.connectorSlug}`
+      name: sql`${userBuiltinConnectors.connectorSlug}`
         .mapWith(nullableTextDecoder)
         .as("name"),
     })
-    .from(userConnectors)
+    .from(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
       ),
     );
   const customConnectorQuery = agentRunCustomConnectorMetadataQuery(db, args);
@@ -270,6 +301,7 @@ async function queryRunBootstrapMetadataSnapshot(
       action: sql`${userPermissionGrants.action}`
         .mapWith(nullablePermissionGrantActionDecoder)
         .as("action"),
+      expiresAt: userPermissionGrants.expiresAt,
     })
     .from(userPermissionGrants)
     .where(
@@ -330,6 +362,29 @@ export async function loadRunBootstrapSnapshotRows(
   return { metadataRows, workflowRows };
 }
 
+function permissionValidityHorizon(
+  rows: readonly BootstrapMetadataQueryRow[],
+): string | null {
+  let horizon: Date | null = null;
+  for (const row of rows) {
+    if (
+      row.kind === "permission_grant" &&
+      row.expiresAt !== null &&
+      (horizon === null || row.expiresAt.getTime() < horizon.getTime())
+    ) {
+      horizon = row.expiresAt;
+    }
+  }
+  return horizon?.toISOString() ?? null;
+}
+
+function requireCustomConnectorMcpFlag(value: boolean | null): boolean {
+  if (value === null) {
+    throw new Error("Custom connector MCP classification is unavailable");
+  }
+  return value;
+}
+
 export function materializeRunBootstrapContext(
   rows: RunBootstrapSnapshotRows,
   args: {
@@ -376,12 +431,21 @@ export function materializeRunBootstrapContext(
         break;
       }
       case "custom_connector": {
-        if (row.id === null || row.permissionNames === null) {
+        if (
+          row.id === null ||
+          row.detail === null ||
+          row.permissionNames === null ||
+          row.storageVersion === null
+        ) {
           throw new Error("Invalid bootstrap metadata custom connector row");
         }
         customConnectorRows.push({
           customConnectorId: row.id,
           permissionNames: row.permissionNames,
+          connectorSlug: row.detail,
+          storageVersion: row.storageVersion,
+          skillStorageVersionId: row.skillStorageVersionId,
+          isMcp: requireCustomConnectorMcpFlag(row.isMcp),
         });
         if (row.permissionBundleRef !== null) {
           const dependency = customConnectorPermissionBundleDependencySlug(
@@ -433,6 +497,7 @@ export function materializeRunBootstrapContext(
     ...connectorScope,
     workflows: workflowsForRunFromRows(rows.workflowRows, args.userId),
     permissionGrants,
+    permissionValidityHorizon: permissionValidityHorizon(rows.metadataRows),
     connectorCatalogMetadataSlugs: [...connectorCatalogMetadataSlugs].sort(),
   };
 }

@@ -132,8 +132,29 @@ The longest ownership-change retry reaches the caller-local thread re-read in a
 the fixed three-attempt bound, two such failures followed by success use at most
 43 statements for a same-owner Agent or 46 for a distinct shared owner,
 including the two unrepeated preflight reads. Database and request-pin failures
-are not retried by this ownership loop.
-These are source-derived statement counts, not endpoint or production latency.
+are not retried by this ownership loop. These counts were recalculated from the
+merged runtime at validation baseline `a686e46b0f2a149b0519582e066ec2d752f798de`;
+the validation changes do not modify runtime SQL. They are source-derived
+statement counts, not endpoint or production latency.
+
+### Local planner evidence
+
+A rolled-back local PostgreSQL 18.6 fixture seeded 50,000 authorization requests
+and 50,000 erasure jobs, then ran `EXPLAIN (ANALYZE, BUFFERS)` on the runtime
+query shapes. The exact `request_token_hash = $hash LIMIT 1 FOR NO KEY UPDATE`
+predicate used `idx_computer_use_auth_requests_token_hash`; because that index
+is unique, both the rows returned and index candidates are bounded to zero or
+one. The hit/miss plans touched 5/3 shared buffers.
+
+The fresh closure predicate is an OR of exact `(subject_kind, subject_id)` pairs
+for the canonical thread user, distinct Agent owner and Agent organization. It
+used a bitmap OR of three `account_erasure_subject_generation` prefix scans;
+the one-generation synthetic hit/miss plans touched 10/9 shared buffers. Its
+`LIMIT 1` bounds only rows returned to zero or one. It does **not** bound
+historical rows scanned: the unique index suffix is `generation`, so every
+stored generation for any matching subject remains an eligible index candidate.
+The local plan confirms intended index choice and predicate shape, not a
+constant scanned-row bound, benchmark, route latency or production latency.
 
 ## Host and residual boundaries
 
@@ -154,15 +175,70 @@ that those paths or the host preflight race are repaired.
 
 The focused route suite uses real PostgreSQL and production HTTP entry points.
 Its fixtures pause actual statements, inspect real `pg_blocking_pids` edges and
-own every holder, competitor, trigger and transaction through teardown. It
-covers canonical web, Slack and Teams creation, three-subject closure/recovery,
-writer-first and closure-first ordering, exact request deletion and identity
-mutation, lock-wait expiry, thread/Agent
-identity movement, null Agent, concurrent same-thread requests, scoped
-completion failure, cancellation before and after the final check, timeout
-propagation, absent runs, repeat Apply and exact publication channels.
+own every holder, Apply, closure, mutation, competitor, trigger and transaction
+through teardown. Fixture setup failures reach the caller, and registered
+asynchronous cleanup always releases and joins the outer transaction. An
+expected-early-exit regression starts both Apply and closure before abandoning
+the barrier callback, then proves Apply settled, removes the exact closure row
+and reacquires the real thread lock before the test can finish.
 
-The existing 26 request-creation cases and 24 Computer Use BDD cases remain
-unchanged and are part of the focused verification. Local suite wall times are
-development-environment measurements only; they are not endpoint or production
-latency evidence.
+The 25 focused cases cover canonical web, Slack and Teams creation;
+three-subject closure/recovery; writer-first and closure-first ordering; missing,
+deleted and foreign canonical threads; exact request deletion and every stored
+identity mutation; thread-user, Agent-owner and Agent-organization pre-admission
+and post-resolution reselection; null Agent; lock-wait expiry; concurrent
+same-thread requests; scoped completion failure; cancellation before and after
+the final check; timeout propagation; absent runs; repeat Apply; and exact
+per-owner publication counts plus complete channel lists.
+
+The request-pin coverage has two distinct windows. The retained post-pin case
+proves thread/Agent identity cannot move after Apply owns the request. A separate
+real PostgreSQL request-row holder now forces Apply to wait before it can own the
+request; while it waits, recursive `pg_blocking_pids` evidence proves the
+transitive holder → Apply → thread-user/thread-Agent and Agent-owner/Agent-org
+blocker chains. An unrelated owner completes and publishes in that window, and
+the target publishes exactly once only after release.
+
+At this validation baseline, the focused suite passed 25/25 with one Vitest
+worker against local PostgreSQL 18.6. The reported 25.63-second Vitest process
+wall time included transform/import/setup work; test execution occupied about
+52% of that process. The existing 26 request-creation cases and 24 Computer Use
+BDD cases remain unchanged and are part of the focused verification. Every such
+local duration is a development-environment measurement, not endpoint or
+production latency evidence.
+
+### Fresh hook evidence
+
+The validation used the repository toolchain's Lefthook 1.12.3 and the unmodified
+`lefthook.yml` above. The complete staged pre-commit hook ran from
+2026-09-18T09:58:37.076Z to 10:00:56.352Z and exited 0 in 139.22 seconds.
+Prettier and style-policy passed in 0.77 and 4.15 seconds; platform static assets
+and all Rust/Python jobs correctly skipped because no matching file was staged;
+Knip found no issues; the 14-package TypeScript check passed in 103.863 seconds
+under its unchanged 300-second budget; and file-size passed in 0.01 seconds. A
+same-staged-files Knip timing run completed in 35.87 seconds under its unchanged
+60-second budget.
+
+The first hook launch exposed a sandbox device problem (`/dev/ptmx` could not
+open), before any job executed. After mounting the already-provided `devpts`, an
+unmodified retry reached Knip but its default V8 heap exhausted after 46.40
+seconds (maximum process-tree RSS 2,242,760 KiB), so the piped type check did not
+start. The successful complete retry kept every hook command and timeout
+unchanged and set only the process heap ceiling to 3,072 MiB; it observed a
+2,582,500 KiB maximum process-tree RSS, zero swap and no timeout. These are fresh
+repair-environment results and resource failures, not reconstructed historical
+R14 evidence.
+
+### Historical evidence limits
+
+R14 merged as `0c5d2d7ec8f90cb0dca0c3f58fe8dbafbe00237a` from reviewed head
+`6147a664dc70fc8d77bd868dd235e4336bc0fc54`. The available GitHub record has no
+review object; its `LGTM` marker was posted by `lancy`, the PR author. It is useful
+review text but is not evidence of a genuinely independent reviewer. The
+`lefthook.yml` at that head is byte-identical to this validation baseline
+(SHA-256 `7f6c626681c07ae766cd5e6478217383d69194fac92fa9df717fb2a0b141c3b4`),
+but no complete historical transcript was available to prove the exact
+Lefthook binary version, executed hook set or job budget. Therefore this
+validation relies on its own full-HEAD independent review, current hooks and
+protected CI rather than upgrading those historical artifacts into claims they
+do not support.

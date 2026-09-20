@@ -15,7 +15,6 @@ import type {
   DesktopComputerUseState,
 } from "./computer-use-types";
 import type { DesktopAuthState } from "./desktop-bridge";
-import { UNAVAILABLE_RECORDER_STATE } from "./desktop-recorder-types";
 import { DesktopTrayController } from "./desktop-tray";
 
 interface MockNativeImage {
@@ -195,10 +194,6 @@ function installController(getState: () => DesktopComputerUseState) {
     openAccessibilitySettings: vi.fn(),
     openScreenRecordingSettings: vi.fn(),
     setKeepAwakeEnabled: vi.fn(async () => {}),
-    getRecorderState: () => UNAVAILABLE_RECORDER_STATE,
-    startScreenRecording: vi.fn(async () => {}),
-    stopScreenRecording: vi.fn(async () => {}),
-    retryScreenRecordingDelivery: vi.fn(async () => {}),
     quit: vi.fn(),
   });
   onTestFinished(() => {

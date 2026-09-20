@@ -7,7 +7,10 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { insertLegacyHostedSiteFixture } from "../../../test-fixtures/hosted-sites";
+import {
+  insertLegacyHostedSiteFixture,
+  insertLegacyHostedSiteHistoryFixture,
+} from "../../../test-fixtures/hosted-sites";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
@@ -60,6 +63,69 @@ function geocodeOkHandler(requests: URL[]) {
 }
 
 describe("FILE-01: hosted-site deployments through host APIs", () => {
+  it.each([false, true])(
+    "preserves history and aliases across out-of-order legacy/rollback completion (immutable first: %s) [HOST-A]",
+    async (immutableFirst) => {
+      const bdd = createBddApi(context);
+      const api = createHostMapsBddApi(context);
+      const actor = bdd.user();
+      if (!actor.orgId) {
+        throw new Error("Expected legacy site owner organization");
+      }
+      const capture = api.captureHostedSitesS3();
+      const site = `legacy-history-${randomUUID().slice(0, 8)}`;
+      const files = [hostedTextFile("/index.html", "<main>historical</main>")];
+      // Historical/rollback writers could attach two uploads to one site.
+      const history = await insertLegacyHostedSiteHistoryFixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        site,
+        files,
+        immutableFirst,
+      });
+      const first = history.deployments[0];
+      const second = history.deployments[1];
+      if (!first || !second) {
+        throw new Error("Expected two legacy uploads");
+      }
+      await api.completeHostedSite(actor, second.id);
+      const completedFirst = await api.completeHostedSite(actor, first.id);
+      expect(completedFirst).toMatchObject({
+        deploymentId: first.id,
+        isActive: false,
+        activeDeploymentVersion: 2,
+      });
+      await expect(api.readHostedSiteFiles(actor, site)).resolves.toMatchObject(
+        {
+          deploymentId: second.id,
+        },
+      );
+      for (const deployment of history.deployments) {
+        for (const target of [site, `dpl-${deployment.id}`]) {
+          await expect(
+            api.readHostedSiteFiles(
+              actor,
+              target,
+              deployment.deploymentVersion,
+            ),
+          ).resolves.toMatchObject({
+            deploymentId: deployment.id,
+            artifactUrl: deployment.artifactUrl,
+            files,
+          });
+        }
+        expect(capture.puts).toContainEqual(
+          expect.objectContaining({
+            key: `${deployment.r2Prefix}/manifest.json`,
+          }),
+        );
+      }
+      const listed = await api.readHostedSiteDeployments(actor, site);
+      expect(listed.deployments).toHaveLength(2);
+      expect(listed.activeDeploymentId).toBe(second.id);
+    },
+  );
+
   it("allocates independent sites when concurrent publications use the same preferred slug [HOST-A]", async () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
@@ -402,7 +468,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         return put.key;
       }),
     ).toContain(
-      `sites/orgs/${actor.orgId}/${versioned.publicSlug}/versions/1/manifest.json`,
+      `sites/brands/okou/publications/${versioned.deploymentId}/manifest.json`,
     );
   });
 
@@ -449,7 +515,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       }),
     );
 
-    const missingKey = `sites/orgs/${actor.orgId}/${site}/versions/1/assets/app.js`;
+    const missingKey = `sites/brands/okou/publications/${first.deploymentId}/assets/app.js`;
     capture.missingKeys.add(missingKey);
     const notUploaded = await api.requestCompleteHostedSite(
       actor,

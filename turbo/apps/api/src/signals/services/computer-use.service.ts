@@ -2,6 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
 import {
+  assertErasureSubjectWritable,
+  type ErasureSubject,
+} from "@okouai/db/operations/account-erasure";
+import {
   and,
   asc,
   desc,
@@ -10,6 +14,7 @@ import {
   isNotNull,
   isNull,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -56,6 +61,7 @@ import {
   publishUserSignal,
 } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
+import { settle } from "../utils";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import type { Tx } from "../../lib/db-types";
 
@@ -133,6 +139,7 @@ type CreateComputerUseCommandResult =
       readonly commandId: string;
       readonly commandStatus: "queued";
     }
+  | { readonly status: "subject_closed" }
   | { readonly status: "no_host" }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
@@ -148,11 +155,13 @@ type ResolveComputerUseCommandTargetsResult =
   | { readonly status: "host_offline" }
   | { readonly status: "host_unsupported" };
 
-type StartComputerUseHostResult = {
-  readonly status: "started";
-  readonly hostId: string;
-  readonly hostToken: string;
-};
+type StartComputerUseHostResult =
+  | {
+      readonly status: "started";
+      readonly hostId: string;
+      readonly hostToken: string;
+    }
+  | { readonly status: "subject_closed" };
 
 type HeartbeatComputerUseHostResult =
   | { readonly status: "ok"; readonly hostId: string }
@@ -1210,6 +1219,19 @@ async function hostFromToken(
   return host ?? null;
 }
 
+const COMPUTER_USE_HOST_START_LOCK_TIMEOUT = "1s";
+const COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT = "5s";
+
+function computerUseHostStartSubjects(params: {
+  readonly orgId: string;
+  readonly userId: string;
+}): readonly ErasureSubject[] {
+  return [
+    { subjectKind: "user", subjectId: params.userId },
+    { subjectKind: "organization", subjectId: params.orgId },
+  ];
+}
+
 export const startComputerUseHost$ = command(
   async (
     { set },
@@ -1225,74 +1247,111 @@ export const startComputerUseHost$ = command(
     },
     signal: AbortSignal,
   ): Promise<StartComputerUseHostResult> => {
+    signal.throwIfAborted();
     const db = set(writeDb$);
-    const hostToken = generateOpaqueToken("vm0_computer_use_host");
-    const now = nowDate();
-    const result = await db.transaction(async (tx) => {
-      const displayName = normalizeHostName(params.hostName);
-      const tokenHash = hashSecret(hostToken);
-      const appVersion = normalizeVersion(params.appVersion);
-      const osVersion = normalizeOsVersion(params.osVersion);
-      const supportedCapabilities = normalizeCapabilities(
-        params.supportedCapabilities,
-      );
-      const values = {
-        orgId: params.orgId,
-        userId: params.userId,
-        installationId: params.installationId ?? null,
-        displayName,
-        tokenHash,
-        appVersion,
-        osVersion,
-        supportedCapabilities,
-        permissions: params.permissions,
-        status: "online",
-        lastSeenAt: now,
-        createdAt: now,
-        updatedAt: now,
-      };
-      const [host] = params.installationId
-        ? await tx
-            .insert(computerUseHosts)
-            .values(values)
-            .onConflictDoUpdate({
-              target: [
-                computerUseHosts.orgId,
-                computerUseHosts.userId,
-                computerUseHosts.installationId,
-              ],
-              targetWhere: and(
-                isNotNull(computerUseHosts.installationId),
-                isNull(computerUseHosts.revokedAt),
-              ),
-              set: {
-                displayName,
-                tokenHash,
-                appVersion,
-                osVersion,
-                supportedCapabilities,
-                permissions: params.permissions,
-                status: "online",
-                lastSeenAt: now,
-                updatedAt: now,
-              },
-            })
-            .returning({ id: computerUseHosts.id })
-        : await tx
-            .insert(computerUseHosts)
-            .values(values)
-            .returning({ id: computerUseHosts.id });
+    const displayName = normalizeHostName(params.hostName);
+    const appVersion = normalizeVersion(params.appVersion);
+    const osVersion = normalizeOsVersion(params.osVersion);
+    const supportedCapabilities = normalizeCapabilities(
+      params.supportedCapabilities,
+    );
+    const result = await db.transaction(
+      async (tx) => {
+        await tx.execute(
+          sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_HOST_START_LOCK_TIMEOUT}, true)`,
+        );
+        await tx.execute(
+          sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT}, true)`,
+        );
+        const admitted = await settle(
+          assertErasureSubjectWritable(
+            tx,
+            computerUseHostStartSubjects(params),
+          ),
+        );
+        signal.throwIfAborted();
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return { status: "subject_closed" as const };
+          }
+          throw admitted.error;
+        }
+
+        // Admission can wait behind an erasure mutation. This fresh clock and
+        // credential belong to the admitted write, not its pre-admission wait.
+        const now = nowDate();
+        const hostToken = generateOpaqueToken("vm0_computer_use_host");
+        const tokenHash = hashSecret(hostToken);
+        const values = {
+          orgId: params.orgId,
+          userId: params.userId,
+          installationId: params.installationId ?? null,
+          displayName,
+          tokenHash,
+          appVersion,
+          osVersion,
+          supportedCapabilities,
+          permissions: params.permissions,
+          status: "online",
+          lastSeenAt: now,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const [host] = params.installationId
+          ? await tx
+              .insert(computerUseHosts)
+              .values(values)
+              .onConflictDoUpdate({
+                target: [
+                  computerUseHosts.orgId,
+                  computerUseHosts.userId,
+                  computerUseHosts.installationId,
+                ],
+                targetWhere: and(
+                  isNotNull(computerUseHosts.installationId),
+                  isNull(computerUseHosts.revokedAt),
+                ),
+                set: {
+                  displayName,
+                  tokenHash,
+                  appVersion,
+                  osVersion,
+                  supportedCapabilities,
+                  permissions: params.permissions,
+                  status: "online",
+                  lastSeenAt: now,
+                  updatedAt: now,
+                },
+              })
+              .returning({ id: computerUseHosts.id })
+          : await tx
+              .insert(computerUseHosts)
+              .values(values)
+              .returning({ id: computerUseHosts.id });
+        signal.throwIfAborted();
+
+        if (!host) {
+          throw new Error("Failed to start computer-use host");
+        }
+
+        const started = {
+          status: "started" as const,
+          hostId: host.id,
+          hostToken,
+        };
+        signal.throwIfAborted();
+        return started;
+      },
+      { isolationLevel: "read committed" },
+    );
+    signal.throwIfAborted();
+    if (result.status === "started") {
+      await publishComputerUseHostsChanged(params.userId);
       signal.throwIfAborted();
-
-      if (!host) {
-        throw new Error("Failed to start computer-use host");
-      }
-
-      return { status: "started" as const, hostId: host.id, hostToken };
-    });
-    signal.throwIfAborted();
-    await publishComputerUseHostsChanged(params.userId);
-    signal.throwIfAborted();
+    }
     return result;
   },
 );
@@ -1433,33 +1492,74 @@ export const stopComputerUseHost$ = command(
   },
 );
 
+export async function projectComputerUseHosts(
+  args: {
+    readonly db: Pick<Db, "select">;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly now: Date;
+  },
+  signal: AbortSignal,
+): Promise<{ readonly hosts: readonly ComputerUseHost[] }> {
+  const hosts = await args.db
+    .select()
+    .from(computerUseHosts)
+    .where(
+      and(
+        eq(computerUseHosts.orgId, args.orgId),
+        eq(computerUseHosts.userId, args.userId),
+        isNull(computerUseHosts.revokedAt),
+      ),
+    )
+    .orderBy(desc(computerUseHosts.lastSeenAt));
+  signal.throwIfAborted();
+  return {
+    hosts: hosts.map((host) => {
+      return serializeHost(host, args.now);
+    }),
+  };
+}
+
 export const listComputerUseHosts$ = command(
   async (
     { set },
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const now = nowDate();
-    const hosts = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.orgId, params.orgId),
-          eq(computerUseHosts.userId, params.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .orderBy(desc(computerUseHosts.lastSeenAt));
-    signal.throwIfAborted();
-    return {
-      hosts: hosts.map((host) => {
-        return serializeHost(host, now);
-      }),
-    };
+    return await projectComputerUseHosts(
+      {
+        db: set(writeDb$),
+        ...params,
+        now: nowDate(),
+      },
+      signal,
+    );
   },
 );
+
+const COMPUTER_USE_COMMAND_LOCK_TIMEOUT = "1s";
+const COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT = "5s";
+
+function computerUseCommandSubjects(params: {
+  readonly orgId: string;
+  readonly userId: string;
+}): readonly ErasureSubject[] {
+  return [
+    { subjectKind: "user", subjectId: params.userId },
+    { subjectKind: "organization", subjectId: params.orgId },
+  ];
+}
+
+async function setComputerUseCommandDeadlines(
+  tx: ComputerUseTx,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_LOCK_TIMEOUT}, true)`,
+  );
+  await tx.execute(
+    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT}, true)`,
+  );
+}
 
 export const createComputerUseCommand$ = command(
   async (
@@ -1475,71 +1575,130 @@ export const createComputerUseCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<CreateComputerUseCommandResult> => {
+    signal.throwIfAborted();
     if (!COMPUTER_USE_COMMANDS.includes(params.kind)) {
       return { status: "host_unsupported" };
     }
 
     const db = set(writeDb$);
-    const now = nowDate();
-    const hosts = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.orgId, params.orgId),
-          eq(computerUseHosts.userId, params.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .orderBy(desc(computerUseHosts.lastSeenAt));
+    const result = await db.transaction(
+      async (tx): Promise<CreateComputerUseCommandResult> => {
+        await setComputerUseCommandDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            signal.throwIfAborted();
+            return { status: "subject_closed" };
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
+
+        // Admission can wait behind an erasure mutation. One fresh clock after
+        // that wait owns host liveness and every persisted creation timestamp.
+        const now = nowDate();
+        const hosts = await tx
+          .select()
+          .from(computerUseHosts)
+          .where(
+            and(
+              eq(computerUseHosts.orgId, params.orgId),
+              eq(computerUseHosts.userId, params.userId),
+              isNull(computerUseHosts.revokedAt),
+            ),
+          )
+          .orderBy(desc(computerUseHosts.lastSeenAt));
+        signal.throwIfAborted();
+
+        if (hosts.length === 0) {
+          signal.throwIfAborted();
+          return { status: "no_host" };
+        }
+
+        const onlineHosts = hosts.filter((host) => {
+          return computerUseHostIsOnline(host, now);
+        });
+        const payload = commandPayload(params.payload);
+        const target = resolveComputerUseCommandTargets({
+          onlineHosts,
+          kind: params.kind,
+          payload,
+          targetHostId: params.targetHostId,
+        });
+        if (target.status !== "resolved") {
+          signal.throwIfAborted();
+          return target;
+        }
+
+        const [row] = await tx
+          .insert(computerUseCommands)
+          .values({
+            orgId: params.orgId,
+            userId: params.userId,
+            runId: params.runId ?? null,
+            hostId: target.targetHostId,
+            kind: params.kind,
+            status: "queued",
+            payload,
+            timeoutMs: params.timeoutMs,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+        signal.throwIfAborted();
+
+        if (!row) {
+          throw new Error("Failed to create computer-use command");
+        }
+
+        const created = {
+          status: "created" as const,
+          commandId: row.id,
+          commandStatus: "queued" as const,
+        };
+        signal.throwIfAborted();
+        return created;
+      },
+      { isolationLevel: "read committed" },
+    );
     signal.throwIfAborted();
-
-    if (hosts.length === 0) {
-      return { status: "no_host" };
-    }
-
-    const onlineHosts = hosts.filter((host) => {
-      return computerUseHostIsOnline(host, now);
-    });
-    const payload = commandPayload(params.payload);
-    const target = resolveComputerUseCommandTargets({
-      onlineHosts,
-      kind: params.kind,
-      payload,
-      targetHostId: params.targetHostId,
-    });
-    if (target.status !== "resolved") {
-      return target;
-    }
-
-    const [row] = await db
-      .insert(computerUseCommands)
-      .values({
-        orgId: params.orgId,
-        userId: params.userId,
-        runId: params.runId ?? null,
-        hostId: target.targetHostId,
-        kind: params.kind,
-        status: "queued",
-        payload,
-        timeoutMs: params.timeoutMs,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-    signal.throwIfAborted();
-
-    if (!row) {
-      throw new Error("Failed to create computer-use command");
-    }
-
-    return {
-      status: "created",
-      commandId: row.id,
-      commandStatus: "queued",
-    };
+    return result;
   },
 );
+
+async function selectComputerUseCommandContent(
+  tx: ComputerUseTx,
+  params: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly commandId: string;
+    readonly hostId?: string;
+  },
+): Promise<Pick<ComputerUseCommandRow, "status" | "result"> | undefined> {
+  const [row] = await tx
+    .select({
+      status: computerUseCommands.status,
+      result: computerUseCommands.result,
+    })
+    .from(computerUseCommands)
+    .where(
+      and(
+        eq(computerUseCommands.orgId, params.orgId),
+        eq(computerUseCommands.userId, params.userId),
+        eq(computerUseCommands.id, params.commandId),
+        ...(params.hostId
+          ? [eq(computerUseCommands.hostId, params.hostId)]
+          : []),
+      ),
+    )
+    .limit(1);
+  return row;
+}
 
 export const getComputerUseCommand$ = command(
   async (
@@ -1552,39 +1711,64 @@ export const getComputerUseCommand$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const now = nowDate();
-    const row = await db.transaction(async (tx) => {
-      await failStaleRunningComputerUseCommands(
-        tx,
-        { orgId: params.orgId, userId: params.userId, now },
-        signal,
-      );
-      const [commandRow] = await tx
-        .select({
-          command: computerUseCommands,
-          hostName: computerUseHosts.displayName,
-        })
-        .from(computerUseCommands)
-        .leftJoin(
-          computerUseHosts,
-          eq(computerUseCommands.hostId, computerUseHosts.id),
-        )
-        .where(
-          and(
-            eq(computerUseCommands.orgId, params.orgId),
-            eq(computerUseCommands.userId, params.userId),
-            eq(computerUseCommands.id, params.commandId),
-            ...(params.hostId
-              ? [eq(computerUseCommands.hostId, params.hostId)]
-              : []),
-          ),
-        )
-        .limit(1);
-      return commandRow;
-    });
     signal.throwIfAborted();
-    return row ? serializeCommand(row.command, row.hostName) : null;
+    const db = set(writeDb$);
+    const value = await db.transaction(
+      async (tx) => {
+        await setComputerUseCommandDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return null;
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
+
+        // Admission can wait behind an erasure mutation. One fresh clock after
+        // that wait owns every timeout comparison and timestamp in this sweep.
+        const now = nowDate();
+        await failStaleRunningComputerUseCommands(
+          tx,
+          { orgId: params.orgId, userId: params.userId, now },
+          signal,
+        );
+        const [commandRow] = await tx
+          .select({
+            command: computerUseCommands,
+            hostName: computerUseHosts.displayName,
+          })
+          .from(computerUseCommands)
+          .leftJoin(
+            computerUseHosts,
+            eq(computerUseCommands.hostId, computerUseHosts.id),
+          )
+          .where(
+            and(
+              eq(computerUseCommands.orgId, params.orgId),
+              eq(computerUseCommands.userId, params.userId),
+              eq(computerUseCommands.id, params.commandId),
+              ...(params.hostId
+                ? [eq(computerUseCommands.hostId, params.hostId)]
+                : []),
+            ),
+          )
+          .limit(1);
+        const result = commandRow
+          ? serializeCommand(commandRow.command, commandRow.hostName)
+          : null;
+        signal.throwIfAborted();
+        return result;
+      },
+      { isolationLevel: "read committed" },
+    );
+    signal.throwIfAborted();
+    return value;
   },
 );
 
@@ -1602,44 +1786,55 @@ export const getComputerUseCommandScreenshot$ = command(
     readonly buffer: Buffer;
     readonly contentType: string;
   } | null> => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select({
-        status: computerUseCommands.status,
-        result: computerUseCommands.result,
-      })
-      .from(computerUseCommands)
-      .where(
-        and(
-          eq(computerUseCommands.orgId, params.orgId),
-          eq(computerUseCommands.userId, params.userId),
-          eq(computerUseCommands.id, params.commandId),
-          ...(params.hostId
-            ? [eq(computerUseCommands.hostId, params.hostId)]
-            : []),
-        ),
-      )
-      .limit(1);
     signal.throwIfAborted();
-    if (!row || row.status !== "succeeded" || !row.result) {
-      return null;
-    }
+    const db = set(writeDb$);
+    const value = await db.transaction(
+      async (tx) => {
+        await setComputerUseCommandDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return null;
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
 
-    const screenshot = row.result.screenshot;
-    if (isStoredScreenshotPointer(screenshot)) {
-      const buffer = await get(
-        downloadS3Buffer(screenshot.bucket, screenshot.key),
-      );
-      signal.throwIfAborted();
-      return { buffer, contentType: screenshot.mimeType };
-    }
-    if (typeof screenshot === "string") {
-      const parsed = parseScreenshotDataUrl(screenshot);
-      if (parsed) {
-        return { buffer: parsed.buffer, contentType: parsed.mimeType };
-      }
-    }
-    return null;
+        const row = await selectComputerUseCommandContent(tx, params);
+        signal.throwIfAborted();
+        let result: {
+          readonly buffer: Buffer;
+          readonly contentType: string;
+        } | null = null;
+        if (row?.status === "succeeded" && row.result) {
+          const screenshot = row.result.screenshot;
+          if (isStoredScreenshotPointer(screenshot)) {
+            const buffer = await get(
+              downloadS3Buffer(screenshot.bucket, screenshot.key, signal),
+            );
+            result = { buffer, contentType: screenshot.mimeType };
+          } else if (typeof screenshot === "string") {
+            const parsed = parseScreenshotDataUrl(screenshot);
+            if (parsed) {
+              result = {
+                buffer: parsed.buffer,
+                contentType: parsed.mimeType,
+              };
+            }
+          }
+        }
+        signal.throwIfAborted();
+        return result;
+      },
+      { isolationLevel: "read committed" },
+    );
+    signal.throwIfAborted();
+    return value;
   },
 );
 
@@ -1658,43 +1853,52 @@ export const getComputerUseCommandPluginContent$ = command(
     readonly contentType: string;
     readonly fileName: string;
   } | null> => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select({
-        status: computerUseCommands.status,
-        result: computerUseCommands.result,
-      })
-      .from(computerUseCommands)
-      .where(
-        and(
-          eq(computerUseCommands.orgId, params.orgId),
-          eq(computerUseCommands.userId, params.userId),
-          eq(computerUseCommands.id, params.commandId),
-          ...(params.hostId
-            ? [eq(computerUseCommands.hostId, params.hostId)]
-            : []),
-        ),
-      )
-      .limit(1);
     signal.throwIfAborted();
-    if (!row || row.status !== "succeeded" || !row.result) {
-      return null;
-    }
+    const db = set(writeDb$);
+    const value = await db.transaction(
+      async (tx) => {
+        await setComputerUseCommandDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return null;
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
 
-    const pluginContent = row.result.pluginContent;
-    if (!isStoredPluginContentPointer(pluginContent)) {
-      return null;
-    }
-
-    const buffer = await get(
-      downloadS3Buffer(pluginContent.bucket, pluginContent.key),
+        const row = await selectComputerUseCommandContent(tx, params);
+        signal.throwIfAborted();
+        let result: {
+          readonly buffer: Buffer;
+          readonly contentType: string;
+          readonly fileName: string;
+        } | null = null;
+        if (row?.status === "succeeded" && row.result) {
+          const pluginContent = row.result.pluginContent;
+          if (isStoredPluginContentPointer(pluginContent)) {
+            const buffer = await get(
+              downloadS3Buffer(pluginContent.bucket, pluginContent.key, signal),
+            );
+            result = {
+              buffer,
+              contentType: pluginContent.mimeType,
+              fileName: pluginContent.fileName,
+            };
+          }
+        }
+        signal.throwIfAborted();
+        return result;
+      },
+      { isolationLevel: "read committed" },
     );
     signal.throwIfAborted();
-    return {
-      buffer,
-      contentType: pluginContent.mimeType,
-      fileName: pluginContent.fileName,
-    };
+    return value;
   },
 );
 
@@ -2083,64 +2287,59 @@ export const completeComputerUseHostCommand$ = command(
   },
 );
 
-export const listComputerUseAuditEvents$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly limit: number;
-      readonly commandId?: string;
-      readonly hostId?: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const filters = [
-      eq(computerUseCommandAuditEvents.orgId, params.orgId),
-      eq(computerUseCommandAuditEvents.userId, params.userId),
-    ];
-    if (params.commandId) {
-      filters.push(
-        eq(computerUseCommandAuditEvents.commandId, params.commandId),
-      );
-    }
-    if (params.hostId) {
-      filters.push(eq(computerUseCommandAuditEvents.hostId, params.hostId));
-    }
-    if (params.runId) {
-      filters.push(eq(computerUseCommandAuditEvents.runId, params.runId));
-    }
-
-    const rows = await db
-      .select()
-      .from(computerUseCommandAuditEvents)
-      .where(and(...filters))
-      .orderBy(desc(computerUseCommandAuditEvents.createdAt))
-      .limit(params.limit);
-    signal.throwIfAborted();
-
-    L.debug("Listed computer-use audit events", {
-      orgId: params.orgId,
-      count: rows.length,
-    });
-
-    return {
-      auditEvents: rows.map((row) => {
-        return {
-          id: row.id,
-          commandId: row.commandId,
-          runId: row.runId,
-          hostId: row.hostId,
-          kind: row.kind as ComputerUseCommandKind,
-          app: row.app,
-          event: row.event as "completed",
-          redactedResult: row.redactedResult,
-          error: row.error,
-          createdAt: row.createdAt.toISOString(),
-        };
-      }),
-    };
+export async function projectComputerUseAuditEvents(
+  args: {
+    readonly db: Pick<Db, "select">;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly limit: number;
+    readonly commandId?: string;
+    readonly hostId?: string;
+    readonly runId?: string;
   },
-);
+  signal: AbortSignal,
+) {
+  const filters = [
+    eq(computerUseCommandAuditEvents.orgId, args.orgId),
+    eq(computerUseCommandAuditEvents.userId, args.userId),
+  ];
+  if (args.commandId) {
+    filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));
+  }
+  if (args.hostId) {
+    filters.push(eq(computerUseCommandAuditEvents.hostId, args.hostId));
+  }
+  if (args.runId) {
+    filters.push(eq(computerUseCommandAuditEvents.runId, args.runId));
+  }
+
+  const rows = await args.db
+    .select()
+    .from(computerUseCommandAuditEvents)
+    .where(and(...filters))
+    .orderBy(desc(computerUseCommandAuditEvents.createdAt))
+    .limit(args.limit);
+  signal.throwIfAborted();
+
+  L.debug("Listed computer-use audit events", {
+    orgId: args.orgId,
+    count: rows.length,
+  });
+
+  return {
+    auditEvents: rows.map((row) => {
+      return {
+        id: row.id,
+        commandId: row.commandId,
+        runId: row.runId,
+        hostId: row.hostId,
+        kind: row.kind as ComputerUseCommandKind,
+        app: row.app,
+        event: row.event as "completed",
+        redactedResult: row.redactedResult,
+        error: row.error,
+        createdAt: row.createdAt.toISOString(),
+      };
+    }),
+  };
+}

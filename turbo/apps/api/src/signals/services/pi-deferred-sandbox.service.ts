@@ -89,6 +89,7 @@ import {
   validateDeferredPiMaterialization,
   type DeferredPiMaterializationAdmission,
 } from "./agent-run-create.service";
+import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 
 const ATTEMPT_MS = 120_000;
 const RUN_MS = 2 * 60 * 60 * 1000;
@@ -883,7 +884,8 @@ export const consumeDeferredPiRun$ = command(
             runId,
             run.launchSnapshot,
           );
-          const at = nowDate();
+          const queueTimestamps = runnerJobQueueTimestamps();
+          const at = queueTimestamps.createdAt;
           if (
             !lifecycle?.intent ||
             !lifecycle.lease ||
@@ -912,7 +914,7 @@ export const consumeDeferredPiRun$ = command(
             reuseKey: null,
             executionContext: payload.executionContext,
             createdAt: at,
-            expiresAt: lifecycle.intent.expiresAt,
+            expiresAt: queueTimestamps.expiresAt,
           });
           await tx
             .update(agentRuns)

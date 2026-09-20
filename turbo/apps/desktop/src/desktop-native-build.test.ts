@@ -59,7 +59,7 @@ assert.deepEqual(process.argv.slice(2, 4), ["build", "--package-path"]);
 assert.deepEqual(process.argv.slice(5), ["-c", "release"]);
 const output = path.join(process.argv[4], ".build", "release");
 fs.mkdirSync(output, { recursive: true });
-for (const name of ["computer-use-helper", "screen-recorder-helper"]) {
+for (const name of ["computer-use-helper"]) {
   fs.writeFileSync(path.join(output, name), name + " current");
 }
 `,
@@ -92,7 +92,7 @@ fs.writeFileSync(path.join(process.argv[4], "symbols"), path.basename(process.ar
     },
   );
   expect(result.status, result.stderr).toBe(0);
-  const helpers = ["computer-use-helper", "screen-recorder-helper"];
+  const helpers = ["computer-use-helper"];
   expect(readdirSync(native).sort()).toEqual(helpers);
   for (const helper of helpers) {
     expect(readFileSync(join(native, helper), "utf8")).toBe(

@@ -52,7 +52,7 @@ describe("okou generate voice command", () => {
     mockConsoleError.mockClear();
   });
 
-  it("shares generated audio with its organization and returns the selected URL", async () => {
+  it("shares generated audio with its organization and returns the stable App URL", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_CURRENT_INTEGRATION", "teams");
     const artifact = serveGenerationVisibility("voice.wav", "org");

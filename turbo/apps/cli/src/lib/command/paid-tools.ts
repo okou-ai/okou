@@ -35,8 +35,8 @@ export async function getPaidToolUnavailableMessage(
   if (!policy.has(tool)) return undefined;
 
   const settingsUrl = new URL("/", await getPlatformOrigin());
-  settingsUrl.searchParams.set("settings", "paid-tools");
-  return `Paid tool "${tool}" is disabled for this run. Re-enable it in Settings > Personal > Paid tools: ${settingsUrl.toString()}\nChanges apply to later runs.`;
+  settingsUrl.searchParams.set("settings", "chat");
+  return `Paid tool "${tool}" is disabled for this run. Re-enable it in Settings > Personal > Chat: ${settingsUrl.toString()}\nChanges apply to later runs.`;
 }
 
 export async function assertPaidToolEnabled(tool: PaidToolId): Promise<void> {
@@ -110,14 +110,6 @@ function paidToolsForHelp(path: Command[]): readonly PaidToolId[] {
     const tool = getGenerationPaidTool(type);
     return tool ? [tool] : [];
   }
-  if (family === "video") {
-    return path[1] === undefined || path[1].name() === "render"
-      ? ["video-rendering"]
-      : [];
-  }
-  if (family === "__intro-video-agent") return ["video-generation"];
-  if (family === "__intro-video-presenter") return ["avatar-video-generation"];
-  if (family === "__intro-video-voice") return ["voice-generation"];
   const tool = paidToolIdSchema.safeParse(family);
   return tool.success ? [tool.data] : [];
 }
@@ -147,6 +139,6 @@ export function installPaidToolPolicy(program: Command): void {
     );
     if (disabled.length === 0) return "";
 
-    return `\nDisabled paid tools in this run: ${disabled.join(", ")}.\nManage them in Settings > Personal > Paid tools. Help and free operations remain available.`;
+    return `\nDisabled paid tools in this run: ${disabled.join(", ")}.\nManage them in Settings > Personal > Chat. Help and free operations remain available.`;
   });
 }

@@ -55,8 +55,8 @@ export async function applyArtifactVisibility<
 
   await assertPrivateArtifactUrl(result.url);
 
-  // A new private deployment is owner-only even if an older version is shared.
-  // Setting the site's audience to private would revoke that older version.
+  // New private artifacts are owner-only. Keep any existing sharing policy
+  // unchanged when the caller requests a private publication.
   if (visibility === "only-me") {
     return { ...result, visibility, ownerUrl: result.url };
   }
@@ -66,11 +66,16 @@ export async function applyArtifactVisibility<
       target,
       visibility === "org" ? "organization" : "public",
     );
-    const url = status.shortUrl ?? status.url;
-    if (!url) {
+    const sharingUrl = status.shortUrl ?? status.url;
+    if (!sharingUrl) {
       throw new Error("The API did not return a sharing URL.");
     }
-    return { ...result, url, visibility, ownerUrl: status.ownerUrl };
+    return {
+      ...result,
+      url: status.ownerUrl,
+      visibility,
+      ownerUrl: status.ownerUrl,
+    };
   } catch (cause) {
     throw new Error(
       `The artifact was created at ${result.url}, but setting visibility failed. Read its current state with okou artifact ${target.id} --kind ${target.kind} --json before retrying the visibility change. Do not repeat the upload, hosting, or generation.`,

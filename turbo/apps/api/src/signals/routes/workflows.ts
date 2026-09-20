@@ -23,7 +23,7 @@ import {
   workflowWebhookAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -44,6 +44,7 @@ import {
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
+import { testOverride } from "../../lib/singleton";
 import {
   deleteOrphanedWorkflowVolume$,
   deleteWorkflow$,
@@ -115,6 +116,16 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
+import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
+import { admitPiStableContextSubjects } from "../services/pi-stable-context-erasure.service";
+import {
+  invalidatePiStableContext,
+  lockPiStableContextGenerationScopes,
+  lockPiStableContextPublicationKey,
+  piStableContextWorkflowInvalidationOptions,
+  piStableContextWorkflowPublicationKey,
+  retirePiStableContextPublication,
+} from "../services/pi-stable-context-generation.service";
 
 const workflowReadAuth = {
   requireOrganization: true,
@@ -366,6 +377,25 @@ const listWorkflowsInner$ = computed(async (get) => {
   return { status: 200 as const, body: [...workflows] };
 });
 
+interface WorkflowCreationHooks {
+  readonly beforeAdmission?: () => Promise<void>;
+  readonly beforeCopyAdmission?: () => Promise<void>;
+}
+
+const workflowCreationHooks = testOverride<WorkflowCreationHooks>(() => {
+  return {};
+});
+
+export function setWorkflowCreationHooksForTest(
+  hooks: WorkflowCreationHooks,
+): void {
+  workflowCreationHooks.set(hooks);
+}
+
+export function clearWorkflowCreationHooksForTest(): void {
+  workflowCreationHooks.clear();
+}
+
 interface WorkflowCreationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
@@ -418,7 +448,19 @@ async function createPreparedWorkflow(
   },
   signal: AbortSignal,
 ) {
+  await workflowCreationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.member.userId },
+      ]))
+    ) {
+      return {
+        kind: "error" as const,
+        response: notFound(`Agent not found: ${args.body.agentId}`),
+      };
+    }
     const error = await validateWorkflowCreation(tx, args, true, signal);
     if (error) {
       return { kind: "error" as const, response: error };
@@ -490,6 +532,11 @@ async function createPreparedWorkflow(
       { db: tx, volume: args.volume },
       signal,
     );
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      agentId: body.agentId,
+      ...(visibility === "private" ? { userId: member.userId } : {}),
+    });
     return { kind: "created" as const, workflow, chatThreadId };
   });
 }
@@ -748,7 +795,7 @@ const updateWorkflowInner$ = command(
       }
     }
 
-    await set(
+    const updated = await set(
       updateWorkflow$,
       {
         workflow: visible.workflow,
@@ -758,6 +805,9 @@ const updateWorkflowInner$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (!updated) {
+      return conflict("Workflow changed during update; retry the request");
+    }
 
     const detail = await get(
       workflowDetail({
@@ -1390,7 +1440,16 @@ async function copyWorkflowDatabaseRows(
   },
   signal: AbortSignal,
 ): Promise<CopyWorkflowDatabaseResult> {
+  await workflowCreationHooks.get().beforeCopyAdmission?.();
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.userId },
+      ]))
+    ) {
+      return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
+    }
     const current = await readWorkflowCopySource(tx, args, args.source);
     if (current.kind === "conflict") {
       return current;
@@ -1449,6 +1508,22 @@ async function copyWorkflowDatabaseRows(
     await commitPreparedVolumeServerSide(
       { db: tx, volume: args.volume },
       signal,
+    );
+    await invalidatePiStableContext(
+      tx,
+      {
+        orgId: args.orgId,
+        agentId: args.targetAgentId,
+        userId: args.userId,
+      },
+      piStableContextWorkflowInvalidationOptions({
+        kind: "upsert",
+        workflow: {
+          workflowId: args.targetWorkflowId,
+          name: sourceWorkflow.name,
+          officialDefinitionName: null,
+        },
+      }),
     );
     // The shared user/org sequence is the final lock: all external work and
     // unrelated row updates have finished before the thread event is appended.
@@ -1918,21 +1993,100 @@ interface VisibilityTransition {
 async function applyVisibilityUpdate(
   db: Db,
   args: {
-    readonly workflowId: string;
+    readonly workflow: Pick<
+      WorkflowRow,
+      | "id"
+      | "orgId"
+      | "agentId"
+      | "ownerUserId"
+      | "name"
+      | "officialDefinitionName"
+      | "visibility"
+    >;
     readonly updatedByUserId: string;
-    readonly patch: {
-      readonly visibility?: "public" | "private";
-    };
+    readonly visibility: "public" | "private";
   },
-): Promise<void> {
-  await db
-    .update(workflows)
-    .set({
-      ...args.patch,
-      updatedBy: args.updatedByUserId,
-      updatedAt: nowDate(),
-    })
-    .where(eq(workflows.id, args.workflowId));
+): Promise<boolean> {
+  return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.workflow.orgId },
+        { subjectKind: "user", subjectId: args.workflow.ownerUserId },
+      ]))
+    ) {
+      return false;
+    }
+    await lockCanonicalAgentMutation(tx, args.workflow.agentId);
+    const workflowCondition = and(
+      eq(workflows.id, args.workflow.id),
+      eq(workflows.orgId, args.workflow.orgId),
+      eq(workflows.agentId, args.workflow.agentId),
+      eq(workflows.ownerUserId, args.workflow.ownerUserId),
+      eq(workflows.visibility, args.workflow.visibility),
+      isNull(workflows.officialDefinitionName),
+    );
+    const [locked] = await tx
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(workflowCondition)
+      .for("update")
+      .limit(1);
+    if (!locked) {
+      return false;
+    }
+
+    const scopes = [
+      { orgId: args.workflow.orgId, agentId: args.workflow.agentId },
+      {
+        orgId: args.workflow.orgId,
+        agentId: args.workflow.agentId,
+        userId: args.workflow.ownerUserId,
+      },
+    ] as const;
+    await lockPiStableContextGenerationScopes(tx, scopes);
+    const publicationKey = piStableContextWorkflowPublicationKey(
+      args.workflow.id,
+    );
+    const currentScope =
+      args.workflow.visibility === "public" ? scopes[0] : scopes[1];
+    if (
+      await lockPiStableContextPublicationKey(tx, currentScope, publicationKey)
+    ) {
+      return false;
+    }
+
+    const [updated] = await tx
+      .update(workflows)
+      .set({
+        visibility: args.visibility,
+        updatedBy: args.updatedByUserId,
+        updatedAt: nowDate(),
+      })
+      .where(workflowCondition)
+      .returning({ id: workflows.id });
+    if (!updated) {
+      return false;
+    }
+    for (const scope of scopes) {
+      await retirePiStableContextPublication(tx, scope, publicationKey);
+    }
+    for (const [index, scope] of scopes.entries()) {
+      const scopeVisibility = index === 0 ? "public" : "private";
+      await invalidatePiStableContext(
+        tx,
+        scope,
+        piStableContextWorkflowInvalidationOptions({
+          kind: args.visibility === scopeVisibility ? "upsert" : "delete",
+          workflow: {
+            workflowId: args.workflow.id,
+            name: args.workflow.name,
+            officialDefinitionName: args.workflow.officialDefinitionName,
+          },
+        }),
+      );
+    }
+    return true;
+  });
 }
 
 function summaryFrom(
@@ -2016,14 +2170,15 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return slugError;
   }
 
-  await applyVisibilityUpdate(writeDb, {
-    workflowId: workflow.id,
+  const updated = await applyVisibilityUpdate(writeDb, {
+    workflow,
     updatedByUserId: auth.userId,
-    patch: {
-      visibility: "public",
-    },
+    visibility: "public",
   });
   signal.throwIfAborted();
+  if (!updated) {
+    return conflict("Workflow changed during publish; retry the request");
+  }
   return {
     status: 200 as const,
     body: summaryFrom(loaded, {
@@ -2070,14 +2225,15 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return slugError;
   }
 
-  await applyVisibilityUpdate(writeDb, {
-    workflowId: loaded.workflow.id,
+  const updated = await applyVisibilityUpdate(writeDb, {
+    workflow: loaded.workflow,
     updatedByUserId: auth.userId,
-    patch: {
-      visibility: "private",
-    },
+    visibility: "private",
   });
   signal.throwIfAborted();
+  if (!updated) {
+    return conflict("Workflow changed during demotion; retry the request");
+  }
   return {
     status: 200 as const,
     body: summaryFrom(loaded, {

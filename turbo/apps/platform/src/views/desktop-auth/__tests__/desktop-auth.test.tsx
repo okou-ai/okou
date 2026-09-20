@@ -75,7 +75,7 @@ async function page(path: string, auth?: SetupPageAuth, host = "app.okou.ai") {
 async function leaveDesktopAuthPage(): Promise<void> {
   window.history.pushState({}, "", "/desktop-auth/missing");
   fireEvent.popState(window);
-  await screen.findByRole("heading", { name: "Page not found" });
+  await screen.findByRole("heading", { name: "That page isn't here." });
 }
 
 function button(name: string) {

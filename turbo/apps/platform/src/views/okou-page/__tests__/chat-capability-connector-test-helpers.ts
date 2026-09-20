@@ -7,7 +7,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 
 import {
@@ -128,7 +128,7 @@ export function connectedConnectorResponse(args: {
   readonly id?: string;
   readonly updatedAt?: string;
   readonly reconnectRequired?: boolean;
-}): ConnectorResponse {
+}): BuiltinConnectorResponse {
   return {
     id: args.id ?? CONNECTOR_CONNECTION_ID,
     slug: args.slug,

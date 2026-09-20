@@ -14,8 +14,10 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import type { Db, ReadonlyDb } from "../external/db";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
+import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   loadAgentConnectorScope,
   type AgentConnectorScope,
@@ -28,6 +30,38 @@ import {
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
+import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
+
+interface ChatThreadConnectorSelectionMutationHooks {
+  readonly beforeAdmission?: () => Promise<void>;
+  readonly afterThreadReadBeforeAgentLock?: () => Promise<void>;
+}
+
+const chatThreadConnectorSelectionMutationHooks =
+  testOverride<ChatThreadConnectorSelectionMutationHooks>(() => {
+    return {};
+  });
+
+export function setChatThreadConnectorSelectionMutationHooksForTest(
+  hooks: ChatThreadConnectorSelectionMutationHooks,
+): void {
+  chatThreadConnectorSelectionMutationHooks.set(hooks);
+}
+
+export function clearChatThreadConnectorSelectionMutationHooksForTest(): void {
+  chatThreadConnectorSelectionMutationHooks.clear();
+}
+
+async function admitChatThreadConnectorSelectionMutation(
+  tx: Tx,
+  args: { readonly orgId: string; readonly userId: string },
+): Promise<boolean> {
+  return await admitPiStableContextSubjects(tx, [
+    { subjectKind: "organization", subjectId: args.orgId },
+    { subjectKind: "user", subjectId: args.userId },
+  ]);
+}
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -167,6 +201,26 @@ async function loadOwnedChatThread(
     )
     .limit(1);
   return thread?.agentId ? { agentId: thread.agentId } : undefined;
+}
+
+async function loadLockedOwnedChatThread(
+  tx: Tx,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly chatThreadId: string;
+  },
+): Promise<OwnedChatThread | undefined> {
+  const observed = await loadOwnedChatThread(tx, args);
+  if (!observed) {
+    return undefined;
+  }
+  await chatThreadConnectorSelectionMutationHooks
+    .get()
+    .afterThreadReadBeforeAgentLock?.();
+  await lockCanonicalAgentMutation(tx, observed.agentId);
+  const current = await loadOwnedChatThread(tx, args);
+  return current?.agentId === observed.agentId ? current : undefined;
 }
 
 async function loadSelectionRows(
@@ -476,8 +530,12 @@ export async function updateChatThreadConnectorSelection(
   },
   signal: AbortSignal,
 ): Promise<UpdateChatThreadConnectorSelectionResult> {
+  await chatThreadConnectorSelectionMutationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
-    const thread = await loadOwnedChatThread(tx, args);
+    if (!(await admitChatThreadConnectorSelectionMutation(tx, args))) {
+      return { kind: "not_found" };
+    }
+    const thread = await loadLockedOwnedChatThread(tx, args);
     if (!thread) {
       return { kind: "not_found" };
     }
@@ -500,6 +558,11 @@ export async function updateChatThreadConnectorSelection(
       { ...args, target: selection.target },
       signal,
     );
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: thread.agentId,
+    });
     return {
       kind: "updated",
       selection: updated,
@@ -517,8 +580,12 @@ export async function clearChatThreadConnectorSelection(
   },
   signal: AbortSignal,
 ): Promise<ClearChatThreadConnectorSelectionResult> {
+  await chatThreadConnectorSelectionMutationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
-    const thread = await loadOwnedChatThread(tx, args);
+    if (!(await admitChatThreadConnectorSelectionMutation(tx, args))) {
+      return { kind: "not_found" };
+    }
+    const thread = await loadLockedOwnedChatThread(tx, args);
     if (!thread) {
       return { kind: "not_found" };
     }
@@ -540,6 +607,11 @@ export async function clearChatThreadConnectorSelection(
         ),
       );
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+    await invalidatePiStableContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      agentId: thread.agentId,
+    });
     return { kind: "cleared" };
   });
 }

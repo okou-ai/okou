@@ -709,22 +709,31 @@ test("An imported log does not expose debug diagnostics when debug access is dis
   expect(screen.queryByText("github-token")).not.toBeInTheDocument();
 });
 
-test("Imported activities preserve their original trigger source", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect",
-  });
+test.each([
+  { source: "automation-schedule", label: "Automation schedule" },
+  { source: "feishu", label: "Feishu" },
+  { source: "lark", label: "Lark" },
+] as const)(
+  "Imported activities preserve their $source trigger source",
+  async ({ source, label }) => {
+    await setupPage({
+      context,
+      path: "/activities/inspect",
+    });
 
-  await expect(screen.findByText("No log loaded")).resolves.toBeInTheDocument();
+    await expect(
+      screen.findByText("No log loaded"),
+    ).resolves.toBeInTheDocument();
 
-  await user.upload(getFileInput(), inspectFile("automation-schedule"));
+    await user.upload(getFileInput(), inspectFile(source));
 
-  await expect(
-    screen.findByRole("heading", { name: "Imported Analysis" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Source")).toBeInTheDocument();
-  expect(screen.getByText("Automation schedule")).toBeInTheDocument();
-});
+    await expect(
+      screen.findByRole("heading", { name: "Imported Analysis" }),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    expect(screen.getByText(label)).toBeInTheDocument();
+  },
+);
 
 test("The most recently selected activity log remains authoritative", async () => {
   await setupPage({

@@ -37,6 +37,7 @@ import { clerk$, type ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
+  admitMorningBriefNativeCollection,
   freezeMorningBriefSourceSelection,
   narrowMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
@@ -81,9 +82,12 @@ import {
   type MorningBriefLanguagePlan,
 } from "./morning-brief-language-policy";
 import { loadMorningBriefMemberLocale } from "./morning-brief-member-locale.service";
+import type { MorningBriefNativeActiveAuthority } from "./morning-brief-native-generation-admission.service";
 import {
+  morningBriefCitationLinks,
   packMorningBriefRequest,
   type MorningBriefOmissionStages,
+  type MorningBriefProviderRequest,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
 import {
@@ -107,6 +111,7 @@ import {
   MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
   MORNING_BRIEF_NO_OMISSIONS,
   MORNING_BRIEF_NO_PROVENANCE,
+  type MorningBriefDisplayLink,
   type MorningBriefSourceCollection,
   type MorningBriefSourceItem,
   type MorningBriefSourceKind,
@@ -178,6 +183,22 @@ function settledCoverage(coverage: MorningBriefCompositionCoverage): boolean {
   );
 }
 
+/**
+ * The exact ephemeral request one composition produced.
+ *
+ * The body is the byte-counted transport sent by S5. Citation links are
+ * program-owned and never accepted from provider output.
+ */
+export interface MorningBriefCompositionTransport {
+  readonly body: string;
+  readonly bodyBytes: number;
+  readonly inputDigest: string;
+  readonly citations: ReadonlyMap<string, MorningBriefDisplayLink | null>;
+  readonly inputItems: number;
+  readonly includedItems: number;
+  readonly sourceCoverage: "complete" | "partial" | "empty";
+}
+
 /** What one composition attempt produced, with no provider payload in it. */
 interface MorningBriefCompositionResult {
   readonly sources: readonly MorningBriefSourceReport[];
@@ -207,10 +228,12 @@ interface MorningBriefCompositionResult {
 }
 
 /** Why a composition produced no model request. */
-type MorningBriefCompositionOutcome =
+export type MorningBriefCompositionOutcome =
   | {
       readonly kind: "composed";
       readonly result: MorningBriefCompositionResult;
+      /** Never serialized by a route; consumed only by the generation engine. */
+      readonly transport: MorningBriefCompositionTransport;
     }
   /** Nothing was configured or everything healthy-empty: settle, send nothing. */
   | {
@@ -267,6 +290,7 @@ export const composeMorningBrief$ = command(
       readonly userId: string;
       readonly anchor: Date;
       readonly deadlineAt?: Date | null;
+      readonly nativeAuthority?: MorningBriefNativeActiveAuthority;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefCompositionOutcome> => {
@@ -410,6 +434,7 @@ interface PlannedMorningBriefRequest {
   readonly envelopeBytes: number;
   readonly totalBytes: number;
   readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+  readonly request: MorningBriefProviderRequest;
   readonly collections: readonly MorningBriefSourceCollection[];
   readonly revoked: ReadonlySet<MorningBriefSourceKind>;
 }
@@ -478,6 +503,20 @@ function finishPlannedComposition(
       language: planned.language,
       request: requestReport(planned),
     },
+    transport: {
+      body: planned.request.body,
+      bodyBytes: planned.request.bodyBytes,
+      inputDigest: planned.request.inputDigest,
+      citations: morningBriefCitationLinks(planned.allocation.items),
+      inputItems: planned.collections.reduce((total, collection) => {
+        return total + collection.items.length;
+      }, 0),
+      includedItems: planned.allocation.items.length,
+      sourceCoverage: aggregateCoverage(
+        planned.collections,
+        planned.allocation.omittedItems,
+      ),
+    },
   };
 }
 
@@ -534,6 +573,7 @@ async function admitMorningBriefAttempt(
       readonly orgId: string;
       readonly userId: string;
       readonly anchor: Date;
+      readonly nativeAuthority?: MorningBriefNativeActiveAuthority;
     };
     readonly phaseDeadlineAt: Date;
     readonly phaseDeadline: MorningBriefSourceDeadline;
@@ -548,17 +588,22 @@ async function admitMorningBriefAttempt(
   if (before) {
     return before;
   }
-  const admitted = await admitMorningBriefCollection(
-    {
-      db: input.db,
-      clerk: input.clerk,
-      orgId: input.args.orgId,
-      userId: input.args.userId,
-      anchor: input.args.anchor,
-      deadline: input.phaseDeadline,
-    },
-    morningBriefPhaseSignal(signal, input.phaseDeadlineAt),
-  );
+  const admissionArgs = {
+    db: input.db,
+    clerk: input.clerk,
+    orgId: input.args.orgId,
+    userId: input.args.userId,
+    anchor: input.args.anchor,
+    deadline: input.phaseDeadline,
+  };
+  const phaseSignal = morningBriefPhaseSignal(signal, input.phaseDeadlineAt);
+  const admitted =
+    input.args.nativeAuthority === undefined
+      ? await admitMorningBriefCollection(admissionArgs, phaseSignal)
+      : await admitMorningBriefNativeCollection(
+          { ...admissionArgs, authority: input.args.nativeAuthority },
+          phaseSignal,
+        );
   signal.throwIfAborted();
   const after = morningBriefExpired(input.phaseDeadlineAt, "admission");
   if (after) {
@@ -632,11 +677,12 @@ function unsettledSources(
   );
 }
 
-/** The measured request one model call would receive, with no evidence in it. */
+/** The measured request one model call receives, with no evidence text. */
 function requestReport(planned: {
   readonly envelopeBytes: number;
   readonly totalBytes: number;
   readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+  readonly request: MorningBriefProviderRequest;
 }): NonNullable<MorningBriefCompositionResult["request"]> {
   return {
     envelopeBytes: planned.envelopeBytes,
@@ -645,7 +691,7 @@ function requestReport(planned: {
     items: planned.allocation.items.length,
     omittedItems: planned.allocation.omittedItems,
     omittedBytes: planned.allocation.omittedBytes,
-    digest: morningBriefEvidenceDigest(planned.allocation.items),
+    digest: planned.request.inputDigest,
   };
 }
 
@@ -921,6 +967,7 @@ const planMorningBriefRequest$ = command(
         readonly envelopeBytes: number;
         readonly totalBytes: number;
         readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+        readonly request: MorningBriefProviderRequest;
         /** The final collections, with any withdrawn source's day removed. */
         readonly collections: readonly MorningBriefSourceCollection[];
         readonly revoked: ReadonlySet<MorningBriefSourceKind>;
@@ -1028,12 +1075,16 @@ const planMorningBriefRequest$ = command(
     if (beforeCommit) {
       return beforeCommit;
     }
+    if (replanned.request === null) {
+      throw new Error("Morning Brief composition planned without a request");
+    }
     return {
       kind: "planned",
       language,
       envelopeBytes: replanned.envelopeBytes,
       totalBytes: replanned.totalBytes,
       allocation: replanned.allocation,
+      request: replanned.request,
       collections,
       revoked,
     };
@@ -1203,11 +1254,32 @@ async function proveRetainedAuthority(
   return { kind: "withdrawn" };
 }
 
+/** Aggregate the complete composition's truthful source coverage. */
+function aggregateCoverage(
+  collections: readonly MorningBriefSourceCollection[],
+  omittedItems: number,
+): "complete" | "partial" | "empty" {
+  const bounded = collections.some((collection) => {
+    return (
+      collection.coverage === "partial" || collection.coverage === "failed"
+    );
+  });
+  if (bounded || omittedItems > 0) {
+    return "partial";
+  }
+  return collections.some((collection) => {
+    return collection.items.length > 0;
+  })
+    ? "complete"
+    : "empty";
+}
+
 /** One sized request: the fixed envelope, the evidence that fits, the total. */
 interface MorningBriefAllocated {
   readonly envelopeBytes: number;
   readonly totalBytes: number;
   readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+  readonly request: MorningBriefProviderRequest | null;
 }
 
 /** The sources whose material the current request would actually release. */
@@ -1235,6 +1307,8 @@ function allocateForCollections(
     envelopeBytes: packed.envelopeBytes,
     totalBytes: packed.totalBytes,
     allocation: packed.allocation,
+    request:
+      packed.allocation.items.length === 0 ? null : packed.providerRequest,
   };
 }
 

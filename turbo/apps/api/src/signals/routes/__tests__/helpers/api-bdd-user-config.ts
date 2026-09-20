@@ -5,7 +5,7 @@ import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   userModelPreferenceContract,
   type UpdateUserModelPreferenceRequest,
@@ -255,7 +255,7 @@ export function createUserConfigBddApi(context: TestContext) {
       agentId: string,
     ): Promise<{ readonly enabledConnectorSlugs: string[] }> {
       const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userConnectorsContract,
+        userBuiltinConnectorsContract,
       );
       const response = await accept(
         client.get({
@@ -273,7 +273,7 @@ export function createUserConfigBddApi(context: TestContext) {
       statuses: readonly (200 | 401 | 403 | 404)[],
     ) {
       const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userConnectorsContract,
+        userBuiltinConnectorsContract,
       );
       return await accept(
         client.get({
@@ -284,14 +284,14 @@ export function createUserConfigBddApi(context: TestContext) {
       );
     },
 
-    async updateUserConnectors(
+    async updateUserBuiltinConnectors(
       credential: Credential,
       agentId: string,
       enabledConnectorSlugs: readonly string[],
       operation?: "replace" | "add" | "remove",
     ): Promise<{ readonly enabledConnectorSlugs: string[] }> {
       const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userConnectorsContract,
+        userBuiltinConnectorsContract,
       );
       const body =
         operation === undefined
@@ -316,7 +316,7 @@ export function createUserConfigBddApi(context: TestContext) {
       operation?: "replace" | "add" | "remove",
     ) {
       const client = setupAppWithRoutes({ context, routes: userConfigRoutes })(
-        userConnectorsContract,
+        userBuiltinConnectorsContract,
       );
       const body =
         operation === undefined

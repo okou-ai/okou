@@ -124,6 +124,20 @@ async function openHtmlViewer(): Promise<void> {
   ).resolves.toHaveAttribute("src", previewSrc);
 }
 
+test("fullscreen is last in the artifact icon actions", async () => {
+  await openHtmlViewer();
+
+  const share = button("Share");
+  const download = button("Download options");
+  const fullscreen = button("Enter fullscreen");
+  expect(share.compareDocumentPosition(download)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(download.compareDocumentPosition(fullscreen)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
 test.each(["unsupported", "denied"] as const)(
   "fullscreen hides the header and offers an exit when the browser API is %s",
   async (mode) => {

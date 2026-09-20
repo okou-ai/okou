@@ -159,7 +159,7 @@ describe("okou generate video command", () => {
     });
   });
 
-  it("publishes a generated video using the selected public URL", async () => {
+  it("publishes a generated video while returning its stable App URL", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
     const artifact = serveGenerationVisibility("video.mp4", "public");
@@ -186,15 +186,15 @@ describe("okou generate video command", () => {
       "public",
       "--json",
     ]);
-    expect(
-      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
-    ).toMatchObject({
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
       url: artifact.url,
       ownerUrl: artifact.ownerUrl,
       visibility: "public",
       previewMarkdownBlock: `![${VIDEO_RESULT.filename}](<${artifact.url}>)`,
       artifactPresentationContext: expect.not.stringContaining("upload-file"),
     });
+    expect(output).not.toContain(artifact.sharingUrl);
   });
 
   it("carries template visibility only to the final built-in video command", async () => {

@@ -12,7 +12,6 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { avatarTemplateStylePresetId } from "@okouai/core/avatar-template";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -25,12 +24,10 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createChatEventsFixture,
   type PromptMessage,
   userMessageWithTemplate,
-  requireOrgId,
   userMessages,
   eventBackedContents,
   assistantEvent,
@@ -54,192 +51,6 @@ const {
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: generation templates and attachments", () => {
-  const introVideoTemplate: GenerationTemplateRequest = {
-    type: "intro-video",
-    selection: {
-      options: {
-        style: {
-          kind: "catalog",
-          style: {
-            id: "minimalism",
-            name: "Minimalism",
-            tags: ["iconic-artist"],
-            aspectRatio: "16:9",
-          },
-        },
-        avatar: { kind: "none" },
-        voice: { kind: "none" },
-      },
-    },
-  };
-
-  it("gates intro video template sends with the rollout override while preserving ordinary video", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const scopedActor = { ...actor, orgId: requireOrgId(actor) };
-    await updateFeatureSwitchesForUser(context, scopedActor, {
-      [FeatureSwitchKey.IntroVideo]: false,
-    });
-    const ordinary = VIDEO_TEMPLATE_ITEMS[0]!;
-    const ordinaryTemplate: GenerationTemplateRequest = {
-      type: "video",
-      selection: { stylePresetId: ordinary.id },
-    };
-    for (const templates of [
-      [introVideoTemplate],
-      [ordinaryTemplate, introVideoTemplate],
-    ]) {
-      const rejected = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: "Explain the product",
-          userMessage: {
-            version: 1,
-            parts: [
-              { type: "text", text: "Explain the product" },
-              ...templates.map((template) => {
-                return {
-                  type: "template" as const,
-                  titleSnapshot: "Selected video",
-                  template,
-                };
-              }),
-            ],
-          },
-        },
-        [400],
-      );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.message).toBe("Intro video is not available");
-    }
-    const events = await chat.requestThreadEvents(actor, {}, [200]);
-    if (events.status !== 200) {
-      throw new Error("Expected thread events to load");
-    }
-    expect(events.body.events).toStrictEqual([]);
-    const video = await sendChatRun(actor, {
-      agentId,
-      prompt: "Make a creative scene",
-      template: ordinaryTemplate,
-    });
-    expect(
-      (await api.readRun(actor, video.runId)).appendSystemPrompt,
-    ).toContain(ordinary.id);
-    await cancelChatRun(actor, video.runId);
-
-    await updateFeatureSwitchesForUser(context, scopedActor, {
-      [FeatureSwitchKey.IntroVideo]: true,
-    });
-
-    const malformed = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "Explain it",
-        userMessage: userMessageWithTemplate("Explain it", {
-          type: "intro-video",
-          selection: {},
-        }),
-      },
-      [400],
-    );
-    expectApiError(malformed.body);
-    expect(malformed.body.error.message).toBe(
-      "Intro video settings are missing",
-    );
-    const explained = await sendChatRun(actor, {
-      agentId,
-      prompt: "Explain the product",
-      template: introVideoTemplate,
-    });
-    const prompt = (await api.readRun(actor, explained.runId))
-      .appendSystemPrompt;
-    expect(prompt).toContain("Use the $intro-video skill");
-    expect(prompt).toContain("- HeyGen style: Minimalism (minimalism)");
-    expect(prompt).toContain("- HeyGen style preview aspect ratio: 16:9");
-    expect(prompt).toContain("- Avatar: No avatar");
-    expect(prompt).toContain("- Voice: No voiceover");
-    await cancelChatRun(actor, explained.runId);
-  }, 90_000);
-
-  it.each(["queued dispatch", "active input"] as const)(
-    "rechecks intro video access before %s",
-    async (delivery) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const scopedActor = { ...actor, orgId: requireOrgId(actor) };
-      await updateFeatureSwitchesForUser(context, scopedActor, {
-        [FeatureSwitchKey.IntroVideo]: true,
-      });
-      const active = await sendChatRun(actor, {
-        agentId,
-        prompt: "Start the conversation",
-      });
-      const claimed = await claimChatRun(runnerGroup, active.runId);
-      const eventId = randomUUID();
-      await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: active.threadId,
-          clientEventId: eventId,
-          prompt: "Explain the product",
-          userMessage: userMessageWithTemplate(
-            "Explain the product",
-            introVideoTemplate,
-          ),
-        },
-        [201],
-      );
-      await updateFeatureSwitchesForUser(context, scopedActor, {
-        [FeatureSwitchKey.IntroVideo]: false,
-      });
-      context.mocks.axiom.ingest.mockClear();
-      if (delivery === "active input") {
-        const reserved = await api.reserveRunnerActiveInputs(
-          claimed.claim.sandboxToken,
-          active.runId,
-        );
-        if (reserved.outcome !== "reserved") {
-          throw new Error("Expected the active input to be reserved");
-        }
-        expect(reserved.prompt).toContain("Explain the product");
-        expect(reserved.prompt).not.toContain("Use the $intro-video skill");
-        await cancelChatRun(actor, active.runId);
-        return;
-      }
-      await completeChatRunOk(active.runId, claimed.sandboxHeaders);
-      await flushWaitUntilForTest();
-      const messages = await waitForThreadMessages(
-        actor,
-        active.threadId,
-        (items) => {
-          return userMessages(items).some((message) => {
-            return (
-              message.revokesEventId === eventId &&
-              typeof message.runId === "string"
-            );
-          });
-        },
-      );
-      const next = userMessages(messages.events).find((message) => {
-        return (
-          message.revokesEventId === eventId &&
-          typeof message.runId === "string"
-        );
-      });
-      if (!next?.runId) {
-        throw new Error("Expected the queued input to dispatch");
-      }
-      const run = await api.readRun(actor, next.runId);
-      expect(run.prompt).toContain("Explain the product");
-      expect(run.appendSystemPrompt).not.toContain(
-        "Use the $intro-video skill",
-      );
-      await cancelChatRun(actor, next.runId);
-    },
-    90_000,
-  );
-
   it("uses the userMessage document for the runtime prompt", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

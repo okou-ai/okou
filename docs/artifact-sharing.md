@@ -16,7 +16,9 @@ and multipart uploads), integration input/output files, browser screenshots,
 Social downloads, and generated preview images use the private artifact bucket.
 The upload purpose is not a storage-policy selector. Private objects have an
 ownership record with `metadata.storage: "private-artifact-v1"`, the bucket and
-object key, and a stable ten-character `/artifacts/` reference. Missing private configuration or
+object key, and a stable ten-character reference. Persisted URL fields and API
+responses qualify that reference with the configured `APP_URL`, for example
+`https://app.okou.ai/artifacts/abc123def4.pdf`. Missing private configuration or
 bytes never falls back to a public write or public lookup.
 
 Reads authorize the recorded owner and organization and use the stored location,
@@ -29,8 +31,9 @@ choice in their request snapshot; older jobs without that field remain public.
 
 Web previews, Agent downloads, image recognition, template import/preview, and
 Drive sync resolve the stored location. Providers that fetch bytes receive
-temporary signed URLs; durable records retain the stable reference. Teams and
-GitHub message links to new private files use the authenticated App URL.
+temporary signed URLs; durable URL fields retain the complete authenticated App
+URL while storage metadata retains the host-independent ten-character reference.
+Teams and GitHub message links to new private files use that same App URL.
 Conversation sharing copies private attachment bytes into private snapshots
 controlled by the conversation's existing share policy, including when creation
 has subsequently been disabled. Reattaching an existing output preserves its
@@ -109,10 +112,11 @@ With `privateArtifacts` enabled, new artifacts default to `only-me`. Omitting
 the option preserves the existing creation flow, including legacy behavior when
 the switch is off. An explicit option requires the switch and a compatible API;
 it is never silently ignored. `org` and `public` share the completed artifact
-through the same owner endpoints as `okou artifact`, and text, JSON, and Markdown
-outputs use the returned audience-specific URL. Explicit `only-me` leaves a new
-private artifact unshared. For hosted sites it does not revoke an older version's
-existing share; use `okou artifact --visibility only-me` to revoke that share.
+through the same owner endpoints as `okou artifact`. Text, JSON, and Markdown
+outputs always use the stable App artifact URL for the created artifact rather
+than an audience-specific delivery alias. Explicit `only-me` leaves a new
+private artifact unshared and does not revoke another artifact's existing share;
+use `okou artifact --visibility only-me` to revoke that share.
 
 ```bash
 okou web upload-file -f report.pdf --visibility org
@@ -126,8 +130,9 @@ live switch before accepting bytes or starting paid generation and capture that
 same private storage policy for the operation. An older API rejects the new
 route rather than ignoring an unknown request field and creating public bytes.
 Old CLI requests keep using existing routes, and new CLI commands without the
-option remain compatible with old APIs. No rollout activation or storage
-migration is part of this change.
+option remain compatible with old APIs. The URL cutover backfills hostless
+staff-only database records but does not move object bytes, activate the rollout
+switch, or change access policy.
 
 If creation succeeds but sharing fails, the command exits unsuccessfully and
 returns the created artifact's owner URL plus a read-state recovery command.
@@ -152,15 +157,18 @@ are not management identities.
 Without `--visibility`, the command reads the current visibility and URL without
 changing permissions. Setting `only-me`, `org`, or `public` uses the existing API
 values `private`, `organization`, and `public`. The API returns a stable
-`ownerUrl` for the requested artifact version in addition to the existing share
-URL fields. The CLI returns that owner URL for `only-me`, and the existing share
-URL for `org` or `public`, in both text and JSON output. Historical organization
-shares without a short alias still return no share URL until explicitly updated.
+`ownerUrl` for the requested artifact in addition to the existing share URL
+fields. The CLI always returns that App artifact URL in text, JSON, and Markdown
+output, including after organization or Public sharing. Public CDN and
+hosted-site delivery aliases remain API delivery details and are not printed for
+these private-artifact results. Historical organization shares therefore still
+have a stable CLI URL even when they do not yet have a short audience alias.
 
-An explicit visibility change checks the selected target, version, audience and
-allocated alias before writing; an already shared version returns its current
-link. The Share button sees the same policy and reuses that link. A newer hosted
-version remains private until explicitly selected for sharing. Setting an
+An explicit visibility change checks the selected target, audience, and
+allocated alias before writing; an already shared artifact does not write again.
+The Share button sees the same policy and reuses its audience delivery alias,
+while the CLI returns the stable App artifact URL. Every new hosted publication
+remains private until explicitly shared. Setting an
 already private artifact to `only-me` returns its owner URL without creating a grant. There is one active
 audience, so switching Public to organization or private revokes the old public
 link; later Public sharing allocates a new public token. Previously issued
@@ -202,7 +210,7 @@ live sharing policy and independent artifact snapshot.
 If an update fails or its response is lost, rerun without `--visibility` before retrying: the
 policy write may already have succeeded. Deploy the API and CLI together before
 using these commands; older run tokens lack the new capabilities and require a
-new run. No storage migration or host Worker protocol change is required.
+new run. No object-storage migration or host Worker protocol change is required.
 
 ## Standalone artifact viewer
 

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { apiClient$ } from "../../api-client.ts";
 import { withCleanup } from "../../utils.ts";
 import { accept } from "../../../lib/accept.ts";
@@ -118,7 +118,7 @@ export const saveAgentConnectors$ = command(
       throw new Error("No agent detail loaded");
     }
 
-    const client = get(apiClient$)(userConnectorsContract);
+    const client = get(apiClient$)(userBuiltinConnectorsContract);
     await withCleanup(
       (async () => {
         await accept(

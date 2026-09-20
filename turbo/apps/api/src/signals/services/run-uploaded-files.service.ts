@@ -43,6 +43,7 @@ interface RecordHostedSiteArtifactArgs {
   readonly siteId: string;
   readonly deploymentId: string;
   readonly deploymentVersion: number | null;
+  readonly immutableContent: boolean;
   readonly site: string;
   readonly publicSlug: string;
   readonly aliasUrl: string | undefined;
@@ -162,7 +163,7 @@ export const recordHostedSiteArtifact$ = command(
     const externalId =
       args.deploymentVersion === null ? args.url : args.deploymentId;
     const filename =
-      args.deploymentVersion === null
+      args.immutableContent || args.deploymentVersion === null
         ? `${args.publicSlug}.html`
         : `${args.site}-v${args.deploymentVersion}.html`;
 

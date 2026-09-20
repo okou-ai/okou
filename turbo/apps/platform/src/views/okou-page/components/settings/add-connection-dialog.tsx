@@ -32,33 +32,33 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../../../signals/connector-domain.ts";
 import {
-  connectFlowConnectorSlug$,
-  pollingOAuthAuthCodeConnectorSlug$,
-  connectorExternalCodeState$,
-  connectorOAuthDeviceAuthState$,
-  connectConnectorOAuthAuthCodeAndSettle$,
-  connectConnectorOAuthDeviceAuthAndSettle$,
-  connectConnectorNoAuthAndSettle$,
-  connectConnectorExternalCode$,
-  completeConnectorExternalCodeAndSettle$,
-  openConnectorExternalCodeAuthorizationPage$,
-  openConnectorOAuthDeviceAuthVerificationPage$,
-  clearConnectorExternalCode$,
-  clearConnectorOAuthDeviceAuth$,
-  connectorOAuthDeviceAuthStartOptionValuesFor$,
-  setConnectorOAuthDeviceAuthStartOptionValue$,
-  setConnectorExternalCodeAuthorizationCode$,
-  runConnectorConnectSuccess$,
-  submitManualGrant$,
-  setManualGrantFormValue$,
-  manualGrantFormValuesFor$,
-  connectorCurrentConnectionStatus,
-  connectorExpiryCountdownText,
+  builtinConnectFlowSlug$,
+  builtinPollingOAuthAuthCodeSlug$,
+  builtinConnectorExternalCodeState$,
+  builtinConnectorOAuthDeviceAuthState$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
+  connectBuiltinConnectorNoAuthAndSettle$,
+  connectBuiltinConnectorExternalCode$,
+  completeBuiltinConnectorExternalCodeAndSettle$,
+  openBuiltinConnectorExternalCodeAuthorizationPage$,
+  openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
+  clearBuiltinConnectorExternalCode$,
+  clearBuiltinConnectorOAuthDeviceAuth$,
+  builtinConnectorOAuthDeviceAuthStartOptionValuesFor$,
+  setBuiltinConnectorOAuthDeviceAuthStartOptionValue$,
+  setBuiltinConnectorExternalCodeAuthorizationCode$,
+  runBuiltinConnectorConnectSuccess$,
+  submitBuiltinManualGrant$,
+  setBuiltinManualGrantFormValue$,
+  builtinManualGrantFormValuesFor$,
+  builtinConnectorCurrentConnectionStatus,
+  builtinConnectorExpiryCountdownText,
   manualGrantInputValuesForMethod,
-  type ConnectorConnectionResult,
+  type BuiltinConnectorConnectionResult,
   type ConnectorConnectSuccess,
-  type ConnectorExternalCodeState,
-  type ConnectorOAuthDeviceAuthState,
+  type BuiltinConnectorExternalCodeState,
+  type BuiltinConnectorOAuthDeviceAuthState,
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { hasTokenInputValue } from "../../../../signals/okou-page/settings/token-input.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
@@ -83,7 +83,7 @@ import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 // ---------------------------------------------------------------------------
 
 function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
-  const connectionStatus = connectorCurrentConnectionStatus(item);
+  const connectionStatus = builtinConnectorCurrentConnectionStatus(item);
   if (connectionStatus === "reconnect-required") {
     return i18n.t(($) => {
       return $.connectors.card.connectionExpired;
@@ -94,7 +94,7 @@ function connectedStatusText(item: PlatformConnectorCatalogStatusItem): string {
       return $.connectors.card.updatePermissions;
     });
   }
-  const expiryText = connectorExpiryCountdownText(item);
+  const expiryText = builtinConnectorExpiryCountdownText(item);
   if (expiryText) {
     return expiryText;
   }
@@ -136,7 +136,7 @@ type SubmitManualGrantFn = (
   inputValues: Record<string, string>,
   options: PostConnectOptions,
   signal: AbortSignal,
-) => Promise<ConnectorConnectionResult | false>;
+) => Promise<BuiltinConnectorConnectionResult | false>;
 
 type ConnectOAuthAuthCodeAndSettleFn = (
   connectorSlug: ConnectorSlug,
@@ -228,7 +228,7 @@ type ConnectMethodContentEntry = {
 };
 
 function connectorOAuthDeviceAuthFlowIsActive(
-  state: ConnectorOAuthDeviceAuthState,
+  state: BuiltinConnectorOAuthDeviceAuthState,
   connectorSlug: ConnectorSlug,
 ): boolean {
   return (
@@ -240,7 +240,7 @@ function connectorOAuthDeviceAuthFlowIsActive(
 }
 
 function connectorExternalCodeFlowIsActive(
-  state: ConnectorExternalCodeState,
+  state: BuiltinConnectorExternalCodeState,
   connectorSlug: ConnectorSlug,
 ): boolean {
   return (
@@ -250,10 +250,10 @@ function connectorExternalCodeFlowIsActive(
 }
 
 function connectorOAuthDeviceAuthStateForMethod(
-  state: ConnectorOAuthDeviceAuthState,
+  state: BuiltinConnectorOAuthDeviceAuthState,
   connectorSlug: ConnectorSlug,
   authMethod: ConnectorAuthMethodId,
-): ConnectorOAuthDeviceAuthState | null {
+): BuiltinConnectorOAuthDeviceAuthState | null {
   if (state.connectorSlug !== connectorSlug || state.status === "idle") {
     return null;
   }
@@ -261,10 +261,10 @@ function connectorOAuthDeviceAuthStateForMethod(
 }
 
 function connectorExternalCodeStateForMethod(
-  state: ConnectorExternalCodeState,
+  state: BuiltinConnectorExternalCodeState,
   connectorSlug: ConnectorSlug,
   authMethod: ConnectorAuthMethodId,
-): ConnectorExternalCodeState | null {
+): BuiltinConnectorExternalCodeState | null {
   if (state.connectorSlug !== connectorSlug || state.status === "idle") {
     return null;
   }
@@ -299,9 +299,9 @@ function ManualGrantForm({
   submitting: boolean;
 }) {
   const { t } = useTranslation();
-  const setFormValue = useSet(setManualGrantFormValue$);
+  const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
-  const manualGrantFormValuesFor = useGet(manualGrantFormValuesFor$);
+  const manualGrantFormValuesFor = useGet(builtinManualGrantFormValuesFor$);
   const fieldValues = manualGrantFormValuesFor(connectorSlug);
 
   const allFilled = method.manualFields.every((field) => {
@@ -400,9 +400,9 @@ function useConnectorProgressContent(
     readonly external: boolean;
   },
 ) {
-  const pollingConnectorSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const deviceAuthState = useGet(connectorOAuthDeviceAuthState$);
-  const externalCodeState = useGet(connectorExternalCodeState$);
+  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const deviceAuthState = useGet(builtinConnectorOAuthDeviceAuthState$);
+  const externalCodeState = useGet(builtinConnectorExternalCodeState$);
   const isPolling = pollingConnectorSlug === connectorSlug;
   const settling =
     pending.browser ||
@@ -506,7 +506,7 @@ function OAuthAuthCodeConnectMethodContent(props: ConnectMethodContentProps) {
 
 function getOAuthDeviceAuthStatusText(
   state: Extract<
-    ConnectorOAuthDeviceAuthState,
+    BuiltinConnectorOAuthDeviceAuthState,
     { readonly status: "pending" | "polling" }
   >,
 ): string {
@@ -530,7 +530,7 @@ function OAuthDeviceAuthCodePanel({
   onOpenVerificationPage,
 }: {
   state: Extract<
-    ConnectorOAuthDeviceAuthState,
+    BuiltinConnectorOAuthDeviceAuthState,
     { readonly status: "pending" | "polling" }
   >;
   onOpenVerificationPage: () => void;
@@ -781,17 +781,17 @@ function OAuthDeviceAuthStartContent({
 function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const state = useGet(connectorOAuthDeviceAuthState$);
+  const state = useGet(builtinConnectorOAuthDeviceAuthState$);
   const openVerificationPage = useSet(
-    openConnectorOAuthDeviceAuthVerificationPage$,
+    openBuiltinConnectorOAuthDeviceAuthVerificationPage$,
   );
   const setStartOptionValueCommand = useSet(
-    setConnectorOAuthDeviceAuthStartOptionValue$,
+    setBuiltinConnectorOAuthDeviceAuthStartOptionValue$,
   );
   const startOptions =
     props.method.grantKind === "device-auth" ? props.method.startOptions : [];
   const connectorOAuthDeviceAuthStartOptionValuesFor = useGet(
-    connectorOAuthDeviceAuthStartOptionValuesFor$,
+    builtinConnectorOAuthDeviceAuthStartOptionValuesFor$,
   );
   const startOptionValues = connectorOAuthDeviceAuthStartOptionValuesFor(
     props.item.slug,
@@ -899,7 +899,7 @@ function OAuthDeviceAuthConnectMethodContent(props: ConnectMethodContentProps) {
 }
 
 type PendingConnectorExternalCodeState = Extract<
-  ConnectorExternalCodeState,
+  BuiltinConnectorExternalCodeState,
   { readonly status: "pending" }
 >;
 type ExternalCodeButtonHandler = (event: unknown) => void;
@@ -914,7 +914,7 @@ function ExternalCodeStartContent({
 }: {
   connectorLabel: string;
   method: PublicConnectorCatalogAuthMethodDetail;
-  current: ConnectorExternalCodeState | null;
+  current: BuiltinConnectorExternalCodeState | null;
   starting: boolean;
   onStart: ExternalCodeButtonHandler;
 }) {
@@ -1047,10 +1047,10 @@ function ExternalCodePendingContent({
 function ExternalCodeConnectMethodContent(props: ConnectMethodContentProps) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const state = useGet(connectorExternalCodeState$);
-  const setCode = useSet(setConnectorExternalCodeAuthorizationCode$);
+  const state = useGet(builtinConnectorExternalCodeState$);
+  const setCode = useSet(setBuiltinConnectorExternalCodeAuthorizationCode$);
   const openAuthorizationPage = useSet(
-    openConnectorExternalCodeAuthorizationPage$,
+    openBuiltinConnectorExternalCodeAuthorizationPage$,
   );
   const current = connectorExternalCodeStateForMethod(
     state,
@@ -1207,6 +1207,9 @@ function getConnectMethodContentComponent(
     case "auth-code": {
       return OAuthAuthCodeConnectMethodContent;
     }
+    case "automatic": {
+      return OAuthAuthCodeConnectMethodContent;
+    }
     case "openid-auth": {
       return OAuthAuthCodeConnectMethodContent;
     }
@@ -1222,7 +1225,6 @@ function getConnectMethodContentComponent(
     case "none": {
       return NoAuthConnectMethodContent;
     }
-    case "automatic":
     case "managed": {
       return null;
     }
@@ -1393,20 +1395,21 @@ function ConnectModalContent({
   reconnectAuthMethod,
 }: ConnectModalContentProps) {
   const [settleLoadable, connectOAuthAuthCodeAndSettleCommand] = useLoadableSet(
-    connectConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
   const [deviceAuthLoadable, connectOAuthDeviceAuthAndSettle] = useLoadableSet(
-    connectConnectorOAuthDeviceAuthAndSettle$,
+    connectBuiltinConnectorOAuthDeviceAuthAndSettle$,
   );
   const [, connectExternalCodeCommand] = useLoadableSet(
-    connectConnectorExternalCode$,
+    connectBuiltinConnectorExternalCode$,
   );
   const [completeExternalCodeLoadable, completeExternalCodeAndSettleCommand] =
-    useLoadableSet(completeConnectorExternalCodeAndSettle$);
-  const [manualGrantLoadable, submitManualGrantCommand] =
-    useLoadableSet(submitManualGrant$);
+    useLoadableSet(completeBuiltinConnectorExternalCodeAndSettle$);
+  const [manualGrantLoadable, submitManualGrantCommand] = useLoadableSet(
+    submitBuiltinManualGrant$,
+  );
   const [noAuthLoadable, connectNoAuthAndSettleCommand] = useLoadableSet(
-    connectConnectorNoAuthAndSettle$,
+    connectBuiltinConnectorNoAuthAndSettle$,
   );
   const submitManualGrant: SubmitManualGrantFn = async (
     connectorSlug,
@@ -1420,7 +1423,9 @@ function ConnectModalContent({
       signal,
     );
   };
-  const [, runConnectSuccess] = useLoadableSet(runConnectorConnectSuccess$);
+  const [, runConnectSuccess] = useLoadableSet(
+    runBuiltinConnectorConnectSuccess$,
+  );
   const externalCodeCompleting =
     completeExternalCodeLoadable.state === "loading";
   const manualGrantSubmitting = manualGrantLoadable.state === "loading";
@@ -1533,12 +1538,16 @@ export function ConnectModal({
   accountMode?: ConnectorAccountConnectMode;
   reconnectAuthMethod?: ConnectorAuthMethodId;
 }) {
-  const clearConnectorOAuthDeviceAuth = useSet(clearConnectorOAuthDeviceAuth$);
-  const clearConnectorExternalCode = useSet(clearConnectorExternalCode$);
-  const connectFlowConnectorSlug = useGet(connectFlowConnectorSlug$);
-  const pollingConnectorSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const connectorOAuthDeviceAuthState = useGet(connectorOAuthDeviceAuthState$);
-  const connectorExternalCodeState = useGet(connectorExternalCodeState$);
+  const clearConnectorOAuthDeviceAuth = useSet(
+    clearBuiltinConnectorOAuthDeviceAuth$,
+  );
+  const clearConnectorExternalCode = useSet(clearBuiltinConnectorExternalCode$);
+  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
+  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectorOAuthDeviceAuthState = useGet(
+    builtinConnectorOAuthDeviceAuthState$,
+  );
+  const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const connectionAttempt = useGet(connectorConnectionAttempt$);
   const { t } = useTranslation();

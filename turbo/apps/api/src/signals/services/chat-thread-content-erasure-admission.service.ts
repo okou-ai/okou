@@ -167,11 +167,11 @@ function sameChatThreadContentIdentity(
  *
  * `agents` carries the `(id, org_id, owner)` unique key, so KEY SHARE conflicts
  * with an owner or organization transfer and with Agent deletion, which
- * cascades this thread. `chat_threads` has no unique key over `user_id` and no
- * production writer moves it; its KEY SHARE conflicts with the FOR UPDATE that
- * `deleteChatThread$` takes before removing the row. Neither conflicts with the
- * FOR NO KEY UPDATE that this transaction's own title or draft UPDATE takes, so
- * unrelated draft and rename traffic on other threads is never serialized.
+ * cascades this thread. The default thread KEY SHARE conflicts with the FOR
+ * UPDATE that `deleteChatThread$` takes before removing the row, while remaining
+ * compatible with this transaction's own title or draft FOR NO KEY UPDATE.
+ * Callers that explicitly request UPDATE serialize at this first thread lock;
+ * they do not acquire KEY SHARE and upgrade later.
  *
  * Re-reading the same content-free identity under the retained locks turns a
  * transfer committed between resolution and lock acquisition into a rollback,
@@ -181,6 +181,7 @@ function sameChatThreadContentIdentity(
 async function lockChatThreadContentIdentity(
   tx: Tx,
   identity: ChatThreadContentIdentity,
+  threadLock: "key share" | "update",
 ): Promise<ChatThreadContentIdentity | null> {
   if (identity.agentId !== null) {
     await tx
@@ -193,7 +194,7 @@ async function lockChatThreadContentIdentity(
     .select({ id: chatThreads.id })
     .from(chatThreads)
     .where(eq(chatThreads.id, identity.chatThreadId))
-    .for("key share");
+    .for(threadLock);
   const current = await loadChatThreadContentIdentity(
     tx,
     identity.chatThreadId,
@@ -289,6 +290,12 @@ export async function withChatThreadContentAdmission<T>(
  * admission -> Agent and thread identity locks -> revalidation -> the write,
  * with every barrier retained through COMMIT.
  *
+ * The default thread lock remains KEY SHARE for existing writers. A caller that
+ * must later take UPDATE while another same-thread operation can retain KEY
+ * SHARE may opt into UPDATE here, so the first thread lock serializes before
+ * either transaction can retain a weaker lock and then attempt an incompatible
+ * upgrade. The opt-in changes neither subject nor Agent ordering.
+ *
  * `authorize` is the caller's existing route contract expressed over the real
  * canonical identity. It runs before admission so an unauthorized request never
  * takes another account's subject locks, and it is a pure function of the
@@ -305,6 +312,7 @@ export async function withChatThreadContentWrite<T>(
   args: {
     readonly chatThreadId: string;
     readonly authorize: (identity: ChatThreadContentIdentity) => boolean;
+    readonly threadLock?: "update";
   },
   write: (tx: Tx, identity: ChatThreadContentIdentity) => Promise<T>,
   signal: AbortSignal,
@@ -325,7 +333,11 @@ export async function withChatThreadContentWrite<T>(
           if (!(await admitChatThreadContentSubjects(tx, selected))) {
             return { outcome: "closed" };
           }
-          const locked = await lockChatThreadContentIdentity(tx, selected);
+          const locked = await lockChatThreadContentIdentity(
+            tx,
+            selected,
+            args.threadLock ?? "key share",
+          );
           if (!locked) {
             return { outcome: "missing" };
           }

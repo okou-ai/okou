@@ -29,6 +29,7 @@ export const RUN_UPLOADED_FILE_SOURCES = [
   "slack",
   "teams",
   "feishu",
+  "lark",
   "email",
   "telegram",
   "agentphone",

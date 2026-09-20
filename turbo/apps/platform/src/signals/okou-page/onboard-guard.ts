@@ -22,6 +22,7 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.computerUseAuthorize,
   ROUTES.connectors,
   ROUTES.connectorSsh,
+  ROUTES.connectorVnc,
   ROUTES.directedAuthorize,
   ROUTES.directedConnect,
   ROUTES.directedReconnect,

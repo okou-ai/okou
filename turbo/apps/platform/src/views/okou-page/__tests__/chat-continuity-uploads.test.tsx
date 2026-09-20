@@ -82,7 +82,7 @@ function sentFilenames(
   });
 }
 
-test("Attach supported files by picker or drag and drop", async () => {
+async function setupAttachmentInputMethods() {
   const thread = continuityThread(9, 1, "Attachment input methods");
   const workspace = installContinuityWorkspace(context, {
     caseId: 9,
@@ -111,8 +111,13 @@ test("Attach supported files by picker or drag and drop", async () => {
     path: `/chats/${thread.id}`,
     ...workspace.pageOptions,
   });
-
   await messageComposer();
+  return { contentTypes, transferCredentials };
+}
+
+test("Attach supported files with the file picker", async () => {
+  const { contentTypes, transferCredentials } =
+    await setupAttachmentInputMethods();
   const ordinary = new File(["# Notes"], "release-notes.md");
   const uncommon = new File(["custom"], "sample.uncommon");
   await userEvent.upload(composerFileInput(), [ordinary, uncommon]);
@@ -136,7 +141,10 @@ test("Attach supported files by picker or drag and drop", async () => {
       previewBypass: null,
     },
   ]);
+});
 
+test("Accept supported drops and reject an oversized dropped file", async () => {
+  const { contentTypes } = await setupAttachmentInputMethods();
   const dropped = new File(["drop"], "dropped.txt", { type: "text/plain" });
   const oversized = new File(["too large"], "archive.iso", {
     type: "application/octet-stream",
@@ -157,6 +165,57 @@ test("Attach supported files by picker or drag and drop", async () => {
   });
   expect(contentTypes.get("dropped.txt")).toBe("text/plain");
   expect(contentTypes.has("archive.iso")).toBeFalsy();
+});
+
+test("Complete uploads returned as absolute private Artifact URLs", async () => {
+  const thread = continuityThread(14, 1, "Absolute private upload");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 14,
+    threads: [thread],
+  });
+  const id = uploadId(14, 1);
+  const artifactUrl = "http://localhost/artifacts/abc123def4.txt";
+  const completedIds: string[] = [];
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    return respond(200, {
+      id,
+      filename: body.filename,
+      contentType: body.contentType,
+      size: body.size,
+      url: artifactUrl,
+      uploadUrl: uploadUrl(14, body.filename),
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    completedIds.push(body.id);
+    return respond(200, {
+      id,
+      filename: "private.txt",
+      contentType: "text/plain",
+      size: 7,
+      url: artifactUrl,
+    });
+  });
+  context.mocks.http.put(uploadUrl(14, "private.txt"), () => {
+    return new HttpResponse(null, { status: 200 });
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+
+  await messageComposer();
+  await userEvent.upload(
+    composerFileInput(),
+    new File(["private"], "private.txt", { type: "text/plain" }),
+  );
+  await waitFor(() => {
+    expect(fastButton("Remove private.txt")).toBeVisible();
+  });
+  expect(completedIds).toStrictEqual([id]);
 });
 
 test("Keep a pending upload with the conversation that started it", async () => {

@@ -12,7 +12,7 @@ interface IndexedDbTransactionLike {
 }
 
 interface IndexedDbTransactionDetails {
-  readonly database: "chat" | "intro_video_drafts" | "voice_drafts";
+  readonly database: "chat" | "voice_drafts";
   /** Stable operation shape only. Never include keys, ranges, or values. */
   readonly template: string;
   readonly transaction_mode: IDBTransactionMode;

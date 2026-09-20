@@ -386,27 +386,6 @@ export const webhookBuiltInGenerationJoggAiContract = c.router({
   },
 });
 
-export const webhookBuiltInGenerationHeyGenContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/webhooks/built-in-generations/heygen/:generationId",
-    pathParams: z.object({
-      generationId: z.uuid(),
-    }),
-    query: z.object({
-      token: z.string().min(1),
-    }),
-    body: c.type<string>(),
-    responses: {
-      200: thirdPartyWebhookOkSchema,
-      400: thirdPartyWebhookErrorSchema,
-      401: thirdPartyWebhookErrorSchema,
-      503: thirdPartyWebhookErrorSchema,
-    },
-    summary: "Handle HeyGen built-in generation webhooks",
-  },
-});
-
 const currentSandboxReuseMissSchema = z.enum([
   "noReuseKey",
   "poolMiss",
@@ -666,6 +645,7 @@ const matchedFirewallAuthContextSchema = z
   .object({
     name: z.string().min(1),
     apiId: z.string().min(1),
+    base: z.string().min(1).optional(),
     connectorSlug: connectorSlugSchema.optional(),
     customConnectorId: z.uuid().optional(),
     sourceId: z.uuid().optional(),

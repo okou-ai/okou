@@ -5,11 +5,7 @@ import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { webUrl } from "../../lib/web-url";
 
-type BuiltInGenerationProviderWebhookProvider =
-  | "fal"
-  | "byteplus"
-  | "minimax"
-  | "heygen";
+type BuiltInGenerationProviderWebhookProvider = "fal" | "byteplus" | "minimax";
 
 function webhookTokenPayload(args: {
   readonly provider: BuiltInGenerationProviderWebhookProvider;
@@ -129,22 +125,5 @@ export function miniMaxBuiltInGenerationWebhookUrl(args: {
   if (args.visualKey) {
     baseUrl.searchParams.set("visualKey", args.visualKey);
   }
-  return baseUrl.toString();
-}
-
-export function heyGenBuiltInGenerationWebhookUrl(args: {
-  readonly generationId: string;
-}): string {
-  const baseUrl = new URL(
-    `/api/webhooks/built-in-generations/heygen/${args.generationId}`,
-    apiBackendUrl() ?? webUrl(),
-  );
-  baseUrl.searchParams.set(
-    "token",
-    signBuiltInGenerationProviderWebhookToken({
-      provider: "heygen",
-      generationId: args.generationId,
-    }),
-  );
   return baseUrl.toString();
 }

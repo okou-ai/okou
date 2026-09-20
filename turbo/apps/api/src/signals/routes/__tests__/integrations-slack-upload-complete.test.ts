@@ -548,7 +548,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         : `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`;
       if (privateFiles) {
         expect(initialized.body.url).toMatch(
-          /^\/artifacts\/[a-z0-9]{10}\.csv$/u,
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.csv$/u,
         );
       } else {
         expect(initialized.body.url).toMatch(

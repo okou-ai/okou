@@ -15,9 +15,11 @@ import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { nowDate } from "../lib/time";
 import {
+  acknowledgeDetachedForTest,
   createDeferredPromise,
   detach,
   Mechanism,
+  onRejection,
   settleIncludingAbort,
 } from "../signals/utils";
 
@@ -77,6 +79,18 @@ export async function removeErasureSubjectsFixture(
   await db()
     .delete(accountErasureJobs)
     .where(inArray(accountErasureJobs.id, [...jobIds]));
+}
+
+/** Whether one exact test-owned erasure job still exists. */
+export async function erasureSubjectJobExistsFixture(
+  jobId: string,
+): Promise<boolean> {
+  const [job] = await db()
+    .select({ id: accountErasureJobs.id })
+    .from(accountErasureJobs)
+    .where(eq(accountErasureJobs.id, jobId))
+    .limit(1);
+  return job !== undefined;
 }
 
 /** Reassigns one Agent's owner, the change a future ownership transfer would
@@ -155,10 +169,9 @@ export interface TransactionBarrier {
     readonly statementTimeout: string;
     readonly transactionTimeout: string;
     /**
-     * Rows the chosen statement itself reported. It carries a number only in
-     * `pauseAfter` mode, where that statement has already run (and its
-     * transaction remains open when it has one), and is `null` when the barrier
-     * pauses before dispatch.
+     * Rows the chosen statement itself reported. In `pauseAfter` mode the
+     * statement has already run; commands such as COMMIT legitimately report
+     * `null`. It is also `null` when the barrier pauses before dispatch.
      */
     readonly rowCount: number | null;
   }>;
@@ -171,8 +184,10 @@ export interface TransactionBarrier {
 }
 
 /** The row count `pg` reports for an executed statement. */
-function pausedRowCount(executed: unknown): number {
-  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
+function pausedRowCount(executed: unknown): number | null {
+  const parsed = z
+    .object({ rowCount: z.number().nullable() })
+    .safeParse(executed);
   if (!parsed.success) {
     throw new Error(
       "Expected the paused statement result to carry a row count",
@@ -193,6 +208,34 @@ interface TransactionBarrierEntryDeferred {
   readonly resolve: (entry: TransactionBarrierEntry) => void;
   readonly reject: (reason?: unknown) => void;
   readonly settled: () => boolean;
+}
+
+function rejectBarrierEntry(
+  entered: TransactionBarrierEntryDeferred,
+  release: () => void,
+  error: unknown,
+): void {
+  if (!entered.settled()) {
+    entered.reject(error);
+  }
+  release();
+}
+
+function settleOwnedBarrierEntry<T>(promise: Promise<T>) {
+  acknowledgeDetachedForTest(promise);
+  return settleIncludingAbort(promise);
+}
+
+function selectedBarrierQuery(
+  args: {
+    readonly select: (queryArgs: unknown[]) => boolean;
+    readonly observe?: (queryArgs: unknown[], receiver: unknown) => void;
+  },
+  queryArgs: unknown[],
+  receiver: unknown,
+): boolean {
+  args.observe?.(queryArgs, receiver);
+  return args.select(queryArgs);
 }
 
 const transactionBarrierSettingsSchema = z.object({
@@ -255,14 +298,24 @@ async function deliverPausedCallbackQuery(args: {
     })(),
   );
   if (!paused.ok) {
-    if (!args.entered.settled()) {
-      args.entered.reject(paused.error);
-    }
-    args.release();
+    rejectBarrierEntry(args.entered, args.release, paused.error);
     Reflect.apply(args.completion, args.receiver, [paused.error]);
     return;
   }
   Reflect.apply(args.completion, args.receiver, args.callbackArgs);
+}
+
+interface DatabaseTransactionBarrierFixtureArgs<T> {
+  readonly select: (queryArgs: unknown[]) => boolean;
+  readonly stopAt: (
+    queryArgs: unknown[],
+    selectingStatement: boolean,
+    transaction: SelectedTransaction,
+  ) => boolean;
+  readonly pauseAfter?: boolean;
+  /** Observes unchanged driver calls for focused SQL/control accounting. */
+  readonly observe?: (queryArgs: unknown[], receiver: unknown) => void;
+  readonly work: (barrier: TransactionBarrier) => Promise<T>;
 }
 
 /**
@@ -299,16 +352,7 @@ async function deliverPausedCallbackQuery(args: {
  * waits forever for a stop it will never reach.
  */
 export async function withDatabaseTransactionBarrierFixture<T>(
-  args: {
-    readonly select: (queryArgs: unknown[]) => boolean;
-    readonly stopAt: (
-      queryArgs: unknown[],
-      selectingStatement: boolean,
-      transaction: SelectedTransaction,
-    ) => boolean;
-    readonly pauseAfter?: boolean;
-    readonly work: (barrier: TransactionBarrier) => Promise<T>;
-  },
+  args: DatabaseTransactionBarrierFixtureArgs<T>,
   signal: AbortSignal,
 ): Promise<T> {
   await closeDbPool();
@@ -322,7 +366,7 @@ export async function withDatabaseTransactionBarrierFixture<T>(
   }>(signal);
   // Own the entry promise even for negative observations where the selected
   // statement correctly never starts before `work` returns.
-  const enteredSettlement = settleIncludingAbort(entered.promise);
+  const enteredSettlement = settleOwnedBarrierEntry(entered.promise);
   const blocked = async () => {
     return await blockedWaiterCount((await entered.promise).pid);
   };
@@ -338,7 +382,11 @@ export async function withDatabaseTransactionBarrierFixture<T>(
   let paused = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
-      const selectingStatement = args.select(queryArgs);
+      const selectingStatement = selectedBarrierQuery(
+        args,
+        queryArgs,
+        receiver,
+      );
       if (!paused && selectingStatement && selected === undefined) {
         selected = receiver;
         statements = [];
@@ -392,18 +440,23 @@ export async function withDatabaseTransactionBarrierFixture<T>(
         };
         return execute(interceptedArgs);
       }
-      return (async () => {
-        const executed: unknown = args.pauseAfter
-          ? await execute(queryArgs)
-          : undefined;
-        const settings = await readTransactionBarrierSettings(execute);
-        entered.resolve({
-          ...settings,
-          rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
-        });
-        await released.promise;
-        return args.pauseAfter ? executed : await execute(queryArgs);
-      })();
+      return onRejection(
+        (async () => {
+          const executed: unknown = args.pauseAfter
+            ? await execute(queryArgs)
+            : undefined;
+          const settings = await readTransactionBarrierSettings(execute);
+          entered.resolve({
+            ...settings,
+            rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
+          });
+          await released.promise;
+          return args.pauseAfter ? executed : await execute(queryArgs);
+        })(),
+        (error) => {
+          rejectBarrierEntry(entered, release, error);
+        },
+      );
     },
   });
   const result = await settleIncludingAbort(

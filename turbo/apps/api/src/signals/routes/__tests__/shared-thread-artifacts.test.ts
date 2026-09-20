@@ -1330,7 +1330,10 @@ test("rejects hosted preview paths that would change the snapshot preview origin
 test("rejects hosted text that exceeds the per-file limit after rewriting", async () => {
   const f = await fixture();
   const file = await f.upload();
-  const reference = file.url.replace(/\.pdf$/u, "");
+  const reference = new URL(file.url, "https://app.okou.ai").pathname.replace(
+    /\.pdf$/u,
+    "",
+  );
   const unit = `${reference} `;
   const maxTextBytes = 4 * 1024 * 1024;
   const source = unit.repeat(

@@ -193,7 +193,7 @@ describe("okou generate source-backed artifact commands", () => {
       return skill.id;
     });
     const videoSkillIds = selectResourceCandidates(
-      "intro-video",
+      "video",
     ).candidates.skills.map((skill) => {
       return skill.id;
     });

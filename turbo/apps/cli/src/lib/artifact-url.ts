@@ -9,7 +9,7 @@ export async function assertPrivateArtifactUrl(url: string): Promise<void> {
   }
 }
 
-/** Keep durable references usable outside an app page, including CI output. */
+/** Qualify hostless responses from older APIs; complete URLs pass through. */
 export async function absoluteArtifactUrl(url: string): Promise<string> {
   if (!parseArtifactReference(url)) {
     return url;

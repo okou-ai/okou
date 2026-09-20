@@ -459,11 +459,12 @@ class TestXJsonFinalize:
         )
         response_streaming.finalize_connector_response_state(flow)
 
-        assert flow.metadata[metadata_keys.X_JSON_STATE] == {
-            "body_parsed": True,
-            "body_truncated": False,
-            "response_data_count": 1,
-        }
+        state = flow.metadata[metadata_keys.X_JSON_STATE]
+        assert state["body_parsed"] is True
+        assert state["body_truncated"] is False
+        assert state["response_data_count"] == 1
+        assert "response_result_count" not in state
+        assert "response_total_tweet_count" not in state
 
     def test_protocol_shaped_data_array_stays_within_work_limit(self, real_flow):
         flow = self._billable_x_json_flow(real_flow)
@@ -474,11 +475,11 @@ class TestXJsonFinalize:
         assert response_stream(flow)(body) == body
         response_streaming.finalize_connector_response_state(flow)
 
-        assert flow.metadata[metadata_keys.X_JSON_STATE] == {
-            "body_parsed": True,
-            "body_truncated": False,
-            "response_data_count": 3_600,
-        }
+        state = flow.metadata[metadata_keys.X_JSON_STATE]
+        assert state["body_parsed"] is True
+        assert state["body_truncated"] is False
+        assert state["response_data_count"] == 3_600
+        assert "parse_error" not in state
 
     @pytest.mark.parametrize(
         "chunk_size",
@@ -505,11 +506,11 @@ class TestXJsonFinalize:
             assert callback(chunk) == chunk
         response_streaming.finalize_connector_response_state(flow)
 
-        assert flow.metadata[metadata_keys.X_JSON_STATE] == {
-            "body_parsed": True,
-            "body_truncated": False,
-            "response_data_count": 1,
-        }
+        state = flow.metadata[metadata_keys.X_JSON_STATE]
+        assert state["body_parsed"] is True
+        assert state["body_truncated"] is False
+        assert state["response_data_count"] == 1
+        assert "parse_error" not in state
 
     def test_x_json_work_limit_discards_partial_state_and_next_flow_recovers(self, real_flow):
         body = json_body_that_exceeds_x_json_work_limit()
@@ -522,12 +523,12 @@ class TestXJsonFinalize:
         assert callback(body[midpoint:]) == body[midpoint:]
         response_streaming.finalize_connector_response_state(flow)
 
-        state = {
-            "body_parsed": False,
-            "body_truncated": False,
-            "parse_error": "work limit exceeded",
-        }
-        assert flow.metadata[metadata_keys.X_JSON_STATE] == state
+        state = dict(flow.metadata[metadata_keys.X_JSON_STATE])
+        assert state["body_parsed"] is False
+        assert state["body_truncated"] is False
+        assert state["parse_error"] == "work limit exceeded"
+        assert "response_data_count" not in state
+        assert "resource_identities" not in state
         response_streaming.finalize_connector_response_state(flow)
         assert flow.metadata[metadata_keys.X_JSON_STATE] == state
 
@@ -536,11 +537,11 @@ class TestXJsonFinalize:
         response_stream(next_flow)(b'{"data":[{"id":"after"}]}')
         response_streaming.finalize_connector_response_state(next_flow)
 
-        assert next_flow.metadata[metadata_keys.X_JSON_STATE] == {
-            "body_parsed": True,
-            "body_truncated": False,
-            "response_data_count": 1,
-        }
+        next_state = next_flow.metadata[metadata_keys.X_JSON_STATE]
+        assert next_state["body_parsed"] is True
+        assert next_state["body_truncated"] is False
+        assert next_state["response_data_count"] == 1
+        assert "parse_error" not in next_state
 
     def test_forensic_buffer_truncation_does_not_stop_x_json_parser(self, real_flow):
         flow = make_x_response_flow(

@@ -28,6 +28,7 @@ import {
 } from "../../../test-fixtures/computer-use-authorization";
 import {
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -260,6 +261,17 @@ async function readSelection(fixture: AuthorizationRunFixture): Promise<{
   };
 }
 
+async function readStoredSelection(fixture: AuthorizationRunFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 function clearPublications(): void {
   context.mocks.ably.channelGet.mockClear();
   context.mocks.ably.publish.mockClear();
@@ -306,12 +318,16 @@ interface CreationState {
 
 async function readCreationState(
   fixture: AuthorizationRunFixture,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<CreationState> {
   return {
     requestCount: await countComputerUseAuthorizationRequestsFixture(
       fixture.runId,
     ),
-    selection: await readSelection(fixture),
+    selection:
+      selectionSource === "http"
+        ? await readSelection(fixture)
+        : await readStoredSelection(fixture),
     events: await sidebarHostEvents(fixture),
     lastSeqId: await lastSidebarSeqId(fixture),
     threadState: await readChatThreadTitleStateFixture(fixture.threadId),
@@ -321,9 +337,20 @@ async function readCreationState(
 async function expectCreationUnchanged(
   fixture: AuthorizationRunFixture,
   before: CreationState,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
-  await expect(readCreationState(fixture)).resolves.toStrictEqual(before);
+  await expect(
+    readCreationState(fixture, selectionSource),
+  ).resolves.toStrictEqual(before);
   expectNoInvalidation(fixture);
+}
+
+async function expectMetadataDenied(
+  fixture: AuthorizationRunFixture,
+): Promise<void> {
+  await expect(
+    chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [404]),
+  ).resolves.toMatchObject({ status: 404 });
 }
 
 async function createAndInspectOpenRequest(
@@ -428,17 +455,22 @@ async function expectCreationDenied(
   fixture: AuthorizationRunFixture,
   before: CreationState,
   status: 404 | 409 = 404,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
   clearPublications();
   const denied = await requestAuthorizationCreation(fixture, [status]);
   expect(denied.status).toBe(status);
   expect("authorizationUrl" in denied.body).toBeFalsy();
-  await expectCreationUnchanged(fixture, before);
+  if (selectionSource === "stored") {
+    await expectMetadataDenied(fixture);
+  }
+  await expectCreationUnchanged(fixture, before, selectionSource);
 }
 
 async function expectLocatorMutationDenied(
   fixture: AuthorizationRunFixture,
   mutate: () => Promise<void>,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
   const before = await readCreationState(fixture);
   clearPublications();
@@ -459,7 +491,10 @@ async function expectLocatorMutationDenied(
     },
     context.signal,
   );
-  await expectCreationUnchanged(fixture, before);
+  if (selectionSource === "stored") {
+    await expectMetadataDenied(fixture);
+  }
+  await expectCreationUnchanged(fixture, before, selectionSource);
 }
 
 describe("account erasure fences Computer Use authorization request creation", () => {
@@ -580,7 +615,7 @@ describe("account erasure fences Computer Use authorization request creation", (
         subjectId: fixture.actor.userId,
       });
 
-      await expectCreationDenied(fixture, before);
+      await expectCreationDenied(fixture, before, 404, "stored");
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       expect(restored.requestToken).not.toBe(control.requestToken);
@@ -603,7 +638,7 @@ describe("account erasure fences Computer Use authorization request creation", (
         subjectId: fixture.owner.userId,
       });
 
-      await expectCreationDenied(fixture, before);
+      await expectCreationDenied(fixture, before, 404, "stored");
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       await expectNextSidebarSequenceAfterCreation(restored, before.lastSeqId);
@@ -625,7 +660,7 @@ describe("account erasure fences Computer Use authorization request creation", (
         subjectId: fixture.orgId,
       });
 
-      await expectCreationDenied(fixture, before);
+      await expectCreationDenied(fixture, before, 404, "stored");
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       expect(restored.requestToken).not.toBe(control.requestToken);
@@ -670,7 +705,7 @@ describe("account erasure fences Computer Use authorization request creation", (
             await expect
               .poll(barrier.blockedWaiterCount, BLOCKED)
               .toBeGreaterThanOrEqual(1);
-            await expectCreationUnchanged(fixture, before);
+            await expectCreationUnchanged(fixture, before, "stored");
 
             // A genuinely unrelated owner and organization keep progressing.
             await createAndInspectOpenRequest(unrelated);
@@ -687,6 +722,7 @@ describe("account erasure fences Computer Use authorization request creation", (
       onTestFinished(async () => {
         await removeErasureSubjectsFixture([outcome.closed.jobId]);
       });
+      await expectMetadataDenied(fixture);
 
       const requestToken = requestTokenFromUrl(
         createdAuthorizationBody(outcome.created).authorizationUrl,
@@ -753,7 +789,8 @@ describe("account erasure fences Computer Use authorization request creation", (
         await removeErasureSubjectsFixture([outcome.closed.jobId]);
       });
       expect(outcome.denied.status).toBe(404);
-      await expectCreationUnchanged(fixture, before);
+      await expectMetadataDenied(fixture);
+      await expectCreationUnchanged(fixture, before, "stored");
     },
   );
 
@@ -946,12 +983,16 @@ describe("account erasure fences Computer Use authorization request creation", (
         subjectKind: "user",
         subjectId: newOwner.userId,
       });
-      await expectLocatorMutationDenied(fixture, async () => {
-        await transferAgentOwnerFixture({
-          agentId: fixture.agentId,
-          owner: newOwner.userId,
-        });
-      });
+      await expectLocatorMutationDenied(
+        fixture,
+        async () => {
+          await transferAgentOwnerFixture({
+            agentId: fixture.agentId,
+            owner: newOwner.userId,
+          });
+        },
+        "stored",
+      );
       await expect(
         countComputerUseAuthorizationRequestsFixture(fixture.runId),
       ).resolves.toBe(0);

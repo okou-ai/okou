@@ -28,6 +28,10 @@ import {
 } from "./source";
 
 import { ConnectorCatalogRelationshipError } from "./relationship-error";
+import {
+  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+} from "./mcp-auth";
 
 const MODEL_PROVIDER_FIREWALL_PREFIX = "model-provider:";
 
@@ -249,6 +253,14 @@ function validateFirewallBindings(args: {
       knownEnvironmentNames.add(name);
     }
   }
+  if (
+    args.connector.mcp !== undefined &&
+    args.connector.authMethods.some((method) => {
+      return method.grant.kind === "automatic";
+    })
+  ) {
+    knownEnvironmentNames.add(AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME);
+  }
   const references = firewallTemplateReferences(args.firewall.apis);
   const unknown = [...references.secrets, ...references.vars].filter((name) => {
     return !knownEnvironmentNames.has(name);
@@ -361,9 +373,14 @@ function validateGenericMcpFirewall(
     { kind: "generated" }
   >,
   api: FirewallConfig["apis"][number],
+  allowAutomaticAuth: boolean,
 ): void {
+  const authIsAllowed =
+    Object.keys(api.auth).length === 0 ||
+    (allowAutomaticAuth &&
+      isDeepStrictEqual(api.auth, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH));
   if (
-    Object.keys(api.auth).length !== 0 ||
+    !authIsAllowed ||
     (api.permissions?.length ?? 0) !== 0 ||
     Object.keys(firewall.config.placeholders ?? {}).length !== 0 ||
     firewall.categories !== null ||
@@ -372,7 +389,7 @@ function validateGenericMcpFirewall(
   ) {
     throw new ConnectorCatalogRelationshipError(
       "mcp-firewall-contract",
-      "MCP generic auth requires runtime-owned credentials and service-level transport access",
+      "MCP firewall auth must be empty or use the Automatic runtime OAuth bearer token with service-level transport access",
     );
   }
 }
@@ -400,12 +417,14 @@ function validateMcpFirewall(
       "MCP firewall must target exactly its fixed endpoint",
     );
   }
-  if (
-    connector.authMethods.some((method) => {
-      return method.grant.kind === "none" || method.grant.kind === "automatic";
-    })
-  ) {
-    validateGenericMcpFirewall(connector.firewall, api);
+  const hasAutomaticAuth = connector.authMethods.some((method) => {
+    return method.grant.kind === "automatic";
+  });
+  const hasNoAuth = connector.authMethods.some((method) => {
+    return method.grant.kind === "none";
+  });
+  if (hasAutomaticAuth || hasNoAuth) {
+    validateGenericMcpFirewall(connector.firewall, api, hasAutomaticAuth);
   }
 }
 

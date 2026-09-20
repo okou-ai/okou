@@ -105,10 +105,11 @@ export const cancelRun$ = command(
     NotFoundResponse | RunNotCancellableResponse | CancelRunResult
   > => {
     const apiStartTime = args.apiStartTime ?? now();
+    const runId = args.runId.toLowerCase();
     const writeDb = set(writeDb$);
 
     const transition = writeDb.transaction(async (tx) => {
-      await lockPiApiFirstTurnLifecycle(tx, args.runId);
+      await lockPiApiFirstTurnLifecycle(tx, runId);
       const [run] = await tx
         .select({
           id: agentRuns.id,
@@ -125,7 +126,7 @@ export const cancelRun$ = command(
         .from(agentRuns)
         .where(
           and(
-            eq(agentRuns.id, args.runId),
+            eq(agentRuns.id, runId),
             eq(agentRuns.userId, args.userId),
             eq(agentRuns.orgId, args.orgId),
           ),
@@ -148,7 +149,7 @@ export const cancelRun$ = command(
         }
         return {
           apiStartTime,
-          runId: args.runId,
+          runId: run.id,
           previousStatus: run.status,
           userId: run.userId,
           orgId: run.orgId,
@@ -190,7 +191,7 @@ export const cancelRun$ = command(
           ? "hard"
           : args.runnerCancellationMode;
       await cancelLockedRun(tx, {
-        runId: args.runId,
+        runId: run.id,
         status: run.status,
         completedAt: new Date(apiStartTime),
         runnerCancellationMode,
@@ -198,7 +199,7 @@ export const cancelRun$ = command(
 
       return {
         apiStartTime,
-        runId: args.runId,
+        runId: run.id,
         previousStatus: run.status,
         userId: run.userId,
         orgId: run.orgId,

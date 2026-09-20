@@ -49,6 +49,7 @@ export const CAPABILITIES = [
   "vnc:read",
   "vnc:write",
   "presentation-template:write",
+  "presentation-convert:write",
   "user-template:write",
 ] as const;
 
@@ -203,6 +204,10 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "presentation-template:write": {
     group: "Presentation Templates",
     label: "Publish a presentation template",
+  },
+  "presentation-convert:write": {
+    group: "Presentation Templates",
+    label: "Convert an HTML presentation into an editable pptx",
   },
   "user-template:write": {
     group: "Custom Templates",

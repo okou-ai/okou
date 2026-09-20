@@ -32,11 +32,11 @@ import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-runtime.service";
 import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 import {
   AutomationEventSourceTiming,
@@ -214,7 +214,7 @@ async function resolveGoogleFormsAccess(
   const currentTime = nowDate();
   const snapshot = await loadConnectorRuntimeSnapshot(args.db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,
     snapshot,
     orgId: args.orgId,
@@ -238,7 +238,7 @@ async function resolveGoogleFormsAccess(
     };
   }
   const connection = loaded.connection;
-  const accessTokenValueRef = connectorCredentialRuntimeValueRef(
+  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     GOOGLE_FORMS_ACCESS_TOKEN_ENVIRONMENT_NAME,
   );
@@ -249,7 +249,7 @@ async function resolveGoogleFormsAccess(
         "Reconnect Google Forms before using Google Forms response automations",
     };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
     valueRefs: [accessTokenValueRef],
@@ -269,7 +269,7 @@ async function resolveGoogleFormsAccess(
       access: { connectorId: connection.connectorId, accessToken },
     };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection,
       db: args.db,

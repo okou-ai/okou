@@ -44,7 +44,7 @@ export class McpMessageHistoryError extends Error {
   }
 }
 
-interface HistoryBudget {
+export interface HistoryBudget {
   readonly check: () => void;
   readonly remainingMs: () => number;
   bytes: number;
@@ -74,7 +74,10 @@ export function createMcpChatHistoryBudget(signal: AbortSignal): HistoryBudget {
   };
 }
 
-async function boundHistoryQuery(tx: Tx, budget: HistoryBudget): Promise<void> {
+export async function boundHistoryQuery(
+  tx: Tx,
+  budget: HistoryBudget,
+): Promise<void> {
   const milliseconds = Math.min(SQL_TIMEOUT_MS, budget.remainingMs());
   await tx.execute(
     sql`SELECT set_config('statement_timeout', ${`${milliseconds.toString()}ms`}, true)`,
@@ -328,8 +331,8 @@ function historyReadFailure(error: unknown): McpMessageHistoryError {
   );
 }
 
-/** Authorized, complete history within an explicit resource envelope. */
-export function readMcpChatMessageHistory(
+/** History and its business projection share one authorized read snapshot. */
+export function readMcpChatHistoryProjection<T>(
   runtime: {
     readonly db: Db;
     readonly bucket: string;
@@ -338,7 +341,12 @@ export function readMcpChatMessageHistory(
   principal: { readonly userId: string; readonly orgId: string },
   threadId: string,
   signal: AbortSignal,
-): Computed<Promise<readonly ChatEventRow[] | null>> {
+  project: (
+    tx: Tx,
+    history: readonly ChatEventRow[],
+    budget: HistoryBudget,
+  ) => Promise<T>,
+): Computed<Promise<T | null>> {
   return computed(async (get) => {
     const budget = runtime.historyBudget ?? createMcpChatHistoryBudget(signal);
     budget.check();
@@ -423,7 +431,9 @@ export function readMcpChatMessageHistory(
               eventIds.add(event.id);
             }
             budget.check();
-            return history;
+            const projection = await project(tx, history, budget);
+            budget.check();
+            return projection;
           },
           { isolationLevel: "repeatable read", accessMode: "read only" },
         ),
@@ -436,4 +446,26 @@ export function readMcpChatMessageHistory(
     }
     return result.value;
   });
+}
+
+/** Authorized, complete history within an explicit resource envelope. */
+export function readMcpChatMessageHistory(
+  runtime: {
+    readonly db: Db;
+    readonly bucket: string;
+    readonly historyBudget?: HistoryBudget;
+  },
+  principal: { readonly userId: string; readonly orgId: string },
+  threadId: string,
+  signal: AbortSignal,
+): Computed<Promise<readonly ChatEventRow[] | null>> {
+  return readMcpChatHistoryProjection(
+    runtime,
+    principal,
+    threadId,
+    signal,
+    (_tx, history) => {
+      return Promise.resolve(history);
+    },
+  );
 }

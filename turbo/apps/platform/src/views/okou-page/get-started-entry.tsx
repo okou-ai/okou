@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
   Input,
 } from "@okouai/ui";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -35,6 +36,8 @@ import {
   checkInGetStarted$,
   getStartedQuests$,
   getStartedSummary$,
+  setCheckinClaimedOpen$,
+  setQuestIntroKey$,
   setShareDialogOpen$,
   setSharePostDraft$,
   shareDialogOpen$,
@@ -45,10 +48,16 @@ import {
   type GetStartedQuest,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { SlackMark } from "./components/slack-mark.tsx";
+import {
+  GetStartedCheckinDialog,
+  GetStartedQuestIntroDialog,
+  questHasIntro,
+} from "./get-started-quest-intro-dialog.tsx";
 
 // The ring is drawn at 16px so it agrees with the `[&_svg]:size-4` that Button
 // enforces on its descendants, and its geometry is fixed at that size.
@@ -365,11 +374,14 @@ function QuestRow({
   quest,
   copy,
   onSelect,
+  opensModal = false,
   pending = false,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
   onSelect: (() => void) | null;
+  /** Whether selecting the row opens a dialog rather than navigating. */
+  opensModal?: boolean;
   pending?: boolean;
 }) {
   const body = (
@@ -390,8 +402,10 @@ function QuestRow({
     );
   }
 
-  // Keep the share dialog on the shared modal-item composition path.
-  if (quest.key === "share") {
+  // A row that opens a dialog stays on the shared modal-item composition
+  // path: a plain menu item closes the menu on click and takes the dialog it
+  // just opened down with it.
+  if (opensModal) {
     return (
       <DropdownMenuModalItem
         className={QUEST_ROW_CLASS}
@@ -499,13 +513,21 @@ function ShareOnXDialog() {
   );
 }
 
-function useQuestActions(
+/**
+ * Where a quest sends the user once they decide to do it.
+ *
+ * The intro dialog does not replace these; it runs the matching handoff on
+ * confirm, so a quest has one destination whether or not it is introduced.
+ */
+function useQuestHandoffs(
   checkIn: (signal: AbortSignal) => Promise<void>,
 ): Record<GetStartedQuestKey, () => void> {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const navigate = useSet(detachedNavigateTo$);
   const setShareDialogOpen = useSet(setShareDialogOpen$);
+  const setCheckinClaimedOpen = useSet(setCheckinClaimedOpen$);
+  const introEnabled = useQuestIntroEnabled();
   return {
     connector: () => {
       navigate("/connectors");
@@ -523,22 +545,65 @@ function useQuestActions(
       setShareDialogOpen(true);
     },
     checkin: () => {
-      detach(checkIn(pageSignal), Reason.DomCallback);
+      detach(
+        (async () => {
+          await checkIn(pageSignal);
+          if (introEnabled) {
+            setCheckinClaimedOpen(true);
+          }
+        })(),
+        Reason.DomCallback,
+      );
     },
   };
+}
+
+function useQuestIntroEnabled(): boolean {
+  return useGet(featureSwitch$)[FeatureSwitchKey.GetStartedQuestIntro] === true;
+}
+
+/**
+ * What a row does when it is selected.
+ *
+ * With the intro switch on, a quest that has something to explain opens its
+ * dialog first and the dialog performs the handoff; every other quest keeps
+ * going straight to its destination.
+ */
+function useQuestActions(
+  handoffs: Record<GetStartedQuestKey, () => void>,
+): Record<GetStartedQuestKey, () => void> {
+  const setQuestIntroKey = useSet(setQuestIntroKey$);
+  const introEnabled = useQuestIntroEnabled();
+  const actions: Partial<Record<GetStartedQuestKey, () => void>> = {};
+  for (const key of Object.keys(handoffs) as GetStartedQuestKey[]) {
+    actions[key] =
+      introEnabled && questHasIntro(key)
+        ? () => {
+            setQuestIntroKey(key);
+          }
+        : handoffs[key];
+  }
+  return actions as Record<GetStartedQuestKey, () => void>;
 }
 
 function GetStartedPanel({
   quests,
   summary,
+  handoffs,
+  checkinPending,
 }: {
   quests: readonly GetStartedQuest[];
   summary: GetStartedSummary;
+  handoffs: Record<GetStartedQuestKey, () => void>;
+  checkinPending: boolean;
 }) {
   const { t } = useTranslation();
   const copy = useQuestCopy();
-  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
-  const actions = useQuestActions(checkIn);
+  const actions = useQuestActions(handoffs);
+  const introEnabled = useQuestIntroEnabled();
+  const opensModal = (quest: GetStartedQuest): boolean => {
+    return quest.key === "share" || (introEnabled && questHasIntro(quest.key));
+  };
   const percent = (summary.completed / summary.total) * 100;
   // Keep the daily reward separate from the other quests.
   const setupQuests = quests.filter((quest) => {
@@ -604,6 +669,7 @@ function GetStartedPanel({
             quest={quest}
             copy={copy[quest.key]}
             onSelect={selectHandler(quest)}
+            opensModal={opensModal(quest)}
           />
         );
       })}
@@ -615,7 +681,7 @@ function GetStartedPanel({
             quest={quest}
             copy={copy[quest.key]}
             onSelect={selectHandler(quest)}
-            pending={checkinLoadable.state === "loading"}
+            pending={checkinPending}
           />
         );
       })}
@@ -641,6 +707,10 @@ export function GetStartedEntry() {
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
   const setMenuOpen = useSet(setGetStartedMenuOpen$);
+  // The dialogs outlive the dropdown that opened them, so the handoffs they
+  // run are built here rather than inside the panel's own tree.
+  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
+  const handoffs = useQuestHandoffs(checkIn);
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -652,6 +722,9 @@ export function GetStartedEntry() {
   if (summary.total === 0) {
     return null;
   }
+  const checkinQuest = questsLoadable.data.find((quest) => {
+    return quest.key === "checkin";
+  });
 
   return (
     <>
@@ -681,9 +754,24 @@ export function GetStartedEntry() {
             </span>
           </Button>
         </DropdownMenuTrigger>
-        <GetStartedPanel quests={questsLoadable.data} summary={summary} />
+        <GetStartedPanel
+          quests={questsLoadable.data}
+          summary={summary}
+          handoffs={handoffs}
+          checkinPending={checkinLoadable.state === "loading"}
+        />
       </DropdownMenu>
       <ShareOnXDialog />
+      <GetStartedQuestIntroDialog
+        onConfirm={(key) => {
+          handoffs[key]();
+        }}
+      />
+      {/* The quest the dialog reports on is the one the panel just checked in,
+          so the dialog exists exactly when that quest does. */}
+      {checkinQuest && (
+        <GetStartedCheckinDialog reward={checkinQuest.rewardAmount} />
+      )}
     </>
   );
 }

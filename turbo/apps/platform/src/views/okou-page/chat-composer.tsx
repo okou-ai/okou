@@ -40,9 +40,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { i18n } from "../../i18n/index.ts";
-import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { IntroVideoPicker } from "./intro-video-picker.tsx";
 import { PaidToolNotice, TemplatePaidToolNotice } from "./paid-tool-notice.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
@@ -51,11 +49,6 @@ import {
   customTemplateCatalog$,
   resetCustomTemplatePicker$,
 } from "../../signals/okou-page/custom-template-library.ts";
-import {
-  avatarSelectionLabel,
-  styleSelectionLabel,
-  voiceSelectionLabel,
-} from "./intro-video-selection-labels.ts";
 import {
   importPresentationTemplateDeck$,
   PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
@@ -80,7 +73,6 @@ import {
   ArrowUp,
   Bolt,
   Check,
-  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
@@ -292,6 +284,17 @@ import {
   invalidateSsh$,
   sshSummary$,
 } from "../../signals/ssh.ts";
+import {
+  vncAgentAccessSnapshot$,
+  updateAgentVncAccess$,
+} from "../../signals/vnc-access.ts";
+import {
+  vncIdentity$,
+  invalidateVnc$,
+  vncSummary$,
+} from "../../signals/vnc.ts";
+import { VncLoadError } from "./vnc-load-error.tsx";
+import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -4231,15 +4234,11 @@ function IllustrationTemplateCard({
 /** `category` is null until an entry point or the member names one. */
 function resolveTemplatePickerCategory(
   category: string | null,
-  introVideoEnabled: boolean,
   customTemplatesEnabled: boolean,
 ): string {
   switch (category) {
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
-    }
-    case "intro-video": {
-      return introVideoEnabled ? category : "video";
     }
     case "slides":
     case "website":
@@ -4259,12 +4258,10 @@ function resolveTemplatePickerCategory(
 
 function TemplatePickerCategoryNav({
   selectedCategory,
-  introVideoEnabled,
   customTemplatesEnabled,
   onChange,
 }: {
   selectedCategory: string;
-  introVideoEnabled: boolean;
   customTemplatesEnabled: boolean;
   onChange: (value: string) => void;
 }) {
@@ -4312,23 +4309,10 @@ function TemplatePickerCategoryNav({
     {
       value: "video",
       label: t(($) => {
-        return introVideoEnabled
-          ? $.artifacts.templates.creativeVideo
-          : $.artifacts.kinds.video;
+        return $.artifacts.kinds.video;
       }),
       Icon: Video,
     },
-    ...(introVideoEnabled
-      ? [
-          {
-            value: "intro-video",
-            label: t(($) => {
-              return $.artifacts.templates.introVideo;
-            }),
-            Icon: Clapperboard,
-          },
-        ]
-      : []),
     {
       value: "avatar",
       label: t(($) => {
@@ -6172,12 +6156,10 @@ function TemplatePickerDialog({
   });
 
   const features = useGet(featureSwitch$);
-  const introVideoEnabled = features[FeatureSwitchKey.IntroVideo] === true;
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
-    introVideoEnabled,
     customTemplatesEnabled,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
@@ -6476,77 +6458,63 @@ function TemplatePickerDialog({
             <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
-                introVideoEnabled={introVideoEnabled}
                 customTemplatesEnabled={customTemplatesEnabled}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory === "intro-video" ? (
-                  <IntroVideoPicker
-                    signals={signals.template.introVideo}
-                    onCancel={closeTemplatePicker}
-                    onSelect={(template) => {
-                      onChange(template);
-                      closeTemplatePicker();
-                    }}
-                  />
-                ) : (
-                  <>
-                    <div
-                      className={cn(
-                        "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                        showTemplatePickerSearch || showAvatarPickerToolbar
-                          ? "flex"
-                          : "hidden sm:flex",
-                      )}
-                    >
-                      {showTemplatePickerSearch ? (
-                        <TemplatePickerWorkflowSearch
-                          search={search}
-                          onSearchChange={handleSearchChange}
-                        />
-                      ) : null}
-                      {showAvatarPickerToolbar ? (
-                        <AvatarTemplatePickerToolbar signals={signals} />
-                      ) : null}
-                    </div>
-                    <TemplatePickerCategoryContent
-                      signals={signals}
-                      selectedCategory={selectedCategory}
-                      pptItems={presentationItems}
-                      importedPptItems={importedTemplateItems}
-                      websiteItems={WEBSITE_TEMPLATE_ITEMS}
-                      illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
-                      videoItems={VIDEO_TEMPLATE_ITEMS}
-                      videoGenerationAllowed={videoGenerationAllowed}
-                      workflowCatalog={workflowCatalog}
-                      value={value}
-                      illustrationVariantIndex={illustrationVariantIndex}
-                      onPresentationScroll={setPresentationGridScrollTop}
-                      onRestorePresentationScroll={
-                        restorePresentationGridScrollNode
-                      }
-                      onSelectPresentation={handleSelectPresentation}
-                      onSelectImportedPresentation={
-                        handleSelectImportedPresentation
-                      }
-                      onSelectCustom={handleSelectCustom}
-                      onPreviewPresentation={handlePreview}
-                      onPreviewImportedPresentation={handlePreviewImported}
-                      onImportedPresentation={closeTemplatePicker}
-                      onSelectWebsite={handleSelectWebsite}
-                      onPreviewWebsite={handlePreviewWebsite}
-                      onSelectIllustration={handleSelectIllustration}
-                      onIllustrationVariantChange={setIllustrationVariantIndex}
-                      onSelectVideo={handleSelectVideo}
-                      onSelectAvatar={handleSelectAvatar}
-                      onWorkflowCategoryChange={setWorkflowCategoryFilter}
-                      onSelectWorkflow={handleSelectWorkflow}
-                      runtime={runtime}
+                <div
+                  className={cn(
+                    "relative h-[68px] shrink-0 items-center px-6 pr-14",
+                    showTemplatePickerSearch || showAvatarPickerToolbar
+                      ? "flex"
+                      : "hidden sm:flex",
+                  )}
+                >
+                  {showTemplatePickerSearch ? (
+                    <TemplatePickerWorkflowSearch
+                      search={search}
+                      onSearchChange={handleSearchChange}
                     />
-                  </>
-                )}
+                  ) : null}
+                  {showAvatarPickerToolbar ? (
+                    <AvatarTemplatePickerToolbar signals={signals} />
+                  ) : null}
+                </div>
+                <TemplatePickerCategoryContent
+                  signals={signals}
+                  selectedCategory={selectedCategory}
+                  pptItems={presentationItems}
+                  importedPptItems={importedTemplateItems}
+                  websiteItems={WEBSITE_TEMPLATE_ITEMS}
+                  illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
+                  videoItems={VIDEO_TEMPLATE_ITEMS}
+                  videoGenerationAllowed={videoGenerationAllowed}
+                  workflowCatalog={workflowCatalog}
+                  value={value}
+                  illustrationVariantIndex={illustrationVariantIndex}
+                  onPresentationScroll={setPresentationGridScrollTop}
+                  onRestorePresentationScroll={
+                    restorePresentationGridScrollNode
+                  }
+                  onSelectPresentation={handleSelectPresentation}
+                  onSelectImportedPresentation={
+                    handleSelectImportedPresentation
+                  }
+                  onSelectCustom={handleSelectCustom}
+                  onPreviewPresentation={handlePreview}
+                  onPreviewImportedPresentation={handlePreviewImported}
+                  onImportedPresentation={closeTemplatePicker}
+                  onSelectWebsite={handleSelectWebsite}
+                  onPreviewWebsite={handlePreviewWebsite}
+                  onSelectIllustration={handleSelectIllustration}
+                  onIllustrationVariantChange={setIllustrationVariantIndex}
+                  onSelectVideo={handleSelectVideo}
+                  onSelectAvatar={handleSelectAvatar}
+                  onWorkflowCategoryChange={setWorkflowCategoryFilter}
+                  onSelectWorkflow={handleSelectWorkflow}
+                  runtime={runtime}
+                />
               </div>
             </div>
           </div>
@@ -6824,25 +6792,6 @@ function selectedComposerTemplateAttachment(
       customTemplates,
     );
   }
-  const introVideo = introVideoTemplateOptions(value);
-  if (introVideo) {
-    return {
-      type: "video",
-      category: "intro-video",
-      title: [
-        i18n.t(($) => {
-          return $.artifacts.templates.introVideo;
-        }),
-        styleSelectionLabel(i18n.t, introVideo.style),
-        avatarSelectionLabel(i18n.t, introVideo.avatar),
-        voiceSelectionLabel(i18n.t, introVideo.voice, introVideo.avatar),
-      ].join(" · "),
-      previewImageUrl:
-        introVideo.style.kind === "catalog"
-          ? introVideo.style.style.thumbnailUrl
-          : undefined,
-    };
-  }
   const avatar = avatarTemplateSelection(value);
   if (avatar) {
     return {
@@ -6924,8 +6873,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
   const category = useGet(signals.template.templatePickerCategory$);
   const pickerFeatures = useGet(featureSwitch$);
-  const introVideoEnabled =
-    pickerFeatures[FeatureSwitchKey.IntroVideo] === true;
   const customTemplatesEnabled =
     pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
@@ -6954,11 +6901,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
     templateMode === "presentation"
       ? "slides"
       : (templateMode ??
-        resolveTemplatePickerCategory(
-          category,
-          introVideoEnabled,
-          customTemplatesEnabled,
-        ));
+        resolveTemplatePickerCategory(category, customTemplatesEnabled));
   const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
@@ -7135,12 +7078,14 @@ function ConnectorTriggerIcons({
   hasComputerUse,
   hasCloudBrowser,
   hasSsh,
+  hasVnc,
 }: {
   connectors: ComposerConnectorItem[];
   customConnectors: ComposerCustomConnectorItem[];
   hasComputerUse: boolean;
   hasCloudBrowser: boolean;
   hasSsh: boolean;
+  hasVnc: boolean;
 }) {
   const { t } = useTranslation();
   const enabledConnectors = connectors.filter((connector) => {
@@ -7156,6 +7101,7 @@ function ConnectorTriggerIcons({
       return { kind: "builtin" as const, connector };
     }),
     ...(hasSsh ? [{ kind: "ssh" as const }] : []),
+    ...(hasVnc ? [{ kind: "vnc" as const }] : []),
     ...enabledCustomConnectors.map((connector) => {
       return { kind: "custom" as const, connector };
     }),
@@ -7165,11 +7111,11 @@ function ConnectorTriggerIcons({
     return <Plug size={18} />;
   }
   return (
-    <span className="flex items-center sm:-space-x-1.5">
+    <span className="flex items-center composer-wide:-space-x-1.5">
       {enabled.map((item, index) => {
         const key =
-          item.kind === "ssh"
-            ? "ssh"
+          item.kind === "ssh" || item.kind === "vnc"
+            ? item.kind
             : item.kind === "builtin"
               ? item.connector.slug
               : item.connector.id;
@@ -7178,12 +7124,12 @@ function ConnectorTriggerIcons({
             key={key}
             className={cn(
               "relative shrink-0",
-              (index > 0 || hasComputerAccess) && "hidden sm:block",
+              (index > 0 || hasComputerAccess) && "hidden composer-wide:block",
             )}
           >
             <span
               className={cn(
-                "flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background sm:h-7 sm:w-7",
+                "flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background composer-wide:h-7 composer-wide:w-7",
                 item.kind === "ssh" && "text-brand-text",
               )}
             >
@@ -7193,6 +7139,14 @@ function ConnectorTriggerIcons({
                   role="img"
                   aria-label={t(($) => {
                     return $.ssh.label;
+                  })}
+                />
+              ) : item.kind === "vnc" ? (
+                <Monitor
+                  size={16}
+                  role="img"
+                  aria-label={t(($) => {
+                    return $.vnc.label;
                   })}
                 />
               ) : item.kind === "builtin" ? (
@@ -7210,14 +7164,14 @@ function ConnectorTriggerIcons({
       })}
       {hasComputerUse && (
         <span className="relative shrink-0">
-          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text sm:h-7 sm:w-7">
+          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text composer-wide:h-7 composer-wide:w-7">
             <Monitor size={16} />
           </span>
         </span>
       )}
       {hasCloudBrowser && (
         <span className="relative shrink-0">
-          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text sm:h-7 sm:w-7">
+          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text composer-wide:h-7 composer-wide:w-7">
             <Globe size={16} />
           </span>
         </span>
@@ -7312,6 +7266,32 @@ function CustomConnectorCatalogCard({
   );
 }
 
+function AddConnectorSshLoadStatus({
+  matches,
+  state,
+}: {
+  readonly matches: boolean;
+  readonly state: Loadable<unknown>["state"];
+}) {
+  const { t } = useTranslation();
+  if (!matches) {
+    return null;
+  }
+  if (state === "hasError") {
+    return <SshLoadError />;
+  }
+  if (state !== "loading") {
+    return null;
+  }
+  return (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.ssh.loading;
+      })}
+    </p>
+  );
+}
+
 function AddConnectorsDialog({
   signals,
   unconnected,
@@ -7348,12 +7328,23 @@ function AddConnectorsDialog({
     return matchesCustomConnectorSearch(search, item);
   });
   const sshSummary = useLoadable(sshSummary$);
+  const vncSummary = useLoadable(vncSummary$);
+  const matchesVnc = `vnc ${t(($) => {
+    return $.vnc.description;
+  })}`
+    .toLowerCase()
+    .includes(search.trim().toLowerCase());
+  const showVnc =
+    vncSummary.state === "hasData" &&
+    vncSummary.data?.configuredCount === 0 &&
+    matchesVnc;
+  const matchesSsh = "ssh".includes(search.trim().toLowerCase());
   const showSsh =
     sshSummary.state === "hasData" &&
     sshSummary.data?.configuredCount === 0 &&
-    "ssh".includes(search.trim().toLowerCase());
+    matchesSsh;
   const visibleConnectorCount =
-    filtered.length + filteredCustom.length + Number(showSsh);
+    filtered.length + filteredCustom.length + Number(showSsh) + Number(showVnc);
 
   return (
     <Dialog
@@ -7415,7 +7406,20 @@ function AddConnectorsDialog({
           />
         </div>
         <div className="overflow-y-auto -mx-6 px-6">
+          <AddConnectorSshLoadStatus
+            matches={matchesSsh}
+            state={sshSummary.state}
+          />
+          {matchesVnc && vncSummary.state === "hasError" && <VncLoadError />}
+          {matchesVnc && vncSummary.state === "loading" && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.vnc.loading;
+              })}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
+            {showVnc && <VncConnectorCard configuredCount={0} />}
             {showSsh && sshSummary.state === "hasData" && sshSummary.data && (
               <SshConnectorCard
                 configuredCount={sshSummary.data.configuredCount}
@@ -7689,6 +7693,14 @@ type ComposerPopoverConnectorItem =
       };
     }
   | {
+      readonly kind: "vnc";
+      readonly connector: {
+        readonly id: "vnc";
+        readonly label: string;
+        readonly authorized: boolean;
+      };
+    }
+  | {
       readonly kind: "builtin";
       readonly connector: ComposerConnectorItem;
     }
@@ -7704,7 +7716,7 @@ function composerPopoverConnectorId(
 }
 
 function composerPopoverConnectorTarget(
-  item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" }>,
+  item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" | "vnc" }>,
 ): ConnectorAccountTarget {
   return item.kind === "builtin"
     ? { kind: "builtin", connectorSlug: item.connector.slug }
@@ -7715,7 +7727,7 @@ function matchesComposerPopoverConnectorSearch(
   search: string,
   item: ComposerPopoverConnectorItem,
 ): boolean {
-  if (item.kind === "ssh") {
+  if (item.kind === "ssh" || item.kind === "vnc") {
     return item.connector.label
       .toLowerCase()
       .includes(search.trim().toLowerCase());
@@ -8276,7 +8288,7 @@ function deriveComposerConnectorPopoverState(args: {
 }) {
   const sorted = args.sortOrder
     ? [...args.connectorItems].sort((a, b) => {
-        const order = { builtin: 0, ssh: 1, custom: 2 };
+        const order = { builtin: 0, ssh: 1, vnc: 2, custom: 3 };
         const kindOrder = order[a.kind] - order[b.kind];
         if (kindOrder !== 0) {
           return kindOrder;
@@ -8316,7 +8328,7 @@ function ComposerConnectorAccountAction({
 }: {
   readonly signals: ComposerSignals;
   readonly actions: ComposerConnectorActions;
-  readonly item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" }>;
+  readonly item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" | "vnc" }>;
 }) {
   const preference = useLastResolved(
     signals.connector.accounts.preferenceState$,
@@ -8374,6 +8386,47 @@ function useComposerSshAccess(agentId: string | null) {
   return { rows, access };
 }
 
+function useComposerVncAccess(agentId: string | null) {
+  const identity = useLoadable(vncIdentity$);
+  const rows = useLoadable(vncAgentAccessSnapshot$);
+  const retained = useLastLoadable(vncAgentAccessSnapshot$);
+  const access =
+    identity.state === "hasData" &&
+    identity.data !== null &&
+    retained.state === "hasData" &&
+    retained.data.identity === identity.data
+      ? retained.data.rows?.find((row) => {
+          return row.agent.agentId === agentId;
+        })
+      : undefined;
+  return { rows, access };
+}
+
+function ComposerConnectorTriggerIcons({
+  connectors,
+  customConnectors,
+  computerUse,
+  sshAccess,
+  vncAccess,
+}: {
+  readonly connectors: ComposerConnectorItem[];
+  readonly customConnectors: ComposerCustomConnectorItem[];
+  readonly computerUse: ComposerComputerUse | undefined;
+  readonly sshAccess: { readonly enabled: boolean } | undefined;
+  readonly vncAccess: { readonly enabled: boolean } | undefined;
+}) {
+  return (
+    <ConnectorTriggerIcons
+      connectors={connectors}
+      customConnectors={customConnectors}
+      hasComputerUse={Boolean(computerUse?.selectedHostId)}
+      hasCloudBrowser={Boolean(computerUse?.cloudBrowserEnabled)}
+      hasSsh={sshAccess?.enabled ?? false}
+      hasVnc={vncAccess?.enabled ?? false}
+    />
+  );
+}
+
 function ConnectorsPopoverButton({
   signals,
   agentId,
@@ -8422,9 +8475,12 @@ function ConnectorsPopoverButton({
   const permissionConnectorSlug = connectorUi.permissionConnectorSlug;
   const { rows: sshRows, access: sshAccess } = useComposerSshAccess(agentId);
   const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
+  const { rows: vncRows, access: vncAccess } = useComposerVncAccess(agentId);
+  const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
+  const reloadVnc = useSet(invalidateVnc$);
   const pageSignal = useGet(pageSignal$);
   const reloadSsh = useSet(invalidateSsh$);
-  const waitingForConnectors = connectorsLoading && !sshAccess;
+  const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
   const connectorItems: ComposerPopoverConnectorItem[] = [
     ...agentConnectors.map((connector) => {
       return { kind: "builtin" as const, connector };
@@ -8439,6 +8495,20 @@ function ConnectorsPopoverButton({
                 return $.ssh.label;
               }),
               authorized: sshAccess.enabled,
+            },
+          },
+        ]
+      : []),
+    ...(vncAccess
+      ? [
+          {
+            kind: "vnc" as const,
+            connector: {
+              id: "vnc" as const,
+              label: t(($) => {
+                return $.vnc.label;
+              }),
+              authorized: vncAccess.enabled,
             },
           },
         ]
@@ -8464,6 +8534,7 @@ function ConnectorsPopoverButton({
       updateConnectorUi({ popoverSortOrder: freshSort });
       openAccountsPopover();
       reloadSsh();
+      reloadVnc();
     } else {
       updateConnectorUi({ popoverSortOrder: null, popoverSearch: "" });
       closeAccountMenu();
@@ -8492,7 +8563,7 @@ function ConnectorsPopoverButton({
               <button
                 type="button"
                 className={cn(
-                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover sm:min-w-9 sm:px-1.5",
+                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
                   COMPOSER_CONTROL_FOCUS_CLASS,
                 )}
                 aria-label={t(($) => {
@@ -8500,12 +8571,12 @@ function ConnectorsPopoverButton({
                 })}
               >
                 {!waitingForConnectors && (
-                  <ConnectorTriggerIcons
+                  <ComposerConnectorTriggerIcons
                     connectors={agentConnectors}
                     customConnectors={agentCustomConnectors}
-                    hasComputerUse={Boolean(computerUse?.selectedHostId)}
-                    hasCloudBrowser={Boolean(computerUse?.cloudBrowserEnabled)}
-                    hasSsh={sshAccess?.enabled ?? false}
+                    computerUse={computerUse}
+                    sshAccess={sshAccess}
+                    vncAccess={vncAccess}
                   />
                 )}
               </button>
@@ -8583,6 +8654,44 @@ function ConnectorsPopoverButton({
                         onCheckedChange={onDomEventFn(async (checked) => {
                           if (agentId) {
                             await updateSshAccess(agentId, checked, pageSignal);
+                          }
+                        })}
+                        ariaLabel={
+                          item.connector.authorized
+                            ? t(
+                                ($) => {
+                                  return $.chat.connectors.remove;
+                                },
+                                {
+                                  connectorName: item.connector.label,
+                                },
+                              )
+                            : t(
+                                ($) => {
+                                  return $.chat.connectors.add;
+                                },
+                                {
+                                  connectorName: item.connector.label,
+                                },
+                              )
+                        }
+                      />
+                    );
+                  }
+                  if (item.kind === "vnc") {
+                    return (
+                      <ComposerConnectorAccessRow
+                        key={item.connector.id}
+                        icon={<Monitor size={16} />}
+                        connectorLabel={item.connector.label}
+                        checked={item.connector.authorized}
+                        loading={
+                          vncSaving.state === "loading" ||
+                          vncRows.state === "loading"
+                        }
+                        onCheckedChange={onDomEventFn(async (checked) => {
+                          if (agentId) {
+                            await updateVncAccess(agentId, checked, pageSignal);
                           }
                         })}
                         ariaLabel={
@@ -8732,6 +8841,11 @@ function ConnectorsPopoverButton({
                 })}
               </div>
             )}
+          </div>
+        )}
+        {vncRows.state === "hasError" && (
+          <div className="px-3 py-2">
+            <VncLoadError />
           </div>
         )}
         {sshRows.state === "hasError" && (
@@ -9473,8 +9587,8 @@ function composerLayoutHeightClassNames(
   if (hasTemplateAttachment) {
     return singleLineOnMobile
       ? {
-          input: "min-h-[86px] md:min-h-[114px]",
-          shell: "min-h-[158px] md:min-h-[186px]",
+          input: "min-h-[86px] composer-wide:min-h-[114px]",
+          shell: "min-h-[158px] composer-wide:min-h-[186px]",
         }
       : {
           input: "min-h-[114px]",
@@ -9483,8 +9597,8 @@ function composerLayoutHeightClassNames(
   }
   return singleLineOnMobile
     ? {
-        input: "min-h-12 md:min-h-[76px]",
-        shell: "min-h-[120px] md:min-h-[148px]",
+        input: "min-h-12 composer-wide:min-h-[76px]",
+        shell: "min-h-[120px] composer-wide:min-h-[148px]",
       }
     : {
         input: "min-h-[76px]",
@@ -9755,7 +9869,9 @@ function ModelConfigurationWarning({
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
           >
             <AlertTriangle size={15} />
-            <span className="hidden sm:inline">{blocker.actionLabel}</span>
+            <span className="hidden composer-wide:inline">
+              {blocker.actionLabel}
+            </span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
@@ -9821,9 +9937,9 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
-    "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
-    "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:gap-1 composer-wide:px-2",
+    "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center composer-wide:[&>[data-slot=select-value]]:justify-start",
+    "[&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
     COMPOSER_CONTROL_FOCUS_CLASS,
   );
@@ -9847,7 +9963,10 @@ function ComposerRunModelPickerControl({
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
-    <div ref={setLifecycleRef} className="contents sm:relative sm:flex">
+    <div
+      ref={setLifecycleRef}
+      className="contents composer-wide:relative composer-wide:flex"
+    >
       <ModelProviderPicker
         value={value}
         onChange={onChange}
@@ -10025,7 +10144,7 @@ function ComposerModelPickerControls({
           mediaModelPanel={mediaModelPanel}
         />
       </div>
-      <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
+      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
     </>
   );
 }
@@ -10262,7 +10381,7 @@ function ComposerModelScopeCard({
       {/* Both ends sit 20px in, matching the text column of the card above:
           the ghost action already carries 12px of its own padding. */}
       <div
-        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs sm:flex-nowrap"
+        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs composer-wide:flex-nowrap"
         role="group"
         aria-label={label}
         aria-live="polite"
@@ -11017,10 +11136,6 @@ function ComposerFooter({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const narrowVideoGap = creativeVideo
-    ? "@max-[344px]/composer:gap-0"
-    : undefined;
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
   const status =
@@ -11045,13 +11160,11 @@ function ComposerFooter({
   return withChatScrollLayout(
     <div
       className={cn(
-        "shrink-0 items-center justify-between gap-1 sm:gap-2",
-        creativeVideo && !activeVoiceDraftStatus
-          ? "grid grid-cols-[minmax(0,1fr)_auto] @min-[640px]/composer:flex"
-          : "flex",
+        // One row that wraps. A control that does not fit takes the next line
+        // instead of pressing on the one beside it, so the footer has no width
+        // at which it has to be told to squeeze its gaps and padding shut.
+        "flex shrink-0 flex-wrap items-center gap-1 composer-wide:gap-2",
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
-        narrowVideoGap,
-        creativeVideo && "@max-[344px]/composer:px-3",
       )}
     >
       {activeVoiceDraftStatus ? (
@@ -11064,42 +11177,29 @@ function ComposerFooter({
         />
       ) : (
         <>
-          <div className="contents @min-[640px]/composer:flex @min-[640px]/composer:min-w-0 @min-[640px]/composer:items-center @min-[640px]/composer:gap-1.5">
-            <div
-              className={cn(
-                "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
-                narrowVideoGap,
-              )}
-            >
-              <ComposerAddSlot signals={signals} />
-              <ComposerTemplatePickerSlot signals={signals} />
-              <ComposerWorkflowPromptSlot signals={signals} />
-              <ComposerConnectorsSlot
-                signals={signals}
-                actions={connectorActions}
-              />
-              <ComposerTaskControls signals={signals} />
-            </div>
-            {/*
-              The video spec follows the type it describes, among the controls
-              that act on the run rather than on the message, and on the same
-              line as the model it is resolved against.
-
-              It is a sibling of the icon row rather than a member of it: below
-              640px this group is `display: contents`, so the chip reaches the
-              footer grid directly and its own `col-span-2 row-start-1 w-full`
-              gives it a full-width first row instead of competing with four
-              icons for a 344px line. Nested inside the row, those placements
-              would resolve against a flex box and do nothing.
-            */}
-            <ComposerVideoOptionsChip signals={signals} />
+          <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
+            <ComposerAddSlot signals={signals} />
+            <ComposerTemplatePickerSlot signals={signals} />
+            <ComposerWorkflowPromptSlot signals={signals} />
+            <ComposerConnectorsSlot
+              signals={signals}
+              actions={connectorActions}
+            />
+            <ComposerTaskControls signals={signals} />
           </div>
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 sm:gap-2",
-              narrowVideoGap,
-            )}
-          >
+          {/*
+            The video spec follows the type it describes, among the controls
+            that act on the run rather than on the message, and on the same line
+            as the model it is resolved against.
+
+            It is a sibling of the icon row rather than a member of it: as a
+            footer item of its own it takes `basis-full` and claims the first
+            line below the composer's width rule, instead of competing with four
+            icons for one. Nested inside the row, that basis would resolve
+            against the row and take a line the row cannot spare.
+          */}
+          <ComposerVideoOptionsChip signals={signals} />
+          <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
             <ComposerModelPickerSlot signals={signals} />
             <MicButton signals={signals} actions={actions} />
             <ComposerSendControl signals={signals} actions={actions} />
@@ -11129,7 +11229,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
       data-slot="chat-composer-card"
       surface="composer"
       className={cn(
-        "@container/composer z-10",
+        "z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
@@ -11189,9 +11289,13 @@ export function ChatComposer({
   return (
     <>
       <ComposerFileInput signals={signals} />
+      {/* The composer group's width, named once. The card is not the container
+          itself: the model-scope notice and the pending-items strip are its
+          siblings at exactly this width, and a control that reads a width it is
+          not inside reads the window instead. */}
       <div
         ref={setImageAnnotationLifecycleRef}
-        className="relative flex w-full min-w-0 flex-col"
+        className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} />

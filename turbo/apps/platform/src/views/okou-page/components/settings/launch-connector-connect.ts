@@ -2,7 +2,7 @@ import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/conn
 import type { PublicConnectorCatalogAuthMethodDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 
 import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
-import { getConnectorStatusDirectConnectMethod } from "../../../../signals/okou-page/settings/connectors.ts";
+import { getBuiltinConnectorStatusDirectConnectMethod } from "../../../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 
 export interface ConnectorConnectHandlers {
@@ -25,7 +25,8 @@ export function launchConnectorConnect({
   connectBrowserAuth,
   connectNoAuth,
 }: LaunchConnectorConnectOptions): void {
-  const directConnectMethod = getConnectorStatusDirectConnectMethod(connector);
+  const directConnectMethod =
+    getBuiltinConnectorStatusDirectConnectMethod(connector);
   if (!directConnectMethod) {
     openModal();
     return;

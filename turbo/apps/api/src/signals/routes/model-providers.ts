@@ -89,16 +89,16 @@ const getBuiltInModelCooldownDiagnosticsInner$ = command(
     const activeCooldowns = await db
       .select({
         selectedModel: builtInModelCandidateCooldown.selectedModel,
-        providerType: builtInModelCandidateCooldown.providerType,
-        upstreamModel: builtInModelCandidateCooldown.upstreamModel,
+        providerType: builtInModelCandidateCooldown.modelRuntimeProvider,
+        upstreamModel: builtInModelCandidateCooldown.modelRuntimeModel,
         unavailableUntil: builtInModelCandidateCooldown.unavailableUntil,
       })
       .from(builtInModelCandidateCooldown)
       .where(gt(builtInModelCandidateCooldown.unavailableUntil, timestamp))
       .orderBy(
         asc(builtInModelCandidateCooldown.selectedModel),
-        asc(builtInModelCandidateCooldown.providerType),
-        asc(builtInModelCandidateCooldown.upstreamModel),
+        asc(builtInModelCandidateCooldown.modelRuntimeProvider),
+        asc(builtInModelCandidateCooldown.modelRuntimeModel),
       );
     signal.throwIfAborted();
 
@@ -142,11 +142,11 @@ const cancelBuiltInModelCooldownInner$ = command(
             bodyResult.data.selectedModel,
           ),
           eq(
-            builtInModelCandidateCooldown.providerType,
+            builtInModelCandidateCooldown.modelRuntimeProvider,
             bodyResult.data.providerType,
           ),
           eq(
-            builtInModelCandidateCooldown.upstreamModel,
+            builtInModelCandidateCooldown.modelRuntimeModel,
             bodyResult.data.upstreamModel,
           ),
         ),

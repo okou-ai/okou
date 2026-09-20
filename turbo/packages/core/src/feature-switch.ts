@@ -45,16 +45,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.XResourceDeduplication]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Deduplicate daily X resource charges; observations are always recorded",
-    enabled: false,
-  },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
@@ -79,6 +74,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.PresentationConvert]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Convert an HTML presentation into an editable pptx from the CLI.",
+    enabled: false,
+    // Held to the maintainer while fidelity is still being measured against
+    // real decks: conversion succeeds, but what a viewer without the deck's
+    // fonts makes of the result is only known for the decks tried so far.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
     description: "Lightweight chat task chips and contextual starting ideas",
@@ -93,6 +99,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.AhrefsConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ahrefs SEO connector",
+    enabled: false,
+  },
+  [FeatureSwitchKey.PlaudConnector]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable the Plaud MCP connector",
     enabled: false,
   },
   [FeatureSwitchKey.BillConnector]: {
@@ -322,13 +333,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
     enabled: false,
   },
-  [FeatureSwitchKey.IntroVideo]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Enable intro videos with style, avatar, and voice selection in the template picker.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.AvatarNeckSweater]: {
     maintainer: "ming@okou.ai",
     description:
@@ -413,6 +417,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Allow OAuth-authorized external clients to use Okou MCP tools.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.VncAccess]: {
     maintainer: "liangyou@okou.ai",
@@ -453,6 +458,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.GetStartedQuestIntro]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Explain what a Get started quest is worth in an illustrated dialog before it hands the user off, instead of navigating straight to the destination.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerTemplateChipCover]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -483,6 +495,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // against hand-built decks; the template corpus has not been checked yet.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.OptimisticMessageSpinner]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Show a spinner beside a user message the server has not confirmed yet",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 

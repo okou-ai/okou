@@ -62,9 +62,7 @@ The Stage 1 row is updated by #34267; the other foundation entries are unchanged
 | `pi-memory-stage1-usage.service.ts`                                                     | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                               |
 | `image-generation.service.ts`, `video-generation.service.ts`, `avatar-video.service.ts` | Raw trigger; callbacks carry original job billing identity; synchronous image requests carry request-local provenance. |
 | `voice-io-post.service.ts`                                                              | Raw trigger; explicit request-local runless classification.                                                            |
-| `intro-video-agent.service.ts`, `intro-video-render.service.ts`                         | Raw trigger; original job billing identity survives provider delay.                                                    |
-| `intro-video-voice.service.ts`, `intro-video-presenter.service.ts`                      | Raw trigger with required run ID.                                                                                      |
-| `built-in-generation.service.ts`, intro-video agent/render job creation                 | Job INSERT trigger; both webhook job projections include independent identity.                                         |
+| `built-in-generation.service.ts`                                                        | Job INSERT trigger; webhook job projections include independent identity.                                              |
 
 `src/test-fixtures`, `routes/test-*`, `__tests__`, `__benches__`, and
 `src/scripts/dev-bench-seed.ts` are fixtures/benchmarks, not production usage

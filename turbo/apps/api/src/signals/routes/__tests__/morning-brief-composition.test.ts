@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
+import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
@@ -15,12 +16,13 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   clearMorningBriefInstructionsHead,
-  holdMorningBriefInstructionVersionRead,
   holdMorningBriefMembershipLookup,
   pauseMorningBriefAutomation,
+  withMorningBriefInstructionVersionReadFixture,
 } from "../../../test-fixtures/morning-brief-collection";
 import { installMorningBriefFixture } from "../../../test-fixtures/morning-brief-gmail-collection";
 import { createDeferredPromise } from "../../utils";
+import { agentInstructionsRoutes } from "../agent-instructions";
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -1137,6 +1139,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
   ])(
     "decides the held canonical instruction version read $name the deadline",
     async ({ offset, expired }) => {
+      const otherOwner = await setupOwner();
       const fixture = await setupOwner({ slack: true });
       const at = freezeClock();
       const deadlineAt = at + 10_000;
@@ -1163,30 +1166,62 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       );
       await seedMembership(fixture);
       stubSlackMessage(at);
-      const pending = startCompose(fixture, {
-        anchor: anchorFor(at),
-        deadlineAt: new Date(deadlineAt).toISOString(),
-      });
+      const sibling = await bdd.createAgent(fixture.actor);
+      await bdd.updateAgentInstructions(
+        fixture.actor,
+        sibling.agentId,
+        "Unrelated Agent instructions.",
+      );
+      // No HTTP input can suspend this final database read. Pause delivery of
+      // its real result, scoped to this Agent, to test the post-await deadline
+      // fence without locking other requests out of the shared storage table.
+      const response = await withMorningBriefInstructionVersionReadFixture(
+        fixture.agentId,
+        async (versionRead) => {
+          const pending = startCompose(fixture, {
+            anchor: anchorFor(at),
+            deadlineAt: new Date(deadlineAt).toISOString(),
+          });
 
-      const initialAuthority = await initialAuthorityReady.promise;
-      await initialAuthority.waitForArrival();
-      const finalAuthority = holdMorningBriefMembershipLookup(
-        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+          const initialAuthority = await initialAuthorityReady.promise;
+          await initialAuthority.waitForArrival();
+          const finalAuthority = holdMorningBriefMembershipLookup(
+            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+            context.signal,
+          );
+          initialAuthority.release();
+          await finalAuthority.waitForArrival();
+          versionRead.arm();
+
+          // A different organization's storage write must also remain free
+          // to complete while this Agent's final read is armed.
+          await bdd.updateAgentInstructions(
+            otherOwner.actor,
+            otherOwner.agentId,
+            "Write in English.",
+          );
+
+          // The same SELECT for another Agent in this organization must finish
+          // without either entering our barrier or waiting for its release.
+          const unrelated = await accept(
+            setupApp({ context, routes: agentInstructionsRoutes })(
+              agentInstructionsContract,
+            ).get({
+              headers: authHeaders(fixture),
+              params: { id: sibling.agentId },
+            }),
+            [200],
+          );
+          expect(unrelated.body.content).toBe("Unrelated Agent instructions.");
+
+          finalAuthority.release();
+          await versionRead.waitForArrival();
+          mockNow(deadlineAt + offset);
+          versionRead.release();
+          return await accept(pending, [200]);
+        },
         context.signal,
       );
-      initialAuthority.release();
-      await finalAuthority.waitForArrival();
-      // Source revalidation is complete and its final owner proof is now held.
-      // Acquire the database boundary before releasing that proof so only the
-      // canonical instruction-version SELECT can arrive at this lock.
-      const versionRead = await holdMorningBriefInstructionVersionRead(
-        context.signal,
-      );
-      finalAuthority.release();
-      await versionRead.waitForBlocked();
-      mockNow(deadlineAt + offset);
-      await versionRead.release();
-      const response = await accept(pending, [200]);
 
       if (!expired) {
         expect(response.body.result).toBe("composed");

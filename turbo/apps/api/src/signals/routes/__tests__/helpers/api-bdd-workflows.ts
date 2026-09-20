@@ -4,7 +4,9 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   workflowsCollectionContract,
+  workflowsDetailContract,
   workflowAutomationsContract,
+  workflowVisibilityContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
@@ -180,6 +182,8 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly displayName?: string;
         readonly chatThreadId?: string;
         readonly visibility?: "public" | "private";
+        readonly description?: string;
+        readonly instruction?: string;
       },
     ): Promise<string> {
       const client = setupApp({ context, routes: workflowsRoutes })(
@@ -198,11 +202,68 @@ export function createWorkflowsBddApi(context: TestContext) {
               ? { chatThreadId: options.chatThreadId }
               : {}),
             visibility: options.visibility ?? "public",
+            ...(options.description
+              ? { description: options.description }
+              : {}),
+            ...(options.instruction
+              ? { instruction: options.instruction }
+              : {}),
           },
         }),
         [201],
       );
       return response.body.id;
+    },
+
+    async copyWorkflow(
+      actor: ApiTestUser,
+      workflowId: string,
+      toAgentId: string,
+    ): Promise<string> {
+      const client = setupApp({ context, routes: workflowsRoutes })(
+        workflowsDetailContract,
+      );
+      const response = await accept(
+        client.copy({
+          headers: authenticate(actor),
+          params: { workflowId },
+          body: { toAgentId },
+        }),
+        [201],
+      );
+      return response.body.id;
+    },
+
+    async publishWorkflow(
+      actor: ApiTestUser,
+      workflowId: string,
+    ): Promise<void> {
+      const client = setupApp({ context, routes: workflowsRoutes })(
+        workflowVisibilityContract,
+      );
+      await accept(
+        client.publish({
+          headers: authenticate(actor),
+          params: { workflowId },
+        }),
+        [200],
+      );
+    },
+
+    async demoteWorkflow(
+      actor: ApiTestUser,
+      workflowId: string,
+    ): Promise<void> {
+      const client = setupApp({ context, routes: workflowsRoutes })(
+        workflowVisibilityContract,
+      );
+      await accept(
+        client.demote({
+          headers: authenticate(actor),
+          params: { workflowId },
+        }),
+        [200],
+      );
     },
 
     async readAutomation(

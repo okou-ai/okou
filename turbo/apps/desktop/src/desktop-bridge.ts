@@ -3,15 +3,6 @@ import type {
   DesktopComputerUseState,
 } from "./computer-use-types";
 import type { DesktopIdentity } from "./config";
-import type {
-  DesktopRecorderAreaSelection,
-  DesktopRecorderAudioChoice,
-  DesktopRecorderCapabilities,
-  DesktopRecorderCaptureRequest,
-  DesktopRecorderState,
-  DesktopRecorderWindowChoice,
-  DesktopRecorderWindowOption,
-} from "./desktop-recorder-types";
 
 export interface DesktopAuthUser {
   readonly userId: string;
@@ -102,33 +93,6 @@ export interface DesktopDeveloperToolsApi {
   readonly subscribe: (callback: () => void) => () => void;
 }
 
-export interface DesktopRecorderApi {
-  readonly getState: () => Promise<DesktopRecorderState>;
-  readonly getCapabilities: () => Promise<DesktopRecorderCapabilities>;
-  readonly startCapture: (
-    request: DesktopRecorderCaptureRequest,
-  ) => Promise<void>;
-  readonly beginAreaSelection: (
-    audio: DesktopRecorderAudioChoice,
-  ) => Promise<void>;
-  readonly completeAreaSelection: (
-    selection: DesktopRecorderAreaSelection | null,
-  ) => Promise<void>;
-  readonly selectWindow: () => Promise<DesktopRecorderWindowChoice | null>;
-  readonly listWindowOptions: () => Promise<
-    readonly DesktopRecorderWindowOption[]
-  >;
-  readonly completeWindowSelection: (
-    choice: DesktopRecorderWindowChoice | null,
-  ) => Promise<void>;
-  readonly pause: () => Promise<void>;
-  readonly resume: () => Promise<void>;
-  readonly discard: () => Promise<void>;
-  readonly stop: () => Promise<void>;
-  readonly cancel: () => Promise<void>;
-  readonly openScreenRecordingSettings: () => Promise<void>;
-}
-
 export type DesktopIdentityInfo = Pick<
   DesktopIdentity,
   "brandName" | "displayName" | "product"
@@ -140,7 +104,6 @@ declare global {
     okouDesktopComputerUse?: DesktopComputerUseApi;
     okouDesktopDeveloperTools?: DesktopDeveloperToolsApi;
     okouDesktopIdentity: DesktopIdentityInfo;
-    okouDesktopRecorder?: DesktopRecorderApi;
   }
 }
 

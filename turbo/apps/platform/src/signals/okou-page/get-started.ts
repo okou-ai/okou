@@ -110,6 +110,35 @@ export const getStartedSummary$ = computed(
   },
 );
 
+/**
+ * Which quest's intro dialog is open, if any.
+ *
+ * The panel is a dropdown and its rows close it on select, so the dialog that
+ * explains a quest cannot live in the panel's own tree. It is held here for the
+ * same reason the share dialog is.
+ */
+const internalQuestIntroKey$ = state<GetStartedQuestKey | null>(null);
+/**
+ * Whether the workflow intro has advanced from its three steps to the prompt
+ * it hands over. Every open starts on the steps.
+ */
+const internalQuestIntroPromptShown$ = state(false);
+export const questIntroKey$ = computed((get) => {
+  return get(internalQuestIntroKey$);
+});
+export const questIntroPromptShown$ = computed((get) => {
+  return get(internalQuestIntroPromptShown$);
+});
+export const setQuestIntroKey$ = command(
+  ({ set }, key: GetStartedQuestKey | null) => {
+    set(internalQuestIntroKey$, key);
+    set(internalQuestIntroPromptShown$, false);
+  },
+);
+export const showQuestIntroPrompt$ = command(({ set }) => {
+  set(internalQuestIntroPromptShown$, true);
+});
+
 const internalShareDialogOpen$ = state(false);
 const internalSharePostDraft$ = state("");
 const internalShareSubmission$ = state<Promise<void> | null>(null);
@@ -159,6 +188,15 @@ export const submitSharePost$ = command(
     signal.throwIfAborted();
   },
 );
+
+/** Whether the check-in confirmation is showing; the check-in itself already ran. */
+const internalCheckinClaimedOpen$ = state(false);
+export const checkinClaimedOpen$ = computed((get) => {
+  return get(internalCheckinClaimedOpen$);
+});
+export const setCheckinClaimedOpen$ = command(({ set }, open: boolean) => {
+  set(internalCheckinClaimedOpen$, open);
+});
 
 export const checkInGetStarted$ = command(
   async ({ get, set }, signal: AbortSignal) => {

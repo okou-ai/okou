@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { computerUseAuthorizationRequests } from "@okouai/db/schema/computer-use-host";
 import { count, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
@@ -8,6 +10,7 @@ import { z } from "zod";
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import {
+  acknowledgeDetachedForTest,
   createDeferredPromise,
   isAbortError,
   onRejection,
@@ -148,6 +151,10 @@ export async function mutateComputerUseAuthorizationRequestFixture(args: {
 
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.number() });
+const transitiveIdentityWaiterCountsRowSchema = z.object({
+  threadWaiterCount: z.number(),
+  agentWaiterCount: z.number(),
+});
 
 async function blockedRequestPinCount(holderPid: number): Promise<number> {
   const rows = await executeRawRows(
@@ -164,6 +171,49 @@ async function blockedRequestPinCount(holderPid: number): Promise<number> {
   return rows[0]?.waiterCount ?? 0;
 }
 
+async function blockedIdentityMutationCounts(holderPid: number): Promise<{
+  readonly threadWaiterCount: number;
+  readonly agentWaiterCount: number;
+}> {
+  const rows = await executeRawRows(
+    db(),
+    sql`
+      WITH RECURSIVE apply_waiter(pid) AS (
+        SELECT activity.pid
+        FROM pg_stat_activity AS activity
+        WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+          AND lower(activity.query) LIKE '%computer_use_authorization_requests%'
+          AND lower(activity.query) LIKE '%for no key update%'
+      ), blocked_chain(pid) AS (
+        SELECT pid FROM apply_waiter
+        UNION
+        SELECT activity.pid
+        FROM blocked_chain AS blocker
+        JOIN pg_stat_activity AS activity
+          ON blocker.pid = ANY(pg_blocking_pids(activity.pid))
+      )
+      SELECT
+        COUNT(*) FILTER (
+          WHERE lower(mutation.query) LIKE 'update "chat_threads" set "user_id"%'
+             OR lower(mutation.query) LIKE 'update "chat_threads" set "agent_id"%'
+        )::int AS "threadWaiterCount",
+        COUNT(*) FILTER (
+          WHERE lower(mutation.query) LIKE 'update "agents" set "owner"%'
+             OR lower(mutation.query) LIKE 'update "agents" set "org_id"%'
+        )::int AS "agentWaiterCount"
+      FROM pg_stat_activity AS mutation
+      WHERE mutation.pid IN (SELECT pid FROM blocked_chain)
+    `,
+    transitiveIdentityWaiterCountsRowSchema,
+  );
+  return (
+    rows[0] ?? {
+      threadWaiterCount: 0,
+      agentWaiterCount: 0,
+    }
+  );
+}
+
 /**
  * Holds one request row from a real second session. The release function owns
  * and joins the transaction on every exit, including setup rejection and test
@@ -175,9 +225,18 @@ export async function holdComputerUseAuthorizationRequestRowFixture(args: {
 }): Promise<{
   readonly release: () => Promise<void>;
   readonly blockedRequestPinCount: () => Promise<number>;
+  readonly blockedIdentityMutationCounts: () => Promise<{
+    readonly threadWaiterCount: number;
+    readonly agentWaiterCount: number;
+  }>;
 }> {
-  const started = createDeferredPromise<number>(args.signal);
+  const started = createDeferredPromise<
+    | { readonly ok: true; readonly holderPid: number }
+    | { readonly ok: false; readonly error: unknown }
+  >(args.signal);
   const released = createDeferredPromise<void>(args.signal);
+  const setup = settleIncludingAbort(started.promise);
+  acknowledgeDetachedForTest(started.promise);
   const holding = onRejection(
     db().transaction(async (tx) => {
       const [request] = await tx
@@ -203,12 +262,15 @@ export async function holdComputerUseAuthorizationRequestRowFixture(args: {
       if (!holderPid) {
         throw new Error("Expected the request holder backend pid");
       }
-      started.resolve(holderPid);
+      started.resolve({ ok: true, holderPid });
       await released.promise;
     }),
     (error) => {
       if (!started.settled()) {
-        started.reject(error);
+        started.resolve({ ok: false, error });
+      }
+      if (!released.settled()) {
+        released.resolve(undefined);
       }
     },
   );
@@ -222,14 +284,110 @@ export async function holdComputerUseAuthorizationRequestRowFixture(args: {
       throw result.error;
     }
   };
+  const setupResult = await setup;
+  if (!setupResult.ok) {
+    await finished;
+    throw setupResult.error;
+  }
+  if (!setupResult.value.ok) {
+    await finished;
+    throw setupResult.value.error;
+  }
   onTestFinished(release);
-  const holderPid = await started.promise;
+  const { holderPid } = setupResult.value;
   return {
     release,
     blockedRequestPinCount: async () => {
       return await blockedRequestPinCount(holderPid);
     },
+    blockedIdentityMutationCounts: async () => {
+      return await blockedIdentityMutationCounts(holderPid);
+    },
   };
+}
+
+/**
+ * Apply-local holder for the canonical thread row. Unlike the older raw shared
+ * holder, setup failure reaches the caller immediately and the registered
+ * async release always joins the outer transaction. This fixture changes no
+ * row and exists only for timeout and lifecycle evidence in the Apply suite.
+ */
+export async function holdComputerUseAuthorizationApplyThreadRowFixture(args: {
+  readonly chatThreadId: string;
+  readonly signal: AbortSignal;
+}): Promise<{ readonly release: () => Promise<void> }> {
+  const started = createDeferredPromise<
+    | { readonly ok: true; readonly holderPid: number }
+    | { readonly ok: false; readonly error: unknown }
+  >(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const setup = settleIncludingAbort(started.promise);
+  acknowledgeDetachedForTest(started.promise);
+  const holding = onRejection(
+    db().transaction(async (tx) => {
+      const [thread] = await tx
+        .select({ id: chatThreads.id })
+        .from(chatThreads)
+        .where(eq(chatThreads.id, args.chatThreadId))
+        .for("update")
+        .limit(1);
+      if (!thread) {
+        throw new Error("Expected the Computer Use Apply thread row");
+      }
+      const pids = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS "pid"`,
+        databasePidRowSchema,
+      );
+      const holderPid = pids[0]?.pid;
+      if (!holderPid) {
+        throw new Error("Expected the Apply thread holder backend pid");
+      }
+      started.resolve({ ok: true, holderPid });
+      await released.promise;
+    }),
+    (error) => {
+      if (!started.settled()) {
+        started.resolve({ ok: false, error });
+      }
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+  );
+  const finished = settleIncludingAbort(holding);
+  const release = async () => {
+    if (!released.settled()) {
+      released.resolve(undefined);
+    }
+    const result = await finished;
+    if (!result.ok && !(args.signal.aborted && isAbortError(result.error))) {
+      throw result.error;
+    }
+  };
+  const setupResult = await setup;
+  if (!setupResult.ok) {
+    await finished;
+    throw setupResult.error;
+  }
+  if (!setupResult.value.ok) {
+    await finished;
+    throw setupResult.value.error;
+  }
+  onTestFinished(release);
+  return { release };
+}
+
+/** The lifecycle regression verifies its exact test-owned closure was removed. */
+export async function computerUseAuthorizationApplyErasureJobExistsFixture(
+  jobId: string,
+): Promise<boolean> {
+  const [job] = await db()
+    .select({ id: accountErasureJobs.id })
+    .from(accountErasureJobs)
+    .where(eq(accountErasureJobs.id, jobId))
+    .limit(1);
+  return job !== undefined;
 }
 
 /**
@@ -340,7 +498,17 @@ function tookRequestPin(transaction: SelectedTransaction): boolean {
   });
 }
 
+function isAgentPin(queryArgs: unknown[]): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('from "agents"') &&
+    text.includes("for key share")
+  );
+}
+
 type ComputerUseAuthorizationApplyStop =
+  | "before-agent-pin"
   | "before-thread-pin"
   | "thread-pin"
   | "request-pin"
@@ -363,6 +531,9 @@ export async function withComputerUseAuthorizationApplyBarrierFixture<T>(
         return isContentIdentityRead(queryArgs, args.chatThreadId);
       },
       stopAt: (queryArgs, _selectingStatement, transaction) => {
+        if (args.stopAt === "before-agent-pin") {
+          return isAgentPin(queryArgs);
+        }
         if (
           args.stopAt === "before-thread-pin" ||
           args.stopAt === "thread-pin"
@@ -384,7 +555,9 @@ export async function withComputerUseAuthorizationApplyBarrierFixture<T>(
         );
       },
       pauseAfter:
-        args.stopAt !== "before-thread-pin" && args.stopAt !== "commit",
+        args.stopAt !== "before-agent-pin" &&
+        args.stopAt !== "before-thread-pin" &&
+        args.stopAt !== "commit",
       work: args.work,
     },
     signal,

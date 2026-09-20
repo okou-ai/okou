@@ -73,12 +73,6 @@ function personalSecretNames(type: PersonalType): readonly string[] {
   return names;
 }
 
-/** Request-local metadata only. This also runs under thread lifecycle locks.
- * Never call account list/ensure/capture, decrypt, or probe a provider here.
- * A retained parent is absent only after its connection AND mirror were cleared.
- * Actual old writers can recreate a mirror (even only the first Claude write)
- * before updating the parent; canonical A capture owns importing that identity.
- * #34010 owns removal after the serving-writer/context/rollback gates close. */
 export async function loadMemberModelRouteContext(
   db: Db,
   orgId: string,
@@ -93,6 +87,23 @@ export async function loadMemberModelRouteContext(
   ) {
     return { priorityEnabled: false, subscriptions: [] };
   }
+  return {
+    priorityEnabled: true,
+    subscriptions: await loadPersonalModelRouteSubscriptions(db, orgId, userId),
+  };
+}
+
+/** Request-local metadata only. This also runs under thread lifecycle locks.
+ * Never call account list/ensure/capture, decrypt, or probe a provider here.
+ * A retained parent is absent only after its connection AND mirror were cleared.
+ * Actual old writers can recreate a mirror (even only the first Claude write)
+ * before updating the parent; canonical A capture owns importing that identity.
+ * #34010 owns removal after the serving-writer/context/rollback gates close. */
+export async function loadPersonalModelRouteSubscriptions(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<readonly PersonalCandidate[]> {
   const accountOwner = and(
     eq(modelProviderAccounts.modelProviderId, modelProviders.id),
     eq(modelProviderAccounts.orgId, orgId),
@@ -183,7 +194,7 @@ export async function loadMemberModelRouteContext(
         provider?.activeNeedsReconnect === true,
     });
   }
-  return { priorityEnabled: true, subscriptions };
+  return subscriptions;
 }
 
 export function providerTypeForSurfaceProtocol(

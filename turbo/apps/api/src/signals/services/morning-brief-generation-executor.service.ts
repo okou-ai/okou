@@ -59,13 +59,14 @@ import {
   type GenerationRequestPlan,
   type GenerationSource,
 } from "./morning-brief-generation-prompt";
-import type { MorningBriefCoverageFacts } from "./morning-brief-coverage-note";
 import { interpretGenerationOutput } from "./morning-brief-generation-result";
+import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
 import {
   acceptMorningBriefGenerationResult,
   holdMorningBriefGenerationSlot,
   lockMorningBriefGeneration,
   readMorningBriefGeneration,
+  readMorningBriefGenerationRecovery,
   readPlatformGenerationReceipt,
   recordMorningBriefGenerationOutcome,
   recordMorningBriefGenerationSkip,
@@ -173,6 +174,25 @@ export type MorningBriefGenerationExecution =
       readonly occurrence: MorningBriefCollectionOccurrenceView;
     };
 
+/**
+ * Content-free resolution of the exact durable S5 attempt a native slot bound.
+ *
+ * This is deliberately S5 vocabulary. The native scheduler may map it onto its
+ * own settlement outcomes, but it does not inspect S5 rows or reinterpret model
+ * output itself. A deliverable result still has to pass S6's authority fence.
+ */
+export interface MorningBriefGenerationRecovery {
+  readonly kind:
+    | "pending"
+    | "deliverable"
+    | "empty-skip"
+    | "collection-failed"
+    | "model-skip"
+    | "generation-failed"
+    | "generation-unknown";
+  readonly attemptId: string;
+}
+
 /** What the in-transaction handoff produced for the request that follows it. */
 type AdmittedGeneration =
   | {
@@ -243,9 +263,19 @@ function admissionOf(args: {
   return {
     key: generationKeyOf(context),
     executionPurpose: args.purpose,
+    // The Slack compatibility writer has no instruction or retained-source
+    // provenance. Explicit nulls prevent it from claiming all-source proof.
+    instructionsVersionId: null,
+    instructionsDigest: null,
+    retainedSources: null,
+    retainedUntil: null,
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
+    // The Slack-only compatibility writer predates retained all-source proof.
+    installationId: null,
+    automationId: null,
+    chatThreadId: null,
     model: MORNING_BRIEF_GENERATION_MODEL,
     language: language.language,
     languageSource: language.source,
@@ -313,7 +343,6 @@ type MorningBriefGenerationRequest = {
       readonly nativeAuthority: MorningBriefNativeGenerationAuthority;
     }
 );
-
 async function admitGeneration(
   tx: Tx,
   purpose: MorningBriefExecutionPurpose,
@@ -471,6 +500,8 @@ type InterpretedOutcome =
       readonly kind: "accept";
       readonly decision: "deliver" | "skip";
       readonly skipReason: string | null;
+      /** What the answer said it was written in; never what was asked for. */
+      readonly reportedLanguage: string | null;
       readonly title: string | null;
       readonly markdown: string | null;
       readonly bytes: number | null;
@@ -494,11 +525,39 @@ type InterpretedOutcome =
  * never supplied and an empty or oversized brief are all failures. None of them
  * is a skip, and none of them is repaired by a second request.
  */
+/**
+ * How one input shape turns raw model content into an outcome.
+ *
+ * The transport, reservation, receipt, cost and persistence engine below is
+ * shared by every caller; only the contract the answer must satisfy differs.
+ * Passing that contract in keeps it that way, instead of growing a second
+ * engine beside this one.
+ */
+type MorningBriefContentInterpreter = (content: string) =>
+  | {
+      readonly kind: "accepted";
+      readonly result:
+        | {
+            readonly decision: "deliver";
+            readonly title: string;
+            readonly markdown: string;
+            readonly bytes: number;
+            readonly reportedLanguage?: string | null;
+          }
+        | {
+            readonly decision: "skip";
+            readonly reason: string;
+            readonly reportedLanguage?: string | null;
+          };
+    }
+  | {
+      readonly kind: "rejected";
+      readonly reason: MorningBriefGenerationFailureReason;
+    };
+
 function interpretResponse(
   observation: PlatformGenerationObservation,
-  sources: ReadonlyMap<string, GenerationSource>,
-  coverage: MorningBriefCoverageFacts,
-  language: string,
+  interpret: MorningBriefContentInterpreter,
 ): InterpretedOutcome {
   if (observation.completionError) {
     return {
@@ -531,12 +590,7 @@ function interpretResponse(
       failureReason: "invalid_shape",
     };
   }
-  const interpreted = interpretGenerationOutput({
-    content: observation.content,
-    sources,
-    coverage,
-    language,
-  });
+  const interpreted = interpret(observation.content);
   if (interpreted.kind === "rejected") {
     return {
       kind: "reject",
@@ -544,11 +598,13 @@ function interpretResponse(
       failureReason: interpreted.reason,
     };
   }
+  const reportedLanguage = interpreted.result.reportedLanguage ?? null;
   return interpreted.result.decision === "skip"
     ? {
         kind: "accept",
         decision: "skip",
         skipReason: interpreted.result.reason,
+        reportedLanguage,
         title: null,
         markdown: null,
         bytes: null,
@@ -557,6 +613,7 @@ function interpretResponse(
         kind: "accept",
         decision: "deliver",
         skipReason: null,
+        reportedLanguage,
         title: interpreted.result.title,
         markdown: interpreted.result.markdown,
         bytes: interpreted.result.bytes,
@@ -612,7 +669,7 @@ function classifyTransport(
  * or was written by something outside this contract — which is worth failing
  * loudly for, not papering over.
  */
-function viewOfRow(
+export function viewOfRow(
   row: MorningBriefGenerationRow,
   receipt: MorningBriefPlatformReceiptView | null,
 ): MorningBriefGenerationView {
@@ -628,6 +685,7 @@ function viewOfRow(
   }
   if (
     row.decision === "deliver" &&
+    row.contentPurgedAt === null &&
     (row.resultTitle === null ||
       row.resultMarkdown === null ||
       row.resultBytes === null)
@@ -805,6 +863,7 @@ async function commitOwnerOutcome(
       {
         decision: interpreted.decision,
         skipReason: interpreted.skipReason,
+        reportedLanguage: interpreted.reportedLanguage,
         title: interpreted.title,
         markdown: interpreted.markdown,
         bytes: interpreted.bytes,
@@ -862,6 +921,10 @@ const generationAuthorityStillCurrent$ = command(
       {
         owner: { orgId: occurrence.orgId, userId: occurrence.userId },
         scheduledFor: occurrence.scheduledFor,
+        // The occurrence decides which authority still has to hold, so a
+        // source-independent slot is never judged against a Slack binding it
+        // was not admitted under.
+        collectionKind: occurrence.collectionKind,
       },
       signal,
     );
@@ -1118,7 +1181,7 @@ const resolveExistingGeneration$ = command(
       // Settling a lapsed reservation records an operational fact and releases
       // no content, so it is not gated on the content-release authority below.
       const resolved = await db.transaction(async (tx) => {
-        return await resolveStaleMorningBriefGeneration(tx, key);
+        return await resolveStaleMorningBriefGeneration(tx, key, row.attemptId);
       });
       signal.throwIfAborted();
       if (!resolved) {
@@ -1158,6 +1221,29 @@ const resolveExistingGeneration$ = command(
       return { kind: "conflict", reason: "binding-changed" };
     }
 
+    // Re-check every source that entered the persisted request, including
+    // supplied-but-uncited material. This is the last external wait before the
+    // owner/result transaction below makes the final no-await release decision.
+    const sourceRefusal = await set(
+      revalidateMorningBriefStoredGenerationSources$,
+      {
+        owner: key.owner,
+        resultAttemptId: row.attemptId,
+        purpose: args.purpose,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (sourceRefusal === "owner-revoked") {
+      return { kind: "conflict", reason: "owner-revoked" };
+    }
+    if (sourceRefusal === "binding-changed") {
+      return { kind: "conflict", reason: "binding-changed" };
+    }
+    if (sourceRefusal !== null) {
+      return { kind: "collection-completed-without-generation", occurrence };
+    }
+
     // The last wait this request performs, and then the fence that decides
     // whether what it read may still be released. Nothing awaits after it.
     const receipt = await loadReceiptView(db, row.attemptId);
@@ -1194,16 +1280,138 @@ const resolveExistingGeneration$ = command(
   },
 );
 
+function recoveryOfGeneration(
+  row: NonNullable<
+    Awaited<ReturnType<typeof readMorningBriefGenerationRecovery>>
+  >,
+  at: Date,
+): MorningBriefGenerationRecovery {
+  const recovered = (
+    kind: MorningBriefGenerationRecovery["kind"],
+  ): MorningBriefGenerationRecovery => {
+    return { kind, attemptId: row.attemptId };
+  };
+  switch (row.state) {
+    case "reserved": {
+      return recovered("pending");
+    }
+    case "skipped_empty": {
+      return recovered("empty-skip");
+    }
+    case "skipped_incomplete": {
+      return recovered("collection-failed");
+    }
+    case "succeeded": {
+      if (row.decision === "skip") {
+        return recovered("model-skip");
+      }
+      // S6 must not be asked to release owner content after its retention
+      // boundary. Current maintenance clears body bytes first and retains the
+      // content-free invocation fence through the replay window, so either the
+      // explicit purge marker or an elapsed deadline makes delivery unknown.
+      return recovered(
+        row.decision === "deliver" &&
+          row.contentPurgedAt === null &&
+          row.expiresAt.getTime() > at.getTime()
+          ? "deliverable"
+          : "generation-unknown",
+      );
+    }
+    case "invocation_outcome_unknown": {
+      return recovered("generation-unknown");
+    }
+    case "output_rejected":
+    case "provider_failed":
+    case "not_invoked":
+    case "result_discarded": {
+      return recovered("generation-failed");
+    }
+  }
+}
+
+/**
+ * Resolve the exact S5 attempt a native occurrence already bound.
+ *
+ * No source is recollected, no provider request is possible and no saved body
+ * is selected. A live reservation remains pending. A lapsed reservation is
+ * settled through S5's existing stale-reservation transition, then read again
+ * so a concurrent terminal writer wins honestly. Physical retention deletion
+ * is the only way a terminal row disappears; because the caller supplied the
+ * durable attempt id, that absence is an unknown generation, never an empty
+ * collection and never permission to generate again.
+ */
+export const recoverMorningBriefGeneration$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: MorningBriefCollectionOwner;
+      readonly attemptId: string;
+      readonly purpose: MorningBriefExecutionPurpose;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefGenerationRecovery> => {
+    const db = set(writeDb$);
+    let row = await readMorningBriefGenerationRecovery(db, args);
+    signal.throwIfAborted();
+    if (row === undefined) {
+      return { kind: "generation-unknown", attemptId: args.attemptId };
+    }
+
+    if (
+      row.state === "reserved" &&
+      row.reservationExpiresAt.getTime() <= nowDate().getTime()
+    ) {
+      const key: MorningBriefGenerationKey = {
+        owner: row.owner,
+        scheduledFor: row.scheduledFor,
+        collectionKind: row.collectionKind,
+        collectionVersion: row.collectionVersion,
+      };
+      await db.transaction(async (tx) => {
+        await resolveStaleMorningBriefGeneration(tx, key, args.attemptId);
+      });
+      signal.throwIfAborted();
+      // The stale transition may have lost to the original terminal writer.
+      // Re-read by exact attempt so either committed outcome is classified, and
+      // a concurrent retention deletion is reported as unknown.
+      row = await readMorningBriefGenerationRecovery(db, args);
+      signal.throwIfAborted();
+      if (row === undefined) {
+        return { kind: "generation-unknown", attemptId: args.attemptId };
+      }
+    }
+
+    return recoveryOfGeneration(row, nowDate());
+  },
+);
+
 interface InvocationArgs {
   readonly db: Db;
   readonly apiKey: string;
   readonly admission: MorningBriefGenerationAdmission;
-  readonly plan: GenerationRequestPlan;
-  readonly sources: ReadonlyMap<string, GenerationSource>;
-  readonly coverage: MorningBriefSlackBundle["coverage"];
+  /** The exact transport bytes this reservation admitted. Sent at most once. */
+  readonly body: string;
+  /** The contract the answer must satisfy, supplied by the input shape. */
+  readonly interpret: MorningBriefContentInterpreter;
+  readonly coverage: MorningBriefGenerationAdmission["sourceCoverage"];
   readonly occurrence: MorningBriefCollectionOccurrenceView;
   /** The durable record of the authority this invocation acts under. */
   readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
+  /**
+   * A last deterministic check, run after the reservation COMMIT and before
+   * any provider contact.
+   *
+   * It is where a caller consumes the shared retained-source revalidator: the
+   * sources were read before the reservation, and a revocation in between must
+   * stop the request rather than be discovered after it was sent.
+   */
+  readonly preflight?: (
+    signal: AbortSignal,
+  ) => Promise<MorningBriefGenerationFailureReason | null>;
+  /** Re-run the same retained-source proof after the response, before content. */
+  readonly postflight?: (
+    signal: AbortSignal,
+  ) => Promise<MorningBriefGenerationFailureReason | null>;
 }
 
 /**
@@ -1237,19 +1445,6 @@ async function reconcileCost(
 }
 
 /**
- * The collector's own verdict plus the candidates the plan had to drop.
- *
- * Both come from the same place the request was built from, so the note the
- * reader sees cannot disagree with what the model was told.
- */
-function coverageFactsOf(args: InvocationArgs): MorningBriefCoverageFacts {
-  return {
-    collected: args.coverage,
-    omittedForSize: args.plan.droppedItems,
-  };
-}
-
-/**
  * The irreversible step, and the one place cancellation must not short-circuit.
  *
  * Every await here deliberately settles rather than propagates: once the
@@ -1265,10 +1460,7 @@ async function requestAndRecordCharge(
     readonly apiKey: string;
     readonly attemptId: string;
     readonly body: string;
-    readonly sources: ReadonlyMap<string, GenerationSource>;
-    /** The same numbers the request was built from, for the coverage note. */
-    readonly coverage: MorningBriefCoverageFacts;
-    readonly language: string;
+    readonly interpret: MorningBriefContentInterpreter;
   },
   providerSignal: AbortSignal,
 ): Promise<{
@@ -1296,12 +1488,7 @@ async function requestAndRecordCharge(
         )
       : {
           receiptOutcome: "response_received" as const,
-          interpreted: interpretResponse(
-            observed,
-            args.sources,
-            args.coverage,
-            args.language,
-          ),
+          interpreted: interpretResponse(observed, args.interpret),
         };
   const receipt = receiptValuesOf({
     attemptId: args.attemptId,
@@ -1418,7 +1605,7 @@ async function recordUninvokedAttempt(
  * request is never retried, because the reservation is already durable and a
  * resent request could be a second inference.
  */
-const invokeAndPersist$ = command(
+export const invokeAndPersist$ = command(
   async (
     { set },
     args: InvocationArgs,
@@ -1474,9 +1661,24 @@ const invokeAndPersist$ = command(
       );
     }
 
-    // Resampled immediately before contact, so a preflight that consumed the
-    // allowance cannot still admit the one request this reservation permits.
-    // Equality with the deadline is exhausted.
+    // The caller's own last deterministic check, after the reservation COMMIT
+    // and still before contact. A source revoked while the reservation was
+    // being committed stops the request here, where nothing has been sent, so
+    // it is a proven pre-contact failure rather than an unknown outcome. The
+    // immutable request is never edited or recollected to get past it.
+    if (args.preflight) {
+      const refused = await args.preflight(
+        AbortSignal.any([signal, AbortSignal.timeout(preflightBudgetMs)]),
+      );
+      signal.throwIfAborted();
+      if (refused !== null) {
+        return await uninvoked(refused);
+      }
+    }
+
+    // Resampled after every wait, so a preflight that consumed the allowance
+    // cannot still admit the one request this reservation permits. Equality
+    // with the deadline is exhausted.
     const budgetMs = remainingProviderBudgetMs(
       admission.reservationExpiresAt,
       nowDate(),
@@ -1494,10 +1696,8 @@ const invokeAndPersist$ = command(
         db,
         apiKey: args.apiKey,
         attemptId: admission.attemptId,
-        body: args.plan.body,
-        sources: args.sources,
-        coverage: coverageFactsOf(args),
-        language: args.plan.language,
+        body: args.body,
+        interpret: args.interpret,
       },
       AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
     );
@@ -1515,10 +1715,31 @@ const invokeAndPersist$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const interpreted =
+    let interpreted =
       stillAdmitted.kind === "current"
         ? observedOutcome
         : lapsedAuthorityOutcome(stillAdmitted);
+
+    if (stillAdmitted.kind === "current" && args.postflight) {
+      const remainingMs = Math.min(
+        5000,
+        admission.reservationExpiresAt.getTime() - nowDate().getTime(),
+      );
+      const refused =
+        remainingMs <= 0
+          ? "reservation_expired"
+          : await args.postflight(
+              AbortSignal.any([signal, AbortSignal.timeout(remainingMs)]),
+            );
+      signal.throwIfAborted();
+      if (refused !== null) {
+        interpreted = lapsedAuthorityOutcome(
+          refused === "binding_changed"
+            ? { kind: "binding-changed" }
+            : { kind: "not-executed", reason: "membership-revoked" },
+        );
+      }
+    }
 
     const persisted = await persistObservation(
       db,
@@ -1576,7 +1797,7 @@ async function collectForGeneration<T>(
  * reservation-before-single-POST protocol, the same platform cost accounting
  * and the same output validation.
  */
-export const executeMorningBriefGeneration$ = command(
+const executeMorningBriefGeneration$ = command(
   async (
     { set },
     args: MorningBriefGenerationRequest,
@@ -1679,14 +1900,25 @@ export const executeMorningBriefGeneration$ = command(
       };
     }
 
+    const plan = admitted.plan;
     return await set(
       invokeAndPersist$,
       {
         db,
         apiKey,
         admission: admitted.admission,
-        plan: admitted.plan,
-        sources,
+        body: plan.body,
+        interpret: (content) => {
+          return interpretGenerationOutput({
+            content,
+            sources,
+            coverage: {
+              collected: bundleCoverage,
+              omittedForSize: plan.droppedItems,
+            },
+            language: plan.language,
+          });
+        },
         coverage: bundleCoverage,
         occurrence: execution.occurrence,
         occurrenceRow,

@@ -8,8 +8,7 @@ import { parseAvatarTemplateStylePresetId } from "./avatar-template";
  * Creative video and talking avatar still share the wire contract's
  * `type: "video"` and are told apart only by `selection.stylePresetId`, so this
  * owns that derivation once rather than leaving each surface to re-read the raw
- * id. Every other product, Intro Video included, is its own wire type and
- * passes straight through.
+ * id. Every other product is its own wire type and passes straight through.
  *
  * A kind is neither a display string nor a picker tab id. Callers translate it
  * into their own vocabulary: the composer's picker calls presentations
@@ -19,7 +18,6 @@ export type GenerationTemplateKind =
   | "avatar"
   | "custom"
   | "illustration"
-  | "intro-video"
   | "presentation"
   | "video"
   | "website"
@@ -44,14 +42,18 @@ export type GenerationTemplateKindSource =
 /**
  * Classify one template selection.
  *
- * A selection stored before Intro Video became its own wire type still carries
- * `type: "video"`, so it classifies as creative video. That is the accepted
- * cost of not backfilling staff-only rows; see the Intro Video schema in
- * `chat-threads.ts`.
+ * A retired Intro Video selection reports as creative video. Its rows survive
+ * in the append-only chat event log, and the wire type is the only thing left
+ * of the product, so it is folded into the envelope it came from rather than
+ * kept as a kind no surface can render. This matches how selections stored
+ * before Intro Video had its own wire type already classify.
  */
 export function generationTemplateKind(
   source: GenerationTemplateKindSource,
 ): GenerationTemplateKind {
+  if (source.type === "intro-video") {
+    return "video";
+  }
   if (source.type !== "video") {
     return source.type;
   }

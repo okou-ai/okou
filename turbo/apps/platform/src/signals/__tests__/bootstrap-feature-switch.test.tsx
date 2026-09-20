@@ -25,12 +25,6 @@ async function openTemplates() {
   await screen.findByRole("dialog");
 }
 
-function introVideoTab() {
-  return queryAllByRoleFast("tab").find((tab) => {
-    return tab.textContent?.trim() === "Intro video";
-  });
-}
-
 test("A signed-in workspace receives its enabled features", async () => {
   mockOrgModelRoutes("claude-sonnet-4-6");
   mockAgent();
@@ -39,14 +33,14 @@ test("A signed-in workspace receives its enabled features", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.IntroVideo]: true,
+      [FeatureSwitchKey.CustomTemplates]: true,
     },
   });
 
   await screen.findByRole("textbox", { name: "Message" });
   await openTemplates();
   await waitFor(() => {
-    expect(introVideoTab()).toBeVisible();
+    expect(customTemplatesTab()).toBeVisible();
   });
 });
 
@@ -64,7 +58,6 @@ async function setupEmailRolloutPage(args: {
       switches: {},
       effectiveSwitches: {
         [FeatureSwitchKey.CustomTemplates]: false,
-        [FeatureSwitchKey.IntroVideo]: true,
       },
     });
   });
@@ -81,14 +74,13 @@ async function setupEmailRolloutPage(args: {
     },
   });
 
+  // Routes start only after the workspace feature response has been applied,
+  // so reaching the composer already proves the server payload landed and the
+  // email defaults were reapplied on top of it.
   await screen.findByRole("textbox", { name: "Message" });
-  // Routes start only after the workspace feature response has been applied.
   const user = userEvent.setup({ delay: null });
   await user.click(await screen.findByLabelText("Template"));
   await screen.findByRole("dialog");
-  await waitFor(() => {
-    expect(introVideoTab()).toBeVisible();
-  });
 }
 
 function customTemplatesTab(): HTMLElement | undefined {

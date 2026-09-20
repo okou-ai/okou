@@ -90,19 +90,29 @@ export function resolveArtifactFileReference(
   });
 }
 
+export function privateArtifactReferenceUrl(
+  reference: string,
+  filename: string,
+): string {
+  return new URL(
+    artifactShareReferencePath(reference, filename),
+    env("APP_URL"),
+  ).href;
+}
+
 export function privateArtifactUrl(
   id: string,
   filename: string,
   metadata: RunUploadedFileMetadata,
 ): string {
   if (metadata.artifactReference !== undefined) {
-    return artifactShareReferencePath(
+    return privateArtifactReferenceUrl(
       z.string().parse(metadata.artifactReference),
       filename,
     );
   }
-  // Persisted private files created before short references retain their URL.
-  return artifactReferencePath(id, filename);
+  // Persisted private files created before short references retain their ID.
+  return new URL(artifactReferencePath(id, filename), env("APP_URL")).href;
 }
 
 export function privateArtifactsBucket(): string {

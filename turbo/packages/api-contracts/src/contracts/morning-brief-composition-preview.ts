@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { morningBriefCollectionOccurrenceSchema } from "./morning-brief-collection-preview";
+import { morningBriefGenerationViewSchema } from "./morning-brief-generation-preview";
 
 const c = initContract();
 
@@ -257,7 +259,62 @@ const composeResponseSchema = z.discriminatedUnion("result", [
   z.object({ result: z.literal("authority-changed") }),
 ]);
 
+/**
+ * What one composed generation produced.
+ *
+ * It reports the same occurrence and generation views the Slack-only engine
+ * reports, because it is the same engine: one reservation, one platform-funded
+ * request, one accepted result. The accepted result's `attemptId` is the
+ * reference a delivery consumer resolves content by; no evidence, prompt,
+ * instruction text or credential is returned here.
+ */
+const generateResponseSchema = z.discriminatedUnion("result", [
+  z.object({
+    result: z.literal("generated"),
+    occurrence: morningBriefCollectionOccurrenceSchema,
+    generation: morningBriefGenerationViewSchema,
+  }),
+  z.object({
+    result: z.literal("already-generated"),
+    occurrence: morningBriefCollectionOccurrenceSchema,
+    generation: morningBriefGenerationViewSchema,
+  }),
+  z.object({
+    result: z.literal("collection-completed-without-generation"),
+    occurrence: morningBriefCollectionOccurrenceSchema,
+  }),
+  z.object({
+    result: z.literal("collection-failed"),
+    occurrence: morningBriefCollectionOccurrenceSchema,
+  }),
+  z.object({
+    result: z.literal("not-executed"),
+    reason: z.string(),
+  }),
+  z.object({
+    result: z.literal("incomplete"),
+    reason: z.string(),
+    detail: z.string(),
+  }),
+  z.object({ result: z.literal("authority-changed") }),
+]);
+
 export const morningBriefCompositionPreviewContract = c.router({
+  generate: {
+    method: "POST",
+    path: "/api/morning-brief/collection-preview/generate",
+    headers: authHeadersSchema,
+    body: z.object({ anchor: z.string().datetime() }),
+    responses: {
+      200: generateResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: z.union([apiErrorSchema, z.string()]),
+      409: apiErrorSchema,
+    },
+    summary: "Generate one Morning Brief from every configured source",
+  },
   compose: {
     method: "POST",
     path: "/api/morning-brief/collection-preview/compose",

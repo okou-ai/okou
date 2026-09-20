@@ -150,7 +150,7 @@ describe("X resource observation wire contract", () => {
     expect(parse(Array.from({ length: 101 }, observation)).success).toBe(false);
   });
 
-  it("retains the legacy protocol and requires a bounded UUID run for v1", () => {
+  it("accepts generic count events and requires a bounded UUID run for resources", () => {
     for (const kind of ["connector", "model", "image"]) {
       expect(
         parse([

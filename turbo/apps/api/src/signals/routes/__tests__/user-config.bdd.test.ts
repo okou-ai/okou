@@ -101,7 +101,7 @@ describe("AUTH-03 agent user connectors", () => {
       displayName: "BDD Connector Agent",
     });
 
-    const set = await cfg.updateUserConnectors(admin, agent.agentId, [
+    const set = await cfg.updateUserBuiltinConnectors(admin, agent.agentId, [
       "github",
       "slack",
     ]);
@@ -113,17 +113,17 @@ describe("AUTH-03 agent user connectors", () => {
       new Set(["github", "slack"]),
     );
 
-    const deduped = await cfg.updateUserConnectors(admin, agent.agentId, [
-      "slack",
-      "github",
-      "slack",
-    ]);
+    const deduped = await cfg.updateUserBuiltinConnectors(
+      admin,
+      agent.agentId,
+      ["slack", "github", "slack"],
+    );
     expect(deduped.enabledConnectorSlugs).toHaveLength(2);
     expect(new Set(deduped.enabledConnectorSlugs)).toStrictEqual(
       new Set(["github", "slack"]),
     );
 
-    const added = await cfg.updateUserConnectors(
+    const added = await cfg.updateUserBuiltinConnectors(
       admin,
       agent.agentId,
       ["linear"],
@@ -137,14 +137,20 @@ describe("AUTH-03 agent user connectors", () => {
       new Set(["github", "slack", "linear"]),
     );
 
-    const replaced = await cfg.updateUserConnectors(admin, agent.agentId, [
-      "linear",
-    ]);
+    const replaced = await cfg.updateUserBuiltinConnectors(
+      admin,
+      agent.agentId,
+      ["linear"],
+    );
     expect(replaced.enabledConnectorSlugs).toStrictEqual(["linear"]);
     const readReplaced = await cfg.readUserConnectors(admin, agent.agentId);
     expect(readReplaced.enabledConnectorSlugs).toStrictEqual(["linear"]);
 
-    const cleared = await cfg.updateUserConnectors(admin, agent.agentId, []);
+    const cleared = await cfg.updateUserBuiltinConnectors(
+      admin,
+      agent.agentId,
+      [],
+    );
     expect(cleared.enabledConnectorSlugs).toStrictEqual([]);
     const readCleared = await cfg.readUserConnectors(admin, agent.agentId);
     expect(readCleared.enabledConnectorSlugs).toStrictEqual([]);
@@ -161,7 +167,7 @@ describe("AUTH-03 agent user connectors", () => {
       code: "VALIDATION_ERROR",
     });
 
-    const discoveryHidden = await cfg.updateUserConnectors(
+    const discoveryHidden = await cfg.updateUserBuiltinConnectors(
       admin,
       agent.agentId,
       ["bentoml"],
@@ -205,7 +211,7 @@ describe("AUTH-03 agent user connectors", () => {
 
     const pat = await api.createCliToken(admin);
     cfg.mockMembership(admin, "org:admin");
-    const patSet = await cfg.updateUserConnectors(
+    const patSet = await cfg.updateUserBuiltinConnectors(
       { bearer: pat.token },
       agent.agentId,
       ["github"],
@@ -224,8 +230,14 @@ describe("AUTH-03 agent user connectors", () => {
     });
 
     const sameSetUpdates = await Promise.all([
-      cfg.updateUserConnectors(admin, agent.agentId, ["github", "slack"]),
-      cfg.updateUserConnectors(admin, agent.agentId, ["github", "slack"]),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, [
+        "github",
+        "slack",
+      ]),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, [
+        "github",
+        "slack",
+      ]),
     ]);
     for (const update of sameSetUpdates) {
       expect(new Set(update.enabledConnectorSlugs)).toStrictEqual(
@@ -234,18 +246,18 @@ describe("AUTH-03 agent user connectors", () => {
     }
 
     await Promise.all([
-      cfg.updateUserConnectors(admin, agent.agentId, ["github"]),
-      cfg.updateUserConnectors(admin, agent.agentId, ["slack"]),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["github"]),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["slack"]),
     ]);
     const readBack = await cfg.readUserConnectors(admin, agent.agentId);
     expect(readBack.enabledConnectorSlugs).toHaveLength(1);
     const enabledType = readBack.enabledConnectorSlugs[0];
     expect(["github", "slack"]).toContain(enabledType);
 
-    await cfg.updateUserConnectors(admin, agent.agentId, [], "replace");
+    await cfg.updateUserBuiltinConnectors(admin, agent.agentId, [], "replace");
     await Promise.all([
-      cfg.updateUserConnectors(admin, agent.agentId, ["github"], "add"),
-      cfg.updateUserConnectors(admin, agent.agentId, ["slack"], "add"),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["github"], "add"),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["slack"], "add"),
     ]);
     const readAfterAdds = await cfg.readUserConnectors(admin, agent.agentId);
     expect(new Set(readAfterAdds.enabledConnectorSlugs)).toStrictEqual(
@@ -253,8 +265,13 @@ describe("AUTH-03 agent user connectors", () => {
     );
 
     await Promise.all([
-      cfg.updateUserConnectors(admin, agent.agentId, ["github"], "remove"),
-      cfg.updateUserConnectors(admin, agent.agentId, ["slack"], "add"),
+      cfg.updateUserBuiltinConnectors(
+        admin,
+        agent.agentId,
+        ["github"],
+        "remove",
+      ),
+      cfg.updateUserBuiltinConnectors(admin, agent.agentId, ["slack"], "add"),
     ]);
     const readAfterRemoveAdd = await cfg.readUserConnectors(
       admin,
@@ -695,7 +712,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     cfg.mockMembership(admin, "org:admin");
 
     const readCap = cfg.okouBearer(admin, ["agent:read"]);
-    const updated = await cfg.updateUserConnectors(
+    const updated = await cfg.updateUserBuiltinConnectors(
       { bearer: readCap.token },
       agent.agentId,
       ["github"],

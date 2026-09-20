@@ -15,28 +15,28 @@ test.each([
     cookie: "v1.fr-FR",
     languages: ["ja-JP"],
     locale: "fr-FR",
-    title: "Page non trouvée",
+    title: "Cette page n'est pas ici.",
   },
   {
     scenario: "the first supported browser language family is selected",
     cookie: "v1.unsupported",
     languages: ["zh-CN", "de-AT", "ja-JP"],
     locale: "de-DE",
-    title: "Seite nicht gefunden",
+    title: "Diese Seite ist nicht hier.",
   },
   {
     scenario: "browser language works before a site cookie exists",
     cookie: null,
     languages: ["fr-CA"],
     locale: "fr-FR",
-    title: "Page non trouvée",
+    title: "Cette page n'est pas ici.",
   },
   {
     scenario: "English is used when no locale hint is supported",
     cookie: "v0.fr-FR",
     languages: ["zh-CN", "ar-SA"],
     locale: "en-US",
-    title: "Page not found",
+    title: "That page isn't here.",
   },
 ])("Initial page language: $scenario", async (scenario) => {
   context.mocks.browser.cookie(
@@ -69,7 +69,7 @@ test("Use the browser's single language when its language list is empty", async 
   });
 
   expect(
-    screen.getByRole("heading", { name: "Page non trouvée" }),
+    screen.getByRole("heading", { name: "Cette page n'est pas ici." }),
   ).toBeVisible();
   expect(document.documentElement).toHaveAttribute("lang", "fr-FR");
 });
@@ -85,7 +85,7 @@ test("Use locale hints on the development host", async () => {
   });
 
   expect(
-    screen.getByRole("heading", { name: "Page non trouvée" }),
+    screen.getByRole("heading", { name: "Cette page n'est pas ici." }),
   ).toBeVisible();
   expect(document.documentElement).toHaveAttribute("lang", "fr-FR");
 });
@@ -104,7 +104,9 @@ test("Render the initial page in English when locale assets are unavailable", as
     auth: null,
   });
 
-  expect(screen.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "That page isn't here." }),
+  ).toBeVisible();
   expect(document.documentElement).toHaveAttribute("lang", "en-US");
   expect(consoleError).toHaveBeenCalledWith(
     "[E][Locale]",

@@ -3,12 +3,12 @@ import chalk from "chalk";
 import {
   getAgent,
   getAgentInstructions,
-  getAgentUserConnectors,
+  getAgentUserBuiltinConnectors,
   listUserPermissionGrants,
 } from "../../lib/api/domains/agents";
-import { listConnectors } from "../../lib/api/domains/connectors";
+import { listBuiltinConnectors } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import type { Connector } from "../../lib/api/domains/connectors";
+import type { BuiltinConnector } from "../../lib/api/domains/connectors";
 import { policyIcon } from "../../lib/utils/format-utils";
 import { formatAvatar } from "./avatar";
 import {
@@ -45,7 +45,9 @@ function printDetailedPermissions(info: ConnectorPermissionInfo): void {
   );
 }
 
-function formatConnectorIdentity(connector: Connector | undefined): string {
+function formatConnectorIdentity(
+  connector: BuiltinConnector | undefined,
+): string {
   if (!connector) return "";
   if (connector.externalUsername) return `@${connector.externalUsername}`;
   if (connector.externalEmail) return connector.externalEmail;
@@ -54,7 +56,7 @@ function formatConnectorIdentity(connector: Connector | undefined): string {
 
 function formatConnectorSummary(
   info: ConnectorPermissionInfo,
-  identity?: Connector,
+  identity?: BuiltinConnector,
 ): string {
   const id = formatConnectorIdentity(identity);
   const idStr = id ? ` ${id}` : "";
@@ -63,7 +65,7 @@ function formatConnectorSummary(
   return `${info.connectorSlug}${idStr} (${info.allowed}/${info.total} allowed)`;
 }
 
-function formatDetailIdentity(connector: Connector | undefined): string {
+function formatDetailIdentity(connector: BuiltinConnector | undefined): string {
   if (!connector) return "";
   let identity = "";
   if (connector.externalUsername && connector.externalEmail) {
@@ -103,13 +105,13 @@ Examples:
       ) => {
         const [agent, connectorSlugs, connectorIdentities] = await Promise.all([
           getAgent(agentId),
-          getAgentUserConnectors(agentId),
-          listConnectors().catch(() => {
-            return { connectors: [] as Connector[] };
+          getAgentUserBuiltinConnectors(agentId),
+          listBuiltinConnectors().catch(() => {
+            return { connectors: [] as BuiltinConnector[] };
           }),
         ]);
 
-        const identityMap = new Map<string, Connector>(
+        const identityMap = new Map<string, BuiltinConnector>(
           connectorIdentities.connectors.map((c) => {
             return [c.slug, c];
           }),

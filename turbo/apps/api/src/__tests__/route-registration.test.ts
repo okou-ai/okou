@@ -68,11 +68,6 @@ describe("API route registrations", () => {
       routes: morningBriefCalendarCollectionPreviewRoutes,
       route: morningBriefCalendarCollectionPreviewContract.collect,
     },
-    {
-      name: "Morning Brief composition preview",
-      routes: morningBriefCompositionPreviewRoutes,
-      route: morningBriefCompositionPreviewContract.compose,
-    },
   ])("registers the $name an operator invokes", ({ routes, route }) => {
     const [entry, ...extra] = routes;
     expect(extra).toHaveLength(0);
@@ -83,6 +78,28 @@ describe("API route registrations", () => {
         return registered.route.path === route.path;
       }),
     ).toStrictEqual([entry]);
+  });
+
+  // Composition and generation deliberately share one route module, so assert
+  // both exact entries rather than applying the single-entry invariant used by
+  // the source-specific collection modules above.
+  it("registers both Morning Brief composition routes an operator invokes", () => {
+    expect(morningBriefCompositionPreviewRoutes).toHaveLength(2);
+    const [composeEntry, generateEntry] = morningBriefCompositionPreviewRoutes;
+    expect(composeEntry?.route).toBe(
+      morningBriefCompositionPreviewContract.compose,
+    );
+    expect(generateEntry?.route).toBe(
+      morningBriefCompositionPreviewContract.generate,
+    );
+    for (const entry of morningBriefCompositionPreviewRoutes) {
+      expect(ROUTES).toContain(entry);
+      expect(
+        ROUTES.filter((registered) => {
+          return registered.route.path === entry?.route.path;
+        }),
+      ).toStrictEqual([entry]);
+    }
   });
 
   // The platform-funded generation preview has the same requirement: its own

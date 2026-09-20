@@ -114,15 +114,15 @@ describe("okou generate avatar-video command", () => {
       "public",
       "--json",
     ]);
-    expect(
-      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
-    ).toMatchObject({
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(output)).toMatchObject({
       url: artifact.url,
       ownerUrl: artifact.ownerUrl,
       visibility: "public",
       previewMarkdownBlock: `![${AVATAR_VIDEO_RESULT.filename}](<${artifact.url}>)`,
       artifactPresentationContext: expect.not.stringContaining("upload-file"),
     });
+    expect(output).not.toContain(artifact.sharingUrl);
   });
 
   it.each(["--list-avatars", "--list-voices"])(

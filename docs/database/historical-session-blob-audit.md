@@ -80,9 +80,9 @@ Paths in this table are under `turbo/apps/api/src/signals/`.
   Migration 1125 adds scheduling watermarks without changing blob ownership.
   External storage migrations 006/007/008/015 concern retired tables, skill
   volumes or version indexes; they are not blob-counter repair commands.
-- Browser `intro-video-draft-store.ts` uses browser Blob objects in IndexedDB;
-  resource registry and Rust contract fixtures use the word blob for unrelated
-  data or protocol representations. Neither writes PostgreSQL `blobs`.
+- Browser draft stores use browser Blob objects in IndexedDB; resource registry
+  and Rust contract fixtures use the word blob for unrelated data or protocol
+  representations. Neither writes PostgreSQL `blobs`.
 
 Reproduce and extend the census before a later execution or repair:
 

@@ -62,10 +62,10 @@ import {
 } from "./connector-runtime-sync.service";
 import type { FirewallRoutingRouteMetadata } from "./connector-server-firewall-catalog.service";
 import {
-  connectorCredentialVariableReadCondition,
-  resolveConnectorCredentialAccess,
-  type ConnectorCredentialAccess,
-} from "./connector-credential-access.service";
+  builtinConnectorCredentialVariableReadCondition,
+  resolveBuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-access.service";
 
 type FeatureStates = ReturnType<typeof getAllFeatureStates>;
 
@@ -93,6 +93,10 @@ interface ConnectorCheckRoutingConfig {
 }
 
 interface StoredRuntimeState {
+  readonly credentialResolutionBySlug: ReadonlyMap<
+    ConnectorSlug,
+    "network-boundary" | "none"
+  >;
   readonly baseUrlVarsBySlug: ReadonlyMap<
     ConnectorSlug,
     Readonly<Record<string, string>> | null
@@ -100,6 +104,7 @@ interface StoredRuntimeState {
 }
 
 interface StoredConnectorRuntimeCandidate {
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly authMethod: string;
@@ -107,7 +112,7 @@ interface StoredConnectorRuntimeCandidate {
 }
 
 interface PendingStoredConnectorRuntime {
-  readonly access: ConnectorCredentialAccess;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly storageNameByRuntimeName: ReadonlyMap<string, string>;
 }
 
@@ -205,7 +210,10 @@ function targetIdentity(
   catalogContext: ConnectorCheckCatalogContext,
 ): ConnectorCheckTargetIdentity {
   if (config.target.kind === "builtin") {
-    return builtinTargetIdentity(config.target.connectorSlug, catalogContext);
+    return {
+      ...builtinTargetIdentity(config.target.connectorSlug, catalogContext),
+      credentialResolution: config.credentialResolution,
+    };
   }
   return {
     target: config.target,
@@ -241,10 +249,11 @@ function pendingStoredConnectorRuntimes(
         `Duplicate stored connector state for ${row.connectorSlug}`,
       );
     }
-    const accessResult = resolveConnectorCredentialAccess({
+    const accessResult = resolveBuiltinConnectorCredentialAccess({
       snapshot: args.snapshot,
       stored: {
         authMethodId: row.authMethod,
+        automaticAuthType: row.automaticAuthType,
         connectorId: row.connectorId,
         connectorSlug: row.connectorSlug,
         orgId: args.orgId,
@@ -312,6 +321,7 @@ async function loadStoredRuntimeState(
             .mapWith(pgTextDecoder)
             .as("connector_slug"),
           authMethod: connectors.authMethod,
+          automaticAuthType: connectors.automaticAuthType,
           storageVersion: connectors.storageVersion,
         })
         .from(connectors)
@@ -325,6 +335,22 @@ async function loadStoredRuntimeState(
         );
 
       const pending = pendingStoredConnectorRuntimes(connectorRows, args);
+      const credentialResolutionBySlug = new Map<
+        ConnectorSlug,
+        "network-boundary" | "none"
+      >();
+      for (const row of connectorRows) {
+        const runtime = pending.get(row.connectorSlug);
+        if (
+          runtime?.access.runtimeMethod.method.grant.kind === "automatic" &&
+          row.automaticAuthType !== null
+        ) {
+          credentialResolutionBySlug.set(
+            row.connectorSlug,
+            row.automaticAuthType === "oauth" ? "network-boundary" : "none",
+          );
+        }
+      }
 
       const readGroups = [...pending.values()].flatMap((value) => {
         return value === null || value.storageNameByRuntimeName.size === 0
@@ -343,7 +369,7 @@ async function loadStoredRuntimeState(
               .select({ name: variables.name, value: variables.value })
               .from(variables)
               .where(
-                connectorCredentialVariableReadCondition({
+                builtinConnectorCredentialVariableReadCondition({
                   db: tx,
                   groups: readGroups,
                 }),
@@ -378,7 +404,7 @@ async function loadStoredRuntimeState(
         baseUrlVarsBySlug.set(connectorSlug, complete ? values : null);
       }
 
-      return { baseUrlVarsBySlug };
+      return { baseUrlVarsBySlug, credentialResolutionBySlug };
     },
     {
       isolationLevel: "repeatable read",
@@ -426,6 +452,7 @@ function configFromCatalogView(
   baseUrlVars: Readonly<Record<string, string>> | null,
   allowStructuralDynamic: boolean,
   networkPolicy?: NetworkPolicy | null,
+  credentialResolution?: "network-boundary" | "none",
 ): ConnectorCheckRoutingConfig {
   const result = buildConnectorDiagnosticBaseCandidates(view, baseUrlVars, {
     allowStructuralDynamic,
@@ -434,9 +461,10 @@ function configFromCatalogView(
     target: { kind: "builtin", connectorSlug: view.connectorSlug },
     label: view.label,
     credentialResolution:
-      view.executionMetadata.secretPlaceholderNames.length > 0
+      credentialResolution ??
+      (view.executionMetadata.secretPlaceholderNames.length > 0
         ? "network-boundary"
-        : "none",
+        : "none"),
     candidates: result.candidates,
     hasUnresolvedDynamicBase: result.hasUnresolvedDynamicBase,
     networkPolicy,
@@ -665,6 +693,9 @@ async function loadRunDiagnosticState(args: {
           : null,
         false,
         networkPolicy,
+        runtime.state === "available"
+          ? runtime.credentialResolution
+          : undefined,
       ),
     );
   }
@@ -695,6 +726,8 @@ async function catalogConfig(
     view,
     state.baseUrlVarsBySlug.get(connectorSlug) ?? null,
     true,
+    undefined,
+    state.credentialResolutionBySlug.get(connectorSlug),
   );
 }
 
@@ -1594,7 +1627,10 @@ export const resolveConnectorCheck$ = command(
               userId: args.userId,
               snapshot,
             })
-          : { baseUrlVarsBySlug: new Map() };
+          : {
+              baseUrlVarsBySlug: new Map(),
+              credentialResolutionBySlug: new Map(),
+            };
       signal.throwIfAborted();
       timeline = { kind: "stored", state };
     }

@@ -536,7 +536,9 @@ describe("JoggAI built-in avatar video routes", () => {
       expect(statusBody.result).toMatchObject({
         privateArtifacts,
         url: privateArtifacts
-          ? expect.stringMatching(/^\/artifacts\/[a-z0-9]{10}\.mp4$/u)
+          ? expect.stringMatching(
+              /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.mp4$/u,
+            )
           : expect.stringMatching(
               /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u,
             ),
@@ -610,7 +612,7 @@ describe("JoggAI built-in avatar video routes", () => {
         if (typeof result.url !== "string") {
           throw new Error("Expected a private avatar artifact reference");
         }
-        const resolvePath = `/api/artifact-references/${result.url.slice("/artifacts/".length)}`;
+        const resolvePath = `/api/artifact-references/${new URL(result.url).pathname.slice("/artifacts/".length)}`;
         const resolved = await app.request(resolvePath, {
           headers: authHeaders(),
         });

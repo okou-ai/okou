@@ -138,13 +138,10 @@ export default [
     //   replaced drew. That is a weaker argument than the flicker one and is
     //   worth re-examining on its own merits; it is carried unchanged here
     //   rather than settled by a guard that was not written for it.
-    // - `not-found-page.tsx` uses `border-[24px]` as a mat around the artwork,
-    //   which is not a border on anything.
     //
-    // None of the three is a competing opinion about how thick a border is.
+    // Neither is a competing opinion about how thick a border is.
     files: [
       "apps/platform/src/views/components/mermaid-diagram.tsx",
-      "apps/platform/src/views/not-found-page.tsx",
       "apps/platform/src/views/okou-page/components/chat-card.tsx",
     ],
     rules: {

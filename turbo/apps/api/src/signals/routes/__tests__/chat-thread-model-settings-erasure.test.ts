@@ -13,6 +13,7 @@ import {
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -171,6 +172,25 @@ async function readSettings(fixture: SettingsFixture): Promise<{
   };
 }
 
+async function readClosedSettings(fixture: SettingsFixture): Promise<{
+  readonly selectedModel: string | null;
+  readonly modelSettings: unknown;
+  readonly serviceTier: string | null;
+}> {
+  const response = await chat.requestReadThreadMetadata(
+    fixture.actor,
+    fixture.threadId,
+    [404],
+  );
+  expect(response.status).toBe(404);
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    selectedModel: metadata.selectedModel,
+    modelSettings: metadata.modelSettings,
+    serviceTier: metadata.codexServiceTier === "fast" ? "priority" : null,
+  };
+}
+
 /**
  * Documented external-behavior exception, shared with `model-policies.test.ts`.
  * An uninitialized or default-less `org_model_policies` state cannot be built
@@ -234,7 +254,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       { reasoningEffort: "extra" },
     );
 
-    await expect(readSettings(fixture)).resolves.toStrictEqual(settings);
+    await expect(readClosedSettings(fixture)).resolves.toStrictEqual(settings);
     await expect(settingsEvents(fixture)).resolves.toStrictEqual(before);
 
     // The denied attempt left the durable sequence untouched, so the next
@@ -277,7 +297,9 @@ describe("account erasure fences chat-thread model settings writes", () => {
       "claude-opus-4-8",
       [404],
     );
-    await expect(readSettings(shared)).resolves.toStrictEqual(sharedBefore);
+    await expect(readClosedSettings(shared)).resolves.toStrictEqual(
+      sharedBefore,
+    );
     await expect(settingsEvents(shared)).resolves.toStrictEqual([]);
 
     const organization = await createSettingsFixture("Closed org settings");
@@ -293,7 +315,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       "claude-opus-4-8",
       [404],
     );
-    await expect(readSettings(organization)).resolves.toStrictEqual(
+    await expect(readClosedSettings(organization)).resolves.toStrictEqual(
       organizationBefore,
     );
     await expect(settingsEvents(organization)).resolves.toStrictEqual([]);
@@ -310,7 +332,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       "claude-opus-4-8",
       [404],
     );
-    await expect(readSettings(closed)).resolves.toMatchObject({
+    await expect(readClosedSettings(closed)).resolves.toMatchObject({
       selectedModel: "claude-sonnet-5",
     });
 
@@ -369,7 +391,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       { seqId: lastSeqId + 1, kind: "model_selection_updated" },
       { seqId: lastSeqId + 2, kind: "service_tier_updated" },
     ]);
-    await expect(readSettings(fixture)).resolves.toMatchObject({
+    await expect(readClosedSettings(fixture)).resolves.toMatchObject({
       selectedModel: "claude-opus-4-8",
     });
 
@@ -381,7 +403,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       "claude-sonnet-5",
       [404],
     );
-    await expect(readSettings(fixture)).resolves.toMatchObject({
+    await expect(readClosedSettings(fixture)).resolves.toMatchObject({
       selectedModel: "claude-opus-4-8",
     });
     await expect(settingsEvents(fixture)).resolves.toStrictEqual(admitted);
@@ -416,7 +438,7 @@ describe("account erasure fences chat-thread model settings writes", () => {
       context.signal,
     );
 
-    await expect(readSettings(fixture)).resolves.toStrictEqual(before);
+    await expect(readClosedSettings(fixture)).resolves.toStrictEqual(before);
     await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
   });
 

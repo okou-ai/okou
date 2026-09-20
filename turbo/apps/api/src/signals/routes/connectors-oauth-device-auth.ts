@@ -1,4 +1,4 @@
-import { connectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -6,23 +6,23 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-  pollConnectorOauthDeviceAuthSession$,
-  startConnectorOauthDeviceAuthSession$,
-} from "../services/connector-oauth-device-auth.service";
+  pollBuiltinConnectorOauthDeviceAuthSession$,
+  startBuiltinConnectorOauthDeviceAuthSession$,
+} from "../services/builtin-connector-oauth-device-auth.service";
 
 const connectorWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
 
-const startConnectorOauthDeviceAuthSessionInner$ = command(
+const startBuiltinConnectorOauthDeviceAuthSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(
-      pathParamsOf(connectorOauthDeviceAuthSessionContract.create),
+      pathParamsOf(builtinConnectorOauthDeviceAuthSessionContract.create),
     );
     const body = await get(
-      bodyResultOf(connectorOauthDeviceAuthSessionContract.create),
+      bodyResultOf(builtinConnectorOauthDeviceAuthSessionContract.create),
     );
     signal.throwIfAborted();
     if (!body.ok) {
@@ -30,7 +30,7 @@ const startConnectorOauthDeviceAuthSessionInner$ = command(
     }
 
     return await set(
-      startConnectorOauthDeviceAuthSession$,
+      startBuiltinConnectorOauthDeviceAuthSession$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -46,14 +46,14 @@ const startConnectorOauthDeviceAuthSessionInner$ = command(
   },
 );
 
-const pollConnectorOauthDeviceAuthSessionInner$ = command(
+const pollBuiltinConnectorOauthDeviceAuthSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(
-      pathParamsOf(connectorOauthDeviceAuthSessionContract.poll),
+      pathParamsOf(builtinConnectorOauthDeviceAuthSessionContract.poll),
     );
     const body = await get(
-      bodyResultOf(connectorOauthDeviceAuthSessionContract.poll),
+      bodyResultOf(builtinConnectorOauthDeviceAuthSessionContract.poll),
     );
     signal.throwIfAborted();
     if (!body.ok) {
@@ -61,7 +61,7 @@ const pollConnectorOauthDeviceAuthSessionInner$ = command(
     }
 
     return await set(
-      pollConnectorOauthDeviceAuthSession$,
+      pollBuiltinConnectorOauthDeviceAuthSession$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -74,19 +74,19 @@ const pollConnectorOauthDeviceAuthSessionInner$ = command(
   },
 );
 
-export const connectorsOauthDeviceAuthRoutes: readonly RouteEntry[] = [
+export const builtinConnectorsOauthDeviceAuthRoutes: readonly RouteEntry[] = [
   {
-    route: connectorOauthDeviceAuthSessionContract.create,
+    route: builtinConnectorOauthDeviceAuthSessionContract.create,
     handler: authRoute(
       connectorWriteAuth,
-      startConnectorOauthDeviceAuthSessionInner$,
+      startBuiltinConnectorOauthDeviceAuthSessionInner$,
     ),
   },
   {
-    route: connectorOauthDeviceAuthSessionContract.poll,
+    route: builtinConnectorOauthDeviceAuthSessionContract.poll,
     handler: authRoute(
       connectorWriteAuth,
-      pollConnectorOauthDeviceAuthSessionInner$,
+      pollBuiltinConnectorOauthDeviceAuthSessionInner$,
     ),
   },
 ];

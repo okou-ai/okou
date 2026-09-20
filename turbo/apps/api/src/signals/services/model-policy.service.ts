@@ -307,8 +307,17 @@ function getSeedDefaultModelForPlan(
     : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
 }
 
-function shouldReplaceExistingDefaultForPlan(
-  existingDefault: OrgModelPolicyRow | undefined,
+export function shouldReplaceExistingDefaultForPlan(
+  existingDefault:
+    | Pick<
+        OrgModelPolicyRow,
+        | "model"
+        | "defaultProviderType"
+        | "credentialScope"
+        | "modelProviderId"
+        | "modelProviderSurfaceId"
+      >
+    | undefined,
   capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
@@ -896,11 +905,6 @@ async function listOrgModelPolicies(
     }),
   );
   const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
-    orgId,
-    userId,
-  );
   const capabilities = member.priorityEnabled
     ? await loadOrgPlanCapabilities(db, orgId)
     : null;
@@ -922,11 +926,7 @@ async function listOrgModelPolicies(
       const runtimeRoute = isBuiltInModelProviderType(
         policy.defaultProviderType,
       )
-        ? await resolveBuiltInModelRuntimeRoute(
-            db,
-            policy.model,
-            featureSwitchContext,
-          )
+        ? await resolveBuiltInModelRuntimeRoute(db, policy.model)
         : null;
       const administrative: OrgModelPolicy = isBuiltInModelProviderType(
         policy.defaultProviderType,

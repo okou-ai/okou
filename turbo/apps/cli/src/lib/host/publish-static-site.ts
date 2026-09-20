@@ -14,11 +14,8 @@ interface PublishStaticSiteResult {
   readonly deploymentId: string;
   readonly publicSlug: string;
   readonly url: string;
-  readonly deploymentVersion?: number;
   readonly artifactUrl?: string;
   readonly aliasUrl?: string;
-  readonly isActive?: boolean;
-  readonly activeDeploymentVersion?: number;
   readonly fileCount: number;
   readonly size: number;
 }
@@ -103,21 +100,12 @@ export async function publishStaticSite(
     deploymentId: completed.deploymentId,
     publicSlug: completed.publicSlug,
     url: completed.url,
-    ...(completed.deploymentVersion === undefined
-      ? {}
-      : { deploymentVersion: completed.deploymentVersion }),
     ...(completed.artifactUrl === undefined
       ? {}
       : { artifactUrl: completed.artifactUrl }),
     ...(completed.aliasUrl === undefined
       ? {}
       : { aliasUrl: completed.aliasUrl }),
-    ...(completed.isActive === undefined
-      ? {}
-      : { isActive: completed.isActive }),
-    ...(completed.activeDeploymentVersion === undefined
-      ? {}
-      : { activeDeploymentVersion: completed.activeDeploymentVersion }),
     fileCount: scan.files.length,
     size: totalSize,
   };

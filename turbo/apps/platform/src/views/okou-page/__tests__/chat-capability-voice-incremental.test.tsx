@@ -379,7 +379,7 @@ test.each([
   );
 });
 
-test("Abort pending transcription when removing a recording after a storage failure, then record again", async () => {
+async function setupStorageFailureRemoval() {
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();
   const started = context.mocks.deferred<void>();
   const aborted = context.mocks.deferred<void>();
@@ -462,12 +462,47 @@ test("Abort pending transcription when removing a recording after a storage fail
   click(await findEnabledButton("Remove voice draft"));
   await aborted.promise;
   await findEnabledButton("Voice input");
-  failingWrite.mockRestore();
+  return {
+    errors,
+    failingWrite,
+    get requests() {
+      return requests;
+    },
+    staleResponse,
+    staleResponseReturned,
+    storageError,
+  };
+}
+
+function expectStorageFailureReported(
+  scenario: Awaited<ReturnType<typeof setupStorageFailureRemoval>>,
+) {
+  expect(scenario.errors).toStrictEqual([
+    [
+      "[E][Composer:VoiceDraft]",
+      "Voice recording could not be saved",
+      scenario.storageError,
+    ],
+  ]);
+}
+
+test("Abort pending transcription when removing a recording after a storage failure", async () => {
+  const scenario = await setupStorageFailureRemoval();
+  scenario.failingWrite.mockRestore();
+  scenario.staleResponse.resolve();
+  await scenario.staleResponseReturned.promise;
+  expect(scenario.requests).toBe(1);
+  expectStorageFailureReported(scenario);
+});
+
+test("Record again without accepting a stale transcription after storage failure", async () => {
+  const scenario = await setupStorageFailureRemoval();
+  scenario.failingWrite.mockRestore();
   context.mocks.browser.voiceInput({ rms: 0.1 });
   click(await findEnabledButton("Voice input"));
   await findEnabledButton("Stop recording");
-  staleResponse.resolve();
-  await staleResponseReturned.promise;
+  scenario.staleResponse.resolve();
+  await scenario.staleResponseReturned.promise;
   click(await findEnabledButton("Stop recording"));
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
@@ -477,12 +512,6 @@ test("Abort pending transcription when removing a recording after a storage fail
   expect(
     screen.getByRole("textbox", { name: "Message" }),
   ).not.toHaveTextContent("Discarded recording.");
-  expect(requests).toBe(2);
-  expect(errors).toStrictEqual([
-    [
-      "[E][Composer:VoiceDraft]",
-      "Voice recording could not be saved",
-      storageError,
-    ],
-  ]);
+  expect(scenario.requests).toBe(2);
+  expectStorageFailureReported(scenario);
 });

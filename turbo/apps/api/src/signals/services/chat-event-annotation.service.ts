@@ -11,7 +11,7 @@ type ChatEventSourceContext =
       readonly messagePermalink: string | null;
     }
   | {
-      readonly kind: "feishu";
+      readonly kind: "feishu" | "lark";
       readonly chatOpenUrl: string | null;
     }
   | {
@@ -147,7 +147,7 @@ export function createChatEventSourcePart(
   let href: string | undefined;
   if (context.kind === "slack") {
     href = storedHref(context.messagePermalink);
-  } else if (context.kind === "feishu") {
+  } else if (context.kind === "feishu" || context.kind === "lark") {
     href = storedHref(context.chatOpenUrl);
   } else if (context.kind === "teams") {
     href = teamsSourceUrl(context);

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
-import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type {
   HostedArtifactKind,
   HostedSiteFilesResponse,
@@ -29,7 +28,10 @@ import {
   putHostedSitesS3Object,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
+import {
+  privateArtifactCreationEnabled,
+  privateArtifactReferenceUrl,
+} from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
 import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
@@ -186,11 +188,6 @@ interface CreateHostedSiteDeploymentContext {
   readonly privateReference: string | null;
 }
 
-interface HostedSiteAllocation {
-  readonly site: HostedSiteRow;
-  readonly deploymentVersion: number;
-}
-
 type HostedSiteFilesTargetResult =
   | {
       readonly status: "ok";
@@ -272,14 +269,6 @@ function immutableDeploymentPointerKey(
   deploymentId: string,
 ): string {
   return `${pointerNamespace(publicBrand)}/deployments/${deploymentId}.json`;
-}
-
-function deploymentPrefix(
-  orgId: string,
-  site: string,
-  deploymentVersion: number,
-): string {
-  return `sites/orgs/${encodeURIComponent(orgId)}/${site}/versions/${deploymentVersion}`;
 }
 
 function hostedSiteRequestedSlug(site: HostedSiteRow): string {
@@ -547,6 +536,7 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
     siteId: deployment.siteId,
     deploymentId: deployment.id,
     deploymentVersion: deployment.deploymentVersion,
+    immutableContent: deployment.manifest.immutableContent === true,
     site: deployment.manifest.site ?? deployment.manifest.publicSlug,
     publicSlug: deployment.manifest.publicSlug,
     aliasUrl: deployment.manifest.access ? undefined : deployment.url,
@@ -589,6 +579,10 @@ async function createHostedSite(
         ...scope,
         publicBrand: args.publicBrand,
         publicSlug,
+        // Compatibility projection for retained rollback writers. New code
+        // creates one publication per site and never allocates a next version.
+        // Remove with the version columns after the #35240 writer-drain gate.
+        nextDeploymentVersion: 2,
         createdFromRunId: args.runId,
         updatedAt: context.now,
       })
@@ -601,37 +595,15 @@ async function createHostedSite(
   return null;
 }
 
-async function allocateHostedSite(
-  db: Tx,
-  args: ScopedPrepareDeploymentArgs,
-  context: CreateHostedSiteDeploymentContext,
-): Promise<HostedSiteAllocation | null> {
-  const site = await createHostedSite(db, args, context);
-  if (!site) {
-    return null;
-  }
-  const deploymentVersion = site.nextDeploymentVersion;
-  const [updatedSite] = await db
-    .update(hostedSites)
-    .set({
-      nextDeploymentVersion: deploymentVersion + 1,
-      updatedAt: context.now,
-    })
-    .where(eq(hostedSites.id, site.id))
-    .returning();
-  if (!updatedSite) {
-    throw new Error("Failed to allocate hosted deployment version");
-  }
-  return { site: updatedSite, deploymentVersion };
-}
-
 async function insertHostedDeployment(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
-  allocation: HostedSiteAllocation,
+  site: HostedSiteRow,
 ): Promise<HostedDeploymentRow> {
-  const { deploymentVersion, site } = allocation;
+  // Retained wire/storage projection for pinned CLIs and old API readers.
+  // Publication identity and storage paths use deploymentId, never this value.
+  const deploymentVersion = 1;
   const { deploymentId } = context;
   if (args.privateArtifacts !== (context.privateReference !== null)) {
     throw new Error("Deployment reference does not match its storage policy");
@@ -639,13 +611,13 @@ async function insertHostedDeployment(
   const artifactUrl =
     context.privateReference === null
       ? deploymentUrl(site.publicBrand, deploymentId)
-      : artifactShareReferencePath(context.privateReference, "index.html");
+      : privateArtifactReferenceUrl(context.privateReference, "index.html");
   const aliasUrl = args.privateArtifacts
     ? artifactUrl
     : publicUrl(site.publicBrand, site.publicSlug);
   const prefix = args.privateArtifacts
     ? `private-sites/${site.publicBrand}/${deploymentId}`
-    : deploymentPrefix(args.orgId, site.slug, deploymentVersion);
+    : `${pointerNamespace(site.publicBrand)}/publications/${deploymentId}`;
   const manifest: HostedSiteManifest = {
     ...buildManifest({
       deploymentId,
@@ -712,17 +684,17 @@ export async function createHostedSiteDeployment(
       // FOR SHARE also blocks non-key metadata updates and run cleanup.
       const chatThreadId = await lockHostedRunChatThreadId(tx, args.runId);
       const scopedArgs = { ...args, chatThreadId };
-      const allocation = await allocateHostedSite(tx, scopedArgs, context);
-      if (!allocation) {
+      const site = await createHostedSite(tx, scopedArgs, context);
+      if (!site) {
         return { kind: "slug_conflict" };
       }
       const deployment = await insertHostedDeployment(
         tx,
         scopedArgs,
         context,
-        allocation,
+        site,
       );
-      return { kind: "ok", site: allocation.site, deployment };
+      return { kind: "ok", site, deployment };
     }),
   );
   if (!result.ok) {
@@ -869,7 +841,7 @@ function activeSitePointerForDeployment(
   };
 }
 
-const promoteHostedSiteDeployment$ = command(
+const bindHostedSiteDeployment$ = command(
   (
     { get, set },
     args: {
@@ -898,13 +870,19 @@ const promoteHostedSiteDeployment$ = command(
         throw new Error("Hosted site not found for deployment");
       }
 
-      const shouldPromote =
+      const shouldBind =
         !args.deployment.manifest.access &&
-        (args.deployment.deploymentVersion === null
-          ? site.activeDeploymentVersion === null
-          : site.activeDeploymentVersion === null ||
-            args.deployment.deploymentVersion >= site.activeDeploymentVersion);
-      if (shouldPromote) {
+        (args.deployment.manifest.immutableContent
+          ? site.activeDeploymentId === null ||
+            site.activeDeploymentId === args.deployment.id
+          : // Historical pending uploads can still complete out of order.
+            // Keep their alias selection until the #35240 migration/drain gate.
+            args.deployment.deploymentVersion === null
+            ? site.activeDeploymentVersion === null
+            : site.activeDeploymentVersion === null ||
+              args.deployment.deploymentVersion >=
+                site.activeDeploymentVersion);
+      if (shouldBind) {
         await set(
           registerLegacyHostedSite$,
           {
@@ -943,7 +921,7 @@ const promoteHostedSiteDeployment$ = command(
           error: null,
         })
         .where(eq(deploymentTable.id, args.deployment.id));
-      if (shouldPromote) {
+      if (shouldBind) {
         await tx
           .update(hostedSites)
           .set({
@@ -955,10 +933,10 @@ const promoteHostedSiteDeployment$ = command(
       }
 
       return {
-        activeDeploymentId: shouldPromote
+        activeDeploymentId: shouldBind
           ? args.deployment.id
           : site.activeDeploymentId,
-        activeDeploymentVersion: shouldPromote
+        activeDeploymentVersion: shouldBind
           ? args.deployment.deploymentVersion
           : site.activeDeploymentVersion,
       };
@@ -1081,7 +1059,7 @@ export const completeHostedSiteDeployment$ = command(
     }
 
     const promotion = await set(
-      promoteHostedSiteDeployment$,
+      bindHostedSiteDeployment$,
       {
         bucket: hostedR2.config.bucket,
         deployment,

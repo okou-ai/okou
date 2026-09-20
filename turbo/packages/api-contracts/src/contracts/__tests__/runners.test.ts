@@ -54,6 +54,10 @@ import {
 import { runRunnerContract } from "../run-routes";
 import { MAX_EVENT_SEQUENCE_NUMBER } from "../runs";
 import {
+  piApiHandoffUsageSchema,
+  piSandboxContinuationSchema,
+} from "../pi-inference-lifecycle";
+import {
   sandboxReuseResultSchema as webhookSandboxReuseResultSchema,
   workspaceReuseResultSchema as webhookWorkspaceReuseResultSchema,
 } from "../webhooks";
@@ -236,10 +240,6 @@ describe("runner claim response contract", () => {
       runId: "00000000-0000-4000-8000-000000020985",
       reuseKey: "thread:00000000-0000-4000-8000-000000020986",
       modelUsageProvider: "fixture-model",
-      xResourceBilling: {
-        protocol: "x-resource-v1",
-        startDate: "2099-01-01",
-      },
       platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
     });
     expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");
@@ -256,33 +256,6 @@ describe("runner claim response contract", () => {
     });
 
     expect(context).not.toHaveProperty("connectorPermissionBaseline");
-  });
-
-  it("accepts an older API response without X resource capability", () => {
-    const { xResourceBilling: _capability, ...olderResponse } =
-      executionContextSchema.parse(loadRunnerClaimResponseFixture());
-    expect(executionContextSchema.parse(olderResponse)).not.toHaveProperty(
-      "xResourceBilling",
-    );
-  });
-
-  it.each([
-    null,
-    { protocol: "x-resource-v2", startDate: "2099-01-01" },
-    { protocol: "x-resource-v1", startDate: "2099-02-30" },
-    { protocol: "x-resource-v1", startDate: "20990101" },
-    { protocol: "x-resource-v1" },
-    { protocol: "x-resource-v1", startDate: "2099-01-01", bindingId: "x" },
-  ])("rejects malformed advertised X resource capability: %j", (capability) => {
-    const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
-    );
-    expect(
-      executionContextSchema.safeParse({
-        ...fixture,
-        xResourceBilling: capability,
-      }).success,
-    ).toBe(false);
   });
 
   it("round-trips canonical trusted environments through stored contexts", () => {
@@ -645,7 +618,7 @@ describe("Pi sandbox execution contract", () => {
     "sandbox-first",
     "pending-tool-continuation",
     "settled-session-continuation",
-  ] as const)("represents %s as one strict ownership-transfer mode", (mode) => {
+  ] as const)("represents %s as one ownership-transfer mode", (mode) => {
     const manifest = piApiFirstTurnManifestSchema.parse({
       schemaVersion: 3,
       outcome: "ownership-transfer",
@@ -661,6 +634,90 @@ describe("Pi sandbox execution contract", () => {
       mode,
       sandboxEventSequenceStart: 4,
     });
+  });
+
+  it("carries additive handoff usage without requiring strict readers", () => {
+    const apiUsage = {
+      schemaVersion: 1,
+      state: "observed",
+      sampledAt: 1_000,
+      coverage: "partial",
+      tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
+      futureField: true,
+    } as const;
+    const manifest = piApiFirstTurnManifestSchema.parse({
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode: "pending-tool-continuation",
+      baseSession: { sessionId: piSessionId, sha256: null },
+      session: handoffSession,
+      sandboxEventSequenceStart: 4,
+      apiUsage,
+      futureManifestField: true,
+    });
+
+    expect(manifest.apiUsage).toStrictEqual({
+      schemaVersion: 1,
+      state: "observed",
+      sampledAt: 1_000,
+      coverage: "partial",
+      tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
+    });
+    expect(manifest).not.toHaveProperty("futureManifestField");
+    expect(
+      piSandboxContinuationSchema.parse({
+        mode: "untouched-h0",
+        apiUsage: {
+          schemaVersion: 1,
+          state: "no-inference",
+          sampledAt: 1_001,
+        },
+        futureContinuationField: true,
+      }),
+    ).toStrictEqual({
+      mode: "untouched-h0",
+      apiUsage: {
+        schemaVersion: 1,
+        state: "no-inference",
+        sampledAt: 1_001,
+      },
+    });
+
+    for (const invalidTokens of [
+      { ...apiUsage.tokens, input: -1 },
+      { ...apiUsage.tokens, output: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      expect(
+        piApiHandoffUsageSchema.safeParse({
+          ...apiUsage,
+          tokens: invalidTokens,
+        }).success,
+      ).toBe(false);
+    }
+    for (const invalidCoverage of [
+      {
+        ...apiUsage,
+        coverage: "complete",
+      },
+      {
+        ...apiUsage,
+        coverage: "partial",
+        tokens: {
+          input: null,
+          cacheRead: null,
+          cacheCreation: null,
+          output: null,
+        },
+      },
+      {
+        ...apiUsage,
+        coverage: "unavailable",
+      },
+    ]) {
+      expect(piApiHandoffUsageSchema.safeParse(invalidCoverage).success).toBe(
+        false,
+      );
+    }
   });
 
   it("accepts one strict sampled Langfuse handoff parent", () => {
@@ -758,10 +815,6 @@ describe("Pi sandbox execution contract", () => {
       overrides: { mode: "ambiguous-continuation" },
     },
     {
-      name: "mode-specific prompt replay field",
-      overrides: { prompt: "must not be encoded in the transfer" },
-    },
-    {
       name: "future manifest version",
       overrides: { schemaVersion: 5 },
     },
@@ -777,6 +830,20 @@ describe("Pi sandbox execution contract", () => {
         ...overrides,
       }).success,
     ).toBe(false);
+  });
+
+  it("ignores unknown additive manifest fields", () => {
+    const manifest = piApiFirstTurnManifestSchema.parse({
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode: "sandbox-first",
+      baseSession: { sessionId: piSessionId, sha256: null },
+      session: handoffSession,
+      sandboxEventSequenceStart: 1,
+      prompt: "ignored by this reader",
+    });
+
+    expect(manifest).not.toHaveProperty("prompt");
   });
 
   it.each([0, -1, 1.5, MAX_EVENT_SEQUENCE_NUMBER + 1])(
@@ -1038,6 +1105,26 @@ describe("connector runtime synchronization contract", () => {
     });
 
     expect(execution.connectorRuntimeTargets).toEqual([target]);
+  });
+
+  it("keeps builtin runtime synchronization policy-only", () => {
+    const result = {
+      target: { kind: "builtin", connectorSlug: "plaud-mcp" },
+      state: "available",
+      networkPolicy: { allow: [], deny: [], ask: [], unknownPolicy: "deny" },
+    };
+
+    expect(connectorRuntimeSyncResultSchema.parse(result)).toEqual(result);
+    expect(
+      connectorRuntimeSyncResultSchema.parse({
+        ...result,
+        firewall: {
+          kind: "builtin",
+          name: "plaud-mcp",
+          sourceId: "10000000-0000-4000-8000-000000000001",
+        },
+      }),
+    ).toStrictEqual(result);
   });
 
   it("requires stable API identities on available custom firewalls", () => {

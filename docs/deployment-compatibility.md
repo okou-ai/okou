@@ -17,6 +17,72 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Pi stable-context schema rollout and rollback
+
+Migration 1168, following retained main migrations through
+`1167_private_artifact_absolute_urls`, adds
+`pi_stable_context_erasure_fences`,
+`pi_stable_context_generations`,
+`pi_stable_context_publications`, `pi_stable_context_heads`,
+`pi_stable_context_artifacts`, and `pi_stable_context_artifact_resources`. It creates empty tables only: it does
+not enumerate users, Agents, sessions or Storage and performs no materialization
+or production backfill. Deploy the additive migration before an API that writes
+these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
+wire readers are unchanged.
+
+Legacy Clerk user and organization deletion closes a one-way subject digest in
+`pi_stable_context_erasure_fences` under the existing account-erasure advisory
+lock, in the same transaction that removes stable-context lifecycle rows. The
+real Clerk membership-cache refresh shares that admission and refuses a closed
+subject; generation initialization, demand registration, and publication make
+the same check. A refresh admitted before closure either finishes first and is
+subsequently cleaned up, or waits and observes the fence. The table is
+feature-local deletion finality: it does not register the dormant account-
+erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
+other product data. Keep stable-context activation on hold until migration 1168
+and this API writer are present on every serving API instance.
+
+Mixed-version API operation is safe by construction. A new reader with no
+generation/head treats the exact variant as missing and uses canonical
+exact-version discovery. An old writer that does not publish demand likewise
+causes a later read-time repair; this is compatibility and recovery, not the
+normal invalidation path. Current writers lock the complete existing
+affected-head set in canonical UUID order and update only that exact snapshot in
+batches of 256. The 16-head worker
+batch bounds post-write demand recapture, not lock coverage; a concurrent new
+head is excluded from the frozen update set. Writers recapture the exact
+post-write semantic source and dynamic skill mounts for that bounded demand set;
+they leave a head missing when a referenced immutable artifact is not yet
+published. A pending multi-stage source generation is never read as ready.
+Source-keyed publication obligations allow independent Workflow writers to
+coexist while a replacement supersedes only the same source. Old API code
+ignores the additive tables and continues the canonical path. Rollback
+therefore consists of rolling API code back while retaining the
+tables; do not drop them until all new writers/workers and rollback binaries
+have drained.
+
+The optional repair/backfill command is bounded by a cursor and limit, is dry-run
+by default, and reports missing/pending/ready/unindexable/failed cardinality. A
+mutating pass only records demand for currently known owner/variant heads; it
+does not synthesize credentials, sessions or a production-wide cross product.
+Establish real cardinality and receive separate production authority before
+running it. No release, activation, feature-switch write or backfill is part of
+the schema migration.
+
+Ready heads own immutable artifacts, and artifact-resource edges retain exact
+Storage/version rows. A source deletion locks/deletes its Workflow and exact
+Storage/version parents before retiring generations and invalidating heads in
+the same transaction (`Workflow → Storage/version → generation/head`). The
+Storage deletion cascades retention edges so normal Workflow/account erasure is
+not blocked. Cleanup can remove only an artifact
+older than seven days that no head references. Agent/account erasure removes
+heads/artifacts through owner edges and explicitly removes generation fences and
+publication obligations. A failed or rolled-back source transaction cannot
+advance its generation; a stale builder cannot attach
+to a newer head. These rules keep rollback and erasure safe without treating
+the seven-day legacy snapshot cache or run-only inference objects as live
+configuration retention.
+
 ## Deployment Model
 
 ### Frontend
@@ -147,8 +213,8 @@ requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
 New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
 while the manifest retains the caller's preferred name. This preserves the
 existing database constraints and keeps each publication addressable by older
-readers. The catalog displays the allocated name; `host versions` and `host clone`
-use the returned site slug to inspect that publication. Historical rows and their
+readers. The catalog displays the allocated name; `host clone` uses the returned
+site slug or immutable URL to inspect that publication. Historical rows and their
 requested-name reservations stay intact. No database migration or historical data
 rewrite runs here.
 
@@ -165,6 +231,13 @@ instances must leave serving and supported rollback targets before no-redeploy
 behavior is universal. Issue
 [#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
 site-version model after preserving existing links and metadata.
+
+The [version-retirement preparation](database/hosted-publication-retirement.md)
+removes version operations from the current CLI and version comparison from App
+sharing. It replaces new-publication counter allocation with fixed compatibility
+values and binds immutable public content by deployment ID. Legacy API history,
+selectors, old upload completion and schema fields remain until the documented
+consumer, data and rollback gates; no physical schema cleanup runs in that step.
 
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
@@ -271,23 +344,30 @@ command. Existing pinned CLIs ignore the key.
 
 #### Private attachment uploads
 
-CLI artifact output qualifies hostless references with its configured app origin
-(`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
-`https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
-download results use the same complete URL in text, JSON and Markdown. Integration
-upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
-canonical publication apply the same CLI normalization before printing. Image
-batch waits also qualify stored artifact and owner references in JSON output,
-including the generated Markdown, without rewriting the batch files. Public
-URLs keep their original bytes, including query strings. API responses and stored
-references retain their existing shapes, so older pinned CLIs retain their prior
-output and the new CLI can consume an older API. Downloading or cloning newly
-qualified URLs requires the updated CLI; previously captured contexts retain
-their own CLI package. No database rewrite or API rollout ordering is required.
-CLI download, generation-input and clone readers accept both
-hostless references and absolute references from that same app origin. Existing
-App thread readers already accept same-origin absolute references and resolve
-them through the authenticated artifact endpoint.
+Private artifact URL fields and API creation responses use the configured
+`APP_URL` origin. Production stores and returns
+`https://app.okou.ai/artifacts/<reference>` for generation, upload, hosting,
+media-download and preview-image records. Integration upload completion (Teams,
+Telegram, Feishu/Lark, AgentPhone and GitHub), Slack canonical publication and
+the Artifact Catalog therefore carry that same complete URL. Public CDN,
+hosted-site and external URLs retain their original bytes, including query
+strings.
+
+Migration `1167_private_artifact_absolute_urls` prefixes the production App
+origin onto hostless private URLs in the canonical file, hosted deployment,
+generation, Social and catalog projections, including catalog logical keys and
+thumbnail URLs. It changes only values beginning with `/artifacts/`; public and
+external URLs are unchanged. `privateArtifacts` remains staff-only, so this is a
+direct data cutover rather than a dual-write or rollback bridge.
+
+The CLI retains its idempotent normalization at the presentation boundary for
+older APIs: complete URLs pass through unchanged, while a hostless response is
+qualified with `OKOU_APP_URL` (or the existing API-to-App origin mapping). Image
+batch waits apply the same presentation rule without rewriting batch files.
+CLI download, generation-input and clone readers continue to accept hostless
+references and absolute references from the same App origin. Existing App thread
+readers likewise resolve both forms through the authenticated artifact endpoint;
+new stored and emitted values use only the complete form.
 
 New private artifact creation allocates a ten-character version-2 R2 reference
 index and stores the reference in file metadata or the hosted deployment URL.
@@ -833,6 +913,27 @@ The 122-minute private binding retention starts at terminal settlement to
 protect late proxy usage. It remains unchanged, along with ordinary
 pending-usage/callback cleanup blockers, provider-result usage, lifecycle
 observation and private checkpoint validation.
+
+#### GPT 6 Sol native model readiness
+
+Poll and claim requests advertise `X-Native-Gpt-6-Sol: 1` only from Runner artifacts
+whose bundled Guest supports GPT 6 Sol and its reasoning efforts. The API checks
+this capability after authorizing and validating the stored context, before
+claiming native `gpt-6-sol` or `openai/gpt-6-sol` work. A claimant without the
+exact capability receives the existing claim `404`; the job stays pending for
+a capable Runner. This covers Built-in and BYOK routes without changing any
+organization default or stored selection.
+
+Poll excludes unsupported Sol jobs before applying its candidate limit, so old
+Runners can still discover existing models behind a Sol job. Claim repeats the
+capability check to cover direct notifications and previously discovered work.
+
+The header leaves the strict claim JSON unchanged, so a new Runner can still
+claim existing work from an old API, which ignores the extra header. During
+API-first promotion, or a Runner rollback, old Runners can continue executing
+existing models but cannot consume Sol jobs. Sol work waits until a supporting
+Runner is available. The capability remains necessary while an incompatible
+Runner is a supported rollback target; no database migration is involved.
 
 #### Runner process drain
 
@@ -1860,6 +1961,59 @@ Run-lifetime missed-notification window includes observed outages; this introduc
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
 
+## Feishu and Lark integration identity
+
+New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified
+installation loaded by the shared Feishu queue launcher. Both platforms keep
+the existing Feishu event context, delivery callbacks, and provider transport.
+Previously queued inputs still resolve their installation before creating a
+run, including ingress retries and queued follow-ups. Captured execution
+contexts and existing runs retain the source they were created with.
+
+The run and uploaded-file source columns are strings, so their new source needs
+no database migration. Historical `feishu` runs and existing input assets are not
+rewritten: the source alone cannot prove which platform created them. The App
+retains its existing historical Lark display label only when the captured
+integration prompt explicitly identifies Lark. New run logs, filters, runtime
+guidance, and file attribution consume the canonical source. The deprecated
+billing usage source projection continues to classify both platforms as `other`.
+
+New chat messages also persist the verified platform in their `source.kind`.
+The App reads `lark` directly; it retains the existing historical Lark label for
+`feishu` messages only when their stored link explicitly uses the Lark app-link
+domain. Historical message documents are unchanged. APIs and Apps predating the
+new kind cannot parse those new strict message documents, including chat history
+and queued input. Keep a capable API while such records remain readable and
+refresh old Apps after promotion.
+
+Migration `1166_feishu_platform_agent_preferences` adds
+`feishu_platform_user_agent_preferences`, keyed by user, organization, and
+platform. `/switch` and `/switch default` affect only the current platform.
+The unscoped historical preference table remains untouched: its records do not
+identify which platform selected the Agent, so they are neither copied nor read
+by new dispatch. Each platform initially uses its installation default until the
+user makes a new selection. Existing chat history and runs are retained.
+
+The additive migration preserves every outgoing API statement against the old
+table. It must complete before promoting the new API; new code requires the new
+table. Old and new APIs do not synchronize preferences: during the non-GA cutover
+or rollback, each reads its own table. Recover by restoring the capable API;
+do not copy unscoped selections into both platforms.
+
+Both integrations remain non-GA under their existing disabled-by-default
+switches (`FeishuIntegration` and `LarkIntegration`). Deploy the capable API
+before the matching App; already-open Apps may need a refresh to display the
+new Lark label. No new switch, App floor, Runner protocol, or rollout bridge is
+introduced. The Runner transports prepared execution context without parsing
+a trigger-source enum.
+
+An API predating this reader cannot safely serve new Lark chat documents, queue entries,
+canonical delivery callbacks, or captured deferred Pi launch intent. Retain a
+capable API for serving and rollback while these records can be consumed;
+disabling ingress does not remove persisted runs. Recovery from an older API
+requires restoring the capable API, not relabeling Lark data as Feishu. This
+non-GA cutover does not promise transparent rollback to the previous reader.
+
 ## Integration source links
 
 Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in
@@ -2057,27 +2211,24 @@ rewritten by any reader, producer or rollback.
 ## Connector catalog v4 consumption
 
 Publish the complete v4 catalog before deploying the consumer. The new API
-syncs and accepts only v4. Until a source has accepted v4, its shared catalog
-reader serves the retained accepted v3 snapshot, validating original v3 bytes
-and current executable capabilities. Discovery, execution and firewall permissions
-use that same reader. Normal sync switches subsequent reads to accepted v4.
-The release workflow stays unchanged; no environment variable, generation
-selector or separate warm-up endpoint is needed. MCP capability filtering does
-not block catalog acceptance.
+syncs, accepts and reads only v4. Discovery, execution and firewall permissions
+use that same accepted-v4 reader. A cold environment reports the catalog as
+unavailable until normal v4 sync succeeds. The release workflow stays unchanged;
+no environment variable, generation selector or separate warm-up endpoint is
+needed. MCP capability filtering does not block catalog acceptance.
 
 Earlier API binaries continue using their v3 namespace and rows. No database
 migration, source-salt change or historical-byte rewrite is needed. New APIs
-always prefer an accepted v4 snapshot, regardless of catalog version ordering.
-Later candidate failures retain v4; a corrupt accepted v4 snapshot fails rather
-than falling back to v3. Diagnostics describe the v4 sync target and can report
-cold v4 state while the v3 bridge keeps connectors available.
+require an accepted v4 snapshot. Later candidate failures retain v4, and a
+corrupt accepted v4 snapshot fails. Diagnostics describe the same v4 generation
+used by the current reader.
 
 [The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
-and rollback requirements. MCP execution and Automatic OAuth remain separate
-deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
-bridge cleanup after every serving source and supported bootstrap target has
-accepted v4 and the deployment/rollback window no longer needs the bridge.
-Historical v3 object and row retention for old binaries remains independent.
+and rollback requirements. Production diagnostics reported active catalog
+`2026-09-19.4560` on 2026-09-20 Asia/Shanghai, opening the v4-only reader gate
+under [#34913](https://github.com/vm0-ai/okou/issues/34913). Historical v3
+objects and rows remain available to older rollback binaries through their own
+v3 readers; current code performs no data deletion or rewrite.
 
 ### Builtin MCP execution
 
@@ -2090,24 +2241,49 @@ Custom and builtin MCP use the same typed discovery response.
 
 Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
-discovery. None/manual methods are executable; the published Plaud Automatic
-method remains unavailable until its handler lands. The addon honors explicit
+discovery. None/manual and Automatic methods are executable. Plaud's Automatic
+method defaults off in auth-method discovery through `plaudConnector`; this
+switch does not gate existing account callbacks or execution. The addon honors explicit
 owner intent and never injects another owner's credentials when the requested
 owner is absent, including overlapping builtin/custom destinations.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
-proxy auth resolution, including Automatic custom MCP resolved to no
+proxy auth resolution, including Automatic builtin and custom MCP resolved to no
 authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
 field to cap cached account authorization at 30 seconds from validation; this
 also bounds static-token cache reuse. Discovery immediately removes deleted
 accounts, while subsequent proxy requests may reuse an existing lease until
 expiry. Expiry does not interrupt an in-flight request or stream. After
 resolution, the addon rechecks the current owner before forwarding. No new
-Runner wire field or HTTP/custom cache policy is introduced.
+HTTP/custom cache policy is introduced.
 
-The v3 catalog read bridge and its cleanup under
-[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
-This execution change adds no environment variable, release workflow change or
+Automatic authentication adds separate builtin OAuth bindings and DCR
+registrations, plus a nullable account auth-resolution field. Apply this
+additive migration before deploying the API. The shared MCP protocol supports
+CIMD/DCR, PKCE, exact issuer/resource binding and optional refresh tokens.
+Builtin callbacks are owned by the API and completion receipts identify the
+exact account and attempt. Stored catalog method IDs remain unchanged.
+
+Automatic accounts receive the same compact builtin firewall reference used by
+builtin HTTP connectors. The Runner resolves its definition, including auth, from
+the accepted catalog; account state does not replace or override that firewall.
+An OAuth catalog firewall uses the proxy-only
+`Bearer ${{ secrets.MCP_ACCESS_TOKEN }}` template, resolved outside the sandbox.
+Automatic discovery still records whether the selected account resolved to OAuth
+or no-auth. A mismatch fails at its natural boundary: an OAuth catalog firewall
+cannot resolve its required secret from a no-auth account, while a no-auth catalog
+firewall sends an OAuth account's request without credentials and lets the upstream
+reject it. Builtin runtime-sync updates remain policy-only. There is no MCP-specific
+client or Runner capability negotiation. A rollback after Automatic accounts exist
+must retain their schema and credential readers.
+The addon sends `matchedFirewall.base` when resolving builtin credentials.
+Automatic OAuth resolution requires this destination to match the current
+catalog and the locked account binding. Missing or stale destinations fail closed;
+HTTP/custom and no-auth resolution do not require this field. Best-effort runtime
+sync cannot authorize credentials for a changed endpoint.
+
+The current connector catalog reader is v4-only as described above. This
+execution change adds no environment variable, release workflow change or
 per-service skill.
 
 ## PostHog CIMD OAuth
@@ -2173,6 +2349,24 @@ consumer/recovery, cancellation, capacity counting, credential retention and era
 A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
+
+## API-first usage handoff producer (#35413)
+
+The consumer contract and tolerant readers are delivered by #34787. This
+follow-up enables the API to add optional `apiUsage` metadata to the existing Pi
+ownership-transfer manifest and durable continuation. Before deploying this
+producer, confirm those readers are deployed and older strict readers have
+drained.
+
+Old payloads remain valid. A missing `apiUsage` field means unavailable, not
+zero. Roll back the producer before rolling back the consumer. The preceding API
+simply stops emitting the field; no database contraction or backfill is
+required.
+
+Provider results already known at transfer are included. Pre-provider transfer
+is marked `no-inference`. A transfer made before a late provider result becomes
+known has no snapshot and stays explicitly unavailable in this initial
+handoff-only design. See [API-first run usage handoff](api-run-usage.md).
 
 ## DeepSeek V4.1 Flash Pi coverage
 
@@ -2478,6 +2672,54 @@ still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
 
+## Morning Brief retained generation authority (#35054)
+
+Migration 1165 generalizes collection occurrences from Slack-only to an exact
+kind-specific binding and adds the all-source generation provenance:
+instruction version/digest, reported language, retained source descriptors and
+deadline, complete installation/automation/destination ids, and
+`content_purged_at`. Its anchor-wide partial unique index prevents another kind
+or contract version from invoking the same logical morning. The replacement
+decision constraint lets an expired successful delivery retain a content-free
+invocation fence. Binding columns stay nullable only for rows written by the
+older Slack-only writer; every all-source reservation writes the complete
+canonical binding. The migration has no backfill, but its index and replacement
+constraints inspect the existing table under the migration wrapper's ordinary
+bounded lock.
+
+The API and migration therefore have these mixed-version rules:
+
+- **Old code after migration** keeps writing null binding columns and a null
+  purge stamp. Those rows still satisfy the expanded constraint and retain the
+  existing Slack authority checks. Old code ignores binding proof written by a
+  newer API.
+- **New code before migration** must not be promoted. Reservation, stored-result
+  revalidation, and expiry sanitation name the new columns directly; without
+  migration 1165 they fail with `42703`. The default-off feature switch and
+  protected preview route contain provider use, but they are not a substitute
+  for the repository's migration-before-API ordering.
+- **New readers of old rows** preserve only the Slack-only contract. A row whose
+  `collection_kind` is `sources` must have retained source proof and complete
+  installation/automation provenance or its content is withheld. A historical
+  non-`sources` row may use its existing live Slack authority gate during the
+  rollback overlap; this compatibility branch can be removed after the old API
+  rollback window closes and the 24-hour result lifetime has elapsed. The
+  generation-time null destination may become the exact thread recorded by its
+  first S6 delivery receipt; only that receipt-first transition is accepted,
+  and any later destination change is withheld.
+- **Rollback after new writes** ignores the additive binding metadata. Content
+  sanitation starts only at the row's existing `expires_at`, when the old
+  generation contract already refuses the result. The row remains solely as a
+  cross-kind/version invocation fence through the seven-day anchor admission
+  window, and the separate immutable email outbox retains any already committed
+  email body.
+
+Retained descriptors identify every source that supplied model input, including
+uncited material, and survive only through the original result or email
+obligation deadline. They contain no source body, prompt, instruction text, or
+credential. Platform usage receipts remain anonymous and are neither purged nor
+reattributed to a user or organization.
+
 ## Marketing attribution cutover (#33886)
 
 The App no longer loads gtag, sends Google Ads conversions, looks up an Ads
@@ -2509,3 +2751,36 @@ Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an
 already-open old bundle can otherwise continue sending browser conversions.
 This PR does not select a floor or change production provider settings.
+
+## X resource protocol cleanup
+
+The X producer always emits `x-resource-v1` observations for post and user reads.
+The claim and proxy registry no longer carry `xResourceBilling` or its fixed
+`startDate`; date-based and absent-capability count producers are retired.
+The API retains its existing generic count-event and resource-event contracts.
+X writes, other connector counts, model and image events keep their shapes.
+Resource events always use N+R billing. This does not change the producer
+protocol or the two-UTC-date retention window.
+
+New Runners work with the preceding gated API: they ignore the old claim
+capability and that API accepts resource uploads. During normal API-before-Runner
+promotion, old Runners receiving the new claim select count-only reads. The
+unchanged generic ingestion path accepts those events and bills their full
+quantity, so this overlap does not discard usage. Runs that already captured the
+preceding capability continue reporting resources.
+
+Count events carry no resource identities: reads from an old Runner in this
+overlap cannot populate the daily resource table or receive deduplication. Full
+producer coverage requires old Runner processes, Runs, streams and retained
+uploads to finish draining. If uninterrupted deduplication is required during
+the cutover, predeploy the unconditional Runner against the preceding API and
+verify that drain before promoting the API.
+The preceding gated API remains a compatible rollback target, but it can restore
+full-count billing for accounts without an enabled override. Rolling back the
+Runner can reduce resource coverage again.
+
+This is a requested protocol retirement, not a database migration. No stored
+execution context contains the claim-only capability, and no historical usage
+or resource row needs rewriting. A code merge and local tests do not prove the
+production drain or full resource coverage. Record that evidence under #34615 as described in the
+[X rollout guide](x-resource-rollout.md).

@@ -194,7 +194,7 @@ describe("okou host publish command", () => {
         expect(stdout).not.toContain(aliasUrl);
         expect(stdout).not.toContain("Alias:");
       } else {
-        expect(stdout).toContain(`Alias: ${aliasUrl} → v1`);
+        expect(stdout).toContain(`Alias: ${aliasUrl}`);
       }
       expect(stdout).toContain("Artifact presentation context:");
       expect(stdout).toContain(`[demo-site](<${expectedUrl}>)`);
@@ -222,11 +222,10 @@ describe("okou host publish command", () => {
       const parsed = JSON.parse(jsonOutput) as Record<string, unknown>;
       expect(parsed).toMatchObject({
         publicSlug,
-        deploymentVersion: 1,
+        deploymentId: "00000000-0000-4000-8000-000000000002",
         artifactUrl: expectedArtifactUrl,
         url: expectedUrl,
         ...alias,
-        isActive: !privateArtifact,
         fileCount: 2,
         size:
           Buffer.byteLength(index) +
@@ -307,7 +306,6 @@ describe("okou host publish command", () => {
         "outside code fences",
       ),
     });
-    expect(parsed.deploymentVersion).toBeUndefined();
     expect(parsed.artifactUrl).toBeUndefined();
     expect(parsed.aliasUrl).toBeUndefined();
   });
