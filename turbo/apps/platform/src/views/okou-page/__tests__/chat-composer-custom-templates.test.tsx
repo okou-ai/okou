@@ -294,6 +294,42 @@ test("The Custom category lists every reachable template", async () => {
   expect(within(dialog).getByText("Partner QBR")).toBeInTheDocument();
 });
 
+test("A template published while the panel is open appears in it", async () => {
+  // The analysis runs in a thread, so the publish reaches this member's
+  // catalog while the picker they started it from is open in front of them.
+  let templates: readonly UserTemplateDetail[] = [customTemplate()];
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(
+      200,
+      templates.map(
+        ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
+          return entry;
+        },
+      ),
+    );
+  });
+
+  const { dialog } = await openCustomPanel();
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+
+  templates = [
+    customTemplate({
+      id: "33333333-3333-4333-8333-333333333333",
+      title: "Party invitation",
+      sourceFilename: "invitation.docx",
+      kind: "document",
+    }),
+    ...templates,
+  ];
+  context.mocks.ably.trigger("presentationTemplatesChanged");
+
+  await expect(
+    within(dialog).findByText("Party invitation"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("A card carries who can see the template and nothing else about it", async () => {
   mockCustomTemplates([customTemplate()]);
 
