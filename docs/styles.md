@@ -704,6 +704,15 @@ captures the current reading position, including scrolling done in fullscreen.
 Retaining a DOM node and its numeric `scrollTop` alone does not preserve a
 document's reading position when its line wrapping changes.
 
+An anchored surface's collision boundary is the one safe-area decision CSS
+cannot reach, because Base UI's positioner is a JavaScript engine measuring
+against the raw viewport. `PopoverContent`, `SelectContent`,
+`DropdownMenuContent` and `TooltipContent` therefore default `collisionPadding`
+to the insets plus a gap, read once inside `@okouai/ui`. A caller asking for a
+larger gap widens that boundary per side rather than replacing it: a request for
+more room is not a request for less protection, and replacing it would silently
+strip the insets from the few surfaces that state a gap of their own.
+
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
 and meets a viewport edge. `#root` carries the top and horizontal insets as
 padding and delegates the bottom one, and a fixed box is laid out past that

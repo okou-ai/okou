@@ -6,6 +6,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { asChildRender } from "../../lib/base-ui-compat";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
+import { resolveCollisionPadding } from "../../lib/safe-area";
 
 interface TooltipProviderProps extends Omit<
   TooltipPrimitive.Provider.Props,
@@ -106,7 +107,7 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
           alignOffset={alignOffset}
           collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
-          collisionPadding={collisionPadding}
+          collisionPadding={resolveCollisionPadding(collisionPadding)}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}
