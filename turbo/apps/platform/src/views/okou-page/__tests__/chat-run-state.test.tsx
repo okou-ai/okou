@@ -416,7 +416,7 @@ test("Show thinking while a newly accepted prompt starts", async () => {
   expect(queryButton("Stop")).toBeNull();
 });
 
-test("Spin beside a user message the server has not confirmed", async () => {
+test("Delay the spinner beside a user message the server has not confirmed", async () => {
   const runAccepted = context.mocks.deferred<void>();
   installRunChat({ sendGate: runAccepted.promise });
 
@@ -431,7 +431,10 @@ test("Spin beside a user message the server has not confirmed", async () => {
   await expect(
     screen.findByText("Draft the launch checklist"),
   ).resolves.toBeInTheDocument();
-  expect(optimisticUserMessageSpinners()).toHaveLength(1);
+  expect(optimisticUserMessageSpinners()).toHaveLength(0);
+  await waitFor(() => {
+    expect(optimisticUserMessageSpinners()).toHaveLength(1);
+  });
 
   runAccepted.resolve(undefined);
   await waitFor(() => {
