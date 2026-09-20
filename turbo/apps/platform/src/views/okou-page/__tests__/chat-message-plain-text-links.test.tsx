@@ -96,6 +96,29 @@ test("A link a user typed is clickable in the message and in its feedback note",
   }
 });
 
+test("A sentence typed onto the end of a link stays outside it", async () => {
+  const url = "https://example.com/chats/8635508a-9285-4833-bd9f-88cf83157546";
+  const prompt = `${url}二额，另见 https://zh.example.com/wiki/中文 和 https://example.com/搜索?q=中文`;
+  installPrompt(prompt);
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const message = await waitFor(() => {
+    const element = userMessage();
+    expect(element).toHaveTextContent(prompt);
+    return element;
+  });
+  // Prose glued to the link is dropped, but a path that is genuinely Chinese
+  // stays part of the destination.
+  expect(linkTo(url, message)).toHaveTextContent(url);
+  for (const chinese of [
+    "https://zh.example.com/wiki/中文",
+    "https://example.com/搜索?q=中文",
+  ]) {
+    expect(linkTo(chinese, message)).toHaveTextContent(chinese);
+  }
+});
+
 test("Text that only looks like a link stays plain text", async () => {
   const prompt = [
     "Bare example.com and mail user@example.com stay text,",
