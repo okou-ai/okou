@@ -394,9 +394,16 @@ function validateGenericMcpFirewall(
 function validateMcpFirewall(
   connector: ConnectorCatalogArtifactConnector,
 ): void {
-  if (connector.mcp === undefined || connector.firewall.kind === "none") {
+  if (connector.mcp === undefined) {
     return;
   }
+  if (connector.firewall.kind === "none") {
+    return;
+  }
+  // Published v4 catalogs from before inline MCP execution can still contain a
+  // generated firewall. Runtime consumers ignore that body. Remove this reader
+  // after the firewall-free catalog is live and retained rollback targets no
+  // longer require the legacy shape; tracked by #35654.
   const api =
     connector.firewall.kind === "generated"
       ? connector.firewall.config.apis[0]

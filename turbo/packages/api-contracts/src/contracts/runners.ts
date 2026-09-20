@@ -157,6 +157,11 @@ export const runnerClaimCapabilitiesSchema = z
 
 /** Additive Runner support is advertised in headers ignored by previous APIs. */
 export const NATIVE_GPT_6_SOL_HEADER = "X-Native-Gpt-6-Sol";
+/**
+ * Mixed-fleet claim fence for trusted inline builtin MCP ownership. Remove
+ * after old Runners drain and retained rollback targets are inline-capable;
+ * tracked by #35654.
+ */
 export const BUILTIN_MCP_INLINE_FIREWALL_HEADER =
   "X-Builtin-Mcp-Inline-Firewall";
 
@@ -1390,6 +1395,7 @@ const storedExecutionContextObjectSchema = z.object({
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Old Runners cannot assign trusted builtin ownership to inline MCP entries.
+  // Remove with the capability header after the drain/rollback gate in #35654.
   requiresBuiltinMcpInlineFirewall: z.literal(true).optional(),
   // API-only catalog-derived permission defaults for claim-time grant refresh.
   connectorPermissionBaseline:
