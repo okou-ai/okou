@@ -21,9 +21,11 @@ An AWS administrator must provision or reconcile this exact role in account
 - Apply [role-trust.json](role-trust.json). Trust is restricted to
   `okou-ai/okou` jobs in the protected `production` environment and the STS
   audience. Keep that environment's protected-branch and human-reviewer rules.
-  Both migration workflow jobs also require `refs/heads/main`. The post-rename
-  trust cleanup is tracked in
-  [#35094](https://github.com/okou-ai/okou/issues/35094).
+  Both migration workflow jobs also require `refs/heads/main`. The subject uses
+  the immutable claim format GitHub applies to renamed repositories, so it
+  carries the owner ID `242540347` and the repository ID `1096175506` rather
+  than names alone. Re-read the current value from
+  `/repos/okou-ai/okou/actions/oidc/customization/sub` before editing it.
 - Set the role's maximum session duration to 7,200 seconds and attach
   [role-permissions.json](role-permissions.json) as an inline policy. This
   allows decrypt and bidirectional rewrap only on the two production keys, and

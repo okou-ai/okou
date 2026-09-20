@@ -26,6 +26,14 @@ export const fields: readonly Field[] = [
     primaryKey: "id",
     column: "encrypted_client_secret",
   },
+  // Builtin MCP automatic authentication (#35241) added this table after the
+  // original inventory. Databases and snapshots predating it lack the table.
+  {
+    table: "connector_dcr_registrations",
+    primaryKey: "id",
+    column: "encrypted_client_secret",
+    optional: true,
+  },
   {
     table: "telegram_installations",
     primaryKey: "telegram_bot_id",

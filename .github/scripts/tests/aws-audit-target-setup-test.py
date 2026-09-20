@@ -64,7 +64,7 @@ class AuditSetupTests(unittest.TestCase):
         return self.clients[service]
 
     def test_iam_trust_allows_only_renamed_production_subject(self):
-        expected_subject = "repo:okou-ai/okou:environment:production"
+        expected_subject = "repo:okou-ai@242540347/okou@1096175506:environment:production"
         github_directory = SCRIPT.parent.parent
         for relative_path in [
             "aws-audit-32264/operator-trust.json",
