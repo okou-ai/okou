@@ -48,7 +48,7 @@ interface McpServerOptions {
   readonly era: ProtocolEra;
   readonly pages?: readonly (readonly Tool[])[];
   readonly callResult?: CallToolResult;
-  readonly callResponse?: () => Response;
+  readonly callResponse?: (requestId: RequestId) => Response;
   readonly listResponse?: (requestId: RequestId) => Response;
   readonly deleteResponse?: () => Response | Promise<Response>;
 }
@@ -178,7 +178,7 @@ function stubMcpServer(options: McpServerOptions): SeenMcpRequest[] {
 
       if (message.method === "tools/call") {
         if (options.callResponse) {
-          return options.callResponse();
+          return options.callResponse(message.id);
         }
         return HttpResponse.json({
           jsonrpc: "2.0",
@@ -230,12 +230,14 @@ describe("okou mcp command", () => {
   });
 
   beforeEach(() => {
+    process.exitCode = undefined;
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
   });
 
   afterEach(() => {
+    process.exitCode = undefined;
     exit.mockClear();
     consoleLog.mockClear();
     consoleError.mockClear();
@@ -403,6 +405,7 @@ describe("okou mcp command", () => {
       ]);
 
       expect(consoleLog).toHaveBeenCalledWith(JSON.stringify(callResult));
+      expect(process.exitCode).toBeUndefined();
       expect(
         seen.map((request) => {
           return request.method ?? request.httpMethod;
@@ -559,6 +562,36 @@ describe("okou mcp command", () => {
     expect(outputText(consoleError)).toContain(
       "MCP tool input must be valid JSON",
     );
+  });
+
+  it("returns action-level input failures as client JSON errors", async () => {
+    stubConnectorList();
+    const seen = stubMcpServer({ era: "modern" });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "search",
+      "--input",
+      "{",
+      "--json",
+    ]);
+
+    expect(seen).toHaveLength(0);
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "client",
+          code: "invalid_input",
+          message: "MCP tool input must be valid JSON",
+          retryable: false,
+        },
+      }),
+    );
+    expect(process.exitCode).toBe(1);
   });
 
   it("rejects non-object JSON before opening an MCP connection", async () => {
@@ -934,6 +967,43 @@ describe("okou mcp command", () => {
     );
   });
 
+  it("returns a missing discovered tool as a client JSON error", async () => {
+    stubConnectorList();
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+    });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "missing",
+      "--input",
+      "{}",
+      "--json",
+    ]);
+
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "client",
+          code: "tool_not_found",
+          message: 'MCP tool "missing" was not found',
+          retryable: false,
+        },
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(
+      seen.filter((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toHaveLength(0);
+  });
+
   it("refuses MCP endpoint redirects", async () => {
     stubConnectorList();
     server.use(
@@ -1053,7 +1123,7 @@ describe("okou mcp command", () => {
     expect(outputText(consoleError)).not.toContain("xxxx");
   });
 
-  it("returns tool-level MCP errors without retrying", async () => {
+  it("handles MCP-standard unstructured tool errors without inferring from text", async () => {
     const toolError = {
       content: [{ type: "text", text: "invalid query" }],
       isError: true,
@@ -1083,7 +1153,241 @@ describe("okou mcp command", () => {
       "--json",
     ]);
 
-    expect(consoleLog).toHaveBeenCalledWith(JSON.stringify(toolError));
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "tool",
+          code: "tool_error",
+          message: "MCP tool returned an error",
+          retryable: false,
+        },
+        result: toolError,
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(exit).not.toHaveBeenCalled();
+    expect(
+      seen.filter((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("projects structured tool error fields into JSON without losing the result", async () => {
+    const toolError = {
+      content: [{ type: "text", text: "limit is too large" }],
+      structuredContent: {
+        error: {
+          code: "invalid_arguments",
+          message: "limit is too large",
+          retryable: false,
+          issues: [
+            {
+              path: ["limit"],
+              code: "too_big",
+              message: "Expected a value no greater than 50",
+            },
+          ],
+        },
+      },
+      isError: true,
+    } satisfies CallToolResult;
+    stubConnectorList();
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+      callResult: toolError,
+    });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "search",
+      "--input",
+      "{}",
+      "--json",
+    ]);
+
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: { kind: "tool", ...toolError.structuredContent.error },
+        result: toolError,
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(
+      seen.filter((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("distinguishes protocol errors in JSON", async () => {
+    stubConnectorList();
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+      callResponse: (requestId) => {
+        return HttpResponse.json({
+          jsonrpc: "2.0",
+          id: requestId,
+          error: { code: -32602, message: "Rejected parameters" },
+        });
+      },
+    });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "search",
+      "--input",
+      "{}",
+      "--json",
+    ]);
+
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "protocol",
+          code: "invalid_params",
+          message: "MCP server returned a protocol error",
+          retryable: false,
+        },
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(
+      seen.filter((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("distinguishes malformed tool results in JSON", async () => {
+    stubConnectorList();
+    stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+      callResponse: (requestId) => {
+        return HttpResponse.json({
+          jsonrpc: "2.0",
+          id: requestId,
+          result: { content: "not-an-array" },
+        });
+      },
+    });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "search",
+      "--input",
+      "{}",
+      "--json",
+    ]);
+
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "protocol",
+          code: "invalid_result",
+          message: "MCP server returned an invalid response",
+          retryable: false,
+        },
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("distinguishes transport failures in JSON without retrying", async () => {
+    stubConnectorList();
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+      callResponse: () => {
+        return HttpResponse.error();
+      },
+    });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "search",
+      "--input",
+      "{}",
+      "--json",
+    ]);
+
+    expect(consoleLog).toHaveBeenCalledWith(
+      JSON.stringify({
+        status: "error",
+        error: {
+          kind: "transport",
+          code: "request_failed",
+          message: "MCP server request failed",
+          retryable: false,
+        },
+      }),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(
+      seen.filter((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("preserves structured tool errors and the raw human payload", async () => {
+    const toolError = {
+      content: [{ type: "text", text: "limit is too large" }],
+      structuredContent: {
+        error: {
+          code: "invalid_arguments",
+          message: "limit is too large",
+          retryable: false,
+          issues: [
+            {
+              path: ["limit"],
+              code: "too_big",
+              message: "Expected a value no greater than 50",
+            },
+          ],
+        },
+      },
+      isError: true,
+    } satisfies CallToolResult;
+    stubConnectorList();
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+      callResult: toolError,
+    });
+
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "_acme-mcp",
+      "search",
+      "--input",
+      "{}",
+    ]);
+
+    expect(consoleLog).toHaveBeenCalledWith(JSON.stringify(toolError, null, 2));
+    expect(process.exitCode).toBe(1);
+    expect(exit).not.toHaveBeenCalled();
     expect(
       seen.filter((request) => {
         return request.method === "tools/call";

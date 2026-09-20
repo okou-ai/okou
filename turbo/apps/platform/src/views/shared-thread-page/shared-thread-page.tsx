@@ -16,7 +16,6 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
-import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type {
   SharedThreadRichContentSignals,
   SharedThreadArtifactSignals,
@@ -55,8 +54,7 @@ import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-th
  * view consumes them.
  */
 export type SharedDisplayAttachment = SharedMessageAttachment & {
-  readonly preview: AttachmentPreviewSignals;
-  readonly artifact?: SharedThreadArtifactSignals;
+  readonly artifact: SharedThreadArtifactSignals;
 };
 
 export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {

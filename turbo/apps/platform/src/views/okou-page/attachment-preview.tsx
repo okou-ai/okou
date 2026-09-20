@@ -54,7 +54,12 @@ function contentTypeForDocumentPreviewKind(kind: DocumentPreviewKind): string {
   return "text/html";
 }
 
-function shouldUseNativeAnchorNavigation(
+/**
+ * A preview opens in place only for the click that would otherwise navigate
+ * this tab. A middle click or a held modifier asks the browser for a tab of
+ * its own, and the link's own destination stays the answer to that.
+ */
+export function shouldUseNativeAnchorNavigation(
   event: ReactMouseEvent<HTMLAnchorElement>,
 ): boolean {
   return (

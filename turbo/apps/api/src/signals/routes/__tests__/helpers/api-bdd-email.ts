@@ -11,6 +11,7 @@ import { userExportRoutes } from "../../user-export";
 import type { ApiTestUser } from "./api-bdd";
 import { createEmailOutboxStateApi } from "./email-outbox-state";
 import { createRouteMocks } from "./route-test";
+import { installUserExportStorage } from "./user-export-storage";
 
 function emailApp(context: TestContext) {
   return setupApp({ context, routes: userExportRoutes });
@@ -22,6 +23,10 @@ function authenticate(context: TestContext, actor: ApiTestUser) {
     actor.orgId,
     actor.orgRole,
   );
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: [{ organization: { id: actor.orgId }, role: actor.orgRole }],
+    totalCount: 1,
+  });
   const emailId = `email_${actor.userId}`;
   mockClerkUsers(context, [
     {
@@ -43,6 +48,7 @@ export function createEmailApi(context: TestContext) {
       actor: ApiTestUser,
     ): Promise<{ readonly to: string; readonly subject: string }> {
       context.mocks.s3.send.mockResolvedValue({});
+      installUserExportStorage(context);
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         `https://r2.example.com/${randomUUID()}/data-export.zip`,
       );

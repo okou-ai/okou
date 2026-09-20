@@ -44,6 +44,7 @@ import { githubOauthRoutes } from "./routes/github-oauth";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runnersRoutes } from "./routes/runners";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
+import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
 import { userExportRoutes } from "./routes/user-export";
 import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
@@ -161,6 +162,7 @@ import { morningBriefDeliveryPreviewRoutes } from "./routes/morning-brief-delive
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
 import { morningBriefCompositionPreviewRoutes } from "./routes/morning-brief-composition-preview";
+import { morningBriefDebugTriggerRoutes } from "./routes/morning-brief-debug-trigger";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -233,6 +235,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...desktopUpdateRoutes,
   ...githubOauthRoutes,
   ...userExportRoutes,
+  ...cronProcessBackgroundJobsRoutes,
   ...webhooksClerkRoutes,
   ...webhooksBuiltInGenerationRoutes,
   ...webhooksGithubRoutes,
@@ -389,6 +392,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefDebugTriggerRoutes,
   ...morningBriefCalendarCollectionPreviewRoutes,
   ...morningBriefCollectionPreviewRoutes,
   ...morningBriefGmailCollectionPreviewRoutes,

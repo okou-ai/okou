@@ -45,7 +45,7 @@ const creations = [
   },
   {
     path: "/api/image-io/generate",
-    body: { prompt: "A private landscape", model: "qwen-image" },
+    body: { prompt: "A private landscape", model: "flux-pro-1.1" },
   },
   {
     path: "/api/video-io/generate",

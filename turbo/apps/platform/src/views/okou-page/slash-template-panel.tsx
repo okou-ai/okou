@@ -2,19 +2,11 @@
 // workflows you have; the right pane previews a type independently of selection.
 // Kept beside the flat menu in slash-workflow.tsx so both can render from the
 // same suggestion state while the feature switch decides which one is shown.
-import {
-  ChevronRight,
-  Globe,
-  Image,
-  Plus,
-  Presentation,
-  Route,
-} from "lucide-react";
+import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { i18n } from "../../i18n/index.ts";
-import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
   isSlashTemplateNativeAspectCategory,
@@ -47,7 +39,6 @@ interface SlashTemplatePanelProps {
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
   ) => void;
-  readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
@@ -81,66 +72,6 @@ function SectionLabel({ children }: { readonly children: string }) {
     <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
       {children}
     </div>
-  );
-}
-
-/**
- * Leads the Presentation covers, because a deck the user already owns is the
- * fastest template of all. It shares the picker dialog's command and accepted
- * formats; only the tile geometry is this pane's own, since these cards are
- * 139px rather than the dialog's full-width tiles.
- */
-function SlashTemplateImportCard({
-  onImportDeck,
-}: {
-  readonly onImportDeck: (file: File) => void;
-}) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.artifacts.templates.importDeck;
-  });
-  return (
-    <label
-      className="group min-w-0 cursor-pointer text-left"
-      data-slot="slash-template-import"
-      onMouseDown={(event) => {
-        // The panel is mounted off the editor's slash range, so letting the
-        // file input take focus clears the range and unmounts this input
-        // before the file dialog can return. Label activation still forwards
-        // the click, so the dialog opens with the caret left where it was.
-        event.preventDefault();
-      }}
-    >
-      <span className="flex aspect-video flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg bg-muted/50 ring-1 ring-border/60 transition-colors group-hover:bg-muted has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-        <Plus
-          className="size-5 text-muted-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
-        <span className="text-[10px] text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.templates.importDeckHint;
-          })}
-        </span>
-        <input
-          type="file"
-          className="sr-only"
-          accept={PRESENTATION_TEMPLATE_IMPORT_ACCEPT}
-          aria-label={label}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            // Clear the input so choosing the same deck again still fires.
-            event.currentTarget.value = "";
-            if (file) {
-              onImportDeck(file);
-            }
-          }}
-        />
-      </span>
-      <span className="mt-1 block truncate text-[12px] text-muted-foreground">
-        {label}
-      </span>
-    </label>
   );
 }
 
@@ -208,14 +139,12 @@ function SlashTemplateCover({
 function SlashTemplateDetailPane({
   category,
   onSelectTemplate,
-  onImportDeck,
 }: {
   readonly category: SlashTemplateCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
   ) => void;
-  readonly onImportDeck: (file: File) => void;
 }) {
   const { t } = useTranslation();
   const previews = slashTemplatePreviews(category);
@@ -293,9 +222,6 @@ function SlashTemplateDetailPane({
                 : "grid grid-cols-2 gap-2.5 pb-4",
             )}
           >
-            {category === "slides" && (
-              <SlashTemplateImportCard onImportDeck={onImportDeck} />
-            )}
             {previews.map((preview) => {
               return (
                 <SlashTemplateCover
@@ -397,7 +323,6 @@ export function SlashTemplatePanel({
   onPreview,
   onSelectCategory,
   onSelectTemplate,
-  onImportDeck,
   onSelectWorkflow,
   onBrowseAll,
   workflowOptionId,
@@ -523,7 +448,6 @@ export function SlashTemplatePanel({
         <SlashTemplateDetailPane
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
-          onImportDeck={onImportDeck}
         />
       )}
     </div>

@@ -1,6 +1,7 @@
 import {
   captureDesktopNativeHelperError,
   captureDesktopNativePermissionRecovery,
+  captureDesktopSessionRestoreFailure,
 } from "./sentry-main";
 import { writeSync } from "node:fs";
 import os from "node:os";
@@ -201,8 +202,12 @@ const automationPermissionPrompt = createAutomationPermissionDeniedPrompt({
 const computerUseAutoStart = new DesktopComputerUseAutoStartSupervisor({
   getState: getComputerUseBridgeState,
   start: async () => {
+    // A paced attempt is the one place allowed to re-arm a paused restore, so
+    // a transient sign-in failure recovers without opening the window.
+    authSession?.requestRestoreRetry();
     await startComputerUseRuntime();
   },
+  canRecover: () => authSession?.canRestoreSession() ?? true,
   logError: logComputerUseAutoStartError,
 });
 const quitConfirmation = new DesktopQuitConfirmationController({
@@ -330,8 +335,10 @@ function getAuthSession(): DesktopAuthSession {
       return await authWindow.run(request);
     },
     onChange: notifyAuthChanged,
-    onBackgroundRefresh: (event) =>
-      computerUseController.handleBackgroundAuthRefresh(event),
+    onBackgroundRefresh: (event) => {
+      computerUseController.handleBackgroundAuthRefresh(event);
+      if (event.phase === "failed") captureDesktopSessionRestoreFailure(event);
+    },
     onAuthCompleted: maybeStartComputerUseAfterAuth,
   });
 

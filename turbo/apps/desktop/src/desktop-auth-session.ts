@@ -12,6 +12,13 @@ type RunAuthWindow = (
   request: DesktopAuthWindowRequest,
 ) => Promise<string | null>;
 
+/**
+ * `signed_out` is the server's authoritative answer: the session is gone and
+ * only an interactive sign-in restores it. `unavailable` means the attempt
+ * never reached that answer, so a later retry can still succeed.
+ */
+export type DesktopAuthRestoreFailure = "signed_out" | "unavailable";
+
 export type DesktopAuthRefreshEvent =
   | { readonly phase: "started"; readonly signal: AbortSignal }
   | {
@@ -19,7 +26,12 @@ export type DesktopAuthRefreshEvent =
       readonly signal: AbortSignal;
       readonly identity: "initial" | "same" | "changed";
     }
-  | { readonly phase: "failed"; readonly signal: AbortSignal };
+  | {
+      readonly phase: "failed";
+      readonly signal: AbortSignal;
+      readonly classification: DesktopAuthRestoreFailure;
+      readonly cause: unknown;
+    };
 
 export interface DesktopAuthRequestOptions {
   /** Stateful callers can let their fresh runtime own retry after auth refresh. */
@@ -97,6 +109,7 @@ export class DesktopAuthSession {
   private pendingCallback: DesktopAuthCallback | null = null;
   private signingIn = false;
   private restoreEnabled = true;
+  private restorePaused = false;
   private authority: {
     readonly userId: string;
     readonly orgId: string;
@@ -152,10 +165,28 @@ export class DesktopAuthSession {
     if (!options?.forceRefresh && this.token) {
       return this.token;
     }
-    if (!this.restoreEnabled) {
+    if (!this.restoreEnabled || this.restorePaused) {
       return null;
     }
     return await this.refresh();
+  }
+
+  /** False once restoration needs an interactive sign-in. */
+  canRestoreSession(): boolean {
+    return this.restoreEnabled;
+  }
+
+  /**
+   * Re-arms a restoration paused by an indeterminate failure, so a paced
+   * recovery owns the retry instead of every state read reopening the window.
+   * An authoritative sign-out is never re-armed here.
+   */
+  requestRestoreRetry(): boolean {
+    if (!this.restoreEnabled || !this.restorePaused) {
+      return false;
+    }
+    this.restorePaused = false;
+    return true;
   }
 
   /**
@@ -195,6 +226,7 @@ export class DesktopAuthSession {
     this.pendingCallback = null;
     this.signingIn = false;
     this.restoreEnabled = false;
+    this.restorePaused = false;
     this.onChange();
   }
 
@@ -252,11 +284,14 @@ export class DesktopAuthSession {
     visible: boolean,
   ): Promise<string | null> {
     const previousState = this.appState;
+    let deniedBySession = false;
+    let failureCause: unknown = null;
     this.lifetime.abort();
     const lifetime = new AbortController();
     this.lifetime = lifetime;
     this.authority = null;
     this.restoreEnabled = true;
+    this.restorePaused = false;
     this.token = null;
     this.appState = signedOutDesktopAuthState();
     if (!interactive)
@@ -277,10 +312,18 @@ export class DesktopAuthSession {
         signal,
       });
       signal.throwIfAborted();
-      if (!token) return null;
+      if (!token) {
+        // A hidden restore resolves without a token only when the auth app
+        // sent it back to sign-in or workspace selection: the session is gone.
+        deniedBySession = true;
+        return null;
+      }
       const state = await this.readAppIdentity(token, signal);
       signal.throwIfAborted();
-      if (state.status !== "signed_in") return null;
+      if (state.status !== "signed_in") {
+        deniedBySession = true;
+        return null;
+      }
       this.appState = state;
       this.token = token;
       this.rememberAuthority(state, lifetime);
@@ -306,6 +349,7 @@ export class DesktopAuthSession {
       }
       return token;
     } catch (error) {
+      failureCause = error;
       if (this.lifetime === lifetime) {
         this.token = null;
         this.appState = signedOutDesktopAuthState();
@@ -317,12 +361,18 @@ export class DesktopAuthSession {
       if (this.lifetime === lifetime) {
         if (!this.token) {
           // Notify renderer/tray subscribers, and keep their reads from
-          // reopening a failed hidden restore until explicit sign-in.
-          this.restoreEnabled = false;
+          // reopening a failed hidden restore. An authoritative denial waits
+          // for an explicit sign-in; anything else only pauses restoration
+          // until a paced recovery re-arms it, so a transient failure cannot
+          // strand a signed-in user.
+          if (deniedBySession) this.restoreEnabled = false;
+          else this.restorePaused = true;
           if (!interactive && !lifetime.signal.aborted)
             this.onBackgroundRefresh({
               phase: "failed",
               signal: lifetime.signal,
+              classification: deniedBySession ? "signed_out" : "unavailable",
+              cause: failureCause,
             });
           this.onChange();
         }
@@ -369,7 +419,16 @@ export class DesktopAuthSession {
     if (!me.ok) throw new Error(`Desktop auth status failed: ${me.status}`);
     const user = authContract.me.responses[200].parse(await me.json());
     signal.throwIfAborted();
-    if (!user.userId || !user.orgId) return signedOutDesktopAuthState();
+    if (!user.userId) return signedOutDesktopAuthState();
+    // Signed in without an active workspace is a state the user resolves by
+    // selecting one. Reporting it as signed out would demand a pointless
+    // sign-in and discard a valid session.
+    if (!user.orgId)
+      return {
+        status: "signed_in",
+        user: { userId: user.userId, email: user.email },
+        organization: null,
+      };
     // Both reads use the identical server-verified bearer; never refresh only
     // the second half of the user/workspace pair.
     const org = await this.appRequest(
@@ -391,7 +450,9 @@ export class DesktopAuthSession {
       !("name" in organization) ||
       typeof organization.name !== "string"
     ) {
-      return signedOutDesktopAuthState();
+      // An unreadable payload is not the server denying the session. Failing
+      // here keeps a signed-out verdict authoritative.
+      throw new Error("Desktop organization payload is unusable");
     }
     return {
       status: "signed_in",

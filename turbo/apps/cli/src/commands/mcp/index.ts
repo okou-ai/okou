@@ -1,8 +1,13 @@
 import chalk from "chalk";
+import type { CallToolResult } from "@modelcontextprotocol/client";
+import {
+  mcpToolErrorContentSchema,
+  type McpToolErrorIssue,
+} from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { Command, Option } from "commander";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { callMcpTool, listMcpTools } from "./client";
+import { callMcpTool, listMcpTools, McpCallFailure } from "./client";
 import {
   DEFAULT_TIMEOUT_SECONDS,
   parseMcpTimeoutSeconds,
@@ -18,6 +23,52 @@ interface CallOptions extends JsonOptions {
   readonly input?: string;
   readonly inputFile?: string;
   readonly timeout: number;
+}
+
+interface McpJsonFailure {
+  readonly status: "error";
+  readonly error: {
+    readonly kind: "client" | "tool" | "protocol" | "transport";
+    readonly code: string;
+    readonly message: string;
+    readonly retryable: boolean;
+    readonly issues?: readonly McpToolErrorIssue[];
+  };
+  readonly result?: CallToolResult;
+}
+
+function safeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "MCP command failed";
+}
+
+function toolFailure(result: CallToolResult): McpJsonFailure {
+  const structured = mcpToolErrorContentSchema.safeParse(
+    result.structuredContent,
+  );
+  const error = structured.success
+    ? structured.data.error
+    : {
+        code: "tool_error",
+        message: "MCP tool returned an error",
+        retryable: false,
+      };
+  return {
+    status: "error",
+    error: { kind: "tool", ...error },
+    result,
+  };
+}
+
+function commandFailure(error: McpCallFailure): McpJsonFailure {
+  return {
+    status: "error",
+    error: {
+      kind: error.kind,
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+    },
+  };
 }
 
 function printCleanupWarning(cleanupWarning: boolean): void {
@@ -164,18 +215,49 @@ const callCommand = new Command()
   .action(
     withErrorHandler(
       async (connectorSlug: string, toolName: string, options: CallOptions) => {
-        const connector = await resolveRunMcpConnector(connectorSlug);
-        const input = await resolveMcpToolInput(options);
-        const result = await callMcpTool(
-          connector,
-          toolName,
-          input,
-          options.timeout,
-        );
-        printCleanupWarning(result.cleanupWarning);
-        console.log(
-          JSON.stringify(result.value, null, options.json ? undefined : 2),
-        );
+        let clientFailureCode = "connector_resolution_failed";
+        try {
+          const connector = await resolveRunMcpConnector(connectorSlug);
+          clientFailureCode = "invalid_input";
+          const input = await resolveMcpToolInput(options);
+          clientFailureCode = "command_failed";
+          const result = await callMcpTool(
+            connector,
+            toolName,
+            input,
+            options.timeout,
+          );
+          printCleanupWarning(result.cleanupWarning);
+          if (result.value.isError === true) {
+            console.log(
+              JSON.stringify(
+                options.json ? toolFailure(result.value) : result.value,
+                null,
+                options.json ? undefined : 2,
+              ),
+            );
+            process.exitCode = 1;
+            return;
+          }
+          console.log(
+            JSON.stringify(result.value, null, options.json ? undefined : 2),
+          );
+        } catch (error) {
+          if (!options.json) {
+            throw error;
+          }
+          const failure =
+            error instanceof McpCallFailure
+              ? error
+              : new McpCallFailure(
+                  "client",
+                  clientFailureCode,
+                  safeErrorMessage(error),
+                  false,
+                );
+          console.log(JSON.stringify(commandFailure(failure)));
+          process.exitCode = 1;
+        }
       },
     ),
   );
@@ -201,5 +283,7 @@ Notes:
   - Available only inside an Agent Run and scoped to its Agent's current authorization
   - Runner remains execution authority; authorization changes may require a new Run
   - Runner applies endpoint policy and injects connector credentials
+  - Successful call JSON is the raw MCP result; failed --json calls use a stable error envelope
+  - Tool errors preserve the raw MCP result and exit nonzero; Okou structured details are used when present
   - Tool calls are never automatically retried`,
   );

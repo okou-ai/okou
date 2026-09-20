@@ -287,7 +287,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 event_type: "error",
                 message: raw_message_from_field(event.get("message"))
                     .unwrap_or_else(|| "error".into()),
-                failure_reason: codex_error_failure_reason(error),
+                failure_reason: codex_error_failure_reason(event, error),
             })
         }
         "turn.completed" => {
@@ -299,7 +299,7 @@ fn extract_codex_failure_diagnostic(event: &Value) -> Option<CodexFailureDiagnos
                 event_type: "turn.completed",
                 message: codex_error_message(turn_error)
                     .unwrap_or_else(|| format!("turn {status}")),
-                failure_reason: codex_error_failure_reason(turn_error),
+                failure_reason: codex_error_failure_reason(event, turn_error),
             })
         }
         _ => None,
@@ -348,8 +348,11 @@ fn codex_error_message(error: Option<&Value>) -> Option<String> {
     combined_message_and_details(message, details)
 }
 
-fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
+fn codex_error_failure_reason(event: &Value, error: Option<&Value>) -> Option<FailureReason> {
     let error = error?;
+    if is_codex_access_program_unavailable(event, error) {
+        return Some(FailureReason::CodexAccessProgramUnavailable);
+    }
     if error.get("code").and_then(Value::as_str) == Some("invalid_api_key") {
         return Some(FailureReason::InvalidApiKey);
     }
@@ -408,6 +411,15 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
         return Some(FailureReason::UnsupportedModel);
     }
     None
+}
+
+fn is_codex_access_program_unavailable(event: &Value, error: &Value) -> bool {
+    event.get("status").and_then(Value::as_u64) == Some(400)
+        && error.get("type").and_then(Value::as_str) == Some("invalid_request_error")
+        && error.get("code").and_then(Value::as_str) == Some("unsupported_parameter")
+        && error.get("param").and_then(Value::as_str) == Some("access_programs.cyber")
+        && error.get("message").and_then(Value::as_str)
+            == Some("The access_programs parameter is not enabled for this organization.")
 }
 
 fn codex_error_info_failure_reason(error: &Value) -> Option<FailureReason> {
@@ -929,6 +941,85 @@ mod tests {
             let success = serde_json::json!({"type": "turn.completed", "turn": {"status": "completed", "error": error}});
             assert!(
                 masked_codex_failure_diagnostic(&success, &SecretMasker::from_raw("")).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn codex_terminal_events_classify_exact_access_program_rejection() {
+        let error = serde_json::json!({
+            "type": "invalid_request_error",
+            "code": "unsupported_parameter",
+            "message": "The access_programs parameter is not enabled for this organization.",
+            "param": "access_programs.cyber"
+        });
+        for event in [
+            serde_json::json!({
+                "type": "error",
+                "status": 400,
+                "error": error.clone()
+            }),
+            serde_json::json!({
+                "type": "turn.completed",
+                "status": 400,
+                "turn": {"status": "failed", "error": error.clone()}
+            }),
+        ] {
+            let diagnostic = masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .expect("terminal Codex diagnostic");
+            assert_eq!(
+                diagnostic.failure_reason,
+                Some(FailureReason::CodexAccessProgramUnavailable)
+            );
+        }
+    }
+
+    #[test]
+    fn codex_access_program_rejection_requires_exact_terminal_structure() {
+        let message = "The access_programs parameter is not enabled for this organization.";
+        let exact_error = serde_json::json!({
+            "type": "invalid_request_error",
+            "code": "unsupported_parameter",
+            "message": message,
+            "param": "access_programs.cyber"
+        });
+        let near_misses = [
+            serde_json::json!({"type": "error", "status": 401, "error": exact_error.clone()}),
+            serde_json::json!({"type": "error", "status": 400, "error": {
+                "type": "server_error", "code": "unsupported_parameter", "message": message,
+                "param": "access_programs.cyber"
+            }}),
+            serde_json::json!({"type": "error", "status": 400, "error": {
+                "type": "invalid_request_error", "code": "invalid_parameter", "message": message,
+                "param": "access_programs.cyber"
+            }}),
+            serde_json::json!({"type": "error", "status": 400, "error": {
+                "type": "invalid_request_error", "code": "unsupported_parameter", "message": message,
+                "param": "access_programs"
+            }}),
+            serde_json::json!({"type": "error", "status": 400, "error": {
+                "type": "invalid_request_error", "code": "unsupported_parameter",
+                "message": "The access_programs parameter is unavailable.",
+                "param": "access_programs.cyber"
+            }}),
+            serde_json::json!({"type": "error", "status": 400, "error": {"message": message}}),
+        ];
+        for event in near_misses {
+            let diagnostic = masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .expect("terminal Codex diagnostic");
+            assert_eq!(diagnostic.failure_reason, None, "event: {event}");
+        }
+
+        for event in [
+            serde_json::json!({"type": "warning", "status": 400, "message": message, "error": exact_error.clone()}),
+            serde_json::json!({"type": "assistant", "message": message, "error": exact_error.clone()}),
+            serde_json::json!({"type": "turn.completed", "status": 400, "turn": {
+                "status": "completed", "error": exact_error
+            }}),
+        ] {
+            assert!(
+                masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).is_none(),
+                "event: {event}"
             );
         }
     }

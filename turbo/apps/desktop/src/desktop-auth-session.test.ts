@@ -213,6 +213,77 @@ describe("Okou App session authority", () => {
     expect(session.getCachedToken()).toBeNull();
   });
 
+  it("pauses restoration after an unavailable attempt and re-arms it on request", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    identityHandlers();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getAuthState();
+    failWindow(new Error("net::ERR_INTERNET_DISCONNECTED"));
+    expect(await pending).toEqual(signedOut);
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "failed",
+      classification: "unavailable",
+    });
+    expect(session.canRestoreSession()).toBe(true);
+
+    // A paused restore must not reopen the window on every state read.
+    expect(await session.getAuthState()).toEqual(signedOut);
+    expect(windows).toHaveLength(1);
+
+    expect(session.requestRestoreRetry()).toBe(true);
+    replies.push(Promise.resolve("restored"));
+    expect(await session.getAuthState()).toMatchObject({
+      status: "signed_in",
+      organization: { id: "app-org" },
+    });
+    expect(windows).toHaveLength(2);
+  });
+
+  it("stops restoring once the auth app denies the session", async () => {
+    const { session, windows, refreshes } = createSession();
+
+    // The default window reply resolves without a token: sign-in is required.
+    expect(await session.getAuthState()).toEqual(signedOut);
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "failed",
+      classification: "signed_out",
+    });
+    expect(session.canRestoreSession()).toBe(false);
+    expect(session.requestRestoreRetry()).toBe(false);
+
+    expect(await session.getAuthState()).toEqual(signedOut);
+    expect(windows).toHaveLength(1);
+  });
+
+  it("keeps a signed-in session that has no active workspace", async () => {
+    const { session, replies, refreshes } = createSession();
+    server.use(
+      http.get(`${api}/api/auth/me`, () =>
+        HttpResponse.json({
+          userId: "app-user",
+          email: "app@example.test",
+          orgId: null,
+        }),
+      ),
+    );
+    replies.push(Promise.resolve("restored"));
+
+    expect(await session.getAuthState()).toEqual({
+      status: "signed_in",
+      user: { userId: "app-user", email: "app@example.test" },
+      organization: null,
+    });
+    expect(session.getCachedToken()).toBe("restored");
+    expect(session.canRestoreSession()).toBe(true);
+    expect(refreshes.some((event) => event.phase === "failed")).toBe(false);
+  });
+
   it("does one bounded App refresh after 401 without a cookie-only retry", async () => {
     const { session, replies, windows } = createSession();
     identityHandlers({ userId: "same-user" });

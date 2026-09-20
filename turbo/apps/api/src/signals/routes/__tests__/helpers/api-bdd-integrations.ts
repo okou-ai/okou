@@ -1760,6 +1760,22 @@ export function createBddIntegrationApi(context: TestContext) {
       );
     },
 
+    async requestCreateAgentPhoneLinkCode<Status extends 200 | 401 | 503>(
+      actor: ApiTestUser | null,
+      statuses: readonly Status[],
+    ) {
+      const client = setupApp({
+        context,
+        routes: integrationsAgentPhoneRoutes,
+      })(integrationsAgentPhoneContract);
+      return await accept(
+        client.createLinkCode({
+          headers: authenticate(context, routeMocks, actor),
+        }),
+        statuses,
+      );
+    },
+
     async requestUnlinkAgentPhone(
       actor: ApiTestUser | null,
       statuses: readonly (204 | 401 | 404)[],

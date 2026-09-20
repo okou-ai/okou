@@ -1358,7 +1358,11 @@ describe("workflow queue", () => {
         },
       },
       sandboxHeaders,
-      [200],
+      // Once the request is aborted, the in-process Hono harness can observe
+      // either the response that already crossed its return boundary or its
+      // synthetic abort response. The durable queue state below is the caller-
+      // visible contract that must remain invariant across both interleavings.
+      [200, 500],
       routeSignal.signal,
     );
     await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(1);
@@ -1371,6 +1375,9 @@ describe("workflow queue", () => {
 
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
+    expect((await runsApi.readRun(scenario.actor, runIds[1]!)).status).toBe(
+      "queued",
+    );
     await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
     await runsApi.requestCancelRun(scenario.actor, blockerRunId, [200]);
   });

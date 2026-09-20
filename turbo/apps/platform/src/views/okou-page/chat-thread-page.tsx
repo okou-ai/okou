@@ -96,6 +96,7 @@ import {
   BrandLangfuse,
   BrandSlack,
   ElapsedTime,
+  LazySpinner,
   ThinkingMessages,
   useMediaQuery,
 } from "@okouai/ui";
@@ -7136,10 +7137,10 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
     >
       <span className="flex h-[1.7em] w-3.5 items-center">
         {optimisticEventIds.has(eventId) ? (
-          <Loader2
+          <LazySpinner
             size={14}
             data-optimistic-user-message
-            className="animate-spin text-muted-foreground"
+            className="text-muted-foreground"
           />
         ) : null}
       </span>

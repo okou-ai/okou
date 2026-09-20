@@ -809,7 +809,6 @@ export function ImageModelBrandIcon({ model }: { model: ImageModel }) {
     case "fal-ai/flux-2-pro": {
       return <ImageModelBrandSvg path={FLUX_ICON_PATH} />;
     }
-    case "fal-ai/qwen-image":
     case "alibaba/qwen-image-3/text-to-image": {
       return <QwenImageModelIcon />;
     }

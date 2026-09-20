@@ -484,28 +484,6 @@
   ],
   "styleInjections": [
     {
-      "file": "apps/platform/src/views/okou-page/chat-composer.tsx",
-      "kind": "third-party-dom-adapter",
-      "syntax": "create-style-element",
-      "fingerprint": "83864e0d938d8d765db78c7c08c6a6f1d7790cb4d61709d25714b8bc7ed9dd4c",
-      "preview": "document.createElement(\"style\")",
-      "owner": "frontend-platform",
-      "rationale": "A Shadow DOM adapter isolates and normalizes user-supplied presentation template markup.",
-      "upstream": "user-supplied presentation template Shadow DOM",
-      "removal": "Remove when presentation template thumbnails no longer render external markup."
-    },
-    {
-      "file": "apps/platform/src/views/okou-page/chat-composer.tsx",
-      "kind": "third-party-dom-adapter",
-      "syntax": "style-content-write",
-      "fingerprint": "7f52bc829c2266e01bb80da09f59bfd93a1c8adfb418e3d7cd692c841944ab1b",
-      "preview": "resetStyle.textContent = ` :host { all: initial; contain: strict; display: block; height: 100%; overflow: hidden; positi",
-      "owner": "frontend-platform",
-      "rationale": "A Shadow DOM adapter isolates and normalizes user-supplied presentation template markup.",
-      "upstream": "user-supplied presentation template Shadow DOM",
-      "removal": "Remove when presentation template thumbnails no longer render external markup."
-    },
-    {
       "file": "apps/platform/src/views/okou-page/presentation-html-preview.ts",
       "kind": "third-party-dom-adapter",
       "syntax": "create-style-element",

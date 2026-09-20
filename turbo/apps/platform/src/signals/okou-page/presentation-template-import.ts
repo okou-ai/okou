@@ -99,15 +99,32 @@ function customTemplateImportPrompt(): string {
  * `additional_info` part, which reaches the agent's prompt and never the
  * thread's visible text.
  *
- * Only the catalog is worth saying. The guide's own publish step is
- * `okou presentation-template publish`, which writes to the presentation
- * table, and a template published there never reaches the Custom pane, which
- * reads the user template catalog. How to read the file, which branch to take
- * and what the package must contain are all in the guide, and restating any of
- * it here would only give the run a second answer to disagree with.
+ * Which guide and which catalog, and nothing else.
+ *
+ * Naming the guide is not redundant with the agent-tools prompt, which is
+ * where the deck's route to it lives. That prompt sends a run to
+ * `okou resource pull skill:presentation-reverse-template`, and the archive it
+ * unpacks to `./generated/resources/reverse-template/` holds the presentation
+ * branch alone. A run told to use "the reverse-template skill" therefore
+ * reaches a guide of that name, reads a deck guide, and has nothing to suggest
+ * the document, PDF and illustration branches exist. Saying "the dispatcher in
+ * `okou-ai/vm0-skills`" is what distinguishes the four-branch guide from the
+ * one-branch copy that shares its name.
+ *
+ * The catalog still has to be said because the presentation branch ends in
+ * `okou presentation-template publish`, which writes to the presentation table
+ * and never reaches the Custom pane. `--kind` rides along because the flag
+ * defaults to `presentation`, and that kind then requires `--pages`: a
+ * document published without the flag either fails for want of page images or
+ * lands in the catalog as a presentation. Neither is worth explaining to the
+ * run — the flag is in the command it is given.
+ *
+ * How to read the file, which branch to take and what the package must contain
+ * are all in the guide, and restating any of it here would only give the run a
+ * second answer to disagree with.
  */
 function customTemplateImportGuidance(): string {
-  return "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+  return "Analyse this file with the `reverse-template` dispatcher in `okou-ai/vm0-skills`: read `reverse-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 }
 
 /** One import's message: what the member reads, and what only the run reads. */

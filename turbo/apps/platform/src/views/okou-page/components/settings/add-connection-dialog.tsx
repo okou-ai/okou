@@ -71,7 +71,6 @@ import {
   connectorConnectionAttempt$,
 } from "../../../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
-import { ConnectorConnectionCancelButton } from "../../../components/connector-connection-progress.tsx";
 import type {
   ConnectorAccountConnectMode,
   ConnectorAccountMutationOptions,
@@ -1550,7 +1549,6 @@ export function ConnectModal({
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
   const connectionAttempt = useGet(connectorConnectionAttempt$);
-  const { t } = useTranslation();
 
   const selectedConnectorSlug = item.slug;
 
@@ -1625,17 +1623,6 @@ export function ConnectModal({
             }}
           />
         </ConnectorConnectionDialogBody>
-        {connectFlowActive && connectionAttempt ? (
-          <ConnectorConnectionCancelButton onCancel={cancel} />
-        ) : connectFlowActive ? (
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={cancel}>
-              {t(($) => {
-                return $.connectors.actions.cancel;
-              })}
-            </Button>
-          </div>
-        ) : null}
         {item.slug === "mercury" ? (
           <MercuryDisclosure className="border-t border-border/50 pt-4" />
         ) : null}
