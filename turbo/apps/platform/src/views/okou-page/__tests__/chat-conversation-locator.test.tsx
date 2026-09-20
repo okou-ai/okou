@@ -314,9 +314,7 @@ test("sampled user markers preview and navigate beyond the rendered conversation
 
   await user.unhover(rail);
   await waitFor(() => {
-    expect(
-      within(preview).queryByText("Locator question 30"),
-    ).not.toBeInTheDocument();
+    expect(preview).not.toBeInTheDocument();
   });
 });
 
