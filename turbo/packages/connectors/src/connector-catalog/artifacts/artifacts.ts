@@ -251,9 +251,11 @@ export const connectorCatalogArtifactConnectorSchema = z
     }
   });
 
-const connectorCatalogArtifactBaseSchema = z
+export const connectorCatalogArtifactSchema = z
   .object({
-    artifactSchemaVersion: z.union([z.literal(3), z.literal(4)]),
+    artifactSchemaVersion: z.literal(
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    ),
     catalogVersion: connectorCatalogVersionSchema,
     categoryMetadata: catalogSourceSchema.shape.categoryMetadata,
     connectors: z.array(connectorCatalogArtifactConnectorSchema).min(1),
@@ -289,15 +291,8 @@ const connectorCatalogArtifactBaseSchema = z
     }
   });
 
-export const connectorCatalogArtifactSchema =
-  connectorCatalogArtifactBaseSchema.safeExtend({
-    artifactSchemaVersion: z.literal(
-      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-    ),
-  });
-
 export type ConnectorCatalogArtifact = z.infer<
-  typeof connectorCatalogArtifactBaseSchema
+  typeof connectorCatalogArtifactSchema
 >;
 export type ConnectorCatalogArtifactConnector = z.infer<
   typeof connectorCatalogArtifactConnectorSchema
