@@ -27,11 +27,11 @@ import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-runtime.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
@@ -40,7 +40,7 @@ import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type { AutomationRow } from "./workflow-automation-launch.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import { lockConnectorState } from "./auth-state-lock.service";
+import { lockBuiltinConnectorState } from "./auth-state-lock.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
 import type { WorkflowQueueAdmissionTransaction } from "./workflow-chat-event-queue.service";
 
@@ -258,7 +258,7 @@ async function resolveGoogleMeetAccess(
   const currentTime = nowDate();
   const snapshot = await loadConnectorRuntimeSnapshot(args.db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,
     snapshot,
     orgId: args.orgId,
@@ -282,7 +282,7 @@ async function resolveGoogleMeetAccess(
     };
   }
   const connection = loaded.connection;
-  const accessTokenValueRef = connectorCredentialRuntimeValueRef(
+  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME,
   );
@@ -293,7 +293,7 @@ async function resolveGoogleMeetAccess(
         "Reconnect Google Meet before using Google Meet event automations",
     };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
     valueRefs: [accessTokenValueRef],
@@ -321,7 +321,7 @@ async function resolveGoogleMeetAccess(
       },
     };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection,
       db: args.db,
@@ -666,7 +666,7 @@ export async function deletePreparedGoogleMeetSubscriptionWithLifecycleLock(
 ): Promise<void> {
   let cleanupError: unknown = null;
   await args.db.transaction(async (tx) => {
-    await lockConnectorState(tx, {
+    await lockBuiltinConnectorState(tx, {
       orgId: args.pending.orgId,
       userId: args.pending.userId,
       connectorSlug: "google-meet",
@@ -1097,7 +1097,7 @@ async function reconcileGoogleMeetSubscriptionLifecycle(
   signal: AbortSignal,
 ): Promise<GoogleMeetSubscriptionReconcileResult> {
   const transition = await args.db.transaction(async (tx) => {
-    await lockConnectorState(tx, {
+    await lockBuiltinConnectorState(tx, {
       orgId: args.orgId,
       userId: args.userId,
       connectorSlug: "google-meet",
@@ -1210,7 +1210,7 @@ async function loadGoogleMeetConnectorInventory(
   signal: AbortSignal,
 ): Promise<Set<string>> {
   return await args.db.transaction(async (tx) => {
-    await lockConnectorState(tx, {
+    await lockBuiltinConnectorState(tx, {
       orgId: args.orgId,
       userId: args.userId,
       connectorSlug: "google-meet",
@@ -1273,7 +1273,7 @@ async function repairGoogleMeetAutomationAccountProjectionsForOwner(
   signal: AbortSignal,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await lockConnectorState(tx, {
+    await lockBuiltinConnectorState(tx, {
       orgId: args.orgId,
       userId: args.userId,
       connectorSlug: "google-meet",
@@ -1797,7 +1797,7 @@ async function persistCurrentGoogleMeetAutomationSource(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  await lockConnectorState(tx, {
+  await lockBuiltinConnectorState(tx, {
     orgId: args.orgId,
     userId: args.userId,
     connectorSlug: "google-meet",

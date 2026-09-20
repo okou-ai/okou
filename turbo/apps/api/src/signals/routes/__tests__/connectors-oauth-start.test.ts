@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorOauthStartResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
+import { builtinConnectorOauthStartResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
 import { http, HttpResponse, type JsonBodyType } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -15,13 +15,13 @@ import {
   API_TEST_CONNECTOR_CATALOG,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
-import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...connectorsSlugCallbackRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
+  ...builtinConnectorsRoutes,
 ]);
 
 const context = testContext();
@@ -798,7 +798,9 @@ async function requestOauthStart(
 }
 
 async function authorizationUrlFromResponse(response: Response): Promise<URL> {
-  const body = connectorOauthStartResponseSchema.parse(await response.json());
+  const body = builtinConnectorOauthStartResponseSchema.parse(
+    await response.json(),
+  );
   return new URL(body.authorizationUrl);
 }
 
@@ -1107,7 +1109,9 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     });
 
     expect(response.status).toBe(200);
-    const body = connectorOauthStartResponseSchema.parse(await response.json());
+    const body = builtinConnectorOauthStartResponseSchema.parse(
+      await response.json(),
+    );
     expect(body.connectionId).toBeTruthy();
     const authorizationUrl = new URL(body.authorizationUrl);
     expectOauthState(authorizationUrl);
@@ -1361,7 +1365,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
     });
 
     expect(response.status).toBe(200);
-    const startBody = connectorOauthStartResponseSchema.parse(
+    const startBody = builtinConnectorOauthStartResponseSchema.parse(
       await response.json(),
     );
     const authorizationUrl = new URL(startBody.authorizationUrl);

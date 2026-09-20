@@ -4,7 +4,6 @@
       "name": "json-identities-and-remainder",
       "runId": "00000000-0000-4000-8000-000000000001",
       "flowId": "10000000-0000-4000-8000-000000000001",
-      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
       "request": {
         "method": "GET",
         "path": "/2/tweets",
@@ -60,7 +59,6 @@
       "name": "counts-ignore-incidental-identities",
       "runId": "00000000-0000-4000-8000-000000000002",
       "flowId": "10000000-0000-4000-8000-000000000002",
-      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
       "request": {
         "method": "GET",
         "path": "/2/tweets/counts/recent",
@@ -98,7 +96,6 @@
       "name": "malformed-json-count-fallback",
       "runId": "00000000-0000-4000-8000-000000000003",
       "flowId": "10000000-0000-4000-8000-000000000003",
-      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
       "request": {
         "method": "GET",
         "path": "/2/tweets?ids=1,2",
@@ -133,44 +130,9 @@
       "expectedRepeatUnits": 2
     },
     {
-      "name": "future-capability-keeps-counts",
-      "runId": "00000000-0000-4000-8000-000000000004",
-      "flowId": "10000000-0000-4000-8000-000000000004",
-      "capability": { "protocol": "x-resource-v1", "startDate": "2099-01-01" },
-      "request": {
-        "method": "GET",
-        "path": "/2/tweets",
-        "permission": "tweet.read"
-      },
-      "chunks": [
-        {
-          "observedAt": "2026-09-18T12:00:00.000Z",
-          "body": "{\"data\":[{\"id\":\"1\"},{\"id\":\"1\"}]}"
-        }
-      ],
-      "completion": "response",
-      "expectedPayloads": [
-        {
-          "runId": "00000000-0000-4000-8000-000000000004",
-          "events": [
-            {
-              "idempotencyKey": "63578406-14b7-5e70-bda8-bc3e3fdb0395",
-              "kind": "connector",
-              "provider": "x",
-              "category": "posts.read",
-              "quantity": 2
-            }
-          ]
-        }
-      ],
-      "expectedFirstUnits": 2,
-      "expectedRepeatUnits": 2
-    },
-    {
       "name": "ndjson-crosses-utc-midnight",
       "runId": "00000000-0000-4000-8000-000000000005",
       "flowId": "10000000-0000-4000-8000-000000000005",
-      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
       "request": {
         "method": "GET",
         "path": "/2/tweets/search/stream",

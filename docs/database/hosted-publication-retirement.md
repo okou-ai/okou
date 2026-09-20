@@ -90,7 +90,7 @@ isolation. It is not a blocker for this metadata-only migration.
 
 ## Physical version-column retirement
 
-Migration `1169_retire_hosted_publication_version_columns` is the separate
+Migration `1173_retire_hosted_publication_version_columns` is the separate
 contraction. It drops the four columns, their two relational version indexes and
 the temporary pointer projection trigger/function. The canonical manifest
 expression indexes remain. No deployment, site, share or uploaded-file row is
@@ -105,11 +105,25 @@ and statement timeouts still apply. These database guards cannot establish which
 API binaries are serving or eligible for rollback.
 
 **Release gate:** ship the runtime transition in its own release first, verify
-that API is serving and is the oldest supported API rollback target, and drain
-its predecessor before admitting the contraction for release. Keep the
-contraction PR in draft until this evidence exists. Merging the runtime PR alone
-does not satisfy the gate. This document and the migration do not establish
-production readiness or authorize production execution.
+that API is serving, and drain its predecessor before merging the contraction.
+Keep the contraction PR in draft until this evidence exists. Merging the runtime
+PR alone does not satisfy the gate.
+
+The contraction also makes the runtime transition's canonical main commit the
+oldest permitted API target in the production rollback resolver. That resolver
+always runs from main, so the guard takes effect when this PR merges, before
+the physical contraction deploys. It rejects incompatible API artifacts before
+external artifact or host access; the independently selected Runner tag does
+not need this API-only commit. A compatible production API release must already
+exist before the guard is installed.
+
+Record the production migration and promotion receipts, verify all supported
+production aliases and build-info responses, then wait out the preceding
+deployment's actual function timeout and verify the aliases again. The Vercel
+timeout also bounds streaming and `waitUntil` work. This covers already-admitted
+requests on ordinary production aliases; it does not claim that old direct
+deployment URLs have been deleted. Local tests and a migration journal entry
+cannot establish this release evidence.
 
 The history audit now emits receipt version 2 and reads retained versions from
 manifests. It removes observations about the retired duplicate active-version

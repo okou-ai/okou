@@ -33,7 +33,7 @@ import type { SlackView } from "../external/slack-block-kit";
 import { createSlackClient } from "../external/slack-message-client";
 import { db$, writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { connectorList } from "../services/connector-data.service";
+import { builtinConnectorList } from "../services/connector-data.service";
 import { userSecrets, userVariables } from "../services/user-data.service";
 import { decryptPersistentSecretValue } from "../services/crypto.utils";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
@@ -86,18 +86,19 @@ const getSlackEnvironment$ = computed(
     const { secrets: requiredSecrets, vars: requiredVars } =
       userConfiguredAgentEnvironmentRequirements(agent.name);
 
-    const [userSecretList, userVarList, userConnectors] = await Promise.all([
-      get(userSecrets({ orgId: auth.orgId, userId: auth.userId })),
-      get(userVariables({ orgId: auth.orgId, userId: auth.userId })),
-      get(connectorList({ orgId: auth.orgId, userId: auth.userId })),
-    ]);
+    const [userSecretList, userVarList, userBuiltinConnectors] =
+      await Promise.all([
+        get(userSecrets({ orgId: auth.orgId, userId: auth.userId })),
+        get(userVariables({ orgId: auth.orgId, userId: auth.userId })),
+        get(builtinConnectorList({ orgId: auth.orgId, userId: auth.userId })),
+      ]);
 
     const existingSecretNames = new Set([
       ...userSecretList.secrets.map((s) => {
         return s.name;
       }),
       ...guaranteedConnectorProvidedBindingNames({
-        bindings: userConnectors.connectorProvidedBindings,
+        bindings: userBuiltinConnectors.connectorProvidedBindings,
         namespace: "secrets",
       }),
     ]);
@@ -106,7 +107,7 @@ const getSlackEnvironment$ = computed(
         return v.name;
       }),
       ...guaranteedConnectorProvidedBindingNames({
-        bindings: userConnectors.connectorProvidedBindings,
+        bindings: userBuiltinConnectors.connectorProvidedBindings,
         namespace: "vars",
       }),
     ]);

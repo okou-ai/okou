@@ -8,10 +8,10 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { Db, ReadonlyDb } from "../external/db";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  type ConnectorCredentialConnection,
-} from "./connector-credential-runtime.service";
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
 const STRIPE_CONNECTOR_SLUG = "stripe";
@@ -47,7 +47,7 @@ type StripeInvoicePaidAutomationReadinessResult =
 type ReadyStripeConnectionResult =
   | {
       readonly kind: "ok";
-      readonly connection: ConnectorCredentialConnection;
+      readonly connection: BuiltinConnectorCredentialConnection;
       readonly stripeAccountId: string;
     }
   | { readonly kind: "bad_request"; readonly message: string };
@@ -68,7 +68,7 @@ async function loadReadyStripeConnection(
 ): Promise<ReadyStripeConnectionResult> {
   const snapshot = await loadConnectorRuntimeSnapshot(args.db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,
     snapshot,
     orgId: args.orgId,
@@ -103,7 +103,7 @@ async function loadReadyStripeConnection(
     return badRequest(RECONNECT_STRIPE_OAUTH_MESSAGE);
   }
 
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
     valueRefs: [STRIPE_LIVEMODE_VALUE_REF],

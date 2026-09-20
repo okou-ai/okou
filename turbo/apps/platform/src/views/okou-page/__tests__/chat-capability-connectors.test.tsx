@@ -11,16 +11,16 @@ import {
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
-  connectorsMainContract,
-  connectorNoAuthGrantContract,
-  connectorOauthStartContract,
+  builtinConnectorsMainContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorsContract,
   customConnectorValuesContract,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -540,14 +540,14 @@ test("Connect a single available connector without an unnecessary chooser", asyn
     return requestedSlug === slug ? item() : null;
   });
   context.mocks.data.connectors([]);
-  context.mocks.api(connectorOauthStartContract.start, ({ respond }) => {
+  context.mocks.api(builtinConnectorOauthStartContract.start, ({ respond }) => {
     return respond(200, {
       authorizationUrl: "https://provider.example.test/authorize-drive",
       oauthAttemptId,
       connectionId: CONNECTOR_CONNECTION_ID,
     });
   });
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [slug] });
   });
   installActionConversation({
@@ -603,13 +603,16 @@ test("Enable a single no-auth connector without an unnecessary dialog", async ()
   installCatalogLookup((requestedSlug) => {
     return requestedSlug === slug ? item() : null;
   });
-  context.mocks.api(connectorNoAuthGrantContract.connect, ({ respond }) => {
-    connected = true;
-    return respond(
-      200,
-      connectedConnectorResponse({ slug, authMethod: method.id }),
-    );
-  });
+  context.mocks.api(
+    builtinConnectorNoAuthGrantContract.connect,
+    ({ respond }) => {
+      connected = true;
+      return respond(
+        200,
+        connectedConnectorResponse({ slug, authMethod: method.id }),
+      );
+    },
+  );
   installActionConversation({
     lines: [
       connectorActionUrl({
@@ -761,14 +764,14 @@ test("Reconnect an expired connector before resuming the task", async () => {
         })
       : null;
   });
-  context.mocks.api(connectorOauthStartContract.start, ({ respond }) => {
+  context.mocks.api(builtinConnectorOauthStartContract.start, ({ respond }) => {
     return respond(200, {
       authorizationUrl: "https://provider.example.test/reconnect-drive",
       oauthAttemptId,
       connectionId: CONNECTOR_CONNECTION_ID,
     });
   });
-  context.mocks.api(connectorsMainContract.list, ({ respond }) => {
+  context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [
         restored
@@ -782,7 +785,7 @@ test("Reconnect an expired connector before resuming the task", async () => {
       connectorProvidedBindings: [],
     });
   });
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [slug] });
   });
   installActionConversation({

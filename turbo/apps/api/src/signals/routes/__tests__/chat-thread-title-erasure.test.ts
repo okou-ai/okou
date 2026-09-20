@@ -15,6 +15,7 @@ import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events
 import {
   holdChatThreadEventIdFixture,
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { createDeferredPromise } from "../../utils";
@@ -350,6 +351,20 @@ function titleState(paused: PausedTitle) {
   return readChatThreadTitleStateFixture(paused.threadId);
 }
 
+async function storedTitle(paused: PausedTitle): Promise<string | null> {
+  return (await readStoredChatThreadMetadataFixture(paused.threadId)).title;
+}
+
+async function closedTitle(paused: PausedTitle): Promise<string | null> {
+  const response = await chat.requestReadThreadMetadata(
+    paused.actor,
+    paused.threadId,
+    [404],
+  );
+  expect(response.status).toBe(404);
+  return storedTitle(paused);
+}
+
 describe("account erasure fences generated chat titles", () => {
   it.each([
     {
@@ -397,7 +412,7 @@ describe("account erasure fences generated chat titles", () => {
       // The generation ran to completion against the provider; only the
       // database copy was refused.
       expect(paused.titleRequests()).toBe(1);
-      await expect(paused.title()).resolves.toBeNull();
+      await expect(closedTitle(paused)).resolves.toBeNull();
       await expect(paused.renames()).resolves.toStrictEqual([]);
       // No title, no `renamed_at` and no touched `updated_at`, and the sidebar
       // of the admitted owner was never invalidated for it.
@@ -480,7 +495,7 @@ describe("account erasure fences generated chat titles", () => {
       // Admission refused before any content was read, so the provider was
       // never called for this thread at all.
       expect(gated.titleRequests()).toBe(0);
-      await expect(gated.title()).resolves.toBeNull();
+      await expect(closedTitle(gated)).resolves.toBeNull();
       await expect(gated.renames()).resolves.toStrictEqual([]);
     },
     CASE_TIMEOUT_MS,
@@ -534,7 +549,10 @@ describe("account erasure fences generated chat titles", () => {
             await paused.send(paused.prompt);
             await paused.entered;
             // The response is delivered and only the optional title is left.
-            await expect(paused.title()).resolves.toBeNull();
+            // The production metadata GET now uses the same commit barrier, so
+            // inspect the committed baseline without letting that GET become
+            // the transaction this writer-specific fixture pauses.
+            await expect(storedTitle(paused)).resolves.toBeNull();
             paused.release();
             const draining = flushWaitUntilForTest();
             const settings = await barrier.entered;
@@ -572,7 +590,7 @@ describe("account erasure fences generated chat titles", () => {
       });
 
       // Writer first: one coherent title, one renamed event, one sequence id.
-      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+      await expect(closedTitle(paused)).resolves.toBe(GENERATED_TITLE);
       const renames = await paused.renames();
       expect(
         renames.map((rename) => {
@@ -586,7 +604,7 @@ describe("account erasure fences generated chat titles", () => {
         "Post closure title",
         [404],
       );
-      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+      await expect(closedTitle(paused)).resolves.toBe(GENERATED_TITLE);
     },
     CASE_TIMEOUT_MS,
   );
@@ -874,7 +892,7 @@ describe("account erasure fences generated chat titles", () => {
             // `COMMIT` has not been sent. No subscriber may have been told yet,
             // and no other session can read the title either.
             precommit = threadListInvalidations(paused);
-            await expect(paused.title()).resolves.toBeNull();
+            await expect(storedTitle(paused)).resolves.toBeNull();
             barrier.release();
             await draining;
           },

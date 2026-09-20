@@ -127,7 +127,7 @@ impl Run {
             .await?
             .map_err(|_| Failure::Network)?;
         let authenticated = scope
-            .wait(rfb_client::authenticate(
+            .wait_deadline_aware(rfb_client::authenticate(
                 socket,
                 &credential.host,
                 credential.password,
@@ -135,7 +135,15 @@ impl Run {
                 scope.deadline,
             ))
             .await?
-            .map_err(Failure::from)?;
+            .map_err(|error| {
+                if let rfb_client::Error::AuthenticationDeadlineExceeded { stage } = &error {
+                    tracing::info!(
+                        vnc_authentication_stage = stage.as_str(),
+                        "VNC authentication deadline exceeded"
+                    );
+                }
+                Failure::from(error)
+            })?;
         let connection = scope
             .wait(authenticated.initialize(request.mode.into(), scope.deadline))
             .await?

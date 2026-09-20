@@ -768,6 +768,39 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
+    async requestReadThreadMetadata(
+      actor: ApiTestUser | null,
+      threadId: string,
+      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
+      signal?: AbortSignal,
+    ) {
+      const client =
+        signal === undefined
+          ? threadMetadataClient()
+          : chatFilesOperationApp(context, signal)(chatThreadMetadataContract);
+      return await accept(
+        client.get({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+        }),
+        statuses,
+      );
+    },
+
+    async requestReadThreadMetadataWithBearer(
+      authorization: string | undefined,
+      threadId: string,
+      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
+    ) {
+      return await accept(
+        threadMetadataClient().get({
+          headers: bearerAuth(authorization),
+          params: { id: threadId },
+        }),
+        statuses,
+      );
+    },
+
     async requestReadThread(
       actor: ApiTestUser | null,
       threadId: string,

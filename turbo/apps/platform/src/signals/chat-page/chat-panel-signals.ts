@@ -82,6 +82,7 @@ export interface MessageListSignals {
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
   >;
+  readonly assistantErrorRecoveryEventId$: Computed<Promise<string | null>>;
   readonly retryAssistantError$: Command<Promise<boolean>, [AbortSignal]>;
   readonly resetCodexSubscriptionAndRetry$: Command<
     Promise<boolean>,
@@ -146,6 +147,7 @@ export interface ChatPanelSignals {
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
   >;
+  readonly assistantErrorRecoveryEventId$: Computed<Promise<string | null>>;
   readonly retryAssistantError$: Command<Promise<boolean>, [AbortSignal]>;
   readonly resetCodexSubscriptionAndRetry$: Command<
     Promise<boolean>,

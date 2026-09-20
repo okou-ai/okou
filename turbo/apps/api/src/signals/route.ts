@@ -3,7 +3,8 @@ import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materializ
 import { authMeRoutes } from "./routes/auth-me";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import type { RouteEntry } from "./route-entry";
-import { connectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
+import { builtinConnectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events";
@@ -91,9 +92,9 @@ import { computerUseRoutes } from "./routes/computer-use";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { connectorsExternalCodeRoutes } from "./routes/connectors-external-code";
-import { connectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
-import { connectorsRoutes } from "./routes/connectors";
+import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
+import { builtinConnectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
+import { builtinConnectorsRoutes } from "./routes/connectors";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
 import { emailInboundRoutes } from "./routes/email-inbound";
@@ -251,7 +252,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
   ...webhooksAgentStorageRoutes,
-  ...connectorsSlugCallbackRoutes,
+  ...builtinConnectorsAutomaticRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
   ...cronProjectChatEventSearchRoutes,
   ...cronSnapshotChatEventsRoutes,
@@ -312,9 +314,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...codexDeviceAuthRoutes,
   ...connectorCatalogRoutes,
   ...connectorCheckRoutes,
-  ...connectorsExternalCodeRoutes,
-  ...connectorsOauthDeviceAuthRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsExternalCodeRoutes,
+  ...builtinConnectorsOauthDeviceAuthRoutes,
+  ...builtinConnectorsRoutes,
   ...connectorAccountRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,

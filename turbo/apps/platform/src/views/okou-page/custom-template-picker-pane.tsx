@@ -1,6 +1,5 @@
 import {
   Check,
-  ChevronLeft,
   ChevronRight,
   MoreHorizontal,
   Plus,
@@ -8,7 +7,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -29,23 +28,19 @@ import type {
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import {
-  CustomTemplateDetailSidebar,
   VISIBILITY_OPTIONS,
   VisibilityLabel,
 } from "./custom-template-detail-sidebar.tsx";
-import { CustomTemplateSourcePreviewDialog } from "./custom-template-source-preview-dialog.tsx";
+import {
+  CustomTemplatePreviewDialog,
+  CustomTemplatesLoadError,
+} from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import {
-  closeCustomTemplate$,
   customTemplateSearchQuery$,
-  customTemplateSurface,
   deleteCustomTemplate$,
   openCustomTemplate$,
-  openCustomTemplateDetail$,
-  openCustomTemplateId$,
-  openCustomTemplateKind$,
-  reloadCustomTemplates$,
   setCustomTemplateSearchQuery$,
   updateCustomTemplate$,
   visibleCustomTemplates$,
@@ -415,104 +410,6 @@ function CustomTemplatesEmpty({
   );
 }
 
-function CustomTemplatesLoadError() {
-  const { t } = useTranslation();
-  const reload = useSet(reloadCustomTemplates$);
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-      <span role="alert">
-        {t(($) => {
-          return $.templates.loadFailed;
-        })}
-      </span>
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        onClick={() => {
-          reload();
-        }}
-      >
-        {t(($) => {
-          return $.templates.retry;
-        })}
-      </Button>
-    </div>
-  );
-}
-
-/**
- * An open deck, which replaces the catalog until it is closed. Its pages are
- * images this panel can stack and scroll, so nothing is gained by lifting them
- * into a dialog of their own.
- */
-function CustomTemplateDetail({
-  onSelect,
-}: {
-  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
-}) {
-  const { t } = useTranslation();
-  // The detail shares the catalog's version, so every save invalidates it. Read
-  // through the last settled answer: dropping to the skeleton on a refresh
-  // would take the editor away mid-save, and with it the field the member is
-  // waiting to get back. The first load still has no previous answer to show,
-  // and a failed refresh still settles as an error.
-  const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
-  const close = useSet(closeCustomTemplate$);
-  const detail =
-    detailLoadable.state === "hasData" ? detailLoadable.data : null;
-  return (
-    <div className="flex flex-col gap-4">
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        className="-ml-2 self-start"
-        onClick={() => {
-          close();
-        }}
-      >
-        <ChevronLeft />
-        {t(($) => {
-          return $.templates.detail.back;
-        })}
-      </Button>
-      {detailLoadable.state === "hasError" ? (
-        <CustomTemplatesLoadError />
-      ) : detail === null ? null : (
-        <div className="flex flex-col gap-5 lg:flex-row">
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
-            {detail.pageUrls.map((pageUrl, index) => {
-              return (
-                <img
-                  key={pageUrl}
-                  src={pageUrl}
-                  alt={t(
-                    ($) => {
-                      return $.templates.detail.page;
-                    },
-                    { number: index + 1 },
-                  )}
-                  loading={index === 0 ? "eager" : "lazy"}
-                  className="w-full rounded-xl border border-border bg-muted object-cover"
-                />
-              );
-            })}
-          </div>
-          {/* Keyed by the template, not by anything that changes while one is
-              open: a save re-renders this subtree, and only arriving at a
-              different template may hand the editor a fresh field. */}
-          <CustomTemplateDetailSidebar
-            key={detail.id}
-            detail={detail}
-            onSelect={onSelect}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * The Custom panel of the template picker. It sits above the rule in the
  * category rail because it answers "who made it", while the seven below it
@@ -528,20 +425,7 @@ export function CustomTemplatePickerPane({
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
-  const openTemplateId = useGet(openCustomTemplateId$);
-  const openTemplateKind = useGet(openCustomTemplateKind$);
   const templatesLoadable = useLoadable(visibleCustomTemplates$);
-
-  // A deck takes the panel over, because its pages are a column this panel can
-  // scroll. Every other kind stays on the catalog and opens a dialog instead:
-  // it is one file, read at a size of its own.
-  if (
-    openTemplateId !== null &&
-    openTemplateKind !== null &&
-    customTemplateSurface(openTemplateKind) === "panel"
-  ) {
-    return <CustomTemplateDetail onSelect={onSelect} />;
-  }
 
   const hasQuery = query.trim().length > 0;
   const templates =
@@ -601,7 +485,7 @@ export function CustomTemplatePickerPane({
         </div>
       ) : null}
       {body}
-      <CustomTemplateSourcePreviewDialog onSelect={onSelect} />
+      <CustomTemplatePreviewDialog onSelect={onSelect} />
     </div>
   );
 }

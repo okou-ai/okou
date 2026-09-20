@@ -35,68 +35,102 @@ export function connectorRuntimeCredentialStatusForAccess(args: {
   return connectorCredentialStatusForAccess(args);
 }
 
-export function connectorCredentialStatusWithMethod(args: {
+export function builtinConnectorCredentialStatusWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorCredentialStatus {
-  if (args.method.grant.kind === "none") {
+  if (builtinConnectorMethodNeedsNoCredentials(args)) {
     return "available";
+  }
+  if (
+    args.method.grant.kind === "automatic" &&
+    args.automaticAuthType !== "oauth"
+  ) {
+    return "reconnect-required";
   }
   return connectorCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
     tokenExpiresAt: args.tokenExpiresAt,
     now: args.now,
-    isRefreshable: connectorAuthMethodSupportsRefreshWithMethod(args.method),
+    isRefreshable: builtinConnectorAuthMethodSupportsRefreshWithMethod(
+      args.method,
+    ),
   });
 }
 
-export function connectorCredentialReconnectReasonWithMethod(args: {
+export function builtinConnectorCredentialReconnectReasonWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorReconnectReason | null {
-  if (args.method.grant.kind === "none") {
+  if (builtinConnectorMethodNeedsNoCredentials(args)) {
     return null;
   }
   const credentialStatus = connectorCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
     tokenExpiresAt: args.tokenExpiresAt,
     now: args.now,
-    isRefreshable: connectorAuthMethodSupportsRefreshWithMethod(args.method),
+    isRefreshable: builtinConnectorAuthMethodSupportsRefreshWithMethod(
+      args.method,
+    ),
   });
   if (
     credentialStatus !== "reconnect-required" ||
     args.storedNeedsReconnect ||
     args.tokenExpiresAt === null ||
-    connectorAuthMethodSupportsRefreshWithMethod(args.method)
+    builtinConnectorAuthMethodSupportsRefreshWithMethod(args.method)
   ) {
     return null;
   }
   return "credential_expired";
 }
 
-export function connectorRuntimeCredentialStatusWithMethod(args: {
+export function builtinConnectorRuntimeCredentialStatusWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorCredentialStatus {
-  if (args.method.grant.kind === "none") {
+  if (builtinConnectorMethodNeedsNoCredentials(args)) {
     return "available";
+  }
+  if (
+    args.method.grant.kind === "automatic" &&
+    args.automaticAuthType !== "oauth"
+  ) {
+    return "reconnect-required";
   }
   return connectorRuntimeCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
     tokenExpiresAt: args.tokenExpiresAt,
     now: args.now,
-    isRefreshable: connectorAuthMethodSupportsRefreshWithMethod(args.method),
+    isRefreshable: builtinConnectorAuthMethodSupportsRefreshWithMethod(
+      args.method,
+    ),
   });
 }
 
-function connectorAuthMethodSupportsRefreshWithMethod(
+function builtinConnectorAuthMethodSupportsRefreshWithMethod(
   method: ConnectorAuthMethodRuntimeConfig,
 ): boolean {
-  return method.access.kind === "refresh-token";
+  return (
+    method.access.kind === "refresh-token" || method.access.kind === "automatic"
+  );
+}
+
+function builtinConnectorMethodNeedsNoCredentials(args: {
+  readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
+}): boolean {
+  return (
+    args.method.grant.kind === "none" ||
+    (args.method.grant.kind === "automatic" &&
+      args.automaticAuthType === "none")
+  );
 }

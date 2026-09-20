@@ -9,7 +9,7 @@ import {
 import {
   clerk$,
   ensureClerkUiLoaded$,
-  readClerkOAuthConsentContinuation,
+  readOAuthConsentContinuation,
   resolveAuthBrandContext,
 } from "./auth.ts";
 import { updateDocumentTitle$ } from "./document-title.ts";
@@ -40,7 +40,7 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     // after readiness lets its provider reuse the loaded instance directly.
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    const continuation = readClerkOAuthConsentContinuation(
+    const continuation = readOAuthConsentContinuation(
       location.search,
       location.hash,
     );

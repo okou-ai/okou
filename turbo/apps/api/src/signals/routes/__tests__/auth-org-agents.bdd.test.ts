@@ -929,13 +929,15 @@ describe("AGENT-01 and AGENT-02", () => {
       connector.id,
       "custom-connector-secret",
     );
-    const connectorList = await api.listCustomConnectors(admin);
-    const listedConnector = connectorList.connectors.find((candidate) => {
-      return candidate.id === connector.id;
-    });
+    const builtinConnectorList = await api.listCustomConnectors(admin);
+    const listedConnector = builtinConnectorList.connectors.find(
+      (candidate) => {
+        return candidate.id === connector.id;
+      },
+    );
     expect(listedConnector).toBeDefined();
     expect(listedConnector?.connected).toBeTruthy();
-    expect(JSON.stringify(connectorList)).not.toContain(
+    expect(JSON.stringify(builtinConnectorList)).not.toContain(
       "custom-connector-secret",
     );
 

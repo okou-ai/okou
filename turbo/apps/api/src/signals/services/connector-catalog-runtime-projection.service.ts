@@ -6,11 +6,10 @@ import {
   connectorCatalogRuntimeProjectionSets,
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
-import { command } from "ccstate";
 import { and, count, eq, inArray } from "drizzle-orm";
 
 import { testOverride } from "../../lib/singleton";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -397,107 +396,104 @@ async function lockSyncState(db: Db, sourceId: string): Promise<boolean> {
   return state !== undefined;
 }
 
-export const reconcileConnectorCatalogRuntimeProjection$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    const db = set(writeDb$);
-    const sourceId = connectorCatalogSource().sourceId;
-    const validator = currentConnectorCatalogValidatorIdentity();
-    await db.transaction(async (tx) => {
-      if (!(await lockSyncState(tx, sourceId))) {
-        return;
-      }
-      const [snapshot] = await tx
-        .select({
-          catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-          catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
-          catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
-          catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
-        })
-        .from(connectorCatalogActiveSnapshot)
-        .where(
-          and(
-            eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
-            eq(
-              connectorCatalogActiveSnapshot.schemaVersion,
-              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
-          ),
-        )
-        .limit(1);
-      if (snapshot === undefined) {
-        return;
-      }
-      const [ready] = await tx
-        .select({
-          projectionSetId: connectorCatalogRuntimeProjectionSets.id,
-          connectorCount: connectorCatalogRuntimeProjectionSets.connectorCount,
-          validationBackendVersion:
-            connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
-          validationBuildCommitSha:
-            connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
-        })
-        .from(connectorCatalogRuntimeProjectionSets)
-        .where(
-          and(
-            eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId),
-            eq(
-              connectorCatalogRuntimeProjectionSets.schemaVersion,
-              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
-            eq(
-              connectorCatalogRuntimeProjectionSets.catalogVersion,
-              snapshot.catalogVersion,
-            ),
-            eq(
-              connectorCatalogRuntimeProjectionSets.catalogDigest,
-              snapshot.catalogDigest,
-            ),
-            eq(
-              connectorCatalogRuntimeProjectionSets.projectionVersion,
-              CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-            ),
-          ),
-        )
-        .limit(1);
-      if (ready !== undefined) {
-        const authority = persistedConnectorCatalogValidationAuthority({
-          backendVersion: ready.validationBackendVersion,
-          validationRevision: ready.validationBuildCommitSha,
-        });
-        // Preserve an attestation from the same or a newer validator package.
-        if (
-          authority !== null &&
-          connectorCatalogValidationAuthorityIsCurrentOrNewer({
-            authority,
-            validator,
-          })
-        ) {
-          const actualCount = await countConnectorCatalogRuntimeProjectionRows({
-            db: tx,
-            identity: {
-              projectionSetId: ready.projectionSetId,
-              sourceId,
-              schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-              catalogVersion: snapshot.catalogVersion,
-              catalogDigest: snapshot.catalogDigest,
-              projectionVersion: CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
-              connectorCount: ready.connectorCount,
-            },
-          });
-          if (actualCount === ready.connectorCount) {
-            return;
-          }
-        }
-      }
-      const decoded = decodeConnectorCatalogSnapshot(snapshot);
-      await persistConnectorCatalogRuntimeProjection({
-        db: tx,
-        sourceId,
-        identity: snapshot,
-        artifact: decoded.artifact,
-        validator,
-      });
+export async function reconcileConnectorCatalogRuntimeProjectionInTransaction(
+  tx: Db,
+): Promise<boolean> {
+  const sourceId = connectorCatalogSource().sourceId;
+  const validator = currentConnectorCatalogValidatorIdentity();
+  if (!(await lockSyncState(tx, sourceId))) {
+    return false;
+  }
+  const [snapshot] = await tx
+    .select({
+      catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
+      catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+      catalogRawSize: connectorCatalogActiveSnapshot.catalogRawSize,
+      catalogGzip: connectorCatalogActiveSnapshot.catalogGzip,
+    })
+    .from(connectorCatalogActiveSnapshot)
+    .where(
+      and(
+        eq(connectorCatalogActiveSnapshot.sourceId, sourceId),
+        eq(
+          connectorCatalogActiveSnapshot.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
+      ),
+    )
+    .limit(1);
+  if (snapshot === undefined) {
+    return false;
+  }
+  const [ready] = await tx
+    .select({
+      projectionSetId: connectorCatalogRuntimeProjectionSets.id,
+      connectorCount: connectorCatalogRuntimeProjectionSets.connectorCount,
+      validationBackendVersion:
+        connectorCatalogRuntimeProjectionSets.catalogValidationBackendVersion,
+      validationBuildCommitSha:
+        connectorCatalogRuntimeProjectionSets.catalogValidationBuildCommitSha,
+    })
+    .from(connectorCatalogRuntimeProjectionSets)
+    .where(
+      and(
+        eq(connectorCatalogRuntimeProjectionSets.sourceId, sourceId),
+        eq(
+          connectorCatalogRuntimeProjectionSets.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+        ),
+        eq(
+          connectorCatalogRuntimeProjectionSets.catalogVersion,
+          snapshot.catalogVersion,
+        ),
+        eq(
+          connectorCatalogRuntimeProjectionSets.catalogDigest,
+          snapshot.catalogDigest,
+        ),
+        eq(
+          connectorCatalogRuntimeProjectionSets.projectionVersion,
+          CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
+        ),
+      ),
+    )
+    .limit(1);
+  if (ready !== undefined) {
+    const authority = persistedConnectorCatalogValidationAuthority({
+      backendVersion: ready.validationBackendVersion,
+      validationRevision: ready.validationBuildCommitSha,
     });
-    signal.throwIfAborted();
-  },
-);
+    // Preserve an attestation from the same or a newer validator package.
+    if (
+      authority !== null &&
+      connectorCatalogValidationAuthorityIsCurrentOrNewer({
+        authority,
+        validator,
+      })
+    ) {
+      const actualCount = await countConnectorCatalogRuntimeProjectionRows({
+        db: tx,
+        identity: {
+          projectionSetId: ready.projectionSetId,
+          sourceId,
+          schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+          catalogVersion: snapshot.catalogVersion,
+          catalogDigest: snapshot.catalogDigest,
+          projectionVersion: CONNECTOR_CATALOG_RUNTIME_PROJECTION_VERSION,
+          connectorCount: ready.connectorCount,
+        },
+      });
+      if (actualCount === ready.connectorCount) {
+        return false;
+      }
+    }
+  }
+  const decoded = decodeConnectorCatalogSnapshot(snapshot);
+  await persistConnectorCatalogRuntimeProjection({
+    db: tx,
+    sourceId,
+    identity: snapshot,
+    artifact: decoded.artifact,
+    validator,
+  });
+  return true;
+}

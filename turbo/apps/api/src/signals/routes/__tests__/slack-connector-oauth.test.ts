@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
@@ -14,7 +14,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackConnectRoutes } from "../slack-connect";
 import { slackOauthRoutes } from "../slack-oauth";
@@ -36,7 +36,7 @@ const routes = [
   ...slackConnectRoutes,
   ...integrationsSlackRoutes,
   ...connectorAccountRoutes,
-  ...connectorsSlugCallbackRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
 ] as const;
 
 function clients() {
@@ -526,7 +526,7 @@ test("a combined grant cannot bypass identity checks through the standalone conn
   const current = actor();
   const authorization = await startInstall();
   const wrongCallback = await accept(
-    clients()(connectorsSlugCallbackContract).callback({
+    clients()(builtinConnectorsSlugCallbackContract).callback({
       params: { connectorSlug: "slack" },
       query: {
         state: parameter(authorization, "state"),

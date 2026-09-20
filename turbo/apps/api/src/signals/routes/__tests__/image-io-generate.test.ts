@@ -1996,7 +1996,6 @@ describe("POST /api/image-io/generate", () => {
       totalCredits: creditsCharged,
       rows: [
         expect.objectContaining({
-          source: "chat",
           credits: creditsCharged,
           breakdown: [
             {

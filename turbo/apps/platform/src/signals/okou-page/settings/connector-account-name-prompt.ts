@@ -8,7 +8,7 @@ import {
   customAccountConnectDialog$,
   customAccountManager$,
 } from "./connector-account-dialogs.ts";
-import { scopeReviewSelection$ } from "./connectors.ts";
+import { builtinConnectorScopeReviewSelection$ } from "./connectors.ts";
 import {
   connectorsPageTab$,
   customConnectorDialog$,
@@ -22,7 +22,7 @@ export const visibleConnectorAccountNamePrompt$ = computed((get) => {
     get(builtinAccountManager$) ||
     get(builtinAccountConnectDialog$) ||
     get(managedConnectorAccessSlug$) ||
-    get(scopeReviewSelection$) ||
+    get(builtinConnectorScopeReviewSelection$) ||
     (get(connectorsPageTab$) === "custom" &&
       (get(customAccountManager$) ||
         get(customAccountConnectDialog$) ||

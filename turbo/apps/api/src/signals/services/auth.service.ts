@@ -11,6 +11,7 @@ import { now, nowDate } from "../../lib/time";
 import { singleton } from "../../lib/singleton";
 import type { ApiOrgRole, CliAuth, CliTokenRecord } from "../../types/auth";
 import { awaitWithSignal, settle } from "../utils";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 
 const L = logger("AuthService");
 
@@ -137,17 +138,28 @@ const upsertMemberRoleCache$ = command(
     userId: string,
     role: ApiOrgRole,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
-    await writeDb
-      .insert(orgMembersCache)
-      .values({ orgId, userId, role, cachedAt: nowDate() })
-      .onConflictDoUpdate({
-        target: [orgMembersCache.orgId, orgMembersCache.userId],
-        set: { role, cachedAt: nowDate() },
-      });
-    signal.throwIfAborted();
+    return await writeDb.transaction(async (tx) => {
+      if (
+        !(await admitPiStableContextSubjects(tx, [
+          { subjectKind: "organization", subjectId: orgId },
+          { subjectKind: "user", subjectId: userId },
+        ]))
+      ) {
+        return false;
+      }
+      await tx
+        .insert(orgMembersCache)
+        .values({ orgId, userId, role, cachedAt: nowDate() })
+        .onConflictDoUpdate({
+          target: [orgMembersCache.orgId, orgMembersCache.userId],
+          set: { role, cachedAt: nowDate() },
+        });
+      signal.throwIfAborted();
+      return true;
+    });
   },
 );
 
@@ -245,7 +257,21 @@ const refreshMemberRole$ = command(
     }
 
     const role = mapClerkRole(membership.role);
-    await set(upsertMemberRoleCache$, orgId, userId, role, signal);
+    const persisted = await set(
+      upsertMemberRoleCache$,
+      orgId,
+      userId,
+      role,
+      signal,
+    );
+    if (!persisted) {
+      return rememberNegativeMemberRole(
+        orgId,
+        userId,
+        { kind: "identity_not_found" },
+        observedAt,
+      );
+    }
     return { kind: "member", role };
   },
 );

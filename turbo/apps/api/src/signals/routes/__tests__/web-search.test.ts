@@ -510,7 +510,6 @@ describe("okou web-search route", () => {
       expect.objectContaining({
         title: "Unavailable thread",
         threadId: null,
-        runId: null,
         credits: 5,
       }),
     ]);

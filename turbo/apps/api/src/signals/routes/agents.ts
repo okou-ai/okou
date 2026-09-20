@@ -9,7 +9,7 @@ import {
   type AgentResponse,
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
@@ -37,12 +37,17 @@ import {
   lockCanonicalAgentMutation,
   lockCanonicalAgentPublicLimit,
 } from "../services/agent-mutation-lock.service";
+import { buildAgentIdentityPrompt } from "../services/agent-identity-prompt.service";
+import {
+  invalidatePiStableContext,
+  type PiStableContextInvalidationOptions,
+} from "../services/pi-stable-context-generation.service";
 import {
   deleteAgentInstructionsStorage$,
   writeAgentInstructionsStorage$,
 } from "../services/agent-instructions-storage.service";
 import {
-  updateUserConnectors,
+  updateUserBuiltinConnectors,
   updateUserCustomConnectors,
 } from "../services/user-connectors.service";
 import { onRejection } from "../utils";
@@ -250,6 +255,31 @@ function validateAgentVisibilityUpdate(
   );
 }
 
+function agentIdentityInvalidationOptions(agent: {
+  readonly agentId: string;
+  readonly defaultAgentId: string | null;
+  readonly displayName: string | null;
+  readonly description: string | null;
+  readonly sound: string | null;
+}): PiStableContextInvalidationOptions {
+  const agentIdentity =
+    buildAgentIdentityPrompt({
+      id: agent.agentId,
+      defaultAgentId: agent.defaultAgentId,
+      displayName: agent.displayName,
+      description: agent.description,
+      sound: agent.sound,
+    }) ?? "";
+  return {
+    transformInput(input) {
+      return {
+        ...input,
+        prompt: { ...input.prompt, agentIdentity },
+      };
+    },
+  };
+}
+
 async function readAgentForResponse(
   writeDb: Pick<Db, "select">,
   orgId: string,
@@ -416,7 +446,7 @@ const getAgentInner$ = computed(async (get) => {
 
 const getAgentUserConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(userConnectorsContract.get));
+  const params = get(pathParamsOf(userBuiltinConnectorsContract.get));
   const exists = await get(
     agentExists({
       orgId: auth.orgId,
@@ -555,11 +585,15 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       .update(agents)
       .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
-
     const agent = await readAgentForResponse(tx, auth.orgId, params.id);
     if (!agent) {
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
+    await invalidatePiStableContext(
+      tx,
+      { orgId: auth.orgId, agentId: params.id },
+      agentIdentityInvalidationOptions(agent),
+    );
     return { agent };
   });
   signal.throwIfAborted();
@@ -653,11 +687,15 @@ const updateAgentMetadataInner$ = command(
         .update(agents)
         .set(buildAgentUpsertConflictSet(updateBody, nowDate()))
         .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)));
-
       const agent = await readAgentForResponse(tx, auth.orgId, params.id);
       if (!agent) {
         throw new Error(`Canonical Agent missing after update: ${params.id}`);
       }
+      await invalidatePiStableContext(
+        tx,
+        { orgId: auth.orgId, agentId: params.id },
+        agentIdentityInvalidationOptions(agent),
+      );
       return { agent };
     });
     signal.throwIfAborted();
@@ -785,13 +823,13 @@ const updateAgentCustomConnectorsInner$ = command(
 );
 
 const updateAgentUserConnectorsBody$ = bodyResultOf(
-  userConnectorsContract.update,
+  userBuiltinConnectorsContract.update,
 );
 
 const updateAgentUserConnectorsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(userConnectorsContract.update));
+    const params = get(pathParamsOf(userBuiltinConnectorsContract.update));
     const body = await get(updateAgentUserConnectorsBody$);
     signal.throwIfAborted();
     if (!body.ok) {
@@ -841,7 +879,7 @@ const updateAgentUserConnectorsInner$ = command(
       }
     }
 
-    const updated = await updateUserConnectors(writeDb, {
+    const updated = await updateUserBuiltinConnectors(writeDb, {
       orgId: auth.orgId,
       userId: auth.userId,
       agentId: params.id,
@@ -907,7 +945,7 @@ export const agentsRoutes: readonly RouteEntry[] = [
     handler: authRoute(agentDeleteAuth, deleteAgentInner$),
   },
   {
-    route: userConnectorsContract.get,
+    route: userBuiltinConnectorsContract.get,
     handler: authRoute(agentReadAuth, getAgentUserConnectorsInner$),
   },
   {
@@ -919,7 +957,7 @@ export const agentsRoutes: readonly RouteEntry[] = [
     handler: authRoute(agentReadAuth, updateAgentCustomConnectorsInner$),
   },
   {
-    route: userConnectorsContract.update,
+    route: userBuiltinConnectorsContract.update,
     handler: authRoute(agentReadAuth, updateAgentUserConnectorsInner$),
   },
 ];

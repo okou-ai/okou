@@ -53,7 +53,10 @@ describe("MCP OAuth foundations", () => {
       client_id: "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
       client_name: "Okou",
       client_uri: "https://app.okou.ai/",
-      redirect_uris: ["https://app.okou.ai/connectors/custom/callback"],
+      redirect_uris: [
+        "https://app.okou.ai/connectors/custom/callback",
+        "https://api.okou.ai/api/connectors/automatic/callback",
+      ],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       application_type: "web",
@@ -77,6 +80,7 @@ describe("MCP OAuth foundations", () => {
     expect(response.body.client_uri).toBe("https://app.okou.ai/");
     expect(response.body.redirect_uris).toStrictEqual([
       "https://app.okou.ai/connectors/custom/callback",
+      "https://api.okou.ai/api/connectors/automatic/callback",
     ]);
   });
 

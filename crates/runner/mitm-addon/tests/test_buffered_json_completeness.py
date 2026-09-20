@@ -2,6 +2,7 @@
 
 import json
 import struct
+from collections import Counter
 
 import pytest
 import zstandard
@@ -126,14 +127,14 @@ def test_model_buffered_json_requires_complete_capture(
 def test_x_incremental_billing_after_forensic_capture_truncates(
     tmp_path, real_flow, usage_webhook_api, body_format, interrupted
 ):
-    first_post = {"id": "first", "text": "x" * STREAM_BUFFER_LIMIT}
-    last_post = {"id": "after-capture-limit"}
+    first_post = {"id": "1", "text": "x" * STREAM_BUFFER_LIMIT}
+    last_post = {"id": "2"}
     if body_format == "ndjson":
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
         body = (
             json.dumps({"data": first_post}).encode()
             + b"\n"
-            + json.dumps({"data": last_post, "includes": {"users": [{"id": "u1"}]}}).encode()
+            + json.dumps({"data": last_post, "includes": {"users": [{"id": "3"}]}}).encode()
             + b"\n"
         )
         if interrupted:
@@ -141,16 +142,16 @@ def test_x_incremental_billing_after_forensic_capture_truncates(
     else:
         flow = make_x_pipeline_flow(real_flow, tmp_path, query="ids=1,2,3")
         body = json.dumps(
-            {"data": [first_post, last_post], "includes": {"users": [{"id": "u1"}]}}
+            {"data": [first_post, last_post], "includes": {"users": [{"id": "3"}]}}
         ).encode()
     flow.metadata[metadata_keys.CAPTURE_BODY] = True
-    mitm_addon.responseheaders(flow)
-    callback = response_stream(flow)
-    assert callback(body[:STREAM_BUFFER_LIMIT]) == body[:STREAM_BUFFER_LIMIT]
-    assert callback(body[STREAM_BUFFER_LIMIT:]) == body[STREAM_BUFFER_LIMIT:]
-    assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
-
     with usage_webhook_api() as webhook:
+        mitm_addon.responseheaders(flow)
+        callback = response_stream(flow)
+        assert callback(body[:STREAM_BUFFER_LIMIT]) == body[:STREAM_BUFFER_LIMIT]
+        assert callback(body[STREAM_BUFFER_LIMIT:]) == body[STREAM_BUFFER_LIMIT:]
+        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+
         if interrupted:
             flow.error = Error("connection reset by peer")
             mitm_addon.error(flow)
@@ -159,7 +160,20 @@ def test_x_incremental_billing_after_forensic_capture_truncates(
             mitm_addon.response(flow)
         usage.flush_usage_events(trigger="test")
 
-    expected = {} if interrupted and body_format == "json" else {"posts.read": 2, "user.read": 1}
     events = webhook.usage_events()
-    assert {event["category"]: event["quantity"] for event in events} == expected
-    assert len(events) == len(expected)
+    if interrupted and body_format == "json":
+        assert events == []
+        return
+    quantities: Counter[str] = Counter()
+    for event in events:
+        quantities[event["category"]] += event["quantity"]
+    assert quantities == {"posts.read": 2, "user.read": 1}
+    assert {
+        (event["category"], resource["id"], resource["occurrences"])
+        for event in events
+        for resource in event["resources"]
+    } == {("posts.read", "1", 1), ("posts.read", "2", 1), ("user.read", "3", 1)}
+    assert all(event["remainder"] == [] for event in events)
+    expected_sources = 3 if body_format == "ndjson" else 2
+    assert len(events) == expected_sources
+    assert len({event["idempotencyKey"] for event in events}) == expected_sources

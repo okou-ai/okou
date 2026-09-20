@@ -1,6 +1,4 @@
 import type { BrowserClerk, UserResource } from "@clerk/shared/types";
-import { buildAccountsBaseUrl } from "@clerk/shared/buildAccountsBaseUrl";
-import { parsePublishableKey } from "@clerk/shared/keys";
 import { command, computed, state } from "ccstate";
 import { normalizeGoogleAdsAttributionParams } from "@okouai/core/google-ads-attribution";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
@@ -17,10 +15,7 @@ import {
   setPostHogUser,
 } from "../lib/posthog.ts";
 import { appendCapturedPreviewBypassToUrl } from "../lib/preview-bypass-cookie.ts";
-import {
-  resolvePlatformEnvironment,
-  resolvePlatformRuntimeConfig,
-} from "../lib/platform-host.ts";
+import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
 import { BRAND_NAME, type BrandName } from "./branding.ts";
 import {
   bestEffort,
@@ -32,6 +27,7 @@ import {
 } from "./utils.ts";
 import { writeConnectionDiagnostic$ } from "./connection-diagnostics.ts";
 import { sessionStorageSignals } from "./external/session-storage.ts";
+import { ROUTES } from "./route-paths.ts";
 
 const reload$ = state(0);
 const clerkVersion$ = state(0);
@@ -164,25 +160,16 @@ export function resolveAppAuthUrl(
   return url.toString();
 }
 
-function getClerkAccountPortalOrigin(): string | null {
-  const key = parsePublishableKey(
-    resolvePlatformRuntimeConfig().clerkPublishableKey,
-  );
-  return key ? buildAccountsBaseUrl(key.frontendApi) : null;
-}
-
-function isClerkOAuthConsentUrl(url: URL): boolean {
+function isAppOAuthConsentUrl(url: URL): boolean {
   return (
-    url.origin === getClerkAccountPortalOrigin() &&
-    url.pathname === "/oauth-consent" &&
+    url.origin === resolveAppOrigin() &&
+    url.pathname === ROUTES.oauthConsent &&
     !url.username &&
     !url.password &&
     !url.hash
   );
 }
 
-// Keep App validation and Clerk's own redirect validation on the same current
-// instance. The OAuth exception below limits Account Portal returns to consent.
 function getAllowedAuthRedirectOrigins(): AllowedAuthRedirectOrigin[] {
   const self = resolveAppOrigin();
   if (!self) {
@@ -192,13 +179,11 @@ function getAllowedAuthRedirectOrigins(): AllowedAuthRedirectOrigin[] {
     resolvePlatformEnvironment() === "production"
       ? [PRODUCTION_AUTH_REDIRECT_ORIGIN_PATTERN]
       : [];
-  const accountPortal = getClerkAccountPortalOrigin();
   return [
     ...new Set([
       self,
       deriveServiceOrigin(self, "www"),
       deriveServiceOrigin(self, "api"),
-      ...(accountPortal ? [accountPortal] : []),
       ...productionOrigins,
     ]),
   ];
@@ -279,12 +264,6 @@ function readAllowedRedirectUrl(
   if (!redirectUrl || redirectUrl.username || redirectUrl.password) {
     return null;
   }
-  if (
-    redirectUrl.origin === getClerkAccountPortalOrigin() &&
-    !isClerkOAuthConsentUrl(redirectUrl)
-  ) {
-    return null;
-  }
   return isAllowedRedirectOrigin(redirectUrl, allowedRedirectOrigins)
     ? redirectUrl
     : null;
@@ -313,7 +292,7 @@ function readAuthRedirectParams(
 }
 
 /** A completed session may continue only a plain OAuth login handoff. */
-export function readClerkOAuthConsentContinuation(
+export function readOAuthConsentContinuation(
   authSearch: string,
   authHash: string,
 ): URL | null {
@@ -339,7 +318,7 @@ export function readClerkOAuthConsentContinuation(
     return null;
   }
   const url = parseUrl(params.get("redirect_url") ?? "");
-  if (!url || !isClerkOAuthConsentUrl(url)) {
+  if (!url || !isAppOAuthConsentUrl(url)) {
     return null;
   }
   if (

@@ -8,6 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
+import type { FirewallApi } from "@okouai/connectors/firewall-types";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
@@ -18,7 +19,10 @@ import {
   loadEffectiveCustomConnectorPermissionBundle,
   type CustomConnectorRuntimeDataRows,
 } from "./agent-run-create.service";
-import { loadConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import {
+  loadConnectorRuntimeSelection,
+  type ConnectorRuntimeSelection,
+} from "./connector-catalog-runtime.service";
 import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
@@ -27,8 +31,9 @@ import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
   resolvedConnectorAccountIdsByTarget,
+  type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
-import { resolveConnectorCredentialAccess } from "./connector-credential-access.service";
+import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -48,6 +53,11 @@ type ConnectorRuntimeBuiltinSyncResult = Extract<
   { readonly target: { readonly kind: "builtin" } }
 >;
 
+type BuiltinRuntimeTargetRegistration = Extract<
+  ConnectorRuntimeTargetRegistration,
+  { readonly kind: "builtin" }
+>;
+
 type ConnectorRuntimeCustomSyncResult = Extract<
   ConnectorRuntimeSyncResult,
   { readonly target: { readonly kind: "custom" } }
@@ -57,6 +67,7 @@ type ResolvedConnectorRuntimeTarget =
   | {
       readonly kind: "builtin";
       readonly result: ConnectorRuntimeBuiltinSyncResult;
+      readonly credentialResolution?: "network-boundary" | "none";
     }
   | {
       readonly kind: "custom";
@@ -79,6 +90,7 @@ export type ConnectorRuntimeDiagnosticResult =
         { readonly kind: "builtin" }
       >;
       readonly state: "available";
+      readonly credentialResolution?: "network-boundary" | "none";
       readonly networkPolicy: Extract<
         ConnectorRuntimeSyncResult,
         {
@@ -159,6 +171,34 @@ function builtinUnresolvedResult(
     state: "unresolved",
     reason: "connector-unavailable",
   };
+}
+
+function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
+  return (
+    Object.keys(auth.headers ?? {}).length > 0 ||
+    Object.keys(auth.query ?? {}).length > 0
+  );
+}
+
+function builtinMcpCredentialResolution(args: {
+  readonly snapshot: ConnectorRuntimeSelection | undefined;
+  readonly registration: BuiltinRuntimeTargetRegistration;
+  readonly credentialAvailable: boolean;
+}): "network-boundary" | "none" | undefined {
+  if (
+    !args.snapshot ||
+    !args.credentialAvailable ||
+    !args.snapshot.serverFirewalls.isMcp(args.registration.connectorSlug)
+  ) {
+    return undefined;
+  }
+  const credentialed =
+    args.snapshot.serverFirewalls
+      .getRuntimeFirewall(args.registration.connectorSlug)
+      ?.apis.some((api) => {
+        return authResolvesAtNetworkBoundary(api.auth);
+      }) ?? false;
+  return credentialed ? "network-boundary" : "none";
 }
 
 async function loadCustomSnapshot(args: {
@@ -363,6 +403,28 @@ async function resolveCustomTarget(args: {
   };
 }
 
+function connectorAccountRequests(
+  registrations: readonly ConnectorRuntimeTargetRegistration[],
+): readonly ConnectorAccountResolutionRequest[] {
+  return registrations.flatMap((registration) => {
+    return registration.kind === "builtin" &&
+      registration.sourceId !== undefined
+      ? [
+          {
+            target: {
+              kind: "builtin" as const,
+              connectorSlug: registration.connectorSlug,
+            },
+            selection: {
+              kind: "exact" as const,
+              sourceId: registration.sourceId,
+            },
+          },
+        ]
+      : [];
+  });
+}
+
 async function resolveConnectorRuntimeTargetStates(args: {
   readonly db: Db;
   readonly scope: ConnectorRuntimeScope;
@@ -391,23 +453,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
       resolveConnectorAccounts(args.db, {
         orgId: args.scope.orgId,
         userId: args.scope.userId,
-        requests: args.targets.flatMap((registration) => {
-          return registration.kind === "builtin" &&
-            registration.sourceId !== undefined
-            ? [
-                {
-                  target: {
-                    kind: "builtin" as const,
-                    connectorSlug: registration.connectorSlug,
-                  },
-                  selection: {
-                    kind: "exact" as const,
-                    sourceId: registration.sourceId,
-                  },
-                },
-              ]
-            : [];
-        }),
+        requests: connectorAccountRequests(args.targets),
       }),
       customRegistrations.length > 0
         ? loadCustomSnapshot({
@@ -456,10 +502,11 @@ async function resolveConnectorRuntimeTargetStates(args: {
     );
     const credentialAccess =
       accountResolution?.kind === "resolved" && builtinCatalogSelection
-        ? resolveConnectorCredentialAccess({
+        ? resolveBuiltinConnectorCredentialAccess({
             snapshot: builtinCatalogSelection,
             stored: {
               authMethodId: accountResolution.account.authMethod,
+              automaticAuthType: accountResolution.account.automaticAuthType,
               connectorId: accountResolution.account.connectorId,
               connectorSlug: registration.connectorSlug,
               orgId: args.scope.orgId,
@@ -469,8 +516,14 @@ async function resolveConnectorRuntimeTargetStates(args: {
           })
         : undefined;
     const refresh = builtinByTarget.get(connectorRuntimeTargetKey(target));
+    const credentialResolution = builtinMcpCredentialResolution({
+      snapshot: builtinCatalogSelection,
+      registration,
+      credentialAvailable: credentialAccess?.kind === "ok",
+    });
     resolvedTargets.push({
       kind: "builtin",
+      ...(credentialResolution === undefined ? {} : { credentialResolution }),
       result:
         refresh && credentialAccess?.kind === "ok"
           ? {
@@ -550,10 +603,7 @@ function diagnosticCustomCredentialResolution(
   >,
 ): "network-boundary" | "none" {
   return result.firewall.firewall.apis.some((api) => {
-    return (
-      Object.keys(api.auth.headers ?? {}).length > 0 ||
-      Object.keys(api.auth.query ?? {}).length > 0
-    );
+    return authResolvesAtNetworkBoundary(api.auth);
   })
     ? "network-boundary"
     : "none";
@@ -573,6 +623,11 @@ export async function resolveConnectorRuntimeDiagnosticTargets(args: {
             target: result.target,
             state: result.state,
             networkPolicy: result.networkPolicy,
+            ...(resolved.credentialResolution !== undefined
+              ? {
+                  credentialResolution: resolved.credentialResolution,
+                }
+              : {}),
           }
         : {
             target: result.target,

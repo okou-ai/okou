@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  connectorExternalCodeSessionStartResponseSchema,
-  connectorListResponseSchema,
-  connectorOauthDeviceAuthSessionStartResponseSchema,
-  connectorResponseSchema,
+  builtinConnectorExternalCodeSessionStartResponseSchema,
+  builtinConnectorListResponseSchema,
+  builtinConnectorOauthDeviceAuthSessionStartResponseSchema,
+  builtinConnectorResponseSchema,
 } from "../connector-schemas";
-import { connectorsSlugCallbackContract } from "../connectors-slug-callback";
+import { builtinConnectorsSlugCallbackContract } from "../connectors-slug-callback";
 import { connectorChangedPayloadSchema } from "../realtime";
 import {
-  userConnectorEnabledSlugsSchema,
-  userConnectorUpdateSchema,
+  userBuiltinConnectorEnabledSlugsSchema,
+  userBuiltinConnectorUpdateSchema,
 } from "../user-connectors";
 import { connectorCatalogContract } from "../connector-catalog";
 import { connectorAccountsContract } from "../connector-accounts";
@@ -20,7 +20,7 @@ import {
   connectorCheckRequestSchema,
   connectorCheckResponseBodySchema,
 } from "../connector-check";
-import { connectorsSearchContract } from "../connectors";
+import { builtinConnectorsSearchContract } from "../connectors";
 import {
   customConnectorListResponseSchema,
   customConnectorResponseSchema,
@@ -111,9 +111,11 @@ const connectorIdentity = {
 
 describe("connector client response contracts", () => {
   it("parses canonical response payloads", () => {
-    expect(connectorResponseSchema.parse(connector)).toStrictEqual(connector);
+    expect(builtinConnectorResponseSchema.parse(connector)).toStrictEqual(
+      connector,
+    );
     expect(
-      connectorListResponseSchema.parse({
+      builtinConnectorListResponseSchema.parse({
         connectors: [connector],
         connectorProvidedBindings: [
           {
@@ -132,7 +134,7 @@ describe("connector client response contracts", () => {
       ],
     });
     expect(
-      connectorOauthDeviceAuthSessionStartResponseSchema.parse({
+      builtinConnectorOauthDeviceAuthSessionStartResponseSchema.parse({
         sessionId: "00000000-0000-4000-a000-000000000003",
         sessionToken: "session-token",
         connectorSlug: "github",
@@ -144,7 +146,7 @@ describe("connector client response contracts", () => {
       }),
     ).toMatchObject({ connectorSlug: "github" });
     expect(
-      connectorExternalCodeSessionStartResponseSchema.parse({
+      builtinConnectorExternalCodeSessionStartResponseSchema.parse({
         sessionId: "00000000-0000-4000-a000-000000000004",
         sessionToken: "session-token",
         connectorSlug: "aws",
@@ -154,7 +156,7 @@ describe("connector client response contracts", () => {
       }),
     ).toMatchObject({ connectorSlug: "aws" });
     expect(
-      connectorsSearchContract.search.responses[200].parse({
+      builtinConnectorsSearchContract.search.responses[200].parse({
         connectors: [
           {
             slug: "github",
@@ -203,7 +205,7 @@ describe("connector client response contracts", () => {
       }),
     ).toMatchObject({ connector: { connectorSlug: "github" } });
     expect(
-      userConnectorEnabledSlugsSchema.parse({
+      userBuiltinConnectorEnabledSlugsSchema.parse({
         enabledConnectorSlugs: ["github"],
       }),
     ).toStrictEqual({ enabledConnectorSlugs: ["github"] });
@@ -543,7 +545,7 @@ describe("connector client request contracts", () => {
 
   it("accepts canonical user connector updates", () => {
     expect(
-      userConnectorUpdateSchema.parse({
+      userBuiltinConnectorUpdateSchema.parse({
         enabledConnectorSlugs: ["github"],
         operation: "add",
       }),
@@ -598,7 +600,7 @@ describe("connector path parameter contracts", () => {
       params: { connectorSlug: "github" },
       headers: {},
     });
-    await initClient(connectorsSlugCallbackContract, config).callback({
+    await initClient(builtinConnectorsSlugCallbackContract, config).callback({
       params: { connectorSlug: "github" },
       query: { responseMode: "json" },
       headers: {},

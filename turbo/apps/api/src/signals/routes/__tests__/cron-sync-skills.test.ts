@@ -14,16 +14,28 @@ import {
   DEFAULT_SKILLS_OWNER,
   DEFAULT_SKILLS_REPO,
 } from "@okouai/core/github-url";
-import { getSkillStorageName } from "@okouai/core/storage-names";
+import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
+import {
+  getSkillStorageName,
+  SYSTEM_ORG_ID,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { http, HttpResponse } from "msw";
 import { create as createTar } from "tar";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { readPiResourceIndexStatusFixture } from "../../../test-fixtures/pi-resource-index";
+import {
+  readPiStableContextStorageDemandFixture,
+  seedPiStableContextStorageDemandFixture,
+} from "../../../test-fixtures/pi-stable-context";
+import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
+import { createBddApi } from "./helpers/api-bdd";
 import {
   cleanupOwnedSkillsState,
   findSkillByUrlState,
@@ -34,6 +46,7 @@ import {
 } from "./helpers/cron-sync-skills-state";
 
 const context = testContext();
+const bdd = createBddApi(context);
 const BUCKET = "test-user-storages";
 const STALE_PRESEEDED_COMMIT_SHA = "0".repeat(40);
 
@@ -764,6 +777,91 @@ describe("GET /api/cron/sync-skills", () => {
     });
   });
 
+  it("records ready stable-context demand in the system-skill V2 transaction", async () => {
+    const fixture = useCronSyncSkillsFixture();
+    const firstCommitSha = newCommitSha();
+    await seedCurrentSeedSkillVersions(fixture);
+    setupMswHandlers(
+      firstCommitSha,
+      createFullTarball(fixture, [fixture.alphaSkill]),
+    );
+    await syncOwnedSkills(fixture);
+    const alphaV1 = buildMockSkillVersion(fixture, fixture.alphaSkill);
+    const alphaStorage = await findSystemStorageByName(alphaV1.storageName);
+    if (!alphaStorage?.archiveSize) {
+      throw new Error("Expected indexed system-skill V1 storage");
+    }
+    const orgId = `cron-skill-demand-${randomUUID()}`;
+    const userId = `cron-skill-user-${randomUUID()}`;
+    const user = bdd.user({ orgId, userId, orgRole: "org:admin" });
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(user, {
+      displayName: "System skill demand Agent",
+    });
+    const headId = await seedPiStableContextStorageDemandFixture({
+      orgId,
+      userId,
+      agentId: agent.agentId,
+      storageName: alphaV1.storageName,
+      versionId: alphaV1.versionHash,
+      archiveSize: alphaStorage.archiveSize,
+      resourceOrgId: SYSTEM_ORG_ID,
+      resourceUserId: VOLUME_ORG_USER_ID,
+      ready: true,
+    });
+
+    const alphaV2: MockSkillEntry = {
+      name: fixture.alphaSkill.name,
+      files: fixture.alphaSkill.files.map((file) => {
+        return file.path === "SKILL.md"
+          ? { ...file, content: `${file.content}\n\nV2 demand.` }
+          : file;
+      }),
+    };
+    const secondCommitSha = newCommitSha();
+    setupMswHandlers(secondCommitSha, createFullTarball(fixture, [alphaV2]));
+    await syncOwnedSkills(fixture);
+    const expectedV2 = buildMockSkillVersion(fixture, alphaV2);
+    await expect(
+      readPiStableContextStorageDemandFixture(headId),
+    ).resolves.toMatchObject({
+      status: "pending",
+      artifactDigest: null,
+      input: {
+        storageMounts: [{ versionId: expectedV2.versionHash }],
+      },
+    });
+
+    const work = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: [expectedV2.versionHash],
+          stableContextOwner: { orgId, userId, agentId: agent.agentId },
+        },
+      }),
+      [200],
+    );
+    const completedHead = await readPiStableContextStorageDemandFixture(headId);
+    expect({ work: work.body.stableContext, completedHead }).toMatchObject({
+      work: {
+        claimed: 1,
+        ready: 1,
+        pending: 0,
+        unindexable: 0,
+        failed: 0,
+        stale: 0,
+      },
+      completedHead: {
+        status: "ready",
+        input: {
+          storageMounts: [{ versionId: expectedV2.versionHash }],
+        },
+      },
+    });
+  });
+
   it("removes skills deleted from the source repository and cleans S3 objects", async () => {
     const fixture = useCronSyncSkillsFixture();
     const firstCommitSha = newCommitSha();
@@ -776,9 +874,31 @@ describe("GET /api/cron/sync-skills", () => {
 
     const betaVersion = buildMockSkillVersion(fixture, fixture.betaSkill);
     const betaStorage = await findSystemStorageByName(betaVersion.storageName);
-    if (!betaStorage) {
-      throw new Error("Expected the beta skill storage");
+    if (!betaStorage?.archiveSize) {
+      throw new Error("Expected the indexed beta skill storage");
     }
+    const demandOrgId = `cron-skill-removal-${randomUUID()}`;
+    const demandUserId = `cron-skill-removal-user-${randomUUID()}`;
+    const demandUser = bdd.user({
+      orgId: demandOrgId,
+      userId: demandUserId,
+      orgRole: "org:admin",
+    });
+    bdd.acceptAgentStorageWrites();
+    const demandAgent = await bdd.createAgent(demandUser, {
+      displayName: "Removed system skill Agent",
+    });
+    const demandHeadId = await seedPiStableContextStorageDemandFixture({
+      orgId: demandOrgId,
+      userId: demandUserId,
+      agentId: demandAgent.agentId,
+      storageName: betaVersion.storageName,
+      versionId: betaVersion.versionHash,
+      archiveSize: betaStorage.archiveSize,
+      resourceOrgId: SYSTEM_ORG_ID,
+      resourceUserId: VOLUME_ORG_USER_ID,
+      ready: true,
+    });
     const betaObjectKeys = [
       `${betaStorage.s3Prefix}/${betaVersion.versionHash}/archive.tar.gz`,
       `${betaStorage.s3Prefix}/${betaVersion.versionHash}/manifest.json`,
@@ -814,6 +934,14 @@ describe("GET /api/cron/sync-skills", () => {
     await expect(
       findSkillByUrl(testSkillUrl(fixture.sentinelSkillName)),
     ).resolves.toMatchObject({ commitSha: sentinelCommitSha });
+    await expect(
+      readPiStableContextStorageDemandFixture(demandHeadId),
+    ).resolves.toMatchObject({
+      status: "missing",
+      input: null,
+      inputDigest: null,
+      artifactDigest: null,
+    });
 
     const deleteCommand = s3CallsByName("DeleteObjectsCommand")[0];
     expect(commandInput(deleteCommand)).toMatchObject({

@@ -8,6 +8,7 @@ import {
 } from "../services/agent-run-create.service";
 import { getSandboxAuthForRun } from "./agent-webhook-auth";
 import {
+  NATIVE_GPT_6_SOL_HEADER,
   PI_DEFERRED_SANDBOX_HEADER,
   type PiDeferredSandboxConfig,
   claimCompatibleStoredExecutionContextSchema,
@@ -106,14 +107,17 @@ import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import {
+  prepareAgentClaimAdmission,
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
   stopClosedComputeCandidate,
   withComputeOwnershipRetry,
+  type ComputeRunAdmission,
   type ComputeRunOwner,
 } from "../services/compute-erasure-admission.service";
 import { logger } from "../../lib/log";
 import { executeRawRows } from "../../lib/db-raw-rows";
+import type { Tx } from "../../lib/db-types";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -884,6 +888,17 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!deferredCapable) {
     whereConditions.push(sql`(${legacySandboxRunPredicate()})`);
   }
+  if (get(request$).header(NATIVE_GPT_6_SOL_HEADER) !== "1") {
+    // Filter before the bounded candidate lookup so an unsupported Sol job
+    // cannot hide existing models behind it from an older Runner.
+    whereConditions.push(sql`(
+      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
+      AND ${inArray(
+        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
+        ["gpt-6-sol", "openai/gpt-6-sol"],
+      )}
+    ) IS NOT TRUE`);
+  }
   if (auth.type === "official-runner") {
     if (!isOfficialRunnerGroup(group)) {
       return forbidden("Official runners can only poll vm0/* groups");
@@ -1396,6 +1411,73 @@ async function deleteStaleClaimJob(
   );
 }
 
+async function prepareClaimTransitionAdmission(
+  tx: Tx,
+  args: {
+    readonly runId: string;
+    readonly owner: ComputeRunOwner;
+    readonly deferred?: PiDeferredSandboxConfig;
+    readonly deferredAdmission?: DeferredPiMaterializationAdmission;
+  },
+): Promise<ComputeRunAdmission | undefined> {
+  const { runId, owner } = args;
+  const ordinaryAgentClaim =
+    args.deferred === undefined && owner.agentId !== null;
+  const agentClaimAdmission = ordinaryAgentClaim
+    ? await prepareAgentClaimAdmission(tx, runId, {
+        ...owner,
+        agentId: owner.agentId,
+      })
+    : undefined;
+  const admission = ordinaryAgentClaim
+    ? agentClaimAdmission?.admission
+    : await prepareComputeRunAdmission(tx, runId, owner);
+  if (args.deferred && admission) {
+    if (!args.deferredAdmission) {
+      return undefined;
+    }
+    await lockDeferredPiCatalog(tx, args.deferredAdmission);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${owner.orgId}))`,
+    );
+    await tx
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        inArray(
+          chatThreads.id,
+          tx
+            .select({ id: agentRuns.chatThreadId })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, runId)),
+        ),
+      )
+      .orderBy(chatThreads.id)
+      .for("update");
+  }
+  if (!admission) {
+    return undefined;
+  }
+  const valid = ordinaryAgentClaim
+    ? agentClaimAdmission?.valid === true
+    : await validateComputeRunAdmission(tx, admission, "pending");
+  if (!valid) {
+    if (!args.deferred && !admission.closed) {
+      await deleteStaleClaimJob(tx, {
+        runId,
+        owner,
+        sessionId: admission.sessionId,
+      });
+    }
+    return undefined;
+  }
+  if (admission.closed) {
+    await stopClosedComputeCandidate(tx, admission);
+    return undefined;
+  }
+  return admission;
+}
+
 async function transitionClaimedJobToRunning(
   db: Db,
   args: {
@@ -1418,45 +1500,8 @@ async function transitionClaimedJobToRunning(
   );
   return await withComputeOwnershipRetry(() => {
     return db.transaction(async (tx) => {
-      const admission = await prepareComputeRunAdmission(tx, runId, owner);
-      if (args.deferred && admission) {
-        if (!args.deferredAdmission) {
-          return { status: "run-not-found" as const };
-        }
-        await lockDeferredPiCatalog(tx, args.deferredAdmission);
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${owner.orgId}))`,
-        );
-        await tx
-          .select({ id: chatThreads.id })
-          .from(chatThreads)
-          .where(
-            inArray(
-              chatThreads.id,
-              tx
-                .select({ id: agentRuns.chatThreadId })
-                .from(agentRuns)
-                .where(eq(agentRuns.id, runId)),
-            ),
-          )
-          .orderBy(chatThreads.id)
-          .for("update");
-      }
+      const admission = await prepareClaimTransitionAdmission(tx, args);
       if (!admission) {
-        return { status: "run-not-found" as const };
-      }
-      if (!(await validateComputeRunAdmission(tx, admission, "pending"))) {
-        if (!args.deferred && !admission.closed) {
-          await deleteStaleClaimJob(tx, {
-            runId,
-            owner,
-            sessionId: admission.sessionId,
-          });
-        }
-        return { status: "run-not-found" as const };
-      }
-      if (admission.closed) {
-        await stopClosedComputeCandidate(tx, admission);
         return { status: "run-not-found" as const };
       }
       if (args.deferred) {
@@ -2265,13 +2310,6 @@ async function buildClaimResponseBody(
       } = args.storedContext;
       return {
         ...runnerStoredContext,
-        xResourceBilling: {
-          protocol: "x-resource-v1" as const,
-          // Deployed Runner readers require this field. It is a fixed wire
-          // compatibility value, not an activation date. Remove only after
-          // those readers leave serving and supported rollback versions.
-          startDate: "1970-01-01",
-        },
         runId: args.run.id,
         reuseKey: args.reuseKey,
         prompt: args.run.prompt,
@@ -2830,6 +2868,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
+    readonly supportsNativeGpt6Sol: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2856,6 +2895,20 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
+    };
+  }
+  const storedContext = storedContextResult.data;
+  const nativeModel = storedContext.environment?.OPENAI_MODEL;
+  if (
+    !args.supportsNativeGpt6Sol &&
+    storedContext.cliAgentType === "codex" &&
+    (nativeModel === "gpt-6-sol" || nativeModel === "openai/gpt-6-sol")
+  ) {
+    // Old Runner artifacts bundle a Guest that rejects Sol's native effort.
+    // Keep the job queued for a capable claimant, including during rollback.
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2919,6 +2972,7 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
+      readonly supportsNativeGpt6Sol: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2937,6 +2991,7 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
+        supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs);
@@ -3115,6 +3170,8 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
+      supportsNativeGpt6Sol:
+        get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,
@@ -3155,6 +3212,7 @@ const modelProviderFailureInner$ = command(
     });
     signal.throwIfAborted();
     if (transition.outcome === "recorded" && transition.cooldown) {
+      const cooldown = transition.cooldown;
       const logLevels = {
         authentication: "warn",
         billing: "warn",
@@ -3162,17 +3220,14 @@ const modelProviderFailureInner$ = command(
         provider_unavailable: "info",
         timeout: "info",
         connection: "info",
-      } as const satisfies Record<
-        typeof transition.cooldown.failureKind,
-        "info" | "warn"
-      >;
-      L[logLevels[transition.cooldown.failureKind]](
+      } as const satisfies Record<typeof cooldown.failureKind, "info" | "warn">;
+      L[logLevels[cooldown.failureKind]](
         "Built-in model provider failure report recorded",
         {
           type: "built_in_model_provider_cooldown",
           runId,
-          ...transition.cooldown,
-          unavailableUntil: transition.cooldown.unavailableUntil.toISOString(),
+          ...cooldown,
+          unavailableUntil: cooldown.unavailableUntil.toISOString(),
         },
       );
     }

@@ -1,4 +1,4 @@
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import type {
   PublicConnectorCatalogPermissionDetail,
@@ -6,7 +6,7 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 
-export type PlatformConnector = ConnectorResponse;
+export type PlatformBuiltinConnector = BuiltinConnectorResponse;
 export type PlatformConnectorCatalogStatusItem =
   PublicConnectorCatalogStatusItem;
 export type PlatformConnectorPermissionMetadata =

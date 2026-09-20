@@ -1041,7 +1041,7 @@ function ChatThreadsListMenu({
             variant="quiet"
             size="icon-sm"
             iconSize="md"
-            className="relative z-10 shrink-0"
+            className="shrink-0"
             aria-label={t(($) => {
               return $.chat.sidebar.openListMenu;
             })}
@@ -1109,7 +1109,7 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
                 variant="quiet"
                 size="icon-sm"
                 iconSize="md"
-                className="relative z-10 shrink-0"
+                className="shrink-0"
                 aria-label={newChatLabel}
               >
                 <Plus size={18} />

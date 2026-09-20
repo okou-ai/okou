@@ -283,7 +283,7 @@ describe("Official Automation result email callbacks", () => {
     await flushWaitUntilForTest();
   });
 
-  it("keeps ordinary success ineligible and selects the session or agent-token brand", async () => {
+  it("keeps ordinary session success ineligible for a result email", async () => {
     const scenario = await setupScenario();
     const sessionRunId = await startRun(scenario, "https://app.okou.ai");
     const sessionCallbacks = await runCallbackState(scenario, sessionRunId);
@@ -313,7 +313,15 @@ describe("Official Automation result email callbacks", () => {
         sourceWorkflowAutomationId: scenario.automationId,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
+  });
 
+  it("selects the Okou brand for an agent-token Automation run", async () => {
+    const scenario = await setupScenario();
+    const sessionRunId = await startRun(scenario, "https://app.okou.ai");
+    await completeRun(scenario, sessionRunId, {
+      exitCode: 0,
+      output: "Agent-token source result",
+    });
     const agentToken = runs.okouTokenForRunWithCapabilities(
       scenario.actor,
       sessionRunId,

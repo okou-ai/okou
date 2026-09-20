@@ -29,8 +29,8 @@ type BuiltInModelProviderConnectionSource = Extract<
 
 interface BuiltInModelRouteIdentity {
   readonly selectedModel: string;
-  readonly providerType: string;
-  readonly upstreamModel: string;
+  readonly modelRuntimeProvider: string;
+  readonly modelRuntimeModel: string;
 }
 
 interface LockedBuiltInModelRoute extends BuiltInModelRouteIdentity {
@@ -73,8 +73,14 @@ type BuiltInModelProviderFailureReport = BuiltInModelProviderFailureMetadata &
 function routeCondition(route: BuiltInModelRouteIdentity) {
   return and(
     eq(builtInModelCandidateCooldown.selectedModel, route.selectedModel),
-    eq(builtInModelCandidateCooldown.providerType, route.providerType),
-    eq(builtInModelCandidateCooldown.upstreamModel, route.upstreamModel),
+    eq(
+      builtInModelCandidateCooldown.modelRuntimeProvider,
+      route.modelRuntimeProvider,
+    ),
+    eq(
+      builtInModelCandidateCooldown.modelRuntimeModel,
+      route.modelRuntimeModel,
+    ),
   );
 }
 
@@ -105,8 +111,8 @@ async function loadBuiltInModelRoute(
   }
   return {
     selectedModel: run.selectedModel,
-    providerType: run.modelRuntimeProvider,
-    upstreamModel: run.modelRuntimeModel,
+    modelRuntimeProvider: run.modelRuntimeProvider,
+    modelRuntimeModel: run.modelRuntimeModel,
   };
 }
 
@@ -117,16 +123,15 @@ async function materializeAndLockRoute(
   await tx
     .insert(builtInModelCandidateCooldown)
     .values({
-      ...route,
+      selectedModel: route.selectedModel,
+      modelRuntimeProvider: route.modelRuntimeProvider,
+      modelRuntimeModel: route.modelRuntimeModel,
       unavailableUntil: new Date(INACTIVE_COOLDOWN_DEADLINE_MS),
     })
     .onConflictDoNothing();
 
-  const [lockedRoute] = await tx
+  const [lockedState] = await tx
     .select({
-      selectedModel: builtInModelCandidateCooldown.selectedModel,
-      providerType: builtInModelCandidateCooldown.providerType,
-      upstreamModel: builtInModelCandidateCooldown.upstreamModel,
       unavailableUntil: builtInModelCandidateCooldown.unavailableUntil,
       connectionObservationStartedAt:
         builtInModelCandidateCooldown.connectionObservationStartedAt,
@@ -137,10 +142,10 @@ async function materializeAndLockRoute(
     .where(routeCondition(route))
     .for("update")
     .limit(1);
-  if (!lockedRoute) {
+  if (!lockedState) {
     throw new Error("Expected built-in model candidate cooldown route");
   }
-  return lockedRoute;
+  return { ...route, ...lockedState };
 }
 
 function observationInterval(route: LockedBuiltInModelRoute): {
@@ -193,8 +198,8 @@ async function activateCooldown(
     cooldown: deadlineChanged
       ? {
           selectedModel: route.selectedModel,
-          providerType: route.providerType,
-          upstreamModel: route.upstreamModel,
+          modelRuntimeProvider: route.modelRuntimeProvider,
+          modelRuntimeModel: route.modelRuntimeModel,
           failureKind: args.failureKind,
           source: args.connectionSource ?? "unspecified",
           reason: args.reason,

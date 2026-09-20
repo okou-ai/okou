@@ -93,6 +93,7 @@ import {
 } from "./connector-connection-write.service";
 import type { Tx } from "../../lib/db-types";
 import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
+import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
 
 const L = logger("CustomConnectorService");
 
@@ -298,7 +299,7 @@ export class CustomConnectorRuntimePrefixError extends Error {
   }
 }
 
-export type StoredValueRow = CustomConnectorStoredValue;
+export type CustomConnectorStoredValueRow = CustomConnectorStoredValue;
 
 type FeatureSwitchContextArg = Parameters<typeof encryptStoredSecretValue>[1];
 
@@ -1847,6 +1848,7 @@ async function persistCustomConnectorCreate(
           }
           oauthConfig = insertedOAuthConfig;
         }
+        await invalidatePiStableContextsForOrg(tx, args.orgId);
         return { row, oauthConfig };
       },
     );
@@ -2191,6 +2193,7 @@ async function persistCustomConnectorUpdate(
           tx,
           args,
         );
+        await invalidatePiStableContextsForOrg(tx, args.orgId);
         return { row: updated, oauthConfig: storedOAuthConfig };
       },
     );
@@ -2468,6 +2471,7 @@ export const deleteCustomConnector$ = command(
             eq(orgCustomConnectors.orgId, args.orgId),
           ),
         );
+      await invalidatePiStableContextsForOrg(tx, args.orgId);
       return true;
     });
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
@@ -3127,7 +3131,7 @@ export function customConnectorSecretKey(args: {
   return `CUSTOM_${args.connectorId.replaceAll("-", "")}_${kindPrefix}_${args.key.toUpperCase()}`;
 }
 
-export function renderTemplateForRuntime(args: {
+export function renderCustomConnectorTemplateForRuntime(args: {
   readonly template: string;
   readonly connectorId: string;
   readonly fields: readonly CustomConnectorField[];
@@ -3275,7 +3279,7 @@ export async function loadCustomConnectorRuntimeData(
 ): Promise<
   readonly {
     readonly connector: CustomConnectorRow;
-    readonly values: readonly StoredValueRow[];
+    readonly values: readonly CustomConnectorStoredValueRow[];
     readonly credentialAccess: CustomConnectorCredentialAccess;
   }[]
 > {
@@ -3336,7 +3340,10 @@ export async function loadCustomConnectorRuntimeData(
       memberConnectorIdsByCustomConnectorId:
         args.memberConnectorIdsByCustomConnectorId,
     });
-    const valuesByConnectorId = new Map<string, StoredValueRow[]>();
+    const valuesByConnectorId = new Map<
+      string,
+      CustomConnectorStoredValueRow[]
+    >();
     for (const value of runtimeStorage.values) {
       const values = valuesByConnectorId.get(value.connectorId) ?? [];
       values.push(value);

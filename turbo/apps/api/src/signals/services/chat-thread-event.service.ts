@@ -59,27 +59,37 @@ async function reserveChatThreadEventSeqId(
   return sequence.seqId;
 }
 
-export async function appendChatThreadEvent(
+interface ChatThreadEventAppend {
+  readonly kind: ChatThreadEventKind;
+  readonly userId: string;
+  readonly orgId?: string | null;
+  readonly chatThreadId: string;
+  readonly agentId: string;
+  readonly eventId?: string;
+  readonly title?: string | null;
+  readonly pinOrder?: string | null;
+  readonly selectedModel?: string | null;
+  readonly modelSettings?: ModelSettings;
+  readonly modelSettingsPatch?: ModelSettingsPatch;
+  readonly serviceTier?: ChatThreadServiceTier | null;
+  readonly computerUseHostId?: string | null;
+  readonly cloudBrowserEnabled?: boolean;
+  readonly selectedVideoModel?: string | null;
+  readonly selectedImageModel?: ImageModelId | null;
+  readonly createdAt?: Date;
+}
+
+export class ChatThreadEventIdConflictError extends Error {
+  constructor() {
+    super("Chat thread event id is already in use");
+    this.name = "ChatThreadEventIdConflictError";
+  }
+}
+
+async function insertChatThreadEvent(
   db: ChatThreadEventTransaction,
-  args: {
-    readonly kind: ChatThreadEventKind;
-    readonly userId: string;
-    readonly orgId?: string | null;
-    readonly chatThreadId: string;
-    readonly agentId: string;
-    readonly eventId?: string;
-    readonly title?: string | null;
-    readonly pinOrder?: string | null;
-    readonly selectedModel?: string | null;
-    readonly modelSettings?: ModelSettings;
-    readonly modelSettingsPatch?: ModelSettingsPatch;
-    readonly serviceTier?: ChatThreadServiceTier | null;
-    readonly computerUseHostId?: string | null;
-    readonly cloudBrowserEnabled?: boolean;
-    readonly selectedVideoModel?: string | null;
-    readonly selectedImageModel?: ImageModelId | null;
-    readonly createdAt?: Date;
-  },
+  args: ChatThreadEventAppend,
+  strict: boolean,
 ): Promise<void> {
   let orgId = args.orgId ?? undefined;
   if (orgId === undefined) {
@@ -96,30 +106,51 @@ export async function appendChatThreadEvent(
   }
 
   const seqId = await reserveChatThreadEventSeqId(db, args.userId, orgId);
+  const insertion = db.insert(chatThreadEvents).values({
+    ...(args.eventId !== undefined ? { id: args.eventId } : {}),
+    userId: args.userId,
+    orgId,
+    seqId,
+    chatThreadId: args.chatThreadId,
+    kind: args.kind,
+    agentId: args.agentId,
+    title: args.title ?? null,
+    pinOrder: args.pinOrder ?? null,
+    selectedModel: args.selectedModel ?? null,
+    modelSettings: args.modelSettings,
+    modelSettingsPatch: args.modelSettingsPatch,
+    serviceTier: args.serviceTier ?? null,
+    computerUseHostId: args.computerUseHostId ?? null,
+    cloudBrowserEnabled: args.cloudBrowserEnabled ?? false,
+    selectedVideoModel: args.selectedVideoModel ?? null,
+    selectedImageModel: args.selectedImageModel ?? null,
+    ...(args.createdAt !== undefined ? { createdAt: args.createdAt } : {}),
+  });
+  if (!strict) {
+    await insertion.onConflictDoNothing({ target: chatThreadEvents.id });
+    return;
+  }
+  const inserted = await insertion
+    .onConflictDoNothing({ target: chatThreadEvents.id })
+    .returning({ id: chatThreadEvents.id });
+  if (inserted.length === 0) {
+    throw new ChatThreadEventIdConflictError();
+  }
+}
 
-  await db
-    .insert(chatThreadEvents)
-    .values({
-      ...(args.eventId !== undefined ? { id: args.eventId } : {}),
-      userId: args.userId,
-      orgId,
-      seqId,
-      chatThreadId: args.chatThreadId,
-      kind: args.kind,
-      agentId: args.agentId,
-      title: args.title ?? null,
-      pinOrder: args.pinOrder ?? null,
-      selectedModel: args.selectedModel ?? null,
-      modelSettings: args.modelSettings,
-      modelSettingsPatch: args.modelSettingsPatch,
-      serviceTier: args.serviceTier ?? null,
-      computerUseHostId: args.computerUseHostId ?? null,
-      cloudBrowserEnabled: args.cloudBrowserEnabled ?? false,
-      selectedVideoModel: args.selectedVideoModel ?? null,
-      selectedImageModel: args.selectedImageModel ?? null,
-      ...(args.createdAt !== undefined ? { createdAt: args.createdAt } : {}),
-    })
-    .onConflictDoNothing({ target: chatThreadEvents.id });
+export async function appendChatThreadEvent(
+  db: ChatThreadEventTransaction,
+  args: ChatThreadEventAppend,
+): Promise<void> {
+  await insertChatThreadEvent(db, args, false);
+}
+
+/** A conflicting event id aborts the caller's transaction instead of dropping projection evidence. */
+export async function appendChatThreadEventStrict(
+  db: ChatThreadEventTransaction,
+  args: ChatThreadEventAppend & { readonly eventId: string },
+): Promise<void> {
+  await insertChatThreadEvent(db, args, true);
 }
 
 export async function getChatThreadSnapshot(

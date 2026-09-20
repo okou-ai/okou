@@ -62,7 +62,6 @@ async def test_real_x_hooks_deliver_shared_wire_contract(
             ],
         },
         network_policy={"allow": [request["permission"]], "deny": [], "unknownPolicy": "deny"},
-        sandbox_fields={"xResourceBilling": case["capability"]},
     )
     registry_path = _write_registry(tmp_path, sandbox_info=sandbox)
     flow = real_flow(

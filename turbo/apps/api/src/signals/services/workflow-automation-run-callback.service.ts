@@ -5,6 +5,7 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -43,6 +44,31 @@ interface HandleWorkflowAutomationInternalCallbackInput {
   readonly callback: InternalRunCallbackEnvelope;
 }
 
+interface UnjournaledCallbackLineageReadSnapshot {
+  readonly automationId: string;
+  readonly lineageKind: "morning-brief" | "ordinary-or-absent";
+}
+
+type UnjournaledCallbackLineageReadHook = (
+  snapshot: UnjournaledCallbackLineageReadSnapshot,
+) => Promise<void>;
+
+const unjournaledCallbackLineageReadHook = testOverride<
+  UnjournaledCallbackLineageReadHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setUnjournaledCallbackLineageReadHookForTest(
+  hook: UnjournaledCallbackLineageReadHook,
+): void {
+  unjournaledCallbackLineageReadHook.set(hook);
+}
+
+export function clearUnjournaledCallbackLineageReadHookForTest(): void {
+  unjournaledCallbackLineageReadHook.clear();
+}
+
 function parseWorkflowAutomationPayload(
   kind: WorkflowAutomationInternalRunCallbackKind,
   payload: unknown,
@@ -59,29 +85,55 @@ function parseWorkflowAutomationPayload(
   }
 }
 
+interface MorningBriefCallbackLineageCandidate {
+  readonly orgId: string;
+  readonly ownerUserId: string | null;
+  readonly workflowId: string;
+  readonly officialBlueprintKey: string | null;
+}
+
+function morningBriefCallbackLineage(
+  automationId: string,
+  candidate: MorningBriefCallbackLineageCandidate | undefined,
+): MorningBriefLegacyLineage | undefined {
+  return candidate?.officialBlueprintKey ===
+    MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY && candidate.ownerUserId !== null
+    ? {
+        orgId: candidate.orgId,
+        userId: candidate.ownerUserId,
+        workflowId: candidate.workflowId,
+        automationId,
+      }
+    : undefined;
+}
+
 async function resolveMorningBriefCallbackLineage(
-  db: Db,
+  db: Pick<Db, "select">,
   automationId: string,
 ): Promise<MorningBriefLegacyLineage | undefined> {
   const [candidate] = await db
     .select({
       orgId: workflowAutomations.orgId,
-      userId: workflowAutomations.ownerUserId,
+      ownerUserId: workflowAutomations.ownerUserId,
       workflowId: workflowAutomations.workflowId,
-      blueprintKey: workflowAutomations.officialBlueprintKey,
+      officialBlueprintKey: workflowAutomations.officialBlueprintKey,
     })
     .from(workflowAutomations)
     .where(eq(workflowAutomations.id, automationId))
     .limit(1);
-  return candidate?.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
-    candidate.userId !== null
-    ? {
-        orgId: candidate.orgId,
-        userId: candidate.userId,
-        workflowId: candidate.workflowId,
-        automationId,
-      }
-    : undefined;
+  return morningBriefCallbackLineage(automationId, candidate);
+}
+
+function sameMorningBriefCallbackLineage(
+  left: MorningBriefLegacyLineage,
+  right: MorningBriefLegacyLineage,
+): boolean {
+  return (
+    left.orgId === right.orgId &&
+    left.userId === right.userId &&
+    left.workflowId === right.workflowId &&
+    left.automationId === right.automationId
+  );
 }
 
 async function callbackFailedForCredits(
@@ -100,7 +152,86 @@ async function callbackFailedForCredits(
   return run?.failureReason === "insufficient_credits";
 }
 
-async function settleUnjournaledWorkflowAutomationCallback(
+type UnjournaledCallbackSettlementAttempt =
+  | {
+      readonly kind: "settled";
+      readonly result: InternalRunCallbackDispatchResult;
+    }
+  | {
+      readonly kind: "retry-selected";
+      readonly lineage: MorningBriefLegacyLineage;
+    };
+
+type UnjournaledRecurringAutomation =
+  typeof workflowAutomations.$inferSelect & {
+    readonly scheduleType: "cron" | "loop";
+  };
+
+type UnjournaledCallbackLineageRevalidation =
+  | UnjournaledCallbackSettlementAttempt
+  | {
+      readonly kind: "continue";
+      readonly automation: UnjournaledRecurringAutomation;
+    };
+
+function isUnjournaledRecurringAutomation(
+  automation: typeof workflowAutomations.$inferSelect | undefined,
+): automation is UnjournaledRecurringAutomation {
+  return (
+    automation !== undefined &&
+    automation.enabled &&
+    (automation.scheduleType === "cron" || automation.scheduleType === "loop")
+  );
+}
+
+function skippedUnjournaledCallbackSettlement(): UnjournaledCallbackSettlementAttempt {
+  return {
+    kind: "settled",
+    result: { success: true, skipped: true },
+  };
+}
+
+function revalidateUnjournaledCallbackLineage(args: {
+  readonly automationId: string;
+  readonly lineage: MorningBriefLegacyLineage | undefined;
+  readonly authority: MorningBriefLegacyWriterAuthority;
+  readonly automation: typeof workflowAutomations.$inferSelect | undefined;
+}): UnjournaledCallbackLineageRevalidation {
+  const lockedLineage = morningBriefCallbackLineage(
+    args.automationId,
+    args.automation,
+  );
+  if (args.lineage === undefined && lockedLineage !== undefined) {
+    // The optimistic ordinary/absent read became a Morning Brief row before
+    // this lock. Release this transaction and retry from durable authority;
+    // never acquire the schedule after the automation row.
+    return { kind: "retry-selected", lineage: lockedLineage };
+  }
+  if (
+    args.lineage !== undefined &&
+    (lockedLineage === undefined ||
+      !sameMorningBriefCallbackLineage(args.lineage, lockedLineage))
+  ) {
+    return skippedUnjournaledCallbackSettlement();
+  }
+  if (!isUnjournaledRecurringAutomation(args.automation)) {
+    return skippedUnjournaledCallbackSettlement();
+  }
+  if (
+    args.authority.kind === "selected" &&
+    (args.authority.row.phase !== "legacy" ||
+      !args.authority.row.enabled ||
+      args.authority.row.nextRunAt !== null ||
+      args.automation.nextRunAt !== null)
+  ) {
+    // A selected compatibility callback owns only the pre-S7a empty slot. A
+    // cutover or a writer that already published a successor wins unchanged.
+    return skippedUnjournaledCallbackSettlement();
+  }
+  return { kind: "continue", automation: args.automation };
+}
+
+async function attemptUnjournaledWorkflowAutomationCallbackSettlement(
   tx: Tx,
   args: {
     readonly automationId: string;
@@ -108,32 +239,31 @@ async function settleUnjournaledWorkflowAutomationCallback(
     readonly lineage: MorningBriefLegacyLineage | undefined;
   },
   signal?: AbortSignal,
-): Promise<InternalRunCallbackDispatchResult> {
+): Promise<UnjournaledCallbackSettlementAttempt> {
   const authority: MorningBriefLegacyWriterAuthority =
     args.lineage === undefined
       ? { kind: "ordinary", fence: { kind: "ordinary" } }
       : await lockMorningBriefLegacyWriterAuthority(tx, args.lineage);
   if (authority.kind === "stale") {
-    return { success: true, skipped: true };
+    return skippedUnjournaledCallbackSettlement();
   }
-  const [automation] = await tx
+  const [lockedAutomation] = await tx
     .select(workflowAutomationColumns())
     .from(workflowAutomations)
     .where(eq(workflowAutomations.id, args.automationId))
     .limit(1)
     .for("update");
   signal?.throwIfAborted();
-  if (
-    !automation ||
-    !automation.enabled ||
-    (automation.scheduleType !== "cron" && automation.scheduleType !== "loop")
-  ) {
-    return { success: true, skipped: true };
+  const revalidation = revalidateUnjournaledCallbackLineage({
+    automationId: args.automationId,
+    lineage: args.lineage,
+    authority,
+    automation: lockedAutomation,
+  });
+  if (revalidation.kind !== "continue") {
+    return revalidation;
   }
-  if (authority.kind === "selected" && authority.row.phase !== "legacy") {
-    return { success: true, skipped: true };
-  }
-
+  const automation = revalidation.automation;
   const completedAt = nowDate();
   const isCreditError = await callbackFailedForCredits(
     tx,
@@ -187,7 +317,37 @@ async function settleUnjournaledWorkflowAutomationCallback(
     );
   }
   signal?.throwIfAborted();
-  return { success: true };
+  return { kind: "settled", result: { success: true } };
+}
+
+async function settleUnjournaledWorkflowAutomationCallback(
+  db: Db,
+  args: {
+    readonly automationId: string;
+    readonly callback: InternalRunCallbackEnvelope;
+    readonly lineage: MorningBriefLegacyLineage | undefined;
+  },
+  signal?: AbortSignal,
+): Promise<InternalRunCallbackDispatchResult> {
+  const attempt = async (
+    lineage: MorningBriefLegacyLineage | undefined,
+  ): Promise<UnjournaledCallbackSettlementAttempt> => {
+    return await db.transaction(async (tx) => {
+      return await attemptUnjournaledWorkflowAutomationCallbackSettlement(
+        tx,
+        { ...args, lineage },
+        signal,
+      );
+    });
+  };
+  const first = await attempt(args.lineage);
+  if (first.kind === "settled") {
+    return first.result;
+  }
+  const retried = await attempt(first.lineage);
+  return retried.kind === "settled"
+    ? retried.result
+    : { success: true, skipped: true };
 }
 
 /**
@@ -238,17 +398,20 @@ export async function handleWorkflowAutomationInternalCallback(
     db,
     payload.data.automationId,
   );
-  return await db.transaction(async (tx) => {
-    return await settleUnjournaledWorkflowAutomationCallback(
-      tx,
-      {
-        automationId: payload.data.automationId,
-        callback: input.callback,
-        lineage,
-      },
-      signal,
-    );
+  await unjournaledCallbackLineageReadHook.get()?.({
+    automationId: payload.data.automationId,
+    lineageKind: lineage === undefined ? "ordinary-or-absent" : "morning-brief",
   });
+  signal?.throwIfAborted();
+  return await settleUnjournaledWorkflowAutomationCallback(
+    db,
+    {
+      automationId: payload.data.automationId,
+      callback: input.callback,
+      lineage,
+    },
+    signal,
+  );
 }
 
 /**

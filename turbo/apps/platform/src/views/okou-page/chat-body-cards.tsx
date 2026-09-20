@@ -30,7 +30,7 @@ import {
 import { isActiveUserPermissionGrant } from "../../signals/user-permission-grants.ts";
 import { Reason, detach } from "../../signals/utils.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
-import { connectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
+import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import { PermissionGrantDurationSelect } from "../components/permission-grant-duration-select.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
@@ -516,7 +516,8 @@ function CatalogConnectorActionCard({
       connected={connected}
       complete={complete}
       reconnectRequired={
-        connectorCurrentConnectionStatus(catalogItem) === "reconnect-required"
+        builtinConnectorCurrentConnectionStatus(catalogItem) ===
+        "reconnect-required"
       }
       busy={loading}
       onActivate={() => {

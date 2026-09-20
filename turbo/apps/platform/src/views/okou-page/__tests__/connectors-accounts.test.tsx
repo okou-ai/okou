@@ -2,9 +2,9 @@ import {
   type ConnectorAccountConnection,
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -118,7 +118,7 @@ test("Show account attention when agent access is unavailable", async () => {
   context.mocks.data.agents([
     listAgent("c0000000-0000-4000-a000-000000000001", "Research"),
   ]);
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(500, {
       error: { message: "Agent access unavailable", code: "UNAVAILABLE" },
     });
@@ -313,13 +313,16 @@ async function openConnectorAccessSummary(
     listAgent(ids[2] ?? "", "Growth"),
     listAgent(ids[3] ?? "", "Ops"),
   ]);
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: enabled.get(params.id) ?? [],
-    });
-  });
   context.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, {
+        enabledConnectorSlugs: enabled.get(params.id) ?? [],
+      });
+    },
+  );
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
       const next = body.operation === "remove" ? [] : ["github"];
       enabled.set(params.id, next);
@@ -600,14 +603,17 @@ test("Exclude deleted agents from connector access", async () => {
     listAgent(activeId, "Research Agent"),
     listAgent(deletedId, "Deleted Agent"),
   ]);
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    if (params.id === deletedId) {
-      return respond(404, {
-        error: { message: "Agent not found", code: "NOT_FOUND" },
-      });
-    }
-    return respond(200, { enabledConnectorSlugs: ["github"] });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      if (params.id === deletedId) {
+        return respond(404, {
+          error: { message: "Agent not found", code: "NOT_FOUND" },
+        });
+      }
+      return respond(200, { enabledConnectorSlugs: ["github"] });
+    },
+  );
   context.mocks.api(userPermissionGrantsContract.list, ({ query, respond }) => {
     if (query.agentId === deletedId) {
       return respond(404, {
@@ -646,13 +652,16 @@ test("Grant and revoke connector access for agents", async () => {
     listAgent(researchId, "Research Agent"),
     listAgent(supportId, "Support Agent"),
   ]);
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: enabled.get(params.id) ?? [],
-    });
-  });
   context.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, {
+        enabledConnectorSlugs: enabled.get(params.id) ?? [],
+      });
+    },
+  );
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
       const current = enabled.get(params.id) ?? [];
       const next =
@@ -764,13 +773,18 @@ test("Reconnect the selected non-default account after cancellation", async () =
     }),
   );
   const authorizedAgents = new Set<string>();
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: authorizedAgents.has(params.id) ? ["stripe"] : [],
-    });
-  });
   context.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, {
+        enabledConnectorSlugs: authorizedAgents.has(params.id)
+          ? ["stripe"]
+          : [],
+      });
+    },
+  );
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
       if (
         body.operation === "add" &&
@@ -841,16 +855,19 @@ test("Reconnect the selected non-default account after cancellation", async () =
     return respond(200, { connections: [work, personal], nextCursor: null });
   });
   let submitted: unknown;
-  context.mocks.api(connectorOauthStartContract.start, ({ body, respond }) => {
-    submitted = body.account;
-    oauthAttemptId = crypto.randomUUID();
-    expect(body.authorizeAgent).not.toBeTruthy();
-    return respond(200, {
-      oauthAttemptId,
-      connectionId: personal.id,
-      authorizationUrl: "https://oauth.test/stripe/authorize",
-    });
-  });
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      submitted = body.account;
+      oauthAttemptId = crypto.randomUUID();
+      expect(body.authorizeAgent).not.toBeTruthy();
+      return respond(200, {
+        oauthAttemptId,
+        connectionId: personal.id,
+        authorizationUrl: "https://oauth.test/stripe/authorize",
+      });
+    },
+  );
   let authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
   await setupPage({
@@ -1141,13 +1158,16 @@ test("Review and reconnect the connector account the user selected", async () =>
   });
   let submittedAccount: unknown;
   mockOAuthCompletions(context);
-  context.mocks.api(connectorOauthStartContract.start, ({ body, respond }) => {
-    submittedAccount = body.account;
-    return respond(200, {
-      authorizationUrl: "https://oauth.test/github/authorize",
-      oauthAttemptId: crypto.randomUUID(),
-    });
-  });
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      submittedAccount = body.account;
+      return respond(200, {
+        authorizationUrl: "https://oauth.test/github/authorize",
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
   await setupAccountsPage();
@@ -1405,7 +1425,7 @@ test("Manage access for a connector without configurable permissions", async () 
     },
   ]);
   context.mocks.data.agents([listAgent(mediaId, "Media Agent")]);
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: ["cloudinary"] });
   });
   context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {

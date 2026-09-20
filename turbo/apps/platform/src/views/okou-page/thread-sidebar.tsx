@@ -1,8 +1,7 @@
 import type { UIEvent as ReactUIEvent } from "react";
-import { createPortal } from "react-dom";
 import { ArrowLeft, ExternalLink, Maximize, Minimize, X } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import { Button, cn } from "@okouai/ui";
+import { Button, FullscreenPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -34,9 +33,6 @@ import { ArtifactSidebar } from "./artifact-sidebar.tsx";
 // ---------------------------------------------------------------------------
 
 const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
-
-const THREAD_SIDEBAR_FULLSCREEN_CLASSNAME =
-  "fixed inset-0 z-[100] flex min-h-0 flex-col bg-background pt-[var(--sat)] pb-[var(--sab)]";
 
 /**
  * Open the thread's artifacts list and refresh its first page. Entry buttons
@@ -166,17 +162,14 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
     );
   };
 
-  const panel = (
-    <aside
+  return (
+    <FullscreenPanel
+      as="aside"
+      fullscreen={fullscreen}
       aria-label={t(($) => {
         return $.artifacts.sidebar.panelTitle;
       })}
       data-testid="thread-sidebar-artifacts"
-      className={cn(
-        fullscreen
-          ? THREAD_SIDEBAR_FULLSCREEN_CLASSNAME
-          : "flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0",
-      )}
     >
       <ThreadSidebarHeader
         title={t(($) => {
@@ -213,14 +206,8 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
           />
         )}
       </div>
-    </aside>
+    </FullscreenPanel>
   );
-  // This is an app-local fullscreen surface, not a modal. Keep it inside the
-  // isolated app stack so body-level Base UI portals remain above it by
-  // structure rather than by competing z-index values.
-  const appRoot =
-    typeof document === "undefined" ? null : document.getElementById("root");
-  return fullscreen && appRoot ? createPortal(panel, appRoot) : panel;
 }
 
 function ThreadArtifactUnavailable({

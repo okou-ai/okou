@@ -5,15 +5,29 @@ import {
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { userConnectors } from "@okouai/db/schema/user-connector";
-import { and, eq } from "drizzle-orm";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
+import { and, eq, isNotNull } from "drizzle-orm";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { ReadonlyDb } from "../external/db";
+import { orderByCustomConnectorId } from "./custom-connector-order";
+
+export interface CustomConnectorDefinitionVersion {
+  readonly customConnectorId: string;
+  readonly connectorSlug: string;
+  readonly storageVersion: number;
+  readonly skillStorageVersionId: string | null;
+  readonly isMcp: boolean;
+}
 
 export interface AgentConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
+}
+
+export interface AgentConnectorScopeSnapshot extends AgentConnectorScope {
+  readonly customConnectorDefinitions: readonly CustomConnectorDefinitionVersion[];
 }
 
 export interface AgentConnectorSlugRow {
@@ -23,6 +37,10 @@ export interface AgentConnectorSlugRow {
 export interface AgentCustomConnectorRow {
   readonly customConnectorId: string;
   readonly permissionNames: readonly string[];
+  readonly connectorSlug: string;
+  readonly storageVersion: number;
+  readonly skillStorageVersionId: string | null;
+  readonly isMcp: boolean;
 }
 
 async function loadAgentAllowedConnectorSlugRows(
@@ -34,13 +52,13 @@ async function loadAgentAllowedConnectorSlugRows(
   },
 ): Promise<readonly AgentConnectorSlugRow[]> {
   return await db
-    .select({ connectorSlug: userConnectors.connectorSlug })
-    .from(userConnectors)
+    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+    .from(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
       ),
     );
 }
@@ -57,6 +75,12 @@ async function loadAgentAllowedCustomConnectorRows(
     .select({
       customConnectorId: userCustomConnectors.customConnectorId,
       permissionNames: userCustomConnectors.permissionNames,
+      connectorSlug: orgCustomConnectors.slug,
+      storageVersion: orgCustomConnectors.storageVersion,
+      skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
+      isMcp: isNotNull(orgCustomConnectors.mcpEndpoint).mapWith(
+        pgBooleanDecoder,
+      ),
     })
     .from(userCustomConnectors)
     .innerJoin(
@@ -79,38 +103,71 @@ async function loadAgentAllowedCustomConnectorRows(
 export function agentConnectorScopeFromRows(args: {
   readonly connectorRows: readonly AgentConnectorSlugRow[];
   readonly customConnectorRows: readonly AgentCustomConnectorRow[];
-}): AgentConnectorScope {
-  const allowedConnectorSlugs = args.connectorRows.flatMap((row) => {
-    const parsed = connectorSlugSchema.safeParse(row.connectorSlug);
-    return parsed.success ? [parsed.data] : [];
-  });
-  const allowedCustomConnectorIds = args.customConnectorRows.map((row) => {
+}): AgentConnectorScopeSnapshot {
+  const allowedConnectorSlugs = args.connectorRows
+    .flatMap((row) => {
+      const parsed = connectorSlugSchema.safeParse(row.connectorSlug);
+      return parsed.success ? [parsed.data] : [];
+    })
+    .sort();
+  const customConnectorRows = orderByCustomConnectorId(
+    args.customConnectorRows,
+    (row) => {
+      return row.customConnectorId;
+    },
+  );
+  const allowedCustomConnectorIds = customConnectorRows.map((row) => {
     return row.customConnectorId;
   });
-  const customConnectorGrants = args.customConnectorRows.map((row) => {
+  const customConnectorGrants = customConnectorRows.map((row) => {
     return {
       customConnectorId: row.customConnectorId,
-      permissionNames: [...row.permissionNames],
+      permissionNames: [...row.permissionNames].sort(),
+    };
+  });
+  const customConnectorDefinitions = customConnectorRows.map((row) => {
+    return {
+      customConnectorId: row.customConnectorId,
+      connectorSlug: row.connectorSlug,
+      storageVersion: row.storageVersion,
+      skillStorageVersionId: row.skillStorageVersionId,
+      isMcp: row.isMcp,
     };
   });
   return {
     allowedConnectorSlugs,
     allowedCustomConnectorIds,
     customConnectorGrants,
+    customConnectorDefinitions,
   };
+}
+
+interface LoadAgentConnectorScopeArgs {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
 }
 
 export async function loadAgentConnectorScope(
   db: ReadonlyDb,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly agentId: string;
-  },
-): Promise<AgentConnectorScope> {
+  args: LoadAgentConnectorScopeArgs,
+): Promise<AgentConnectorScopeSnapshot> {
   const [connectorRows, customConnectorRows] = await Promise.all([
     loadAgentAllowedConnectorSlugRows(db, args),
     loadAgentAllowedCustomConnectorRows(db, args),
   ]);
+  return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
+}
+
+/** Transaction-safe form for writers that hold one PostgreSQL client. */
+export async function loadAgentConnectorScopeSerial(
+  db: ReadonlyDb,
+  args: LoadAgentConnectorScopeArgs,
+): Promise<AgentConnectorScopeSnapshot> {
+  const connectorRows = await loadAgentAllowedConnectorSlugRows(db, args);
+  const customConnectorRows = await loadAgentAllowedCustomConnectorRows(
+    db,
+    args,
+  );
   return agentConnectorScopeFromRows({ connectorRows, customConnectorRows });
 }

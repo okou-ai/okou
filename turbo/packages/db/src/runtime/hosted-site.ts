@@ -5,9 +5,8 @@ import {
   privateHostedDeploymentColumns,
 } from "../columns/hosted-site";
 
-// Application statements omit the retired version columns. The physical
-// mapping retains them until the preceding API leaves serving and rollback;
-// follow-up #35240.
+// Runtime queries and physical DDL share these column factories. Index
+// definitions live in the physical schema used by migration generation.
 export const hostedSites = pgTable("hosted_sites", hostedSiteColumns());
 export const hostedDeployments = pgTable(
   "hosted_deployments",

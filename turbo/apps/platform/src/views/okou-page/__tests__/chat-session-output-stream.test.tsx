@@ -72,17 +72,14 @@ async function subscribed(): Promise<void> {
   });
 }
 
-test("Text appears during a run, appends deltas, and reconciles with the durable event", async () => {
+async function setupActiveOutputStream() {
   const events = activeRun();
   await setupPage({ context, path: RUN_PATH, featureSwitches });
   await subscribed();
-  push(0, "Preparing");
-  await expect(screen.findByText("Preparing")).resolves.toBeVisible();
-  // The index is only a block-start marker; later deltas append without gap tracking.
-  push(3, " the report");
-  await expect(
-    screen.findByText("Preparing the report"),
-  ).resolves.toBeVisible();
+  return events;
+}
+
+function publishDurableReport(events: ReturnType<typeof activeRun>) {
   events.push(
     assistantEvent({
       id: EVENT_ID,
@@ -92,12 +89,38 @@ test("Text appears during a run, appends deltas, and reconciles with the durable
     }),
   );
   publishRunUpdate();
+}
+
+test("Append live text deltas during a run", async () => {
+  await setupActiveOutputStream();
+  push(0, "Preparing");
+  await expect(screen.findByText("Preparing")).resolves.toBeVisible();
+  push(3, " the report");
+  await expect(
+    screen.findByText("Preparing the report"),
+  ).resolves.toBeVisible();
+});
+
+test("Reconcile live text with the durable assistant event", async () => {
+  const events = await setupActiveOutputStream();
+  push(0, "Preparing");
+  push(3, " the report");
+  await expect(
+    screen.findByText("Preparing the report"),
+  ).resolves.toBeVisible();
+  publishDurableReport(events);
   await expect(screen.findByText("The complete report")).resolves.toBeVisible();
   expect(screen.queryByText("Preparing the report")).not.toBeInTheDocument();
   push(0, "A late first packet");
   push(4, "A late delta");
   expect(screen.queryByText(/A late/)).not.toBeInTheDocument();
   expect(screen.getAllByText("The complete report")).toHaveLength(1);
+});
+
+test("Unsubscribe from output after the durable run completes", async () => {
+  const events = await setupActiveOutputStream();
+  publishDurableReport(events);
+  await expect(screen.findByText("The complete report")).resolves.toBeVisible();
   events.push(
     completedEvent({ id: "stream-completed", runId: RUN_ID, seqId: 3 }),
   );

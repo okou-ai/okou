@@ -251,11 +251,6 @@ def _prepare_firewall_metadata(
     flow.metadata[metadata_keys.FIREWALL_PARAMS] = allow.params
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = firewall_billable
     flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = sandbox_info.get("modelUsageProvider")
-    flow.metadata[metadata_keys.X_RESOURCE_BILLING] = (
-        flow_metadata.parse_x_resource_billing(sandbox_info["xResourceBilling"])
-        if "xResourceBilling" in sandbox_info
-        else None
-    )
 
 
 def prepare_firewall_metadata(
@@ -301,6 +296,7 @@ def _build_firewall_auth_context(
             matched_firewall = {
                 "name": allow.name,
                 "apiId": api_id,
+                "base": firewall_base,
                 "connectorSlug": allow.name,
                 "routingVariables": routing_variables,
                 **({"sourceId": source_id} if isinstance(source_id, str) else {}),

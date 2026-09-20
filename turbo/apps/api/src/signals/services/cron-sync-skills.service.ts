@@ -25,7 +25,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { skills } from "@okouai/db/schema/skill";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command, computed, type Computed } from "ccstate";
-import { eq, inArray, like } from "drizzle-orm";
+import { asc, eq, inArray, like } from "drizzle-orm";
 import { create as createTar, Parser } from "tar";
 
 import { env } from "../../lib/env";
@@ -38,6 +38,10 @@ import {
   putS3Object,
 } from "../external/s3";
 import { createDeferredPromise, safeSync, tapError } from "../utils";
+import {
+  enqueuePiStableContextStorageDemands,
+  retirePiStableContextStorageDemands,
+} from "./pi-stable-context-generation.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
 import { preparePiResourceIndex } from "../../lib/pi-resource-index";
@@ -618,6 +622,12 @@ function syncSingleSkill(
         },
         signal,
       );
+      await enqueuePiStableContextStorageDemands(tx, {
+        storageId,
+        versionId: context.versionHash,
+        archiveSize: upload.archiveBuffer.length,
+        fileCount: context.files.length,
+      });
     });
 
     log.debug("Synced skill", {
@@ -664,22 +674,37 @@ function removeOrphanedSkills(
         return id !== null;
       });
 
-    const orphanStorages =
-      orphanStorageIds.length > 0
-        ? await db
-            .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-            .from(storages)
-            .where(inArray(storages.id, orphanStorageIds))
-        : [];
-    signal.throwIfAborted();
-
-    await db.delete(skills).where(inArray(skills.id, orphanIds));
-    signal.throwIfAborted();
-
-    if (orphanStorageIds.length > 0) {
-      await db.delete(storages).where(inArray(storages.id, orphanStorageIds));
+    const orphanStorages = await db.transaction(async (tx) => {
+      const lockedStorages =
+        orphanStorageIds.length > 0
+          ? await tx
+              .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+              .from(storages)
+              .where(inArray(storages.id, orphanStorageIds))
+              .orderBy(asc(storages.id))
+              .for("update")
+          : [];
       signal.throwIfAborted();
-    }
+      await retirePiStableContextStorageDemands(
+        tx,
+        lockedStorages.map((storage) => {
+          return storage.id;
+        }),
+      );
+      await tx.delete(skills).where(inArray(skills.id, orphanIds));
+      if (lockedStorages.length > 0) {
+        await tx.delete(storages).where(
+          inArray(
+            storages.id,
+            lockedStorages.map((storage) => {
+              return storage.id;
+            }),
+          ),
+        );
+      }
+      signal.throwIfAborted();
+      return lockedStorages;
+    });
 
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     for (const storage of orphanStorages) {

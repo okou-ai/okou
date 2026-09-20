@@ -629,13 +629,27 @@ test("A private site card resizes its authorized screenshot and opens the site o
   });
 });
 
-test.each(["assistant", "user"] as const)(
-  "A private video in a %s message resizes its authorized poster and opens the original",
-  async (role) => {
+test.each([
+  { role: "assistant", storedForm: "absolute" },
+  { role: "user", storedForm: "absolute" },
+  { role: "assistant", storedForm: "relative" },
+] as const)(
+  "A private video in a $role message with a $storedForm catalog URL resizes its authorized poster and opens the original",
+  async ({ role, storedForm }) => {
     const videoId = "00000000-0000-4000-8000-000000000021";
     const posterId = "00000000-0000-4000-8000-000000000022";
-    const video = artifactReferencePath(videoId, "generated.mp4");
-    const poster = artifactReferencePath(posterId, "poster-v2.jpg");
+    const video = new URL(
+      artifactReferencePath(videoId, "generated.mp4"),
+      "http://localhost",
+    ).href;
+    const poster = new URL(
+      artifactReferencePath(posterId, "poster-v2.jpg"),
+      "http://localhost",
+    ).href;
+    const storedVideo =
+      storedForm === "relative" ? new URL(video).pathname : video;
+    const storedPoster =
+      storedForm === "relative" ? new URL(poster).pathname : poster;
     const videoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=owner`;
     const posterUrl = `${R2_ORIGIN}/private/poster%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
     mockAttachmentChat(context, {
@@ -655,8 +669,8 @@ test.each(["assistant", "user"] as const)(
         artifactFile("generated.mp4", {
           id: videoId,
           contentType: "video/mp4",
-          url: video,
-          previewImageUrl: poster,
+          url: storedVideo,
+          previewImageUrl: storedPoster,
         }),
       ],
     });
@@ -664,7 +678,10 @@ test.each(["assistant", "user"] as const)(
       artifactReferencesContract.resolve,
       ({ params, respond }) => {
         const isPoster =
-          params.reference === poster.slice("/artifacts/".length);
+          params.reference ===
+          new URL(storedPoster, "http://localhost").pathname.slice(
+            "/artifacts/".length,
+          );
         return respond(200, {
           url: isPoster ? posterUrl : videoUrl,
           filename: isPoster ? "poster-v2.jpg" : "generated.mp4",

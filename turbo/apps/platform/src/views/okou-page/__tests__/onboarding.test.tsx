@@ -45,7 +45,7 @@ test("An unknown nested onboarding path shows not found", async () => {
   });
 
   await expect(
-    screen.findByRole("heading", { name: "Page not found" }),
+    screen.findByRole("heading", { name: "That page isn't here." }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/onboarding/unknown");
 });

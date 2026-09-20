@@ -34,6 +34,7 @@ import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events
 import {
   holdChatThreadEventIdFixture,
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
   withChatThreadContentBarrierFixture,
@@ -357,6 +358,17 @@ async function readSelection(fixture: AuthorizationRunFixture): Promise<{
   };
 }
 
+async function readStoredSelection(fixture: AuthorizationRunFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 /**
  * Start this case's publication evidence from an empty paired view, so an
  * earlier setup write is never attributed to the request under test. Both spies
@@ -444,8 +456,12 @@ async function readDurableAuthorization(
 
 async function readApplyState(
   fixture: AuthorizationFixture,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<ApplyState> {
-  const selection = await readSelection(fixture);
+  const selection =
+    selectionSource === "http"
+      ? await readSelection(fixture)
+      : await readStoredSelection(fixture);
   return {
     selection,
     authorization: await readDurableAuthorization(fixture, selection),
@@ -457,8 +473,19 @@ async function readApplyState(
 async function expectUnchanged(
   fixture: AuthorizationFixture,
   before: ApplyState,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
-  await expect(readApplyState(fixture)).resolves.toStrictEqual(before);
+  await expect(readApplyState(fixture, selectionSource)).resolves.toStrictEqual(
+    before,
+  );
+}
+
+async function expectMetadataDenied(
+  fixture: AuthorizationRunFixture,
+): Promise<void> {
+  await expect(
+    chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [404]),
+  ).resolves.toMatchObject({ status: 404 });
 }
 
 /** The state an accepted apply leaves: the cloud browser on, any selected
@@ -466,8 +493,9 @@ async function expectUnchanged(
 async function expectApplied(
   fixture: AuthorizationFixture,
   before: ApplyState,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
-  const after = await readApplyState(fixture);
+  const after = await readApplyState(fixture, selectionSource);
   expect(after.selection).toStrictEqual({
     computerUseHostId: null,
     cloudBrowserEnabled: true,
@@ -511,10 +539,14 @@ interface CreationState {
 
 async function readCreationState(
   fixture: AuthorizationRunFixture,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<CreationState> {
   return {
     requestCount: await countBrowserAuthorizationRequestsFixture(fixture.runId),
-    selection: await readSelection(fixture),
+    selection:
+      selectionSource === "http"
+        ? await readSelection(fixture)
+        : await readStoredSelection(fixture),
     events: await sidebarHostEvents(fixture),
     lastSeqId: await lastSidebarSeqId(fixture),
     threadState: await readChatThreadTitleStateFixture(fixture.threadId),
@@ -524,8 +556,11 @@ async function readCreationState(
 async function expectCreationUnchanged(
   fixture: AuthorizationRunFixture,
   before: CreationState,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
-  await expect(readCreationState(fixture)).resolves.toStrictEqual(before);
+  await expect(
+    readCreationState(fixture, selectionSource),
+  ).resolves.toStrictEqual(before);
   expectNoInvalidation(fixture);
 }
 
@@ -588,17 +623,22 @@ async function expectCreationDenied(
   fixture: AuthorizationRunFixture,
   before: CreationState,
   status: 404 | 409 = 404,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
   clearPublications();
   const denied = await requestAuthorizationCreation(fixture, [status]);
   expect(denied.status).toBe(status);
   expect("authorizationUrl" in denied.body).toBeFalsy();
-  await expectCreationUnchanged(fixture, before);
+  if (selectionSource === "stored") {
+    await expectMetadataDenied(fixture);
+  }
+  await expectCreationUnchanged(fixture, before, selectionSource);
 }
 
 async function expectLocatorMutationDenied(
   fixture: AuthorizationRunFixture,
   mutate: () => Promise<void>,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
   const before = await readCreationState(fixture);
   clearPublications();
@@ -619,7 +659,10 @@ async function expectLocatorMutationDenied(
     },
     context.signal,
   );
-  await expectCreationUnchanged(fixture, before);
+  if (selectionSource === "stored") {
+    await expectMetadataDenied(fixture);
+  }
+  await expectCreationUnchanged(fixture, before, selectionSource);
 }
 
 describe("account erasure fences cloud browser authorization apply", () => {
@@ -644,7 +687,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
       expect(denied.status).toBe(404);
       await flushWaitUntilForTest();
 
-      await expectUnchanged(fixture, before);
+      await expectMetadataDenied(fixture);
+      await expectUnchanged(fixture, before, "stored");
       expectNoInvalidation(fixture);
 
       // The denied attempt consumed no durable sequence, so the next accepted
@@ -672,7 +716,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
         subjectId: shared.owner.userId,
       });
       await applyAuthorization(shared, [404]);
-      await expectUnchanged(shared, sharedBefore);
+      await expectMetadataDenied(shared);
+      await expectUnchanged(shared, sharedBefore, "stored");
 
       const organization = await createAuthorizationFixture();
       const organizationBefore = await readApplyState(organization);
@@ -681,7 +726,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
         subjectId: organization.orgId,
       });
       await applyAuthorization(organization, [404]);
-      await expectUnchanged(organization, organizationBefore);
+      await expectMetadataDenied(organization);
+      await expectUnchanged(organization, organizationBefore, "stored");
     },
   );
 
@@ -700,7 +746,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
 
       const denied = await applyAuthorization(closed, [404]);
       expect(denied.status).toBe(404);
-      await expectUnchanged(closed, closedBefore);
+      await expectMetadataDenied(closed);
+      await expectUnchanged(closed, closedBefore, "stored");
 
       const accepted = await applyAuthorization(unrelated, [200]);
       expect(accepted.status).toBe(200);
@@ -727,7 +774,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
       });
       const denied = await applyAuthorization(fixture, [404]);
       expect(denied.status).toBe(404);
-      await expectUnchanged(fixture, completed);
+      await expectMetadataDenied(fixture);
+      await expectUnchanged(fixture, completed, "stored");
     },
   );
 
@@ -767,7 +815,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
 
             // An independent reader still sees the pre-commit state and no
             // outbound invalidation has been published for it.
-            await expectUnchanged(fixture, before);
+            await expectUnchanged(fixture, before, "stored");
             expectNoInvalidation(fixture);
 
             // An unrelated owner is not serialized behind that barrier.
@@ -799,7 +847,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
       });
 
       await flushWaitUntilForTest();
-      await expectApplied(fixture, before);
+      await expectMetadataDenied(fixture);
+      await expectApplied(fixture, before, "stored");
       // Exactly one invalidation per owner, each on that owner's own channel,
       // and the target's was published only after its COMMIT. A global total of
       // two is also satisfied by two publications under one owner or by either
@@ -810,10 +859,10 @@ describe("account erasure fences cloud browser authorization apply", () => {
 
       // The closure landed behind the admitted write, so the next apply of the
       // same live token is denied and changes nothing.
-      const applied = await readApplyState(fixture);
+      const applied = await readApplyState(fixture, "stored");
       await applyAuthorization(fixture, [404]);
       await flushWaitUntilForTest();
-      await expectUnchanged(fixture, applied);
+      await expectUnchanged(fixture, applied, "stored");
       // The denied repeat adds no invalidation, for either owner.
       expect(threadListInvalidations(fixture)).toBe(1);
       expect(threadListInvalidations(unrelated)).toBe(1);
@@ -849,7 +898,8 @@ describe("account erasure fences cloud browser authorization apply", () => {
       );
 
       expect(denied.status).toBe(404);
-      await expectUnchanged(fixture, before);
+      await expectMetadataDenied(fixture);
+      await expectUnchanged(fixture, before, "stored");
     },
   );
 
@@ -1241,7 +1291,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
             await barrier.entered;
             // Nothing is visible or published yet, exactly as in the writer-first
             // case: the executed statements are still inside the transaction.
-            await expectUnchanged(fixture, before);
+            await expectUnchanged(fixture, before, "stored");
             expectNoInvalidation(fixture);
 
             // An abort that arrives only here is past every in-transaction
@@ -1492,7 +1542,7 @@ describe("account erasure fences cloud browser authorization request creation", 
         subjectId: fixture.actor.userId,
       });
 
-      await expectCreationDenied(fixture, before);
+      await expectCreationDenied(fixture, before, 404, "stored");
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       expect(restored.requestToken).not.toBe(control.requestToken);
@@ -1515,7 +1565,7 @@ describe("account erasure fences cloud browser authorization request creation", 
         subjectId: fixture.owner.userId,
       });
 
-      await expectCreationDenied(fixture, before);
+      await expectCreationDenied(fixture, before, 404, "stored");
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       await expectNextSidebarSequenceAfterCreation(restored, before.lastSeqId);
@@ -1537,7 +1587,7 @@ describe("account erasure fences cloud browser authorization request creation", 
         subjectId: fixture.orgId,
       });
 
-      await expectCreationDenied(fixture, before);
+      await expectCreationDenied(fixture, before, 404, "stored");
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       expect(restored.requestToken).not.toBe(control.requestToken);
@@ -1582,7 +1632,7 @@ describe("account erasure fences cloud browser authorization request creation", 
             await expect
               .poll(barrier.blockedWaiterCount, BLOCKED)
               .toBeGreaterThanOrEqual(1);
-            await expectCreationUnchanged(fixture, before);
+            await expectCreationUnchanged(fixture, before, "stored");
 
             // A genuinely unrelated owner and organization keep progressing.
             await createAndInspectOpenRequest(unrelated);
@@ -1599,6 +1649,7 @@ describe("account erasure fences cloud browser authorization request creation", 
       onTestFinished(async () => {
         await removeErasureSubjectsFixture([outcome.closed.jobId]);
       });
+      await expectMetadataDenied(fixture);
 
       const requestToken = requestTokenFromUrl(
         createdAuthorizationBody(outcome.created).authorizationUrl,
@@ -1665,7 +1716,8 @@ describe("account erasure fences cloud browser authorization request creation", 
         await removeErasureSubjectsFixture([outcome.closed.jobId]);
       });
       expect(outcome.denied.status).toBe(404);
-      await expectCreationUnchanged(fixture, before);
+      await expectMetadataDenied(fixture);
+      await expectCreationUnchanged(fixture, before, "stored");
     },
   );
 
@@ -1855,12 +1907,16 @@ describe("account erasure fences cloud browser authorization request creation", 
         subjectKind: "user",
         subjectId: newOwner.userId,
       });
-      await expectLocatorMutationDenied(fixture, async () => {
-        await transferAgentOwnerFixture({
-          agentId: fixture.agentId,
-          owner: newOwner.userId,
-        });
-      });
+      await expectLocatorMutationDenied(
+        fixture,
+        async () => {
+          await transferAgentOwnerFixture({
+            agentId: fixture.agentId,
+            owner: newOwner.userId,
+          });
+        },
+        "stored",
+      );
       await expect(
         countBrowserAuthorizationRequestsFixture(fixture.runId),
       ).resolves.toBe(0);

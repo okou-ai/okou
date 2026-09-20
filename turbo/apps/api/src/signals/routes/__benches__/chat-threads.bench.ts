@@ -21,7 +21,7 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { connectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
@@ -53,7 +53,7 @@ import { seedOrgMembership$ } from "../__tests__/helpers/org-membership";
 import { createRouteMocks } from "../__tests__/helpers/route-test";
 import { billingStatusRoutes } from "../billing-status";
 import { chatThreadRoutes } from "../chat-threads";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { orgReadRoutes } from "../org-read";
@@ -98,8 +98,8 @@ const BENCH_CONNECTOR_CATALOG_KEY =
 const chatThreadClient = setupApp({ context, routes: chatThreadRoutes })(
   chatThreadByIdContract,
 );
-const connectorsClient = setupApp({ context, routes: connectorsRoutes })(
-  connectorsMainContract,
+const connectorsClient = setupApp({ context, routes: builtinConnectorsRoutes })(
+  builtinConnectorsMainContract,
 );
 const userPreferencesClient = setupApp({
   context,

@@ -1,4 +1,4 @@
-import type { ConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type {
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
@@ -39,7 +39,7 @@ interface ConnectorCatalogConnectorReadArgs extends ConnectorCatalogReadArgs {
 
 export async function searchConnectorCatalog(
   args: ConnectorCatalogSearchArgs,
-): Promise<ConnectorSearchItem[]> {
+): Promise<BuiltinConnectorSearchItem[]> {
   return await searchExternalConnectorCatalog(args);
 }
 

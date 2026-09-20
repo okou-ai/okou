@@ -1,6 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { withCleanup } from "../utils.ts";
@@ -80,7 +80,7 @@ function createAgentConnectorAuthorizationRequestBroker(): AgentConnectorAuthori
         return pendingRequest;
       }
 
-      const client = params.createClient(userConnectorsContract);
+      const client = params.createClient(userBuiltinConnectorsContract);
       const response = client.get({ params: { id: params.agentId } });
       const load = async (): Promise<AgentConnectorAuthorizations | null> => {
         const result =

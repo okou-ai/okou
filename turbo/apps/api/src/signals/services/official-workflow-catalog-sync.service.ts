@@ -40,6 +40,7 @@ import {
   type ValidatedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-validation.service";
 import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "./official-workflow-catalog-source";
+import { invalidateAllPiStableContexts } from "./pi-stable-context-generation.service";
 import {
   commitPreparedVolumeServerSide,
   prepareVolumeServerSide$,
@@ -761,6 +762,7 @@ async function activateCandidate(
       { previous: current, payload: candidate.payload, releaseId },
       signal,
     );
+    await invalidateAllPiStableContexts(tx);
     return {
       outcome: "accepted" as const,
       releaseId,
