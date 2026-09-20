@@ -131,6 +131,11 @@ jq -e '
   ($rootfs_process.if | contains("needs.detect.outputs.runner-changed")) and
   ($rootfs_process.if | contains("needs.detect.outputs.ci-changed")) and
   any($rootfs_process.steps[]?;
+    .name == "Setup R2 sccache" and
+    .uses == "./.github/actions/setup-r2-sccache" and
+    .with.architecture == "${{ matrix.id }}"
+  ) and
+  any($rootfs_process.steps[]?;
     ((.uses // "") | startswith("Swatinem/rust-cache@")) and
     .with["shared-key"] == "${{ matrix.cacheSuffix }}-rootfs-process-local"
   ) and
