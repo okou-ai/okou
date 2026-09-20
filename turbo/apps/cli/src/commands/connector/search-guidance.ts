@@ -1,5 +1,6 @@
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
 import {
+  CALLBACK_PROMPT_GUIDANCE,
   connectorActionUrl,
   currentChatSupportsActionCallback,
   finalizeActionUrl,
@@ -151,7 +152,7 @@ export function printConnectorSearchGuidance(args: {
     })
   ) {
     console.log(
-      'When only one connector or permission action is needed, okou connector search <slug> --limit 1 --callback-prompt "<original task and next step>" provides a link that continues this chat after the user completes the action. The prompt is included in the URL, so a short task description without secrets is sufficient. Ordinary links support tasks that need multiple access actions.',
+      `When only one connector or permission action is needed, okou connector search <slug> --limit 1 --callback-prompt "<brief task and next step>" provides a link that continues this chat after the user completes the action. ${CALLBACK_PROMPT_GUIDANCE} Ordinary links support tasks that need multiple access actions.`,
     );
   }
 }

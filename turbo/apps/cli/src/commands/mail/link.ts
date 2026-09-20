@@ -4,6 +4,8 @@ import { linkMailDraft } from "../../lib/api/domains/mail";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getOkouChatThreadId } from "../../lib/okou-env";
 import {
+  CALLBACK_PROMPT_GUIDANCE,
+  CALLBACK_PROMPT_MAX_LENGTH,
   connectorActionCallbackAvailable,
   finalizeActionUrl,
   printCallbackTurnInstruction,
@@ -34,14 +36,14 @@ function mailDraftReviewUrl(args: {
 
 const callbackPromptOption = new Option(
   "--callback-prompt <prompt>",
-  "Start the next web chat round with this prompt after the user sends the email",
+  `Start the next web chat round with this prompt after the user sends the email (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
 );
 const callbackPromptAvailable = connectorActionCallbackAvailable();
 if (!callbackPromptAvailable) {
   callbackPromptOption.hideHelp();
 }
 const callbackPromptNotes = callbackPromptAvailable
-  ? "  - --callback-prompt remains available for nonstandard callers, but the standard web email handoff must omit it\n"
+  ? `  - --callback-prompt remains available for nonstandard callers, but the standard web email handoff must omit it\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
   : "";
 
 export const linkCommand = new Command()
