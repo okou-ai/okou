@@ -88,7 +88,12 @@ test("Lab groups every feature by rollout stage with a switch", async () => {
     within(released).getByText(FeatureSwitchKey.AvatarNeckSweater),
   ).toBeVisible();
   expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
-  expect(within(beta).getByText(FeatureSwitchKey.WelcomeThread)).toBeVisible();
+  expect(
+    within(released).getByText(FeatureSwitchKey.WelcomeThread),
+  ).toBeVisible();
+  expect(
+    within(beta).getByText(FeatureSwitchKey.CustomTemplates),
+  ).toBeVisible();
   expect(
     within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
   ).toBeVisible();
