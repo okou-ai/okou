@@ -12,6 +12,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { and, eq, or, sql } from "drizzle-orm";
 import type { PgTransactionConfig } from "drizzle-orm/pg-core";
 import type { z } from "zod";
@@ -22,6 +23,7 @@ import { monotonicNow, now } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
+  awaitWithSignal,
   onRejection,
   readBoundedResponseText,
   safeJsonParse,
@@ -443,6 +445,8 @@ interface MorningBriefAuthorizationRequest {
   readonly db: Db;
   readonly clerk: ClerkClient;
   readonly deadline: MorningBriefSourceDeadline;
+  /** The owner observation this phase spends, resolved once and shared. */
+  readonly owner: MorningBriefOwnerAuthority;
 }
 
 interface MorningBriefReaderRequest extends MorningBriefAuthorizationRequest {
@@ -474,7 +478,10 @@ interface PinnedAccount {
 type AuthorizationPhase = "admission" | "request" | "release";
 
 type IdentityOutcome =
-  | { readonly kind: "allow" }
+  /** The catalog snapshot this decision was taken against, so the endpoint
+   * decision that follows reuses it rather than reading the accepted catalog a
+   * second time for the same request. */
+  | { readonly kind: "allow"; readonly snapshot: ConnectorRuntimeSnapshot }
   | {
       readonly kind: "revoked";
       readonly reason: MorningBriefSourceUnavailable;
@@ -886,11 +893,170 @@ export async function morningBriefScopeIsCurrent(
 }
 
 /**
+ * Whether this member's durable organization membership row is still there.
+ *
+ * `org_members_cache` is a read-through cache and not a tombstone, so its
+ * absence cannot on its own prove a removal: a member whose row was simply
+ * never populated would be refused for a reason that never happened. What it
+ * can prove is a *transition*. A row a phase observed present and that is now
+ * gone is a removal that landed while this source was mid-read, which is
+ * exactly the moment a running collection has to stop admitting requests.
+ *
+ * It is one primary-key read, so the fence every request crosses stays local
+ * while the membership generation itself is observed once per phase.
+ */
+async function memberRowIsPresent(
+  db: ReadonlyDb,
+  owner: { readonly orgId: string; readonly userId: string },
+): Promise<boolean> {
+  const [row] = await db
+    .select({ userId: orgMembersCache.userId })
+    .from(orgMembersCache)
+    .where(
+      and(
+        eq(orgMembersCache.orgId, owner.orgId),
+        eq(orgMembersCache.userId, owner.userId),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/** The owner answer one phase resolves, and what it pinned to fence against. */
+interface MorningBriefOwnerObservation {
+  readonly current: boolean;
+  /** Whether a durable membership row existed when the phase observed it. */
+  readonly memberRowObserved: boolean;
+}
+
+/**
+ * The owner authority a phase acts under: observed once, fenced every request.
+ *
+ * {@link morningBriefScopeIsCurrent} answers an owner-level question — the
+ * member's current Clerk membership generation, the erasure subjects, the
+ * canonical binding and the Agent's visibility. That answer is identical for
+ * every endpoint of every item a source reads, so re-deriving it per provider
+ * request spent one Clerk round trip and one locked local transaction per
+ * collected message while never being able to say anything new. It is resolved
+ * once here and handed down instead.
+ *
+ * Separating the observation from the fence is the point. The *generation* —
+ * which is the only thing that can tell a removal apart from a removal
+ * followed by a rejoin under a new id — is a live Clerk read, and it is taken
+ * once per phase: at a source's admission, again at its release fence, and
+ * again at the retained-source re-proof. The *removal* is a durable local fact
+ * this member's own cleanup writes, and it is re-read on every request, so a
+ * membership withdrawn mid-read still admits no further provider request.
+ *
+ * This is not a cache. It holds no clock, expires nothing and is shared with
+ * nothing outside the phase that created it; a phase that must observe the
+ * owner again starts its own observation at its own call site rather than
+ * waiting for a timeout to make one stale. Concurrent siblings inside one
+ * phase await the same observation rather than repeating it.
+ */
+export interface MorningBriefOwnerAuthority {
+  readonly isCurrent: (signal: AbortSignal) => Promise<boolean>;
+}
+
+/**
+ * `phaseSignal` is the phase's own boundary, never one caller's: the shared
+ * observation outlives whichever sibling happened to ask first, so binding it
+ * to that caller's signal would let one cancelled worker withdraw the answer
+ * its siblings are still waiting on.
+ */
+export function startMorningBriefOwnerAuthority(
+  args: {
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly scope: MorningBriefCollectionScope;
+    readonly deadline: MorningBriefSourceDeadline;
+  },
+  phaseSignal: AbortSignal,
+): MorningBriefOwnerAuthority {
+  let pending: Promise<MorningBriefOwnerObservation> | null = null;
+  const observe = async (): Promise<MorningBriefOwnerObservation> => {
+    // The member's current Clerk membership generation, not a cache row's
+    // presence. A removal, and a removal followed by a rejoin under a new id,
+    // both fail here. It still precedes every local transaction below, so no
+    // database lock is ever held while Clerk answers.
+    const membershipId = await loadCurrentMembershipId(
+      args.clerk,
+      args.scope,
+      phaseSignal,
+    );
+    phaseSignal.throwIfAborted();
+    const current =
+      membershipId !== null && membershipId === args.scope.membershipId;
+    if (!current) {
+      return { current, memberRowObserved: false };
+    }
+    // Taken after the generation answer, so what the fence below pins is a row
+    // that coexisted with a membership this scope was still admitted under.
+    return {
+      current,
+      memberRowObserved: await memberRowIsPresent(args.db, args.scope),
+    };
+  };
+  const startObservation = (): Promise<MorningBriefOwnerObservation> => {
+    // A failed observation is not an answer. Releasing it lets the next caller
+    // ask again rather than inherit one outage as a standing refusal.
+    const guarded: Promise<MorningBriefOwnerObservation> = onRejection(
+      observe(),
+      () => {
+        if (pending === guarded) {
+          pending = null;
+        }
+      },
+    );
+    return guarded;
+  };
+  return {
+    isCurrent: async (signal: AbortSignal): Promise<boolean> => {
+      // Siblings wait on the first caller's read but never past their own
+      // cancellation: an aborted caller stops waiting while the observation
+      // continues for whoever still needs it.
+      const observed = await awaitWithSignal(
+        (pending ??= startObservation()),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!observed.current) {
+        return false;
+      }
+      // A row this phase pinned present and that is now gone is a removal that
+      // landed mid-read. When nothing was pinned there is no transition to
+      // detect, and the next phase's own generation read stays the fence.
+      if (
+        observed.memberRowObserved &&
+        !(await memberRowIsPresent(args.db, args.scope))
+      ) {
+        return false;
+      }
+      signal.throwIfAborted();
+      // Everything the local database decides is still decided per request:
+      // erasure admission, the canonical binding and the Agent's visibility are
+      // local reads whose answer a source read can outlive.
+      return await localScopeIsCurrent(
+        args.db,
+        args.scope,
+        args.deadline,
+        signal,
+      );
+    },
+  };
+}
+
+/**
  * Every identity gate this source depends on, re-derived live.
  *
  * This never decides an endpoint: it answers "is this still the same member,
  * owner, Agent and account?". Endpoint authority is separate and always names a
  * real URL.
+ *
+ * The owner half of that question is the phase's own observation; everything
+ * below it — the account selection, the pinned account's liveness, the Agent's
+ * grants and accepted catalog visibility — is local state that can change while
+ * this source is mid-read, so it is still asked for every request.
  */
 async function authorizeIdentity(
   request: MorningBriefAuthorizationRequest,
@@ -899,12 +1065,7 @@ async function authorizeIdentity(
   signal: AbortSignal,
 ): Promise<IdentityOutcome> {
   const { db, scope, connectorSlug } = request;
-  if (
-    !(await morningBriefScopeIsCurrent(
-      { db, clerk: request.clerk, scope, deadline: request.deadline },
-      signal,
-    ))
-  ) {
+  if (!(await request.owner.isCurrent(signal))) {
     return { kind: "revoked", reason: phaseReason(phase, "not-authorized") };
   }
   signal.throwIfAborted();
@@ -959,7 +1120,7 @@ async function authorizeIdentity(
   if (!(await connectorIsVisible(db, snapshot, scope, connectorSlug))) {
     return { kind: "revoked", reason: phaseReason(phase, "not-authorized") };
   }
-  return { kind: "allow" };
+  return { kind: "allow", snapshot };
 }
 
 type UrlAuthorization =
@@ -982,11 +1143,9 @@ async function authorizeUrl(
   if (identity.kind !== "allow") {
     return identity;
   }
-  const snapshot = await loadConnectorRuntimeSnapshot(request.db);
-  signal.throwIfAborted();
   const decision = await urlPermission({
     db: request.db,
-    snapshot,
+    snapshot: identity.snapshot,
     scope: request.scope,
     connectorSlug: request.connectorSlug,
     url,
@@ -1469,13 +1628,29 @@ async function releaseIsAuthorized(
   bounded: AbortSignal,
 ): Promise<MorningBriefSourceUnavailable | null> {
   const pinned = state.credential?.pinned ?? null;
-  const identity = await authorizeIdentity(request, pinned, "release", bounded);
+  // The fence is the point the material is actually released, so it observes
+  // the owner again rather than reusing what admitted the read. One observation
+  // covers the whole fence: every retained permission below is re-evaluated
+  // against the same instant, which is the question the fence asks.
+  const fenced: MorningBriefReaderRequest = {
+    ...request,
+    owner: startMorningBriefOwnerAuthority(
+      {
+        db: request.db,
+        clerk: request.clerk,
+        scope: request.scope,
+        deadline: request.deadline,
+      },
+      bounded,
+    ),
+  };
+  const identity = await authorizeIdentity(fenced, pinned, "release", bounded);
   if (identity.kind !== "allow") {
     return identity.reason;
   }
   for (const url of state.retainedByPermission.values()) {
     const decision = await authorizeUrl(
-      request,
+      fenced,
       pinned,
       url,
       "release",
@@ -1521,13 +1696,24 @@ export async function withMorningBriefConnectorReader<T>(
   collect: (reader: MorningBriefConnectorReader) => Promise<T>,
   signal: AbortSignal,
 ): Promise<MorningBriefAccessResult<T>> {
-  const request: MorningBriefReaderRequest = {
-    ...args,
-    selection: args.authority.selection,
-  };
   const deadlineAt = args.deadline.at;
   const deadline = args.deadline.signal;
   const bounded = AbortSignal.any([signal, deadline]);
+  const request: MorningBriefReaderRequest = {
+    ...args,
+    selection: args.authority.selection,
+    // Admission and every request this source authorizes spend one observation
+    // of the owner. The release fence below starts its own.
+    owner: startMorningBriefOwnerAuthority(
+      {
+        db: args.db,
+        clerk: args.clerk,
+        scope: args.scope,
+        deadline: args.deadline,
+      },
+      bounded,
+    ),
+  };
   const state: ReaderState = {
     requests: 0,
     reservedBytes: 0,
@@ -1662,6 +1848,14 @@ export async function revalidateMorningBriefRetainedRead(
     readonly endpoints: readonly string[];
     /** The composing attempt's absolute bound, never a fresh phase budget. */
     readonly deadline: MorningBriefSourceDeadline;
+    /**
+     * This re-proof's own owner observation.
+     *
+     * The caller owns it because one re-proof covers every retained source at
+     * once: re-deriving the same member, binding and Agent per descriptor would
+     * ask one question per source and answer it identically.
+     */
+    readonly owner: MorningBriefOwnerAuthority;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefSourceUnavailable | null> {
@@ -1672,6 +1866,7 @@ export async function revalidateMorningBriefRetainedRead(
     connectorSlug: args.connectorSlug,
     selection: { kind: "selected", connectorId: args.connectionId },
     deadline: args.deadline,
+    owner: args.owner,
   };
   const pinned: PinnedAccount = {
     connectorId: args.connectionId,
