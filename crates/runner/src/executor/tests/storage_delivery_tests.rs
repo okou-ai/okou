@@ -375,6 +375,59 @@ async fn split_decoded_batches_carry_overlap_shadow_only_on_first_request() {
 }
 
 #[tokio::test]
+async fn unsplit_json_request_carries_overlap_shadow() {
+    let sandbox = MockSandbox::new("json-shadow");
+    let manifest = Manifest {
+        storages: Vec::new(),
+        artifacts: Vec::new(),
+        cleanup_paths: vec!["/storage".into()],
+        instruction_cleanups: Vec::new(),
+        history_overlap_shadow: Some(
+            HistoryOverlapShadow::new("/history".into(), vec!["/storage".into()]).unwrap(),
+        ),
+    };
+
+    let transport = download_storages_with_files(&sandbox, &minimal_context(), manifest, &[])
+        .await
+        .unwrap();
+
+    assert_eq!(transport, HistoryOverlapShadowTransport::Attached);
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    let delivered: Manifest =
+        serde_json::from_slice(&calls.first().unwrap().manifest_json).unwrap();
+    assert!(delivered.history_overlap_shadow.is_some());
+}
+
+#[tokio::test]
+async fn unsplit_decoded_request_carries_overlap_shadow() {
+    let fixture = DeliveryFixture::new(1, 1, 604).await;
+    let sandbox = MockSandbox::new("decoded-shadow-unsplit");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    manifest.history_overlap_shadow = Some(
+        HistoryOverlapShadow::new(
+            "/history".into(),
+            vec![manifest.storages.first().unwrap().mount_path.clone()],
+        )
+        .unwrap(),
+    );
+
+    let transport = download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+
+    assert_eq!(transport, HistoryOverlapShadowTransport::Attached);
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    let (json, payload) =
+        storage_files::split_input(&calls.first().unwrap().manifest_json).unwrap();
+    let delivered: Manifest = serde_json::from_slice(json).unwrap();
+    assert!(delivered.history_overlap_shadow.is_some());
+    assert_eq!(storage_files::decode(payload).unwrap().len(), 1);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn overlap_shadow_budget_omission_preserves_required_decoded_delivery() {
     let fixture = DeliveryFixture::new(1, 1, 604).await;
     let sandbox = MockSandbox::new("decoded-shadow-budget");
@@ -403,8 +456,8 @@ async fn overlap_shadow_budget_omission_preserves_required_decoded_delivery() {
 async fn oversized_split_json_request_keeps_overlap_shadow_without_binary_budget() {
     let fixture = DeliveryFixture::new(3, 3, 35_000).await;
     let sandbox = MockSandbox::new("decoded-shadow-json-first");
-    let (mut manifest, files) = fixture.prepare(&sandbox).await;
-    manifest.cleanup_paths.push("/cleanup".into());
+    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+    files.pop().unwrap();
     let roots = (0..16)
         .map(|index| format!("/{index:04}{}", "x".repeat(4090)))
         .collect();
@@ -427,6 +480,7 @@ async fn oversized_split_json_request_keeps_overlap_shadow_without_binary_budget
     assert!(first_call.manifest_json.len() > storage_files::MAX_MANIFEST_BYTES);
     let first: Manifest = serde_json::from_slice(&first_call.manifest_json).unwrap();
     assert!(first.history_overlap_shadow.is_some());
+    assert_eq!(first.storages.len(), 1);
     for call in calls.iter().skip(1) {
         let json = storage_files::split_input(&call.manifest_json).unwrap().0;
         let batch: Manifest = serde_json::from_slice(json).unwrap();
