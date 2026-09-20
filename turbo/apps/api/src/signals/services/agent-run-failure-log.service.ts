@@ -158,23 +158,27 @@ export function logAgentRunFailure(input: LogAgentRunFailureInput): void {
     return;
   }
 
-  const isCreditError = input.failureReason === "insufficient_credits";
-  const logFailure = isCreditError
-    ? L.debug
-    : input.failureReason === "guest_root_filesystem_full"
-      ? L.info
-      : input.failureReason === "provider_overloaded" &&
-          evidence.modelCredentialOwner === "platform"
-        ? L.error
-        : L.warn;
-  logFailure(
-    isCreditError ? "Run stopped: insufficient credits" : "Run failed",
-    {
-      runId: input.runId,
-      exitCode: input.exitCode,
-      error: input.error,
-      failureReason: input.failureReason,
-      ...evidence,
-    },
-  );
+  const fields = {
+    runId: input.runId,
+    exitCode: input.exitCode,
+    error: input.error,
+    failureReason: input.failureReason,
+    ...evidence,
+  };
+  if (input.failureReason === "insufficient_credits") {
+    L.debug("Run stopped: insufficient credits", fields);
+    return;
+  }
+  if (input.failureReason === "guest_root_filesystem_full") {
+    L.info("Run failed", fields);
+    return;
+  }
+  if (
+    input.failureReason === "provider_overloaded" &&
+    evidence.modelCredentialOwner === "platform"
+  ) {
+    L.error("Run failed", fields);
+    return;
+  }
+  L.warn("Run failed", fields);
 }

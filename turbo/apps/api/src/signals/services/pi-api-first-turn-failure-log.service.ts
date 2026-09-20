@@ -64,8 +64,7 @@ export function logPiApiFirstTurnExecutionFailure(
   input: LogPiApiFirstTurnExecutionFailureInput,
 ): void {
   const diagnostic = input.modelFailureDiagnostic;
-  const logFailure = isInfoLevelFailure(input.failureReason) ? L.info : L.error;
-  logFailure("Pi API first-turn execution failed", {
+  const fields = {
     runId: input.runId,
     ...input.route,
     outcome: "terminal_failure",
@@ -83,5 +82,10 @@ export function logPiApiFirstTurnExecutionFailure(
             : {}),
         }
       : {}),
-  });
+  };
+  if (isInfoLevelFailure(input.failureReason)) {
+    L.info("Pi API first-turn execution failed", fields);
+    return;
+  }
+  L.error("Pi API first-turn execution failed", fields);
 }
