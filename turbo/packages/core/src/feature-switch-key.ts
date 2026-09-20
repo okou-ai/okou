@@ -18,6 +18,7 @@ export enum FeatureSwitchKey {
   DocuSignConnector = "docusignConnector",
   FigmaConnector = "figmaConnector",
   ExpensifyConnector = "expensifyConnector",
+  MondayConnector = "mondayConnector",
   MercuryConnector = "mercuryConnector",
   NeonConnector = "neonConnector",
   NetSuiteConnector = "netSuiteConnector",
