@@ -114,6 +114,7 @@
         "time": "Time"
       },
       "log": "Log",
+      "manualReloadNotice": "Reload this page to see the latest activity logs.",
       "modelProvidedBy": "{{model}} provided by {{provider}}",
       "networkEmpty": {
         "description": "No network traffic was recorded for this run.",

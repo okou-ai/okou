@@ -116,6 +116,7 @@
         "time": "Data e ora"
       },
       "log": "Log",
+      "manualReloadNotice": "Ricarica questa pagina per vedere i registri delle attività più recenti.",
       "modelProvidedBy": "{{model}} fornito da {{provider}}",
       "networkEmpty": {
         "description": "Nessun traffico di rete registrato per questa esecuzione.",

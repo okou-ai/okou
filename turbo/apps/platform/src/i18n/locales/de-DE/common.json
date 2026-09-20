@@ -114,6 +114,7 @@
         "time": "Zeit"
       },
       "log": "Log",
+      "manualReloadNotice": "Laden Sie diese Seite neu, um die neuesten Aktivitätsprotokolle zu sehen.",
       "modelProvidedBy": "{{model}} bereitgestellt von {{provider}}",
       "networkEmpty": {
         "description": "Für diese Ausführung wurde kein Netzwerkverkehr aufgezeichnet.",

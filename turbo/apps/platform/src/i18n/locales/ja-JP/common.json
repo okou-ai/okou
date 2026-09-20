@@ -114,6 +114,7 @@
         "time": "時間"
       },
       "log": "ログ",
+      "manualReloadNotice": "最新のアクティビティログを表示するには、このページを再読み込みしてください。",
       "modelProvidedBy": "{{model}} は {{provider}} によって提供されます",
       "networkEmpty": {
         "description": "この実行ではネットワーク トラフィックは記録されませんでした。",

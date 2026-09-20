@@ -116,6 +116,7 @@
         "time": "Horário"
       },
       "log": "Log",
+      "manualReloadNotice": "Recarregue esta página para ver os registros de atividade mais recentes.",
       "modelProvidedBy": "{{model}} fornecido por {{provider}}",
       "networkEmpty": {
         "description": "Nenhum tráfego de rede foi registrado para esta execução.",

@@ -72,7 +72,6 @@ import {
   loadNetworkLogsNextPage$,
 } from "../../signals/activity-page/activity-network-signals.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { setActivityDetailScrollContainer$ } from "../../signals/activity-page/activity-detail-scroll.ts";
 import {
   ContextContent,
   KeyValueTable,
@@ -712,7 +711,7 @@ function runnerStartupPath(
   return "unknown";
 }
 
-function isActiveRunnerStatus(status: LogStatus | undefined): boolean {
+function isActiveRunStatus(status: LogStatus | undefined): boolean {
   return status === "queued" || status === "pending" || status === "running";
 }
 
@@ -891,7 +890,7 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
   const runner = runnerLoadable.data?.runner ?? null;
   const sandboxReuse = runner?.sandboxReuseResult ?? null;
   const workspaceReuse = runner?.workspaceReuseResult ?? null;
-  const missing = isActiveRunnerStatus(runnerLoadable.data?.status)
+  const missing = isActiveRunStatus(runnerLoadable.data?.status)
     ? t(($) => {
         return $.activity.detail.runner.provisioning;
       })
@@ -1158,7 +1157,6 @@ function ActivityDetailContent({
   };
   const fetchExtra = useSet(fetchDownloadExtra$);
   const pageSignal = useGet(pageSignal$);
-  const setScrollContainer = useSet(setActivityDetailScrollContainer$);
 
   const status: LogStatus = detail.status;
   const time = formatLogTime(detail.createdAt);
@@ -1166,10 +1164,7 @@ function ActivityDetailContent({
 
   return (
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
-      <div
-        ref={setScrollContainer}
-        className="flex-1 flex flex-col min-h-0 overflow-auto"
-      >
+      <div className="flex-1 flex flex-col min-h-0 overflow-auto">
         <nav className="hidden md:flex shrink-0 items-center gap-1 px-4 pt-4 text-sm text-muted-foreground">
           {features?.[FeatureSwitchKey.OkouDebug] && (
             <>
@@ -1244,6 +1239,13 @@ function ActivityDetailContent({
               features={features}
             />
           </div>
+          {isActiveRunStatus(status) && (
+            <p className="mt-6 text-sm text-muted-foreground">
+              {t(($) => {
+                return $.activity.detail.manualReloadNotice;
+              })}
+            </p>
+          )}
         </div>
       </div>
     </div>

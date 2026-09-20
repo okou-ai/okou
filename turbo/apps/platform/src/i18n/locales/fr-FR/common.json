@@ -116,6 +116,7 @@
         "time": "Temps"
       },
       "log": "Journal",
+      "manualReloadNotice": "Actualisez cette page pour voir les derniers journaux d’activité.",
       "modelProvidedBy": "{{model}} fourni par {{provider}}",
       "networkEmpty": {
         "description": "Aucun trafic réseau n'a été enregistré pour cette exécution.",

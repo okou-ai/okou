@@ -114,6 +114,7 @@
         "time": "समय"
       },
       "log": "लॉग",
+      "manualReloadNotice": "नवीनतम गतिविधि लॉग देखने के लिए इस पेज को रीलोड करें।",
       "modelProvidedBy": "{{model}} {{provider}} द्वारा प्रदान किया गया",
       "networkEmpty": {
         "description": "इस रन के लिए कोई नेटवर्क ट्रैफ़िक रिकॉर्ड नहीं किया गया था.",

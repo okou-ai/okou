@@ -114,6 +114,7 @@
         "time": "Waktu"
       },
       "log": "Log",
+      "manualReloadNotice": "Muat ulang halaman ini untuk melihat log aktivitas terbaru.",
       "modelProvidedBy": "{{model}} disediakan oleh {{provider}}",
       "networkEmpty": {
         "description": "Tidak ada traffic jaringan yang direkam untuk run ini.",
