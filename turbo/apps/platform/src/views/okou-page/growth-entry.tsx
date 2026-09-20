@@ -270,13 +270,14 @@ export function GrowthEntryHeader() {
           slot exists from the first render so async role and entry resolution
           cannot move the home content. The corner controls stay absolute. */}
       <div aria-hidden className="hidden h-14 shrink-0 md:block" />
-      {/* Getting started is offered to every role — a member can connect,
-          build, share and check in on their own — while the workspace controls
-          beside it stay admin-only. */}
+      {/* The corner names one thing. Get started already carries inviting and
+          Slack as its own rows, so it replaces the split control wherever it
+          is offered — to every role, since a member can connect, build, share
+          and check in alone. Without quests the split control remains the
+          admin's entry, and a member's corner stays empty. */}
       {questsEnabled || isAdmin ? (
         <CornerHeader>
-          {questsEnabled ? <GetStartedEntry /> : null}
-          {isAdmin ? <AdminGrowthEntry /> : null}
+          {questsEnabled ? <GetStartedEntry /> : <AdminGrowthEntry />}
         </CornerHeader>
       ) : null}
     </>

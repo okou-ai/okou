@@ -9,6 +9,7 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -330,6 +331,36 @@ test("The growth menu reflects installed Slack and offers invitations", async ()
   await expect(
     within(settings).findByRole("heading", { name: "People" }),
   ).resolves.toBeVisible();
+});
+
+test("Get started replaces the workspace growth entry", async () => {
+  configureGrowthPage(context, {
+    role: "admin",
+    slack: slackStatus({
+      connected: true,
+      installed: true,
+      workspaceAdmin: true,
+    }),
+  });
+  await setupPage({
+    context,
+    path: growthChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await expect(
+    waitFor(() => {
+      return screen.getByTestId("get-started-entry");
+    }),
+  ).resolves.toBeVisible();
+
+  expect(screen.queryByTestId("growth-entry")).toBeNull();
+  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
+  expect(
+    queryAllByRoleFast("button").find((candidate) => {
+      return normalizedText(candidate) === "Invite humans 🤝";
+    }),
+  ).toBeUndefined();
 });
 
 test("A non-admin does not see the workspace growth entry", async () => {
