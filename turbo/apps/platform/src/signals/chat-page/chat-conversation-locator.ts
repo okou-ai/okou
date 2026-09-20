@@ -566,7 +566,10 @@ export function createChatConversationLocatorSignals({
     }
     const turn = get(sampledTurns$)[hit];
     const tick = get(layout$).ticks[hit];
-    return turn === undefined || tick === undefined
+    if (tick === undefined) {
+      throw new Error("Locator hit has no matching layout tick");
+    }
+    return turn === undefined
       ? null
       : {
           turnIndex: turn.turnIndex,
