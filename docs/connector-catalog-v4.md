@@ -62,8 +62,9 @@ interpret the `-mcp` naming convention. Every MCP descriptor must declare
 HTTP connectors retain bundled skill support and exact-version mounting.
 
 The reader validates endpoint, ownership, replacement and none/Automatic auth
-metadata. MCP none/none and manual/static methods with no-op revocation are
-executable, as are Automatic grant/access pairs. Provider-backed MCP methods
+metadata. MCP none/none and supported single-secret manual/static methods with
+no-op revocation are executable, as are Automatic grant/access pairs.
+Provider-backed MCP methods
 remain filtered until their handlers are installed. These expected filters do
 not emit warning or error logs and do not reject an otherwise valid catalog.
 New MCP entries use `firewall: { kind: "none" }`; the API derives transport

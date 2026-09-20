@@ -2403,8 +2403,9 @@ admitted account. The entry carries the connector slug and account `sourceId`,
 uses the fixed MCP endpoint, has no HTTP path permissions, and keeps unknown
 transport access allowed. Its auth is empty for a `none` grant or an Automatic
 account resolved to no authentication, uses the platform-owned bearer template
-for Automatic OAuth, and uses the admitted method's single credential binding
-for manual auth. Producer firewall contents cannot change this shape.
+for Automatic OAuth, and uses that same Bearer shape with the admitted
+manual/static method's single connector-secret binding. Other auth shapes fail
+closed. Producer firewall contents cannot change this shape.
 
 Queued Runs retain their captured CLI package, inline firewall and exact account
 mapping. Builtin MCP admission requires the Run's Okou token for authenticated

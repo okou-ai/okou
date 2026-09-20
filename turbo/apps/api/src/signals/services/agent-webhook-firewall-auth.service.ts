@@ -5979,6 +5979,9 @@ async function prepareBuiltinMcpFirewallAuth(args: {
       expiresAt,
     };
   }
+  if (grantKind !== "manual" || runtimeMethod.method.access.kind !== "static") {
+    return { ok: false, response: connectorNotConfigured() };
+  }
   const expectedAuth = expectedBuiltinMcpCredentialAuth(runtimeMethod);
   if (
     expectedAuth === null ||

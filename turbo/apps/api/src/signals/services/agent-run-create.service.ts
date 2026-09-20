@@ -3864,6 +3864,12 @@ function mcpFirewallAuthBySlug(
         }
         return [[row.connectorSlug, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH]];
       }
+      if (
+        grantKind !== "manual" ||
+        row.runtimeMethod.method.access.kind !== "static"
+      ) {
+        throw new Error("Unsupported built-in MCP credential auth method");
+      }
       const secretBindings = connectorAuthMethodRuntimeMetadata(
         row.runtimeMethod.method,
       ).runtimeBindings.filter((binding) => {
