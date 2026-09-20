@@ -5769,6 +5769,11 @@ function TemplatePickerDialog({
         maxWidth="6xl"
         height={760}
         contentClassName={dialogContentClassName}
+        // Website and Custom open a template in a dialog of their own rather
+        // than in this frame, and it is narrower than the gallery. The gallery
+        // steps back while one is open, so a template is read against the page
+        // like every other preview instead of against the grid it came from.
+        hideWhenNestedOpen
         aria-describedby={undefined}
         onKeyDown={handleDialogKeyDown}
         onKeyDownCapture={
