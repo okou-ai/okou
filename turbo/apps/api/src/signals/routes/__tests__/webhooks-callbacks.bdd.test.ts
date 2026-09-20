@@ -4798,6 +4798,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       prompt: "concurrency add-on run two",
       modelProvider: "anthropic-api-key",
     });
+    await runs.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "concurrency add-on run three",
+      modelProvider: "anthropic-api-key",
+    });
     const queued = await runs.createRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on queued run",
@@ -4805,8 +4810,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
     expect(queued.status).toBe("queued");
     const before = await runs.readRunQueue(actor);
-    expect(before.body.concurrency.limit).toBe(2);
-    expect(before.body.concurrency.active).toBe(2);
+    expect(before.body.concurrency.limit).toBe(3);
+    expect(before.body.concurrency.active).toBe(3);
     expect(before.body.queue).toHaveLength(1);
 
     const suffix = randomUUID().slice(0, 8);
@@ -4889,8 +4894,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     ]);
 
     const after = await runs.readRunQueue(actor);
-    expect(after.body.concurrency.limit).toBe(4);
-    expect(after.body.concurrency.active).toBe(3);
+    expect(after.body.concurrency.limit).toBe(5);
+    expect(after.body.concurrency.active).toBe(4);
     expect(after.body.queue).toHaveLength(0);
 
     const admitted = await runs.createRun(actor, {
@@ -4900,7 +4905,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
     expect(admitted.status).toBe("pending");
     const afterAdmitted = await runs.readRunQueue(actor);
-    expect(afterAdmitted.body.concurrency.active).toBe(4);
+    expect(afterAdmitted.body.concurrency.active).toBe(5);
     expect(afterAdmitted.body.queue).toHaveLength(0);
 
     // Replaying the same invoice event must not grant additional slots.
@@ -4913,7 +4918,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),
     ]);
     const afterReplay = await runs.readRunQueue(actor);
-    expect(afterReplay.body.concurrency.limit).toBe(4);
+    expect(afterReplay.body.concurrency.limit).toBe(5);
 
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       concurrencySubscription({
@@ -4953,7 +4958,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       currentPeriodEnd: isoOf(periodEnd),
     });
     const afterPastDue = await runs.readRunQueue(actor);
-    expect(afterPastDue.body.concurrency.limit).toBe(4);
+    expect(afterPastDue.body.concurrency.limit).toBe(5);
 
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       concurrencySubscription({
@@ -5030,7 +5035,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     billingStatus = await billing.readBillingStatus(actor);
     expect(billingStatus.concurrencySubscriptions).toStrictEqual([]);
     const afterItemRemoved = await runs.readRunQueue(actor);
-    expect(afterItemRemoved.body.concurrency.limit).toBe(2);
+    expect(afterItemRemoved.body.concurrency.limit).toBe(3);
 
     await api.postStripeEvent(
       stripeEvent({
@@ -5048,7 +5053,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(billingStatus.tier).toBe("pro");
     expect(billingStatus.hasSubscription).toBeTruthy();
     const afterDeleted = await runs.readRunQueue(actor);
-    expect(afterDeleted.body.concurrency.limit).toBe(2);
+    expect(afterDeleted.body.concurrency.limit).toBe(3);
   });
 
   it("keeps Stripe quantity across prorations and stale concurrent events", async () => {
