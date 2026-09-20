@@ -78,6 +78,7 @@ function LocatorPreviewCard({
         hideWhenDetached
         initialFocus={false}
         finalFocus={false}
+        positionerClassName="pointer-events-none"
         className="pointer-events-none w-[340px] rounded-xl border-border bg-background px-4 py-3.5"
       >
         <div className="mb-2 flex items-center gap-2 text-[11.5px] font-medium text-muted-foreground">
