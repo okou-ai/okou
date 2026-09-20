@@ -532,6 +532,9 @@ async fn split_dedicated_json_shadow_budget_omission_preserves_transport() {
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     assert_eq!(files.len(), 121);
     assert!(serde_json::to_vec(&manifest).unwrap().len() > storage_files::MAX_MANIFEST_BYTES);
+    let write_file_calls_before = sandbox.write_file_calls().len();
+    let exec_calls_before = sandbox.exec_calls().len();
+    let manifest_calls_before = sandbox.storage_manifest_calls().len();
     let roots = (0..16)
         .map(|index| format!("/{index:04}{}", "x".repeat(4090)))
         .collect();
@@ -543,9 +546,10 @@ async fn split_dedicated_json_shadow_budget_omission_preserves_transport() {
         .unwrap();
 
     assert_eq!(transport, HistoryOverlapShadowTransport::DescriptorBudget);
-    assert!(sandbox.write_file_calls().is_empty());
-    assert!(sandbox.exec_calls().is_empty());
-    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(sandbox.write_file_calls().len(), write_file_calls_before);
+    assert_eq!(sandbox.exec_calls().len(), exec_calls_before);
+    let all_calls = sandbox.storage_manifest_calls();
+    let calls = &all_calls[manifest_calls_before..];
     assert!(calls.len() > 1);
     assert!(
         !calls[0]
