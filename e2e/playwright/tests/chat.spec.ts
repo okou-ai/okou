@@ -119,7 +119,9 @@ test("a mobile greeting unfolds from a centered avatar without clipping its text
   await page.emulateMedia({ reducedMotion: "no-preference" });
   // Warm the actual product fonts before observing the entrance animation.
   await page.goto(new URL("/agents", appUrl).href);
-  await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "New agent", exact: true }),
+  ).toBeVisible();
   await expect
     .poll(async () => {
       return page.evaluate(async () => {
