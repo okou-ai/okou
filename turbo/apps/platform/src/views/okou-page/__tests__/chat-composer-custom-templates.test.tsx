@@ -1,3 +1,4 @@
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userTemplatesContract,
   type UserTemplateDetail,
@@ -20,9 +21,21 @@ import {
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
-/** What the Custom entry sends, whatever the file turns out to be. */
-const PROMPT =
-  "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+/** What the Custom entry asks for, whatever the file turns out to be. */
+const PROMPT = "Analyse this file and save it as a reusable template.";
+
+/**
+ * What the run is told on top of that request, and the member is not: which
+ * guide reads the file, and which catalog the result belongs in.
+ */
+const GUIDANCE =
+  "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+
+function additionalInfo(message: UserMessageDocument): string[] {
+  return message.parts.flatMap((part) => {
+    return part.type === "additional_info" ? [part.text] : [];
+  });
+}
 
 function customTemplate(
   overrides: Partial<UserTemplateDetail> = {},
@@ -936,9 +949,12 @@ test("Every source is sent with one message that lets the guide sort it", async 
   });
   // The `reverse-template` guide decides whether the file is a deck or a
   // document; repeating that here would give the run two answers that can
-  // disagree. What this message does carry is the catalog, because the guide's
-  // presentation branch names the other one.
+  // disagree. What the member reads is the request they made, one sentence
+  // long whatever the file turns out to be.
   expect(capture.runPrompts[0]).toBe(PROMPT);
+  // The catalog still has to be said, because the guide's presentation branch
+  // names the other one — so it is said where only the run reads it.
+  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
 test("A deck from the same entry is sent the same message", async () => {
@@ -966,6 +982,7 @@ test("A deck from the same entry is sent the same message", async () => {
     expect(capture.runPrompts).toHaveLength(1);
   });
   expect(capture.runPrompts[0]).toBe(PROMPT);
+  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
 test("A source no kind is made from is refused before it is uploaded", async () => {

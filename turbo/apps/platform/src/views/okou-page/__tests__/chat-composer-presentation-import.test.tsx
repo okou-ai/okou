@@ -94,6 +94,14 @@ test("Import a presentation deck into chat", async () => {
   );
   expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
   expect(capture.runClientThreadIds).toStrictEqual([undefined]);
+  // This entry adds nothing the member cannot see. How to reach the guide is
+  // already in every run's tools prompt, and the catalog needs no correction
+  // here, so the deck is sent with the sentence and nothing behind it.
+  expect(
+    capture.sentMessages[0]!.parts.filter((part) => {
+      return part.type === "additional_info";
+    }),
+  ).toStrictEqual([]);
 });
 
 test("Import a legacy presentation deck into an existing chat", async () => {

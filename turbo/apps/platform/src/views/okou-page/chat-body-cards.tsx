@@ -412,6 +412,7 @@ function ArtifactCardView({
           openVideoLightbox({
             url: signals.url,
             filename: signals.filename,
+            preview: signals,
           });
         }}
         posterClassName="h-full w-full"
@@ -435,6 +436,7 @@ function ArtifactCardView({
         openFileLightbox({
           filename: signals.filename,
           url: signals.url,
+          preview: signals,
         });
       }}
       previewImageLoad={signals.previewImageLoad}
