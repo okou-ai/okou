@@ -66,7 +66,6 @@ import {
 } from "../../../test-fixtures/account-erasure-subject";
 import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
@@ -465,8 +464,13 @@ async function chatRunFixture() {
   return { auth, actor, chat, agent, runs };
 }
 
-async function creationFixture() {
+async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
   const f = await threadFixture();
+  const defaultAgentId = options.withDefaultAgent
+    ? await f.bdd.bootstrapLimitedFreeOnboarding(f.actor, {
+        displayName: "MCP default Agent",
+      })
+    : null;
   const runs = createRunsApi(context);
   const { providerId } = await runs.ensureOrgModelProvider(f.actor);
   await runs.updateOrgModelPolicies(
@@ -481,11 +485,7 @@ async function creationFixture() {
       };
     }),
   );
-  await setOrgDefaultAgentFixture({
-    orgId: f.auth.orgId,
-    agentId: f.agent.agentId,
-  });
-  return { ...f, runs, providerId };
+  return { ...f, runs, providerId, defaultAgentId };
 }
 
 describe("MCP chat discovery and creation", () => {
@@ -826,7 +826,7 @@ describe("MCP chat discovery and creation", () => {
   });
 
   it("atomically creates a conversation with its first message and resolves defaults", async () => {
-    const f = await creationFixture();
+    const f = await creationFixture({ withDefaultAgent: true });
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
       requestId: randomUUID(),
@@ -836,7 +836,7 @@ describe("MCP chat discovery and creation", () => {
     const created = await createThread(token, args);
     expect(created).toMatchObject({
       threadId: args.requestId,
-      agentId: f.agent.agentId,
+      agentId: f.defaultAgentId,
       title: args.title,
       model: {
         selectedModel: null,
