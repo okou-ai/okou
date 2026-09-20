@@ -4,17 +4,7 @@ import { mcpChatMessageSchema } from "./mcp-chat-messages";
 
 export const mcpSendChatMessageInputSchema = z.strictObject({
   threadId: z.uuid().toLowerCase(),
-  text: z
-    .string()
-    .max(32_000)
-    .refine(
-      (text) => {
-        return text.trim().length > 0;
-      },
-      {
-        message: "Message text must not be blank",
-      },
-    ),
+  text: z.string().max(32_000).regex(/\S/u, "Message text must not be blank"),
   requestId: z.uuid().toLowerCase(),
 });
 
