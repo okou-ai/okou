@@ -553,8 +553,9 @@ headroom below 64 KiB. Oversized historical reference metadata fails
 explicitly instead of truncating identities. Poll no faster
 than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
 and stop automatic polling when it is null or the tool returns a resource
-error. A queued input with no run has unavailable output but a non-null retry
-delay: continue tracking that original input instead of submitting it again.
+error. A queued input with no run has `lifecycle.output: "pending"` while
+`evidence.output.state` is `unavailable`, plus a non-null retry delay: continue
+tracking that original input instead of submitting it again.
 
 Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
 single immediate observation above. A positive value is a client preference up
