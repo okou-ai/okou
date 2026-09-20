@@ -19,7 +19,10 @@ import {
   mcpListAgentsOutputSchema,
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
+  mcpCreateChatThreadOutputSchema,
+  mcpCreateChatWithMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
@@ -957,15 +960,13 @@ describe("MCP chat discovery and creation", () => {
         },
       },
     });
-    if (!("input" in created)) {
-      throw new Error("Expected the combined creation response");
-    }
-    expect(created.nextAction.arguments.inputRef).toStrictEqual(
-      created.input.inputRef,
+    const combined = mcpCreateChatWithMessageOutputSchema.parse(created);
+    expect(combined.nextAction.arguments.inputRef).toStrictEqual(
+      combined.input.inputRef,
     );
     expect(
-      Date.parse(created.input.retryUntil) -
-        Date.parse(created.input.acceptedAt),
+      Date.parse(combined.input.retryUntil) -
+        Date.parse(combined.input.acceptedAt),
     ).toBe(24 * 60 * 60 * 1000);
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
@@ -999,9 +1000,9 @@ describe("MCP chat discovery and creation", () => {
       },
       replayed: true,
       input: {
-        inputRef: created.input.inputRef,
+        inputRef: combined.input.inputRef,
         disposition: "associated",
-        runId: created.input.runId,
+        runId: combined.input.runId,
       },
     });
     expect(
@@ -6001,32 +6002,18 @@ describe("external MCP entry", () => {
                   {
                     name: "create_chat_thread",
                     inputSchema: {
-                      anyOf: [
-                        {
-                          properties: {
-                            title: { pattern: "\\S" },
-                            model: {
-                              minLength: 1,
-                              maxLength: 255,
-                              pattern: "\\S",
-                            },
-                          },
+                      properties: {
+                        title: { pattern: "\\S" },
+                        model: {
+                          minLength: 1,
+                          maxLength: 255,
+                          pattern: "\\S",
                         },
-                        {
-                          properties: {
-                            title: { pattern: "\\S" },
-                            model: {
-                              minLength: 1,
-                              maxLength: 255,
-                              pattern: "\\S",
-                            },
-                            message: {
-                              maxLength: 32_000,
-                              pattern: "\\S",
-                            },
-                          },
+                        message: {
+                          maxLength: 32_000,
+                          pattern: "\\S",
                         },
-                      ],
+                      },
                     },
                     annotations: {
                       readOnlyHint: false,

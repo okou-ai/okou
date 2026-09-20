@@ -17,47 +17,26 @@ describe("MCP chat input schemas", () => {
       },
     });
     expect(z.toJSONSchema(mcpCreateChatThreadInputSchema)).toMatchObject({
-      anyOf: [
-        {
-          properties: {
-            title: {
-              type: "string",
-              minLength: 1,
-              maxLength: 200,
-              pattern: "\\S",
-            },
-            model: {
-              type: "string",
-              minLength: 1,
-              maxLength: 255,
-              pattern: "\\S",
-            },
-          },
-          required: ["requestId"],
+      properties: {
+        title: {
+          type: "string",
+          minLength: 1,
+          maxLength: 200,
+          pattern: "\\S",
         },
-        {
-          properties: {
-            title: {
-              type: "string",
-              minLength: 1,
-              maxLength: 200,
-              pattern: "\\S",
-            },
-            model: {
-              type: "string",
-              minLength: 1,
-              maxLength: 255,
-              pattern: "\\S",
-            },
-            message: {
-              type: "string",
-              maxLength: 32_000,
-              pattern: "\\S",
-            },
-          },
-          required: ["requestId", "message"],
+        model: {
+          type: "string",
+          minLength: 1,
+          maxLength: 255,
+          pattern: "\\S",
         },
-      ],
+        message: {
+          type: "string",
+          maxLength: 32_000,
+          pattern: "\\S",
+        },
+      },
+      required: ["requestId"],
     });
     expect(z.toJSONSchema(mcpUpdateChatThreadInputSchema)).toMatchObject({
       properties: {
@@ -139,6 +118,12 @@ describe("MCP chat input schemas", () => {
     expect(
       mcpCreateChatThreadInputSchema.parse({ requestId: id }),
     ).toStrictEqual({ requestId: id });
+    expect(
+      mcpCreateChatThreadInputSchema.safeParse({
+        requestId: id,
+        message: undefined,
+      }).success,
+    ).toBe(false);
     expect(
       mcpCreateChatThreadInputSchema.parse({
         requestId: id,
