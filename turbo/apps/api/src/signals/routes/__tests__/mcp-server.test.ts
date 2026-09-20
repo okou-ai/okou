@@ -934,7 +934,7 @@ describe("MCP chat discovery and creation", () => {
       await pending;
     });
     await expect
-      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5_000 })
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
       .toBeGreaterThan(0);
     controller.abort();
     lock.release();
