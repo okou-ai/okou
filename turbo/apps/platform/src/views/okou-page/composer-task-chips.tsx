@@ -54,15 +54,20 @@ const TASK_CHIP = "px-3";
  * text wraps inside the top of the card and the icon parks on the floor, so a
  * short idea and a long one still occupy the same shape.
  *
- * The stroke comes off. A chip's `control-border` is a full 1px of
- * `gray-300`, heavier than the composer's own hairline plus shadow, which left
- * the row of suggestions out-stroking the card it belongs to. `bg-muted` is
- * the same surface the template covers sit on, and `neutral` keeps painting
- * its hover and pressed states as overlays on top of it.
+ * The card carries no fill of its own. `bg-muted` is warm -- red sits seven
+ * steps above blue -- so a row of them read as tinted against the page rather
+ * than as neutral surfaces. `bg-card` plus the lighter of the product's two
+ * stroke inks draws the box instead: `border-border` rather than the
+ * `control-border` a chip carries, which is the same gray-400 the composer's
+ * own edge uses and was heavier than a 232x116 perimeter wants. Both weights
+ * are the shared `--default-border-width` hairline; only the ink changes.
+ *
+ * `neutral` still owns the states, so hover and pressed keep painting as
+ * overlays above whichever fill is underneath.
  */
 const TASK_IDEA_CARD = [
   "h-[116px] w-[232px] flex-col items-start justify-start gap-0",
-  "rounded-xl border-transparent bg-muted p-4 pb-3.5",
+  "rounded-xl border-border bg-card p-4 pb-3.5",
   // A fixed box holds translated copy, so the overflow is contained here
   // rather than left to spill past the card in a longer language.
   "overflow-hidden whitespace-normal text-left text-sm font-normal leading-5",
