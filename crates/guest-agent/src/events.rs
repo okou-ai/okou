@@ -957,7 +957,6 @@ mod tests {
             serde_json::json!({
                 "type": "error",
                 "status": 400,
-                "message": error["message"],
                 "error": error.clone()
             }),
             serde_json::json!({
