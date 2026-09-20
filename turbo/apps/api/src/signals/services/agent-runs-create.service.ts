@@ -430,6 +430,7 @@ function buildStableAgentPrompt(args: {
   readonly agent: AgentRunRecord;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
+  readonly runUsageEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -445,6 +446,7 @@ function buildStableAgentPrompt(args: {
       privateArtifactsEnabled: args.privateArtifactsEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
+      runUsageEnabled: args.runUsageEnabled,
       bankingEnabled: args.bankingEnabled,
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
@@ -915,6 +917,10 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   const promptInputs = {
     privateArtifactsEnabled: isFeatureEnabled(
       FeatureSwitchKey.PrivateArtifacts,
+      args.featureSwitchContext,
+    ),
+    runUsageEnabled: isFeatureEnabled(
+      FeatureSwitchKey.RunUsage,
       args.featureSwitchContext,
     ),
     bankingEnabled: isFeatureEnabled(
