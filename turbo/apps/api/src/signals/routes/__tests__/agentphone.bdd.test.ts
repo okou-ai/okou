@@ -495,6 +495,22 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({ linked: false });
   });
 
+  it("runs an all-digit prompt from an already linked sender", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "20260920",
+    });
+
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toContain("20260920");
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
+  });
+
   it("links an AgentPhone user without provisioning artifact storage", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);

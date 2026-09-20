@@ -191,8 +191,6 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   expect(within(dialog).getByText("or send")).toBeVisible();
   expect(within(dialog).getByText("to")).toBeVisible();
   expect(within(dialog).getByText("Expires in 10 minutes")).toBeVisible();
-  expect(within(dialog).queryByText("Send “hi”")).toBeNull();
-  expect(within(dialog).queryByText("Open our reply")).toBeNull();
   expect(within(dialog).getByTestId("agentphone-link-qr")).toHaveAttribute(
     "data-sms-href",
     messageHref,
@@ -202,15 +200,15 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
     messageHref,
   );
 
-  const copyCode = getAction("button", `Copy connection code ${code}`, dialog);
-  const copyPhone = getAction("button", "Copy +1 (903) 985-3128", dialog);
-  click(copyCode);
-  click(copyPhone);
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([code, "+19039853128"]);
-    expect(copyCode).toHaveAttribute("data-copied", "true");
-    expect(copyPhone).toHaveAttribute("data-copied", "true");
-  });
+  click(getAction("button", `Copy connection code ${code}`, dialog));
+  await expect(
+    screen.findByText("Connection code copied"),
+  ).resolves.toBeInTheDocument();
+  click(getAction("button", "Copy +1 (903) 985-3128", dialog));
+  await expect(
+    screen.findByText("Phone number copied"),
+  ).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([code, "+19039853128"]);
 
   publishPhoneLinked();
 

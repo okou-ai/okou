@@ -45,7 +45,10 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneMessageEvent,
 } from "../services/agentphone.service";
-import { isAgentPhoneMentionText } from "../services/agentphone-shared.service";
+import {
+  isAgentPhoneMentionText,
+  type AgentPhoneUserLink,
+} from "../services/agentphone-shared.service";
 import { safeJsonParse, tapError } from "../utils";
 
 interface AgentPhoneConfig {
@@ -945,10 +948,24 @@ function shouldDispatchAgentPhoneEvent(event: AgentPhoneMessageEvent): boolean {
   return !(event.channel === "imessage" && event.isGroup && !event.mentioned);
 }
 
+/** A connection code binds an unlinked sender, so a sender that already has a
+ *  link keeps the normal prompt path even when the body looks like a code. */
+function isAgentPhoneConnectionCodeCandidate(
+  event: AgentPhoneMessageEvent,
+  userLink: AgentPhoneUserLink | null,
+): boolean {
+  return (
+    userLink === null &&
+    !event.isGroup &&
+    isAgentPhoneConnectionCodeMessage(event.body)
+  );
+}
+
 function agentPhoneEventForStorage(
   event: AgentPhoneMessageEvent,
+  userLink: AgentPhoneUserLink | null,
 ): AgentPhoneMessageEvent {
-  if (event.isGroup || !isAgentPhoneConnectionCodeMessage(event.body)) {
+  if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
     return event;
   }
   return { ...event, body: "[connection code redacted]" };
@@ -957,9 +974,10 @@ function agentPhoneEventForStorage(
 async function handleAgentPhoneConnectionCode(
   db: Db,
   event: AgentPhoneMessageEvent,
+  userLink: AgentPhoneUserLink | null,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (event.isGroup) {
+  if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
     return false;
   }
 
@@ -1065,7 +1083,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   const stored = await storeInboundAgentPhoneMessage(writeDb, {
-    event: agentPhoneEventForStorage(event),
+    event: agentPhoneEventForStorage(event, userLink),
     userLinkId: userLink?.id ?? null,
     publicBrand,
   });
@@ -1074,7 +1092,7 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
     return okText();
   }
 
-  if (await handleAgentPhoneConnectionCode(writeDb, event, signal)) {
+  if (await handleAgentPhoneConnectionCode(writeDb, event, userLink, signal)) {
     return okText();
   }
 
