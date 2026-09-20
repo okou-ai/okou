@@ -21,6 +21,7 @@ TLS_ADMISSION_INVALID_REGISTRY_SANDBOX: Final = "invalid_registry_sandbox"
 TLS_ADMISSION_REGISTRY_UNAVAILABLE: Final = "registry_unavailable"
 
 _TEST_ENDPOINT_PATH_PREFIX: Final = "/api/test/"
+_PLATFORM_MCP_RESOURCE_PATH: Final = "/mcp"
 _TEST_ENDPOINT_BYPASS_HEADER: Final = "x-okou-test-endpoint-bypass"
 _UPSTREAM_BINDING_DIAGNOSTICS = "_upstream_binding_diagnostics"
 
@@ -142,6 +143,12 @@ def platform_request_path_decision(path: str) -> PlatformRequestPathDecision:
     if pathname.startswith(_TEST_ENDPOINT_PATH_PREFIX):
         return "firewall"
     return "api_allow"
+
+
+def is_platform_mcp_resource_path(path: str) -> bool:
+    """Return whether ``path`` is the exact safe platform MCP resource."""
+    pathname = strip_url_query_and_fragment(path)
+    return not path_security.has_unsafe_path(pathname) and pathname == _PLATFORM_MCP_RESOURCE_PATH
 
 
 def api_destination_matches(
@@ -526,15 +533,17 @@ def ensure_bound_destination(
     *,
     kind: upstream_destination_binding.BindingKind,
     api_url: str,
+    platform_mcp_connector_auth: bool = False,
 ) -> bool:
     """Admit the flow's trusted authority for one privileged binding kind.
 
     ``flow`` must already carry validated trusted-authority metadata and the
     request, client, and server connection state to bind. ``kind`` selects the
     privileged purpose, while ``api_url`` identifies the platform API origin.
-    ``api_allow`` requires the current scheme and authority to match that origin;
-    ``connector_auth`` on that origin requires the gated test-endpoint bypass
-    before either binding or reusing a destination.
+    ``api_allow`` requires the current scheme and authority to match that origin.
+    ``connector_auth`` on that origin requires either the gated test-endpoint
+    bypass or a classification-owned MCP authorization whose current path is
+    still the exact platform MCP resource before binding or reuse.
 
     A direct server binding may be reused, extended with ``kind``, or refreshed
     only while its authority and current destination remain valid. Otherwise an
@@ -573,16 +582,16 @@ def ensure_bound_destination(
     )
     if kind == "api_allow" and not is_api_destination:
         return False
-    # Synthetic test providers live on the platform API preview host but
-    # intentionally exercise connector auth injection instead of API auto-allow.
-    # Keep this path limited to test endpoints gated by the same internal
-    # bypass secret that the API route validates.
-    if (
-        kind == "connector_auth"
-        and is_api_destination
-        and not _request_has_platform_test_endpoint_bypass(flow)
-    ):
-        return False
+    # Two connector-auth paths intentionally share the platform API authority:
+    # test providers require their internal bypass secret, while the MCP resource
+    # requires an explicit proof from successful connector-owner classification.
+    if kind == "connector_auth" and is_api_destination:
+        has_test_endpoint_bypass = _request_has_platform_test_endpoint_bypass(flow)
+        has_platform_mcp_authorization = (
+            platform_mcp_connector_auth and is_platform_mcp_resource_path(flow.request.path)
+        )
+        if not (has_test_endpoint_bypass or has_platform_mcp_authorization):
+            return False
 
     allowed_kinds = frozenset((kind,))
     has_bound = upstream_destination_binding.flow_matches_normalized_destination(

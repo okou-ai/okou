@@ -5,6 +5,30 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](testing/mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+## Platform MCP connector authorization
+
+Registered sandbox requests to the configured platform API normally use the
+`api_allow` fast path and never resolve connector credentials. The exact safe
+`/mcp` resource is the only product exception: a captured, non-malformed private
+connector intent may continue to normal compiled-firewall owner selection. The
+selected firewall must have a valid static base that normalizes to that exact
+current resource. Broad platform bases, parameterized bases, `/mcp/`, descendant
+paths, missing or malformed intent, wrong or ambiguous owners, and omitted or
+removed connectors retain `api_allow` and receive no connector credential.
+
+Intent and path create only eligibility. A selected current firewall must still
+pass permission and network policy, public-destination policy, credential
+resolution, and auth revalidation. Its `FirewallAllow` carries an internal proof
+to request-header prebinding, optional header streaming, and final request
+handling. Platform-origin `connector_auth` binding requires that proof and
+rechecks the exact `/mcp` path; the independent `/api/test/*` secret bypass is
+unchanged. The private intent header remains stripped before upstream forwarding.
+
+No API/Runner registry schema changes. Older Runner instances keep the prior
+credential-free `api_allow` behavior and therefore may receive the MCP service's
+OAuth challenge until replaced. Production-entrypoint coverage is in
+`tests/test_request_handler_api_admission.py`.
+
 ## Gmail send restriction
 
 For registered sandbox requests, trusted authority validation and the existing
