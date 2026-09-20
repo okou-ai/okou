@@ -21,7 +21,7 @@ export function PlainTextWithLinks({ text }: { text: string }): ReactNode {
             href={segment.value}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-link underline underline-offset-2"
+            className="text-link underline underline-offset-2 hover:decoration-2"
           >
             {segment.value}
           </a>

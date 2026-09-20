@@ -276,7 +276,9 @@ both the canvas and the tinted user bubble. The token is therefore chosen for
 the 4.5:1 background ratio alone: it clears it on the canvas and on
 `bg-gray-200` in both themes. Markdown that the third-party preview stylesheet
 renders keeps that stylesheet's own link color; this token governs first-party
-markup.
+markup. Hover thickens the underline rather than shifting the color: a
+lighter shade drops the link under the 4.5:1 minimum, and thickness is free
+of that constraint.
 
 Large editable surfaces use `border-surface-focus` to emphasize their existing
 border on focus: neutral gray in light themes and muted amber in dark themes.
