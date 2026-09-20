@@ -20,13 +20,11 @@ import {
 } from "@okouai/core/storage-names";
 import { createStore } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
-import { Client } from "pg";
 import { onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { executeRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
-import { env } from "../lib/env";
 import { writeDb$, type Db } from "../signals/external/db";
 import { createDeferredPromise } from "../signals/utils";
 import {
@@ -540,53 +538,20 @@ export async function removePiStableContextHeadFixture(
   return removed.artifactDigest;
 }
 
-export async function stableContextBackendBlockedByFixture(args: {
-  readonly blockedPid: number;
-  readonly blockerPid: number;
-}): Promise<boolean> {
+/** Inspect a blocker through either the shared fixture DB or its owning tx. */
+export async function stableContextBackendBlockedByFixture(
+  args: {
+    readonly blockedPid: number;
+    readonly blockerPid: number;
+  },
+  executor: Db | Tx = store.set(writeDb$),
+): Promise<boolean> {
   const [state] = await executeRawRows(
-    store.set(writeDb$),
+    executor,
     sql`SELECT ${args.blockerPid} = ANY(pg_blocking_pids(${args.blockedPid})) AS blocked`,
     z.object({ blocked: z.boolean() }),
   );
   return state?.blocked ?? false;
-}
-
-/**
- * Reserve an observer connection before a production transaction enters its
- * bounded lock window. The shared API pool can be saturated by parallel test
- * files, so borrowing from it after the lock attempt can consume the complete
- * production lock timeout before the test is able to release its blocker.
- */
-export async function createStableContextBlockObserverFixture(
-  signal: AbortSignal,
-) {
-  const client = new Client({ connectionString: env("DATABASE_URL") });
-  await client.connect();
-  onTestFinished(async () => {
-    await client.end();
-  });
-  return {
-    async blockedBy(args: {
-      readonly blockedPid: number;
-      readonly blockerPid: number;
-    }): Promise<boolean> {
-      signal.throwIfAborted();
-      const result = await client.query<{ readonly blocked: boolean }>(
-        "SELECT $1::int = ANY(pg_blocking_pids($2::int)) AS blocked",
-        [args.blockerPid, args.blockedPid],
-      );
-      signal.throwIfAborted();
-      const [state] = z
-        .array(z.object({ blocked: z.boolean() }))
-        .length(1)
-        .parse(result.rows);
-      if (!state) {
-        throw new Error("Expected stable-context lock observer state");
-      }
-      return state.blocked;
-    },
-  };
 }
 
 export async function deleteExpiredOwnedPiStableContextArtifactFixture(args: {
