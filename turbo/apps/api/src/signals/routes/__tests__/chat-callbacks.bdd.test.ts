@@ -4495,6 +4495,8 @@ describe("CHAT-02: failed chat callbacks", () => {
       "Claude usage limit reached. Visit https://claude.ai/settings/usage or try again at 6:17 AM.";
     const executionTimeoutError =
       "Agent execution timed out after 7200 seconds";
+    const codexAccessProgramError =
+      '{"type":"invalid_request_error","code":"unsupported_parameter","message":"The access_programs parameter is not enabled for this organization.","param":"access_programs.cyber"}';
     const rounds: readonly {
       readonly prompt: string;
       readonly error: string;
@@ -4571,8 +4573,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       },
       {
         prompt: "Codex access-program rejection",
-        error:
-          '{"type":"invalid_request_error","code":"unsupported_parameter","message":"The access_programs parameter is not enabled for this organization.","param":"access_programs.cyber"}',
+        error: codexAccessProgramError,
         expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
         failureReason: "codex_access_program_unavailable",
         selectedModel: "gpt-5.6-sol",
@@ -4717,6 +4718,17 @@ describe("CHAT-02: failed chat callbacks", () => {
     ).toStrictEqual({
       content: "Oops, something went wrong. Please try again later.",
       error: "Oops, something went wrong. Please try again later.",
+    });
+
+    const codexAccessProgramRunId = runIds.at(-1);
+    if (!codexAccessProgramRunId) {
+      throw new Error("Expected Codex access-program run");
+    }
+    await expect(
+      api.readRun(actor, codexAccessProgramRunId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: codexAccessProgramError,
     });
 
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(
