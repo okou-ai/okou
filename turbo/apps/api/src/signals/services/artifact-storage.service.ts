@@ -306,6 +306,9 @@ export const storeGeneratedArtifactObject$ = command(
           contentType: args.contentType,
           size: args.body.byteLength,
           publicBrand: args.publicBrand,
+          // A generation is an artifact output even when no run produced it, so
+          // its ownership record carries that purpose and stays in the catalog.
+          purpose: "artifact",
         },
         signal,
       );

@@ -118,13 +118,18 @@ function metadataString(
  * user handed to the agent arrive here alongside the agent's own outputs; this
  * is where the two are separated.
  *
- * An upload declaring `purpose: "artifact"` is one. A chat or integration
- * attachment is not, and neither is a private upload's ownership record that
- * no run has produced — a composer attachment still sitting in a draft.
+ * An upload declaring `purpose: "artifact"` is one, and every producer of an
+ * artifact output declares it — including the generation and download paths
+ * that can run without a run. A chat or integration attachment is not, and
+ * neither is a private upload's ownership record that no run produced and no
+ * uploader claimed: a composer attachment still sitting in a draft.
  *
- * Only versioned private storage identifies that ownership record. A row
- * without the storage marker was written by an earlier API version, whose
- * uploads reach the catalog exactly as they did before.
+ * Only versioned private storage identifies that ownership record, so a row
+ * without the storage marker keeps the catalog behavior it had before private
+ * artifacts existed. Surface: DB versus API, for rows written by earlier API
+ * versions (`docs/fallback.md` §7). Remove this clause once the historical
+ * public artifact objects and their references are migrated or retired, which
+ * is tracked with the matching public-object readers under #32492.
  */
 function isCatalogArtifactFile(row: CatalogFileRow): boolean {
   if (metadataString(row.metadata, "purpose") === "artifact") {
@@ -617,10 +622,12 @@ async function removeHostedRunShadowArtifacts(
 }
 
 /**
- * A file can become an attachment after it was already cataloged: the composer
- * uploads first and only the send marks the row as input. Removing the
- * projection here keeps the catalog converging on the current classification
- * instead of retaining whatever the first sync observed.
+ * A file can already carry a projection that the current rules refuse: every
+ * attachment registered before this admission existed. Removing it here keeps
+ * the catalog converging on the current classification instead of retaining
+ * whatever an earlier sync observed. No current producer writes such a
+ * projection, so after the accompanying cleanup migration this only repairs a
+ * row an older API registered while it was still draining.
  */
 async function removeAttachmentArtifacts(
   db: Db,
