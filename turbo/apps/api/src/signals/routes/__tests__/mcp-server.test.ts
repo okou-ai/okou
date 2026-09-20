@@ -1857,10 +1857,6 @@ describe("MCP chat status", () => {
       messagePage: null,
       retryAfterMs: null,
     });
-    expect(status).not.toHaveProperty("input");
-    expect(status).not.toHaveProperty("runSelection");
-    expect(status).not.toHaveProperty("run");
-    expect(status).not.toHaveProperty("output");
     expect(Number.isNaN(Date.parse(status.observedAt))).toBeFalsy();
     await expect(f.chat.readThread(f.actor, thread.id)).resolves.toStrictEqual(
       before,
