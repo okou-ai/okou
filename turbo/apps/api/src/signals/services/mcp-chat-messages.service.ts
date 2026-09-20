@@ -436,13 +436,23 @@ function readPage(
   return { kind: "ok", data };
 }
 
-/** Build a message page from one already-authorized canonical history view. */
-export function readMcpChatMessagePage(
-  messages: readonly McpCompleteChatMessage[],
+interface PreparedMessagePage {
+  readonly filters: string;
+  readonly cursor: Cursor | null;
+}
+
+function invalidMessageCursor(): McpMessageReadResult {
+  return {
+    kind: "invalid_cursor",
+    message:
+      "The message cursor is invalid, expired, or belongs to different authorization, thread, run filter or limit. Restart without cursor.",
+  };
+}
+
+function prepareMessagePage(
   principal: Principal,
   input: McpGetChatMessagesInput,
-  checkBudget: () => void,
-): McpMessageReadResult {
+): PreparedMessagePage | null {
   const filters = digest({
     threadId: input.threadId,
     runId: input.runId ?? null,
@@ -451,22 +461,44 @@ export function readMcpChatMessagePage(
   const cursor = input.cursor
     ? decodeCursor(input.cursor, principal, filters)
     : null;
-  if (input.cursor && !cursor) {
-    return {
-      kind: "invalid_cursor",
-      message:
-        "The message cursor is invalid, expired, or belongs to different authorization, thread, run filter or limit. Restart without cursor.",
-    };
-  }
+  return input.cursor && !cursor ? null : { filters, cursor };
+}
+
+function readPreparedMcpChatMessagePage(
+  messages: readonly McpCompleteChatMessage[],
+  principal: Principal,
+  input: McpGetChatMessagesInput,
+  checkBudget: () => void,
+  prepared: PreparedMessagePage,
+): McpMessageReadResult {
   const selected = messages.filter((message) => {
     checkBudget();
     return input.runId === undefined || message.runId === input.runId;
   });
-  return readPage(selected, input, cursor, {
+  return readPage(selected, input, prepared.cursor, {
     principal,
-    filters,
+    filters: prepared.filters,
     checkBudget,
   });
+}
+
+/** Build a message page from one already-authorized canonical history view. */
+export function readMcpChatMessagePage(
+  messages: readonly McpCompleteChatMessage[],
+  principal: Principal,
+  input: McpGetChatMessagesInput,
+  checkBudget: () => void,
+): McpMessageReadResult {
+  const prepared = prepareMessagePage(principal, input);
+  return prepared
+    ? readPreparedMcpChatMessagePage(
+        messages,
+        principal,
+        input,
+        checkBudget,
+        prepared,
+      )
+    : invalidMessageCursor();
 }
 
 export function getMcpChatMessages(
@@ -490,19 +522,9 @@ export function getMcpChatMessages(
         );
       }
     };
-    if (input.cursor) {
-      const filters = digest({
-        threadId: input.threadId,
-        runId: input.runId ?? null,
-        limit: input.limit,
-      });
-      if (!decodeCursor(input.cursor, principal, filters)) {
-        return {
-          kind: "invalid_cursor",
-          message:
-            "The message cursor is invalid, expired, or belongs to different authorization, thread, run filter or limit. Restart without cursor.",
-        };
-      }
+    const prepared = prepareMessagePage(principal, input);
+    if (!prepared) {
+      return invalidMessageCursor();
     }
     const result = await settle(
       (async (): Promise<McpMessageReadResult> => {
@@ -518,11 +540,12 @@ export function getMcpChatMessages(
         if (rows === null) {
           return { kind: "not_found", message: "Conversation not found." };
         }
-        const page = readMcpChatMessagePage(
+        const page = readPreparedMcpChatMessagePage(
           projectMcpChatMessages(rows, checkBudget),
           principal,
           input,
           checkBudget,
+          prepared,
         );
         checkBudget();
         return page;

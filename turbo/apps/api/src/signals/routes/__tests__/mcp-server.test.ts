@@ -35,14 +35,19 @@ import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -1618,18 +1623,15 @@ describe("MCP chat status", () => {
     });
     const claimed = await f.claimChatRun(actor.runnerGroup, runId);
     let monotonicMs = 1000;
-    const performanceNow = vi
-      .spyOn(performance, "now")
-      .mockImplementation(() => {
-        return monotonicMs;
-      });
+    mockMonotonicNow(monotonicMs);
     onTestFinished(() => {
-      performanceNow.mockRestore();
+      clearMockMonotonicNow();
     });
     context.mocks.signalTimers.delay.mockImplementation(
       (milliseconds, options) => {
         options?.signal?.throwIfAborted();
         monotonicMs += milliseconds;
+        mockMonotonicNow(monotonicMs);
         return Promise.resolve();
       },
     );
@@ -1660,7 +1662,7 @@ describe("MCP chat status", () => {
       }),
     ).toStrictEqual([2000, 2000, 1000]);
 
-    performanceNow.mockRestore();
+    clearMockMonotonicNow();
     await f.webhooks.requestAgentEvents(
       {
         runId,
@@ -1941,10 +1943,18 @@ describe("MCP chat status", () => {
       userId: auth.userId,
       orgId: auth.orgId,
     });
-    const sent = await f.sendChatRun(actor.actor, {
+    const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
-      prompt: "Fail before producing output",
     });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Fail before producing output",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
     const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
     await f.failChatRun(
       sent.runId,
@@ -1952,10 +1962,20 @@ describe("MCP chat status", () => {
       "PRIVATE_RAW_ERROR",
     );
     await flushWaitUntilForTest();
-    const status = await getStatus(auth.token(), { threadId: sent.threadId });
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
     expect(status).toMatchObject({
       run: { id: sent.runId, status: "failed" },
       output: { state: "unavailable", reason: "no_output", messageRefs: [] },
+      wait: {
+        observations: 1,
+        outcome: "status",
+        returnReason: "non_retryable_state",
+      },
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(JSON.stringify(status)).not.toContain("PRIVATE_RAW_ERROR");

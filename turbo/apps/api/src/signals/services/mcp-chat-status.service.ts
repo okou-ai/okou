@@ -17,9 +17,9 @@ import { delay } from "signal-timers";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { settle } from "../utils";
+import { isAbortError, settleIncludingAbort } from "../utils";
 import {
   boundHistoryQuery,
   McpMessageHistoryError,
@@ -501,7 +501,7 @@ function elapsedWait(operation: WaitOperation): number {
     0,
     Math.min(
       operation.effectiveMs,
-      Math.round(performance.now() - operation.waitStartedAt),
+      Math.round(monotonicNow() - operation.waitStartedAt),
     ),
   );
 }
@@ -544,7 +544,7 @@ function logWait(
     readonly runtimeOccupancy: number;
   },
 ): void {
-  L.info("MCP chat status wait completed", {
+  L.debug("MCP chat status wait completed", {
     ...details,
     inputState: data?.input?.state ?? "not_requested",
     runState: data?.run?.status ?? "unavailable",
@@ -593,45 +593,50 @@ function waitForMcpChatStatus(
     }
     operation.principalOccupancy = admission.principalOccupancy;
     operation.runtimeOccupancy = admission.runtimeOccupancy;
-    const deadline = operation.waitStartedAt + operation.effectiveMs;
-    try {
-      for (;;) {
-        const remaining = deadline - performance.now();
-        if (remaining <= 0) {
-          return withWaitResult(
-            currentStatus(operation),
-            operation,
-            "deadline",
-            "application_deadline",
+    const result = await settleIncludingAbort(
+      (async (): Promise<McpGetChatStatusOutput | null> => {
+        const deadline = operation.waitStartedAt + operation.effectiveMs;
+        for (;;) {
+          const remaining = deadline - monotonicNow();
+          if (remaining <= 0) {
+            return withWaitResult(
+              currentStatus(operation),
+              operation,
+              "deadline",
+              "application_deadline",
+            );
+          }
+          if (operation.observations >= MCP_CHAT_STATUS_MAX_OBSERVATIONS) {
+            return withWaitResult(
+              currentStatus(operation),
+              operation,
+              "status",
+              "observation_limit",
+            );
+          }
+          await delay(
+            Math.min(operation.latest?.retryAfterMs ?? remaining, remaining),
+            { signal },
           );
-        }
-        if (operation.observations >= MCP_CHAT_STATUS_MAX_OBSERVATIONS) {
-          return withWaitResult(
-            currentStatus(operation),
-            operation,
-            "status",
-            "observation_limit",
+          operation.latest = await get(
+            observeMcpChatStatus(runtime, principal, args, signal, true),
           );
+          operation.observations += 1;
+          if (operation.latest === null) {
+            return null;
+          }
+          const completed = completeObservedWait(operation.latest, operation);
+          if (completed) {
+            return completed;
+          }
         }
-        await delay(
-          Math.min(operation.latest?.retryAfterMs ?? remaining, remaining),
-          { signal },
-        );
-        operation.latest = await get(
-          observeMcpChatStatus(runtime, principal, args, signal, true),
-        );
-        operation.observations += 1;
-        if (operation.latest === null) {
-          return null;
-        }
-        const completed = completeObservedWait(operation.latest, operation);
-        if (completed) {
-          return completed;
-        }
-      }
-    } finally {
-      admission.release();
+      })(),
+    );
+    admission.release();
+    if (!result.ok) {
+      throw result.error;
     }
+    return result.value;
   });
 }
 
@@ -660,7 +665,7 @@ function executeMcpChatStatus(
       checkResponseSize(operation.latest);
       return operation.latest;
     }
-    operation.waitStartedAt = performance.now();
+    operation.waitStartedAt = monotonicNow();
     const completed = completeObservedWait(operation.latest, operation);
     return (
       completed ??
@@ -701,53 +706,60 @@ export function getMcpChatStatus(
       effectiveMs: Math.min(requestedMs, MCP_CHAT_STATUS_MAX_WAIT_MS),
       latest: null,
       observations: 0,
-      waitStartedAt: performance.now(),
+      waitStartedAt: monotonicNow(),
       principalOccupancy: 0,
       runtimeOccupancy: 0,
     };
-    try {
-      const result = await settle(
-        get(executeMcpChatStatus(runtime, principal, args, signal, operation)),
-        signal,
-      );
+    const result = await settleIncludingAbort(
+      get(executeMcpChatStatus(runtime, principal, args, signal, operation)),
+    );
+    if (signal.aborted) {
       if (operation.effectiveMs > 0) {
-        const completed = result.ok ? result.value : null;
-        if (completed?.wait) {
-          logWait(
-            completed,
-            waitLogDetails(
-              operation,
-              completed.wait.outcome,
-              completed.wait.returnReason,
-            ),
-          );
-        } else if (!result.ok || completed === null) {
-          logWait(
-            operation.latest,
-            waitLogDetails(operation, "error", "observation_error"),
-          );
-        }
-      }
-      if (result.ok) {
-        return result.value === null
-          ? { kind: "not_found", message: "Conversation not found." }
-          : { kind: "ok", data: result.value };
-      }
-      if (result.error instanceof McpMessageHistoryError) {
-        return { kind: result.error.kind, message: result.error.message };
-      }
-      return {
-        kind: "history_unavailable",
-        message: "Chat status is temporarily unavailable. Retry later.",
-      };
-    } catch (error) {
-      if (operation.effectiveMs > 0 && signal.aborted) {
         logWait(
           operation.latest,
           waitLogDetails(operation, "cancelled", "request_cancelled"),
         );
       }
-      throw error;
+      signal.throwIfAborted();
     }
+    if (!result.ok && isAbortError(result.error)) {
+      if (operation.effectiveMs > 0) {
+        logWait(
+          operation.latest,
+          waitLogDetails(operation, "cancelled", "request_cancelled"),
+        );
+      }
+      throw result.error;
+    }
+    if (operation.effectiveMs > 0) {
+      const completed = result.ok ? result.value : null;
+      if (completed?.wait) {
+        logWait(
+          completed,
+          waitLogDetails(
+            operation,
+            completed.wait.outcome,
+            completed.wait.returnReason,
+          ),
+        );
+      } else if (!result.ok || completed === null) {
+        logWait(
+          operation.latest,
+          waitLogDetails(operation, "error", "observation_error"),
+        );
+      }
+    }
+    if (result.ok) {
+      return result.value === null
+        ? { kind: "not_found", message: "Conversation not found." }
+        : { kind: "ok", data: result.value };
+    }
+    if (result.error instanceof McpMessageHistoryError) {
+      return { kind: result.error.kind, message: result.error.message };
+    }
+    return {
+      kind: "history_unavailable",
+      message: "Chat status is temporarily unavailable. Retry later.",
+    };
   });
 }
