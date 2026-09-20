@@ -13,6 +13,7 @@ readonly OKOU_GOAL_RETIREMENT_RELEASE=1f68f182a2457ec3aea52d8063be2bd2d2263abd
 readonly COMPUTER_USE_HOST_CLIENT_PRODUCT_DROP_COMMIT=669d0befc9a181e44e3f1f9e39093efddabcc0f8
 readonly PERSONAL_SUBSCRIPTION_PRIORITY_COMMIT=8a5e1299b4d26bd114ccec017b84b7a83fb4a164
 readonly ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT=6e1abbb785dc1613d0f5cd1b1dd80fae694abb46
+readonly HOSTED_PUBLICATION_RUNTIME_COMMIT=f205ec54fc463f43b1106a3659e5d6a8c979cab8
 readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a24
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
@@ -89,6 +90,13 @@ fi
 if ! git merge-base --is-ancestor \
   "$ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT" "$TARGET_COMMIT"; then
   fail "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop: ${ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT}."
+fi
+
+# API rollback does not restore schema. Preceding binaries implicitly select
+# the retired hosted-publication version columns; retained Runner tags do not.
+if ! git merge-base --is-ancestor \
+  "$HOSTED_PUBLICATION_RUNTIME_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates hosted publication version-column retirement: ${HOSTED_PUBLICATION_RUNTIME_COMMIT}."
 fi
 
 # A/B runtime identity and personal precedence must survive allowed rollback.

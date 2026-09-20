@@ -64,7 +64,8 @@ export function VncConnectorCard({
       }
       status={
         <ConnectorEntryStatus
-          tone="neutral"
+          tone={configuredCount > 0 ? "success" : "neutral"}
+          className="min-w-0 flex-1 text-xs text-muted-foreground"
           label={t(
             ($) => {
               return $.vnc.summary;

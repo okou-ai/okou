@@ -79,7 +79,6 @@ const publicConnectorCatalogItemSchema = z.object({
       endpoint: z.url({ protocol: /^https$/u }),
     })
     .optional(),
-  replaces: z.object({ connectorSlug: connectorSlugSchema }).optional(),
   authMethods: z.array(publicConnectorCatalogAuthMethodSummarySchema),
   permissionSummary: publicConnectorCatalogPermissionSummarySchema,
 });

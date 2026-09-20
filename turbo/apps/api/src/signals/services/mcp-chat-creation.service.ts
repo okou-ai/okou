@@ -41,10 +41,19 @@ interface Principal {
   readonly orgId: string;
 }
 
-class McpThreadCreationError extends Error {}
+class McpThreadCreationError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly retryable = false,
+  ) {
+    super(message);
+  }
+}
 
 function creationConflict(): never {
   throw new McpThreadCreationError(
+    "request_id_conflict",
     "Creation request cannot be replayed. Use the original requestId, Agent, exact title and model; inspect your conversations before creating new work.",
   );
 }
@@ -71,7 +80,7 @@ async function admitCreation(
     .limit(1);
   signal.throwIfAborted();
   if (!selected) {
-    throw new McpThreadCreationError("Agent not found.");
+    throw new McpThreadCreationError("not_found", "Agent not found.");
   }
   await assertErasureSubjectWritable(tx, [
     { subjectKind: "user", subjectId: principal.userId },
@@ -90,7 +99,9 @@ async function admitCreation(
   signal.throwIfAborted();
   if (!locked || locked.owner !== selected.owner) {
     throw new McpThreadCreationError(
+      "unavailable",
       "Agent availability changed. Refresh list_agents and retry the same creation request.",
+      true,
     );
   }
 }
@@ -157,6 +168,7 @@ async function readCreation(
   }
   if (event.createdAt.getTime() + CREATION_RETRY_MS <= now()) {
     throw new McpThreadCreationError(
+      "request_expired",
       "The 24-hour creation retry window has expired. Inspect the original conversation before creating new work; this request was not applied again.",
     );
   }
@@ -181,7 +193,10 @@ async function initializeThread(
   });
   signal.throwIfAborted();
   if ("status" in pin) {
-    throw new McpThreadCreationError(pin.body.error.message);
+    throw new McpThreadCreationError(
+      "selection_unavailable",
+      pin.body.error.message,
+    );
   }
   const media = await loadNewChatThreadMediaModels(tx, principal);
   const settings = await loadNewChatThreadModelSettings(tx, principal);
@@ -192,7 +207,10 @@ async function initializeThread(
     requested: undefined,
   });
   if ("status" in effort) {
-    throw new McpThreadCreationError(effort.body.error.message);
+    throw new McpThreadCreationError(
+      "selection_unavailable",
+      effort.body.error.message,
+    );
   }
   const created = await createChatThreadInTransaction(tx, {
     ...principal,
@@ -208,7 +226,7 @@ async function initializeThread(
   });
   signal.throwIfAborted();
   if (created.kind === "invalid_connector_selection") {
-    throw new McpThreadCreationError(created.message);
+    throw new McpThreadCreationError("invalid_state", created.message);
   }
   return created.kind === "created";
 }
@@ -302,13 +320,23 @@ export const createMcpChatThread$ = command(
     );
     if (!result.ok) {
       if (result.error instanceof McpThreadCreationError) {
-        return { kind: "error", message: result.error.message };
+        return {
+          kind: "error",
+          code: result.error.code,
+          message: result.error.message,
+          retryable: result.error.retryable,
+        };
       }
       if (
         result.error instanceof Error &&
         result.error.message === "account_erasure:subject_closed"
       ) {
-        return { kind: "error", message: "Account content is closed." };
+        return {
+          kind: "error",
+          code: "account_closed",
+          message: "Account content is closed.",
+          retryable: false,
+        };
       }
       throw result.error;
     }

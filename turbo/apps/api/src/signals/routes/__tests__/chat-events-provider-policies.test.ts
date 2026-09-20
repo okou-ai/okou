@@ -1,6 +1,9 @@
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import { LIMITED_FREE1_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  LIMITED_FREE1_DEFAULT_RUN_MODEL,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { CANONICAL_CODEX_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
@@ -20,7 +23,11 @@ import {
   holdChatThreadRowLockFixture,
   releaseBddBuiltInModelKey,
 } from "../../../test-fixtures/chat-events";
-import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
+import {
+  setOrgModelPolicyProviderTypeFixture,
+  stageUnrepairedOrgModelPolicyFixture,
+} from "../../../test-fixtures/org-model-policies";
+import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
@@ -34,12 +41,10 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
 import {
-  deleteBuiltInCandidateCooldownFixture,
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
   resolveBuiltInModelRouteFixture,
   seedBuiltInModelCandidateKeys,
-  setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
@@ -401,6 +406,67 @@ describe("CHAT-02: model-first provider policies", () => {
       };
     }
     expect(builtInObservation).toStrictEqual(expectedBuiltInObservation);
+  }, 90_000);
+
+  it("reuses request-scoped routing reads on an existing-thread send", async () => {
+    const { actor, agentId, providerId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-sonnet-5",
+    });
+
+    const captured = await withModelRoutingQueryReceipt(() => {
+      return sendChatRun(actor, {
+        agentId,
+        threadId: thread.id,
+        prompt: "reuse the routing receipt facts",
+      });
+    });
+    // The second plan read is final admission. Stable-context materialization
+    // no longer repeats the switch read, because this send hands its
+    // request-scoped feature-switch context to run preparation. Routing owns
+    // only the single policy read and never loads personal account metadata on
+    // this organization path.
+    expect(captured.receipt).toStrictEqual({
+      planReads: 2,
+      policyReads: 1,
+      featureSwitchReads: 1,
+      personalMetadataReads: 0,
+      personalAccountReads: 0,
+    });
+    await cancelChatRun(actor, captured.result.runId);
+  }, 90_000);
+
+  it("routes from the authoritative policies seeded by the same send", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await seedBuiltInModelKey(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    await stageUnrepairedOrgModelPolicyFixture({
+      orgId: requireOrgId(actor),
+      state: "unseeded",
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "route from the repaired policy snapshot",
+    });
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    });
+    await cancelChatRun(actor, run.runId);
   }, 90_000);
 
   it("preserves persisted external model plan-state outcomes", async () => {
@@ -1903,49 +1969,57 @@ describe("CHAT-02: model-first provider policies", () => {
     if (!direct) {
       throw new Error("Expected a DeepSeek direct route");
     }
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      model,
-      direct,
-      new Date(now() + 10 * 60 * 1000),
-    );
-    const openRouter = await resolveBuiltInModelRouteFixture(context, model);
+    const openRouter =
+      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+        {
+          selectedModel: model,
+          providerType: direct.provider_type,
+          upstreamModel: direct.upstream_model,
+        },
+        async () => {
+          return await resolveBuiltInModelRouteFixture(context, model);
+        },
+      );
     expect(openRouter).toMatchObject({ provider_type: "openrouter-codex" });
     if (!openRouter) {
       throw new Error("Expected an OpenRouter fallback route");
     }
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      model,
-      openRouter,
-      new Date(now() + 10 * 60 * 1000),
-    );
-    await deleteBuiltInCandidateCooldownFixture(context, model, direct);
-    await api.updateOrgModelPolicies(actor, [
+    // Exiting the direct-candidate scope restores it. Keep only the fallback
+    // unavailable in this request chain without mutating shared cooldown rows.
+    await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
       {
-        model,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
+        selectedModel: model,
+        providerType: openRouter.provider_type,
+        upstreamModel: openRouter.upstream_model,
       },
-    ]);
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-      [FeatureSwitchKey.OpenRouterUsRouting]: true,
-    });
+      async () => {
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model,
+            isDefault: true,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null,
+          },
+        ]);
+        await authDeviceSupport.updateFeatureSwitches(actor, {
+          [FeatureSwitchKey.PiLoop]: false,
+          [FeatureSwitchKey.OpenRouterUsRouting]: true,
+        });
 
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "restore direct DeepSeek while its fallback is cooling",
-      model,
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claimEnvironment(claim).OPENAI_BASE_URL).toBe(
-      "https://api.deepseek.com/",
+        const run = await sendChatRun(actor, {
+          agentId,
+          prompt: "restore direct DeepSeek while its fallback is cooling",
+          model,
+        });
+        const { claim } = await claimChatRun(runnerGroup, run.runId);
+        expect(claimEnvironment(claim).OPENAI_BASE_URL).toBe(
+          "https://api.deepseek.com/",
+        );
+        expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
+        await cancelChatRun(actor, run.runId);
+      },
     );
-    expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
-    await cancelChatRun(actor, run.runId);
   });
 
   it.each(

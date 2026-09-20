@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, Dialog, DialogBody, DialogContent } from "@okouai/ui";
+import { Button, Dialog, DialogBody, DialogContent, cn } from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -7,9 +7,11 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Columns2,
+  Download,
   FileMusic,
   Image,
   Loader2,
@@ -37,7 +39,6 @@ import {
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
-import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -714,18 +715,25 @@ function ArtifactDialogImageBody({
 
 function ArtifactDialogVideoBody({
   filename,
+  fullscreen,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
   const resourceUrl = useLastResolved(preview.resourceUrl$) ?? null;
 
+  // Fullscreen exists to make the picture bigger. The default stage clamps its
+  // content to a reading measure, so playback has to opt out of it.
   return (
-    <ArtifactDialogStage centered>
+    <ArtifactDialogStage centered flush={fullscreen} scrollable={!fullscreen}>
       <div
-        className="w-full overflow-hidden bg-black"
+        className={cn(
+          "w-full overflow-hidden bg-black",
+          fullscreen && "h-full min-h-0",
+        )}
         data-testid="artifact-dialog-video-stage"
       >
         {resourceUrl !== null && (
@@ -735,7 +743,10 @@ function ArtifactDialogVideoBody({
             autoPlay
             playsInline
             preload="metadata"
-            className="block aspect-video w-full bg-black object-contain"
+            className={cn(
+              "block w-full bg-black object-contain",
+              fullscreen ? "h-full" : "aspect-video",
+            )}
             aria-label={t(
               ($) => {
                 return $.artifacts.preview.videoLabel;
@@ -791,9 +802,11 @@ function ArtifactDialogAudioBody({
 
 function ArtifactDialogDocumentFrameBody({
   filename,
+  fullscreen,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
@@ -806,7 +819,7 @@ function ArtifactDialogDocumentFrameBody({
       : resourceUrl;
 
   return (
-    <ArtifactDialogStage scrollable={false}>
+    <ArtifactDialogStage flush={fullscreen} scrollable={false}>
       <div
         className="flex h-full min-h-0 w-full flex-1 overflow-hidden"
         data-testid="artifact-dialog-document-frame"
@@ -829,17 +842,63 @@ function ArtifactDialogDocumentFrameBody({
   );
 }
 
-function ArtifactDialogGenericFileBody({ filename }: { filename: string }) {
+// No preview is a terminal screen, so it has to carry the one action that
+// still works on the file: taking it away.
+function ArtifactDialogGenericFileBody({
+  filename,
+  preview,
+}: {
+  filename: string;
+  preview: AttachmentLightboxState;
+}) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [downloadLoadable, downloadAttachment] =
+    useLoadableSet(downloadAttachment$);
+  const downloading = downloadLoadable.state === "loading";
   return (
     <ArtifactDialogStage centered>
-      <div className="flex w-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
-        <p className="text-sm">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+        <FilePreviewIcon filename={filename} size="lg" />
+        <div className="flex flex-col gap-1">
+          <p className="break-all text-sm font-medium text-foreground">
+            {filename}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.preview.noInline;
+            })}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          disabled={downloading}
+          aria-busy={downloading}
+          onClick={() => {
+            detach(
+              downloadAttachment({ filename, url: preview.url }, pageSignal),
+              Reason.DomCallback,
+              "artifact download",
+            );
+          }}
+        >
+          {downloading ? (
+            <Loader2 size={14} className="animate-spin" aria-hidden />
+          ) : (
+            <Download size={14} aria-hidden />
+          )}
           {t(($) => {
-            return $.artifacts.preview.noInline;
+            return $.artifacts.actions.download;
           })}
-        </p>
-        <p className="text-xs">{filename}</p>
+        </Button>
+        {downloadLoadable.state === "hasError" && (
+          <p role="alert" className="text-xs text-destructive">
+            {t(($) => {
+              return $.artifacts.toasts.downloadFailed;
+            })}
+          </p>
+        )}
       </div>
     </ArtifactDialogStage>
   );
@@ -847,16 +906,23 @@ function ArtifactDialogGenericFileBody({ filename }: { filename: string }) {
 
 function ArtifactDialogOfficeDocumentBody({
   filename,
+  fullscreen,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   preview: Extract<AttachmentLightboxState, { kind: "file" }>;
 }) {
   const resourceUrl = useLastResolved(preview.resourceUrl$) ?? null;
   const shareUrl = useLastResolved(preview.shareUrl$);
   return (
-    <ArtifactDialogStage scrollable={false}>
-      <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden rounded-xl border border-border/70 bg-background shadow-sm">
+    <ArtifactDialogStage flush={fullscreen} scrollable={false}>
+      <div
+        className={cn(
+          "flex h-full min-h-0 w-full flex-1 overflow-hidden bg-background",
+          !fullscreen && "rounded-xl border border-border/70 shadow-sm",
+        )}
+      >
         <OfficeDocumentPreview
           resourceUrl={
             shareUrl === undefined ? null : (shareUrl ?? resourceUrl)
@@ -900,7 +966,13 @@ export function ArtifactPreviewBody({
   }
 
   if (preview.kind === "video") {
-    return <ArtifactDialogVideoBody filename={filename} preview={preview} />;
+    return (
+      <ArtifactDialogVideoBody
+        filename={filename}
+        fullscreen={fullscreen}
+        preview={preview}
+      />
+    );
   }
 
   if (preview.kind === "audio") {
@@ -912,11 +984,14 @@ export function ArtifactPreviewBody({
       return (
         <ArtifactDialogOfficeDocumentBody
           filename={filename}
+          fullscreen={fullscreen}
           preview={preview}
         />
       );
     }
-    return <ArtifactDialogGenericFileBody filename={filename} />;
+    return (
+      <ArtifactDialogGenericFileBody filename={filename} preview={preview} />
+    );
   }
 
   if (preview.kind === "markdown") {
@@ -943,7 +1018,11 @@ export function ArtifactPreviewBody({
   }
 
   return (
-    <ArtifactDialogDocumentFrameBody filename={filename} preview={preview} />
+    <ArtifactDialogDocumentFrameBody
+      filename={filename}
+      fullscreen={fullscreen}
+      preview={preview}
+    />
   );
 }
 
@@ -1388,9 +1467,8 @@ function ArtifactPreviewDialogContent({
           </div>
           <DialogBody className="overflow-hidden bg-background">
             {connectionProgressActive ? (
-              <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+              <div className="flex h-full items-center justify-center p-6">
                 <ConnectorConnectionStatus />
-                <ConnectorConnectionCancelButton />
               </div>
             ) : (
               <ArtifactPreviewBody

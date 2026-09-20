@@ -329,12 +329,12 @@ import {
   CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
   CHAT_THREAD_RESPONSE_COMPACT_STACK_CLASS,
   CHAT_THREAD_RESPONSE_STACK_CLASS,
-  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS,
   CHAT_THREAD_WORK_HISTORY_TEXT_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
+import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -3731,7 +3731,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className={cn(
           "absolute inset-0 focus:outline-none [overflow-anchor:none]",
-          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+          SCROLL_FADE_Y_END,
           standalonePwa && "overscroll-contain",
         )}
       >

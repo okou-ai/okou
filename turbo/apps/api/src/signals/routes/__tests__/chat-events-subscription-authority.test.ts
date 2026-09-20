@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+import { HTTPException } from "hono/http-exception";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
@@ -8,8 +9,10 @@ import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { holdThreadSessionConversationClearFixture } from "../../../test-fixtures/chat-events";
+import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
@@ -17,6 +20,7 @@ import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
+  requireOrgId,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   expectNoBuiltInModelUsage,
   userMessages,
@@ -48,6 +52,7 @@ const {
   waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
+  requestSendEventRaw,
   requestSendEventWithBearer,
   cancelBeforeLatePiResult,
   mockPiCheckpointObjectStore,
@@ -58,7 +63,360 @@ const {
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
+function jsonHttpException(status: 409 | 422, message: string) {
+  return new HTTPException(status, {
+    res: new Response(JSON.stringify({ error: { message } }), {
+      status,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+}
+
+function observePendingSend<T>(send: Promise<T>) {
+  const result = settleIncludingAbort(send);
+  const phases: Promise<unknown>[] = [];
+
+  async function beforeSettlement(phase: PromiseLike<unknown>) {
+    const work = Promise.resolve(phase);
+    phases.push(work);
+    await Promise.race([
+      work,
+      result.then((settled) => {
+        if (!settled.ok) {
+          throw settled.error;
+        }
+        throw new Error(
+          "Chat send completed before its held subscription preparation phase",
+        );
+      }),
+    ]);
+  }
+
+  async function joinPhases() {
+    await Promise.allSettled(phases);
+  }
+
+  return { result, beforeSettlement, joinPhases };
+}
+
 describe("CHAT-02: run-level model overrides", () => {
+  describe("subscription account preparation", () => {
+    async function prepareSubscriptionThread() {
+      const { actor, agentId } = await entitledChatActor();
+      const captured = await configureSubscriptionPiModel(actor, {
+        accountId: `preparation-subscription-${randomUUID()}`,
+      });
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        [FeatureSwitchKey.PiLoop]: false,
+      });
+      const thread = await chat.createThread(actor, { agentId });
+      const preparation = holdPiContextPreparationStagesFixture({
+        userId: actor.userId,
+        orgId: requireOrgId(actor),
+        signal: context.signal,
+      });
+      return { actor, agentId, captured, thread, preparation };
+    }
+
+    it("overlaps account capture with thread observation and keeps captured identity", async () => {
+      const f = await prepareSubscriptionThread();
+      const send = sendChatRun(f.actor, {
+        agentId: f.agentId,
+        threadId: f.thread.id,
+        model: "gpt-5.6-terra",
+        prompt: "overlap subscription capture with thread preparation",
+      });
+      const observed = observePendingSend(send);
+
+      await Promise.all([
+        f.preparation.arrival("subscription-account"),
+        f.preparation.arrival("thread-session"),
+      ]);
+      expect(
+        f.preparation.hasArrived("post-authorization-context"),
+      ).toBeFalsy();
+      f.preparation.release("subscription-account");
+      await observed.beforeSettlement(
+        f.preparation.arrival("post-authorization-context"),
+      );
+      expect(f.preparation.arrivalCount("subscription-account")).toBe(1);
+      expect(f.preparation.arrivalCount("thread-session")).toBe(1);
+      f.preparation.release("post-authorization-context");
+      f.preparation.release("thread-session");
+      f.preparation.releaseAll();
+
+      const run = await send;
+      await observed.joinPhases();
+      await expect(api.readRun(f.actor, run.runId)).resolves.toMatchObject({
+        source: {
+          providerType: "codex-oauth-token",
+          account: { id: f.captured.accountSourceId },
+        },
+      });
+      await cancelChatRun(f.actor, run.runId);
+    });
+
+    it("captures once while a stale thread snapshot retries with the same account", async () => {
+      const { actor, agentId } = await entitledChatActor();
+      const captured = await configureSubscriptionPiModel(actor, {
+        accountId: `retry-subscription-${randomUUID()}`,
+      });
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        [FeatureSwitchKey.PiLoop]: true,
+      });
+      mockPiResourceArchiveDownloads();
+      mockPiCheckpointObjectStore();
+      server.use(
+        http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+          return nativeCodexSseResponse(
+            piResponsesTextSse("subscription retry answer", 1),
+          );
+        }),
+      );
+      const first = await sendChatRun(actor, {
+        agentId,
+        model: "gpt-5.6-terra",
+        prompt: "establish subscription session before retry",
+      });
+      await waitForRunStatus(actor, first.runId, "completed");
+      await flushWaitUntilForTest();
+
+      const conversationClear = await holdThreadSessionConversationClearFixture(
+        {
+          threadId: first.threadId,
+          signal: context.signal,
+        },
+      );
+      onTestFinished(async () => {
+        conversationClear.release();
+        await conversationClear.done;
+      });
+      const preparation = holdPiContextPreparationStagesFixture({
+        userId: actor.userId,
+        orgId: requireOrgId(actor),
+        signal: context.signal,
+      });
+      const secondPromise = sendChatRun(actor, {
+        agentId,
+        threadId: first.threadId,
+        model: "gpt-5.6-terra",
+        prompt: "retry subscription preparation after snapshot change",
+      });
+
+      await Promise.all([
+        preparation.arrival("subscription-account"),
+        preparation.arrival("thread-session"),
+      ]);
+      preparation.release("subscription-account");
+      await preparation.arrival("post-authorization-context");
+      for (const stage of [
+        "post-authorization-context",
+        "thread-session",
+        "connector-contexts",
+        "model-provider",
+        "user-timezone",
+        "media-models",
+        "official-workflow",
+      ] as const) {
+        preparation.release(stage);
+      }
+      await expect
+        .poll(conversationClear.blockedWaiterCount)
+        .toBeGreaterThanOrEqual(1);
+
+      conversationClear.release();
+      await conversationClear.done;
+      const second = await secondPromise;
+      expect(preparation.arrivalCount("subscription-account")).toBe(1);
+      expect(preparation.arrivalCount("thread-session")).toBe(2);
+      await expect(api.readRun(actor, second.runId)).resolves.toMatchObject({
+        source: {
+          providerType: "codex-oauth-token",
+          account: { id: captured.accountSourceId },
+        },
+      });
+      preparation.releaseAll();
+      await waitForRunStatus(actor, second.runId, "completed");
+    }, 90_000);
+
+    it("keeps an unavailable capture ahead of a speculative thread failure", async () => {
+      const f = await prepareSubscriptionThread();
+      const clientEventId = randomUUID();
+      const prompt = "prefer unavailable capture over thread failure";
+      const send = requestSendEventRaw(f.actor, {
+        agentId: f.agentId,
+        threadId: f.thread.id,
+        model: "gpt-5.6-terra",
+        prompt,
+        clientEventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+      });
+      const observed = observePendingSend(send);
+
+      await Promise.all([
+        f.preparation.arrival("subscription-account"),
+        f.preparation.arrival("thread-session"),
+      ]);
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        f.actor,
+        f.captured.accountSourceId,
+      );
+      f.preparation.reject(
+        "thread-session",
+        jsonHttpException(422, "session preparation failed"),
+      );
+      await observed.beforeSettlement(
+        f.preparation.departure("thread-session"),
+      );
+      f.preparation.release("subscription-account");
+
+      await expect(send).resolves.toStrictEqual({
+        status: 409,
+        body: {
+          error: {
+            code: "CONFLICT",
+            message:
+              "The selected subscription account is unavailable. Reconnect it before starting another run.",
+          },
+        },
+      });
+      await observed.joinPhases();
+      expect(
+        f.preparation.hasArrived("post-authorization-context"),
+      ).toBeFalsy();
+      f.preparation.releaseAll();
+      const events = await chat.listThreadEvents(f.actor, f.thread.id);
+      expect(events.events).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          id: clientEventId,
+        }),
+        expect.objectContaining({
+          eventType: "control.revoke",
+          revokesEventId: clientEventId,
+        }),
+      ]);
+    });
+
+    it("keeps post-authorization failure ahead of thread failure after capture", async () => {
+      const f = await prepareSubscriptionThread();
+      const clientEventId = randomUUID();
+      const prompt = "preserve subscription preparation error order";
+      const send = requestSendEventRaw(f.actor, {
+        agentId: f.agentId,
+        threadId: f.thread.id,
+        model: "gpt-5.6-terra",
+        prompt,
+        clientEventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+      });
+      const observed = observePendingSend(send);
+
+      await Promise.all([
+        f.preparation.arrival("subscription-account"),
+        f.preparation.arrival("thread-session"),
+      ]);
+      f.preparation.release("subscription-account");
+      await f.preparation.arrival("post-authorization-context");
+      f.preparation.reject(
+        "thread-session",
+        jsonHttpException(422, "session preparation failed"),
+      );
+      await observed.beforeSettlement(
+        f.preparation.departure("thread-session"),
+      );
+      f.preparation.reject(
+        "post-authorization-context",
+        jsonHttpException(409, "authorization preparation failed"),
+      );
+
+      await expect(send).resolves.toStrictEqual({
+        status: 409,
+        body: { error: { message: "authorization preparation failed" } },
+      });
+      await observed.joinPhases();
+      f.preparation.releaseAll();
+      const events = await chat.listThreadEvents(f.actor, f.thread.id);
+      expect(events.events).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          id: clientEventId,
+        }),
+      ]);
+    });
+
+    it("settles capture and thread branches before surfacing cancellation", async () => {
+      const { actor, agentId } = await entitledChatActor();
+      await configureSubscriptionPiModel(actor, {
+        accountId: `cancelled-subscription-${randomUUID()}`,
+      });
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        [FeatureSwitchKey.PiLoop]: false,
+      });
+      const thread = await chat.createThread(actor, { agentId });
+      const controller = new AbortController();
+      const requestSignal = AbortSignal.any([
+        controller.signal,
+        context.signal,
+      ]);
+      const preparation = holdPiContextPreparationStagesFixture({
+        userId: actor.userId,
+        orgId: requireOrgId(actor),
+        signal: requestSignal,
+        gateSignal: context.signal,
+      });
+      const clientEventId = randomUUID();
+      const prompt = "cancel held subscription preparation";
+      const send = requestSendEventRaw(
+        actor,
+        {
+          agentId,
+          threadId: thread.id,
+          model: "gpt-5.6-terra",
+          prompt,
+          clientEventId,
+          userMessage: {
+            version: 1,
+            parts: [{ type: "text", text: prompt }],
+          },
+          hasTextContent: true,
+        },
+        requestSignal,
+      );
+      const observed = observePendingSend(send);
+
+      await Promise.all([
+        preparation.arrival("subscription-account"),
+        preparation.arrival("thread-session"),
+      ]);
+      controller.abort(
+        new DOMException("cancelled by subscription route test", "AbortError"),
+      );
+      preparation.release("thread-session");
+      await observed.beforeSettlement(preparation.departure("thread-session"));
+      preparation.release("subscription-account");
+
+      const response = await send;
+      expect(response.status).toBe(500);
+      await observed.joinPhases();
+      await preparation.departure("subscription-account");
+      expect(preparation.hasArrived("post-authorization-context")).toBeFalsy();
+      preparation.releaseAll();
+      const events = await chat.listThreadEvents(actor, thread.id);
+      expect(events.events).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          id: clientEventId,
+        }),
+      ]);
+    });
+  });
+
   describe("final subscription authority", () => {
     function observeProviderRequests() {
       const requests: {

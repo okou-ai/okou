@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.10](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.9...sandbox-firecracker-v0.43.10) (2026-09-20)
+
+
+### Bug Fixes
+
+* **runner:** use fresh memory evidence for balloon grace ([#35509](https://github.com/vm0-ai/okou/issues/35509)) ([961efe6](https://github.com/vm0-ai/okou/commit/961efe6ab002c6414844e65309e2df75fce4dba7))
+
 ## [0.43.9](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.8...sandbox-firecracker-v0.43.9) (2026-09-19)
 
 ## [0.43.8](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.7...sandbox-firecracker-v0.43.8) (2026-09-18)

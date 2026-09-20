@@ -15,6 +15,9 @@ use tokio::process::Command;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 const CHILD_TIMEOUT: Duration = Duration::from_secs(15);
+const NON_UNICODE_RUNTIME_CAPTURE_CHILD: &str =
+    "guest_agent_captures_a_non_unicode_canonical_runtime_override_in_isolated_child";
+const NON_UNICODE_RUNTIME_PARENT_ENV: &str = "OKOU_TEST_NON_UNICODE_RUNTIME_PARENT";
 static NEXT_ENDPOINT: AtomicU32 = AtomicU32::new(1);
 
 struct PrivateFiles {
@@ -203,11 +206,16 @@ async fn guest_agent_preserves_a_non_unicode_canonical_runtime_override() -> Tes
     let runtime_dir = root
         .path()
         .join(OsString::from_vec(b"canonical-runtime-\xff".to_vec()));
-    let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
+    let mut command = Command::new(std::env::current_exe()?);
     command
         .env_clear()
-        .env(guest_contracts::env::RUN_ID_ENV, "non-unicode-runtime")
-        .env("HOME", root.path().join("process-home"));
+        .args([
+            "--exact",
+            NON_UNICODE_RUNTIME_CAPTURE_CHILD,
+            "--ignored",
+            "--nocapture",
+        ])
+        .env(NON_UNICODE_RUNTIME_PARENT_ENV, root.path());
     apply_runtime_env(&mut command, Some(runtime_dir.as_os_str()));
 
     let output = command_output(
@@ -215,15 +223,28 @@ async fn guest_agent_preserves_a_non_unicode_canonical_runtime_override() -> Tes
         "non-Unicode canonical runtime scenario did not finish",
     )
     .await?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(output.status.code(), Some(1), "stderr: {stderr}");
     assert!(
-        stderr.contains("OKOU_RUN_PAYLOAD_FILE is required"),
-        "stderr: {stderr}"
+        output.status.success(),
+        "isolated capture child failed with status {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
-    assert!(!stderr.contains("OKOU_GUEST_RUNTIME_DIR must be an absolute path"));
-    assert!(!guest_contracts::runtime_paths::system_log_file(&runtime_dir).exists());
     Ok(())
+}
+
+#[test]
+#[ignore = "spawned exactly by the non-Unicode runtime capture parent test"]
+fn guest_agent_captures_a_non_unicode_canonical_runtime_override_in_isolated_child() {
+    let parent = PathBuf::from(
+        std::env::var(NON_UNICODE_RUNTIME_PARENT_ENV)
+            .expect("isolated capture child requires its Unicode runtime parent"),
+    );
+    let expected = parent.join(OsString::from_vec(b"canonical-runtime-\xff".to_vec()));
+    let captured = guest_contracts::runtime_paths::guest_runtime_dir_env_from_process_env()
+        .expect("isolated capture child should accept an absolute runtime override");
+
+    assert_eq!(captured.as_deref(), Some(expected.as_path()));
 }
 
 #[tokio::test]

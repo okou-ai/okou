@@ -92,6 +92,12 @@ out=$(bash -c '. "$1"; runner_image_target_for_uname_m aarch64' bash "$TARGET")
 out=$(bash -c '. "$1"; runner_image_target_for_uname_m x86_64' bash "$TARGET")
 [ "$out" = "x86_64-unknown-linux-musl" ] || fail "expected x86_64 target, got: ${out}"
 
+out=$(bash -c '. "$1"; runner_image_sccache_architecture aarch64-unknown-linux-musl' bash "$TARGET")
+[ "$out" = "arm64" ] || fail "expected arm64 sccache architecture, got: ${out}"
+
+out=$(bash -c '. "$1"; runner_image_sccache_architecture x86_64-unknown-linux-musl' bash "$TARGET")
+[ "$out" = "x86_64" ] || fail "expected x86_64 sccache architecture, got: ${out}"
+
 out=$(bash -c '. "$1"; runner_image_elf_machine_hex aarch64-unknown-linux-musl' bash "$TARGET")
 [ "$out" = "b700" ] || fail "expected aarch64 ELF machine metadata, got: ${out}"
 
@@ -355,6 +361,16 @@ if bash -c '. "$1"; runner_image_cache_suffix powerpc-unknown-linux-musl' bash "
   fail "expected unsupported cache suffix target to fail"
 fi
 grep -q "unsupported runner image target: powerpc-unknown-linux-musl" "${TMPDIR}/cache.err" || fail "expected unsupported cache suffix message"
+
+if bash -c '. "$1"; runner_image_sccache_architecture ""' bash "$TARGET" >"${TMPDIR}/sccache-empty.out" 2>"${TMPDIR}/sccache-empty.err"; then
+  fail "expected empty sccache architecture target to fail"
+fi
+grep -q "missing runner image target" "${TMPDIR}/sccache-empty.err" || fail "expected missing sccache architecture target message"
+
+if bash -c '. "$1"; runner_image_sccache_architecture powerpc-unknown-linux-musl' bash "$TARGET" >"${TMPDIR}/sccache.out" 2>"${TMPDIR}/sccache.err"; then
+  fail "expected unsupported sccache architecture target to fail"
+fi
+grep -q "unsupported runner image target: powerpc-unknown-linux-musl" "${TMPDIR}/sccache.err" || fail "expected unsupported sccache architecture message"
 
 if bash -c '. "$1"; runner_image_asset_suffix ""' bash "$TARGET" >"${TMPDIR}/asset-empty.out" 2>"${TMPDIR}/asset-empty.err"; then
   fail "expected empty asset suffix target to fail"

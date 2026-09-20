@@ -250,6 +250,9 @@ export const CHAT_RUN_USAGE_LIMIT_MESSAGE =
 export const CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE =
   "The selected model is not available with the configured provider account. Choose a supported model or update the provider configuration.";
 
+export const CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE =
+  "Codex sent an access-program selector that is unavailable for this account. The same conversation may be retried; no entitlement or account-setting change is required.";
+
 /**
  * A provider content-safety rejection is deterministic for the same input, so
  * this copy must not invite a retry. It names the actions the user can take
@@ -705,6 +708,7 @@ export function isGenericRunErrorForDisplay(errorMessage: string): boolean {
 }
 
 type StructuredRunErrorBehavior =
+  | "codex-access-program-unavailable"
   | "content-policy"
   | "credential"
   | "execution-timeout"
@@ -741,6 +745,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
   reconnect_required: "reconnect",
+  codex_access_program_unavailable: "codex-access-program-unavailable",
   unsupported_model: "unsupported-model",
   usage_limit: "usage-limit",
 };
@@ -789,6 +794,9 @@ function formatStructuredRunError(params: {
   }
 
   switch (STRUCTURED_RUN_ERROR_BEHAVIOR[knownReason.data]) {
+    case "codex-access-program-unavailable": {
+      return CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE;
+    }
     case "execution-timeout": {
       return CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE;
     }

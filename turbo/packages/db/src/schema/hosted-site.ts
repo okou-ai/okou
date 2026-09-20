@@ -1,7 +1,6 @@
 import {
   foreignKey,
   index,
-  integer,
   pgTable,
   unique,
   uniqueIndex,
@@ -23,15 +22,7 @@ export type {
 
 export const hostedSites = pgTable(
   "hosted_sites",
-  {
-    ...hostedSiteColumns(),
-    // Physical compatibility for the API preceding runtime version retirement.
-    // Drop with its mirror trigger after that API leaves serving and rollback.
-    activeDeploymentVersion: integer("active_deployment_version"),
-    nextDeploymentVersion: integer("next_deployment_version")
-      .notNull()
-      .default(2),
-  },
+  hostedSiteColumns(),
   (table) => {
     return [
       index("idx_hosted_sites_org").on(table.orgId),
@@ -57,20 +48,12 @@ export const hostedSites = pgTable(
 
 export const hostedDeployments = pgTable(
   "hosted_deployments",
-  {
-    ...hostedDeploymentColumns(() => {
-      return hostedSites.id;
-    }),
-    // Existing rows retain their version; new immutable publications are v1
-    // for outgoing API readers until the #35240 column contraction.
-    deploymentVersion: integer("deployment_version").default(1),
-  },
+  hostedDeploymentColumns(() => {
+    return hostedSites.id;
+  }),
   (table) => {
     return [
       index("idx_hosted_deployments_site").on(table.siteId),
-      uniqueIndex("idx_hosted_deployments_site_version")
-        .on(table.siteId, table.deploymentVersion)
-        .where(sql`${table.deploymentVersion} IS NOT NULL`),
       uniqueIndex("idx_hosted_deployments_site_manifest_version").on(
         table.siteId,
         sql`((${table.manifest}->>'deploymentVersion')::integer)`,
@@ -89,19 +72,12 @@ export const hostedDeployments = pgTable(
 // Separate rows keep older API binaries from publishing private deployments.
 export const privateHostedDeployments = pgTable(
   "private_hosted_deployments",
-  {
-    ...privateHostedDeploymentColumns(() => {
-      return hostedSites.id;
-    }),
-    deploymentVersion: integer("deployment_version").notNull().default(1),
-  },
+  privateHostedDeploymentColumns(() => {
+    return hostedSites.id;
+  }),
   (table) => {
     return [
       index("idx_private_hosted_deployments_site").on(table.siteId),
-      uniqueIndex("idx_private_hosted_deployments_site_version").on(
-        table.siteId,
-        table.deploymentVersion,
-      ),
       uniqueIndex("idx_private_hosted_deployments_site_manifest_version").on(
         table.siteId,
         sql`((${table.manifest}->>'deploymentVersion')::integer)`,

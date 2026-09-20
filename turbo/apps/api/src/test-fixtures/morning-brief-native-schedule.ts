@@ -62,6 +62,137 @@ export async function deleteLegacyMorningBriefInstallation(
   await db().delete(workflows).where(eq(workflows.id, workflowId));
 }
 
+/**
+ * Reconstruct a member whose installed legacy brief has no durable row yet.
+ *
+ * Every current creation route materializes the row as part of enrollment, so
+ * no external API can leave an installed member in the pre-migration state the
+ * bootstrap scan actually exists for. The installation, its automation and any
+ * journaled occurrence stay exactly as the real routes committed them; only the
+ * durable row this member was not migrated into yet is removed.
+ */
+export async function removeMorningBriefNativeScheduleForMigrationFixture(
+  owner: MorningBriefNativeOwner,
+): Promise<void> {
+  const removed = await db()
+    .delete(morningBriefNativeSchedules)
+    .where(
+      and(
+        eq(morningBriefNativeSchedules.orgId, owner.orgId),
+        eq(morningBriefNativeSchedules.userId, owner.userId),
+      ),
+    )
+    .returning({ userId: morningBriefNativeSchedules.userId });
+  if (removed.length !== 1) {
+    throw new Error("Expected one materialized Morning Brief row to remove");
+  }
+}
+
+/**
+ * Hold the real bootstrap at the statement that publishes the first row.
+ *
+ * By this point the production transaction has already taken the owner key and
+ * sampled the legacy state it is about to publish, which is the exact instant a
+ * selected legacy writer must not be able to slip past. No endpoint can stop a
+ * tick here, so an owner-scoped trigger parks the insert on an advisory lock the
+ * fixture holds.
+ */
+export async function holdMorningBriefFirstMaterialization(
+  owner: MorningBriefNativeOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const digest = nativeOwnerDigest(owner);
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+  const functionName = `test_mb_first_materialization_${suffix}`;
+  const triggerName = `mbm_hold_${digest}_${suffix}`;
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF substring(
+             encode(
+               sha256(convert_to(NEW.org_id || ':' || NEW.user_id, 'UTF8')),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 3) THEN
+          PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+              'morning-brief-first-materialization:' || split_part(TG_NAME, '_', 3),
+              0
+            )
+          );
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE INSERT ON morning_brief_native_schedules
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let restored = false;
+  const restore = async () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON morning_brief_native_schedules`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`morning-brief-first-materialization:${digest}`}, 0))`,
+    );
+  });
+  onTestFinished(async () => {
+    await held.release();
+    await restore();
+  });
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Hold the selected legacy automation row so a writer stops with durable
+ * authority already decided.
+ *
+ * Every selected legacy writer takes durable authority — the owner key while no
+ * row exists — before this row, so a transaction parked here has finished the
+ * classification under test and nothing else. The returned pid is the waiter,
+ * which lets a caller chain the next observation onto it.
+ */
+export async function holdSelectedMorningBriefAutomationRow(
+  automationId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    const rows = await tx
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, automationId))
+      .for("update");
+    if (rows.length !== 1) {
+      throw new Error("Expected one selected Morning Brief automation row");
+    }
+  });
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
 export async function readNativeOccurrences(owner: MorningBriefNativeOwner) {
   return await db()
     .select()

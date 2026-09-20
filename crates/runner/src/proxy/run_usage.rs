@@ -28,7 +28,7 @@ pub struct MitmRunUsage {
     admission: Arc<Semaphore>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenTotals {
     pub input: u64,
@@ -38,7 +38,7 @@ pub struct TokenTotals {
     pub total: u64,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageReason {
     HistoryLost,
@@ -152,6 +152,8 @@ impl RunUsageSnapshot {
         .into_iter()
         .try_fold(0_u64, u64::checked_add);
         self.sampled_at_ms > 0
+            && self.sampled_at_ms <= MAX_QUANTITY
+            && self.revision <= MAX_QUANTITY
             && self.observed_responses <= MAX_RESPONSES
             && self.outstanding_responses <= MAX_RESPONSES
             && totals.total <= MAX_QUANTITY

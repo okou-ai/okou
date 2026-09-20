@@ -34,7 +34,7 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
-  it("preserves archive mismatch diagnostics through the sandbox-operation SDK transport", async () => {
+  it("preserves archive diagnostics through the sandbox-operation SDK transport", async () => {
     // Logger-suite exception: ingestion is the subject and no read endpoint
     // exposes it. Use the real webhook to cover validation and projection.
     const bdd = createBddApi(context);
@@ -72,6 +72,17 @@ describe("shared SDK ingestion", () => {
       archive_url: "https://private.example/archive?secret=private",
       raw_content_encoding: "private-header",
     } as const;
+    const connectionAttempt = {
+      started: 2,
+      succeeded: 1,
+      failed: 0,
+      dropped: 0,
+      active_at_headers: 1,
+      terminal_duration_ms: 37,
+      saturated: false,
+      origin: "https://private.example",
+      raw_error: "private",
+    } as const;
     const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookTelemetryContract,
@@ -82,6 +93,10 @@ describe("shared SDK ingestion", () => {
           sandboxOperations: [
             operation,
             { ...operation, archive_size_mismatch: diagnostic },
+            {
+              ...operation,
+              archive_connection_attempt: connectionAttempt,
+            },
           ],
         },
       }),
@@ -112,6 +127,21 @@ describe("shared SDK ingestion", () => {
           archive_size_mismatch_source_kind: "storage",
           archive_size_mismatch_source_index: 0,
           archive_size_mismatch_content_encoding: "other",
+        },
+      ],
+    );
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          ...expected,
+          archive_connection_attempt_started: 2,
+          archive_connection_attempt_succeeded: 1,
+          archive_connection_attempt_failed: 0,
+          archive_connection_attempt_dropped: 0,
+          archive_connection_attempt_active_at_headers: 1,
+          archive_connection_attempt_terminal_duration_ms: 37,
+          archive_connection_attempt_saturated: false,
         },
       ],
     );

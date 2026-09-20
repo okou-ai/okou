@@ -1191,11 +1191,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         };
       },
     );
-    await Promise.all(
-      paginationEvents.map(async (event) => {
-        await chat.renameThread(actor, thread.id, event.title, event.id);
-      }),
-    );
+    // This test covers cursor pagination, not concurrent mutation admission.
+    // Keep the writes to one thread sequential to avoid artificial contention.
+    for (const event of paginationEvents) {
+      await chat.renameThread(actor, thread.id, event.title, event.id);
+    }
 
     const firstPage = await threadEventPage(actor, snapshot.latestSeqId);
     expect(firstPage.events).toHaveLength(lifecyclePageSize);

@@ -20,6 +20,7 @@ function buildCommands(): Command[] {
     new Command("agent"),
     new Command("connector"),
     new Command("mcp"),
+    new Command("run"),
     new Command("credit"),
     new Command("upgrade"),
     new Command("chat"),
@@ -194,7 +195,11 @@ describe("registerCommands", () => {
     vi.stubEnv("OKOU_TOKEN", undefined);
 
     const prog = buildProgram();
-    expect(hiddenCommandNames(prog)).toEqual(["mcp", "image-recognition"]);
+    expect(hiddenCommandNames(prog)).toEqual([
+      "mcp",
+      "run",
+      "image-recognition",
+    ]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });
@@ -239,6 +244,7 @@ describe("registerCommands", () => {
       "org",
       "connector",
       "mcp",
+      "run",
       "credit",
       "chat",
       "schedule",
@@ -268,7 +274,11 @@ describe("registerCommands", () => {
 
     const prog = buildProgram();
 
-    expect(hiddenCommandNames(prog)).toEqual(["mcp", "image-recognition"]);
+    expect(hiddenCommandNames(prog)).toEqual([
+      "mcp",
+      "run",
+      "image-recognition",
+    ]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });
@@ -282,9 +292,25 @@ describe("registerCommands", () => {
 
     const prog = buildProgram();
 
-    expect(hiddenCommandNames(prog)).toEqual(["mcp", "image-recognition"]);
+    expect(hiddenCommandNames(prog)).toEqual([
+      "mcp",
+      "run",
+      "image-recognition",
+    ]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
+  });
+
+  it("should show current Run usage only with run-usage:read", () => {
+    vi.stubEnv(
+      "OKOU_TOKEN",
+      buildOkouToken({ scope: "okou", capabilities: ["run-usage:read"] }),
+    );
+
+    const prog = buildProgram();
+
+    expect(visibleCommandNames(prog)).toContain("run");
+    expect(visibleCommandNames(prog)).not.toContain("credit");
   });
 
   it("should show globally enabled commands when capabilities array is empty", () => {

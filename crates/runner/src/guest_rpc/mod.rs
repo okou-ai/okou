@@ -14,7 +14,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{ids::RunId, ssh, vnc};
+use crate::{ids::RunId, run_usage, ssh, types::ExecutionContext, vnc};
 
 const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -23,6 +23,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct Runtime {
     pub(crate) ssh: Option<Arc<ssh::SshRuntime>>,
     pub(crate) vnc: Option<Arc<vnc::VncRuntime>>,
+    pub(crate) usage: Option<run_usage::Runtime>,
 }
 
 /// The stream and permit move together into a consumer. Host work may retain
@@ -42,19 +43,41 @@ impl Runtime {
     pub(crate) fn install(
         &self,
         sandbox: &dyn Sandbox,
-        run: RunId,
+        context: &ExecutionContext,
         cancel: &CancellationToken,
     ) -> Option<Run> {
-        let acceptor = sandbox.guest_rpc(&run.to_string())?;
-        Some(self.start(acceptor, sandbox.id().to_owned(), run, cancel))
+        let acceptor = sandbox.guest_rpc(&context.run_id.to_string())?;
+        let usage = self
+            .usage
+            .as_ref()
+            .and_then(|runtime| runtime.for_context(context));
+        Some(self.start_with_usage(
+            acceptor,
+            sandbox.id().to_owned(),
+            context.run_id,
+            cancel,
+            usage,
+        ))
     }
 
+    #[cfg(test)]
     pub(crate) fn start(
         &self,
         acceptor: Arc<dyn GuestRpcAcceptor>,
         sandbox: String,
         run: RunId,
         cancel: &CancellationToken,
+    ) -> Run {
+        self.start_with_usage(acceptor, sandbox, run, cancel, None)
+    }
+
+    fn start_with_usage(
+        &self,
+        acceptor: Arc<dyn GuestRpcAcceptor>,
+        sandbox: String,
+        run: RunId,
+        cancel: &CancellationToken,
+        usage: Option<Arc<run_usage::Run>>,
     ) -> Run {
         let cancel = cancel.child_token();
         let ssh = self
@@ -75,6 +98,7 @@ impl Runtime {
             task_cancel,
             task_ssh,
             task_vnc,
+            usage,
         ));
         Run {
             cancel,
@@ -92,6 +116,7 @@ async fn serve(
     cancel: CancellationToken,
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
+    usage: Option<Arc<run_usage::Run>>,
 ) {
     let permits = Arc::new(Semaphore::new(RUN_REQUEST_CAPACITY));
     let mut prune = tokio::time::interval(Duration::from_secs(30));
@@ -136,6 +161,7 @@ async fn serve(
             scope,
             ssh.clone(),
             vnc.clone(),
+            usage.clone(),
         ));
     }
     cancel.cancel();
@@ -161,6 +187,7 @@ async fn dispatch(
     scope: Scope,
     ssh: Option<Arc<ssh::Run>>,
     vnc: Option<Arc<vnc::Run>>,
+    usage: Option<Arc<run_usage::Run>>,
 ) {
     let _cancel_on_drop = scope.cancelled.clone().drop_guard();
     let started = Instant::now();
@@ -214,6 +241,23 @@ async fn dispatch(
                 request,
             })
             .await;
+        } else {
+            scope.error(input, ErrorCode::Unavailable).await;
+        }
+    } else if request.method == "run.usage" {
+        if let Some(usage) = usage {
+            usage
+                .dispatch(Request {
+                    input,
+                    lease,
+                    run,
+                    started,
+                    deadline: scope.deadline,
+                    cancelled: scope.cancelled,
+                    sandbox_cancelled: scope.sandbox_cancelled,
+                    request,
+                })
+                .await;
         } else {
             scope.error(input, ErrorCode::Unavailable).await;
         }
