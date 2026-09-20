@@ -109,6 +109,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.UserMessageLinks]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Make plain http(s) URLs clickable in a user's own messages",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
@@ -236,12 +242,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Spotify connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.StripeMarketplaceOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Show Stripe Marketplace OAuth as a sign-in option for the Stripe connector.",
-    enabled: false,
-  },
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -324,12 +324,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.PiDeferredSandbox]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
     enabled: false,
   },
   [FeatureSwitchKey.PiLoop]: {

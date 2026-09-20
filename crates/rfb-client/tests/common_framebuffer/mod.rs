@@ -1,7 +1,8 @@
 use std::{future::Future, io, sync::Arc, time::Duration};
 
 use rfb_client::{
-    Authenticated, Error, FramebufferConnection, SharingMode, TrustRoots, VncPassword, authenticate,
+    Authenticated, Error, FramebufferConnection, SharingMode, TrustRoots, VncPassword,
+    X509Authentication, authenticate,
 };
 use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
 use tokio::{
@@ -70,7 +71,7 @@ where
     let caller = authenticate(
         client,
         "vnc.example.test",
-        VncPassword::new(" secret ".to_owned()).unwrap(),
+        X509Authentication::VncPassword(VncPassword::new(" secret ".to_owned()).unwrap()),
         roots,
         deadline(),
     );

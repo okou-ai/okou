@@ -8,22 +8,6 @@
 
 /// Runner-facing DTOs generated from TypeScript API contracts.
 pub mod runners {
-    /// Authenticated Runner job DTOs.
-    pub mod jobs {
-        /// Authenticated deferred Pi handoff DTOs.
-        pub mod pi_handoff {
-            /// One bounded chunk of authenticated deferred Pi handoff data.
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            pub struct Response {
-                /// Base64-encoded handoff bytes.
-                pub chunk: String,
-                /// Next exact byte offset, or null after the final chunk.
-                pub next_offset: Option<u64>,
-            }
-        }
-    }
-
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.
@@ -51,52 +35,6 @@ pub mod runners {
             /// Optional opaque Codex model catalog supplied by the API.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub model_catalog: Option<serde_json::Value>,
-        }
-
-        /// Captured H0 checkpoint.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiDeferredLaunchConfigApiFirstTurnBaseSession {
-            /// Canonical Pi session identifier.
-            pub session_id: String,
-            /// Original H0 history digest, or null for an empty session.
-            pub sha256: Option<String>,
-        }
-
-        /// Minimum deferred handoff identity accepted by the Runner.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiDeferredLaunchConfigApiFirstTurn {
-            /// Deferred continuation version.
-            pub schema_version: i64,
-            /// Claimed inference owner epoch.
-            pub owner_epoch: i64,
-            /// Claimed demand generation.
-            pub generation: i64,
-            /// Execution startup deadline in Unix milliseconds.
-            pub deadline_at: i64,
-            /// Digest of the frozen resources validated by the CLI.
-            pub resource_snapshot_digest: String,
-            /// Original canonical Pi session checkpoint.
-            pub base_session: PiDeferredLaunchConfigApiFirstTurnBaseSession,
-            /// First unpublished Sandbox event sequence.
-            pub sandbox_event_sequence_start: u64,
-            /// Digest of the exact H1 or untouched H0 bytes.
-            pub history_hash: String,
-            /// Original Run authorized by the Sandbox token.
-            pub run_id: String,
-            /// Original Run has a thread capable of receiving active input.
-            pub active_input: bool,
-        }
-
-        /// Deferred Pi Runner validation view. The CLI validates the full immutable payload.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiDeferredLaunchConfig {
-            /// Outer Pi launch version.
-            pub schema_version: i64,
-            /// Generation-fenced durable continuation.
-            pub api_first_turn: PiDeferredLaunchConfigApiFirstTurn,
         }
 
         /// Pi session checkpoint used as the first-turn base.

@@ -7,7 +7,6 @@ import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { earlierDeferredDemandTotals } from "./pi-deferred-demand.service";
 import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
@@ -180,13 +179,7 @@ export async function loadOrgConcurrencyState(
   };
 }
 
-/**
- * Fresh direct admission only. The caller has no persisted queue position, so
- * its single captured `at` is both the position it is ordered at and the
- * instant its earlier demand is tested for expiry. Queued legacy promotion and
- * retained deferred promotion keep a historical position and must call
- * `countEarlierDeferredDemand` with a separate current `eligibilityTime`.
- */
+/** Fresh direct admission only, ordered at the caller's single captured `at`. */
 export async function loadOrgConcurrencyAdmissionState(
   db: ReadDb,
   args: {
@@ -194,15 +187,11 @@ export async function loadOrgConcurrencyAdmissionState(
     readonly at: Date;
     readonly activePendingAfter: Date;
   },
-): Promise<OrgConcurrencyState & { readonly earlierDeferredDemand: number }> {
+): Promise<OrgConcurrencyState> {
   const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
     db,
     args,
   );
-  const deferredDemandTotals = earlierDeferredDemandTotals(db, args.orgId, {
-    positionTime: args.at,
-    eligibilityTime: args.at,
-  });
   const [row] = await db
     .select({
       entitlementOrgId: orgPlanEntitlements.orgId,
@@ -210,11 +199,9 @@ export async function loadOrgConcurrencyAdmissionState(
       baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
       paidSlots: paidSlotTotals.slots,
       activeRunCount: activeRunTotals.count,
-      earlierDeferredDemand: deferredDemandTotals.count,
     })
     .from(paidSlotTotals)
     .crossJoin(activeRunTotals)
-    .crossJoin(deferredDemandTotals)
     .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
     .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId));
   if (!row) {
@@ -227,7 +214,6 @@ export async function loadOrgConcurrencyAdmissionState(
     baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
     paidSlots: row.paidSlots,
     activeRunCount: row.activeRunCount,
-    earlierDeferredDemand: row.earlierDeferredDemand,
   };
 }
 

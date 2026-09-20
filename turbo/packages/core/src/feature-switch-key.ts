@@ -33,7 +33,6 @@ export enum FeatureSwitchKey {
   RampConnector = "rampConnector",
   ResendConnector = "resendConnector",
   SpotifyConnector = "spotifyConnector",
-  StripeMarketplaceOAuthConnector = "stripeMarketplaceOAuthConnector",
   OkouDebug = "_debug",
   Banking = "banking",
   Lab = "_lab",
@@ -60,7 +59,6 @@ export enum FeatureSwitchKey {
   McpServer = "mcpServer",
   VncAccess = "vncAccess",
   RunUsage = "runUsage",
-  PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
@@ -83,4 +81,5 @@ export enum FeatureSwitchKey {
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
   OptimisticMessageSpinner = "optimisticMessageSpinner",
+  UserMessageLinks = "userMessageLinks",
 }

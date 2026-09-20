@@ -26,8 +26,7 @@ import { agentRuns } from "./agent-run";
  *   connector github                       issue.write
  *   model     claude-sonnet-4-6            tokens.input
  *   model     claude-sonnet-4-6            tokens.output
- *   image     gemini-2.5-flash-image       output_tokens
- *   image     gemini-2.5-flash-image       input_tokens
+ *   image     fal-ai/nano-banana-2         output_image
  *   image     gpt-image-2                  tokens.output.image
  *   image     fal-ai/qwen-image            output_megapixel
  *   video     fal-ai/veo3.1/fast           output_video_seconds.audio
