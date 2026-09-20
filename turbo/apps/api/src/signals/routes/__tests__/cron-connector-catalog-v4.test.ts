@@ -157,7 +157,8 @@ function runtimeBuiltinConnector(
       protocol === "mcp"
         ? { kind: "none" }
         : {
-            ...connector.firewall,
+            kind: "generated",
+            billable: false,
             config: {
               description: "Notes",
               apis: [
@@ -176,6 +177,9 @@ function runtimeBuiltinConnector(
                 },
               ],
             },
+            categories: null,
+            defaultAllowed: null,
+            defaultUnknownPolicy: "allow",
           },
   };
 }
