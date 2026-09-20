@@ -73,7 +73,7 @@ function SharedThreadArtifactDialog({
         height={1000}
         surface="canvas"
         mode={fullscreen ? "fullscreen" : "windowed"}
-        overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
+        overlayClassName="[@media(display-mode:standalone)]:-bottom-safe bg-gray-900/45 dark:bg-gray-900/45"
         contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
         data-testid="shared-thread-artifact-lightbox"
       >

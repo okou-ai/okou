@@ -168,12 +168,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
           data-slot="dialog-viewport"
           className={cn(
             "fixed inset-x-0 top-0 flex h-[var(--okou-viewport-height,100dvh)] items-center justify-center overflow-hidden",
-            mode === "windowed" && [
-              "pt-[calc(var(--sat,env(safe-area-inset-top,0px))+1.5rem)]",
-              "pr-[calc(var(--sar,env(safe-area-inset-right,0px))+1.5rem)]",
-              "pb-[calc(var(--sab,env(safe-area-inset-bottom,0px))+1.5rem)]",
-              "pl-[calc(var(--sal,env(safe-area-inset-left,0px))+1.5rem)]",
-            ],
+            mode === "windowed" && "p-safe-offset-6",
           )}
         >
           <DialogPrimitive.Popup
@@ -205,13 +200,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
                     surface === "canvas" &&
                       "shadow-[0_24px_70px_rgba(0,0,0,0.30)]",
                   ]
-                : [
-                    "h-full w-full rounded-none",
-                    "pt-[var(--sat,env(safe-area-inset-top,0px))]",
-                    "pr-[var(--sar,env(safe-area-inset-right,0px))]",
-                    "pb-[var(--sab,env(safe-area-inset-bottom,0px))]",
-                    "pl-[var(--sal,env(safe-area-inset-left,0px))]",
-                  ],
+                : ["h-full w-full rounded-none", "p-safe"],
             )}
           >
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

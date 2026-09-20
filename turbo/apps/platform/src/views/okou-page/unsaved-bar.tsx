@@ -28,7 +28,7 @@ const ANCHORS: Readonly<Record<UnsavedBarAnchor, AnchorConfig>> = {
     containerId: "root",
     // Modal and floating Base UI portals live outside this container and stay
     // above the bar without coordinating z-index values.
-    className: "fixed bottom-[max(1.5rem,var(--sab))] z-40",
+    className: "fixed bottom-safe-or-6 z-40",
     renderInPlaceWithoutContainer: true,
   },
   "settings-dialog": {
