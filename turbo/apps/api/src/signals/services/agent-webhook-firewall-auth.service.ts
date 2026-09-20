@@ -5888,6 +5888,12 @@ type BuiltinMcpFirewallAuthPreparation =
 function expectedBuiltinMcpCredentialAuth(
   runtimeMethod: ConnectorRuntimeMethod,
 ) {
+  if (
+    runtimeMethod.method.grant.kind !== "manual" ||
+    runtimeMethod.method.access.kind !== "static"
+  ) {
+    return null;
+  }
   const secretBindings = connectorAuthMethodRuntimeMetadata(
     runtimeMethod.method,
   ).runtimeBindings.filter((binding) => {
@@ -5978,9 +5984,6 @@ async function prepareBuiltinMcpFirewallAuth(args: {
       },
       expiresAt,
     };
-  }
-  if (grantKind !== "manual" || runtimeMethod.method.access.kind !== "static") {
-    return { ok: false, response: connectorNotConfigured() };
   }
   const expectedAuth = expectedBuiltinMcpCredentialAuth(runtimeMethod);
   if (
