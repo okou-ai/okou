@@ -67,6 +67,7 @@ import {
 } from "../../../test-fixtures/account-erasure-subject";
 import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
@@ -879,6 +880,47 @@ describe("MCP chat discovery and creation", () => {
       threadId: args.requestId,
       agentId: f.defaultAgentId,
       title: null,
+      replayed: true,
+    });
+  });
+
+  it("re-resolves a concurrently accepted default Agent without reversing the subject lock order", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    if (!f.defaultAgentId) {
+      throw new Error("Expected the default Agent fixture");
+    }
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = { requestId: randomUUID() };
+    const replacement = await f.bdd.createAgent(f.actor, {
+      displayName: "Replacement MCP default Agent",
+      visibility: "private",
+    });
+    const lock = await holdAgentRowLockFixture({
+      agentId: f.defaultAgentId,
+      signal: context.signal,
+    });
+    const first = createThread(token, args);
+    onTestFinished(async () => {
+      lock.release();
+      await lock.done;
+      await first;
+    });
+    await expect
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
+      .toBeGreaterThan(0);
+    await setOrgDefaultAgentFixture({
+      orgId: f.auth.orgId,
+      agentId: replacement.agentId,
+    });
+
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      agentId: replacement.agentId,
+      replayed: false,
+    });
+    lock.release();
+    await lock.done;
+    await expect(first).resolves.toMatchObject({
+      agentId: replacement.agentId,
       replayed: true,
     });
   });

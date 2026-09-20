@@ -50,6 +50,7 @@ import {
 } from "./model-selection.service";
 
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
+const CREATION_AGENT_ATTEMPTS = 3;
 const CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
 const COMBINED_INPUT_NAMESPACE = "c2559c1c-a5f8-4d43-88a6-9738ef189420";
 const L = logger("McpChatCreation");
@@ -66,6 +67,13 @@ class McpThreadCreationError extends Error {
     readonly retryable = false,
   ) {
     super(message);
+  }
+}
+
+class McpCreationAgentChangedError extends Error {
+  constructor() {
+    super("Creation Agent changed while acquiring locks");
+    this.name = "McpCreationAgentChangedError";
   }
 }
 
@@ -174,6 +182,26 @@ async function resolveDefaultAgent(
     );
   }
   return selected.agentId;
+}
+
+/** Resolve the candidate Agent without retaining a business-row lock. */
+async function resolveCreationAgent(
+  tx: Tx,
+  principal: Principal,
+  input: McpCreateChatThreadInput,
+): Promise<string> {
+  const [thread] = await tx
+    .select({ agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, input.requestId))
+    .limit(1);
+  if (thread) {
+    if (thread.agentId === null) {
+      creationConflict();
+    }
+    return thread.agentId;
+  }
+  return input.agentId ?? (await resolveDefaultAgent(tx, principal));
 }
 
 function optionalSelectionMatches(
@@ -401,6 +429,11 @@ async function createInTransaction(
 ): Promise<McpCreateChatThreadOutput> {
   await tx.execute(sql`SELECT set_config('lock_timeout', '1s', true)`);
   await tx.execute(sql`SELECT set_config('statement_timeout', '3s', true)`);
+  // Resolve identity without a row lock, then preserve the global subject ->
+  // Agent -> request -> thread lock order. If a concurrent default-based
+  // creation chose another Agent, the outer bounded retry re-resolves it.
+  const admittedAgentId = await resolveCreationAgent(tx, principal, input);
+  await admitCreation(tx, principal, admittedAgentId, signal);
   // Serialize only this idempotency identity, including requests that select
   // different Agents. PK/event validation still handles non-MCP collisions.
   const lockKey = `mcp:create_chat_thread:${input.requestId}`;
@@ -411,15 +444,17 @@ async function createInTransaction(
   let creation = await readCreation(tx, principal, input);
   let replayed = true;
   if (creation) {
-    const agentId = creation.thread.agentId;
-    if (agentId === null) {
-      creationConflict();
+    if (creation.thread.agentId !== admittedAgentId) {
+      throw new McpCreationAgentChangedError();
     }
-    await admitCreation(tx, principal, agentId, signal);
   } else {
-    const agentId = input.agentId ?? (await resolveDefaultAgent(tx, principal));
-    await admitCreation(tx, principal, agentId, signal);
-    replayed = !(await initializeThread(tx, principal, input, agentId, signal));
+    replayed = !(await initializeThread(
+      tx,
+      principal,
+      input,
+      admittedAgentId,
+      signal,
+    ));
     // appendChatThreadEvent tolerates event-ID duplicates. Never commit a
     // newly inserted thread unless its exact initial event and optional input
     // were also written.
@@ -489,6 +524,42 @@ async function createInTransaction(
           },
         }),
   };
+}
+
+async function createWithAgentRetry(
+  args: {
+    readonly db: Db;
+    readonly principal: Principal;
+    readonly input: McpCreateChatThreadInput;
+  },
+  signal: AbortSignal,
+): Promise<McpCreateChatThreadOutput> {
+  for (let attempt = 1; ; attempt++) {
+    const result = await settle(
+      args.db.transaction(
+        async (tx) => {
+          signal.throwIfAborted();
+          return await createInTransaction(
+            tx,
+            args.principal,
+            args.input,
+            signal,
+          );
+        },
+        { isolationLevel: "read committed" },
+      ),
+      signal,
+    );
+    if (result.ok) {
+      return result.value;
+    }
+    if (
+      !(result.error instanceof McpCreationAgentChangedError) ||
+      attempt === CREATION_AGENT_ATTEMPTS
+    ) {
+      throw result.error;
+    }
+  }
 }
 
 async function finishCombinedCreation(
@@ -586,21 +657,18 @@ export const createMcpChatThread$ = command(
       signal,
       AbortSignal.timeout(15_000),
     ]);
+    const db = set(writeDb$);
     const result = await settle(
       // The route's waitUntil owner retains the real transaction through
       // commit/rollback. The deadline stops admission/work; it must not race
       // away from a transaction that can still hold locks or finish a write.
-      set(writeDb$).transaction(
-        async (tx) => {
-          operationSignal.throwIfAborted();
-          return await createInTransaction(
-            tx,
-            args.principal,
-            args.input,
-            operationSignal,
-          );
+      createWithAgentRetry(
+        {
+          db,
+          principal: args.principal,
+          input: args.input,
         },
-        { isolationLevel: "read committed" },
+        operationSignal,
       ),
       signal,
     );
@@ -636,7 +704,7 @@ export const createMcpChatThread$ = command(
     }
     return await finishCombinedCreation(
       {
-        db: set(writeDb$),
+        db,
         principal: args.principal,
         input: args.input,
         output: result.value,
