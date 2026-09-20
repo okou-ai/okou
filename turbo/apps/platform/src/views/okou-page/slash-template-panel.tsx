@@ -13,6 +13,7 @@ import {
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
+import { slashWorkflowPaneImg } from "./platform-assets.ts";
 import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
@@ -259,7 +260,21 @@ function SlashTemplateWorkflowPane() {
             return $.chat.composer.slashPanel.workflowSubtitle;
           })}
         />
-        <p className="mt-[11px] text-[12px] text-muted-foreground">
+        {/*
+          The artwork carries its own warm ground, so it sits in a rounded
+          block the way the marketing surfaces frame a scene, rather than
+          bleeding into the popover. Its intrinsic size is twice the width it
+          renders at, which is what keeps it sharp on a 2x display.
+        */}
+        <img
+          src={slashWorkflowPaneImg}
+          alt=""
+          aria-hidden
+          width={576}
+          height={365}
+          className="mt-[11px] w-full rounded-xl"
+        />
+        <p className="mt-3 text-[12px] text-muted-foreground">
           {t(($) => {
             return $.chat.composer.slashPanel.workflowHint;
           })}
