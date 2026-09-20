@@ -38,7 +38,7 @@ describe("MCP tool errors", () => {
     });
   });
 
-  it("rejects unstable codes, extra fields, and unbounded issues", () => {
+  it("ignores additive fields while rejecting unstable codes and unbounded issues", () => {
     const base = {
       error: {
         code: "invalid_arguments",
@@ -52,9 +52,15 @@ describe("MCP tool errors", () => {
       }).success,
     ).toBe(false);
     expect(
-      mcpToolErrorContentSchema.safeParse({ ...base, internal: "secret" })
-        .success,
-    ).toBe(false);
+      mcpToolErrorContentSchema.parse({
+        ...base,
+        futureTopLevel: true,
+        error: {
+          ...base.error,
+          futureDetail: "ignored",
+        },
+      }),
+    ).toStrictEqual(base);
     expect(
       mcpToolErrorContentSchema.safeParse({
         error: {

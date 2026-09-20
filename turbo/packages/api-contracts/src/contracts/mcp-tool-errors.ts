@@ -3,7 +3,7 @@ import { z } from "zod";
 export const MCP_TOOL_ERROR_MAX_ISSUES = 20;
 export const MCP_TOOL_ERROR_MAX_PATH_SEGMENTS = 16;
 
-export const mcpToolErrorIssueSchema = z.strictObject({
+export const mcpToolErrorIssueSchema = z.object({
   path: z
     .array(z.union([z.string().max(256), z.number().int().nonnegative()]))
     .max(MCP_TOOL_ERROR_MAX_PATH_SEGMENTS),
@@ -14,7 +14,7 @@ export const mcpToolErrorIssueSchema = z.strictObject({
   message: z.string().min(1).max(1_000),
 });
 
-export const mcpToolErrorSchema = z.strictObject({
+export const mcpToolErrorSchema = z.object({
   code: z
     .string()
     .regex(/^[a-z][a-z0-9_]*$/u)
@@ -27,7 +27,7 @@ export const mcpToolErrorSchema = z.strictObject({
     .optional(),
 });
 
-export const mcpToolErrorContentSchema = z.strictObject({
+export const mcpToolErrorContentSchema = z.object({
   error: mcpToolErrorSchema,
 });
 
