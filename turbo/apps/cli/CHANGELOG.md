@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.347.0](https://github.com/vm0-ai/okou/compare/cli-v9.346.1...cli-v9.347.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+    * @okouai/pi-agent-runtime bumped to 1.33.26
+
 ## [9.346.1](https://github.com/vm0-ai/okou/compare/cli-v9.346.0...cli-v9.346.1) (2026-09-20)
 
 
