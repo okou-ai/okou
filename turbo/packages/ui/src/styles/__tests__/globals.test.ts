@@ -487,6 +487,83 @@ describe("neutral gray palette", () => {
   });
 });
 
+// A `fixed` surface owes its own safe-area inset, and every one of these
+// utilities is the only place a component states that. Which property each one
+// reads is the whole behaviour: the keyboard-aware bottom or the physical one.
+describe("safe-area utilities", () => {
+  /** Returns the declaration body of `@utility <name>`. */
+  function readUtilityBody(name: string): string {
+    return readRuleBody(globalCss, `@utility ${name} {`);
+  }
+
+  const bottomAvoiding = [
+    "p-safe",
+    "p-safe-offset-*",
+    "pb-safe",
+    "pb-safe-offset-*",
+    "pb-safe-or-*",
+    "-mb-safe-offset-*",
+    "bottom-safe-or-*",
+    "bottom-safe-offset-*",
+  ];
+
+  it.each(bottomAvoiding)(
+    "%s avoids the bottom inset the keyboard can retire",
+    (name) => {
+      const body = readUtilityBody(name);
+
+      expect(body).toContain("var(--okou-safe-b,");
+      expect(body).not.toMatch(/var\(--sab[,)]/);
+    },
+  );
+
+  // This one paints a fill past the viewport edge rather than keeping content
+  // clear of the indicator, so it still owes the physical reserve while the
+  // keyboard is up. Collapsing it would pull the fill back into view.
+  it("extends past the edge by the physical inset", () => {
+    const body = readUtilityBody("-bottom-safe");
+
+    expect(body).toMatch(/var\(--sab,\s*env\(safe-area-inset-bottom, 0px\)\)/);
+    expect(body).not.toContain("--okou-safe-b");
+  });
+
+  it("takes the larger of the inset and the requested gutter", () => {
+    expect(readUtilityBody("pb-safe-or-*")).toMatch(/padding-bottom:\s*max\(/);
+    expect(readUtilityBody("bottom-safe-or-*")).toMatch(/bottom:\s*max\(/);
+  });
+
+  it("adds the requested gap on top of the inset", () => {
+    expect(readUtilityBody("pb-safe-offset-*")).toMatch(
+      /padding-bottom:\s*calc\(/,
+    );
+    expect(readUtilityBody("top-safe-offset-*")).toMatch(/top:\s*calc\(/);
+  });
+
+  // Without the second declaration a caller can only reach the spacing scale,
+  // and the viewport-relative gutters in the app have no scale entry.
+  it.each(["pb-safe-or-*", "bottom-safe-or-*", "pb-safe-offset-*"])(
+    "%s accepts an arbitrary value as well as the spacing scale",
+    (name) => {
+      const body = readUtilityBody(name);
+
+      expect(body).toContain("--spacing(--value(integer))");
+      expect(body).toContain("--value([length], [*])");
+    },
+  );
+
+  // A primitive has to behave in a host that never declared the properties.
+  it.each([
+    ["--sat", "safe-area-inset-top"],
+    ["--sar", "safe-area-inset-right"],
+    ["--sal", "safe-area-inset-left"],
+    ["--okou-safe-b", "safe-area-inset-bottom"],
+  ])("falls back from %s to the environment variable", (property, inset) => {
+    expect(readUtilityBody("p-safe")).toContain(
+      `var(${property}, env(${inset}, 0px))`,
+    );
+  });
+});
+
 // The rail caption and the two composer placeholders draw their color through a
 // Tailwind opacity modifier, so the token alone says nothing about what a user
 // reads -- only the composite against the surface behind it does.

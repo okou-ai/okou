@@ -4191,10 +4191,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0"
-      style={{
-        paddingBottom: "max(0.5rem, var(--okou-composer-safe-bottom))",
-      }}
+      className="relative shrink-0 pb-safe-or-2"
     >
       {/* `overflow-y-auto` clips at this element's padding box. The composer's
           focus veil is offset down and blurred well past the gap the footer

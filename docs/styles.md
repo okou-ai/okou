@@ -961,11 +961,47 @@ is not `h-dvh`, because standalone moves the variable to `100lvh`. A percentage
 would not do either: `h-full` on a fixed element resolves against the viewport
 rather than the height the rest of the app measures.
 
-`p-safe` is an `@utility` instead of a theme entry because its four sides carry
-four different values, which no single spacing token can express. Registering it
+`p-safe` belongs to the safe-area utility family in `@okouai/ui`, which is where
+a surface reaches an inset. Naming follows the ecosystem convention, so the side
+is carried by the property prefix rather than repeated in a token name:
+
+| Form                | Emits                | Use when                                               |
+| ------------------- | -------------------- | ------------------------------------------------------ |
+| `*-safe`            | the inset            | the surface owes exactly the system reserve            |
+| `*-safe-or-{n}`     | `max(inset, n)`      | a design gutter and the reserve are the same blank     |
+| `*-safe-offset-{n}` | `calc(inset + n)`    | the content must clear the reserve and keep its margin |
+
+Pick between the last two by asking whether the gutter and the reserve are one
+visual blank. A page's bottom scroll gutter is: on a device with no indicator it
+still wants the gutter, and on one with an indicator that strip is already
+empty, so take the larger. A dialog's margin is not: the panel has an edge and a
+shadow, so it clears the reserve and then keeps its own inset.
+
+These are `@utility` rather than `@theme` entries for two reasons. `p-safe`'s
+four sides carry four different values, which no single spacing token can
+express; and a spacing token can only name a length, so it cannot reach the
+`max()` and `calc()` forms that most call sites actually need. Registering them
 is not an exception to the selector boundary: `@utility` emits into
 `@layer utilities` and declares no class selector, so the policy does not see a
 selector to reject.
+
+Every one of them falls back to `env()`, so a primitive behaves in a host that
+never declared the properties, and no call site repeats that decision.
+
+Bottom-edge utilities read `--okou-safe-b`, not the raw `--sab`. The two differ
+while the software keyboard is up: the keyboard covers the home indicator, so a
+surface resting above the keyboard owes nothing there and the reserved strip
+would show as a gap. The app collapses `--okou-safe-b` from
+`:root[data-keyboard-open="true"]`, on the document root rather than a subtree,
+so a body-level portal inherits the correction without any component needing
+JavaScript for it. `-bottom-safe` is the exception: it extends a fill past the
+viewport edge instead of keeping content clear of the indicator, so it reads the
+physical `--sab` and is unaffected by the keyboard.
+
+A class the class merger cannot classify conflicts with nothing, so both copies
+survive and stylesheet order — not the caller — decides. The shared `cn()`
+therefore registers `safe` as a spacing value and gives the `-or-` / `-offset-`
+forms their own group validators.
 
 `position: fixed` changes where a box is laid out, not where it sits in the DOM,
 so a shell's custom properties still inherit into a fixed cover.

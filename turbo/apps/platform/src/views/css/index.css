@@ -244,21 +244,27 @@
 }
 
 /* Safe area insets as CSS custom properties — more reliable than direct env() in inline
-   styles across WebKit versions, including iOS 26+ standalone PWA mode. */
+   styles across WebKit versions, including iOS 26+ standalone PWA mode.
+
+   `--okou-safe-b` is the bottom inset a surface still has to avoid. The raw
+   `--sab` measures the home indicator; the software keyboard covers that strip
+   while it is up, so a surface that sits above the keyboard owes nothing there
+   and reserving the inset would leave a gap between the surface and the
+   keyboard. The `@okouai/ui` safe-area utilities read this property, so a
+   body-level portal inherits the correction from the document root instead of
+   needing a descendant selector or JavaScript. `--sab` keeps the physical value
+   for fills that paint past the viewport edge. */
 :root {
   --sat: env(safe-area-inset-top, 0px);
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
+  --okou-safe-b: var(--sab);
   --okou-viewport-height: 100dvh;
 }
 
-/* All four insets at once, for a surface that escapes the page shell and so
-   inherits none of the insets `#root` applies. The four sides carry different
-   values, which no single spacing token can express, so this is a utility
-   rather than a `@theme` entry. */
-@utility p-safe {
-  padding: var(--sat) var(--sar) var(--sab) var(--sal);
+:root[data-keyboard-open="true"] {
+  --okou-safe-b: 0px;
 }
 
 /* The effort bar's handle is a superellipse rather than a rounded rectangle --
@@ -446,14 +452,6 @@
       --okou-viewport-height: 100lvh;
     }
   }
-}
-
-[data-chat-composer] {
-  --okou-composer-safe-bottom: var(--sab);
-}
-
-:root[data-keyboard-open="true"] [data-chat-composer] {
-  --okou-composer-safe-bottom: 0px;
 }
 
 html,
