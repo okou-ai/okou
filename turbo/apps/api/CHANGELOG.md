@@ -8,6 +8,26 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.640.0](https://github.com/vm0-ai/okou/compare/api-v1.639.2...api-v1.640.0) (2026-09-20)
+
+
+### Features
+
+* **connectors:** gate monday mcp discovery ([#35525](https://github.com/vm0-ai/okou/issues/35525)) ([a7384c6](https://github.com/vm0-ai/okou/commit/a7384c6f34b5841a424676418e5f57178b21da06))
+
+
+### Performance Improvements
+
+* **api:** reuse chat startup snapshots ([#35371](https://github.com/vm0-ai/okou/issues/35371)) ([8396eda](https://github.com/vm0-ai/okou/commit/8396eda860c508e1cfa79e974390991035168ce1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.685.0
+    * @okouai/db bumped to 1.279.3
+
 ## [1.639.2](https://github.com/vm0-ai/okou/compare/api-v1.639.1...api-v1.639.2) (2026-09-20)
 
 

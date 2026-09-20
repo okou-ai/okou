@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.925.0](https://github.com/vm0-ai/okou/compare/app-v0.924.0...app-v0.925.0) (2026-09-20)
+
+
+### Features
+
+* **platform:** gate AgentPhone entry behind feature switch ([#35488](https://github.com/vm0-ai/okou/issues/35488)) ([37f2fa4](https://github.com/vm0-ai/okou/commit/37f2fa4a63c075cf895061d5138edb1a437d0f40))
+
+
+### Bug Fixes
+
+* **app:** give the artifact catalog, share menu and unpreviewable files a way out ([#35330](https://github.com/vm0-ai/okou/issues/35330)) ([0c851f5](https://github.com/vm0-ai/okou/commit/0c851f5af41ad294297500f7549447bd49d25918))
+* **platform:** close the template picker when a custom import starts ([#35443](https://github.com/vm0-ai/okou/issues/35443)) ([296665c](https://github.com/vm0-ai/okou/commit/296665c8590f75eacd56156b4bd7ee5df0893d9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.685.0
+
 ## [0.924.0](https://github.com/vm0-ai/okou/compare/app-v0.923.1...app-v0.924.0) (2026-09-20)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.202.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.1...runner-rs-v0.202.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **python:** preserve auth base abort socket ownership ([#35521](https://github.com/vm0-ai/okou/issues/35521)) ([db151cf](https://github.com/vm0-ai/okou/commit/db151cf53b9b9df4f8b3bbafd6b7d4e24698675c))
+* **runner:** classify heartbeat connection resets ([#35511](https://github.com/vm0-ai/okou/issues/35511)) ([59bb98c](https://github.com/vm0-ai/okou/commit/59bb98c6c7192f5cab127c736d82750eef21cc1a))
+* **runner:** release catalog ownership on overflow ([#35514](https://github.com/vm0-ai/okou/issues/35514)) ([9c1d985](https://github.com/vm0-ai/okou/commit/9c1d9857f134b7e99005b479b721acbf137187da))
+
+
+### Performance Improvements
+
+* **runner:** bound sse parse diagnostics ([#35517](https://github.com/vm0-ai/okou/issues/35517)) ([f2146ee](https://github.com/vm0-ai/okou/commit/f2146eeacd252a357fc62ccf5c80b2fe0b715590))
+
 ## [0.202.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.0...runner-rs-v0.202.1) (2026-09-20)
 
 
