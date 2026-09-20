@@ -16,6 +16,8 @@ export const FEATURED_SOURCE_SLUGS = [
   "notion",
   "google-calendar",
   "outlook-mail",
+  "google-ads",
+  "meta-ads",
 ] as const satisfies readonly ConnectorSlug[];
 
 export const SOURCE_FAMILIES = {
@@ -55,7 +57,7 @@ export type IndustryId = (typeof INDUSTRY_IDS)[number];
 export const INDUSTRY_RECOMMENDED_SOURCES: Readonly<
   Record<IndustryId, readonly ConnectorSlug[]>
 > = {
-  marketing: ["google-docs", "google-sheets"],
+  marketing: ["google-ads", "meta-ads", "google-sheets"],
   design: ["google-drive"],
   consulting: ["gmail", "google-docs"],
   coaching: ["google-calendar", "google-docs"],
