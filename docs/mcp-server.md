@@ -16,13 +16,13 @@ JSON text representation.
 
 ## Tool errors and CLI exit status
 
-Server-declared tool failures retain `isError: true` and a text content fallback.
-Okou chat tools additionally return `structuredContent.error` with a stable
-`code`, human-readable `message`, explicit `retryable` boolean, and optional
-bounded validation `issues` containing field paths, issue codes and messages.
-Invalid tool arguments use `invalid_arguments`; an idempotency key reused for a
-different request uses `request_id_conflict`. Clients must branch on these fields
-instead of parsing English text. A retryable value is metadata, not permission to
+Server-declared Okou chat tool failures retain `isError: true`, text content for
+human inspection, and a required `structuredContent.error` with a stable `code`,
+human-readable `message`, explicit `retryable` boolean, and optional bounded
+validation `issues` containing field paths, issue codes and messages. Invalid
+tool arguments use `invalid_arguments`; an idempotency key reused for a different
+request uses `request_id_conflict`. Clients must branch on these fields instead
+of parsing English text. A retryable value is metadata, not permission to
 automatically replay a tool call.
 
 For `okou mcp call`, a successful invocation exits `0`. A server result with
@@ -30,9 +30,11 @@ For `okou mcp call`, a successful invocation exits `0`. A server result with
 client failure exits nonzero. Successful `--json` output remains the raw MCP
 result. Failed `--json` output uses `{status:"error", error:{kind,code,message,retryable}}`;
 server-declared tool failures also preserve the complete raw MCP result under
-`result`. Without `--json`, tool errors continue to print the complete raw result
-for inspection before exiting nonzero. Commander syntax and option-conflict
-errors occur before the action and retain the CLI's standard error format.
+`result`. A tool error without a valid `structuredContent.error` is reported as
+`protocol` / `invalid_tool_error`; the CLI does not infer machine fields from its
+text. Without `--json`, tool errors continue to print the complete raw result for
+inspection before exiting nonzero. Commander syntax and option-conflict errors
+occur before the action and retain the CLI's standard error format.
 
 The CLI never automatically retries a tool call. A timeout, connection failure,
 or error result does not prove that a remote side effect did not happen; follow
