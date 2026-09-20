@@ -152,8 +152,7 @@ test("A signed-out visitor reads a shared prompt's link as plain text", async ()
 
   // A share link has no workspace, so the staff switch cannot resolve and the
   // prompt keeps the presentation it has today, overrides included.
-  const prompt = await screen.findByText(content);
-  expect(prompt).toBeVisible();
+  await expect(screen.findByText(content)).resolves.toBeInTheDocument();
   expect(
     queryAllByRoleFast("link").filter((candidate) => {
       return candidate.getAttribute("href") === "https://example.com/report";

@@ -71,9 +71,6 @@ export function splitPlainTextUrls(text: string): readonly PlainTextSegment[] {
       continue;
     }
     const url = withoutProseTail(text.slice(token.start, token.end));
-    if (url.length === 0) {
-      continue;
-    }
     if (token.start > offset) {
       segments.push({ type: "text", value: text.slice(offset, token.start) });
     }
