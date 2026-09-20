@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.687.0](https://github.com/okou-ai/okou/compare/core-v8.686.0...core-v8.687.0) (2026-09-20)
+
+
+### Features
+
+* **core:** enable Monday connector for staff ([#35578](https://github.com/okou-ai/okou/issues/35578)) ([3858c60](https://github.com/okou-ai/okou/commit/3858c60deb3c05e8e2e3fba0f746aeb7f82f5598))
+* **core:** enable Plaud connector for staff ([#35580](https://github.com/okou-ai/okou/issues/35580)) ([8b421f5](https://github.com/okou-ai/okou/commit/8b421f5f28cdeea74da038cfc066b844c98e588c))
+* **core:** enable presentation convert for staff ([#35557](https://github.com/okou-ai/okou/issues/35557)) ([94b826c](https://github.com/okou-ai/okou/commit/94b826c0fd7b5649b16e9fe3d0f256b3382cb432))
+* **core:** release the welcome thread to every workspace ([#35586](https://github.com/okou-ai/okou/issues/35586)) ([6bb62d1](https://github.com/okou-ai/okou/commit/6bb62d1157a83b416d91f77705bb448182196f64))
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### CI
+
+* prepare runtime references for okou-ai rename ([#35352](https://github.com/okou-ai/okou/issues/35352)) ([e0445aa](https://github.com/okou-ai/okou/commit/e0445aa875eae424817d932886e6de38895ce986))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+
 ## [8.686.0](https://github.com/vm0-ai/okou/compare/core-v8.685.0...core-v8.686.0) (2026-09-20)
 
 
