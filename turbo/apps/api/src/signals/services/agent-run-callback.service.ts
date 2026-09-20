@@ -73,6 +73,7 @@ interface DispatchRunCallbacksInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly redriveChatCallbackId?: string;
+  readonly redriveUndeliveredChatCallbackOnly?: true;
   readonly skipChatCallback?: boolean;
   readonly awaitTerminalChatProcessing?: boolean;
 }
@@ -440,6 +441,7 @@ export const dispatchRunCallbacks$ = command(
       result,
       error,
       redriveChatCallbackId,
+      redriveUndeliveredChatCallbackOnly,
       skipChatCallback,
       awaitTerminalChatProcessing,
     } = input;
@@ -481,10 +483,13 @@ export const dispatchRunCallbacks$ = command(
                 eq(agentRunCallbacks.id, redriveChatCallbackId),
                 eq(agentRunCallbacks.internalKind, "chat"),
               ),
-          or(
-            eq(agentRunCallbacks.status, "pending"),
-            eq(agentRunCallbacks.status, "failed"),
-          ),
+          redriveChatCallbackId === undefined ||
+            redriveUndeliveredChatCallbackOnly === true
+            ? or(
+                eq(agentRunCallbacks.status, "pending"),
+                eq(agentRunCallbacks.status, "failed"),
+              )
+            : undefined,
           or(
             isNull(agentRunCallbacks.internalKind),
             notInArray(agentRunCallbacks.internalKind, [
