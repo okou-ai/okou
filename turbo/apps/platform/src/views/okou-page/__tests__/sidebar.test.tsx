@@ -1072,20 +1072,30 @@ test("Filter the chat list to unread conversations", async () => {
   });
 });
 
-test("Refresh unread-only conversations when remote read cursors change", async () => {
+test("Keep unread conversations visible while remote read cursors refresh", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "New unread conversation"),
     createThread(INCIDENT_THREAD_ID, "Previously unread conversation"),
     createThread(AUTOMATION_THREAD_ID, "Read conversation"),
   ]);
+  const indicatorRefreshStarted = context.mocks.deferred<void>();
+  const releaseIndicatorRefresh = context.mocks.deferred<void>();
+  let refreshing = false;
   let unreadThreadId = INCIDENT_THREAD_ID;
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
-      threads: { [unreadThreadId]: "unread" },
-    });
-  });
+  context.mocks.api(
+    chatThreadsContract.indicators,
+    async ({ respond, withSignal }) => {
+      if (refreshing) {
+        indicatorRefreshStarted.resolve();
+        await withSignal(releaseIndicatorRefresh.promise);
+      }
+      return respond(200, {
+        agents: { [AGENT_ID]: "unread" },
+        threads: { [unreadThreadId]: "unread" },
+      });
+    },
+  );
   context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
     return respond(200, {
       unreads: [{ threadId: unreadThreadId, unreadAt: "2026-03-10T00:05:00Z" }],
@@ -1106,12 +1116,31 @@ test("Refresh unread-only conversations when remote read cursors change", async 
   });
 
   unreadThreadId = EXISTING_THREAD_ID;
-  changeChatThreadReadCursor({
-    agentId: AGENT_ID,
-    threadIds: [],
-    scope: "agent",
+  refreshing = true;
+  await act(async () => {
+    changeChatThreadReadCursor({
+      agentId: AGENT_ID,
+      threadIds: [],
+      scope: "agent",
+    });
+    await indicatorRefreshStarted.promise;
   });
 
+  expect(
+    visibleThreadTitles([
+      "New unread conversation",
+      "Previously unread conversation",
+      "Read conversation",
+    ]),
+  ).toStrictEqual(["Previously unread conversation"]);
+  expect(within(sidebar()).queryAllByTestId("sidebar-skeleton")).toHaveLength(
+    0,
+  );
+  expect(
+    within(sidebar()).queryByText("No unread chats"),
+  ).not.toBeInTheDocument();
+
+  releaseIndicatorRefresh.resolve();
   await within(sidebar()).findByText("New unread conversation");
   expect(
     visibleThreadTitles([
@@ -1120,6 +1149,9 @@ test("Refresh unread-only conversations when remote read cursors change", async 
       "Read conversation",
     ]),
   ).toStrictEqual(["New unread conversation"]);
+  expect(within(sidebar()).queryAllByTestId("sidebar-skeleton")).toHaveLength(
+    0,
+  );
 });
 
 test("Keep check-mark chats and archive controls unchanged when archiving is disabled", async () => {

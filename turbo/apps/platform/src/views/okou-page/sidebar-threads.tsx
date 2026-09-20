@@ -1,5 +1,10 @@
 import type { MouseEvent } from "react";
-import { useGet, useLoadable, useSet, useLastResolved } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useSet,
+  useLastResolved,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -1169,7 +1174,7 @@ function UnreadChatThreadsContent({
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
   const { t } = useTranslation();
-  const list = useLoadable(unreadSidebarChatThreadList$);
+  const list = useLastLoadable(unreadSidebarChatThreadList$);
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
   const scrollCurrentChatThreadOnRef = useSet(
@@ -1226,7 +1231,7 @@ function AllChatThreadsContent({
   currentMainThreadId: string | null;
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
-  const listLoadable = useLoadable(scrollSignals.list$);
+  const listLoadable = useLastLoadable(scrollSignals.list$);
 
   if (listLoadable.state === "loading") {
     return (
