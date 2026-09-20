@@ -63,7 +63,9 @@ const TASK_CHIP = "px-3";
 const TASK_IDEA_CARD = [
   "h-[116px] w-[232px] flex-col items-start justify-start gap-0",
   "rounded-xl border-transparent bg-muted p-4 pb-3.5",
-  "whitespace-normal text-left text-sm font-normal leading-5",
+  // A fixed box holds translated copy, so the overflow is contained here
+  // rather than left to spill past the card in a longer language.
+  "overflow-hidden whitespace-normal text-left text-sm font-normal leading-5",
   // The label is an anonymous flex item and cannot take `order`, so the
   // ordering is stated from the icon: past the text, then pushed to the floor.
   "[&_svg]:order-2 [&_svg]:mt-auto",
@@ -81,7 +83,7 @@ const TASK_ICONS = {
  * the sentence beside them did not, and four different marks in one row of one
  * kind of thing are four separate places for the eye to stop.
  */
-const IDEA_ICON = MessageSquare;
+const IdeaIcon = MessageSquare;
 const IMAGE_IDEAS = [
   "productScene",
   "headshot",
@@ -346,7 +348,7 @@ function ComposerTaskIdeas({
               detach(saveDraft(pageSignal), Reason.DomCallback);
             }}
           >
-            <IDEA_ICON
+            <IdeaIcon
               size={16}
               className="shrink-0 text-muted-foreground"
               aria-hidden
