@@ -66,6 +66,7 @@ import {
 } from "../../../test-fixtures/account-erasure-subject";
 import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
@@ -480,6 +481,10 @@ async function creationFixture() {
       };
     }),
   );
+  await setOrgDefaultAgentFixture({
+    orgId: f.auth.orgId,
+    agentId: f.agent.agentId,
+  });
   return { ...f, runs, providerId };
 }
 
