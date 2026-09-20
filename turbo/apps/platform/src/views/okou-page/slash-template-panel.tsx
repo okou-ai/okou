@@ -13,7 +13,7 @@ import {
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
-import { slashWorkflowPaneImg } from "./platform-assets.ts";
+import { SlashWorkflowPaneDiagram } from "./slash-workflow-pane-diagram.tsx";
 import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
@@ -260,19 +260,7 @@ function SlashTemplateWorkflowPane() {
             return $.chat.composer.slashPanel.workflowSubtitle;
           })}
         />
-        {/*
-          The artwork carries its own warm ground and rounded corners, so it
-          needs no frame here. Its intrinsic size is declared so the pane
-          reserves the right box before the CDN answers.
-        */}
-        <img
-          src={slashWorkflowPaneImg}
-          alt=""
-          aria-hidden
-          width={560}
-          height={280}
-          className="mt-[11px] w-full"
-        />
+        <SlashWorkflowPaneDiagram />
         <p className="mt-3 text-[12px] text-muted-foreground">
           {t(($) => {
             return $.chat.composer.slashPanel.workflowHint;

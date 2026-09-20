@@ -3,6 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type {
+  ConnectorAuthMethodId,
+  ConnectorSlug,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -12,6 +17,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { setMockConnectors } from "../../../mocks/handlers/api-connectors.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
@@ -735,4 +741,61 @@ test("Importing a deck from the panel sends it for analysis", async () => {
     "panel-deck.pptx",
   );
   expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
+});
+
+function connectedConnector(
+  slug: ConnectorSlug,
+  authMethod: ConnectorAuthMethodId,
+): BuiltinConnectorResponse {
+  return {
+    id: `00000000-0000-4000-a000-${slug.padStart(12, "0").slice(-12)}`,
+    slug,
+    authMethod,
+    externalId: null,
+    externalUsername: null,
+    externalEmail: null,
+    oauthScopes: null,
+    connectionStatus: "connected",
+    reconnectReason: null,
+    tokenExpiresAt: null,
+    createdAt: "2026-09-20T00:00:00.000Z",
+    updatedAt: "2026-09-20T00:00:00.000Z",
+  };
+}
+
+function diagramNodes(): HTMLElement[] {
+  return [
+    ...document.querySelectorAll<HTMLElement>(
+      '[data-slot="slash-workflow-diagram-node"]',
+    ),
+  ];
+}
+
+test("The workflow pane draws the connectors this workspace has", async () => {
+  setMockConnectors([
+    connectedConnector("ahrefs", "api-token"),
+    connectedConnector("openai", "oauth"),
+  ]);
+  const user = userEvent.setup();
+  await openSlashMenu();
+  await user.hover(slashButton("Workflow"));
+  await waitFor(() => {
+    expect(workflowPane()).not.toBeNull();
+  });
+
+  await waitFor(() => {
+    expect(
+      diagramNodes().map((node) => {
+        return node.getAttribute("data-connector");
+      }),
+    ).toContain("ahrefs");
+  });
+  expect(
+    diagramNodes().map((node) => {
+      return node.getAttribute("data-connector");
+    }),
+  ).toContain("openai");
+  // The drawing keeps its shape whatever the workspace has connected, so the
+  // pane's width cannot follow the number of connectors.
+  expect(diagramNodes()).toHaveLength(5);
 });

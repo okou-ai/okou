@@ -1346,6 +1346,16 @@ Every row therefore keeps a pane: the types that own covers get
 rows get `data-slot="slash-template-workflow-pane"` at the same 320px. Adding a
 row that has no pane is a width change, not a content decision.
 
+The workflow pane's drawing is 288x144 — the pane's content width exactly — so
+it is spelled at its natural size and nothing is scaled. Its node coordinates
+are literal utilities per slot, the way the onboarding diagram spells its tile
+stack, because they drive a mapped list that Tailwind's scanner must still
+see. Its connector line keeps the literal brand orange for the reason
+[illustration strokes](#illustration-strokes) gives: it is artwork, and it
+stays that colour in both themes. The node count is fixed whatever the
+workspace has connected, so the drawing cannot become another way for the
+pane's width to move.
+
 ## Exception boundary
 
 Only two exception kinds exist:

@@ -29,9 +29,6 @@ export const emptyUsageImg = pageAssetUrl(
 export const emptySearchImg = pageAssetUrl(
   "assets/empty-search-b4e60a8e07b8.webp",
 );
-export const slashWorkflowPaneImg = pageAssetUrl(
-  "assets/slash-workflow-pane-e0314f5e0094.svg",
-);
 export const thinkingSpinnerImg =
   "https://static.okou.io/public/okou-transparent.svg";
 export const computerUseIllustrationImg = pageAssetUrl(
