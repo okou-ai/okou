@@ -394,7 +394,7 @@ function validateGenericMcpFirewall(
 function validateMcpFirewall(
   connector: ConnectorCatalogArtifactConnector,
 ): void {
-  if (connector.mcp === undefined) {
+  if (connector.mcp === undefined || connector.firewall.kind === "none") {
     return;
   }
   const api =

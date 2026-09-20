@@ -594,13 +594,7 @@ const connectors = [
           revoke: { kind: "none" },
         },
       ],
-      firewall: generatedFirewall([
-        {
-          base: "https://public-mcp.example.test/server",
-          auth: {},
-          permissions: [],
-        },
-      ]),
+      firewall: { kind: "none" },
     }),
     mcp: {
       transport: "streamable-http",
@@ -624,9 +618,7 @@ const connectors = [
           envBindings: { MCP_API_KEY: secret("MCP_API_KEY") },
         }),
       ],
-      firewall: generatedFirewall([
-        bearerApi("https://manual-mcp.example.test/server", "MCP_API_KEY"),
-      ]),
+      firewall: { kind: "none" },
     }),
     mcp: {
       transport: "streamable-http",

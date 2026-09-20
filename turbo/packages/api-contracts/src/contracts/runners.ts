@@ -155,8 +155,10 @@ export const runnerClaimCapabilitiesSchema = z
   .strict()
   .readonly();
 
-/** Native model support is advertised in a header ignored by previous APIs. */
+/** Additive Runner support is advertised in headers ignored by previous APIs. */
 export const NATIVE_GPT_6_SOL_HEADER = "X-Native-Gpt-6-Sol";
+export const BUILTIN_MCP_INLINE_FIREWALL_HEADER =
+  "X-Builtin-Mcp-Inline-Firewall";
 
 export const builtInModelProviderConnectionSourceSchema = z.enum([
   "provider_response",
@@ -1376,8 +1378,8 @@ const storedExecutionContextObjectSchema = z.object({
   apiStartTime: apiStartTimeSchema.optional(),
   // User's timezone preference (IANA format, e.g., "Asia/Shanghai")
   userTimezone: z.string().optional(),
-  // Firewall entries for proxy-side token replacement. Built-ins stay compact;
-  // org custom connectors use inline firewall bodies.
+  // Firewall entries for proxy-side token replacement. HTTP built-ins stay
+  // compact; builtin MCP and org custom connectors use inline bodies.
   firewalls: executionFirewallsSchema.optional(),
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),
@@ -1387,6 +1389,8 @@ const storedExecutionContextObjectSchema = z.object({
   // Stable connector targets pinned for this run. The runner owns this list
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
+  // Old Runners cannot assign trusted builtin ownership to inline MCP entries.
+  requiresBuiltinMcpInlineFirewall: z.literal(true).optional(),
   // API-only catalog-derived permission defaults for claim-time grant refresh.
   connectorPermissionBaseline:
     storedConnectorPermissionBaselineSchema.optional(),

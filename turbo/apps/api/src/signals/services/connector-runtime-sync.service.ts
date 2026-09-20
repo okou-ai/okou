@@ -184,6 +184,8 @@ function builtinMcpCredentialResolution(args: {
   readonly snapshot: ConnectorRuntimeSelection | undefined;
   readonly registration: BuiltinRuntimeTargetRegistration;
   readonly credentialAvailable: boolean;
+  readonly automaticAuthType: "none" | "oauth" | null | undefined;
+  readonly grantKind: string | undefined;
 }): "network-boundary" | "none" | undefined {
   if (
     !args.snapshot ||
@@ -192,13 +194,12 @@ function builtinMcpCredentialResolution(args: {
   ) {
     return undefined;
   }
-  const credentialed =
-    args.snapshot.serverFirewalls
-      .getRuntimeFirewall(args.registration.connectorSlug)
-      ?.apis.some((api) => {
-        return authResolvesAtNetworkBoundary(api.auth);
-      }) ?? false;
-  return credentialed ? "network-boundary" : "none";
+  return args.automaticAuthType === "oauth" ||
+    (args.grantKind !== undefined &&
+      args.grantKind !== "none" &&
+      args.grantKind !== "automatic")
+    ? "network-boundary"
+    : "none";
 }
 
 async function loadCustomSnapshot(args: {
@@ -520,6 +521,14 @@ async function resolveConnectorRuntimeTargetStates(args: {
       snapshot: builtinCatalogSelection,
       registration,
       credentialAvailable: credentialAccess?.kind === "ok",
+      automaticAuthType:
+        accountResolution?.kind === "resolved"
+          ? accountResolution.account.automaticAuthType
+          : undefined,
+      grantKind:
+        credentialAccess?.kind === "ok"
+          ? credentialAccess.access.runtimeMethod.method.grant.kind
+          : undefined,
     });
     resolvedTargets.push({
       kind: "builtin",

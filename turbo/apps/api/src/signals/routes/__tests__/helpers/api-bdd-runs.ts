@@ -27,6 +27,7 @@ import {
 } from "@okouai/api-contracts/contracts/cron";
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
+  BUILTIN_MCP_INLINE_FIREWALL_HEADER,
   runnersActiveInputsContract,
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -514,7 +515,10 @@ export function createRunsApi(
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(true),
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders: {
+            [BUILTIN_MCP_INLINE_FIREWALL_HEADER]: "1",
+            ...extraHeaders,
+          },
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,

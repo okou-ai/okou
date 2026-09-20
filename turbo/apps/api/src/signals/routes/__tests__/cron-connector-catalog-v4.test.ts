@@ -121,26 +121,13 @@ function mcpConnector(slug = "plaud-mcp") {
         revoke: { kind: "none" },
       },
     ],
-    firewall: {
-      kind: "generated",
-      billable: false,
-      config: {
-        description: "Notes",
-        apis: [
-          { base: "https://notes.example.com/mcp", auth: {}, permissions: [] },
-        ],
-      },
-      categories: null,
-      defaultAllowed: null,
-      defaultUnknownPolicy: "allow",
-    },
+    firewall: { kind: "none" },
   };
 }
 
 function runtimeMcpConnector(
   authKind: "none" | "manual" | "automatic",
   endpoint: string,
-  updated = false,
 ) {
   const connector = mcpConnector("catalog-mcp");
   return {
@@ -163,27 +150,7 @@ function runtimeMcpConnector(
                 revoke: { kind: "none" },
               },
             ],
-    firewall: {
-      ...connector.firewall,
-      config: {
-        description: "Notes",
-        apis: [
-          {
-            base: endpoint,
-            auth:
-              authKind === "manual"
-                ? {
-                    headers: {
-                      [updated ? "X-Api-Key" : "Authorization"]:
-                        `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
-                    },
-                  }
-                : {},
-            permissions: [],
-          },
-        ],
-      },
-    },
+    firewall: { kind: "none" },
   };
 }
 
@@ -410,7 +377,7 @@ describe("connector catalog v4 preparation", () => {
                             "Unrelated service",
                           ),
                         ]
-                      : [runtimeMcpConnector(authKind, nextEndpoint, true)];
+                      : [runtimeMcpConnector(authKind, nextEndpoint)];
                 },
               }).objects,
             );

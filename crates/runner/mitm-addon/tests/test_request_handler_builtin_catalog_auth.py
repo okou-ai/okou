@@ -1,4 +1,4 @@
-"""Builtin MCP authentication follows the runner-owned catalog firewall."""
+"""Builtin MCP authentication honors trusted run-scoped firewall ownership."""
 
 import pytest
 
@@ -226,3 +226,80 @@ async def test_builtin_catalog_auth_uses_current_catalog_destination(
     assert isinstance(matched, dict)
     assert matched["base"] == "https://replacement.example.com/server"
     assert matched["sourceId"] == _SOURCE_ID
+
+
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+async def test_inline_builtin_ownership_beats_overlapping_custom_without_auth_webhook(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
+):
+    registry_path = tmp_path / "registry.json"
+    builtin = _firewall(_BUILTIN, oauth=False)
+    custom = _firewall(_CUSTOM, oauth=False)
+    sandbox = {
+        "runId": "inline-builtin-auth",
+        "cliAgentType": "codex",
+        "sandboxToken": "sandbox-token",
+        "encryptedSecrets": "iv:tag:data",
+        "networkLogPath": str(tmp_path / "network.jsonl"),
+        "proxyLogPath": str(tmp_path / "proxy.jsonl"),
+        "billableFirewalls": [],
+        "firewalls": [
+            {
+                "kind": "inline",
+                "sourceId": _SOURCE_ID,
+                "firewall": builtin,
+            },
+            {
+                "kind": "inline",
+                "sourceId": _CUSTOM_ID,
+                "customConnectorId": _CUSTOM_ID,
+                "firewall": custom,
+            },
+        ],
+        "connectorRuntimeTargets": [
+            {
+                "kind": "builtin",
+                "connectorSlug": _BUILTIN,
+                "sourceId": _SOURCE_ID,
+            },
+            {"kind": "custom", "customConnectorId": _CUSTOM_ID},
+        ],
+        "connectorRoutingVariables": {
+            f"builtin:{_BUILTIN}": {},
+            f"custom:{_CUSTOM_ID}": {},
+        },
+        "networkPolicies": {
+            name: {"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"}
+            for name in (_BUILTIN, _CUSTOM)
+        },
+    }
+    write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
+    endpoint = FakeAuthEndpoint()
+    flows = []
+    with endpoint.run(), mitm_ctx(registry_path=str(registry_path), api_url=endpoint.api_url):
+        for intent in (_BUILTIN, _CUSTOM_ID):
+            flow = real_flow(
+                with_response=False,
+                client_ip=_CLIENT_IP,
+                host="shared.example.com",
+                path="/server",
+                method="POST",
+            )
+            flow.request.headers["X-Okou-Connector-Intent"] = intent
+            if requestheaders_first:
+                flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
+                result = mitm_addon.requestheaders(flow)
+                if result is not None:
+                    await await_requestheaders_result(result)
+            await mitm_addon.request(flow)
+            flows.append(flow)
+
+    assert [flow.metadata[metadata_keys.FIREWALL_NAME] for flow in flows] == [
+        _BUILTIN,
+        _CUSTOM,
+    ]
+    assert endpoint.request_count == 0
+    for flow in flows:
+        assert flow.response is None
+        assert flow.error is None
+        assert "Authorization" not in flow.request.headers
