@@ -265,7 +265,7 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
   });
 }
 
-function builtinRuntimeConfig(
+function mcpRuntimeConfig(
   connector: ConnectorCatalogArtifactConnector | undefined,
 ) {
   return connector
@@ -277,7 +277,7 @@ function builtinRuntimeConfig(
     : undefined;
 }
 
-async function publishBuiltinCatalogWakeups(args: {
+async function publishMcpCatalogWakeups(args: {
   readonly db: Db;
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
@@ -299,9 +299,9 @@ async function publishBuiltinCatalogWakeups(args: {
   ].filter((slug) => {
     const before = previous.get(slug);
     const after = current.get(slug);
-    return !isDeepStrictEqual(
-      builtinRuntimeConfig(before),
-      builtinRuntimeConfig(after),
+    return (
+      (before?.mcp !== undefined || after?.mcp !== undefined) &&
+      !isDeepStrictEqual(mcpRuntimeConfig(before), mcpRuntimeConfig(after))
     );
   });
   if (changedSlugs.length === 0) {
@@ -351,7 +351,7 @@ async function publishCatalogRuntimeWakeups(args: {
 }): Promise<void> {
   const results = await Promise.all([
     settle(publishCatalogPermissionBundleWakeupsInner(args)),
-    settle(publishBuiltinCatalogWakeups(args)),
+    settle(publishMcpCatalogWakeups(args)),
   ]);
   for (const result of results) {
     if (!result.ok) {

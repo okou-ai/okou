@@ -332,18 +332,10 @@ const connectorRuntimeSyncTargetsSchema = connectorRuntimeTargetsSchema
   .min(1)
   .max(CONNECTOR_RUNTIME_SYNC_TARGETS_MAX);
 
-/** Additive reader capability for terminal built-in connector absence. */
-export const CONNECTOR_RUNTIME_BUILTIN_ABSENT_HEADER =
-  "X-Connector-Runtime-Builtin-Absent";
-
 export const connectorRuntimeCustomUnresolvedReasonSchema = z.enum([
   "permission-bundle-unavailable",
   "runtime-configuration-unavailable",
 ]);
-
-export const connectorRuntimeBuiltinAbsentReasonSchema = z.literal(
-  "connector-unavailable",
-);
 
 export const connectorRuntimeCustomAbsentReasonSchema = z.literal(
   "connector-unavailable",
@@ -365,13 +357,6 @@ export const connectorRuntimeBuiltinUnresolvedResultSchema =
     target: connectorRuntimeBuiltinTargetSchema,
     state: z.literal("unresolved"),
     reason: z.literal("connector-unavailable"),
-  });
-
-export const connectorRuntimeBuiltinAbsentResultSchema =
-  connectorRuntimeResultBaseSchema.extend({
-    target: connectorRuntimeBuiltinTargetSchema,
-    state: z.literal("absent"),
-    reason: connectorRuntimeBuiltinAbsentReasonSchema,
   });
 
 export const connectorRuntimeCustomAvailableResultSchema =
@@ -409,7 +394,6 @@ export const connectorRuntimeCustomAbsentResultSchema =
 export const connectorRuntimeSyncResultSchema = z.union([
   connectorRuntimeBuiltinAvailableResultSchema,
   connectorRuntimeBuiltinUnresolvedResultSchema,
-  connectorRuntimeBuiltinAbsentResultSchema,
   connectorRuntimeCustomAvailableResultSchema,
   connectorRuntimeCustomUnresolvedResultSchema,
   connectorRuntimeCustomAbsentResultSchema,

@@ -8,7 +8,6 @@ import {
 } from "../services/agent-run-create.service";
 import { getSandboxAuthForRun } from "./agent-webhook-auth";
 import {
-  CONNECTOR_RUNTIME_BUILTIN_ABSENT_HEADER,
   NATIVE_GPT_6_SOL_HEADER,
   PI_DEFERRED_SANDBOX_HEADER,
   type PiDeferredSandboxConfig,
@@ -3290,8 +3289,6 @@ const connectorRuntimeSyncInner$ = command(
         agentId: run.agentId,
       },
       targets: body.data.targets,
-      builtinAbsentCapable:
-        get(request$).header(CONNECTOR_RUNTIME_BUILTIN_ABSENT_HEADER) === "1",
     });
     signal.throwIfAborted();
     return {

@@ -11,8 +11,8 @@
 //! A sync response must contain each requested target exactly once. Valid
 //! builtin policy and custom firewall updates are prepared independently, then
 //! committed through one registry transaction that holds their registration
-//! and generations current through the atomic write. Authoritative custom
-//! absence removes only that candidate, while unresolved results retain
+//! and generations current through the atomic write. Authoritative absence
+//! removes only the matching candidate, while unresolved results retain
 //! last-known-good state and retry. Transport, validation, queue, and registry
 //! publication failures also retain last-known-good state and install a capped,
 //! jittered retry. Older queued or in-flight work cannot clear a newer realtime
@@ -2287,12 +2287,6 @@ mod tests {
     fn assert_connector_runtime_sync_request(request: &str, run_id: &RunId) {
         let expected = format!("POST /api/runners/runs/{run_id}/connector-runtime/sync HTTP/1.1");
         assert_eq!(request.lines().next(), Some(expected.as_str()));
-        assert!(
-            request
-                .to_ascii_lowercase()
-                .contains("\r\nx-connector-runtime-builtin-absent: 1\r\n"),
-            "connector runtime sync request must advertise built-in absence support: {request}"
-        );
         assert!(
             request.ends_with(r#"{"targets":[{"kind":"builtin","connectorSlug":"slack"}]}"#),
             "unexpected connector runtime sync request: {request}"

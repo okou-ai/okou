@@ -27,7 +27,6 @@ import {
 } from "@okouai/api-contracts/contracts/cron";
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
-  CONNECTOR_RUNTIME_BUILTIN_ABSENT_HEADER,
   runnersActiveInputsContract,
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -720,20 +719,12 @@ export function createRunsApi(
     async syncConnectorRuntime(
       runId: string,
       body: RunnerConnectorRuntimeSyncRequest,
-      options: { readonly builtinAbsentCapable?: boolean } = {},
     ) {
       const response = await accept(
         runApp(context)(runnersConnectorRuntimeSyncContract).sync({
           headers: runnerHeaders(true),
           params: { runId },
           body,
-          ...(options.builtinAbsentCapable === false
-            ? {}
-            : {
-                extraHeaders: {
-                  [CONNECTOR_RUNTIME_BUILTIN_ABSENT_HEADER]: "1",
-                },
-              }),
         }),
         [200],
       );

@@ -110,14 +110,6 @@ export type ConnectorRuntimeDiagnosticResult =
   | {
       readonly target: Extract<
         ConnectorRuntimeTarget,
-        { readonly kind: "builtin" }
-      >;
-      readonly state: "absent";
-      readonly reason: "connector-unavailable";
-    }
-  | {
-      readonly target: Extract<
-        ConnectorRuntimeTarget,
         { readonly kind: "custom" }
       >;
       readonly state: "available";
@@ -177,16 +169,6 @@ function builtinUnresolvedResult(
   return {
     target,
     state: "unresolved",
-    reason: "connector-unavailable",
-  };
-}
-
-function builtinAbsentResult(
-  target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
-): ConnectorRuntimeBuiltinSyncResult {
-  return {
-    target,
-    state: "absent",
     reason: "connector-unavailable",
   };
 }
@@ -423,11 +405,9 @@ async function resolveCustomTarget(args: {
 
 function connectorAccountRequests(
   registrations: readonly ConnectorRuntimeTargetRegistration[],
-  catalogConnectorSlugs: ReadonlySet<string>,
 ): readonly ConnectorAccountResolutionRequest[] {
   return registrations.flatMap((registration) => {
     return registration.kind === "builtin" &&
-      catalogConnectorSlugs.has(registration.connectorSlug) &&
       registration.sourceId !== undefined
       ? [
           {
@@ -462,29 +442,18 @@ async function resolveConnectorRuntimeTargetStates(args: {
           requestedConnectorSlugs: builtinConnectorSlugs,
         })
       : undefined;
-  const builtinCatalogConnectorSlugs = new Set(
-    builtinCatalogSelection?.connectors.keys() ?? [],
-  );
-  const catalogBuiltinConnectorSlugs = builtinConnectorSlugs.filter(
-    (connectorSlug) => {
-      return builtinCatalogConnectorSlugs.has(connectorSlug);
-    },
-  );
   const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
     await Promise.all([
       resolveActiveNetworkPolicyRefreshes(
         args.db,
         args.scope,
-        catalogBuiltinConnectorSlugs,
+        builtinConnectorSlugs,
         builtinCatalogSelection,
       ),
       resolveConnectorAccounts(args.db, {
         orgId: args.scope.orgId,
         userId: args.scope.userId,
-        requests: connectorAccountRequests(
-          args.targets,
-          builtinCatalogConnectorSlugs,
-        ),
+        requests: connectorAccountRequests(args.targets),
       }),
       customRegistrations.length > 0
         ? loadCustomSnapshot({
@@ -555,9 +524,8 @@ async function resolveConnectorRuntimeTargetStates(args: {
     resolvedTargets.push({
       kind: "builtin",
       ...(credentialResolution === undefined ? {} : { credentialResolution }),
-      result: !builtinCatalogConnectorSlugs.has(registration.connectorSlug)
-        ? builtinAbsentResult(target)
-        : refresh && credentialAccess?.kind === "ok"
+      result:
+        refresh && credentialAccess?.kind === "ok"
           ? {
               target,
               state: "available",
@@ -599,20 +567,9 @@ export async function resolveConnectorRuntimeTargets(args: {
   readonly db: Db;
   readonly scope: ConnectorRuntimeScope;
   readonly targets: readonly ConnectorRuntimeTargetRegistration[];
-  readonly builtinAbsentCapable: boolean;
 }): Promise<readonly ConnectorRuntimeSyncResult[]> {
   const resolvedTargets = await resolveConnectorRuntimeTargetStates(args);
   return resolvedTargets.map((target) => {
-    // API promotion precedes Runner promotion, so a headerless Runner can keep
-    // syncing an active run while its process drains. Remove this downgrade
-    // after incompatible processes drain and leave the rollback floor: #35544.
-    if (
-      target.kind === "builtin" &&
-      target.result.state === "absent" &&
-      !args.builtinAbsentCapable
-    ) {
-      return builtinUnresolvedResult(target.result.target);
-    }
     return target.result;
   });
 }
@@ -661,30 +618,22 @@ export async function resolveConnectorRuntimeDiagnosticTargets(args: {
   return resolvedTargets.map((resolved): ConnectorRuntimeDiagnosticResult => {
     if (resolved.kind === "builtin") {
       const { result } = resolved;
-      if (result.state === "absent") {
-        return {
-          target: result.target,
-          state: result.state,
-          reason: result.reason,
-        };
-      }
-      if (result.state === "unresolved") {
-        return {
-          target: result.target,
-          state: result.state,
-          reason: result.reason,
-        };
-      }
-      return {
-        target: result.target,
-        state: result.state,
-        networkPolicy: result.networkPolicy,
-        ...(resolved.credentialResolution !== undefined
-          ? {
-              credentialResolution: resolved.credentialResolution,
-            }
-          : {}),
-      };
+      return result.state === "available"
+        ? {
+            target: result.target,
+            state: result.state,
+            networkPolicy: result.networkPolicy,
+            ...(resolved.credentialResolution !== undefined
+              ? {
+                  credentialResolution: resolved.credentialResolution,
+                }
+              : {}),
+          }
+        : {
+            target: result.target,
+            state: result.state,
+            reason: result.reason,
+          };
     }
     const { result } = resolved;
     if (result.state === "absent") {
