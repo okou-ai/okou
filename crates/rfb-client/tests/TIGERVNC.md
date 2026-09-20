@@ -6,9 +6,9 @@ session, input and PNG paths to TigerVNC **1.13.1**, packaged by Ubuntu 24.04 as
 missing tools or a different version fail the requested acceptance run.
 
 This is an external-server gate, separate from the ordinary deterministic test
-suite. A default `cargo test` reports it as ignored and does not establish
-TigerVNC interoperability. Run it explicitly before exposing this engine through
-Runner or user-facing commands.
+suite. A default `cargo test` reports its tests as ignored and does not establish
+TigerVNC interoperability. Run the relevant commands explicitly before exposing
+an engine profile through Runner or user-facing commands.
 
 ## Environment and command
 
@@ -37,11 +37,72 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client \
   --ignored --exact --nocapture
 ```
 
+That command retains the complete X509Vnc framebuffer/input session matrix. Run
+the independent X509None authentication boundary separately:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client \
+  --lib tigervnc_tests::pinned_tigervnc_x509_none_authentication_acceptance -- \
+  --ignored --exact --nocapture
+```
+
+X509Plain uses TigerVNC's real `PlainUsers` and PAM validation rather than a test
+bypass. Ubuntu's `pam_unix` helper permits the unprivileged TigerVNC process to
+validate the account that runs it, not a different user's shadow password. On an
+authorized disposable Ubuntu host, build the current test, copy only its binary
+and fixture to an isolated directory, create an otherwise unused temporary
+account, run both TigerVNC and the client test as that account, and remove every
+artifact. The example generates the password without printing it; do not run
+these account or mode mutations on a persistent or shared host:
+
+```sh
+RFB_ACCEPT_USER=rfb-accept-test
+RFB_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
+if id "$RFB_ACCEPT_USER" >/dev/null 2>&1; then
+  echo "refusing to reuse existing account: $RFB_ACCEPT_USER" >&2
+  exit 1
+fi
+sudo useradd --no-create-home --shell /bin/bash "$RFB_ACCEPT_USER"
+RFB_ACCEPT_DIR=
+cleanup_rfb_accept_user() {
+  sudo userdel "$RFB_ACCEPT_USER"
+  if [ -n "$RFB_ACCEPT_DIR" ]; then
+    rm -rf -- "$RFB_ACCEPT_DIR"
+  fi
+  unset RFB_ACCEPT_PASSWORD
+}
+trap cleanup_rfb_accept_user EXIT
+printf '%s:%s\n' "$RFB_ACCEPT_USER" "$RFB_ACCEPT_PASSWORD" | sudo chpasswd
+cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client --lib --no-run
+RFB_TEST_BINARY="$(find crates/target/local/deps -maxdepth 1 -type f \
+  -name 'rfb_client-*' -perm -111 -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
+RFB_ACCEPT_DIR="$(mktemp -d /tmp/rfb-client-acceptance.XXXXXX)"
+install -m 755 "$RFB_TEST_BINARY" "$RFB_ACCEPT_DIR/rfb-client-tests"
+install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py "$RFB_ACCEPT_DIR/tigervnc.py"
+chmod 755 "$RFB_ACCEPT_DIR"
+sudo -u "$RFB_ACCEPT_USER" env \
+  HOME=/tmp \
+  RFB_TIGERVNC_PLAIN_USERNAME="$RFB_ACCEPT_USER" \
+  RFB_TIGERVNC_PLAIN_PASSWORD="$RFB_ACCEPT_PASSWORD" \
+  RFB_TIGERVNC_PAM_SERVICE=tigervnc \
+  RFB_TIGERVNC_FIXTURE="$RFB_ACCEPT_DIR/tigervnc.py" \
+  "$RFB_ACCEPT_DIR/rfb-client-tests" \
+  tigervnc_tests::pinned_tigervnc_x509_plain_authentication_acceptance \
+  --ignored --exact --nocapture
+```
+
+The fixture passes only the username to TigerVNC's `PlainUsers` option. The
+password remains in the disposable account's test-process environment long
+enough to construct a zeroizing `PlainCredentials` value and is never printed by
+the fixture. The packaged `/etc/pam.d/tigervnc` service performs the independent
+verification.
+
 No existing desktop, VNC service or saved credentials are used. The fixture
 starts its own X server on an unused display and an ephemeral loopback TCP port,
 with X11 TCP disabled. It creates a temporary CA and localhost/IP SAN server
-certificate, and the synthetic password `testpass`. The client verifies that CA
-and identity through the same X509Vnc authentication used by production.
+certificate, and, for X509Vnc, the synthetic password `testpass`. Each server
+advertises exactly one requested security type. The client verifies the same CA
+and identity before completing the selected authentication.
 
 Normal completion waits for both fixture and server exit. On a failed or
 cancelled Rust test, the child guard kills the Python fixture; Linux
@@ -51,8 +112,9 @@ XRandR helper has a ten-second execution limit and the same parent-death guard.
 
 ## Assertions and limits
 
-The test runs both ZRLE and Raw, using a module-private SetEncodings adapter only
-in the test. Production does not gain an encoding override. Every connection
+The X509Vnc session test runs both ZRLE and Raw, using a module-private
+SetEncodings adapter only in the test. Production does not gain an encoding
+override. Every session connection
 explicitly requests `SharingMode::Shared`; this harness does not establish
 exclusive-mode behavior for any server policy. For each encoding it:
 

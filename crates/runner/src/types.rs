@@ -1406,7 +1406,7 @@ pub enum ConnectorRuntimeSyncState {
         reason: ConnectorRuntimeUnresolvedReason,
     },
     Absent {
-        reason: ConnectorRuntimeCustomAbsentReason,
+        reason: ConnectorRuntimeAbsentReason,
     },
 }
 
@@ -1421,7 +1421,7 @@ pub enum ConnectorRuntimeUnresolvedReason {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub enum ConnectorRuntimeCustomAbsentReason {
+pub enum ConnectorRuntimeAbsentReason {
     #[serde(rename = "connector-unavailable")]
     Connector,
 }

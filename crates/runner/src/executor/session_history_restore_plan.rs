@@ -157,7 +157,31 @@ pub(crate) enum SessionHistoryRestorePlan {
     SkipVerified(RestoredSessionIdentity),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HistoryOverlapShadowApplicability {
+    Planned(&'static str),
+    NoPlannedRestore,
+    VerifyFirst,
+}
+
 impl SessionHistoryRestorePlan {
+    pub(super) fn history_overlap_shadow_applicability(
+        &self,
+        context: &ExecutionContext,
+    ) -> HistoryOverlapShadowApplicability {
+        if matches!(self, Self::SkipVerified(_)) {
+            return HistoryOverlapShadowApplicability::VerifyFirst;
+        }
+        if context.resume_session.is_none() {
+            return HistoryOverlapShadowApplicability::NoPlannedRestore;
+        }
+        HistoryOverlapShadowApplicability::Planned(
+            super::session_restore::history_restore_write_root(effective_cli_framework(
+                &context.cli_agent_type,
+            )),
+        )
+    }
+
     pub(super) async fn cancel_and_drain(self) {
         match self {
             Self::Prestarted { materializer, .. } => {
@@ -413,6 +437,40 @@ mod tests {
     }
 
     #[test]
+    fn history_overlap_shadow_applicability_uses_planned_framework_roots() {
+        let mut context = execution_context_for_test(RunId::new_v4());
+        context.resume_session = Some(ResumeSession::inline(
+            "sess-restore-plan".into(),
+            "session history".into(),
+        ));
+        let plan = SessionHistoryRestorePlan::Default;
+
+        for (framework, root) in [
+            (
+                "claude-code",
+                "/home/user/.claude/projects/-home-user-workspace",
+            ),
+            ("codex", "/home/user/.codex/sessions"),
+            (
+                "pi",
+                "/home/user/.pi/agent/sessions/--home-user-workspace--",
+            ),
+        ] {
+            context.cli_agent_type = framework.into();
+            assert_eq!(
+                plan.history_overlap_shadow_applicability(&context),
+                HistoryOverlapShadowApplicability::Planned(root)
+            );
+        }
+
+        context.resume_session = None;
+        assert_eq!(
+            plan.history_overlap_shadow_applicability(&context),
+            HistoryOverlapShadowApplicability::NoPlannedRestore
+        );
+    }
+
+    #[test]
     fn restore_plan_skips_matching_checkpointed_final_identity() {
         let history_hash = "a".repeat(64);
         let context = context_with_history_ref_and_size(&history_hash, 12);
@@ -424,6 +482,11 @@ mod tests {
             &context,
             SandboxReuseResult::Reused,
             Some(&restored_identity),
+        );
+
+        assert_eq!(
+            plan.history_overlap_shadow_applicability(&context),
+            HistoryOverlapShadowApplicability::VerifyFirst
         );
 
         match plan {

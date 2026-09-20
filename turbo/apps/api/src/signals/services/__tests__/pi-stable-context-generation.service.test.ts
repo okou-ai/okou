@@ -1190,6 +1190,7 @@ describe("Pi stable context generation fences", () => {
     const semantic = {
       promptInputs: {
         privateArtifactsEnabled: false,
+        runUsageEnabled: false,
         bankingEnabled: false,
         vncEnabled: false,
         larkEnabled: false,
@@ -1393,6 +1394,7 @@ describe("Pi stable context generation fences", () => {
     const semantic = {
       promptInputs: {
         privateArtifactsEnabled: false,
+        runUsageEnabled: false,
         bankingEnabled: false,
         vncEnabled: false,
         larkEnabled: false,

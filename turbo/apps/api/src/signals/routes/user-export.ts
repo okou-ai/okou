@@ -12,6 +12,7 @@ import {
   toUserExportStartResponse,
   userExportStatus,
 } from "../services/user-export.service";
+import { executeDurableUserExportWork$ } from "../services/user-export-durable.service";
 import { tapError } from "../utils";
 
 const log = logger("route:user-export");
@@ -49,24 +50,29 @@ const postUserExportInner$ = command(
 
     if (result.shouldExecute) {
       const backgroundSignal = new AbortController().signal;
+      const work: Promise<unknown> =
+        result.executionMode === "durable-v1"
+          ? set(
+              executeDurableUserExportWork$,
+              { jobId: result.jobId, maxSteps: 10 },
+              backgroundSignal,
+            )
+          : set(
+              executeUserExportJob$,
+              {
+                jobId: result.jobId,
+                userId: auth.userId,
+                orgId: auth.orgId,
+              },
+              backgroundSignal,
+            );
       waitUntil(
-        tapError(
-          set(
-            executeUserExportJob$,
-            {
-              jobId: result.jobId,
-              userId: auth.userId,
-              orgId: auth.orgId,
-            },
-            backgroundSignal,
-          ),
-          (error) => {
-            log.error("executeUserExportJob failed", {
-              jobId: result.jobId,
-              error,
-            });
-          },
-        ),
+        tapError(work, (error) => {
+          log.error("executeUserExportJob failed", {
+            jobId: result.jobId,
+            error,
+          });
+        }),
       );
     }
 

@@ -31,7 +31,10 @@ import {
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
-import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
+import {
+  artifactFallbackSubtitle,
+  artifactSupportsFullscreen,
+} from "../okou-page/artifact-display.ts";
 import { copyAttachmentLinkToClipboard } from "../okou-page/attachment-url.ts";
 
 function ArtifactViewerActions({
@@ -100,22 +103,24 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
-      <Button
-        ref={enterButtonRef}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        showTooltip
-        disabled={enterLoadable.state === "loading"}
-        aria-label={t(($) => {
-          return $.artifacts.actions.enterFullscreen;
-        })}
-        onClick={() => {
-          detach(enterFullscreen(pageSignal), Reason.DomCallback);
-        }}
-      >
-        <Maximize2 aria-hidden />
-      </Button>
+      {artifactSupportsFullscreen(artifact.preview.kind) && (
+        <Button
+          ref={enterButtonRef}
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          showTooltip
+          disabled={enterLoadable.state === "loading"}
+          aria-label={t(($) => {
+            return $.artifacts.actions.enterFullscreen;
+          })}
+          onClick={() => {
+            detach(enterFullscreen(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <Maximize2 aria-hidden />
+        </Button>
+      )}
       <ArtifactActionSeparator />
       <Button
         size="sm"
@@ -304,7 +309,15 @@ export function SharedArtifactPage({
       </header>
       <main
         ref={containerRef}
-        className={`relative min-h-0 flex-1 bg-muted/30 ${artifact === null ? "overflow-y-auto" : "overflow-hidden"}`}
+        // This element is the one handed to requestFullscreen, so it paints
+        // over the browser's black backdrop with nothing behind it. A
+        // translucent surface would let that backdrop through as an
+        // undefined grey, so fullscreen takes the opaque surface instead.
+        className={cn(
+          "relative min-h-0 flex-1",
+          fullscreen ? "bg-muted" : "bg-muted/30",
+          artifact === null ? "overflow-y-auto" : "overflow-hidden",
+        )}
       >
         {artifact !== null ? (
           <ArtifactPreviewBody

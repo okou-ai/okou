@@ -96,6 +96,12 @@ async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normaliz
     assert_successful_action_once(&ops, "runner_storage_manifest_cache_populate");
     assert_successful_action_once(&ops, "runner_storage_manifest_guest_storage_apply");
     assert_successful_action_once(&ops, "runner_storage_manifest_apply");
+    assert!(telemetry.pending_ops_with_outcome_snapshot().contains(&(
+        "runner_storage_history_overlap_shadow".into(),
+        true,
+        Some("not_applicable".into()),
+        Some("no_planned_restore".into()),
+    )));
     assert!(
         ops.iter()
             .all(|(action, _, _)| action != "storage_download"),
@@ -397,6 +403,12 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
     assert_successful_action_once(&ops, "runner_storage_manifest_apply");
     assert_no_action(&ops, "runner_storage_manifest_cache_populate");
     assert_no_action(&ops, "runner_storage_manifest_guest_storage_apply");
+    assert!(telemetry.pending_ops_with_outcome_snapshot().contains(&(
+        "runner_storage_history_overlap_shadow".into(),
+        true,
+        Some("not_applicable".into()),
+        Some("no_storage_work".into()),
+    )));
 }
 
 #[tokio::test]

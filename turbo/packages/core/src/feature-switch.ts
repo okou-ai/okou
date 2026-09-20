@@ -45,6 +45,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DurableUserExport]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
@@ -228,12 +234,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SpotifyConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Spotify connector integration",
-    enabled: false,
-  },
-  [FeatureSwitchKey.StripeMarketplaceOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Show Stripe Marketplace OAuth as a sign-in option for the Stripe connector.",
     enabled: false,
   },
   [FeatureSwitchKey.OkouDebug]: {

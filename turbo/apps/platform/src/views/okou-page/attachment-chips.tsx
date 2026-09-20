@@ -99,6 +99,7 @@ import {
 } from "./artifact-actions.tsx";
 import {
   artifactFallbackSubtitle,
+  artifactSupportsFullscreen,
   artifactTitleSubtitle,
 } from "./artifact-display.ts";
 import {
@@ -1364,12 +1365,14 @@ function ArtifactPreviewDialogActions({
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />
       )}
-      <ArtifactDialogFullscreenButton
-        fullscreen={fullscreen}
-        onClick={() => {
-          toggleLightboxDialogFullscreen();
-        }}
-      />
+      {artifactSupportsFullscreen(preview.kind) && (
+        <ArtifactDialogFullscreenButton
+          fullscreen={fullscreen}
+          onClick={() => {
+            toggleLightboxDialogFullscreen();
+          }}
+        />
+      )}
       <ArtifactPreviewCloseButton />
     </div>
   );

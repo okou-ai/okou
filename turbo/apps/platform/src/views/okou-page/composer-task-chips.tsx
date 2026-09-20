@@ -34,7 +34,7 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
 /**
- * The task-type row. `neutral` at its default size is a form button: `px-4`
+ * The task-type row. `outline` at its default size is a form button: `px-4`
  * against a fixed `h-9` leaves 17.25px of ink inset on the sides and 11.5px
  * above and below, a 1.5 : 1 frame that reads as a submit control rather than a
  * chip. `px-3` brings the sides to 13.25px, or 1.15 : 1 -- close to even, with
@@ -42,10 +42,16 @@ import { ComposerVisualizationOptions } from "./composer-visualization-options.t
  * height is deliberately left alone: `h-9` is what sets this row's rhythm under
  * the composer, and what reads wrong is the frame, not the size.
  *
- * Padding is the caller's to set; the border is not. The stroke stays on the
- * variant's `control-border`, because `--border` is `gray-200` rather than
- * `gray-300` under the color presets, so borrowing it here would take two
- * stops in those palettes instead of one.
+ * `outline` rather than `neutral`, because this row sits directly on the page
+ * canvas. `neutral` fills a chip with `control-surface`, which is gray-50:
+ * 1.02 : 1 against white, so it carries no step in lightness and reaches the
+ * eye as hue alone, on a screen whose canvas, card and copy are otherwise
+ * unsaturated. `outline` keeps the same stroke and leaves the canvas itself
+ * behind the label, so five chips stop reading as the one tinted band on the
+ * page. The idea cards below are the opposite case and keep `neutral`: they
+ * own an opaque `bg-muted` fill, which needs that variant's overlay states.
+ *
+ * Padding is the caller's to set; the border is not.
  */
 const TASK_CHIP = "px-3";
 /**
@@ -54,15 +60,20 @@ const TASK_CHIP = "px-3";
  * text wraps inside the top of the card and the icon parks on the floor, so a
  * short idea and a long one still occupy the same shape.
  *
- * The stroke comes off. A chip's `control-border` is a full 1px of
- * `gray-300`, heavier than the composer's own hairline plus shadow, which left
- * the row of suggestions out-stroking the card it belongs to. `bg-muted` is
- * the same surface the template covers sit on, and `neutral` keeps painting
- * its hover and pressed states as overlays on top of it.
+ * The card carries no fill of its own. `bg-muted` is warm -- red sits seven
+ * steps above blue -- so a row of them read as tinted against the page rather
+ * than as neutral surfaces. `bg-card` plus the lighter of the product's two
+ * stroke inks draws the box instead: `border-border` rather than the
+ * `control-border` a chip carries, which is the same gray-400 the composer's
+ * own edge uses and was heavier than a 232x116 perimeter wants. Both weights
+ * are the shared `--default-border-width` hairline; only the ink changes.
+ *
+ * `neutral` still owns the states, so hover and pressed keep painting as
+ * overlays above whichever fill is underneath.
  */
 const TASK_IDEA_CARD = [
   "h-[116px] w-[232px] flex-col items-start justify-start gap-0",
-  "rounded-xl border-transparent bg-muted p-4 pb-3.5",
+  "rounded-xl border-border bg-card p-4 pb-3.5",
   // A fixed box holds translated copy, so the overflow is contained here
   // rather than left to spill past the card in a longer language.
   "overflow-hidden whitespace-normal text-left text-sm font-normal leading-5",
@@ -392,7 +403,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-start gap-2"
+          className="flex flex-wrap items-center justify-center gap-2"
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
@@ -413,7 +424,7 @@ export function ComposerTaskChips({
                 <Button
                   key={task}
                   type="button"
-                  variant="neutral"
+                  variant="outline"
                   className={TASK_CHIP}
                   onClick={() => {
                     selectTask(task);

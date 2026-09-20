@@ -14,7 +14,13 @@ export function mcpTimestampKey(value: string): string {
 export const mcpListChatThreadsInputSchema = z
   .strictObject({
     agentId: z.uuid().optional(),
-    title: z.string().trim().min(1).max(200).optional(),
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .regex(/\S/u, "Provide a nonblank title")
+      .optional(),
     since: mcpFilterTimestampSchema.optional(),
     before: mcpFilterTimestampSchema.optional(),
     activity: z.enum(["active", "idle"]).optional(),

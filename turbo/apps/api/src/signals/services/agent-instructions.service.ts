@@ -28,12 +28,16 @@ interface AgentInstructionsResult {
  * storage volume, and extracts the canonical instructions file from the
  * S3 archive. Returns null when the agent is not found.
  */
-export function agentInstructions(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}): Computed<Promise<AgentInstructionsResult | null>> {
+export function agentInstructions(
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly agentId: string;
+  },
+  signal?: AbortSignal,
+): Computed<Promise<AgentInstructionsResult | null>> {
   return computed(async (get): Promise<AgentInstructionsResult | null> => {
+    signal?.throwIfAborted();
     const [agent] = await get(db$)
       .select({
         name: agents.name,
@@ -48,6 +52,7 @@ export function agentInstructions(args: {
         ),
       )
       .limit(1);
+    signal?.throwIfAborted();
 
     if (!agent) {
       return null;
@@ -71,6 +76,7 @@ export function agentInstructions(args: {
         ),
       )
       .limit(1);
+    signal?.throwIfAborted();
 
     if (!storage?.headVersionId) {
       return { content: null, filename: instructionsFilename };
@@ -81,13 +87,15 @@ export function agentInstructions(args: {
       .from(storageVersions)
       .where(eq(storageVersions.id, storage.headVersionId))
       .limit(1);
+    signal?.throwIfAborted();
 
     if (!version) {
       return { content: null, filename: instructionsFilename };
     }
 
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const manifest = await get(downloadManifest(bucket, version.s3Key));
+    const manifest = await get(downloadManifest(bucket, version.s3Key, signal));
+    signal?.throwIfAborted();
     const normalize = (p: string): string => {
       return p.replace(/^\.\//, "");
     };
@@ -101,7 +109,10 @@ export function agentInstructions(args: {
     }
 
     const archiveKey = `${version.s3Key}/archive.tar.gz`;
-    const archiveBuffer = await get(downloadS3Buffer(bucket, archiveKey));
+    const archiveBuffer = await get(
+      downloadS3Buffer(bucket, archiveKey, signal),
+    );
+    signal?.throwIfAborted();
     const rawContent = extractFileFromTarGz(
       archiveBuffer,
       instructionFile.path,
