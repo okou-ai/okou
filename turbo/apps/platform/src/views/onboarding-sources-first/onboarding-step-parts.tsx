@@ -71,21 +71,6 @@ export function ProductMark({
 }
 
 /**
- * The mark for an answer with no product behind it: one icon, carrying the same
- * weight as the brand marks beside it.
- */
-export function OnboardingChoiceMark({ icon }: { readonly icon: ReactNode }) {
-  return (
-    <span
-      className="flex size-16 items-center justify-center rounded-full bg-muted text-muted-foreground"
-      aria-hidden="true"
-    >
-      {icon}
-    </span>
-  );
-}
-
-/**
  * A step whose answer is one of a few options: the card itself is the control,
  * so it leads with the mark and the chosen one is lit rather than ticked in a
  * circle. The radio stays behind it for the keyboard and screen readers.

@@ -1,6 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, Sparkles } from "lucide-react";
+import { Check } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import {
   nextSourcesFirstStep,
@@ -14,7 +14,7 @@ import {
 } from "./onboarding-sources-first-data.ts";
 import {
   OnboardingChoiceCard,
-  OnboardingChoiceMark,
+  OnboardingIllustration,
   OnboardingPanel,
   OnboardingPosterCard,
   ProductMark,
@@ -298,7 +298,7 @@ export function OnboardingExperiencePage() {
         <OnboardingPosterCard
           value="no"
           selected={experienced === false}
-          mark={<OnboardingChoiceMark icon={<Sparkles size={28} />} />}
+          mark={<OnboardingIllustration name="new" alt="" size="poster" />}
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.no;
           })}
