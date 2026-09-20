@@ -287,8 +287,9 @@ function PinPill() {
  * `rounded-full`. The agent artwork is a half figure drawn to the bottom of its
  * canvas, and a circle is at its narrowest exactly where the collar lands, so
  * the bottom of the sweater was pinched into a point by a mask with nothing
- * visible to attribute it to. `rounded-xl` leaves 20px of straight edge under a
- * 12.6px collar, and the border makes the frame answerable for the crop.
+ * visible to attribute it to. `rounded-xl` is 14px, so it leaves 28px of
+ * straight bottom under a collar that renders 14.7px wide, and the border makes
+ * the frame answerable for the crop.
  *
  * The size stays on the step the mobile layout already used rather than gaining
  * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
