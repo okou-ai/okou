@@ -19,7 +19,7 @@ An AWS administrator must provision or reconcile this exact role in account
   already exists. Its URL is `https://token.actions.githubusercontent.com` and
   its client ID is `sts.amazonaws.com`; create it only if absent.
 - Apply [role-trust.json](role-trust.json). During the organization rename,
-  trust is restricted to `vm0-ai/okou` and `maxandzoe/okou` jobs in the
+  trust is restricted to `vm0-ai/okou` and `okou-ai/okou` jobs in the
   protected `production` environment and the STS audience. Keep that
   environment's protected-branch and human-reviewer rules. Both migration
   workflow jobs also require `refs/heads/main`. As soon as GitHub confirms the

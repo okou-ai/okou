@@ -101,7 +101,7 @@ jobs:
       app_worker_version: ${{ steps.release.outputs['turbo/apps/app-worker--version'] }}
       desktop_version: ${{ steps.release.outputs['turbo/apps/desktop--version'] }}
     steps:
-      - uses: maxandzoe/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
+      - uses: okou-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -330,7 +330,7 @@ jobs:
         with:
           ref: main
 
-      - uses: maxandzoe/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
+      - uses: okou-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json

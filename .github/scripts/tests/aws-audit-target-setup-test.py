@@ -66,7 +66,7 @@ class AuditSetupTests(unittest.TestCase):
     def test_iam_trust_allows_only_current_and_renamed_production_subjects(self):
         expected_subjects = [
             "repo:vm0-ai/okou:environment:production",
-            "repo:maxandzoe/okou:environment:production",
+            "repo:okou-ai/okou:environment:production",
         ]
         github_directory = SCRIPT.parent.parent
         for relative_path in [
@@ -136,9 +136,9 @@ class AuditSetupTests(unittest.TestCase):
         return result, json.loads(report_text)
 
     def test_renamed_repository_reaches_the_same_protected_identity_boundary(self):
-        self.env["GITHUB_REPOSITORY"] = "maxandzoe/okou"
+        self.env["GITHUB_REPOSITORY"] = "okou-ai/okou"
         self.env["GITHUB_WORKFLOW_REF"] = (
-            "maxandzoe/okou/.github/workflows/"
+            "okou-ai/okou/.github/workflows/"
             "aws-audit-target-setup.yml@refs/heads/main"
         )
         result, report = self.main(account="072707626411")
