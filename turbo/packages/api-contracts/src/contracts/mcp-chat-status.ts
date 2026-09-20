@@ -134,6 +134,7 @@ function lifecycleRequiresRun(
   lifecycle: ChatStatusOutputValue["lifecycle"],
 ): boolean {
   return (
+    (lifecycle.phase === "queued" && lifecycle.output === "partial") ||
     lifecycle.phase === "running" ||
     lifecycle.phase === "finalizing" ||
     (lifecycle.phase === "settled" &&
@@ -231,6 +232,22 @@ function waitStatusCoherenceIssues(
   }
   if (!status.wait) {
     return issues;
+  }
+  if (status.messagePage && status.messages) {
+    for (const [index, message] of status.messagePage.messages.entries()) {
+      if (message.ref.threadId !== status.threadId) {
+        issues.push({
+          path: ["messagePage", "messages", index, "ref", "threadId"],
+          message: "messagePage messages must belong to the status threadId",
+        });
+      }
+      if (message.runId !== status.messages.arguments.runId) {
+        issues.push({
+          path: ["messagePage", "messages", index, "runId"],
+          message: "messagePage messages must belong to the handoff runId",
+        });
+      }
+    }
   }
   if (!waitReasonMatchesOutcome(status.wait)) {
     issues.push({

@@ -9,12 +9,32 @@ import {
 const threadId = "00000000-0000-4000-8000-000000000001";
 const runId = "00000000-0000-4000-8000-000000000002";
 const otherThreadId = "00000000-0000-4000-8000-000000000003";
+const otherRunId = "00000000-0000-4000-8000-000000000004";
 const messages = {
   tool: "get_chat_messages" as const,
   arguments: { threadId, runId, limit: 20 as const },
 };
+const pageMessage = {
+  ref: {
+    threadId,
+    eventId: "00000000-0000-4000-8000-000000000005",
+    seqId: 1,
+  },
+  role: "assistant" as const,
+  eventType: "output.message" as const,
+  createdAt: "2026-09-20T00:00:00.000Z",
+  runId,
+  text: "Ready output",
+  textOffset: 0,
+  textComplete: true,
+  files: [],
+  fileOffset: 0,
+  filesComplete: true,
+  nextContentCursor: null,
+  url: "https://app.okou.ai/messages/00000000-0000-4000-8000-000000000005",
+};
 const messagePage = {
-  messages: [],
+  messages: [pageMessage],
   olderCursor: null,
   newerCursor: null,
 };
@@ -90,6 +110,11 @@ describe("MCP chat status response coherence", () => {
       retryAfterMs: 2000,
     }),
     statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "partial" },
+      messages,
+      retryAfterMs: 2000,
+    }),
+    statusOutput({
       lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
       messages,
     }),
@@ -138,6 +163,10 @@ describe("MCP chat status response coherence", () => {
     statusOutput({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
     }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "partial" },
+      retryAfterMs: 2000,
+    }),
     statusOutput({ retryAfterMs: 2000 }),
     statusOutput({
       lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
@@ -170,6 +199,37 @@ describe("MCP chat status response coherence", () => {
         returnReason: "output_ready",
       },
       messagePage,
+    }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+      messages,
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage: {
+        ...messagePage,
+        messages: [
+          {
+            ...pageMessage,
+            ref: { ...pageMessage.ref, threadId: otherThreadId },
+          },
+        ],
+      },
+    }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+      messages,
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage: {
+        ...messagePage,
+        messages: [{ ...pageMessage, runId: otherRunId }],
+      },
     }),
     statusOutput({
       wait: {
