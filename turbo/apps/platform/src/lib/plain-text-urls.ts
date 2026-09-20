@@ -29,7 +29,8 @@ function withoutProseTail(url: string): string {
   let sawNonAscii = false;
   for (let index = 0; index < url.length; index += 1) {
     const character = url[index];
-    if (character === undefined || character.codePointAt(0) <= 0x7f) {
+    const code = character?.codePointAt(0);
+    if (code === undefined || code <= 0x7f) {
       continue;
     }
     const previous = url[index - 1];
