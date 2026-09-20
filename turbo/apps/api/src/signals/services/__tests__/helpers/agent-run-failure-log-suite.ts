@@ -1,7 +1,10 @@
 import { EVENT } from "@axiomhq/logging";
 import { afterEach, expect } from "vitest";
 
-import { getApiTestMocks, resetApiTestMocks } from "../../../../__tests__/mocks";
+import {
+  getApiTestMocks,
+  resetApiTestMocks,
+} from "../../../../__tests__/mocks";
 import {
   logAgentRunFailure,
   type AgentRunFailureLogSnapshot,
@@ -9,10 +12,9 @@ import {
 
 interface TestRegistrar {
   (name: string, test: () => void): void;
-  each: <T>(cases: readonly T[]) => (
-    name: string,
-    test: (value: T) => void,
-  ) => void;
+  each: <T>(
+    cases: readonly T[],
+  ) => (name: string, test: (value: T) => void) => void;
 }
 
 const { axiomLogging } = getApiTestMocks();
