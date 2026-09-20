@@ -429,11 +429,12 @@ function policyCanUsePersonalMetadata(args: {
   if (args.credentialScope === "member") {
     return true;
   }
+  // Subscriptions only ever carry a personal type, so a model that supports
+  // none of them can never match one and needs no metadata read.
   return getProvidersForModel(args.policy.model).some((providerType) => {
-    return (
-      providerType === "claude-code-oauth-token" ||
-      providerType === "codex-oauth-token"
-    );
+    return PERSONAL_TYPES.some((personalType): boolean => {
+      return personalType === providerType;
+    });
   });
 }
 
