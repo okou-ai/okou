@@ -85,6 +85,12 @@ type ComposerEditorSignals = Pick<
   | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
+  /**
+   * The forward dialog reuses the start page's composer signals, so
+   * "not docked under a thread" is not enough to identify the start page. Its
+   * shell stays compact while the start page's opens taller.
+   */
+  readonly forwardComposer: boolean;
 };
 
 type ComposerWorkflowEditorSignals = Pick<
@@ -313,7 +319,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
-  readonly forwardComposer?: boolean;
+  readonly forwardComposer: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -358,10 +364,14 @@ function createComposerFileInputSignals() {
 
 function composerEditorSignals(
   composer: WorkflowComposerSignals,
-  singleLineOnMobile: boolean,
+  options: Pick<
+    CreateComposerSignalsOptions,
+    "singleLineOnMobile" | "forwardComposer"
+  >,
 ): ComposerEditorSignals {
   return {
-    singleLineOnMobile,
+    singleLineOnMobile: options.singleLineOnMobile,
+    forwardComposer: options.forwardComposer,
     editor: composer.editor,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
@@ -672,7 +682,7 @@ export function createComposerSignals(
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
-    editor: composerEditorSignals(workflowComposer, options.singleLineOnMobile),
+    editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
     workflow: {

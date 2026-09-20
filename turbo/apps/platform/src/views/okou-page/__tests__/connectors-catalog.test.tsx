@@ -416,7 +416,7 @@ test("Switch between built-in and custom connectors", async () => {
   });
 });
 
-test("Present a connector with no accounts and allow cancelling direct OAuth", async () => {
+test("Present a connector with no accounts and allow closing direct OAuth", async () => {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
@@ -468,7 +468,7 @@ test("Present a connector with no accounts and allow cancelling direct OAuth", a
     "Please wait while we finish setting up your connection.",
   );
   expect(connect).toBeDisabled();
-  click(getConnectorAction("button", "Cancel", progress));
+  click(within(progress).getByLabelText("Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(connect).toBeEnabled();

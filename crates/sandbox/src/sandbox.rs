@@ -306,6 +306,8 @@ pub struct SevereMemoryRetentionDiagnostics {
     pub target_observed: bool,
     /// First reported actual balloon size, in MiB.
     pub first_actual_mib: Option<u32>,
+    /// Actual balloon size from the sample before the final sample, in MiB.
+    pub previous_actual_mib: Option<u32>,
     /// Final reported actual balloon size, in MiB.
     pub actual_mib: Option<u32>,
     /// Maximum reported actual balloon size, in MiB.
@@ -334,6 +336,10 @@ pub struct SevereMemoryRetentionDiagnostics {
     pub reported_minor_faults: Option<i64>,
     /// Final disk-cache memory reported by Firecracker, in bytes.
     pub reported_disk_caches_bytes: Option<i64>,
+    /// Low-cardinality reason the final progress extension was not granted.
+    pub progress_extension_blocker: Option<&'static str>,
+    /// Whether a fresh Guest snapshot was already attempted for the terminal decision.
+    pub guest_memory_snapshot_attempted: bool,
     /// Terminal guest counters, absent when the diagnostic request failed.
     pub guest_memory_snapshot: Option<GuestMemorySnapshot>,
 }

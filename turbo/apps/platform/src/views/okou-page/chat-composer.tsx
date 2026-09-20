@@ -266,7 +266,6 @@ import {
   matchesConnectorSearch,
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
@@ -5878,7 +5877,7 @@ export function ComposerPresentationRecommendations({
       aria-label={label}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
+        <p className="min-w-0 truncate text-base font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
@@ -7393,9 +7392,6 @@ function AddConnectorsDialog({
               })}
             </p>
           )}
-          {connecting ? (
-            <ConnectorConnectionCancelButton onCancel={onClose} />
-          ) : null}
         </DialogHeader>
         <div className="shrink-0">
           <Input
@@ -9586,29 +9582,43 @@ interface ComposerLayoutHeightClassNames {
 // the shell stable and let its flexible input region absorb that 20px change.
 // A template chip reserves the same additional 38px in both footer modes.
 function composerLayoutHeightClassNames(
-  singleLineOnMobile: boolean,
+  { singleLineOnMobile, forwardComposer }: ComposerSignals["editor"],
   hasTemplateAttachment: boolean,
 ): ComposerLayoutHeightClassNames {
+  // On the start page the composer is the subject of the screen rather than a
+  // dock under a transcript, so it opens 48px taller. The forward dialog shares
+  // these signals and is not that page, so it keeps the compact shell.
+  const startPage = !singleLineOnMobile && !forwardComposer;
   if (hasTemplateAttachment) {
     return singleLineOnMobile
       ? {
           input: "min-h-[86px] composer-wide:min-h-[114px]",
           shell: "min-h-[158px] composer-wide:min-h-[186px]",
         }
-      : {
-          input: "min-h-[114px]",
-          shell: "min-h-[186px]",
-        };
+      : startPage
+        ? {
+            input: "min-h-[162px]",
+            shell: "min-h-[234px]",
+          }
+        : {
+            input: "min-h-[114px]",
+            shell: "min-h-[186px]",
+          };
   }
   return singleLineOnMobile
     ? {
         input: "min-h-12 composer-wide:min-h-[76px]",
         shell: "min-h-[120px] composer-wide:min-h-[148px]",
       }
-    : {
-        input: "min-h-[76px]",
-        shell: "min-h-[148px]",
-      };
+    : startPage
+      ? {
+          input: "min-h-[124px]",
+          shell: "min-h-[196px]",
+        }
+      : {
+          input: "min-h-[76px]",
+          shell: "min-h-[148px]",
+        };
 }
 
 function ComposerInputSlot({
@@ -11225,7 +11235,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const uploadFile = useComposerFileUpload(signals);
   const notifyDraftChanged = useComposerDraftChange(signals);
   const layoutHeightClassNames = composerLayoutHeightClassNames(
-    signals.editor.singleLineOnMobile,
+    signals.editor,
     hasTemplateAttachment,
   );
 

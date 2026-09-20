@@ -1005,6 +1005,9 @@ export const rustTypeBindings = [
           response_connection_lost: ["The response connection was lost."],
           safety_policy_refusal: ["The provider refused for safety policy."],
           reconnect_required: ["The CLI requires reconnecting."],
+          codex_access_program_unavailable: [
+            "Codex sent an access-program selector unavailable to the account.",
+          ],
           unsupported_model: ["The selected model is unsupported."],
           usage_limit: ["The provider reported a usage limit."],
         },

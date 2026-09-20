@@ -402,7 +402,6 @@ describe.each([true, false])(
               ...created.deployment,
               id: randomUUID(),
               runId: runId ?? null,
-              deploymentVersion: 2,
               manifest: {
                 ...created.deployment.manifest,
                 deploymentVersion: 2,
@@ -430,7 +429,6 @@ describe.each([true, false])(
       const oldWrite = harness.db.insert(hostedDeployments).values({
         ...created.deployment,
         id: randomUUID(),
-        deploymentVersion: 2,
         manifest: { ...created.deployment.manifest, deploymentVersion: 2 },
         runId: otherRun,
       });

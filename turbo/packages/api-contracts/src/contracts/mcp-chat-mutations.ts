@@ -80,4 +80,9 @@ export type McpCancelRunOutput = z.infer<typeof mcpCancelRunOutputSchema>;
 
 export type McpChatMutationResult<T> =
   | { readonly kind: "ok"; readonly data: T }
-  | { readonly kind: "error"; readonly message: string };
+  | {
+      readonly kind: "error";
+      readonly code: string;
+      readonly message: string;
+      readonly retryable: boolean;
+    };

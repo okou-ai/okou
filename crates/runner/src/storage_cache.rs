@@ -66,6 +66,9 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
+use crate::archive_connection_attempt::{
+    ArchiveConnectionAttempt, ConnectionAttemptLayer, ConnectionAttemptObserver,
+};
 use crate::error::{RunnerError, RunnerResult};
 use crate::lock;
 use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
@@ -331,6 +334,7 @@ impl FreshArchiveDeliveryAdmission {
             .redirect(reqwest::redirect::Policy::none())
             .pool_max_idle_per_host(FRESH_DELIVERY_RUNNER_LIMIT)
             .pool_idle_timeout(FRESH_DELIVERY_HTTP_IDLE_TIMEOUT)
+            .connector_layer(ConnectionAttemptLayer)
             .build()
             .map_err(|error| {
                 RunnerError::Internal(format!("build runner-owned archive client: {error}"))
@@ -1044,6 +1048,7 @@ struct FreshArchivePhaseRecord {
     operation: SandboxOpRecord,
     completed_at: DateTime<Utc>,
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
+    archive_connection_attempt: Option<ArchiveConnectionAttempt>,
 }
 
 /// At most four phases for each of the four archives admitted to one delivery.
@@ -1068,6 +1073,7 @@ impl FreshArchivePhaseRecords {
                 record.operation,
                 record.completed_at,
                 record.archive_size_mismatch,
+                record.archive_connection_attempt,
             );
         }
     }
@@ -1078,6 +1084,7 @@ struct FreshArchivePhaseGuard {
     action_type: Option<&'static str>,
     started_at: Instant,
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
+    connection_attempt_observer: Option<ConnectionAttemptObserver>,
 }
 
 impl FreshArchivePhaseGuard {
@@ -1087,7 +1094,22 @@ impl FreshArchivePhaseGuard {
             action_type: Some(action_type),
             started_at: Instant::now(),
             archive_size_mismatch: None,
+            connection_attempt_observer: None,
         }
+    }
+
+    fn new_headers(records: &FreshArchivePhaseRecords) -> (Self, ConnectionAttemptObserver) {
+        let observer = ConnectionAttemptObserver::default();
+        (
+            Self {
+                records: records.clone(),
+                action_type: Some(STORAGE_CACHE_FRESH_DELIVERY_HEADERS),
+                started_at: Instant::now(),
+                archive_size_mismatch: None,
+                connection_attempt_observer: Some(observer.clone()),
+            },
+            observer,
+        )
     }
 
     fn finish(mut self, result: Result<(), &'static str>) {
@@ -1107,6 +1129,13 @@ impl FreshArchivePhaseGuard {
         let Some(action_type) = self.action_type.take() else {
             return;
         };
+        // Close the request observer before capturing the phase boundary so a
+        // background connector cannot enter the recorded summary after this
+        // operation's duration or completion timestamp.
+        let archive_connection_attempt = self
+            .connection_attempt_observer
+            .as_ref()
+            .map(ConnectionAttemptObserver::freeze);
         let record = FreshArchivePhaseRecord {
             operation: SandboxOpRecord::new(
                 action_type,
@@ -1116,6 +1145,7 @@ impl FreshArchivePhaseGuard {
             ),
             completed_at: Utc::now(),
             archive_size_mismatch: self.archive_size_mismatch,
+            archive_connection_attempt,
         };
         self.records
             .records
@@ -2925,55 +2955,58 @@ async fn fetch_fresh_archive(
     representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), &'static str> {
-    let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_HEADERS);
+    let (phase, connection_attempt_observer) = FreshArchivePhaseGuard::new_headers(phase_records);
     let mut mismatch = None;
-    let headers = async {
-        let response = http
-            .get(archive_url)
-            .timeout(OBJECT_DOWNLOAD_TIMEOUT)
-            .send()
-            .await
-            .map_err(|error| {
-                if error.is_timeout() {
-                    "timeout"
-                } else {
-                    "http"
-                }
-            })?;
-        if response.status() != reqwest::StatusCode::OK {
-            return Err("http-status");
-        }
-
-        let response_size = response.content_length();
-        let (exact_size, size_source) = match expected_size {
-            Some(expected) => {
-                if let Some(size) = response_size.filter(|size| *size != expected) {
-                    mismatch = Some(ArchiveSizeMismatch::new(
-                        expected,
-                        size,
-                        representative,
-                        response.headers(),
-                    ));
-                    return Err("response-size-mismatch");
-                }
-                (expected, FreshArchiveSizeSource::Manifest)
+    let headers = connection_attempt_observer
+        .scope(async {
+            let response = http
+                .get(archive_url)
+                .timeout(OBJECT_DOWNLOAD_TIMEOUT)
+                .send()
+                .await
+                .map_err(|error| {
+                    if error.is_timeout() {
+                        "timeout"
+                    } else {
+                        "http"
+                    }
+                })?;
+            if response.status() != reqwest::StatusCode::OK {
+                return Err("http-status");
             }
-            None => match response_size {
-                Some(0) => return Err("response-size-zero"),
-                Some(size) if size <= CACHE_MAX_SIZE => (size, FreshArchiveSizeSource::Response),
-                Some(_) => return Err("response-size-oversized"),
-                None => return Err("response-size-missing"),
-            },
-        };
-        if exact_size == 0 {
-            return Err("expected-size-zero");
-        }
-        if exact_size > CACHE_MAX_SIZE {
-            return Err("expected-size-oversized");
-        }
-        Ok((response, response_size, exact_size, size_source))
-    }
-    .await;
+
+            let response_size = response.content_length();
+            let (exact_size, size_source) = match expected_size {
+                Some(expected) => {
+                    if let Some(size) = response_size.filter(|size| *size != expected) {
+                        mismatch = Some(ArchiveSizeMismatch::new(
+                            expected,
+                            size,
+                            representative,
+                            response.headers(),
+                        ));
+                        return Err("response-size-mismatch");
+                    }
+                    (expected, FreshArchiveSizeSource::Manifest)
+                }
+                None => match response_size {
+                    Some(0) => return Err("response-size-zero"),
+                    Some(size) if size <= CACHE_MAX_SIZE => {
+                        (size, FreshArchiveSizeSource::Response)
+                    }
+                    Some(_) => return Err("response-size-oversized"),
+                    None => return Err("response-size-missing"),
+                },
+            };
+            if exact_size == 0 {
+                return Err("expected-size-zero");
+            }
+            if exact_size > CACHE_MAX_SIZE {
+                return Err("expected-size-oversized");
+            }
+            Ok((response, response_size, exact_size, size_source))
+        })
+        .await;
     phase.finish_with_archive_size_mismatch(
         headers.as_ref().map(|_| ()).map_err(|reason| *reason),
         mismatch,

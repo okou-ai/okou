@@ -17,6 +17,7 @@ type PiContextPreparationStage =
   | RunContextParallelStage;
 
 const STAGES: readonly PiContextPreparationStage[] = [
+  "subscription-account",
   "post-authorization-context",
   "thread-session",
   "connector-contexts",
@@ -28,6 +29,7 @@ const STAGES: readonly PiContextPreparationStage[] = [
 
 function createPreparationGate(signal: AbortSignal) {
   let waiting = false;
+  let arrivalCount = 0;
   let failure: { readonly reason: unknown } | undefined;
   return {
     arrived: createDeferredPromise<void>(signal),
@@ -38,6 +40,12 @@ function createPreparationGate(signal: AbortSignal) {
     },
     setWaiting: (value: boolean) => {
       waiting = value;
+    },
+    arrivalCount: () => {
+      return arrivalCount;
+    },
+    recordArrival: () => {
+      arrivalCount += 1;
     },
     getFailure: () => {
       return failure;
@@ -78,6 +86,7 @@ export function holdPiContextPreparationStagesFixture(args: {
     if (!gate) {
       throw new Error(`Unexpected Pi preparation stage: ${input.stage}`);
     }
+    gate.recordArrival();
     if (!gate.arrived.settled()) {
       gate.arrived.resolve(undefined);
     }
@@ -151,6 +160,13 @@ export function holdPiContextPreparationStagesFixture(args: {
         throw new Error(`Unexpected Pi preparation stage: ${stage}`);
       }
       return gate.arrived.settled();
+    },
+    arrivalCount(stage: PiContextPreparationStage): number {
+      const gate = gates.get(stage);
+      if (!gate) {
+        throw new Error(`Unexpected Pi preparation stage: ${stage}`);
+      }
+      return gate.arrivalCount();
     },
     departure(stage: PiContextPreparationStage): Promise<void> {
       const gate = gates.get(stage);

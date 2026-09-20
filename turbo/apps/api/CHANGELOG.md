@@ -8,6 +8,41 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.641.0](https://github.com/vm0-ai/okou/compare/api-v1.640.0...api-v1.641.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Bug Fixes
+
+* **api:** align pi api-first failure reporting ([#35490](https://github.com/vm0-ai/okou/issues/35490)) ([ad1996c](https://github.com/vm0-ai/okou/commit/ad1996ccb76f571c306e3200601fc564b1b39020))
+* **api:** make pi loop user scoped ([#35565](https://github.com/vm0-ai/okou/issues/35565)) ([8b8715c](https://github.com/vm0-ai/okou/commit/8b8715c553690b2f699d776a7985dce94457b836))
+
+
+### Refactoring
+
+* **connectors:** remove replacement metadata ([#35566](https://github.com/vm0-ai/okou/issues/35566)) ([0dd5f71](https://github.com/vm0-ai/okou/commit/0dd5f7140af5032e07a483b58be28da73bc34030))
+* remove retired hosted publication version columns ([#35323](https://github.com/vm0-ai/okou/issues/35323)) ([d2032e5](https://github.com/vm0-ai/okou/commit/d2032e55ce1e25d8f438e488948e9fe9ccb88de5))
+
+
+### Performance Improvements
+
+* **api:** overlap subscription capture with thread preparation ([#35545](https://github.com/vm0-ai/okou/issues/35545)) ([677bb0b](https://github.com/vm0-ai/okou/commit/677bb0b1afb775e6ab29e52b771807c51512c5fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+    * @okouai/db bumped to 1.279.4
+    * @okouai/pi-agent-runtime bumped to 1.33.26
+
 ## [1.640.0](https://github.com/vm0-ai/okou/compare/api-v1.639.2...api-v1.640.0) (2026-09-20)
 
 

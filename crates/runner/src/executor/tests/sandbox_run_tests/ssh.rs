@@ -234,6 +234,7 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
             .map(|ssh| crate::guest_rpc::Runtime {
                 ssh: Some(ssh),
                 vnc: None,
+                usage: None,
             });
             assert_eq!(config.guest_rpc.is_some(), enabled);
             let ctx = minimal_context();

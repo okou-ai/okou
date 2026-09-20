@@ -42,7 +42,7 @@ jobs:
       # runs that nobody acts on.
       - id: release-please
         continue-on-error: true
-        uses: vm0-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
+        uses: okou-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json

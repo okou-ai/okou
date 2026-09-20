@@ -150,6 +150,7 @@ describe("CHAT-02: model-first provider policies", () => {
       preparation.arrival("post-authorization-context"),
       preparation.arrival("thread-session"),
     ]);
+    expect(preparation.hasArrived("subscription-account")).toBeFalsy();
     expect(preparation.hasArrived("model-provider")).toBeFalsy();
     expect(preparation.hasArrived("connector-contexts")).toBeFalsy();
     preparation.release("post-authorization-context");

@@ -10,6 +10,7 @@ use serde::Serialize;
 use tokio::task::JoinHandle;
 use tracing::warn;
 
+use crate::archive_connection_attempt::ArchiveConnectionAttempt;
 use crate::duration::duration_ms;
 use crate::error::{ApiFailureKind, RunnerError};
 use crate::http::HttpClient;
@@ -294,6 +295,8 @@ struct SandboxOp {
     dns_readiness: Option<dns_readiness::DnsReadinessTelemetryFields>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_connection_attempt: Option<ArchiveConnectionAttempt>,
 }
 
 #[derive(Serialize)]
@@ -391,6 +394,7 @@ impl JobTelemetry {
         record: SandboxOpRecord,
         completed_at: DateTime<Utc>,
         mismatch: Option<ArchiveSizeMismatch>,
+        connection_attempt: Option<ArchiveConnectionAttempt>,
     ) {
         let mut operation = sandbox_op_at(
             record.action_type,
@@ -402,6 +406,7 @@ impl JobTelemetry {
             completed_at,
         );
         operation.archive_size_mismatch = mismatch;
+        operation.archive_connection_attempt = connection_attempt;
         self.push_operation(operation);
     }
 
@@ -688,6 +693,15 @@ impl JobTelemetry {
     }
 
     #[cfg(test)]
+    pub(crate) fn pending_archive_connection_attempt_payloads(&self) -> Vec<serde_json::Value> {
+        self.pending_ops
+            .iter()
+            .filter(|op| op.archive_connection_attempt.is_some())
+            .map(|op| serde_json::to_value(op).expect("serialize archive connection attempt"))
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(crate) fn pending_workspace_history_restore_payloads(&self) -> Vec<serde_json::Value> {
         self.pending_ops
             .iter()
@@ -933,6 +947,7 @@ fn sandbox_op_at(
         history_transfer: None,
         dns_readiness: None,
         archive_size_mismatch: None,
+        archive_connection_attempt: None,
     }
 }
 
@@ -1072,6 +1087,7 @@ mod tests {
             history_transfer: None,
             dns_readiness: None,
             archive_size_mismatch: None,
+            archive_connection_attempt: None,
         };
         let json = serde_json::to_value(&op).unwrap();
         assert_eq!(
@@ -1359,6 +1375,7 @@ mod tests {
                 history_transfer: None,
                 dns_readiness: None,
                 archive_size_mismatch: None,
+                archive_connection_attempt: None,
             }],
         };
         let json = serde_json::to_value(&payload).unwrap();
@@ -1566,6 +1583,7 @@ mod tests {
                 crate::storage_plan::ArchiveHandle::artifact(0),
                 &reqwest::header::HeaderMap::new(),
             )),
+            None,
         );
         telemetry.flush().await;
         let requests = receiver.assert_finished_with_requests().await;

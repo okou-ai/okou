@@ -247,9 +247,16 @@ metadata from the old authoritative columns, rotates changed manifest CAS hashes
 and keeps outgoing API readers working with temporary defaults and a pointer
 projection trigger. IDs, stored byte paths and share policies do not change.
 See the [runtime retirement matrix](database/hosted-publication-retirement.md#runtime-version-column-retirement).
-The later physical-drop release removes the projection and columns only after
-this runtime cleanup is serving and defines the supported API rollback floor;
-it must not be bundled into the same production release.
+The separately gated physical-drop migration removes the four columns, their
+two old indexes and the projection trigger/function. It verifies the retained
+manifest versions, public bindings and persisted SQL dependencies before
+dropping anything, and preserves content rows and share identities. This
+contraction remains draft until the runtime cleanup has shipped in its own
+production release and its predecessor has drained. The contraction installs
+that runtime transition's canonical main commit as the API rollback floor in
+the main-owned resolver before the physical drop deploys. Its API-only floor
+does not constrain the independently retained Runner tag. A migration journal
+entry cannot prove this serving/rollback boundary.
 
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
@@ -1331,6 +1338,17 @@ generic server/overload evidence from exact terminal text. It cannot undo
 retries already performed by an old SDK. No new protocol, database column or
 session format is introduced, and local-deadline handoff is unchanged.
 
+Codex access-program rejection adds `codex_access_program_unavailable` under
+that same open-token contract. The API accepts and persists future snake-case
+tokens, so a new Runner talking to an older API remains functional but receives
+generic failure presentation and the older unknown-token warning policy. An old
+Runner talking to a new API omits the reason and keeps its existing behavior.
+With both artifacts updated, the exact trusted terminal
+`access_programs.cyber` rejection receives specific guidance, Runner INFO
+telemetry, and no API WARN/ERROR. The run remains failed and retains its original
+error. There is no schema migration, historical backfill, replay, retry,
+credential change, rollout switch, or production-observation authorization.
+
 Queued or active commit-addressed contexts can retain the old CLI. Release
 acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
 the controlled fixture against that artifact, and observe a fixed 24-hour
@@ -2140,11 +2158,12 @@ The receipt-capable writer from [#32880](https://github.com/vm0-ai/vm0/pull/3288
 Cancelling a connector connection aborts the current App attempt: owned requests
 and polling stop, its popup closes when the browser still permits access, busy controls are
 released, and unfinished local continuations (including account naming and Chat
-callbacks) must not start or update a newer attempt. Explicit dialog close and
-Escape have the same meaning; outside presses do not cancel pending work. Once
-the App has confirmed success, the action is labelled Close rather than Cancel.
-Provider isolation policies can sever the popup handle, so closing that external
-window is best-effort and is not required to release the App's attempt.
+callbacks) must not start or update a newer attempt. The dialog's Close control
+and Escape have the same meaning; outside presses do not cancel pending work.
+Connector authorization progress surfaces add no separate Cancel action; forms
+that already provide a general Cancel action keep it. Provider isolation
+policies can sever the popup handle, so closing that external window is
+best-effort and is not required to release the App's attempt.
 
 This is **local cancellation**, not a provider revocation or an API transaction
 rollback. The API may already have claimed OAuth state and may finish persisting

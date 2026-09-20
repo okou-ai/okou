@@ -1448,7 +1448,9 @@
           },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
-            "description": "Verbinden Sie eines Ihrer Tools, damit {{assistantName}} darin arbeiten kann.",
+            "connected": "Verbunden",
+            "description": "Wählen Sie eines aus, und {{assistantName}} beginnt darin zu arbeiten.",
+            "notConnected": "Nicht verbunden",
             "pickerFailed": "Konnektoren konnten nicht geladen werden. Bitte auf der Konnektoren-Seite erneut versuchen.",
             "pickerLoading": "Konnektoren werden geladen …",
             "title": "{{assistantName}} arbeitet in den Tools, die Sie ohnehin nutzen"

@@ -2,20 +2,12 @@ import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
-  ArrowUpRight,
-  CalendarDays,
   ChartNoAxesCombined,
-  FileText,
   Globe,
   Image,
-  Mail,
   MessageSquare,
   Presentation,
-  RefreshCw,
   Route,
-  Sparkles,
-  UserRound,
-  Video,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -42,16 +34,13 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
 /**
- * Both chip rows -- the task types and the ideas inside a type -- are the same
- * object, so the one thing they override carries one definition.
- *
- * `neutral` at its default size is a form button: `px-4` against a fixed `h-9`
- * leaves 17.25px of ink inset on the sides and 11.5px above and below, a
- * 1.5 : 1 frame that reads as a submit control rather than a chip. `px-3`
- * brings the sides to 13.25px, or 1.15 : 1 -- close to even, with the slight
- * horizontal margin a label needs to not touch its own edge. The height is
- * deliberately left alone: `h-9` is what sets this row's rhythm under the
- * composer, and what reads wrong is the frame, not the size.
+ * The task-type row. `neutral` at its default size is a form button: `px-4`
+ * against a fixed `h-9` leaves 17.25px of ink inset on the sides and 11.5px
+ * above and below, a 1.5 : 1 frame that reads as a submit control rather than a
+ * chip. `px-3` brings the sides to 13.25px, or 1.15 : 1 -- close to even, with
+ * the slight horizontal margin a label needs to not touch its own edge. The
+ * height is deliberately left alone: `h-9` is what sets this row's rhythm under
+ * the composer, and what reads wrong is the frame, not the size.
  *
  * Padding is the caller's to set; the border is not. The stroke stays on the
  * variant's `control-border`, because `--border` is `gray-200` rather than
@@ -59,6 +48,28 @@ import { ComposerVisualizationOptions } from "./composer-visualization-options.t
  * stops in those palettes instead of one.
  */
 const TASK_CHIP = "px-3";
+/**
+ * An idea is a sentence, not a label, so it gets a card rather than the pill
+ * the task row uses. A fixed box is what makes the row read as one set: the
+ * text wraps inside the top of the card and the icon parks on the floor, so a
+ * short idea and a long one still occupy the same shape.
+ *
+ * The stroke comes off. A chip's `control-border` is a full 1px of
+ * `gray-300`, heavier than the composer's own hairline plus shadow, which left
+ * the row of suggestions out-stroking the card it belongs to. `bg-muted` is
+ * the same surface the template covers sit on, and `neutral` keeps painting
+ * its hover and pressed states as overlays on top of it.
+ */
+const TASK_IDEA_CARD = [
+  "h-[116px] w-[232px] flex-col items-start justify-start gap-0",
+  "rounded-xl border-transparent bg-muted p-4 pb-3.5",
+  // A fixed box holds translated copy, so the overflow is contained here
+  // rather than left to spill past the card in a longer language.
+  "overflow-hidden whitespace-normal text-left text-sm font-normal leading-5",
+  // The label is an anonymous flex item and cannot take `order`, so the
+  // ordering is stated from the icon: past the text, then pushed to the floor.
+  "[&_svg]:order-2 [&_svg]:mt-auto",
+].join(" ");
 const TASK_ICONS = {
   workflow: Route,
   presentation: Presentation,
@@ -66,46 +77,13 @@ const TASK_ICONS = {
   website: Globe,
   visualization: ChartNoAxesCombined,
 } as const;
-const IDEA_ICONS = {
-  presentation: [
-    Presentation,
-    MessageSquare,
-    Sparkles,
-    FileText,
-    UserRound,
-    ChartNoAxesCombined,
-    Globe,
-    CalendarDays,
-  ],
-  image: [
-    Image,
-    UserRound,
-    CalendarDays,
-    Sparkles,
-    FileText,
-    ChartNoAxesCombined,
-  ],
-  video: [
-    Image,
-    Video,
-    MessageSquare,
-    CalendarDays,
-    Presentation,
-    RefreshCw,
-    Sparkles,
-    Mail,
-  ],
-  website: [
-    Globe,
-    UserRound,
-    CalendarDays,
-    Sparkles,
-    FileText,
-    Presentation,
-    ArrowUpRight,
-    CalendarDays,
-  ],
-} as const;
+/**
+ * One mark for the whole row. An idea is something the user says, so the same
+ * speech bubble fits every type; the four glyphs this replaced carried nothing
+ * the sentence beside them did not, and four different marks in one row of one
+ * kind of thing are four separate places for the eye to stop.
+ */
+const IdeaIcon = MessageSquare;
 const IMAGE_IDEAS = [
   "productScene",
   "headshot",
@@ -278,7 +256,7 @@ function ComposerTemplateShelf({
       aria-label={label}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
+        <p className="min-w-0 truncate text-base font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
@@ -350,7 +328,6 @@ function ComposerTaskIdeas({
   const insertPrompt = useSet(signals.editor.replacePromptText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const icons = IDEA_ICONS[task];
   return (
     <ComposerRail
       signals={signals}
@@ -358,21 +335,20 @@ function ComposerTaskIdeas({
       label={t(($) => {
         return $.chat.taskChips.ideasLabel;
       })}
-      gap="gap-2"
-      items={ideas.map((idea, index) => {
-        const Icon = icons[index % icons.length]!;
+      gap="gap-3"
+      items={ideas.map((idea) => {
         return (
           <Button
             key={idea.label}
             type="button"
             variant="neutral"
-            className={cn("shrink-0", TASK_CHIP)}
+            className={cn("shrink-0", TASK_IDEA_CARD)}
             onClick={() => {
               insertPrompt(idea.prompt);
               detach(saveDraft(pageSignal), Reason.DomCallback);
             }}
           >
-            <Icon
+            <IdeaIcon
               size={16}
               className="shrink-0 text-muted-foreground"
               aria-hidden
@@ -461,7 +437,10 @@ export function ComposerTaskChips({
         <div
           key={selected}
           className={cn(
-            "flex min-w-0 flex-col gap-5",
+            // The ideas row and the shelf under it are two groups, not two
+            // members of one: they need visibly more air between them than the
+            // `gap-3` a shelf keeps between its own title and its covers.
+            "flex min-w-0 flex-col gap-12",
             "motion-safe:animate-composer-panel-in",
           )}
         >

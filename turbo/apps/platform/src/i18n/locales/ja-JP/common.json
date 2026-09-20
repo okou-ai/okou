@@ -1447,7 +1447,9 @@
           },
           "connector": {
             "confirm": "すべてのコネクターを見る",
-            "description": "普段使っているツールをつないで、{{assistantName}} がその中で作業できるようにします。",
+            "connected": "接続済み",
+            "description": "1 つ選ぶと、{{assistantName}} がその中で作業を始めます。",
+            "notConnected": "未接続",
             "pickerFailed": "コネクターを読み込めませんでした。コネクターページで再試行してください。",
             "pickerLoading": "コネクターを読み込み中…",
             "title": "{{assistantName}} は、あなたが普段使っているツールの中で働きます"

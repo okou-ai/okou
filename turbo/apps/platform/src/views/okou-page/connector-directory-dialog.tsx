@@ -1,9 +1,6 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { registerConnectorConnectionDialog$ } from "../../signals/connector-connection-progress.ts";
-import {
-  ConnectorConnectionCancelButton,
-  useConnectorConnectionDialogClose,
-} from "../components/connector-connection-progress.tsx";
+import { useConnectorConnectionDialogClose } from "../components/connector-connection-progress.tsx";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -1252,11 +1249,6 @@ export function ConnectorDirectoryDialog({
             onConnectCustom={onConnectCustom}
           />
         )}
-        {connecting ? (
-          <div className="border-t border-border p-4">
-            <ConnectorConnectionCancelButton onCancel={onClose} />
-          </div>
-        ) : null}
       </DialogContent>
     </Dialog>
   );

@@ -24,7 +24,6 @@ import {
   noneGrantSourceSchema,
   automaticGrantSourceSchema,
   connectorMcpSchema,
-  connectorReplacementSchema,
   validateConnectorProtocolSemantics,
 } from "./source";
 import { isConnectorCatalogIconKey } from "./icon";
@@ -196,7 +195,6 @@ export const connectorCatalogArtifactConnectorSchema = z
     generation: z.array(z.string().min(1)),
     tags: z.array(z.string().min(1)),
     mcp: connectorMcpSchema.optional(),
-    replaces: connectorReplacementSchema.optional(),
     authMethods: z.array(connectorCatalogAuthMethodSchema).min(1),
     icon: connectorCatalogIconSchema,
     skill: connectorCatalogSkillSchema,
@@ -205,14 +203,11 @@ export const connectorCatalogArtifactConnectorSchema = z
   .strict()
   .superRefine((connector, context) => {
     try {
-      validateConnectorProtocolSemantics({
-        connectorSlug: connector.slug,
-        ...connector,
-      });
+      validateConnectorProtocolSemantics(connector);
     } catch {
       context.addIssue({
         code: "custom",
-        message: "Invalid MCP authentication or replacement contract",
+        message: "Invalid MCP authentication contract",
       });
     }
     if (connector.mcp !== undefined && connector.skill.kind !== "none") {
@@ -273,21 +268,6 @@ export const connectorCatalogArtifactSchema = z
         message: "Connector catalog slugs must be unique",
         path: ["connectors"],
       });
-    }
-    const owners = new Set<string>();
-    for (const connector of artifact.connectors) {
-      const predecessor = connector.replaces?.connectorSlug;
-      if (predecessor === undefined) {
-        continue;
-      }
-      if (owners.has(predecessor) || slugs.has(predecessor)) {
-        context.addIssue({
-          code: "custom",
-          message: "Replacement must have one owner and omit its predecessor",
-          path: ["connectors"],
-        });
-      }
-      owners.add(predecessor);
     }
   });
 

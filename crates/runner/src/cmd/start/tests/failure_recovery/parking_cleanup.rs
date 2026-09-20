@@ -20,6 +20,7 @@ fn severe_memory_retention() -> sandbox::SandboxParkOutcome {
                 observed_target_mib: Some(3584),
                 target_observed: true,
                 first_actual_mib: Some(2048),
+                previous_actual_mib: Some(2300),
                 actual_mib: Some(2448),
                 max_actual_mib: Some(2448),
                 deficit_mib: Some(1136),
@@ -34,6 +35,8 @@ fn severe_memory_retention() -> sandbox::SandboxParkOutcome {
                 reported_major_faults: Some(13),
                 reported_minor_faults: Some(14),
                 reported_disk_caches_bytes: Some(15),
+                progress_extension_blocker: Some("fresh_guest_available_reserve_insufficient"),
+                guest_memory_snapshot_attempted: true,
                 guest_memory_snapshot: Some(sandbox::GuestMemorySnapshot {
                     mem_total_bytes: 1,
                     mem_free_bytes: 2,
