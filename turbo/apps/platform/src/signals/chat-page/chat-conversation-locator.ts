@@ -67,7 +67,8 @@ const TICK_GROW_RATIO = 3.1;
  */
 const BAND_BASE_WIDTH_PX = 32;
 
-const SCROLL_ANCHOR_SELECTOR = "[data-chat-scroll-anchor-event-id]";
+const USER_SCROLL_ANCHOR_SELECTOR =
+  '[data-role="user"][data-chat-scroll-anchor-event-id]';
 
 /** One sampled user turn. `turnIndex` indexes the complete turn list. */
 export interface LocatorTurn {
@@ -271,7 +272,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * The event id nearest the reading focus. This is the one place the locator
+ * The user turn owning the reading focus. This is the one place the locator
  * walks the DOM, and it leaves with a single id rather than a table of
  * rectangles: turn geometry belongs to the transcript, not to the rail.
  */
@@ -281,10 +282,9 @@ function currentEventIdAt(
 ): string | null {
   const containerTop = container.getBoundingClientRect().top;
   const scrollTop = container.scrollTop;
-  let best: string | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  let current: string | null = null;
   for (const anchor of container.querySelectorAll<HTMLElement>(
-    SCROLL_ANCHOR_SELECTOR,
+    USER_SCROLL_ANCHOR_SELECTOR,
   )) {
     const eventId = anchor.dataset.chatScrollAnchorEventId;
     if (!eventId) {
@@ -295,13 +295,15 @@ function currentEventIdAt(
       continue;
     }
     const top = rect.top - containerTop + scrollTop;
-    const distance = Math.abs(top - focus);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = eventId;
+    // An answer belongs to the user turn before it. Selecting the nearest
+    // arbitrary message anchor would produce an assistant id that no sampled
+    // tick represents, or select the next request before the reader reaches it.
+    if (top > focus) {
+      return current;
     }
+    current = eventId;
   }
-  return best;
+  return current;
 }
 
 function readViewport(container: HTMLElement): LocatorViewportReading {

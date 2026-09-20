@@ -69,7 +69,7 @@ function LocatorPreviewCard({ thread }: { thread: ChatPanelSignals }) {
         // The card trails the cursor instead of tracking it exactly, which is
         // what makes it read as floating beside the pointer rather than pinned
         // to it. CSS owns the easing; the signals only publish the target.
-        "transition-[transform,opacity] duration-150 ease-out",
+        "transition-transform duration-150 ease-out",
         preview ? "opacity-100" : "opacity-0",
       )}
       style={{

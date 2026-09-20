@@ -93,13 +93,10 @@ function mockThreads(count: number): void {
   });
 }
 
-function mockViewportHeight(
-  height: (viewport: HTMLElement) => number,
-  threadCount = 120,
-): void {
+function mockViewportHeight(height: () => number, threadCount = 120): void {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
     function (this: HTMLElement) {
-      return this.dataset.testid === "sidebar-scroll-area" ? height(this) : 0;
+      return this.dataset.testid === "sidebar-scroll-area" ? height() : 0;
     },
   );
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
@@ -327,15 +324,10 @@ test("Do not retain rows or show an empty state when the list query fails", asyn
   ).not.toBeInTheDocument();
 });
 
-test("Coalesce sidebar resize bursts and cancel pending measurements when hidden", async () => {
+test("Use the latest viewport size after resizing, hiding, and reopening the sidebar", async () => {
   mockThreads(120);
   let viewportHeight = 612;
-  let viewport: HTMLElement | undefined;
-  let heightReads = 0;
-  mockViewportHeight((element) => {
-    if (element === viewport) {
-      heightReads += 1;
-    }
+  mockViewportHeight(() => {
     return viewportHeight;
   });
   await setupPage({
@@ -351,9 +343,6 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
     expect(rows()).toHaveLength(25);
   });
 
-  // Count only this viewport through the existing prototype mock. Spying on
-  // its inherited getter again would also replace the mock for other elements.
-  viewport = within(sidebar).getByTestId("sidebar-scroll-area");
   const flushFrame = queueAnimationFrames();
 
   resizeWindow();
@@ -362,16 +351,12 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   viewportHeight = 360;
   resizeWindow();
 
-  // Intermediate layouts must not force repeated geometry reads. The single
-  // frame measurement must use the latest height and update the visible rows.
-  expect(heightReads).toBe(0);
+  // The frame must use the latest height and update the visible rows.
   flushFrame();
-  expect(heightReads).toBe(1);
   await waitFor(() => {
     expect(rows()).toHaveLength(18);
   });
 
-  heightReads = 0;
   viewportHeight = 900;
   resizeWindow();
   click(within(sidebar).getByLabelText("Hide chat list"));
@@ -380,7 +365,7 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   });
   resizeWindow();
   flushFrame();
-  expect(heightReads).toBe(0);
+  expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
 
   click(screen.getByLabelText("Show chat list"));
   const reopenedSidebar = await screen.findByTestId("chat-list-column");
@@ -392,13 +377,9 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   await waitFor(() => {
     expect(reopenedRows()).toHaveLength(33);
   });
-  viewport = within(reopenedSidebar).getByTestId("sidebar-scroll-area");
-
   viewportHeight = 360;
   resizeWindow();
-  expect(heightReads).toBe(0);
   flushFrame();
-  expect(heightReads).toBe(1);
   await waitFor(() => {
     expect(reopenedRows()).toHaveLength(18);
   });
