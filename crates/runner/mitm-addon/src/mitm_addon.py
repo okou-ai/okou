@@ -364,7 +364,7 @@ def _prebind_requestheaders_upstream_destination(
         flow,
         kind="connector_auth",
         api_url=get_api_url(),
-        platform_mcp_connector_auth=classification.platform_mcp_connector_auth,
+        platform_connector_auth=classification.platform_connector_auth,
     )
 
 
@@ -1049,7 +1049,7 @@ async def _try_firewall_request_stream_from_headers(
         flow,
         kind="connector_auth",
         api_url=get_api_url(),
-        platform_mcp_connector_auth=classification.platform_mcp_connector_auth,
+        platform_connector_auth=classification.platform_connector_auth,
     ):
         fall_back()
         return
@@ -1455,7 +1455,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 flow,
                 kind="connector_auth",
                 api_url=get_api_url(),
-                platform_mcp_connector_auth=classification.platform_mcp_connector_auth,
+                platform_connector_auth=classification.platform_connector_auth,
             ):
                 prepare_firewall_metadata(flow, allow, sandbox_info)
                 _block_upstream_destination_unbound(flow, reason="connector_auth")

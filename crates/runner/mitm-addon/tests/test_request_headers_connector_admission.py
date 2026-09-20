@@ -132,7 +132,7 @@ async def test_test_connector_bounded_requestheaders_uses_connector_binding(
         *,
         kind: upstream_destination_binding.BindingKind,
         api_url: str,
-        platform_mcp_connector_auth: bool = False,
+        platform_connector_auth: bool = False,
     ) -> bool:
         nonlocal active_destinations, active_api_urls
         destinations: list[tuple[str, int]] = []
@@ -144,7 +144,7 @@ async def test_test_connector_bounded_requestheaders_uses_connector_binding(
                 tracked_flow,
                 kind=kind,
                 api_url=api_url,
-                platform_mcp_connector_auth=platform_mcp_connector_auth,
+                platform_connector_auth=platform_connector_auth,
             )
         finally:
             admission_derivations.append((tuple(destinations), tuple(api_urls)))

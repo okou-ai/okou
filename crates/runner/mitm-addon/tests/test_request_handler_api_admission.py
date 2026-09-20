@@ -975,12 +975,14 @@ async def test_platform_mcp_rejects_broad_platform_firewall_base(
 @pytest.mark.parametrize(
     "path",
     [
-        pytest.param("/api/runs", id="ordinary-platform-path"),
-        pytest.param("/mcp/", id="mcp-trailing-slash"),
-        pytest.param("/mcp/tools", id="mcp-descendant"),
+        pytest.param("/api", id="denylisted-api-root"),
+        pytest.param("/api/runs", id="denylisted-api-descendant"),
+        pytest.param("/mcp/", id="denylisted-mcp-trailing-slash"),
+        pytest.param("/mcp/tools", id="denylisted-mcp-descendant"),
+        pytest.param("/other", id="unlisted-platform-path"),
     ],
 )
-async def test_platform_api_non_mcp_paths_auto_allow_before_firewall_auth(
+async def test_non_allowlisted_platform_paths_auto_allow_before_firewall_auth(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, path
 ):
     reg_path = _write_registry(

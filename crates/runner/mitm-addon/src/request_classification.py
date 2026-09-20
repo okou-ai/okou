@@ -189,7 +189,7 @@ class FirewallAllow:
     sandbox_info: dict
     firewall_allow: matching.FirewallAllow
     builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
-    platform_mcp_connector_auth: bool = False
+    platform_connector_auth: bool = False
     kind: Literal["firewall_allow"] = field(init=False, default="firewall_allow")
 
 
@@ -333,7 +333,7 @@ def classify_request(
 
     The decision order is registry/TLS admission, registered sandbox resolution,
     trusted authority validation, platform path admission, platform API allow or
-    exact MCP connector eligibility, browser passthrough, fixed Gmail send
+    allowlisted connector eligibility, browser passthrough, fixed Gmail send
     restriction, firewall match, publicDestination validation, and default allow.
 
     After registry and TLS admission checks accept a registered sandbox,
@@ -384,12 +384,12 @@ def classify_request_with_trusted_authority(
     )
 
 
-def _firewall_base_is_exact_platform_mcp_resource(
+def _firewall_base_is_exact_platform_connector_resource(
     raw_base: object,
     *,
     original_url: str,
 ) -> bool:
-    """Return whether a selected static firewall base owns this MCP resource."""
+    """Return whether a selected static firewall base owns this platform resource."""
     if not isinstance(raw_base, str):
         return False
     base_key = matching.static_firewall_base_config_key(raw_base)
@@ -475,7 +475,7 @@ def _classify_request(
     )
 
     intent = connector_intent.from_flow(flow)
-    platform_mcp_api_fallback: ApiAllow | None = None
+    platform_connector_api_fallback: ApiAllow | None = None
     if upstream_admission.api_destination_matches(
         api_url,
         scheme=flow.request.scheme,
@@ -490,16 +490,20 @@ def _classify_request(
         if platform_path_decision == "api_allow":
             if not (
                 intent.status == "present"
-                and upstream_admission.is_platform_mcp_resource_path(flow.request.path)
+                and upstream_admission.platform_connector_auth_path_decision(flow.request.path)
+                == "allow"
             ):
                 return ApiAllow(sandbox_info=sandbox_info)
-            # A present connector intent makes the exact platform MCP resource
+            # A present connector intent makes an allowlisted platform resource
             # eligible for normal firewall owner selection. It does not authorize
             # credentials by itself; every non-selected outcome falls back to the
             # ordinary platform API path below.
-            platform_mcp_api_fallback = ApiAllow(sandbox_info=sandbox_info)
+            platform_connector_api_fallback = ApiAllow(sandbox_info=sandbox_info)
 
-    if flow.metadata.get(metadata_keys.BROWSER_USER_AGENT) and platform_mcp_api_fallback is None:
+    if (
+        flow.metadata.get(metadata_keys.BROWSER_USER_AGENT)
+        and platform_connector_api_fallback is None
+    ):
         return BrowserAllow(sandbox_info=sandbox_info)
 
     if gmail_send.blocks_gmail_send(trusted_authority.host, flow.request.path):
@@ -517,8 +521,8 @@ def _classify_request(
     if intent.status == "present" and (
         intent.value in omitted_builtin_firewalls or intent.value in omitted_custom_connector_ids
     ):
-        if platform_mcp_api_fallback is not None:
-            return platform_mcp_api_fallback
+        if platform_connector_api_fallback is not None:
+            return platform_connector_api_fallback
         return Allow(
             sandbox_info=sandbox_info,
             builtin_firewall_catalog_snapshot=(registry_state.builtin_firewall_catalog_snapshot),
@@ -537,21 +541,21 @@ def _classify_request(
             is_asterisk_form=is_asterisk_form,
         )
         if isinstance(result, matching.FirewallAmbiguous):
-            if platform_mcp_api_fallback is not None:
-                return platform_mcp_api_fallback
+            if platform_connector_api_fallback is not None:
+                return platform_connector_api_fallback
             return FirewallAmbiguous(
                 sandbox_info=sandbox_info,
                 firewall_ambiguous=result,
                 builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
             )
         if isinstance(result, matching.FirewallBlock):
-            if platform_mcp_api_fallback is not None and not (
-                _firewall_base_is_exact_platform_mcp_resource(
+            if platform_connector_api_fallback is not None and not (
+                _firewall_base_is_exact_platform_connector_resource(
                     result.base,
                     original_url=original_url,
                 )
             ):
-                return platform_mcp_api_fallback
+                return platform_connector_api_fallback
             return FirewallBlock(
                 sandbox_info=sandbox_info,
                 firewall_block=result,
@@ -562,13 +566,13 @@ def _classify_request(
                 if isinstance(result, matching.FirewallPolicyAllow)
                 else result
             )
-            if platform_mcp_api_fallback is not None and not (
-                _firewall_base_is_exact_platform_mcp_resource(
+            if platform_connector_api_fallback is not None and not (
+                _firewall_base_is_exact_platform_connector_resource(
                     firewall_allow.api_entry.get("base"),
                     original_url=original_url,
                 )
             ):
-                return platform_mcp_api_fallback
+                return platform_connector_api_fallback
             public_destination_denial = _public_destination_denial(
                 flow,
                 firewall_allow,
@@ -591,11 +595,11 @@ def _classify_request(
                 builtin_firewall_catalog_snapshot=(
                     registry_state.builtin_firewall_catalog_snapshot
                 ),
-                platform_mcp_connector_auth=platform_mcp_api_fallback is not None,
+                platform_connector_auth=platform_connector_api_fallback is not None,
             )
 
-    if platform_mcp_api_fallback is not None:
-        return platform_mcp_api_fallback
+    if platform_connector_api_fallback is not None:
+        return platform_connector_api_fallback
 
     return Allow(
         sandbox_info=sandbox_info,
