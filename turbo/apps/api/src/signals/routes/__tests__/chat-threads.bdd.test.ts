@@ -4979,7 +4979,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await completeChatRunOk(run.runId, sandboxHeaders);
   }, 120_000);
 
-  it("dedupes artifact urls and filters hosted-site runs", async () => {
+  it("dedupes artifact urls and lists hosted sites beside run files", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Artifacts dedupe agent",
     );
@@ -5043,10 +5043,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       }),
     ).toStrictEqual([sharedId]);
 
-    // A hosted-site deployment on run 2 hides its plain uploads while the
-    // plain run keeps its files. With run 2's plain copy of the shared URL
-    // filtered out, the URL dedupe no longer applies and run 1 surfaces its
-    // own copy again.
+    // A hosted-site deployment is listed next to the run's other files rather
+    // than replacing them, so run 2 keeps its copy of the shared URL and the
+    // dedupe still resolves that URL to run 2.
     const prepared = await chat.prepareHostedSiteWithBearer(bearer2, {
       site: `bdd-artifact-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site",
@@ -5059,8 +5058,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const hostedGroup = artifacts.runs.find((group) => {
       return group.runId === run2.runId;
     });
-    expect(hostedGroup?.files).toHaveLength(1);
-    expect(hostedGroup?.files[0]).toMatchObject({
+    expect(hostedGroup?.files).toHaveLength(2);
+    expect(hostedGroup?.files[0]?.id).toBe(sharedId);
+    expect(hostedGroup?.files[1]).toMatchObject({
       artifactKind: "hosted-site",
       url: prepared.artifactUrl,
       aliasUrl: prepared.url,
@@ -5073,7 +5073,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       plainGroup?.files.map((file) => {
         return file.id;
       }),
-    ).toStrictEqual([ownId, sharedId]);
+    ).toStrictEqual([ownId]);
 
     // A Drive connection without a refresh token resolves 401s to "unknown".
     mockGoogleDriveConnectorOAuth({ omitRefreshToken: true });
@@ -5104,13 +5104,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await completeChatRunOk(run2.runId, claim2.sandboxHeaders);
   }, 120_000);
 
-  it("keeps media generated beside a hosted site visible", async () => {
+  it("keeps files generated beside a hosted site visible", async () => {
     const { actor, agentId, runnerGroup } =
       await entitledChatActor("Hosted media agent");
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
-    // One run generates deliverables and then publishes a site from its markup.
+    // One run generates deliverables and then publishes a site alongside them.
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "generate media then publish a site",
@@ -5120,11 +5120,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const bearer = `Bearer ${okouTokenFromClaim(claim.claim)}`;
     const videoId = randomUUID();
     const imageId = randomUUID();
-    const markupId = randomUUID();
+    const deckId = randomUUID();
     for (const [id, name, size] of [
       [videoId, "kitten.mp4", 2048],
       [imageId, "kitten.jpg", 512],
-      [markupId, "index.html", 128],
+      [deckId, "kitten.pdf", 128],
     ] as const) {
       objectStore.addObject({
         bucket: "test-user-artifacts",
@@ -5133,14 +5133,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
     }
     // The video carries an explicit content type; the others resolve theirs
-    // from the filename, covering both discovery paths.
+    // from the filename.
     await chat.completeUploadWithBearer(
       bearer,
       { id: videoId, contentType: "video/mp4" },
       [200],
     );
     await chat.completeUploadWithBearer(bearer, { id: imageId }, [200]);
-    await chat.completeUploadWithBearer(bearer, { id: markupId }, [200]);
+    await chat.completeUploadWithBearer(bearer, { id: deckId }, [200]);
 
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
       site: `bdd-media-${randomUUID().slice(0, 8)}`,
@@ -5154,27 +5154,22 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const group = artifacts.runs.find((item) => {
       return item.runId === run.runId;
     });
-    // The deployment replaces the markup it was built from, while the media
-    // stays addressable with its own metadata.
-    expect(group?.files).toHaveLength(3);
+    // Publishing a site does not withdraw the deliverables generated with it,
+    // so each stays addressable with its own metadata.
+    expect(group?.files).toHaveLength(4);
     expect(
-      group?.files.slice(0, 2).map((file) => {
+      group?.files.slice(0, 3).map((file) => {
         return file.id;
       }),
-    ).toStrictEqual([videoId, imageId]);
+    ).toStrictEqual([videoId, imageId, deckId]);
     expect(group?.files[0]).toMatchObject({
       contentType: "video/mp4",
       filename: "kitten.mp4",
     });
-    expect(group?.files[2]).toMatchObject({
+    expect(group?.files[3]).toMatchObject({
       artifactKind: "hosted-site",
       url: prepared.artifactUrl,
     });
-    expect(
-      group?.files.map((file) => {
-        return file.id;
-      }),
-    ).not.toContain(markupId);
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run.runId, claim.sandboxHeaders);
