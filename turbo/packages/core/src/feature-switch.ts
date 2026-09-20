@@ -521,6 +521,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.OnboardingSourcesFirst]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OptimisticMessageSpinner]: {
     maintainer: "ethan@okou.ai",
     description:

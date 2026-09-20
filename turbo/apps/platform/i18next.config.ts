@@ -36,6 +36,10 @@ export default defineConfig({
       "connectors.providerConnect.lark.*",
       "onboarding.categories.*",
       "onboarding.make.options.*",
+      // Source-first onboarding indexes these by industry, source family, or
+      // connector slug at runtime.
+      "onboarding.sourcesFirst.industries.*",
+      "onboarding.sourcesFirst.startingPrompt.*",
       "onboarding.templates.*.*",
       "onboarding.workflows.*",
       // Paid tool rows select copy by the shared tool catalog at runtime.
