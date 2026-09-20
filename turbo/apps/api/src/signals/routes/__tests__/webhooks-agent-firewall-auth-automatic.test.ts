@@ -144,6 +144,11 @@ describe("builtin Automatic firewall credential destinations", () => {
           if (builtin?.kind !== "inline") {
             throw new Error("Expected the builtin Automatic inline firewall");
           }
+          const runtimeApi = builtin.firewall.apis[0];
+          if (!runtimeApi) {
+            throw new Error("Expected the builtin Automatic runtime API");
+          }
+          const runtimeAuthHeaders = runtimeApi.auth.headers ?? {};
           const originalBase = catalog.endpoint;
           const nextEndpoint = "https://replacement-mcp.example.test/server";
           const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
@@ -153,7 +158,7 @@ describe("builtin Automatic firewall credential destinations", () => {
               {
                 encryptedSecrets:
                   claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-                authHeaders: catalog.firewallAuthHeaders,
+                authHeaders: runtimeAuthHeaders,
                 forceRefresh,
                 matchedFirewall: {
                   name: catalog.slug,
@@ -426,13 +431,17 @@ describe("builtin Automatic firewall credential destinations", () => {
         if (builtin?.kind !== "inline") {
           throw new Error("Expected the builtin Automatic inline firewall");
         }
+        const runtimeApi = builtin.firewall.apis[0];
+        if (!runtimeApi) {
+          throw new Error("Expected the builtin Automatic runtime API");
+        }
         const authHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
         };
         const body = {
           encryptedSecrets:
             claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-          authHeaders: catalog.firewallAuthHeaders,
+          authHeaders: runtimeApi.auth.headers ?? {},
           forceRefresh: true,
           matchedFirewall: {
             name: catalog.slug,
