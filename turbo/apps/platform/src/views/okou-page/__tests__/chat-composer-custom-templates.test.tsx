@@ -16,6 +16,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
+  THREAD_ID,
   context,
   mockTemplateChat,
   openTemplatePicker,
@@ -985,6 +986,45 @@ test("A deck from the same entry is sent the same message", async () => {
   expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
+test("Choosing a source leaves the picker for the thread it starts", async () => {
+  mockCustomTemplates([customTemplate()]);
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000013",
+    filename: "brand-report.docx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 5,
+    url: "https://cdn.example.test/brand-report.docx",
+  });
+  const user = userEvent.setup({ delay: null });
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
+  });
+  const dialog = await openTemplatePicker(user);
+
+  click(tabByText("Custom"));
+  await user.upload(
+    await within(dialog).findByLabelText("Import your own file"),
+    new File(["docx"], "brand-report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+  );
+
+  await waitFor(() => {
+    expect(capture.runPrompts).toHaveLength(1);
+  });
+  // The import sends a message, and the thread it sends into is the one the
+  // member was just handed. A picker left open covers the run they were sent
+  // to watch — and from an existing chat nothing else takes it away.
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
 test("A source no kind is made from is refused before it is uploaded", async () => {
   mockCustomTemplates([]);
   const { dialog, capture } = await openCustomPanel();
@@ -1012,6 +1052,9 @@ test("A source no kind is made from is refused before it is uploaded", async () 
   // Refused before the bytes are spent, not after a run has already started on
   // a file that cannot become a template.
   expect(capture.runPrompts).toStrictEqual([]);
+  // The toast asks for a different file, and the entry that takes one is in
+  // this picker, so the refusal does not take it away.
+  expect(within(dialog).getByLabelText("Import your own file")).toBeVisible();
 });
 
 test("Uploading stays in Presentation while the switch is off", async () => {

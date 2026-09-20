@@ -48,6 +48,7 @@ import {
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   CUSTOM_TEMPLATE_IMPORT_ACCEPT,
+  canImportCustomTemplate,
   importPresentationTemplateDeck$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -293,9 +294,11 @@ function CustomTemplateCard({
 function CustomTemplateFileInput({
   signals,
   label,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
   readonly label: string;
+  readonly onImported: () => void;
 }) {
   const rootSignal = useGet(rootSignal$);
   const importDeck = useSet(importPresentationTemplateDeck$);
@@ -312,6 +315,13 @@ function CustomTemplateFileInput({
         if (!file) {
           return;
         }
+        // The import attaches the file and sends, so the member is answered in
+        // the thread rather than here; a picker left over that thread hides the
+        // run they were just handed. A file the import will refuse instead
+        // keeps the picker, because its toast asks for another one.
+        if (canImportCustomTemplate(file)) {
+          onImported();
+        }
         detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
       }}
     />
@@ -327,8 +337,10 @@ function CustomTemplateFileInput({
  */
 function CustomTemplateUploadCard({
   signals,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
+  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -357,7 +369,11 @@ function CustomTemplateUploadCard({
           strokeWidth={1.5}
           aria-hidden
         />
-        <CustomTemplateFileInput signals={signals} label={label} />
+        <CustomTemplateFileInput
+          signals={signals}
+          label={label}
+          onImported={onImported}
+        />
       </span>
       <span className="flex flex-col gap-0.5">
         <span className="truncate text-sm font-medium text-foreground">
@@ -379,8 +395,10 @@ function CustomTemplateUploadCard({
  */
 function CustomTemplatesEmpty({
   signals,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
+  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -405,7 +423,11 @@ function CustomTemplatesEmpty({
           return $.templates.empty.description;
         })}
       </span>
-      <CustomTemplateFileInput signals={signals} label={label} />
+      <CustomTemplateFileInput
+        signals={signals}
+        label={label}
+        onImported={onImported}
+      />
     </label>
   );
 }
@@ -418,9 +440,11 @@ function CustomTemplatesEmpty({
 export function CustomTemplatePickerPane({
   signals,
   onSelect,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
@@ -447,11 +471,11 @@ export function CustomTemplatePickerPane({
       hasQuery ? (
         <TemplateEmptyPanel />
       ) : (
-        <CustomTemplatesEmpty signals={signals} />
+        <CustomTemplatesEmpty signals={signals} onImported={onImported} />
       )
     ) : (
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-        <CustomTemplateUploadCard signals={signals} />
+        <CustomTemplateUploadCard signals={signals} onImported={onImported} />
         {templates.map((template) => {
           return (
             <CustomTemplateCard

@@ -6504,7 +6504,7 @@ function TemplatePickerDialog({
                   onSelectCustom={handleSelectCustom}
                   onPreviewPresentation={handlePreview}
                   onPreviewImportedPresentation={handlePreviewImported}
-                  onImportedPresentation={closeTemplatePicker}
+                  onImported={closeTemplatePicker}
                   onSelectWebsite={handleSelectWebsite}
                   onPreviewWebsite={handlePreviewWebsite}
                   onSelectIllustration={handleSelectIllustration}
@@ -6563,7 +6563,7 @@ function TemplatePickerCategoryContent({
   onSelectCustom,
   onPreviewPresentation,
   onPreviewImportedPresentation,
-  onImportedPresentation,
+  onImported,
   onSelectWebsite,
   onPreviewWebsite,
   onSelectIllustration,
@@ -6601,7 +6601,8 @@ function TemplatePickerCategoryContent({
     templateId: string,
     slideIndex: number,
   ) => void;
-  onImportedPresentation: () => void;
+  /** Both import entries leave the picker for the thread they send into. */
+  onImported: () => void;
   onSelectWebsite: (item: WebsiteTemplateItem) => void;
   onPreviewWebsite: (item: WebsiteTemplateItem) => void;
   onSelectIllustration: (item: IllustrationTemplateItem) => void;
@@ -6619,7 +6620,11 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane signals={signals} onSelect={onSelectCustom} />
+        <CustomTemplatePickerPane
+          signals={signals}
+          onSelect={onSelectCustom}
+          onImported={onImported}
+        />
       </div>
     );
   }
@@ -6641,7 +6646,7 @@ function TemplatePickerCategoryContent({
           onSelectImported={onSelectImportedPresentation}
           onPreview={onPreviewPresentation}
           onPreviewImported={onPreviewImportedPresentation}
-          onImported={onImportedPresentation}
+          onImported={onImported}
           runtime={runtime}
           signals={signals}
         />

@@ -75,6 +75,17 @@ function importedTemplateKind(file: File): UserTemplateKind | null {
 }
 
 /**
+ * Whether the Custom entry can make a template from this file.
+ *
+ * Exported so the pane can leave itself open for a file the import is about to
+ * refuse: that refusal is a toast asking for a different file, and it is
+ * answered in the picker the member still has in front of them.
+ */
+export function canImportCustomTemplate(file: File): boolean {
+  return importedTemplateKind(file) !== null;
+}
+
+/**
  * The message the deck is sent with.
  *
  * One plain sentence on purpose: importing a template is not a special
