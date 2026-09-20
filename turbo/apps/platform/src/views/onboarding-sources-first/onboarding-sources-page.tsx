@@ -13,8 +13,8 @@ import {
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
-  justConnectedSlugs$,
-  setSelectedConnectorSlug$,
+  justConnectedBuiltinSlugs$,
+  setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
   sourcesFirstUi$,
@@ -36,7 +36,7 @@ function SourceSearchDialog({
 }) {
   const { t } = useTranslation();
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
-  const selectConnector = useSet(setSelectedConnectorSlug$);
+  const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
   const connectors =
     catalogLoadable.state === "hasData"
       ? catalogLoadable.data.connectors.filter((connector) => {
@@ -97,7 +97,7 @@ export function OnboardingSourcesPage() {
   const updateUi = useSet(updateSourcesFirstUi$);
   const flow = useSourcesFirstFlow("sources");
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
-  const justConnected = useGet(justConnectedSlugs$);
+  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const connectedSlugs: readonly ConnectorSlug[] =
     catalogLoadable.state === "hasData"
       ? catalogLoadable.data.connectors

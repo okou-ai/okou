@@ -150,12 +150,12 @@ function SourcesConnectorGrid({
   const connectorCatalogItemsLoadable = useLastLoadable(
     connectorCatalogStatus$,
   );
-  const setSelectedConnectorSlug = useSet(setSelectedConnectorSlug$);
-  const selectedConnectorSlug = useGet(selectedConnectorSlug$);
-  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
-  const justConnectedSlugs = useGet(justConnectedSlugs$);
+  const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
+  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
+  const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
       ? connectorCatalogItemsLoadable.data.connectors

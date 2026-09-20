@@ -2,7 +2,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Textarea } from "@okouai/ui";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
-import { justConnectedSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
+import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { updateSourcesFirstDraft$ } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { useOnboardingNavigation } from "../onboarding/onboarding-navigation.ts";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
@@ -35,7 +35,7 @@ export function OnboardingReadyPage() {
   const flow = useSourcesFirstFlow("ready");
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
-  const justConnected = useGet(justConnectedSlugs$);
+  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const { runPrompt } = useOnboardingNavigation();
 
   const connected =
