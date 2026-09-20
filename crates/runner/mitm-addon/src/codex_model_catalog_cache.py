@@ -954,6 +954,7 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
             else:
                 state.capture.extend(chunk[:remaining])
                 state.capture_overflow = True
+                _bypass_response(flow, state, "response_size")
         return downstream(chunk)
 
     state.wrapper_stream = capture_and_stream

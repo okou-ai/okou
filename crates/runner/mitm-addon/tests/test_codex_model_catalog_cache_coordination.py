@@ -145,6 +145,81 @@ async def test_non_cacheable_identity_headers_release_singleflight_follower(real
     catalog_cache.handle_error(follower)
 
 
+async def test_stream_overflow_releases_singleflight_owner_before_response_end(real_flow):
+    version = "stream-overflow-release"
+    owner = catalog_flow(real_flow, version=version)
+    await prepare_miss(owner)
+    replacement = catalog_flow(real_flow, version=version)
+    replacement_prepare = asyncio.create_task(
+        catalog_cache.prepare_request(replacement, request_end_stream=True)
+    )
+    await asyncio.sleep(0)
+    assert not replacement_prepare.done()
+
+    owner.response = catalog_response()
+    del owner.response.headers["Content-Length"]
+    owner.response.headers["Transfer-Encoding"] = "chunked"
+    mitm_addon.responseheaders(owner)
+    stream = owner.response.stream
+    assert callable(stream)
+
+    overflow_chunk = b'{"models":[],"padding":"' + b"x" * catalog_cache.MAX_ENTRY_BYTES
+    assert stream(overflow_chunk) == overflow_chunk
+    assert stream(b'"}') == b'"}'
+
+    assert await asyncio.wait_for(replacement_prepare, timeout=0.1)
+    assert replacement.response is None
+    owner_telemetry: dict[str, object] = {}
+    catalog_cache.add_network_log_fields(owner, owner_telemetry)
+    validation_latency = owner_telemetry.pop("model_catalog_cache_validation_latency_ms")
+    assert isinstance(validation_latency, int)
+    assert validation_latency >= 0
+    assert owner_telemetry == {
+        "model_catalog_cache_status": "model_catalog_cold_not_stored",
+        "model_catalog_cache_bypass_reason": "response_size",
+        "model_catalog_cache_upstream_encoding": "identity",
+    }
+
+    capacity_owners = [
+        catalog_flow(real_flow, version=f"{version}-capacity-{index}")
+        for index in range(catalog_cache.MAX_IN_FLIGHT_REQUESTS - 2)
+    ]
+    for capacity_owner in capacity_owners:
+        await prepare_miss(capacity_owner)
+    admitted = catalog_flow(real_flow, version=f"{version}-admitted")
+    await prepare_miss(admitted)
+    admitted_telemetry: dict[str, object] = {}
+    catalog_cache.add_network_log_fields(admitted, admitted_telemetry)
+    assert admitted_telemetry == {}
+
+    replacement_waiter = catalog_flow(real_flow, version=version)
+    replacement_waiter_prepare = asyncio.create_task(
+        catalog_cache.prepare_request(replacement_waiter, request_end_stream=True)
+    )
+    await asyncio.sleep(0)
+    assert not replacement_waiter_prepare.done()
+
+    assert catalog_cache.finalize_response(owner) is None
+    owner.error = Error("upstream reset after overflow")
+    catalog_cache.handle_error(owner)
+    catalog_cache.release_flow_state(owner)
+    assert owner.response.stream is not stream
+    await asyncio.sleep(0)
+    assert not replacement_waiter_prepare.done()
+
+    replacement_body = b'{"models":[{"slug":"replacement"}]}'
+    replacement.response = catalog_response(body=replacement_body)
+    assert (await finish_response(replacement))["model_catalog_cache_status"] == (
+        "model_catalog_cold_stored"
+    )
+    await asyncio.wait_for(replacement_waiter_prepare, timeout=0.1)
+    assert replacement_waiter.response is not None
+    assert replacement_waiter.response.content == replacement_body
+
+    for capacity_owner in [*capacity_owners, admitted]:
+        catalog_cache.handle_error(capacity_owner)
+
+
 @pytest.mark.parametrize(
     ("content_type", "etag", "reason"),
     [
