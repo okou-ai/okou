@@ -1129,6 +1129,13 @@ impl FreshArchivePhaseGuard {
         let Some(action_type) = self.action_type.take() else {
             return;
         };
+        // Close the request observer before capturing the phase boundary so a
+        // background connector cannot enter the recorded summary after this
+        // operation's duration or completion timestamp.
+        let archive_connection_attempt = self
+            .connection_attempt_observer
+            .as_ref()
+            .map(ConnectionAttemptObserver::freeze);
         let record = FreshArchivePhaseRecord {
             operation: SandboxOpRecord::new(
                 action_type,
@@ -1138,10 +1145,7 @@ impl FreshArchivePhaseGuard {
             ),
             completed_at: Utc::now(),
             archive_size_mismatch: self.archive_size_mismatch,
-            archive_connection_attempt: self
-                .connection_attempt_observer
-                .as_ref()
-                .map(ConnectionAttemptObserver::freeze),
+            archive_connection_attempt,
         };
         self.records
             .records

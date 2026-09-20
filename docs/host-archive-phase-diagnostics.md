@@ -66,8 +66,8 @@ after that boundary cannot change the recorded summary.
 | `terminal_duration_ms`                     | Sum of whole elapsed milliseconds for success, failure and drop recorded before freeze.   |
 | `saturated`                                | At least one count or the duration sum reached its fixed representable cap.               |
 
-Counts are capped at 255 and `terminal_duration_ms` at 4,294,967,295. Once a
-cap is reached the value remains bounded and `saturated` is true. The API
+Counts are capped at 255 and `terminal_duration_ms` at 4,294,967,295. When an
+observation exceeds a cap the value remains bounded and `saturated` is true. The API
 forwards the seven fields under the `archive_connection_attempt_` prefix in
 Axiom. An emitted object with `started: 0` means no connector call was observed
 before this headers phase froze. An absent object means the headers phase was
