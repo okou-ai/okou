@@ -842,9 +842,8 @@ describe("MCP chat discovery and creation", () => {
       replayed: false,
       input: {
         inputRef: { threadId: args.requestId, eventId: expect.any(String) },
-        disposition: expect.stringMatching(
-          /^(queued|reserved|associated|rejected|revoked)$/,
-        ),
+        disposition: "rejected",
+        runId: null,
       },
       nextAction: {
         tool: "get_chat_status",
@@ -866,13 +865,42 @@ describe("MCP chat discovery and creation", () => {
     ).toBe(24 * 60 * 60 * 1000);
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
-    ).toMatchObject([{ text: args.message }]);
+    ).toMatchObject([
+      { text: args.message, eventType: "input.rejected", runId: null },
+    ]);
+
+    await f.runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+      {
+        model: "claude-sonnet-4-6",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+    ]);
 
     const replay = await createThread(token, args);
     expect(replay).toMatchObject({
       threadId: args.requestId,
+      agentId: f.agent.agentId,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-4-6",
+        source: "org_default",
+      },
       replayed: true,
-      input: { inputRef: created.input.inputRef },
+      input: {
+        inputRef: created.input.inputRef,
+        disposition: "rejected",
+        runId: null,
+      },
     });
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
@@ -945,6 +973,12 @@ describe("MCP chat discovery and creation", () => {
     const recovered = await createThread(token, args);
     expect(recovered).toMatchObject({
       threadId: args.requestId,
+      agentId: f.agent.agentId,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
       replayed: true,
       input: { inputRef: { threadId: args.requestId } },
     });
@@ -986,10 +1020,16 @@ describe("MCP chat discovery and creation", () => {
       (await getMessages(token, { threadId: args.requestId })).messages,
     ).toHaveLength(1);
 
+    const secondAgent = await f.bdd.createAgent(f.actor, {
+      displayName: "Another combined creation Agent",
+      visibility: "private",
+    });
     for (const conflicting of [
       { ...args, title: "Changed title" },
       { ...args, message: "Changed message" },
+      { ...args, agentId: secondAgent.agentId },
       { ...args, agentId: undefined },
+      { ...args, model: "claude-sonnet-4-6" },
       { ...args, model: undefined },
       {
         requestId: args.requestId,
@@ -1383,38 +1423,45 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
-  it("expires creation retries after 24 hours and does not recreate deleted conversations", async () => {
-    const f = await creationFixture();
-    const args = {
-      requestId: randomUUID(),
-      agentId: f.agent.agentId,
-      title: "Retry window",
-      model: "claude-sonnet-5",
-    };
-    const created = await createThread(
-      f.auth.token({ scope: defaultScopes }),
-      args,
-    );
-    const token = f.auth.token({
-      scope: defaultScopes,
-      exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
-    });
-    await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
-      await expect(createThread(token, args)).resolves.toMatchObject({
-        replayed: true,
+  it.each([
+    { kind: "empty", message: undefined },
+    { kind: "combined", message: "Retain one expiring initial input" },
+  ] as const)(
+    "expires $kind creation retries after 24 hours and does not recreate deleted conversations",
+    async ({ message }) => {
+      const f = await creationFixture();
+      const args = {
+        requestId: randomUUID(),
+        agentId: f.agent.agentId,
+        title: "Retry window",
+        model: "claude-sonnet-5",
+        ...(message === undefined ? {} : { message }),
+      };
+      const created = await createThread(
+        f.auth.token({ scope: defaultScopes }),
+        args,
+      );
+      const token = f.auth.token({
+        scope: defaultScopes,
+        exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
       });
-    });
-    await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
-      const expired = await callTool(token, "create_chat_thread", args);
-      expect(expired.isError).toBeTruthy();
-      structuredToolError(expired);
-    });
-    await f.chat.deleteThread(f.actor, created.threadId);
-    expect(
-      (await callTool(token, "create_chat_thread", args)).isError,
-    ).toBeTruthy();
-    expect((await listThreads(token)).threads).toStrictEqual([]);
-  });
+      await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
+        await expect(createThread(token, args)).resolves.toMatchObject({
+          replayed: true,
+        });
+      });
+      await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
+        const expired = await callTool(token, "create_chat_thread", args);
+        expect(expired.isError).toBeTruthy();
+        structuredToolError(expired);
+      });
+      await f.chat.deleteThread(f.actor, created.threadId);
+      expect(
+        (await callTool(token, "create_chat_thread", args)).isError,
+      ).toBeTruthy();
+      expect((await listThreads(token)).threads).toStrictEqual([]);
+    },
+  );
 
   it("rejects an unrelated created-event collision and an existing thread without matching creation evidence", async () => {
     const f = await creationFixture();

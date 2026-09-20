@@ -627,8 +627,11 @@ export const createMcpChatThread$ = command(
     }
     await publishThreadListChanged(args.principal);
     signal.throwIfAborted();
-    if (!isCombinedCreation(args.input) || !("input" in result.value)) {
+    if (!isCombinedCreation(args.input)) {
       return { kind: "ok", data: result.value };
+    }
+    if (!("input" in result.value)) {
+      throw new Error("Combined creation output is missing input receipt");
     }
     return await finishCombinedCreation(
       {
