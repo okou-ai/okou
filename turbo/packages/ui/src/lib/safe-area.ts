@@ -48,14 +48,6 @@ function readInset(styles: CSSStyleDeclaration, property: string): number {
  * device, not of the menu.
  */
 function safeAreaCollisionPadding(): CollisionInset {
-  if (typeof document === "undefined") {
-    return {
-      top: COLLISION_GAP,
-      right: COLLISION_GAP,
-      bottom: COLLISION_GAP,
-      left: COLLISION_GAP,
-    };
-  }
   const styles = window.getComputedStyle(document.documentElement);
   return {
     top: COLLISION_GAP + readInset(styles, "--sat"),

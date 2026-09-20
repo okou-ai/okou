@@ -414,6 +414,15 @@
     calc(
       var(--sal, env(safe-area-inset-left, 0px)) + --spacing(--value(integer))
     );
+  padding: calc(
+      var(--sat, env(safe-area-inset-top, 0px)) + --value([length], [*])
+    )
+    calc(var(--sar, env(safe-area-inset-right, 0px)) + --value([length], [*]))
+    calc(
+      var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+        --value([length], [*])
+    )
+    calc(var(--sal, env(safe-area-inset-left, 0px)) + --value([length], [*]));
 }
 
 @utility pt-safe-offset-* {
@@ -476,6 +485,13 @@
     (
         var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
           --spacing(--value(integer))
+      ) *
+      -1
+  );
+  margin-bottom: calc(
+    (
+        var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+          --value([length], [*])
       ) *
       -1
   );

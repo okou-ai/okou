@@ -540,16 +540,27 @@ describe("safe-area utilities", () => {
   });
 
   // Without the second declaration a caller can only reach the spacing scale,
-  // and the viewport-relative gutters in the app have no scale entry.
-  it.each(["pb-safe-or-*", "bottom-safe-or-*", "pb-safe-offset-*"])(
-    "%s accepts an arbitrary value as well as the spacing scale",
-    (name) => {
-      const body = readUtilityBody(name);
+  // and the viewport-relative gutters in the app have no scale entry. Every
+  // utility that takes a value carries both, so the family has one surface
+  // rather than a per-utility answer.
+  it.each([
+    "p-safe-offset-*",
+    "pt-safe-offset-*",
+    "pr-safe-offset-*",
+    "pb-safe-offset-*",
+    "pl-safe-offset-*",
+    "pb-safe-or-*",
+    "-mb-safe-offset-*",
+    "bottom-safe-or-*",
+    "bottom-safe-offset-*",
+    "top-safe-offset-*",
+    "right-safe-offset-*",
+  ])("%s accepts an arbitrary value as well as the spacing scale", (name) => {
+    const body = readUtilityBody(name);
 
-      expect(body).toContain("--spacing(--value(integer))");
-      expect(body).toContain("--value([length], [*])");
-    },
-  );
+    expect(body).toContain("--spacing(--value(integer))");
+    expect(body).toContain("--value([length], [*])");
+  });
 
   // A primitive has to behave in a host that never declared the properties.
   it.each([

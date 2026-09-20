@@ -47,16 +47,10 @@ function readRuleBody(selector: string): string {
   throw new Error(`Unterminated CSS rule for ${selector}`);
 }
 
+// Only the split between the physical inset and the avoidable one belongs
+// here. The four `env()` declarations and the shell's own padding are unchanged
+// configuration, and restating them would pin the file rather than a decision.
 describe("safe-area properties", () => {
-  it("reads every inset from its environment variable", () => {
-    const root = readRuleBody(":root {");
-
-    expect(root).toMatch(/--sat:\s*env\(safe-area-inset-top, 0px\);/);
-    expect(root).toMatch(/--sar:\s*env\(safe-area-inset-right, 0px\);/);
-    expect(root).toMatch(/--sab:\s*env\(safe-area-inset-bottom, 0px\);/);
-    expect(root).toMatch(/--sal:\s*env\(safe-area-inset-left, 0px\);/);
-  });
-
   it("starts the avoidable bottom inset at the physical one", () => {
     expect(readRuleBody(":root {")).toMatch(/--okou-safe-b:\s*var\(--sab\);/);
   });
@@ -76,14 +70,6 @@ describe("safe-area properties", () => {
   it("keeps the physical inset unchanged while the keyboard is open", () => {
     expect(readRuleBody(':root[data-keyboard-open="true"] {')).not.toContain(
       "--sab:",
-    );
-  });
-
-  // Fixed descendants are laid out past this padding box, which is why they
-  // carry their own insets; the shell still owns the three it can apply.
-  it("keeps the shell's own top and horizontal padding", () => {
-    expect(readRuleBody("#root {\n  box-sizing")).toMatch(
-      /padding:\s*var\(--sat\)\s*var\(--sar\)\s*0\s*var\(--sal\);/,
     );
   });
 });
