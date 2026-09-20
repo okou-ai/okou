@@ -208,14 +208,25 @@ describe("builtin MCP Run admission", () => {
         }),
       ]),
     );
+    const manualFirewall = claim.firewalls?.find((entry) => {
+      return entry.kind === "inline" && entry.firewall.name === "manual-mcp";
+    });
+    if (manualFirewall?.kind !== "inline") {
+      throw new Error("Expected the manual MCP inline firewall");
+    }
+    const manualApi = manualFirewall.firewall.apis[0];
+    if (!manualApi) {
+      throw new Error("Expected the manual MCP runtime API");
+    }
     const authBody = {
       encryptedSecrets: claim.encryptedSecrets,
-      authHeaders: { Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}` },
+      authHeaders: manualApi.auth.headers ?? {},
       secretConnectorMap: claim.secretConnectorMap ?? undefined,
       secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
       matchedFirewall: {
         name: "manual-mcp",
         apiId: "manual-mcp:0",
+        base: manualApi.base,
         connectorSlug: "manual-mcp",
         sourceId: admittedAccount.id,
         routingVariables: {},
