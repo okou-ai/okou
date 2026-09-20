@@ -4,21 +4,53 @@ import { apiErrorSchema } from "./errors";
 
 export const VNC_DISPLAY_NAME_MAX_LENGTH = 128;
 export const VNC_PASSWORD_MAX_LENGTH = 8;
+export const VNC_USERNAME_MAX_BYTES = 255;
+export const VNC_USERNAME_PASSWORD_MAX_BYTES = 1_023;
 
 const nameSchema = z.string().trim().min(1).max(VNC_DISPLAY_NAME_MAX_LENGTH);
+function boundedUtf8String(maxBytes: number, label: string) {
+  return z
+    .string()
+    .refine((value) => {
+      const length = new TextEncoder().encode(value).byteLength;
+      return length >= 1 && length <= maxBytes;
+    }, `${label} must be between 1 and ${maxBytes} UTF-8 bytes`)
+    .refine((value) => {
+      return !value.includes("\u0000");
+    }, `${label} must not contain NUL`);
+}
+
+const vncPasswordAuthenticationVariantSchema = z
+  .object({
+    method: z.literal("vnc_password"),
+    password: z
+      .string()
+      .min(1)
+      .max(VNC_PASSWORD_MAX_LENGTH)
+      .refine((value) => {
+        return !/[^\x20-\x7e]/u.test(value);
+      }, "VNC passwords require printable ASCII bytes"),
+  })
+  .strict();
+
+export const vncPasswordAuthenticationSchema = z.discriminatedUnion("method", [
+  vncPasswordAuthenticationVariantSchema,
+]);
+
+export const vncUsernamePasswordAuthenticationSchema = z
+  .object({
+    method: z.literal("username_password"),
+    username: boundedUtf8String(VNC_USERNAME_MAX_BYTES, "VNC username"),
+    password: boundedUtf8String(
+      VNC_USERNAME_PASSWORD_MAX_BYTES,
+      "VNC username/password password",
+    ),
+  })
+  .strict();
+
 export const vncAuthenticationSchema = z.discriminatedUnion("method", [
-  z
-    .object({
-      method: z.literal("vnc_password"),
-      password: z
-        .string()
-        .min(1)
-        .max(VNC_PASSWORD_MAX_LENGTH)
-        .refine((value) => {
-          return !/[^\x20-\x7e]/u.test(value);
-        }, "VNC passwords require printable ASCII bytes"),
-    })
-    .strict(),
+  vncPasswordAuthenticationVariantSchema,
+  vncUsernamePasswordAuthenticationSchema,
 ]);
 const revisionSchema = z.int().positive().max(2_147_483_647);
 
@@ -45,19 +77,30 @@ export const vncCredentialSelectionSchema = z.union([
   z.object({ create: createVncCredentialRequestSchema }).strict(),
 ]);
 
-export const vncCredentialResponseSchema = z
-  .object({
-    id: z.uuid(),
-    name: z.string(),
-    authMethod: z.literal("vnc_password"),
-    revision: revisionSchema,
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-    hosts: z.array(
-      z.object({ id: z.uuid(), displayName: z.string() }).strict(),
-    ),
-  })
-  .strict();
+const vncCredentialResponseBase = {
+  id: z.uuid(),
+  name: z.string(),
+  revision: revisionSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  hosts: z.array(z.object({ id: z.uuid(), displayName: z.string() }).strict()),
+} as const;
+
+export const vncCredentialResponseSchema = z.discriminatedUnion("authMethod", [
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("vnc_password"),
+    })
+    .strict(),
+  z
+    .object({
+      ...vncCredentialResponseBase,
+      authMethod: z.literal("username_password"),
+      username: boundedUtf8String(VNC_USERNAME_MAX_BYTES, "VNC username"),
+    })
+    .strict(),
+]);
 
 const c = initContract();
 const errors = {

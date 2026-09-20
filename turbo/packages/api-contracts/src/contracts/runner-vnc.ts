@@ -2,8 +2,11 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
-import { VNC_HOST_MAX_LENGTH, vncSecuritySchema } from "./vnc-connections";
-import { vncAuthenticationSchema } from "./vnc-credentials";
+import {
+  VNC_HOST_MAX_LENGTH,
+  vncX509VncSecuritySchema,
+} from "./vnc-connections";
+import { vncPasswordAuthenticationSchema } from "./vnc-credentials";
 
 const c = initContract();
 
@@ -49,8 +52,8 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
-      authentication: vncAuthenticationSchema,
-      security: vncSecuritySchema,
+      authentication: vncPasswordAuthenticationSchema,
+      security: vncX509VncSecuritySchema,
     })
     .strict(),
 ]);
