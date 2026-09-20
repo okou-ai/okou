@@ -39,18 +39,17 @@ test("The tagline holds its full line while it types", async () => {
   const fullLine = tagline.getAttribute("aria-label");
   expect(fullLine).toBeTruthy();
 
-  // Two layers, not one: the first carries the whole line and is hidden from
-  // both the page and the accessibility tree, the second carries whatever has
-  // been typed so far. Asserting they are separate elements is what keeps this
-  // test from passing once the reserving copy is deleted -- the progress
-  // assertions below would still hold against a single self-sizing line.
-  const [reserved, typed] = Array.from(tagline.children);
-  expect(tagline.children).toHaveLength(2);
-  expect(reserved?.getAttribute("aria-hidden")).toBe("true");
+  // The whole line is in the heading and hidden from both the page and the
+  // accessibility tree, which is what holds the box open. Asserted through the
+  // hidden copy rather than through the number or order of elements, so that
+  // reserving the same width another way stays free to pass.
+  const reserved = tagline.querySelector("[aria-hidden='true']");
+  expect(reserved).toBeInTheDocument();
   expect(reserved?.textContent).toBe(fullLine);
 
   // Whatever the typewriter has reached is a prefix of that same line, so the
-  // two layers can never disagree about where the box ends.
+  // visible text can never ask for more room than is already reserved.
+  const typed = tagline.querySelector("[aria-hidden='true'] ~ *");
   expect(fullLine?.startsWith(typed?.textContent ?? "")).toBeTruthy();
 
   await waitFor(() => {

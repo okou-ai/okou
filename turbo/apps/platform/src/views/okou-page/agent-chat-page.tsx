@@ -289,19 +289,20 @@ function PinPill() {
  * the bottom of the sweater was pinched into a point by a mask with nothing
  * visible to attribute it to. `rounded-xl` is 14px, so it leaves 28px of
  * straight bottom under a collar that renders 14.7px wide, and the border makes
- * the frame answerable for the crop.
+ * the frame answerable for the crop. `surface-border` is the registered token
+ * for a four-sided hairline; `--border` is a stop lighter and would disagree
+ * with the chips on the same screen.
  *
  * The size stays on the step the mobile layout already used rather than gaining
  * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
  * reads as a standee beside the text.
  */
 const AGENT_AVATAR_FRAME =
-  "h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border";
+  "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl border border-surface-border";
 /**
  * Fills the frame's content box. Restating the frame's own `h-14 w-14` here
  * would overflow it by the border on every side and be silently clipped, since
- * the border box is what the frame sizes -- and filling it is also what lets
- * the frame drop the centering it used to need around a smaller child.
+ * the border box is what the frame sizes.
  */
 const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
