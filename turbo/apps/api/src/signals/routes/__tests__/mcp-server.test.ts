@@ -843,11 +843,8 @@ describe("MCP chat discovery and creation", () => {
     await expect(
       getStatus(token, { threadId: requestId }),
     ).resolves.toMatchObject({
-      evidence: {
-        input: null,
-        run: null,
-        output: { state: "unavailable" },
-      },
+      lifecycle: { phase: "idle", outcome: null, output: "none" },
+      messages: null,
     });
     expect(
       (await getMessages(token, { threadId: requestId })).messages,
@@ -1841,17 +1838,6 @@ describe("MCP chat status", () => {
     expect(status).toMatchObject({
       threadId: thread.id,
       lifecycle: { phase: "idle", outcome: null, output: "none" },
-      evidence: {
-        input: null,
-        run: null,
-        runSelection: "latest",
-        output: {
-          state: "unavailable",
-          messageRefs: [],
-          hasMore: false,
-          reason: "no_associated_run",
-        },
-      },
       messages: null,
       wait: null,
       messagePage: null,
@@ -1890,36 +1876,16 @@ describe("MCP chat status", () => {
     const pending = await getStatus(token, args);
     expect(pending).toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
-      evidence: {
-        input: {
-          ref: sent.inputRef,
-          state: "associated",
-          // Immediate admission does not retain a launch receipt. Association
-          // proves the run identity, not how the runtime consumed the input.
-          deliveryMode: "unknown",
-          runId,
-        },
-        run: { id: runId, status: "pending", completedAt: null },
-        runSelection: "input",
-        output: { state: "pending", messageRefs: [], reason: null },
-      },
       messages: {
         tool: "get_chat_messages",
         arguments: { threadId: thread.id, runId, limit: 20 },
       },
     });
     expect(pending.retryAfterMs).toBeGreaterThan(0);
-    expect(pending.evidence.input?.visibleMessageRef).not.toStrictEqual(
-      sent.inputRef,
-    );
     expect(JSON.stringify(pending)).not.toContain("PRIVATE_STATUS_PROMPT");
     const claimed = await f.claimChatRun(actor.runnerGroup, runId);
     await expect(getStatus(token, args)).resolves.toMatchObject({
       lifecycle: { phase: "running", outcome: null, output: "pending" },
-      evidence: {
-        run: { id: runId, status: "running", completedAt: null },
-        output: { state: "pending" },
-      },
     });
     await f.webhooks.requestAgentEvents(
       {
@@ -1942,12 +1908,7 @@ describe("MCP chat status", () => {
     const partial = await getStatus(token, args);
     expect(partial).toMatchObject({
       lifecycle: { phase: "running", outcome: null, output: "partial" },
-      evidence: {
-        run: { status: "running" },
-        output: { state: "partial", hasMore: false, reason: null },
-      },
     });
-    expect(partial.evidence.output.messageRefs).toHaveLength(1);
     await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
       lastEventSequence: 0,
     });
@@ -1962,17 +1923,6 @@ describe("MCP chat status", () => {
         phase: "settled",
         outcome: "completed",
         output: "ready",
-      },
-      evidence: {
-        run: {
-          id: runId,
-          status: "completed",
-          completedAt: expect.any(String),
-        },
-        output: {
-          state: "ready",
-          messageRefs: partial.evidence.output.messageRefs,
-        },
       },
       retryAfterMs: null,
     });
@@ -1996,14 +1946,10 @@ describe("MCP chat status", () => {
       ),
     ).toStrictEqual(new Set(["user", "assistant"]));
     expect(
-      messages.messages
-        .filter((message) => {
-          return message.role === "assistant";
-        })
-        .map((message) => {
-          return message.ref;
-        }),
-    ).toStrictEqual(ready.evidence.output.messageRefs);
+      messages.messages.filter((message) => {
+        return message.role === "assistant";
+      }),
+    ).toMatchObject([{ text: "A readable intermediate result." }]);
     const waited = await getStatus(token, { ...args, waitMs: 60_000 });
     expect(waited.wait).toStrictEqual({
       requestedMs: 60_000,
@@ -2022,19 +1968,19 @@ describe("MCP chat status", () => {
         outcome: "completed",
         output: "ready",
       },
-      evidence: {
-        input: null,
-        runSelection: "latest",
-        run: { id: runId, status: "completed" },
-        output: { state: "ready" },
+      messages: {
+        arguments: { threadId: thread.id, runId, limit: 20 },
       },
       wait: null,
       messagePage: null,
     });
+    const visibleInputRef = messages.messages.find((message) => {
+      return message.role === "user";
+    })?.ref;
     const invalidRefs = [
       { ...sent.inputRef, eventId: randomUUID() },
       { ...sent.inputRef, seqId: sent.inputRef.seqId + 1 },
-      pending.evidence.input?.visibleMessageRef,
+      visibleInputRef,
     ];
     for (const inputRef of invalidRefs) {
       if (!inputRef) {
@@ -2047,11 +1993,6 @@ describe("MCP chat status", () => {
           phase: "unavailable",
           outcome: null,
           output: "unavailable",
-        },
-        evidence: {
-          input: { state: "unavailable", runId: null },
-          run: null,
-          runSelection: "input",
         },
         messages: null,
       });
@@ -2067,9 +2008,13 @@ describe("MCP chat status", () => {
       }),
     ).resolves.toMatchObject({
       threadId: thread.id,
-      evidence: {
-        input: { ref: sent.inputRef, runId },
-        run: { id: runId, status: "completed" },
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "ready",
+      },
+      messages: {
+        arguments: { threadId: thread.id, runId, limit: 20 },
       },
     });
   });
@@ -2132,9 +2077,10 @@ describe("MCP chat status", () => {
     });
 
     expect(status).toMatchObject({
-      evidence: {
-        run: { id: runId, status: "completed" },
-        output: { state: "ready" },
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "ready",
       },
       wait: {
         requestedMs: 5000,
@@ -2202,10 +2148,7 @@ describe("MCP chat status", () => {
     });
 
     expect(deadline).toMatchObject({
-      evidence: {
-        run: { id: runId, status: "running" },
-        output: { state: "pending" },
-      },
+      lifecycle: { phase: "running", outcome: null, output: "pending" },
       wait: {
         requestedMs: 5000,
         effectiveMs: 5000,
@@ -2310,7 +2253,7 @@ describe("MCP chat status", () => {
       outcome: "status",
       returnReason: "waiter_limit",
     });
-    expect(exhausted.evidence.output.state).toBe("pending");
+    expect(exhausted.lifecycle.output).toBe("pending");
 
     release.resolve();
     await expect(Promise.all([first, second])).resolves.toStrictEqual([
@@ -2461,14 +2404,6 @@ describe("MCP chat status", () => {
         outcome: "cancelled",
         output: "partial",
       },
-      evidence: {
-        run: {
-          id: sent.runId,
-          status: "cancelled",
-          cancellationRecovery: "pending",
-        },
-        output: { state: "partial" },
-      },
     });
     expect(recovering.retryAfterMs).toBeGreaterThan(0);
     await f.webhooks.requestAgentEvents(
@@ -2498,17 +2433,18 @@ describe("MCP chat status", () => {
         outcome: "cancelled",
         output: "ready",
       },
-      evidence: {
-        run: {
-          id: sent.runId,
-          status: "cancelled",
-          cancellationRecovery: "complete",
-        },
-        output: { state: "ready" },
-      },
       retryAfterMs: null,
     });
-    expect(recovered.evidence.output.messageRefs).toHaveLength(2);
+    if (!recovered.messages) {
+      throw new Error("Expected recovered output retrieval instructions");
+    }
+    expect(
+      (await getMessages(token, recovered.messages.arguments)).messages.filter(
+        (message) => {
+          return message.role === "assistant";
+        },
+      ),
+    ).toHaveLength(2);
   });
 
   it("reports failed runs without inventing assistant messages from terminal errors", async () => {
@@ -2544,14 +2480,6 @@ describe("MCP chat status", () => {
     });
     expect(status).toMatchObject({
       lifecycle: { phase: "settled", outcome: "failed", output: "none" },
-      evidence: {
-        run: { id: sent.runId, status: "failed" },
-        output: {
-          state: "unavailable",
-          reason: "no_output",
-          messageRefs: [],
-        },
-      },
       wait: {
         observations: 1,
         outcome: "status",
@@ -2585,14 +2513,6 @@ describe("MCP chat status", () => {
         outcome: "completed",
         output: "none",
       },
-      evidence: {
-        run: { id: sent.runId, status: "completed" },
-        output: {
-          state: "unavailable",
-          reason: "no_output",
-          messageRefs: [],
-        },
-      },
       retryAfterMs: null,
     });
   });
@@ -2620,33 +2540,23 @@ describe("MCP chat status", () => {
     const args = { threadId: active.threadId, inputRef: submitted.inputRef };
     await expect(getStatus(token, args)).resolves.toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
-      evidence: {
-        input: { state: "queued", runId: null, deliveryMode: "unknown" },
-        run: null,
-      },
+      messages: null,
     });
     await f.completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
     const launched = await getStatus(token, args);
-    const nextRunId = launched.evidence.run?.id;
-    if (!nextRunId) {
+    if (!launched.messages) {
       throw new Error("Expected the queued input to start its own run");
     }
+    const nextRunId = launched.messages.arguments.runId;
     onTestFinished(async () => {
       await f.api.requestCancelRun(actor.actor, nextRunId, [200, 400, 404]);
     });
     expect(nextRunId).not.toBe(active.runId);
     expect(launched).toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
-      evidence: {
-        input: {
-          ref: submitted.inputRef,
-          state: "associated",
-          deliveryMode: "launch",
-          runId: nextRunId,
-        },
-        run: { id: nextRunId, status: "pending" },
-        output: { state: "pending" },
+      messages: {
+        arguments: { threadId: active.threadId, runId: nextRunId, limit: 20 },
       },
     });
     // Infrastructure exception: the retention cutoff uses the database clock;
@@ -2664,7 +2574,8 @@ describe("MCP chat status", () => {
     );
     expect(retained.body.deleted).toBe(1);
     const archived = await getStatus(token, args);
-    expect(archived.evidence).toStrictEqual(launched.evidence);
+    expect(archived.lifecycle).toStrictEqual(launched.lifecycle);
+    expect(archived.messages).toStrictEqual(launched.messages);
   });
 
   it.each(["completed", "timeout"] as const)(
@@ -2694,10 +2605,6 @@ describe("MCP chat status", () => {
         getStatus(token, { threadId: sent.threadId }),
       ).resolves.toMatchObject({
         lifecycle: { phase: "finalizing", outcome: status, output: "pending" },
-        evidence: {
-          run: { id: sent.runId, status },
-          output: { state: "pending", messageRefs: [] },
-        },
         retryAfterMs: expect.any(Number),
       });
       await f.webhooks.requestAgentEvents(
@@ -2717,15 +2624,8 @@ describe("MCP chat status", () => {
         [200],
       );
       const observed = await getStatus(token, { threadId: sent.threadId });
-      expect(observed.evidence.run?.status).toBe(status);
       // Timeout fencing discards late output; an ordinary completed run can
       // materialize it, but neither case invents the missing terminal marker.
-      expect(observed.evidence.output.state).toBe(
-        status === "completed" ? "partial" : "pending",
-      );
-      expect(observed.evidence.output.messageRefs).toHaveLength(
-        status === "completed" ? 1 : 0,
-      );
       expect(observed.lifecycle).toStrictEqual({
         phase: "finalizing",
         outcome: status,
@@ -2770,7 +2670,9 @@ describe("MCP chat status", () => {
     );
     expect(retained.body.deleted).toBe(1);
     const after = await getStatus(token, args);
-    expect(after.evidence).toStrictEqual(before.evidence);
+    expect(after.lifecycle).toStrictEqual(before.lifecycle);
+    expect(after.messages).toStrictEqual(before.messages);
+    expect(after.retryAfterMs).toBe(before.retryAfterMs);
     await deleteFakeChatEventObject(archive.key);
     const failure = await callTool(token, "get_chat_status", args);
     expect(failure.isError).toBeTruthy();
@@ -2876,23 +2778,9 @@ describe("MCP chat mutations", () => {
     });
     expect(status).toMatchObject({
       lifecycle: { phase: "settled", outcome: "rejected", output: "none" },
-      evidence: {
-        input: {
-          ref: result.inputRef,
-          state: "rejected",
-          deliveryMode: "unknown",
-          runId: null,
-        },
-        run: null,
-        runSelection: "input",
-        output: { state: "unavailable", reason: "no_associated_run" },
-      },
       messages: null,
       retryAfterMs: null,
     });
-    expect(status.evidence.input?.visibleMessageRef).toStrictEqual(
-      (await getMessages(token, { threadId: thread.id })).messages[0]?.ref,
-    );
     const replay = await sendMessage(token, {
       threadId: thread.id,
       text,
@@ -3593,12 +3481,8 @@ describe("MCP chat mutations", () => {
       await expect(
         getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
-        evidence: {
-          input: { state: "queued", runId: null },
-          run: null,
-          runSelection: "input",
-          output: { state: "unavailable", reason: "no_associated_run" },
-        },
+        lifecycle: { phase: "queued", outcome: null, output: "pending" },
+        messages: null,
       });
       const revoked = await revokeMessage(
         token,
@@ -3627,16 +3511,7 @@ describe("MCP chat mutations", () => {
         getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
         lifecycle: { phase: "settled", outcome: "revoked", output: "none" },
-        evidence: {
-          input: {
-            ref: sent.inputRef,
-            state: "revoked",
-            runId: null,
-            visibleMessageRef: null,
-          },
-          run: null,
-          output: { state: "unavailable", reason: "no_associated_run" },
-        },
+        messages: null,
         retryAfterMs: null,
       });
       expect(
@@ -3790,15 +3665,12 @@ describe("MCP chat mutations", () => {
       getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
     ).resolves.toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
-      evidence: {
-        input: {
-          ref: sent.inputRef,
-          state: "reserved",
-          deliveryMode: "unknown",
+      messages: {
+        arguments: {
+          threadId: active.threadId,
           runId: active.runId,
+          limit: 20,
         },
-        run: { id: active.runId, status: "running" },
-        output: { state: "pending", messageRefs: [] },
       },
     });
     await expect(
@@ -3820,21 +3692,14 @@ describe("MCP chat mutations", () => {
     });
     expect(delivered).toMatchObject({
       lifecycle: { phase: "running", outcome: null, output: "pending" },
-      evidence: {
-        input: {
-          ref: sent.inputRef,
-          state: "delivered",
-          deliveryMode: "steer",
+      messages: {
+        arguments: {
+          threadId: active.threadId,
           runId: active.runId,
+          limit: 20,
         },
-        run: { id: active.runId, status: "running" },
-        runSelection: "input",
-        output: { state: "pending", messageRefs: [] },
       },
     });
-    expect(delivered.evidence.input?.visibleMessageRef).not.toStrictEqual(
-      sent.inputRef,
-    );
     await expect(
       revokeMessage(token, args.threadId, args.requestId),
     ).resolves.toMatchObject({
@@ -3879,28 +3744,23 @@ describe("MCP chat mutations", () => {
       threadId: args.threadId,
       inputRef: initial.inputRef,
     });
-    expect(launched.evidence.run).toStrictEqual(steered.evidence.run);
-    expect(launched.evidence.output).toStrictEqual(steered.evidence.output);
     expect(launched.lifecycle).toStrictEqual({
       phase: "running",
       outcome: null,
       output: "partial",
     });
     expect(steered.lifecycle).toStrictEqual(launched.lifecycle);
-    expect(steered.evidence.output).toMatchObject({
-      state: "partial",
-      hasMore: true,
-    });
-    expect(steered.evidence.output.messageRefs).toHaveLength(20);
+    expect(steered.messages).toStrictEqual(launched.messages);
     if (!steered.messages) {
       throw new Error("Expected shared output retrieval instructions");
     }
     const page = await getMessages(token, steered.messages.arguments);
+    expect(page.messages).toHaveLength(20);
     expect(
-      page.messages.map((message) => {
-        return message.ref;
+      page.messages.every((message) => {
+        return message.role === "assistant";
       }),
-    ).toStrictEqual(steered.evidence.output.messageRefs);
+    ).toBeTruthy();
     expect(page.olderCursor).not.toBeNull();
     installFakeChatEventR2(context, []);
     // Infrastructure exception: public sends cannot backdate acceptance past
@@ -3922,14 +3782,8 @@ describe("MCP chat mutations", () => {
       threadId: args.threadId,
       inputRef: sent.inputRef,
     });
-    expect(archived.evidence.input).toStrictEqual({
-      ...steered.evidence.input,
-      state: "associated",
-      deliveryMode: "unknown",
-    });
-    expect(archived.evidence.run).toStrictEqual(steered.evidence.run);
-    expect(archived.evidence.output).toStrictEqual(steered.evidence.output);
     expect(archived.lifecycle).toStrictEqual(steered.lifecycle);
+    expect(archived.messages).toStrictEqual(steered.messages);
   });
 
   it.each(["lowercase", "uppercase"] as const)(

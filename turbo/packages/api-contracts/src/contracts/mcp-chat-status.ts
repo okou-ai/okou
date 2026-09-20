@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-import {
-  mcpChatMessageSchema,
-  mcpGetChatMessagesOutputSchema,
-} from "./mcp-chat-messages";
-import { runStatusSchema } from "./runs";
+import { mcpGetChatMessagesOutputSchema } from "./mcp-chat-messages";
 
 const inputReferenceSchema = z.strictObject({
   threadId: z.uuid().toLowerCase(),
@@ -82,56 +78,10 @@ export const mcpGetChatStatusInputSchema = z
     }
   });
 
-const mcpChatStatusInputEvidenceSchema = z
-  .strictObject({
-    ref: inputReferenceSchema,
-    state: z.enum([
-      "queued",
-      "reserved",
-      "associated",
-      "delivered",
-      "rejected",
-      "revoked",
-      "unavailable",
-    ]),
-    deliveryMode: z.enum(["launch", "steer", "unknown"]),
-    runId: z.uuid().nullable(),
-    visibleMessageRef: mcpChatMessageSchema.shape.ref.nullable(),
-  })
-  .nullable();
-
-const mcpChatStatusRunEvidenceSchema = z
-  .strictObject({
-    id: z.uuid(),
-    status: runStatusSchema,
-    createdAt: z.iso.datetime(),
-    startedAt: z.iso.datetime().nullable(),
-    completedAt: z.iso.datetime().nullable(),
-    cancellationRecovery: z.enum(["pending", "complete", "not_applicable"]),
-  })
-  .nullable();
-
-const mcpChatStatusOutputEvidenceSchema = z.strictObject({
-  state: z.enum(["pending", "partial", "ready", "unavailable"]),
-  messageRefs: z.array(mcpChatMessageSchema.shape.ref).max(20),
-  hasMore: z.boolean(),
-  reason: z
-    .enum(["no_associated_run", "run_unavailable", "no_output"])
-    .nullable(),
-});
-
-export const mcpChatStatusEvidenceSchema = z.strictObject({
-  input: mcpChatStatusInputEvidenceSchema,
-  runSelection: z.enum(["input", "latest"]),
-  run: mcpChatStatusRunEvidenceSchema,
-  output: mcpChatStatusOutputEvidenceSchema,
-});
-
 export const mcpGetChatStatusOutputSchema = z.strictObject({
   threadId: z.uuid(),
   observedAt: z.iso.datetime(),
   lifecycle: mcpChatLifecycleSchema,
-  evidence: mcpChatStatusEvidenceSchema,
   messages: z
     .strictObject({
       tool: z.literal("get_chat_messages"),

@@ -1039,7 +1039,26 @@ function registerSearchAndStatusTools(
     "get_chat_status",
     {
       description:
-        "Observe input delivery, run state, and readable output separately. Pass threadId plus the complete original inputRef, or omit inputRef for the latest run. For an exact input, waitMs adds a bounded wait/read: positive values clamp to 8 seconds and 5 observations; deadline or capacity returns current state, not a run outcome. queued/reserved/associated are not delivery proof. Terminal runs may still have pending/partial or late output; ready means current materialized output is readable. A ready wait includes the first bounded messagePage; follow its cursors or message handoff. Disconnect cancels only the waiter. Honor retryAfterMs. The same 8 MiB gzip, 32 MiB history, 50,000-event, and 15-second limits apply; status is capped at 16 KiB, or 192 KiB with messagePage. Reading neither marks read nor changes or cancels execution.",
+        "Observe one derived lifecycle result for work and readable output in your conversation. " +
+        "phase tracks idle/queued/running/finalizing/settled/unavailable, outcome preserves a terminal run or input result, and output tracks pending/partial/ready/none/unavailable. " +
+        "Pass threadId and the complete original inputRef returned by send_chat_message; without " +
+        "inputRef, observes the latest run. Set waitMs for an exact input only to add a bounded " +
+        "wait/read after the first observation; zero or omission stays immediate, and the server " +
+        "clamps positive waits to 8 seconds with at most 5 observations. wait reports ready, " +
+        "deadline or ordinary status; deadline and waiter capacity are successful current-state " +
+        "reads, not run outcomes. Missing input associations never select another run. " +
+        "queued does not prove delivery, launch provenance or model compliance. " +
+        "Internal input, run, cancellation-recovery and output observations are not returned. " +
+        "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
+        "output, including cancellation recovery. ready means current materialized output is readable; " +
+        "late output may still arrive. Positive waits return the first bounded messagePage on ready; " +
+        "follow its cursors and the messages tool handoff for complete content. Disconnect cancels " +
+        "only this read waiter, never the accepted run. Honor retryAfterMs and back off repeated polls. " +
+        "Original references survive live retention " +
+        "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
+        "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
+        "are explicit errors. Status-only data is bounded to 16 KiB and status with messagePage to " +
+        "192 KiB. This read does not mark read, change execution or cancel runs.",
       inputSchema: mcpGetChatStatusInputSchema,
       outputSchema: mcpGetChatStatusOutputSchema,
       annotations: readAnnotations,
@@ -1053,15 +1072,16 @@ function registerSearchAndStatusTools(
         },
         signal,
         (data) => {
-          const input = data.input?.state ?? "not selected";
-          const run = data.run?.status ?? "not found";
+          const outcome = data.lifecycle.outcome
+            ? `; outcome ${data.lifecycle.outcome}`
+            : "";
           const wait = data.wait
             ? `; wait ${data.wait.outcome} (${data.wait.returnReason})`
             : "";
           const retry = data.retryAfterMs
             ? `; retry after ${data.retryAfterMs} ms`
             : "";
-          return `Chat ${data.threadId}: input ${input}; run ${run}; output ${data.output.state}${wait}${retry}.`;
+          return `Chat ${data.threadId}: phase ${data.lifecycle.phase}${outcome}; output ${data.lifecycle.output}${wait}${retry}.`;
         },
         "Chat status is temporarily unavailable. Retry later.",
       );

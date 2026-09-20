@@ -476,43 +476,34 @@ unchanged.
 
 Call `get_chat_status` with `threadId` and the complete original `inputRef`
 returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
-match. With no input reference, `evidence.runSelection: "latest"` observes the latest
-authorized run by creation time, with run ID as a deterministic tie breaker.
-With an input reference, `evidence.runSelection: "input"` observes only its associated
-or reserved run. A queued, revoked, missing or inaccessible association never
-falls back to another run in the conversation.
+match. With no input reference, the service observes the latest authorized run
+by creation time, with run ID as a deterministic tie breaker. With an input
+reference, it observes only that input's associated or reserved run. A queued,
+revoked, missing or inaccessible association never falls back to another run
+in the conversation.
 
-The result uses lifecycle as its primary conclusion and keeps the precise
-observations from which it is derived under `evidence`:
+The result exposes lifecycle as its complete public status model. Internal
+input, delivery, run, cancellation-recovery and output observations are used to
+derive it but are not returned:
 
-| Field                         | Meaning                                                                                                                                                    |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle`                   | Primary evidence-derived `{phase, outcome, output}` result for ordinary polling. Its strict union permits only documented combinations.                    |
-| `evidence.input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
-| `evidence.input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
-| `evidence.runSelection`       | `input` when observing the supplied original input reference, otherwise `latest`.                                                                          |
-| `evidence.run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
-| `evidence.output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
-| `evidence.output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
-| `messages`                    | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
-| `wait`                        | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
-| `messagePage`                 | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
-| `retryAfterMs`                | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
+| Field          | Meaning                                                                                                                                                    |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle`    | Sole `{phase, outcome, output}` status result. Its strict union permits only documented combinations.                                                      |
+| `messages`     | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `wait`         | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
+| `messagePage`  | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
+| `retryAfterMs` | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
 
-Initial `evidence.input.state` is `associated`, even when the run has started:
-the service does not invent a runtime delivery receipt for the initial prompt. `reserved`
-means an active-input handoff is open. `delivered` requires an acknowledged
-active-input receipt and its canonical replacement; it never proves model
-compliance. Several inputs may share one run and its conversation output.
-`visibleMessageRef` can differ from the immutable original `ref` and may be
-null after revocation. Reads never submit, revoke, cancel, change recency or
-mark a conversation read.
+Lifecycle does not expose or prove launch versus steer delivery, model
+compliance, timestamps, cancellation-recovery details or internal output
+reasons. Several inputs may share one run and its conversation output. Reads
+never submit, revoke, cancel, change recency or mark a conversation read.
 
 `lifecycle.phase` is `idle`, `queued`, `running`, `finalizing`, `settled`, or
-`unavailable`. Its independent `outcome` is `completed`, `failed`, `timeout`,
+`unavailable`. Its `outcome` is `completed`, `failed`, `timeout`,
 `cancelled`, `rejected`, `revoked`, or null; `output` is `pending`, `partial`,
-`ready`, `none`, or `unavailable`. Exact-input evidence takes precedence:
-missing or inaccessible input evidence is unavailable, rejected and revoked
+`ready`, `none`, or `unavailable`. Exact-input observation takes precedence:
+missing or inaccessible input is unavailable, rejected and revoked
 inputs are settled with no output, and queued or reserved inputs remain queued
 without inheriting output from a shared run. With no selected run, the phase is
 idle and output is none; this means no work was selected by that observation,
@@ -524,18 +515,16 @@ is finalizing while preserving its completed, failed, timeout, or cancelled
 outcome. It becomes settled only when output is ready or confirmed absent
 (`none`). Failure, timeout and cancellation remain visible even if output is
 ready. Pending cancellation recovery also remains finalizing. This summary is a
-current evidence projection, not proof of delivery mode, model compliance, or a
+current server observation, not proof of delivery mode, model compliance, or a
 single immutable final answer.
 
-`evidence.run.status` preserves `queued`, `pending`, `running`, `completed`,
-`failed`, `timeout` and `cancelled`. A terminal run is not enough for output readiness.
-Actual visible assistant output plus the matching canonical terminal marker
-is required for `ready`; unresolved cancellation recovery keeps it `partial`.
-Without messages `evidence.output.state` is `pending` until materialization
-completes, then `unavailable` with `no_output`. Missing associations use `no_associated_run`,
-and a deleted or inaccessible associated run uses `run_unavailable`. Terminal
-error/control markers are not fabricated as message references. Read the run
-status to distinguish success, failure and cancellation.
+Internally, actual visible assistant output plus the matching canonical
+terminal marker is required for `ready`; unresolved cancellation recovery keeps
+the lifecycle finalizing. Without messages, lifecycle output stays `pending`
+until materialization completes and then becomes `none`. Missing associations
+map to idle or the exact-input outcome above. Terminal error/control markers
+are not fabricated as messages. Read `lifecycle.outcome` to distinguish
+success, failure, timeout and cancellation.
 
 `ready` describes the current materialized view, not an immutable final answer:
 late output can still arrive. Cancellation recovery reports `pending`,
@@ -553,9 +542,9 @@ headroom below 64 KiB. Oversized historical reference metadata fails
 explicitly instead of truncating identities. Poll no faster
 than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
 and stop automatic polling when it is null or the tool returns a resource
-error. A queued input with no run has `lifecycle.output: "pending"` while
-`evidence.output.state` is `unavailable`, plus a non-null retry delay: continue
-tracking that original input instead of submitting it again.
+error. A queued input with no run has `lifecycle.output: "pending"` plus a
+non-null retry delay: continue tracking that original input instead of
+submitting it again.
 
 Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
 single immediate observation above. A positive value is a client preference up
@@ -596,11 +585,11 @@ Original input lookup lasts while the exact canonical input and linkage remain
 in readable retained thread history. It continues through archives after the
 30-day live-event window, within the stated history limits; it is not a new
 permanent identity store. Deleted/mismatched/absent references return
-`evidence.input.state: "unavailable"`; corrupt, missing or oversized required archives
-fail the tool explicitly. Historical launch/steer evidence can become `unknown`
-when receipt or callback records are no longer available. None of this extends
-the independent 24-hour send retry guarantee. References and artifact links
-retain their existing user/org/thread authorization and grant no new access.
+`lifecycle.phase: "unavailable"`; corrupt, missing or oversized required
+archives fail the tool explicitly. Historical launch/steer provenance is not
+part of the status response. None of this extends the independent 24-hour send
+retry guarantee. References and artifact links retain their existing
+user/org/thread authorization and grant no new access.
 
 Combined native Codex acceptance in #34936 should exercise send returning a
 null run ID → status by inputRef → queued/associated execution → partial/ready
