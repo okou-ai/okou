@@ -1039,26 +1039,19 @@ function registerSearchAndStatusTools(
     "get_chat_status",
     {
       description:
-        "Observe one derived lifecycle result for work and readable output in your conversation. " +
-        "phase tracks idle/queued/running/finalizing/settled/unavailable, outcome preserves a terminal run or input result, and output tracks pending/partial/ready/none/unavailable. " +
-        "Pass threadId and the complete original inputRef returned by send_chat_message; without " +
-        "inputRef, observes the latest run. Set waitMs for an exact input only to add a bounded " +
-        "wait/read after the first observation; zero or omission stays immediate, and the server " +
-        "clamps positive waits to 8 seconds with at most 5 observations. wait reports ready, " +
-        "deadline or ordinary status; deadline or waiter capacity returns current state, not a " +
-        "run outcome. Missing input associations never select another run. " +
-        "queued does not prove delivery, launch provenance or model compliance. " +
-        "Internal input, run, cancellation-recovery and output observations are not returned. " +
-        "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
-        "output, including cancellation recovery. ready means current materialized output is readable; " +
-        "late output may still arrive. Positive waits return the first bounded messagePage on ready; " +
-        "follow its cursors and the messages tool handoff for complete content. Disconnect cancels " +
-        "only the waiter, never the accepted run. Honor retryAfterMs and back off repeated polls. " +
-        "Original references survive live retention " +
-        "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
-        "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
-        "are explicit errors. Status-only data is bounded to 16 KiB and status with messagePage to " +
-        "192 KiB. Reading neither marks read nor changes or cancels execution.",
+        "Observe derived lifecycle {phase,outcome,output}. Pass threadId and complete " +
+        "send_chat_message inputRef, or omit inputRef for the latest run. Positive waitMs requires " +
+        "inputRef, clamps to 8 seconds and 5 observations, and returns ready, deadline, or status; " +
+        "deadline or capacity is current state, not a run outcome. Missing associations never select " +
+        "another run. queued proves neither delivery, provenance, nor model compliance. Private " +
+        "observations may map several inputs to one run and output. Terminal runs may remain " +
+        "finalizing with pending or partial output; ready means current materialized output is " +
+        "readable, but late output may arrive. A ready wait includes one bounded messagePage; follow " +
+        "its cursors or messages handoff. Disconnect cancels only the waiter, never the run. Honor " +
+        "retryAfterMs. Limits match get_chat_messages: 8 MiB gzip, 32 MiB history, 50,000 events, " +
+        "15 seconds; missing refs are unavailable and archive errors explicit. Response caps are " +
+        "16 KiB, or 192 KiB with messagePage. Reading neither marks read nor changes or cancels " +
+        "execution.",
       inputSchema: mcpGetChatStatusInputSchema,
       outputSchema: mcpGetChatStatusOutputSchema,
       annotations: readAnnotations,
