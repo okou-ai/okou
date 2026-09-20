@@ -76,8 +76,10 @@ export function ProductMark({
 
 /**
  * A step whose answer is one of a few options: the card itself is the control,
- * so it leads with the mark and the chosen one is lit rather than ticked in a
- * circle. The radio stays behind it for the keyboard and screen readers.
+ * so it leads with the mark and the chosen one is bordered and ticked rather
+ * than ticked in a circle. The surface stays the card's own: a tinted fill
+ * would show through the illustrations, which carry an opaque white plate.
+ * The radio stays behind it for the keyboard and screen readers.
  */
 export function OnboardingPosterCard({
   value,
@@ -97,7 +99,7 @@ export function OnboardingPosterCard({
       className={cn(
         surfaceVariants({ interactive: true }),
         "relative flex min-h-[300px] flex-col overflow-hidden text-center",
-        selected && "border-primary bg-state-selected",
+        selected && "border-primary",
       )}
     >
       <Radio value={value} className="sr-only" />
