@@ -332,7 +332,7 @@ describe("GitHub file integration routes", () => {
         "https://api.github.com/repos/:owner/:repo/issues/:issueNumber/comments",
         async ({ request, params }) => {
           expect(params.owner).toBe("okou-ai");
-          expect(params.repo).toBe("vm0");
+          expect(params.repo).toBe("okou");
           expect(params.issueNumber).toBe("42");
           expect(request.headers.get("authorization")).toBe(
             "Bearer ghs_test_token",

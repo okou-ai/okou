@@ -317,7 +317,7 @@ const githubWebhookAutomationCases: readonly GithubWebhookAutomationCase[] = [
       eventConfig: {
         provider: "github",
         event: "pull_request",
-        repository: "VM0-AI/VM0",
+        repository: "OKOU-AI/OKOU",
         action: "closed",
         merged: true,
         filters: {
