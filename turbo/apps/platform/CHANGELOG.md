@@ -11,6 +11,60 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.927.1](https://github.com/okou-ai/okou/compare/app-v0.927.0...app-v0.927.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+* **platform:** inset the workspace sheet beside the bare nav rail ([#35571](https://github.com/okou-ai/okou/issues/35571)) ([4d8c957](https://github.com/okou-ai/okou/commit/4d8c95714536ba5d048720bb32f07d4de0e2b81b))
+* **platform:** point custom template import at the dispatcher ([#35613](https://github.com/okou-ai/okou/issues/35613)) ([e7e590e](https://github.com/okou-ai/okou/commit/e7e590e22134d1d3c36315d7ac8a9c6a7c7caad0))
+* **ui:** delay user message spinner by 500ms ([#35607](https://github.com/okou-ai/okou/issues/35607)) ([f3f85b2](https://github.com/okou-ai/okou/commit/f3f85b26001b30166019bb19deca38b6e7113834))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/ui bumped to 1.10.4
+
+## [0.927.0](https://github.com/okou-ai/okou/compare/app-v0.926.0...app-v0.927.0) (2026-09-20)
+
+
+### Features
+
+* **api:** trigger a native morning brief on demand from settings debug ([#35596](https://github.com/okou-ai/okou/issues/35596)) ([c09e95b](https://github.com/okou-ai/okou/commit/c09e95bf7b724e7a32dfa6cdb01303b840c8fde6))
+* **app:** remove the deck import from the slash panel ([#35570](https://github.com/okou-ai/okou/issues/35570)) ([3908906](https://github.com/okou-ai/okou/commit/3908906ccd5f5fb183012da0448538272178db7d))
+* **core:** release the welcome thread to every workspace ([#35586](https://github.com/okou-ai/okou/issues/35586)) ([6bb62d1](https://github.com/okou-ai/okou/commit/6bb62d1157a83b416d91f77705bb448182196f64))
+* **platform:** drop the growth entry from the get started corner ([#35482](https://github.com/okou-ai/okou/issues/35482)) ([5258c8b](https://github.com/okou-ai/okou/commit/5258c8b6dfa97abd26582a17fe8a7d9550c1c9b8))
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+* **platform:** hide the template gallery while a template is open over it ([#35593](https://github.com/okou-ai/okou/issues/35593)) ([1307f7c](https://github.com/okou-ai/okou/commit/1307f7cc581f7042a71917eb839d6980dc00d37f))
+* **platform:** offer continue after replacing an unsupported model ([#35583](https://github.com/okou-ai/okou/issues/35583)) ([7bd196f](https://github.com/okou-ai/okou/commit/7bd196fca07d5610e75c4fcdf7f37b87bb7fc630))
+* **platform:** remove connector authorization cancel buttons ([#35569](https://github.com/okou-ai/okou/issues/35569)) ([39cdd93](https://github.com/okou-ai/okou/commit/39cdd936e65536dd42ab8fc7ef8efc18b01e6eae))
+* **platform:** reuse resolved artifact identity for sharing ([#35595](https://github.com/okou-ai/okou/issues/35595)) ([52b66bc](https://github.com/okou-ai/okou/commit/52b66bcd8b3d0bc80d0c74db305d2f0a4e2269ef))
+
+
+### Refactoring
+
+* **app:** derive presentation template previews with computed ([#35449](https://github.com/okou-ai/okou/issues/35449)) ([5753733](https://github.com/okou-ai/okou/commit/57537338d1c12c02d643780e46b512574239f4f4))
+* **platform:** use css for agent row action visibility ([#35446](https://github.com/okou-ai/okou/issues/35446)) ([c3ce4b7](https://github.com/okou-ai/okou/commit/c3ce4b77511ece49cdcdc893a6fa8122b602e794))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/ui bumped to 1.10.3
+
 ## [0.926.0](https://github.com/vm0-ai/okou/compare/app-v0.925.0...app-v0.926.0) (2026-09-20)
 
 

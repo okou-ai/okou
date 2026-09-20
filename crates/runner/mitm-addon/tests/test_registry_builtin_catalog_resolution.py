@@ -526,6 +526,37 @@ class TestRegistryBuiltinCatalogResolution:
                 builtin_firewall_catalog_snapshot=snapshot,
             )
 
+    def test_explicit_omission_overrides_stale_catalog_entry(self, tmp_path):
+        cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
+        write_catalog_cache(
+            cache_path,
+            digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            version="catalog-a",
+            firewalls={
+                "github": github_cache_firewall(),
+                "slack": cache_firewall("slack", "https://slack.example.com"),
+            },
+        )
+        resolved = registry_firewalls.resolve_firewall_entries(
+            {
+                "runId": "run-explicit-omission",
+                "connectorRuntimeTargets": [
+                    {"kind": "builtin", "connectorSlug": "github"},
+                    {"kind": "builtin", "connectorSlug": "slack"},
+                ],
+                "firewalls": [
+                    {"kind": "builtin", "name": "github"},
+                    {"kind": "builtin", "name": "slack"},
+                ],
+            },
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            explicit_omitted_builtin_names=frozenset({"github"}),
+        )
+
+        assert resolved.firewalls is not None
+        assert [firewall["name"] for firewall in resolved.firewalls] == ["slack"]
+        assert resolved.omitted_builtin_names == frozenset({"github"})
+
     def test_inline_custom_connector_id_is_preserved_on_firewall_and_apis(self):
         custom_connector_id = "550e8400-e29b-41d4-a716-446655440000"
         source_id = "550e8400-e29b-41d4-a716-446655440001"

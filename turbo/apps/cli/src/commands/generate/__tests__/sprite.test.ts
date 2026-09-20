@@ -114,7 +114,7 @@ describe("okou generate sprite command", () => {
   );
 
   it("should keep Sprite's implicit model inside a run with a default image model", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "qwen-image");
+    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
 
     await generateCommand.parseAsync([
       "node",
@@ -128,11 +128,11 @@ describe("okou generate sprite command", () => {
     expect(stdout).toContain("Use `gpt-image-2`");
     expect(stdout).toContain("--model gpt-image-2 --raw-prompt");
     expect(stdout).not.toContain("Use the run default");
-    expect(stdout).not.toContain("--model qwen-image --raw-prompt");
+    expect(stdout).not.toContain("--model flux-pro-1.1 --raw-prompt");
   });
 
   it("should preserve Sprite's explicit model inside a gated run", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "qwen-image");
+    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
 
     await generateCommand.parseAsync([
       "node",
@@ -147,7 +147,7 @@ describe("okou generate sprite command", () => {
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("Use `seedream4`");
     expect(stdout).toContain("--model seedream4 --raw-prompt");
-    expect(stdout).not.toContain("Use the run default `qwen-image`");
+    expect(stdout).not.toContain("Use the run default `flux-pro-1.1`");
   });
 
   it("should reject an unknown asset type", async () => {

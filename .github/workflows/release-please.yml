@@ -1,11 +1,11 @@
 name: release-please
 
-# Releases run straight off the push to main. Waiting for the Turbo run on main
+# Releases run straight off the push to main. Waiting for the Staging workflow
 # adds no artifact dependency: each queued pull request's merge-group Turbo run
 # uploads the canonical app and CLI artifacts under its merged commit SHA, and
 # the Desktop workflow does the same when its package version changes.
-# release-please deploys that same SHA as release_target. The Turbo push run
-# reuses its artifacts and only repoints the staging-app Pages alias.
+# release-please deploys that same SHA as release_target. Staging independently
+# reuses those artifacts to deploy and verify the shared staging environment.
 on:
   push:
     branches: ["main"]

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.926.0",
+  "version": "0.927.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -70,6 +70,7 @@
     "micromark-util-sanitize-uri": "^2.0.1",
     "path-to-regexp": "^8.4.0",
     "posthog-js": "^1.422.5",
+    "qrcode.react": "4.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-i18next": "^17.0.11",

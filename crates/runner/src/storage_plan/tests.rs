@@ -278,6 +278,64 @@ fn fresh_and_changed_instructions_share_staging_but_not_cleanup() {
 }
 
 #[test]
+fn history_overlap_shadow_covers_complete_conservative_write_roots() {
+    let source = manifest(
+        vec![
+            storage("/data", "data", "v1", None),
+            storage(
+                "/home/user/.codex",
+                "agent-instructions@test",
+                "v1",
+                Some("AGENTS.md"),
+            ),
+        ],
+        vec![artifact("/artifact", "artifact", "v1", true)],
+    );
+    let previous = StorageFingerprints {
+        storages: HashMap::from([
+            (
+                "/removed-data".into(),
+                StorageFingerprint::new("removed-data", "v1"),
+            ),
+            (
+                "/home/user/.claude".into(),
+                StorageFingerprint::new("agent-instructions@removed", "v1"),
+            ),
+        ]),
+        artifacts: HashMap::from([(
+            "/removed-artifact".into(),
+            StorageFingerprint::new("removed-artifact", "v1"),
+        )]),
+    };
+    let plan = build_storage_plan(&source, "/run/test", Some(&previous)).unwrap();
+
+    let shadow = plan
+        .history_overlap_shadow("/home/user/.codex/sessions")
+        .unwrap();
+
+    assert_eq!(shadow.history_root, "/home/user/.codex/sessions");
+    assert_eq!(
+        shadow
+            .storage_write_roots
+            .into_iter()
+            .collect::<HashSet<_>>(),
+        [
+            "/removed-data",
+            "/removed-artifact",
+            "/home/user/.claude",
+            "/data",
+            "/run/test/storage-instructions/1",
+            "/run/test/storage-instructions",
+            "/home/user/.codex",
+            "/artifact",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+    );
+}
+
+#[test]
 fn changed_storage_name_or_version_requires_replacement() {
     let manifest = manifest(vec![storage("/data", "data", "v2", None)], Vec::new());
 

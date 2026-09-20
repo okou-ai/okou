@@ -18,7 +18,7 @@ import { createStoragesBddApi } from "./api-bdd-storages";
 
 interface MemoryFile {
   readonly path: string;
-  readonly content: string;
+  readonly content: string | Buffer;
 }
 
 interface CommittedMemoryVersion {
@@ -36,13 +36,17 @@ export async function commitMemoryVersion(
   context: TestContext,
   actor: ApiTestUser,
   files: readonly MemoryFile[],
+  archiveSize = 1024,
 ): Promise<CommittedMemoryVersion> {
   if (!actor.orgId) {
     throw new Error("commitMemoryVersion requires an actor with an org");
   }
   const storagesApi = createStoragesBddApi(context);
   const entries = files.map((file) => {
-    const content = Buffer.from(file.content, "utf8");
+    const content =
+      typeof file.content === "string"
+        ? Buffer.from(file.content, "utf8")
+        : file.content;
     return {
       path: file.path,
       hash: createHash("sha256").update(content).digest("hex"),
@@ -56,7 +60,7 @@ export async function commitMemoryVersion(
     files: entries,
   });
   storagesApi.mockStorageObjectExistsOnce();
-  storagesApi.mockStorageObjectExistsOnce();
+  storagesApi.mockStorageObjectExistsOnce(archiveSize);
   await storagesApi.commitStorage(actor, {
     storageName: MEMORY_ARTIFACT_NAME,
     storageOwner: "user",

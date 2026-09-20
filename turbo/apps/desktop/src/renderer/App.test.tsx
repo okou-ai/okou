@@ -518,6 +518,27 @@ describe("Desktop renderer bridge integration", () => {
     expect(await screen.findByText("Sign in to Okou")).toBeTruthy();
   });
 
+  it("asks a signed-in user without an active workspace to select one", async () => {
+    const { auth } = installDesktopBridges({
+      authState: {
+        status: "signed_in",
+        user: { userId: "user_test", email: "desktop@example.com" },
+        organization: null,
+      },
+    });
+
+    renderDesktopApp();
+
+    expect(await screen.findByText("Select a workspace")).toBeTruthy();
+    expect(screen.queryByText("Sign in to Okou")).toBeNull();
+
+    fireEvent.click(buttonForText("Select workspace"));
+
+    await waitFor(() => {
+      expect(auth.api.openOrgSelection).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("shows a Desktop bridge fallback when preload did not expose the computer use bridge", async () => {
     renderDesktopApp();
 

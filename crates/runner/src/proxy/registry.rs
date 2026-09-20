@@ -200,6 +200,9 @@ pub(crate) enum ConnectorRuntimeRegistryUpdate {
         connector_slug: String,
         network_policy: NetworkPolicy,
     },
+    BuiltinAbsent {
+        connector_slug: String,
+    },
     Custom {
         custom_connector_id: String,
         state: CustomConnectorRuntimeRegistryState,
@@ -429,6 +432,12 @@ fn apply_connector_runtime_update(
                     },
                 ) => connector_slug == update_slug,
                 (
+                    ConnectorRuntimeTarget::Builtin { connector_slug },
+                    ConnectorRuntimeRegistryUpdate::BuiltinAbsent {
+                        connector_slug: update_slug,
+                    },
+                ) => connector_slug == update_slug,
+                (
                     ConnectorRuntimeTarget::Custom {
                         custom_connector_id,
                     },
@@ -451,10 +460,19 @@ fn apply_connector_runtime_update(
             if !sandbox_has_connector_firewall(sandbox, connector_slug) {
                 return Ok(false);
             }
+            sandbox.omitted_builtin_firewalls.remove(connector_slug);
             sandbox
                 .network_policies
                 .get_or_insert_with(HashMap::new)
                 .insert(connector_slug.clone(), network_policy.clone());
+        }
+        ConnectorRuntimeRegistryUpdate::BuiltinAbsent { connector_slug } => {
+            sandbox
+                .omitted_builtin_firewalls
+                .insert(connector_slug.clone());
+            if let Some(network_policies) = sandbox.network_policies.as_mut() {
+                network_policies.remove(connector_slug);
+            }
         }
         ConnectorRuntimeRegistryUpdate::Custom {
             custom_connector_id,
@@ -1758,6 +1776,127 @@ mod tests {
             registry_file_state(harness.registry_path()).await,
             absent_file_state,
             "an accepted unchanged Absent batch must not replace the registry"
+        );
+    }
+
+    #[tokio::test]
+    async fn builtin_absence_omits_policy_and_later_available_restores_it() {
+        let harness = RegistryHarness::new().await;
+        let firewalls = vec![
+            FirewallEntry::Builtin {
+                name: "github".to_string(),
+                base_url_vars: None,
+                source_id: None,
+            },
+            FirewallEntry::Builtin {
+                name: "slack".to_string(),
+                base_url_vars: None,
+                source_id: None,
+            },
+        ];
+        let github_policy = policy(&["repos.read"], &[], &[], "ask");
+        let network_policies = HashMap::from([
+            ("github".to_string(), github_policy.clone()),
+            (
+                "slack".to_string(),
+                policy(&["chat:write"], &[], &[], "allow"),
+            ),
+        ]);
+        let runtime_targets = builtin_runtime_targets(&["github", "slack"]);
+        harness
+            .handle
+            .register_sandbox(
+                "10.200.0.2",
+                &SandboxRegistration {
+                    firewalls: Some(&firewalls),
+                    network_policies: Some(&network_policies),
+                    connector_runtime_targets: Some(&runtime_targets),
+                    ..base_registration()
+                },
+            )
+            .await
+            .unwrap();
+
+        let absent_update = [ConnectorRuntimeRegistryUpdate::BuiltinAbsent {
+            connector_slug: "slack".to_string(),
+        }];
+        assert_eq!(
+            harness
+                .handle
+                .apply_connector_runtime_updates_if_run_matches(
+                    "10.200.0.2",
+                    "run-test",
+                    &absent_update,
+                )
+                .await
+                .unwrap(),
+            Some(vec![true])
+        );
+        let absent = read_registry(harness.registry_path()).await.unwrap();
+        let absent_sandbox = &absent.sandboxes["10.200.0.2"];
+        assert_eq!(
+            absent_sandbox.omitted_builtin_firewalls,
+            HashSet::from(["slack".to_string()])
+        );
+        assert_eq!(
+            absent_sandbox
+                .firewalls
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(firewall_name)
+                .collect::<Vec<_>>(),
+            ["github", "slack"]
+        );
+        assert_eq!(
+            absent_sandbox.network_policies.as_ref().unwrap(),
+            &HashMap::from([("github".to_string(), github_policy.clone())])
+        );
+        let absent_file_state = registry_file_state(harness.registry_path()).await;
+
+        assert_eq!(
+            harness
+                .handle
+                .apply_connector_runtime_updates_if_run_matches(
+                    "10.200.0.2",
+                    "run-test",
+                    &absent_update,
+                )
+                .await
+                .unwrap(),
+            Some(vec![true])
+        );
+        assert_eq!(
+            registry_file_state(harness.registry_path()).await,
+            absent_file_state,
+            "an unchanged built-in absence must not replace the registry"
+        );
+
+        let restored_policy = policy(&[], &["chat:write"], &[], "deny");
+        assert_eq!(
+            harness
+                .handle
+                .apply_connector_runtime_updates_if_run_matches(
+                    "10.200.0.2",
+                    "run-test",
+                    &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                        connector_slug: "slack".to_string(),
+                        network_policy: restored_policy.clone(),
+                    }],
+                )
+                .await
+                .unwrap(),
+            Some(vec![true])
+        );
+        let restored = read_registry(harness.registry_path()).await.unwrap();
+        let restored_sandbox = &restored.sandboxes["10.200.0.2"];
+        assert!(restored_sandbox.omitted_builtin_firewalls.is_empty());
+        assert_eq!(
+            restored_sandbox.network_policies.as_ref().unwrap(),
+            &HashMap::from([
+                ("github".to_string(), github_policy),
+                ("slack".to_string(), restored_policy),
+            ])
         );
     }
 

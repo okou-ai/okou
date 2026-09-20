@@ -1420,14 +1420,14 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
           serviceTier: null,
-          selectedImageModel: "fal-ai/qwen-image",
+          selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
       [200],
     );
     expect(stored.body).toMatchObject({
       selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
     expect(stored.body.updatedAt).not.toBeNull();
 
@@ -1440,7 +1440,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
     expect(preserved.body).toMatchObject({
       selectedModel: null,
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
 
     const explicitlyCleared = await accept(

@@ -192,7 +192,7 @@ describe("okou generate website command", () => {
   });
 
   it("should let the image batch own its settings with a default image model", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "qwen-image");
+    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
 
     await generateCommand.parseAsync([
       "node",
@@ -206,7 +206,7 @@ describe("okou generate website command", () => {
     expect(stdout).toContain(
       "let the command own generation settings/concurrency/retry",
     );
-    expect(stdout).not.toContain("use `qwen-image` by default");
+    expect(stdout).not.toContain("use `flux-pro-1.1` by default");
     expect(stdout).not.toContain("run default image model");
   });
 

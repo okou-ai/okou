@@ -660,7 +660,6 @@
       "previewSlide": "Preview slide {{slideNumber}}",
       "previewVoice": "Preview voice {{title}}",
       "previewWebsite": "Preview website template {{title}}",
-      "previousHtmlPreview": "{{title}} previous HTML preview",
       "previousSlide": "Preview previous slide",
       "recommended": "Recommended",
       "renameImportedTemplate": "Rename template",
@@ -3484,21 +3483,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Authorized sender",
+        "codeExpiry": "Expires in 10 minutes",
         "connectAria": "Connect phone",
-        "connectDescription": "Message this AgentPhone number from the phone you want to connect.",
+        "connectDescription": "Scan the code or open Messages, then send the prefilled code.",
         "connectTitle": "Connect phone",
         "copyAria": "Copy {{phone}}",
+        "copyCodeAria": "Copy connection code {{code}}",
+        "copyCodeError": "Failed to copy connection code",
+        "copyCodeSuccess": "Connection code copied",
         "copyError": "Failed to copy phone number",
         "copySuccess": "Phone number copied",
+        "createCodeError": "Couldn't create a connection code. Try again.",
+        "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
         "destination": "iMessage or SMS to",
-        "messageInstruction": "Send “hi”",
+        "manualSend": "or send",
+        "manualSendTo": "to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
-        "replyInstruction": "Tap the connection link within 10 minutes to finish.",
-        "replyTitle": "Open our reply",
-        "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably."
+        "qrTitle": "Scan to open Messages with the connection code ready",
+        "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+        "tryAgain": "Try again"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -5488,7 +5494,7 @@
         "starting": "Starting export"
       },
       "backToAssistant": "Back to {{assistantName}}",
-      "description": "Download the files and text records you created in {{assistantName}}.",
+      "description": "Download your conversations, memory, and the agent and workflow instructions you can access in {{assistantName}}.",
       "documentTitle": "Export data",
       "duration": {
         "soon": "soon"
@@ -5499,11 +5505,12 @@
         "startFailed": "Failed to start export"
       },
       "scope": {
-        "agentInstructions": "Agent instruction documents",
-        "artifactsExcluded": "Artifacts are not included in this export.",
-        "chatMessages": "User and assistant text chat messages",
-        "memoryFiles": "Memory files",
-        "workflowInstructions": "Workflow SKILL.md instructions and files"
+        "agentInstructions": "Instructions for agents you can access",
+        "chatMessages": "Your chat messages",
+        "chatThreads": "Your chat threads",
+        "filesExcluded": "Artifact, attachment, and workflow supporting files are not included.",
+        "memoryFiles": "Your current memory files",
+        "workflowInstructions": "Instructions for workflows you can access"
       },
       "status": {
         "checkingDescription": "Your latest export state will appear here.",
@@ -5961,6 +5968,14 @@
           "stores": "object stores",
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
+        },
+        "morningBriefTrigger": {
+          "description": "Run a real Morning Brief now. It queues your own next run for the ordinary scheduler, which delivers a real brief and a real email within a minute. Triggering before your daily time gives you two briefs that morning.",
+          "failed": "Could not queue the Morning Brief. Try again.",
+          "queued": "Queued. The scheduler delivers the brief within a minute.",
+          "title": "Morning Brief",
+          "trigger": "Run Morning Brief now",
+          "triggering": "Queueing…"
         },
         "voiceInput": {
           "default": "Default ({{model}})",

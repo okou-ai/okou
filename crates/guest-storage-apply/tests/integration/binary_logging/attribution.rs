@@ -63,6 +63,57 @@ fn start_archive_server(archive: Vec<u8>) -> io::Result<TcpTestServer<()>> {
 }
 
 #[test]
+fn binary_records_one_redacted_pre_cleanup_history_overlap_shadow() {
+    let fixture = BinaryLoggingFixture::new("history-overlap-shadow").unwrap();
+    let history = fixture.dir.path().join("private-history-root");
+    let storage = fixture.dir.path().join("private-storage-root");
+    std::fs::create_dir_all(&history).unwrap();
+    std::fs::create_dir_all(&storage).unwrap();
+    let manifest = fixture.dir.path().join("manifest.json");
+    std::fs::write(
+        &manifest,
+        serde_json::to_vec(&json!({
+            "storageMounts": [],
+            "cleanupPaths": [],
+            "historyOverlapShadow": {
+                "historyRoot": history,
+                "storageWriteRoots": [storage]
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let output = fixture.run_manifest_path(&manifest).unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let actions = fixture.action_types().unwrap();
+    let ops = fixture.ops_entries().unwrap();
+    let matching = ops
+        .iter()
+        .filter(|entry| entry["action_type"] == "guest_storage_history_overlap_shadow")
+        .collect::<Vec<_>>();
+    assert_eq!(matching.len(), 1);
+    assert_eq!(matching[0]["outcome"], "eligible");
+    assert_eq!(matching[0]["reason"], "disjoint");
+    assert!(action_precedes(
+        &actions,
+        "guest_storage_history_overlap_shadow",
+        "guest_storage_apply_cleanup"
+    ));
+    let ops_log = fixture.read_ops_log().unwrap();
+    let system_log = fixture.read_system_log().unwrap();
+    for private in [history.to_str().unwrap(), storage.to_str().unwrap()] {
+        assert!(!ops_log.contains(private));
+        assert!(!system_log.contains(private));
+    }
+}
+
+#[test]
 fn binary_records_download_scheduler_attribution() {
     let server = MockServer::start();
     let remote_tar = create_tar_gz(&[("remote.txt", b"remote")]).unwrap();

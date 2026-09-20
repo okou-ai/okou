@@ -51,6 +51,11 @@ const agentPhoneStartLinkResponseSchema = z.object({
   verificationSent: z.literal(true),
 });
 
+const agentPhoneLinkCodeResponseSchema = z.object({
+  code: z.string().regex(/^\d{8}$/u),
+  expiresAt: z.iso.datetime(),
+});
+
 export const integrationsAgentPhoneContract = c.router({
   connectAgentPhone: {
     method: "POST",
@@ -103,6 +108,19 @@ export const integrationsAgentPhoneContract = c.router({
     },
     summary: "Send a verified AgentPhone connection link by SMS",
   },
+  createLinkCode: {
+    method: "POST",
+    path: "/api/integrations/agentphone/link-code",
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: {
+      200: agentPhoneLinkCodeResponseSchema,
+      401: apiErrorSchema,
+      409: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Create a one-time AgentPhone connection code",
+  },
   unlink: {
     method: "DELETE",
     path: "/api/integrations/agentphone/link",
@@ -130,4 +148,7 @@ export type AgentPhoneLinkStatusResponse = z.infer<
 >;
 export type AgentPhoneStartLinkResponse = z.infer<
   typeof agentPhoneStartLinkResponseSchema
+>;
+export type AgentPhoneLinkCodeResponse = z.infer<
+  typeof agentPhoneLinkCodeResponseSchema
 >;

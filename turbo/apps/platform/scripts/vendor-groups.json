@@ -113,6 +113,7 @@
     "prosemirror-tables": 3,
     "prosemirror-transform": 3,
     "prosemirror-view": 3,
+    "qrcode.react": 3,
     "react": 2,
     "react-dom": 2,
     "react-i18next": 2,

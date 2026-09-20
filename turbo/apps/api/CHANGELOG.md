@@ -8,6 +8,56 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.642.1](https://github.com/okou-ai/okou/compare/api-v1.642.0...api-v1.642.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+* **mcp:** align chat tool input schemas ([#35619](https://github.com/okou-ai/okou/issues/35619)) ([9e32b4e](https://github.com/okou-ai/okou/commit/9e32b4ec8b77ef30e3a80fcd528119a683adcfb8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/db bumped to 1.279.6
+    * @okouai/pi-agent-runtime bumped to 1.33.28
+
+## [1.642.0](https://github.com/okou-ai/okou/compare/api-v1.641.0...api-v1.642.0) (2026-09-20)
+
+
+### Features
+
+* **api:** carry cloudflare ray id and browser time on preview failures ([#35574](https://github.com/okou-ai/okou/issues/35574)) ([ced9458](https://github.com/okou-ai/okou/commit/ced9458700d43861586a90f7c57428113d08584b))
+* **api:** trigger a native morning brief on demand from settings debug ([#35596](https://github.com/okou-ai/okou/issues/35596)) ([c09e95b](https://github.com/okou-ai/okou/commit/c09e95bf7b724e7a32dfa6cdb01303b840c8fde6))
+* **core:** release the welcome thread to every workspace ([#35586](https://github.com/okou-ai/okou/issues/35586)) ([6bb62d1](https://github.com/okou-ai/okou/commit/6bb62d1157a83b416d91f77705bb448182196f64))
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* **api:** preserve terminal chat events on lock contention ([#35560](https://github.com/okou-ai/okou/issues/35560)) ([71ec306](https://github.com/okou-ai/okou/commit/71ec30640f4f43da06a1db1fbebd147f8fc3cea3))
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+* **cli:** surface failed mcp calls ([#35562](https://github.com/okou-ai/okou/issues/35562)) ([f92d366](https://github.com/okou-ai/okou/commit/f92d3665968bb3a9e03bb1a8d579c5b1405fb586))
+
+
+### CI
+
+* prepare runtime references for okou-ai rename ([#35352](https://github.com/okou-ai/okou/issues/35352)) ([e0445aa](https://github.com/okou-ai/okou/commit/e0445aa875eae424817d932886e6de38895ce986))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/db bumped to 1.279.5
+    * @okouai/pi-agent-runtime bumped to 1.33.27
+
 ## [1.641.0](https://github.com/vm0-ai/okou/compare/api-v1.640.0...api-v1.641.0) (2026-09-20)
 
 

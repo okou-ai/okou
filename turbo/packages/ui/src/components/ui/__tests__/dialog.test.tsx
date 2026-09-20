@@ -159,6 +159,44 @@ describe("Dialog", () => {
     ).toHaveLength(2);
   });
 
+  it("keeps a popup out of view while its own nested dialog is open", () => {
+    render(
+      <Dialog open>
+        <DialogContent hideWhenNestedOpen>
+          <DialogTitle>Gallery dialog</DialogTitle>
+          <Dialog open>
+            <DialogContent>
+              <DialogTitle>Template dialog</DialogTitle>
+            </DialogContent>
+          </Dialog>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    const [gallery, template] = document.querySelectorAll(
+      '[data-slot="dialog-content"]',
+    );
+    expect(gallery).toHaveAttribute("data-nested-dialog-open");
+    expect(gallery).toHaveClass("data-nested-dialog-open:invisible");
+    // The dialog on top carries neither, so nothing hides the one being read.
+    expect(template).not.toHaveAttribute("data-nested-dialog-open");
+    expect(template).not.toHaveClass("data-nested-dialog-open:invisible");
+  });
+
+  it("leaves a popup painted while nothing is open over it", () => {
+    render(
+      <Dialog open>
+        <DialogContent hideWhenNestedOpen>
+          <DialogTitle>Gallery dialog</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Gallery dialog" }),
+    ).not.toHaveAttribute("data-nested-dialog-open");
+  });
+
   it("can leave close controls to a custom dialog header", () => {
     render(
       <Dialog open>

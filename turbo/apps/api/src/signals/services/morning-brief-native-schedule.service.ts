@@ -1099,6 +1099,123 @@ async function loadUnsettledOccurrence(
   return row;
 }
 
+/** The most recent instant at which this owner had a slot claimed. */
+async function loadLastClaimedAt(
+  db: MorningBriefNativeReader,
+  owner: MorningBriefMemberIdentity,
+): Promise<Date | undefined> {
+  const [row] = await db
+    .select({ claimedAt: morningBriefNativeOccurrences.claimedAt })
+    .from(morningBriefNativeOccurrences)
+    .where(occurrenceOwnerWhere(owner))
+    .orderBy(desc(morningBriefNativeOccurrences.claimedAt))
+    .limit(1);
+  return row?.claimedAt;
+}
+
+/** Why a bring-forward was refused, with no provider work performed. */
+export type MorningBriefBringForwardRefusal =
+  | "absent"
+  | "not-native"
+  | "disabled"
+  | "membership-generation"
+  | "unsettled-occurrence"
+  | "rate-limited";
+
+export type MorningBriefBringForwardResult =
+  | { readonly kind: "brought-forward"; readonly scheduledFor: Date }
+  | {
+      readonly kind: "refused";
+      readonly reason: MorningBriefBringForwardRefusal;
+    };
+
+/**
+ * Move this owner's existing native obligation to `at` so the cron admits it.
+ *
+ * This is the whole of the on-demand trigger. It executes nothing: the ordinary
+ * per-minute tick then claims the moved instant through
+ * {@link claimMorningBriefNativeOccurrence} and drives the same execution,
+ * settlement, delivery and recovery code a scheduled brief uses. An inline
+ * execution path would bypass that claim and with it the epoch/lease/attempt CAS
+ * that keeps one logical slot to one model request, one Chat receipt and one
+ * logical email.
+ *
+ * Three properties make this safe without any new state:
+ *
+ * - **The occurrence identity is free.** The claim freezes `scheduledFor` at
+ *   `schedule.nextRunAt`, so a moved instant is a different slot from the
+ *   scheduled one and can never collide with it.
+ * - **The scheduled delivery survives.** The claim clears the obligation and the
+ *   one settlement recomputes it from the settlement clock, so a daily cron
+ *   triggered after that day's instant reinstalls the same next-morning instant
+ *   that was already pending. Triggering *before* it instead yields two briefs
+ *   that morning at distinct anchors, which is a deliberate, surfaced edge.
+ * - **A repeated press cannot strand an obligation.** An unsettled occurrence
+ *   refuses, and the minimum interval is derived from the most recent
+ *   `claimed_at` rather than from a new column.
+ *
+ * Every refusal is decided under the durable fence and performs zero provider
+ * work. The caller is always the owner, so a member can only move their own
+ * obligation.
+ */
+export async function bringMorningBriefNativeObligationForward(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  args: {
+    readonly at: Date;
+    /** The live membership generation, resolved outside this transaction. */
+    readonly membershipId: string;
+    readonly minimumIntervalMs: number;
+  },
+): Promise<MorningBriefBringForwardResult> {
+  const schedule = await lockMorningBriefNativeScheduleForWrite(tx, owner);
+  if (schedule === undefined) {
+    return { kind: "refused", reason: "absent" };
+  }
+  if (schedule.phase !== "native") {
+    return { kind: "refused", reason: "not-native" };
+  }
+  if (!schedule.enabled) {
+    return { kind: "refused", reason: "disabled" };
+  }
+  if (schedule.membershipId !== args.membershipId) {
+    return { kind: "refused", reason: "membership-generation" };
+  }
+  // Refusing here is what makes a repeated press safe. Overwriting `next_run_at`
+  // while an admitted slot is still executing would hand that execution an
+  // obligation its settlement then discards as already superseded.
+  if ((await loadUnsettledOccurrence(tx, owner)) !== undefined) {
+    return { kind: "refused", reason: "unsettled-occurrence" };
+  }
+  const lastClaimedAt = await loadLastClaimedAt(tx, owner);
+  if (
+    lastClaimedAt !== undefined &&
+    args.at.getTime() - lastClaimedAt.getTime() < args.minimumIntervalMs
+  ) {
+    return { kind: "refused", reason: "rate-limited" };
+  }
+
+  const [row] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({
+      nextRunAt: args.at,
+      scheduleOwner: scheduleOwnerForPhase(schedule.phase),
+      updatedAt: args.at,
+    })
+    .where(
+      and(
+        scheduleWhere(owner),
+        // The fresh predicate this module requires of every mutation: the row
+        // this caller inspected is still the one being written.
+        eq(morningBriefNativeSchedules.ownerEpoch, schedule.ownerEpoch),
+      ),
+    )
+    .returning();
+  return row === undefined
+    ? { kind: "refused", reason: "absent" }
+    : { kind: "brought-forward", scheduledFor: args.at };
+}
+
 /**
  * Revoke this member's native execution authority.
  *

@@ -31,6 +31,8 @@ export const exportJobs = pgTable(
       .notNull(),
     // pending -> running -> completed | failed
     status: varchar("status", { length: 20 }).notNull(),
+    // NULL preserves exports admitted by the outgoing one-call executor.
+    executionMode: text("execution_mode").$type<"durable-v1">(),
     s3Key: text("s3_key"),
     artifactUrls: jsonb("artifact_urls").$type<ExportArtifactUrls>(),
     error: text("error"),

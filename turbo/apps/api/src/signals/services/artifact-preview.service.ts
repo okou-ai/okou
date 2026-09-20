@@ -363,6 +363,9 @@ interface SnapshotFailure {
   // them: the wait it will honour, and the name of the quota that was hit.
   readonly retryAfterSeconds?: number;
   readonly rateLimitPolicy?: string;
+  // Present whenever Cloudflare sends them, on any failed response.
+  readonly cfRay?: string;
+  readonly browserMsUsed?: number;
 }
 
 /**
@@ -375,6 +378,34 @@ function parseRetryAfterSeconds(value: string | null): number | undefined {
     return undefined;
   }
   return Number(value.trim());
+}
+
+/**
+ * The observation headers Cloudflare returns alongside a Browser Rendering
+ * response. `cf-ray` is the only identifier its support can trace a request by,
+ * and this service has never captured one. `x-browser-ms-used` reports the
+ * browser time the request actually consumed, which is the one value that can
+ * separate a render that ran to the action budget from one that never got a
+ * browser at all — a distinction our own `elapsedMs` cannot make, because it
+ * only measures how long we waited.
+ */
+function snapshotObservationFields(response: Response): {
+  readonly cfRay?: string;
+  readonly browserMsUsed?: number;
+} {
+  const cfRay = response.headers.get("cf-ray");
+  const browserMs = response.headers.get("x-browser-ms-used");
+  // A malformed value is absent. Zero is not: a failure that consumed no
+  // browser time is the exact reading this record exists to capture, so it must
+  // survive rather than be dropped as falsy.
+  const browserMsUsed =
+    browserMs !== null && /^\d+$/u.test(browserMs.trim())
+      ? Number(browserMs.trim())
+      : undefined;
+  return {
+    ...(cfRay === null ? {} : { cfRay }),
+    ...(browserMsUsed === undefined ? {} : { browserMsUsed }),
+  };
 }
 
 /**
@@ -436,6 +467,8 @@ class ArtifactSnapshotError extends Error {
   readonly errorDetail: string | undefined;
   readonly retryAfterSeconds: number | undefined;
   readonly rateLimitPolicy: string | undefined;
+  readonly cfRay: string | undefined;
+  readonly browserMsUsed: number | undefined;
 
   constructor(failure: SnapshotFailure) {
     super(
@@ -447,6 +480,8 @@ class ArtifactSnapshotError extends Error {
     this.elapsedMs = failure.elapsedMs;
     this.retryAfterSeconds = failure.retryAfterSeconds;
     this.rateLimitPolicy = failure.rateLimitPolicy;
+    this.cfRay = failure.cfRay;
+    this.browserMsUsed = failure.browserMsUsed;
     const parsed = browserSnapshotErrorSchema.safeParse(
       safeJsonParse(failure.body),
     );
@@ -465,6 +500,8 @@ function snapshotFailureLogFields(error: unknown): {
   readonly errorDetail?: string;
   readonly retryAfterSeconds?: number;
   readonly rateLimitPolicy?: string;
+  readonly cfRay?: string;
+  readonly browserMsUsed?: number;
 } {
   if (!(error instanceof ArtifactSnapshotError)) {
     return {};
@@ -483,6 +520,10 @@ function snapshotFailureLogFields(error: unknown): {
     ...(error.rateLimitPolicy === undefined
       ? {}
       : { rateLimitPolicy: error.rateLimitPolicy }),
+    ...(error.cfRay === undefined ? {} : { cfRay: error.cfRay }),
+    ...(error.browserMsUsed === undefined
+      ? {}
+      : { browserMsUsed: error.browserMsUsed }),
   };
 }
 
@@ -514,6 +555,7 @@ async function observeArtifactSnapshot(
       status: response.status,
       elapsedMs: Math.round(performance.now() - startedAt),
       body,
+      ...snapshotObservationFields(response),
       ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
       ...(rateLimitPolicy === null ? {} : { rateLimitPolicy }),
     },

@@ -1,4 +1,5 @@
 import { mockClerkUsers } from "./clerk-users";
+import { randomUUID } from "node:crypto";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -35,6 +36,7 @@ function clerkUserProfile(actor: ApiTestUser): ClerkUserProfile {
 function authenticate(
   context: TestContext,
   nextActor: ApiTestUser | null,
+  organizationIds?: readonly string[],
 ): AuthHeaders {
   if (!nextActor) {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -49,10 +51,24 @@ function authenticate(
     nextActor.orgRole,
   );
   mockClerkUsers(context, [clerkUserProfile(nextActor)]);
+  const orgIds = organizationIds ?? (nextActor.orgId ? [nextActor.orgId] : []);
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: orgIds.map((orgId) => {
+      return {
+        role: nextActor.orgRole ?? "org:member",
+        organization: { id: orgId },
+        publicUserData: { userId: nextActor.userId },
+      };
+    }),
+    totalCount: orgIds.length,
+  });
   return { authorization: "Bearer clerk-session" };
 }
 
-export function createOpsLogsApi(context: TestContext) {
+export function createOpsLogsApi(
+  context: TestContext,
+  options: { readonly organizationIds?: readonly string[] } = {},
+) {
   return {
     async requestGetUserExport<TStatus extends 200 | 401 | 403 | 500>(
       actor: ApiTestUser | null,
@@ -61,7 +77,7 @@ export function createOpsLogsApi(context: TestContext) {
       return await accept(
         setupApp({ context, routes: userExportRoutes })(userExportContract).get(
           {
-            headers: authenticate(context, actor),
+            headers: authenticate(context, actor, options.organizationIds),
           },
         ),
         statuses,
@@ -76,24 +92,24 @@ export function createOpsLogsApi(context: TestContext) {
         setupApp({ context, routes: userExportRoutes })(
           userExportContract,
         ).post({
-          headers: authenticate(context, actor),
+          headers: authenticate(context, actor, options.organizationIds),
         }),
         statuses,
       );
     },
 
     /**
-     * Holds the next `s3.send` call (the export zip PutObject) open until
+     * Holds the next `s3.send` call (the export multipart creation) open until
      * `resolve()` is called, keeping the detached export job observable in
      * its pending/running window. Deterministic only while the export actor
-     * owns no composes/threads/artifacts, so the zip put is the flow's sole
-     * `s3.send` call.
+     * owns no stored memory or archived threads, so multipart creation is
+     * the flow's first `s3.send` call.
      */
     deferS3PutOnce(): { readonly resolve: () => void } {
       const pending = createDeferredPromise<unknown>(context.signal);
       const resolvePut = (): void => {
         if (!pending.settled()) {
-          pending.resolve({});
+          pending.resolve({ UploadId: randomUUID() });
         }
       };
       context.mocks.s3.send.mockReturnValueOnce(pending.promise);

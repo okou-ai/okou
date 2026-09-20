@@ -1353,6 +1353,7 @@ function ArtifactPreviewDialogActions({
       )}
       {showShare && (
         <ArtifactShareButton
+          artifactShareIdentity$={preview.artifactShareIdentity$}
           surface="dialog"
           shareUrl={shareUrl}
           ariaLabel={t(($) => {
