@@ -400,6 +400,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AgentPhoneEntry]: {
+    maintainer: "linghan@okou.ai",
+    description: "Show the AgentPhone entry point on the Works page.",
+    enabled: false,
+  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",

@@ -52,6 +52,7 @@ export enum FeatureSwitchKey {
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",
+  AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   McpServer = "mcpServer",
