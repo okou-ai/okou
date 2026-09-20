@@ -37,6 +37,7 @@ import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
@@ -149,6 +150,31 @@ function expectSubstantialCompactSuccess(result: unknown): void {
   const measurement = measureCompactSuccess(result);
   expect(measurement.compactBytes).toBeLessThanOrEqual(
     Math.floor(measurement.baselineBytes * 0.6),
+  );
+}
+
+const mcpCreationNamespace = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
+
+function mcpCreationEventId(input: {
+  readonly requestId: string;
+  readonly agentId?: string;
+  readonly title?: string;
+  readonly model?: string;
+  readonly message?: string;
+}): string {
+  const optionalIdentity = (value: string | undefined) => {
+    return value === undefined ? ["omitted"] : ["present", value];
+  };
+  return uuidv5(
+    JSON.stringify([
+      "create_chat_thread",
+      input.requestId,
+      optionalIdentity(input.agentId),
+      optionalIdentity(input.title),
+      optionalIdentity(input.model),
+      "message" in input ? ["present", input.message] : ["omitted"],
+    ]),
+    mcpCreationNamespace,
   );
 }
 
@@ -1378,8 +1404,19 @@ describe("MCP chat discovery and creation", () => {
       title: "Unchanged metadata",
       model: "claude-sonnet-5",
     });
-    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
-      .body;
+    const eventsResponse = await f.chat.requestThreadEvents(f.actor, {}, [200]);
+    if (eventsResponse.status !== 200) {
+      throw new Error("Expected chat thread events to load");
+    }
+    const eventsBefore = eventsResponse.body;
+    const createdEventId = eventsBefore.events.find((event) => {
+      return (
+        event.kind === "created" && event.chatThreadId === created.threadId
+      );
+    })?.id;
+    if (!createdEventId) {
+      throw new Error("Expected the MCP creation event");
+    }
     for (const patch of [
       {},
       { title: " " },
@@ -1415,7 +1452,7 @@ describe("MCP chat discovery and creation", () => {
     expect(
       (
         await callTool(token, "update_chat_thread", {
-          requestId: created.threadId,
+          requestId: createdEventId,
           threadId: created.threadId,
           patch: { title: "Event collision must roll back" },
         })
@@ -1508,24 +1545,23 @@ describe("MCP chat discovery and creation", () => {
   it("rejects an unrelated created-event collision and an existing thread without matching creation evidence", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
-    const collidingEventId = randomUUID();
-    const first = await f.chat.createThread(f.actor, {
-      agentId: f.agent.agentId,
-      title: "Other event owner",
-      model: "claude-sonnet-5",
-      eventId: collidingEventId,
-    });
     const args = {
-      requestId: collidingEventId,
+      requestId: randomUUID(),
       agentId: f.agent.agentId,
       title: "MCP creation intent",
       model: "claude-sonnet-5",
     };
+    const first = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Other event owner",
+      model: "claude-sonnet-5",
+      eventId: mcpCreationEventId(args),
+    });
     expect(
       (await callTool(token, "create_chat_thread", args)).isError,
     ).toBeTruthy();
     expect(
-      (await callTool(token, "get_chat_thread", { threadId: collidingEventId }))
+      (await callTool(token, "get_chat_thread", { threadId: args.requestId }))
         .isError,
     ).toBeTruthy();
     const existingId = randomUUID();
