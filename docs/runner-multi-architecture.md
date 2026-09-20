@@ -159,6 +159,36 @@ fork and Dependabot pull requests skip the credentialed setup and run the same
 coverage command without sccache. A trusted run that selects the action still
 fails when its R2 configuration is missing instead of silently falling back.
 
+### Production release compilation
+
+`build-runner-release-assets` uses the same shared action before its existing
+release rust-cache. The release matrix resolves its Rust target through
+`runner_image_sccache_architecture`, then passes the repo-level R2 secrets and
+variables shown above. The job intentionally has no `environment: production`,
+so compiler caching uses the test/development R2 bucket shared with CI rather
+than the production-scoped user-storage bucket.
+
+This is separate from the downstream `resolve-image-cache` handoff. Production
+host image builds require `environment: production`, so that resolver reads the
+repo-level image-cache configuration outside the environment and transfers the
+encrypted credentials into the environment-bound job. Release-asset compilation
+must not replace or redirect that handoff.
+
+Both the production release job and `.github/workflows/runner-release-build.yml`
+invoke `.github/scripts/runner-release-build.sh` for separate guest and embedded
+Runner phases. The build-only workflow runs automatically for relevant internal
+pull-request changes and can be dispatched manually for another revision. It
+uses the same toolchain, targets, release profile, repo-level R2 configuration,
+and rust-cache keys, but restores without saving the rust-cache snapshot and has
+no release creation, asset upload, Slack notification, production environment,
+or deployment authority.
+
+Run the build-only workflow twice on an unchanged revision to compare initial
+population with warm compiler-cache behavior. Use the reported sccache hits,
+misses, and errors to classify the runs; do not assume the shared prefix was
+empty. Record guest and Runner step durations separately because the warm Runner
+step still includes non-cacheable final executable, full-LTO, and link work.
+
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;
 main often reuses the complete runner binary and skips compilation, so that

@@ -294,6 +294,7 @@ jobs:
             .github/scripts/resolve-desktop-version-change.sh \
             .github/scripts/run-semgrep.sh \
             .github/scripts/runner-behavior-*.sh \
+            .github/scripts/runner-release-build.sh \
             .github/scripts/smoke-okou-cli-artifact.sh \
             .github/scripts/verify-okou-cli-artifact.sh \
             .github/scripts/verify-okou-desktop-artifact.sh \
@@ -334,6 +335,8 @@ jobs:
             .github/scripts/tests/report-cgroup-memory-peak-test.sh \
             .github/scripts/tests/runner-lifecycle-lock-test.sh \
             .github/scripts/tests/runner-lifecycle-lock-diagnostics-test.sh \
+            .github/scripts/tests/runner-release-build-test.sh \
+            .github/scripts/tests/runner-release-build-workflow-test.sh \
             .github/scripts/tests/rust-coverage-cache-workflow-test.sh \
             .github/scripts/tests/rust-ci-memory-workflow-test.sh \
             .github/scripts/tests/runner-lifecycle-ownership-workflow-test.sh \

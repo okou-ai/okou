@@ -1983,7 +1983,18 @@ jobs:
           . .github/scripts/runner-image-target.sh
           runner_image_validate_target "$TARGET_TRIPLE"
           cache_suffix=$(runner_image_cache_suffix "$TARGET_TRIPLE")
+          sccache_architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
           echo "cache_suffix=$cache_suffix" >> "$GITHUB_OUTPUT"
+          echo "sccache_architecture=$sccache_architecture" >> "$GITHUB_OUTPUT"
+
+      - name: Setup R2 sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ steps.target-metadata.outputs.sccache_architecture }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -2016,29 +2027,12 @@ jobs:
       - name: Cross-compile guest binaries for ${{ matrix.target }}
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
-        run: |
-          . .github/scripts/runner-guest-binaries.sh
-          runner_guest_binaries_load
-          guest_cargo_args=()
-          for package in "${RUNNER_GUEST_PACKAGES[@]}"; do
-            guest_cargo_args+=("-p" "$package")
-          done
-          cd crates
-          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}"
+        run: .github/scripts/runner-release-build.sh guests
 
       - name: Cross-compile runner with embedded guests for ${{ matrix.target }}
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
-        run: |
-          . .github/scripts/runner-guest-binaries.sh
-          runner_guest_binaries_load
-          cd crates
-          TARGET_DIR="target/${TARGET_TRIPLE}/release"
-          guest_env=()
-          for index in "${!RUNNER_GUEST_BINARIES[@]}"; do
-            guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=${TARGET_DIR}/${RUNNER_GUEST_BINARIES[$index]}")
-          done
-          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner
+        run: .github/scripts/runner-release-build.sh runner
 
       - name: Upload runner binary to GitHub Release
         env:

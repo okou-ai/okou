@@ -1,0 +1,111 @@
+name: Runner Release Build
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/setup-r2-sccache/**"
+      - ".github/scripts/runner-guest-binaries.sh"
+      - ".github/scripts/runner-image-target.sh"
+      - ".github/scripts/runner-release-build.sh"
+      - ".github/workflows/release-please.yml"
+      - ".github/workflows/runner-release-build.yml"
+      - "crates/.cargo/config.toml"
+      - "crates/Cargo.toml"
+      - "crates/runner/guest-binaries.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-release-build-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.ref, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build Runner release (${{ matrix.target }})
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      }}
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-musl
+          - x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Resolve runner target metadata
+        id: target-metadata
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          . .github/scripts/runner-image-target.sh
+          runner_image_validate_target "$TARGET_TRIPLE"
+          cache_suffix=$(runner_image_cache_suffix "$TARGET_TRIPLE")
+          sccache_architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
+          expected_elf_machine=$(runner_image_elf_machine_hex "$TARGET_TRIPLE")
+          {
+            echo "cache_suffix=$cache_suffix"
+            echo "sccache_architecture=$sccache_architecture"
+            echo "expected_elf_machine=$expected_elf_machine"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup R2 sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ steps.target-metadata.outputs.sccache_architecture }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release
+          save-if: "false"
+
+      - name: Reset sccache statistics
+        run: sccache --zero-stats
+
+      - name: Cross-compile guest binaries for ${{ matrix.target }}
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: .github/scripts/runner-release-build.sh guests
+
+      - name: Cross-compile runner with embedded guests for ${{ matrix.target }}
+        env:
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: .github/scripts/runner-release-build.sh runner
+
+      - name: Validate Runner release binary
+        env:
+          EXPECTED_ELF_MACHINE: ${{ steps.target-metadata.outputs.expected_elf_machine }}
+          TARGET_TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          runner_path="crates/target/${TARGET_TRIPLE}/release/runner"
+          test -x "$runner_path"
+
+          elf_magic=$(od -An -tx1 -N4 "$runner_path" | tr -d ' \n')
+          elf_machine=$(dd if="$runner_path" bs=1 skip=18 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')
+          if [ "$elf_magic" != "7f454c46" ] || [ "$elf_machine" != "$EXPECTED_ELF_MACHINE" ]; then
+            echo "::error::built runner does not match ${TARGET_TRIPLE}: magic=${elf_magic} machine=${elf_machine} expected_machine=${EXPECTED_ELF_MACHINE}"
+            exit 1
+          fi
+
+      - name: Report sccache statistics
+        if: ${{ always() }}
+        run: sccache --show-stats
