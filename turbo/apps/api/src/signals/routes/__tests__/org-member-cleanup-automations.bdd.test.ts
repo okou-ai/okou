@@ -23,12 +23,12 @@ import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automati
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
 /*
-Departing members keep no armed workflow automation. Both departure paths —
-in-app member removal and the Clerk membership webhook — run the same member
-cleanup, so each case here asserts the same three outcomes through public
-surfaces: the event automation stops dispatching, the schedule is no longer
-selected as due, and every automation outside the departing (org, owner) pair
-keeps firing.
+A departing member keeps no armed workflow automation. Both departure paths -
+in-app member removal and the Clerk membership webhook - run the same member
+cleanup, so each case asserts the same outcomes through public surfaces: the
+event automation stops dispatching, the schedule is no longer selected as due,
+the row survives with its configuration, and automations outside the departing
+(organization, owner) pair are untouched.
 
 `executed` alone cannot tell an eagerly disarmed schedule from one the poller
 retires lazily at its next due time: both leave nothing executed. `skipped`
@@ -70,6 +70,26 @@ function executionClient() {
   return setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
     testWorkflowAutomationExecutionContract,
   );
+}
+
+function orgIdOf(actor: ApiTestUser): string {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped actor");
+  }
+  return actor.orgId;
+}
+
+/**
+ * The creating admin of an entitled workspace with an organization default
+ * model, which is what a workspace owner reaches through billing and
+ * onboarding. Passing an existing identity gives that same person a second
+ * workspace.
+ */
+async function setupWorkspaceOwner(actor: ApiTestUser): Promise<ApiTestUser> {
+  await runs.grantProEntitlement(actor, { tier: "team" });
+  await runs.ensureOrgModelProvider(actor);
+  context.mocks.s3.send.mockResolvedValue({});
+  return actor;
 }
 
 interface OwnedAutomations {
@@ -178,132 +198,122 @@ async function runScheduleTick(automationId: string) {
   return response.body;
 }
 
-/** Automation reads are org-scoped, so an admin can audit a departed owner's row. */
+/** Automation reads are organization-scoped, so any admin can audit the row. */
 async function readAsAdmin(admin: ApiTestUser, automationId: string) {
   mocks.clerk.session(admin.userId, admin.orgId, admin.orgRole);
   return await wf.readAutomation(automationId);
 }
 
-async function setupOrgWithDepartingMember(label: string): Promise<{
-  readonly admin: ApiTestUser;
-  readonly member: ApiTestUser;
-}> {
-  const { actor: admin } = await wf.setupWorkflowOrg({ tier: "team" });
-  if (!admin.orgId) {
-    throw new Error("Expected an org-scoped workflow actor");
-  }
-  const member = wf.user({
-    orgId: admin.orgId,
-    orgRole: "org:member",
-    email: `${label}-member-${shortId()}@example.test`,
-  });
-  context.mocks.s3.send.mockResolvedValue({});
-  return { admin, member };
-}
-
 describe("Org member cleanup disarms the departing member's automations", () => {
-  it("stops event dispatch and schedule selection for the removed member alone", async () => {
+  it("stops event dispatch and schedule selection for the departing owner alone", async () => {
     runs.configureRunnerGroup();
-    const { admin, member } = await setupOrgWithDepartingMember("removal");
-    const departing = await seedOwnedAutomations(member, "departing");
-    const retained = await seedOwnedAutomations(admin, "retained");
-
-    // The same owner in a second organization is a different pair entirely.
-    const { actor: otherOrgAdmin } = await wf.setupWorkflowOrg({
-      tier: "team",
-    });
-    if (!otherOrgAdmin.orgId) {
-      throw new Error("Expected an org-scoped workflow actor");
-    }
-    const memberElsewhere = wf.user({
-      userId: member.userId,
-      orgId: otherOrgAdmin.orgId,
+    const departing = await setupWorkspaceOwner(wf.user());
+    const peerAdmin = wf.user({
+      orgId: orgIdOf(departing),
       orgRole: "org:admin",
-      email: member.email,
+      email: `peer-${shortId()}@example.test`,
     });
-    const elsewhere = await seedOwnedAutomations(memberElsewhere, "elsewhere");
+    const departingAutomations = await seedOwnedAutomations(
+      departing,
+      "departing",
+    );
+    const peerAutomations = await seedOwnedAutomations(peerAdmin, "peer");
 
-    org.mockClerkOrg(admin, {
+    // The same person's second workspace is a different (organization, owner)
+    // pair, and its automations must survive a departure from the first one.
+    const elsewhere = await setupWorkspaceOwner(
+      wf.user({ userId: departing.userId, email: departing.email }),
+    );
+    const elsewhereAutomations = await seedOwnedAutomations(
+      elsewhere,
+      "elsewhere",
+    );
+
+    // Armed before the departure: the delivery dispatches and starts a run.
+    await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(200);
+
+    org.mockClerkOrg(peerAdmin, {
       members: [
-        { actor: admin, role: "org:admin" },
-        { actor: member, role: "org:member" },
+        { actor: peerAdmin, role: "org:admin" },
+        { actor: departing, role: "org:admin" },
       ],
     });
     await expect(
-      org.removeMember(admin, { email: member.email }),
+      org.removeMember(peerAdmin, { email: departing.email }),
     ).resolves.toStrictEqual({
-      message: `Removed ${member.email} from org`,
+      message: `Removed ${departing.email} from org`,
     });
 
-    // The event automation no longer dispatches: its delivery is refused
-    // outright, while an identical webhook owned by a current member of the
-    // same organization still dispatches at the same moment. The disarmed
-    // state behind that refusal is read back below; the dispatchers that
-    // consult `workflowAutomationCanFire` would also fail closed on the
-    // membership row this cleanup deletes.
-    expect(await postWebhookDelivery(departing)).toBe(404);
-    expect(await postWebhookDelivery(retained)).toBe(200);
+    // The event automation no longer dispatches, while the same person's
+    // webhook in their other workspace still does.
+    await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(404);
+    await expect(postWebhookDelivery(elsewhereAutomations)).resolves.toBe(200);
 
-    // The schedule is never selected as due again — not selected and then
+    // The schedule is never selected as due again - not selected and then
     // skipped by the poller's membership gate.
-    expect(await runScheduleTick(departing.scheduleAutomationId)).toStrictEqual(
-      { success: true, executed: 0, skipped: 0 },
-    );
-    expect(await runScheduleTick(retained.scheduleAutomationId)).toStrictEqual({
-      success: true,
-      executed: 1,
-      skipped: 0,
-    });
+    await expect(
+      runScheduleTick(departingAutomations.scheduleAutomationId),
+    ).resolves.toStrictEqual({ success: true, executed: 0, skipped: 0 });
+    await expect(
+      runScheduleTick(elsewhereAutomations.scheduleAutomationId),
+    ).resolves.toStrictEqual({ success: true, executed: 1, skipped: 0 });
 
     // Disabled, not deleted: the schedule keeps its configuration and its
-    // creation-time anchor so an administrator can re-enable or reassign it.
-    expect(
-      await readAsAdmin(admin, departing.scheduleAutomationId),
-    ).toMatchObject({
+    // creation-time anchor, so an administrator can re-enable or reassign it.
+    await expect(
+      readAsAdmin(peerAdmin, departingAutomations.scheduleAutomationId),
+    ).resolves.toMatchObject({
       kind: "schedule",
       enabled: false,
-      nextRunAt: departing.scheduleNextRunAt,
+      nextRunAt: departingAutomations.scheduleNextRunAt,
       schedule: { type: "loop", intervalSeconds: LOOP_INTERVAL_SECONDS },
     });
-    expect(
-      await readAsAdmin(admin, departing.webhookAutomationId),
-    ).toMatchObject({
+    await expect(
+      readAsAdmin(peerAdmin, departingAutomations.webhookAutomationId),
+    ).resolves.toMatchObject({
       kind: "event",
       eventType: "webhook-received",
       enabled: false,
     });
-    expect(
-      await readAsAdmin(admin, retained.scheduleAutomationId),
-    ).toMatchObject({ enabled: true });
-    expect(
-      await readAsAdmin(admin, retained.webhookAutomationId),
-    ).toMatchObject({ enabled: true });
 
-    // The same person's automations in another organization stay armed.
-    org.mockClerkOrg(otherOrgAdmin, {
-      members: [{ actor: otherOrgAdmin, role: "org:admin" }],
+    // Another member of the same organization keeps both of theirs armed.
+    await expect(
+      readAsAdmin(peerAdmin, peerAutomations.scheduleAutomationId),
+    ).resolves.toMatchObject({ enabled: true });
+    await expect(
+      readAsAdmin(peerAdmin, peerAutomations.webhookAutomationId),
+    ).resolves.toMatchObject({ enabled: true });
+
+    // As does the same person in their other workspace.
+    org.mockClerkOrg(elsewhere, {
+      members: [{ actor: elsewhere, role: "org:admin" }],
     });
-    expect(
-      await readAsAdmin(otherOrgAdmin, elsewhere.scheduleAutomationId),
-    ).toMatchObject({ enabled: true });
-    expect(await postWebhookDelivery(elsewhere)).toBe(200);
-    expect(await runScheduleTick(elsewhere.scheduleAutomationId)).toStrictEqual(
-      { success: true, executed: 1, skipped: 0 },
-    );
+    await expect(
+      readAsAdmin(elsewhere, elsewhereAutomations.webhookAutomationId),
+    ).resolves.toMatchObject({ enabled: true });
   }, 60_000);
 
   it("disarms the same automations when Clerk reports the membership deleted", async () => {
     runs.configureRunnerGroup();
-    const { admin, member } = await setupOrgWithDepartingMember("webhook");
-    const departing = await seedOwnedAutomations(member, "clerk-departing");
+    const departing = await setupWorkspaceOwner(wf.user());
+    const auditor = wf.user({
+      orgId: orgIdOf(departing),
+      orgRole: "org:admin",
+      email: `auditor-${shortId()}@example.test`,
+    });
+    const departingAutomations = await seedOwnedAutomations(
+      departing,
+      "clerk-departing",
+    );
+    await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(200);
 
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: "organizationMembership.deleted",
       data: {
         id: `orgmem_${shortId()}`,
-        organization_id: admin.orgId,
-        user_id: member.userId,
+        organization_id: orgIdOf(departing),
+        user_id: departing.userId,
       },
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
@@ -313,8 +323,8 @@ describe("Org member cleanup disarms the departing member's automations", () => 
       .poll(
         async () => {
           const automation = await readAsAdmin(
-            admin,
-            departing.scheduleAutomationId,
+            auditor,
+            departingAutomations.scheduleAutomationId,
           );
           return automation.enabled;
         },
@@ -322,13 +332,13 @@ describe("Org member cleanup disarms the departing member's automations", () => 
       )
       .toBe(false);
 
-    expect(await postWebhookDelivery(departing)).toBe(404);
-    expect(await runScheduleTick(departing.scheduleAutomationId)).toStrictEqual(
-      { success: true, executed: 0, skipped: 0 },
-    );
-    expect(
-      await readAsAdmin(admin, departing.webhookAutomationId),
-    ).toMatchObject({
+    await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(404);
+    await expect(
+      runScheduleTick(departingAutomations.scheduleAutomationId),
+    ).resolves.toStrictEqual({ success: true, executed: 0, skipped: 0 });
+    await expect(
+      readAsAdmin(auditor, departingAutomations.webhookAutomationId),
+    ).resolves.toMatchObject({
       kind: "event",
       eventType: "webhook-received",
       enabled: false,
