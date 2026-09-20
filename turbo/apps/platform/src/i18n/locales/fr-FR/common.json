@@ -459,6 +459,7 @@
       "description": "Il est peut-être privé ou n’est plus disponible.",
       "help": "Demandez à la personne qui a partagé ce lien de vérifier l’accès.",
       "signedInAs": "Connecté en tant que {{email}}",
+      "signedInDescription": "Il n’existe peut-être pas, ou il est partagé avec un autre compte ou une autre organisation.",
       "signIn": "Se connecter",
       "signInFailed": "Impossible d’ouvrir la connexion. Réessayez.",
       "switchAccount": "Changer de compte",

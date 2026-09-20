@@ -445,6 +445,7 @@
       "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
       "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
       "signedInAs": "{{email}} 계정으로 로그인됨",
+      "signedInDescription": "존재하지 않거나 다른 계정 또는 조직에 공유되었을 수 있습니다.",
       "signIn": "로그인",
       "signInFailed": "로그인 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "switchAccount": "계정 전환",

@@ -459,6 +459,7 @@
       "description": "Potrebbe essere privato o non più disponibile.",
       "help": "Chiedi alla persona che ha condiviso questo link di verificare l’accesso.",
       "signedInAs": "Accesso effettuato come {{email}}",
+      "signedInDescription": "Potrebbe non esistere o essere condiviso con un altro account o un’altra organizzazione.",
       "signIn": "Accedi",
       "signInFailed": "Impossibile aprire l’accesso. Riprova.",
       "switchAccount": "Cambia account",

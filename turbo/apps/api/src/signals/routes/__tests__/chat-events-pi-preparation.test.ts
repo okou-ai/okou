@@ -4,6 +4,7 @@ import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/ru
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+import { HTTPException } from "hono/http-exception";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -16,6 +17,8 @@ import {
   holdPiApiFirstTurnLifecycleLockFixture,
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
+import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
+import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { workflowsRoutes } from "../workflows";
@@ -63,6 +66,15 @@ const {
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
 
+function jsonHttpException(status: 409 | 422, message: string) {
+  return new HTTPException(status, {
+    res: new Response(JSON.stringify({ error: { message } }), {
+      status,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+}
+
 function observePendingSend<T>(send: Promise<T>) {
   const result = settleIncludingAbort(send);
   const phases: Promise<unknown>[] = [];
@@ -93,6 +105,213 @@ function observePendingSend<T>(send: Promise<T>) {
 }
 
 describe("CHAT-02: model-first provider policies", () => {
+  it("overlaps captured legacy context branches and skips deferred cache identity", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    await api.heartbeatRunner(runnerGroup);
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const providerBodies: string[] = [];
+    server.use(
+      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
+        providerBodies.push(await request.text());
+        return nativeCodexSseResponse(
+          piResponsesTextSse("overlapped legacy answer", providerBodies.length),
+        );
+      }),
+    );
+    const thread = await chat.createThread(actor, { agentId });
+    const preparation = holdPiContextPreparationStagesFixture({
+      userId: actor.userId,
+      orgId,
+      signal: context.signal,
+    });
+    const countedRun = withStableAgentPromptBuildCountFixture(async () => {
+      return await sendChatRun(
+        actor,
+        {
+          agentId,
+          threadId: thread.id,
+          prompt: "exercise overlapped legacy context preparation",
+          model: "gpt-5.6-terra",
+        },
+        usagePricingResolution,
+      );
+    });
+
+    await Promise.all([
+      preparation.arrival("post-authorization-context"),
+      preparation.arrival("thread-session"),
+    ]);
+    expect(preparation.hasArrived("model-provider")).toBeFalsy();
+    expect(preparation.hasArrived("connector-contexts")).toBeFalsy();
+    preparation.release("post-authorization-context");
+    preparation.release("thread-session");
+
+    await Promise.all([
+      preparation.arrival("model-provider"),
+      preparation.arrival("connector-contexts"),
+    ]);
+    expect(preparation.hasArrived("user-timezone")).toBeFalsy();
+    expect(preparation.hasArrived("media-models")).toBeFalsy();
+    expect(preparation.hasArrived("official-workflow")).toBeFalsy();
+    expect(providerBodies).toHaveLength(0);
+    preparation.release("model-provider");
+    preparation.release("connector-contexts");
+
+    await Promise.all([
+      preparation.arrival("user-timezone"),
+      preparation.arrival("media-models"),
+      preparation.arrival("official-workflow"),
+    ]);
+    preparation.releaseAll();
+
+    const {
+      buildCount,
+      cacheIdentityBuildCount,
+      result: run,
+    } = await countedRun;
+    expect(buildCount).toBe(1);
+    expect(cacheIdentityBuildCount).toBe(0);
+    await waitForRunStatus(actor, run.runId, "completed", 10_000);
+    expect(providerBodies).toHaveLength(1);
+    expect(piResponsesDeveloperPrompt(providerBodies[0])).toContain(
+      "# Current User Info",
+    );
+  }, 30_000);
+
+  it("settles simultaneous legacy preparation failures in dependency order without post-admission effects", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    const thread = await chat.createThread(actor, { agentId });
+    const preparation = holdPiContextPreparationStagesFixture({
+      userId: actor.userId,
+      orgId,
+      signal: context.signal,
+    });
+    const clientEventId = randomUUID();
+    const prompt = "reject simultaneous legacy preparation failures";
+    const send = requestSendEventRaw(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt,
+        clientEventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+        model: "gpt-5.6-terra",
+      },
+      context.signal,
+      usagePricingResolution,
+    );
+    const observed = observePendingSend(send);
+
+    await Promise.all([
+      preparation.arrival("post-authorization-context"),
+      preparation.arrival("thread-session"),
+    ]);
+    preparation.reject(
+      "thread-session",
+      jsonHttpException(422, "session preparation failed"),
+    );
+    await observed.beforeSettlement(preparation.departure("thread-session"));
+    preparation.reject(
+      "post-authorization-context",
+      jsonHttpException(409, "authorization preparation failed"),
+    );
+
+    const response = await send;
+    expect(response).toStrictEqual({
+      status: 409,
+      body: { error: { message: "authorization preparation failed" } },
+    });
+    await observed.joinPhases();
+    await preparation.departure("post-authorization-context");
+    preparation.releaseAll();
+    const events = await chat.listThreadEvents(actor, thread.id);
+    expect(events.events).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.prompt",
+        id: clientEventId,
+      }),
+    ]);
+  });
+
+  it("settles held legacy preparation branches before surfacing cancellation without post-admission effects", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    const thread = await chat.createThread(actor, { agentId });
+    const controller = new AbortController();
+    const requestSignal = AbortSignal.any([controller.signal, context.signal]);
+    const preparation = holdPiContextPreparationStagesFixture({
+      userId: actor.userId,
+      orgId,
+      signal: requestSignal,
+      gateSignal: context.signal,
+    });
+    const clientEventId = randomUUID();
+    const prompt = "cancel held legacy preparation";
+    const send = requestSendEventRaw(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt,
+        clientEventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+        model: "gpt-5.6-terra",
+      },
+      requestSignal,
+      usagePricingResolution,
+    );
+    const observed = observePendingSend(send);
+
+    await Promise.all([
+      preparation.arrival("post-authorization-context"),
+      preparation.arrival("thread-session"),
+    ]);
+    controller.abort(new DOMException("cancelled by route test", "AbortError"));
+    preparation.release("thread-session");
+    await observed.beforeSettlement(preparation.departure("thread-session"));
+    preparation.release("post-authorization-context");
+
+    const response = await send;
+    expect(response.status).toBe(500);
+    await observed.joinPhases();
+    await preparation.departure("post-authorization-context");
+    preparation.releaseAll();
+    const events = await chat.listThreadEvents(actor, thread.id);
+    expect(events.events).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.prompt",
+        id: clientEventId,
+      }),
+    ]);
+  });
+
   it.each(["pending", "cancelled", "queued"] as const)(
     "keeps %s admission responsive while API preparation is blocked",
     async (outcome) => {

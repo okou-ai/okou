@@ -445,6 +445,7 @@
       "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
       "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
       "signedInAs": "Masuk sebagai {{email}}",
+      "signedInDescription": "Artefak ini mungkin tidak ada atau dibagikan ke akun atau organisasi lain.",
       "signIn": "Masuk",
       "signInFailed": "Tidak dapat membuka halaman masuk. Silakan coba lagi.",
       "switchAccount": "Ganti akun",

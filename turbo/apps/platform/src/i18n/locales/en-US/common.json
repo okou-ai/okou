@@ -445,6 +445,7 @@
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
       "signedInAs": "Signed in as {{email}}",
+      "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
       "signInFailed": "Could not open sign-in. Please try again.",
       "switchAccount": "Switch account",

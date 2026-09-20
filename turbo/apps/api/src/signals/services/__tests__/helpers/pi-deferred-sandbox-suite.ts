@@ -457,6 +457,56 @@ async function grantPaidConcurrency(orgId: string, slots = 1): Promise<void> {
   });
 }
 
+/**
+ * Publish demand at a controlled instant and report the queue position and
+ * expiry the producer actually recorded. The demand lifetime stays whatever
+ * production chose; cases derive their instants from the returned row instead
+ * of restating it.
+ */
+async function publishDeferredDemandAt(
+  f: { readonly runId: string; readonly h1Hash: string },
+  enqueuedAt: number,
+) {
+  await expect(
+    withMockNowForTest(enqueuedAt, async () => {
+      return await publishPiSandboxDemand(
+        db(),
+        { runId: f.runId, ownerEpoch: 1, generation: 1 },
+        {
+          mode: "pending-tools",
+          h1Hash: f.h1Hash,
+          manifestGeneration: 3,
+          pendingToolIds: ["tool-1"],
+          lastEventSequence: 4,
+        },
+      );
+    }),
+  ).resolves.toBeTruthy();
+  const [intent] = await db()
+    .select({
+      enqueuedAt: agentRunSandboxIntent.enqueuedAt,
+      expiresAt: agentRunSandboxIntent.expiresAt,
+    })
+    .from(agentRunSandboxIntent)
+    .where(eq(agentRunSandboxIntent.runId, f.runId));
+  if (!intent) {
+    throw new Error("Missing published deferred demand");
+  }
+  return intent;
+}
+
+async function deferredDemandStates(
+  runIds: readonly string[],
+): Promise<readonly string[]> {
+  const rows = await db()
+    .select({ state: agentRunSandboxIntent.state })
+    .from(agentRunSandboxIntent)
+    .where(inArray(agentRunSandboxIntent.runId, [...runIds]));
+  return rows.map((row) => {
+    return row.state;
+  });
+}
+
 export const registerDurabilityTests = (it: DefineTest): void => {
   it("restores a large H1 after its publisher exits and more than 55 seconds of waiting", async () => {
     const f = await fixture({ large: true });
@@ -2486,6 +2536,242 @@ export const registerCapacityTests = (it: DefineTest): void => {
     },
     60_000,
   );
+
+  it.each([
+    {
+      headState: "already expired",
+      offsetAfterHeadExpiry: 1000,
+      admitted: true,
+    },
+    {
+      headState: "expiring exactly at that instant",
+      offsetAfterHeadExpiry: 0,
+      admitted: true,
+    },
+    {
+      headState: "still eligible",
+      offsetAfterHeadExpiry: -1000,
+      admitted: false,
+    },
+  ])(
+    "admits later deferred demand at an instant where the earlier head is $headState",
+    async ({ offsetAfterHeadExpiry, admitted }) => {
+      const orgId = `org_${randomUUID()}`;
+      const head = await fixture({
+        orgId,
+        userId: `user_${randomUUID()}`,
+        publish: false,
+        publishInProcess: true,
+      });
+      const later = await fixture({
+        orgId,
+        userId: `user_${randomUUID()}`,
+        publish: false,
+        publishInProcess: true,
+      });
+      // The later demand takes its position first so the head's lifetime can be
+      // derived from a real published row rather than a restated constant.
+      const laterIntent = await publishDeferredDemandAt(
+        later,
+        Date.now() - 60_000,
+      );
+      const demandLifetimeMs =
+        laterIntent.expiresAt.getTime() - laterIntent.enqueuedAt.getTime();
+      // The head expires after the later demand was enqueued, so a reader that
+      // tested expiry against that historical position would still count it.
+      const headExpiresAt = laterIntent.enqueuedAt.getTime() + 30_000;
+      const headIntent = await publishDeferredDemandAt(
+        head,
+        headExpiresAt - demandLifetimeMs,
+      );
+      expect(headIntent.enqueuedAt.getTime()).toBeLessThan(
+        laterIntent.enqueuedAt.getTime(),
+      );
+      expect(headIntent.expiresAt.getTime()).toBeGreaterThan(
+        laterIntent.enqueuedAt.getTime(),
+      );
+      await db()
+        .update(orgPlanEntitlements)
+        .set({ baseConcurrencyLimit: 1 })
+        .where(eq(orgPlanEntitlements.orgId, orgId));
+
+      const admissionAt = headExpiresAt + offsetAfterHeadExpiry;
+      expect(laterIntent.expiresAt.getTime()).toBeGreaterThan(admissionAt);
+      await expect(
+        withMockNowForTest(admissionAt, async () => {
+          return await createStore().set(
+            consumeDeferredPiRun$,
+            later.runId,
+            context.signal,
+          );
+        }),
+      ).resolves.toBe(admitted);
+      await expect(
+        db()
+          .select({ runId: runnerJobQueue.runId })
+          .from(runnerJobQueue)
+          .where(eq(runnerJobQueue.runId, later.runId)),
+      ).resolves.toStrictEqual(admitted ? [{ runId: later.runId }] : []);
+      // The head keeps its retained demand either way: admission decides expiry
+      // on its own instead of waiting for a consumer to sweep the head first.
+      await expect(deferredDemandStates([head.runId])).resolves.toStrictEqual([
+        "waiting",
+      ]);
+      if (admitted) {
+        await accept(claim(later.runId, true, randomUUID()), [200]);
+      }
+    },
+    90_000,
+  );
+
+  it("keeps the run-ID tie break for demand enqueued at the same instant", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const enqueuedAt = Date.now() - 60_000;
+    const first = await fixture({
+      orgId,
+      userId: `user_${randomUUID()}`,
+      publish: false,
+      publishInProcess: true,
+    });
+    const second = await fixture({
+      orgId,
+      userId: `user_${randomUUID()}`,
+      publish: false,
+      publishInProcess: true,
+    });
+    const firstIntent = await publishDeferredDemandAt(first, enqueuedAt);
+    const secondIntent = await publishDeferredDemandAt(second, enqueuedAt);
+    expect(secondIntent.enqueuedAt).toStrictEqual(firstIntent.enqueuedAt);
+    await db()
+      .update(orgPlanEntitlements)
+      .set({ baseConcurrencyLimit: 1 })
+      .where(eq(orgPlanEntitlements.orgId, orgId));
+
+    const firstIsEarlier = first.runId.localeCompare(second.runId) < 0;
+    const earlier = firstIsEarlier ? first : second;
+    const later = firstIsEarlier ? second : first;
+    await expect(
+      createStore().set(consumeDeferredPiRun$, later.runId, context.signal),
+    ).resolves.toBeFalsy();
+    await expect(
+      createStore().set(consumeDeferredPiRun$, earlier.runId, context.signal),
+    ).resolves.toBeTruthy();
+    await accept(claim(earlier.runId, true, randomUUID()), [200]);
+  }, 90_000);
+
+  it("promotes a queued Run past earlier demand that expired after it was queued", async () => {
+    const { actor, agent, api } = await createLegacyAdmissionFixture(
+      "Expired earlier demand promotion",
+    );
+    const active = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "active before expired-demand promotion",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(active.status).toBe("pending");
+    const queued = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "queued before earlier demand expired",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(queued.status).toBe("queued");
+    const [queuedRow] = await db()
+      .select({ createdAt: agentRunQueue.createdAt })
+      .from(agentRunQueue)
+      .where(eq(agentRunQueue.runId, queued.runId));
+    if (!queuedRow) {
+      throw new Error("Missing queued admission row");
+    }
+    const deferred = await fixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      publish: false,
+      publishInProcess: true,
+    });
+
+    // The demand commits behind the organization capacity lock, after promotion
+    // has already taken its unlocked candidate snapshot. Promotion therefore
+    // never visits the head as a candidate and cannot rely on sweeping it.
+    const held = await holdDeferredRow(context.signal, (tx) => {
+      return tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}))`,
+      );
+    });
+    const publication = publishDeferredDemandAt(
+      deferred,
+      queuedRow.createdAt.getTime() - 1000,
+    );
+    const publisherPid = await held.waitForBlocked();
+    // The pending Run that forced this queue entry has aged out of the active
+    // window by then, so the only thing that can still hold the slot is demand
+    // that was enqueued earlier and has since expired.
+    const admissionAt = queuedRow.createdAt.getTime() + 24 * 60 * 60 * 1000;
+    const promotion = withMockNowForTest(admissionAt, async () => {
+      return await createStore().set(
+        promoteNextQueuedRun$,
+        { orgId: actor.orgId },
+        context.signal,
+      );
+    });
+    await waitForDeferredBlocker(publisherPid);
+    await held.release();
+    const intent = await publication;
+    expect(intent.enqueuedAt.getTime()).toBeLessThan(
+      queuedRow.createdAt.getTime(),
+    );
+    expect(intent.expiresAt.getTime()).toBeGreaterThan(
+      queuedRow.createdAt.getTime(),
+    );
+    expect(intent.expiresAt.getTime()).toBeLessThan(admissionAt);
+    await expect(promotion).resolves.toMatchObject({
+      kind: "activation",
+      activation: { runnerNotification: { runId: queued.runId } },
+    });
+    await expect(deferredDemandStates([deferred.runId])).resolves.toStrictEqual(
+      ["waiting"],
+    );
+    await expect(
+      db()
+        .select({ runId: agentRunQueue.runId })
+        .from(agentRunQueue)
+        .where(eq(agentRunQueue.runId, queued.runId)),
+    ).resolves.toStrictEqual([]);
+  }, 120_000);
+
+  it("admits fresh direct legacy work behind retained expired demand", async () => {
+    const { actor, agent } = await createLegacyAdmissionFixture(
+      "Expired demand direct admission",
+    );
+    const reads = createRunReadsApi(context);
+    const deferred = await fixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      publish: false,
+      publishInProcess: true,
+    });
+    const intent = await publishDeferredDemandAt(
+      deferred,
+      Date.now() - 24 * 60 * 60 * 1000,
+    );
+    expect(intent.expiresAt.getTime()).toBeLessThan(Date.now());
+    const admitted = await reads.requestCreateDirectRun(
+      actor,
+      {
+        agentId: agent.agentId,
+        modelProviderType: "anthropic-api-key",
+        vars: { OKOU_AGENT_ID: agent.agentId },
+        secrets: { OKOU_TOKEN: "expired-demand-admission-token" },
+        prompt: "direct legacy behind expired demand",
+      },
+      [201],
+    );
+    expect(admitted.body).toMatchObject({ status: "pending" });
+    // Admission excluded the demand without discarding it; the retained backlog
+    // is still there for a consumer or the expiry sweep to settle.
+    await expect(deferredDemandStates([deferred.runId])).resolves.toStrictEqual(
+      ["waiting"],
+    );
+  }, 90_000);
 };
 
 export const registerLifecycleTests = (it: DefineTest): void => {
