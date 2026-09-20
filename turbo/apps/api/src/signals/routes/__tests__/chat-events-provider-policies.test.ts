@@ -435,13 +435,15 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "reuse the routing receipt facts",
       });
     });
-    // The second plan read is final admission; the second switch read belongs
-    // to stable-context materialization. Routing owns only the single policy
-    // read and never loads personal account metadata on this organization path.
+    // The second plan read is final admission. Stable-context materialization
+    // no longer repeats the switch read, because this send hands its
+    // request-scoped feature-switch context to run preparation. Routing owns
+    // only the single policy read and never loads personal account metadata on
+    // this organization path.
     expect(captured.receipt).toStrictEqual({
       planReads: 2,
       policyReads: 1,
-      featureSwitchReads: 2,
+      featureSwitchReads: 1,
       personalMetadataReads: 0,
       personalAccountReads: 0,
     });
