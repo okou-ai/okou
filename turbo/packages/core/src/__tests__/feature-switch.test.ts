@@ -213,6 +213,37 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("enables the Plaud MCP connector for staff and honors explicit overrides", () => {
+    expect(FeatureSwitchKey.PlaudConnector).toBe("plaudConnector");
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PlaudConnector, context)).toBe(
+        false,
+      );
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.PlaudConnector]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, {
+        overrides: { [FeatureSwitchKey.PlaudConnector]: true },
+      }),
+    ).toBe(true);
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PlaudConnector]).toEqual(
+      {
+        maintainer: "liangyou@okou.ai",
+        description: "Enable the Plaud MCP connector",
+        rolloutStage: "beta",
+      },
+    );
+  });
+
   it("should return true when orgId hash matches enabledOrgIdHashes", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
