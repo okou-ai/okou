@@ -1,6 +1,5 @@
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { CSSProperties } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -202,37 +201,26 @@ function useTagline(
   return taglines[index % taglines.length];
 }
 
-/**
- * One character every 40ms. The greeting's settle is timed off the same number,
- * because what moves the avatar is the line arriving.
- */
-const TAGLINE_TYPEWRITER_SPEED_MS = 40;
-
-function TypewriterText({
-  text,
-  speed = TAGLINE_TYPEWRITER_SPEED_MS,
-}: {
-  text: string;
-  speed?: number;
-}) {
-  const displayedText = useGet(chatPageTaglineDisplayed$);
+function TypewriterText({ text }: { text: string }) {
+  const animation = useGet(chatPageTaglineDisplayed$);
+  const displayedText = animation.text === text ? animation.displayed : "";
   const typewriterRef = useSet(chatPageTaglineTypewriterRef$);
-  const typewriterKey = `${text}:${String(speed)}`;
 
   return (
     <>
-      <span
-        key={typewriterKey}
-        ref={typewriterRef}
-        className="contents"
-        data-typewriter-speed={String(speed)}
-        data-typewriter-text={text}
-      >
-        {displayedText}
+      {/* The complete copy keeps wrapping and height stable while the row
+          follows the width of the text that has actually unfolded. */}
+      <span key={text} ref={typewriterRef} aria-hidden className="invisible">
+        {text}
       </span>
-      {displayedText.length < text.length && (
-        <span className="inline-block w-[2px] h-[1em] bg-foreground/60 ml-0.5 align-middle animate-pulse" />
-      )}
+      <span
+        aria-hidden
+        data-slot="chat-tagline-measurement"
+        className="invisible absolute inset-0"
+      />
+      <span aria-hidden className="absolute inset-0">
+        <span data-slot="chat-tagline-text">{displayedText}</span>
+      </span>
     </>
   );
 }
@@ -411,58 +399,14 @@ export function AgentChatPage() {
           {/* The greeting keeps the space the composer left behind rather than
               staying pinned under the header with a screen-deep hole under it.
               Both margins are auto, so the free space is split above and below
-              it and the line lands in the middle of what is left.
-
-              While the offset below is on, the reserved line hangs past the
-              right edge; the scrollport above would answer that with a
-              horizontal scrollbar, so this row clips its own axis. `clip`
-              rather than `hidden` leaves the vertical axis visible for the pin
-              button. */}
+              it and the line lands in the middle of what is left. The reserved
+              line extends past the right edge during the centered hold, so clip
+              that axis while keeping the pin button visible vertically. */}
           <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
-            {/* The avatar is on the row before the line is: the tagline needs
-              the agent's name, so the frame stands alone for as long as that
-              takes to resolve. Centred alone and centred against a full line
-              are two different places, and the step between them is what this
-              animates.
-
-              `calc(50% - 1.75rem)` is that step, written without measuring
-              anything. 50% of this box puts its left edge on the row's centre,
-              and 1.75rem is half of the avatar frame's `h-14`, so together they
-              land the avatar's own centre there. The percentage resolves
-              against the box as it is painted, so the frame that widens this
-              box with the reserved line still draws the avatar exactly centred,
-              and the settle runs from that position rather than from a stale
-              one. Reduced motion keeps the offset off entirely, which resolves
-              to the settled layout.
-
-              The offset is held by the line the page is currently rendering,
-              rather than by how far the typewriter has got. The typed text is
-              module state with no page lifetime, and the route boundary only
-              drops the committed page when the route itself changes, so moving
-              between two agents' chats would read the previous visit's line and
-              render this row already settled.
-
-              The travel lasts exactly as long as the line takes to arrive,
-              because the line is what is moving the avatar. A fixed duration is
-              the wrong length for a line of any other length, and at 500ms it
-              also outran the typing badly enough to be the whole of why the
-              move read as mechanical: the row slid left faster than the text
-              grew right, so the end of the line travelled backwards for the
-              first third of the move before it began to advance. Half a sine
-              over the typing run keeps the row slower than the text at every
-              point, which leaves the line growing out of its own centre while
-              the avatar drifts off it. */}
             <div
+              data-slot="chat-greeting"
               data-testid="chat-greeting"
-              data-settled={tagline !== ""}
-              style={
-                {
-                  "--chat-greeting-settle-duration": `${String(
-                    tagline.length * TAGLINE_TYPEWRITER_SPEED_MS,
-                  )}ms`,
-                } as CSSProperties
-              }
-              className="flex min-w-0 items-center gap-4 transition-transform duration-[var(--chat-greeting-settle-duration)] ease-[cubic-bezier(0.45,0.05,0.55,0.95)] motion-safe:translate-x-[calc(50%_-_1.75rem)] data-[settled=true]:translate-x-0"
+              className="flex max-w-full items-center gap-4 motion-safe:translate-x-[var(--chat-greeting-offset,calc(50%-1.75rem))]"
             >
               <ChatAgentAvatar agentId={currentChatAgentId} />
               <h2
@@ -470,18 +414,7 @@ export function AgentChatPage() {
                 data-testid="chat-tagline"
                 className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
               >
-                {/* The tagline is typed one character at a time. Centred, every
-                    character would widen the row and slide the avatar left, so
-                    the full line holds the box from the first frame and the
-                    typed text paints over it. The reserving copy stays in flow:
-                    it has to wrap exactly the way the visible text will, which a
-                    measured width could not promise. */}
-                <span aria-hidden className="invisible">
-                  {tagline}
-                </span>
-                <span className="absolute inset-0">
-                  <TypewriterText text={tagline} />
-                </span>
+                <TypewriterText key={currentChatAgentId} text={tagline} />
               </h2>
             </div>
           </div>

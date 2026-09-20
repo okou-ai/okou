@@ -13,7 +13,9 @@ test("complete app onboarding to chat page", async ({ browser, page }) => {
   test.setTimeout(240_000);
 
   const email = generateTestEmail("playwright");
-  const userId = await createUser(email);
+  const userId = await createUser(email, undefined, {
+    firstName: "Christopher",
+  });
   const orgId = await createOrganization("E2E Test Org", userId, "playwright");
   const apiUrl = resolveApiBackendUrl();
   const appUrl = deriveAppUrl(apiUrl);
