@@ -37,6 +37,15 @@ const artifactId = "00000000-0000-4000-8000-000000000010";
 const imagePath = artifactReferencePath(artifactId, "launch.png");
 const imageUrl = "https://artifacts.example.com/launch.png?signature=private";
 
+function queryAction(role: "button" | "link" | "menuitem", name: string) {
+  return queryAllByRoleFast(role).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+}
+
 function action(role: "button" | "link" | "menuitem", name: string) {
   const element = queryAllByRoleFast(role).find((candidate) => {
     return (
@@ -413,3 +422,28 @@ test("A shared Markdown artifact displays its diagram", async () => {
   expect(browser.blobForUrl(imageUrl)?.type).toBe("image/svg+xml");
   expect(action("button", "Expand diagram")).toBeEnabled();
 });
+
+test.each([
+  ["audio/mpeg", "voice-note.mp3", false],
+  ["image/png", "launch.png", true],
+] as const)(
+  "the viewer offers fullscreen only where there is a picture to enlarge: %s",
+  async (contentType, filename, offered) => {
+    await openViewer({
+      path: artifactReferencePath(artifactId, filename),
+      filename,
+      contentType,
+      url: `https://artifacts.example.com/${filename}?signature=private`,
+    });
+
+    await expect(
+      screen.findByRole("heading", { name: filename }),
+    ).resolves.toBeInTheDocument();
+    // Fullscreen makes a picture bigger; an audio player has none, so the
+    // control would only produce a larger empty stage.
+    expect(queryAction("button", "Enter fullscreen") !== undefined).toBe(
+      offered,
+    );
+    expect(action("button", "Download options")).toBeInTheDocument();
+  },
+);

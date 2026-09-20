@@ -24,7 +24,10 @@ import type {
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
-import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
+import {
+  artifactFallbackSubtitle,
+  artifactSupportsFullscreen,
+} from "../okou-page/artifact-display.ts";
 
 /** Public-share dialog, with no owner sharing, editing, or Drive actions. */
 export function SharedThreadArtifactLightbox({
@@ -95,6 +98,9 @@ function SharedThreadArtifactDialog({
           </div>
           <SharedThreadArtifactActions
             signals={signals}
+            supportsFullscreen={artifactSupportsFullscreen(
+              current.preview.kind,
+            )}
             downloading={downloadState.state === "loading"}
             downloadAvailable={resource.state === "hasData"}
             onDownload={() => {
@@ -134,11 +140,13 @@ function SharedThreadArtifactActions({
   signals,
   downloading,
   downloadAvailable,
+  supportsFullscreen,
   onDownload,
 }: {
   readonly signals: SharedThreadArtifactPreviewSignals;
   readonly downloading: boolean;
   readonly downloadAvailable: boolean;
+  readonly supportsFullscreen: boolean;
   readonly onDownload: () => void;
 }) {
   const { t } = useTranslation();
@@ -178,19 +186,21 @@ function SharedThreadArtifactActions({
           <Download size={18} />
         )}
       </Button>
-      <Button
-        variant="quiet"
-        size="icon-sm"
-        showTooltip
-        aria-label={t(($) => {
-          return fullscreen
-            ? $.artifacts.actions.exitFullscreen
-            : $.artifacts.actions.enterFullscreen;
-        })}
-        onClick={toggleFullscreen}
-      >
-        {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-      </Button>
+      {supportsFullscreen && (
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          showTooltip
+          aria-label={t(($) => {
+            return fullscreen
+              ? $.artifacts.actions.exitFullscreen
+              : $.artifacts.actions.enterFullscreen;
+          })}
+          onClick={toggleFullscreen}
+        >
+          {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </Button>
+      )}
       <Button
         variant="quiet"
         size="icon-sm"
