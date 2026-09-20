@@ -305,7 +305,7 @@ describe("connector catalog v4 preparation", () => {
     ["mcp", "automatic"],
     ["http", "manual"],
   ] as const)(
-    "refreshes a running %s %s builtin when its catalog configuration changes or disappears",
+    "refreshes a running %s %s builtin when its catalog configuration changes, disappears, or is restored",
     async (protocol, authKind) => {
       const endpoint = "https://automatic-mcp.example.test/server";
       const initial = release({
@@ -405,7 +405,7 @@ describe("connector catalog v4 preparation", () => {
           });
           expect(initialRuntime).toMatchObject({ state: "available" });
 
-          for (const change of ["updated", "removed"] as const) {
+          for (const change of ["updated", "removed", "restored"] as const) {
             const nextEndpoint = "https://updated.example.test/mcp";
             serveObjects(
               release({
@@ -423,8 +423,8 @@ describe("connector catalog v4 preparation", () => {
                           runtimeBuiltinConnector(
                             protocol,
                             authKind,
-                            nextEndpoint,
-                            true,
+                            change === "updated" ? nextEndpoint : endpoint,
+                            change === "updated",
                           ),
                         ];
                 },
