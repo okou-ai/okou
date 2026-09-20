@@ -873,7 +873,7 @@ interface TerminalChatCallbackWork {
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly githubDeliveryCallbackId?: string;
-  readonly deferredSideEffects?: () => Promise<void>;
+  readonly deferredSideEffects?: (signal: AbortSignal) => Promise<void>;
 }
 
 type DrainOutcome =
@@ -4210,7 +4210,7 @@ async function prepareCompletedTerminalChatCallbackWork(
     telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: completed.githubDeliveryCallbackId,
-    deferredSideEffects: () => {
+    deferredSideEffects: (deferredSignal) => {
       return runCompletedChatCallbackSideEffects(
         {
           db: args.db,
@@ -4224,13 +4224,13 @@ async function prepareCompletedTerminalChatCallbackWork(
               args.runId,
               args.run.prompt,
               resultText,
-              signal,
+              deferredSignal,
             );
           },
           dispatchChatRunFinishedAutomations:
             args.dependencies.dispatchChatRunFinishedAutomations,
         },
-        signal,
+        deferredSignal,
       );
     },
   };
@@ -4311,7 +4311,7 @@ async function prepareFailedTerminalChatCallbackWork(
     telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: failed.githubDeliveryCallbackId,
-    deferredSideEffects: () => {
+    deferredSideEffects: (deferredSignal) => {
       return runFailedChatCallbackSideEffects(
         {
           db: args.db,
@@ -4326,7 +4326,7 @@ async function prepareFailedTerminalChatCallbackWork(
           dispatchChatRunFinishedAutomations:
             args.dependencies.dispatchChatRunFinishedAutomations,
         },
-        signal,
+        deferredSignal,
       );
     },
   };
@@ -4720,9 +4720,65 @@ async function drainAndClearTerminalChatThread(
   return result.ok ? result.value : { ok: false, error: result.error };
 }
 
+async function finishTerminalChatCallbackAfterProjection(
+  args: {
+    readonly callback: TerminalChatCallbackArgs;
+    readonly runId: string;
+    readonly callbackStatus: "completed" | "failed";
+    readonly work: TerminalChatCallbackWork;
+    readonly chatThread: ChatThreadForRunRow;
+    readonly timing: ChatCallbackPreCreateTimingCollector;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  await dispatchCanonicalDeliveryCallbacks(
+    {
+      runId: args.runId,
+      status: args.callbackStatus,
+      slackDeliveryCallbackId: args.work.slackDeliveryCallbackId,
+      feishuDeliveryCallbackId: args.work.feishuDeliveryCallbackId,
+      teamsDeliveryCallbackId: args.work.teamsDeliveryCallbackId,
+      telegramDeliveryCallbackId: args.work.telegramDeliveryCallbackId,
+      agentphoneDeliveryCallbackId: args.work.agentphoneDeliveryCallbackId,
+      githubDeliveryCallbackId: args.work.githubDeliveryCallbackId,
+      dependencies: args.callback.dependencies,
+    },
+    signal,
+  );
+
+  const drainResult = await drainAndClearTerminalChatThread(
+    {
+      chatThreadId: args.chatThread.chatThreadId,
+      callback: args.callback,
+      timing: args.timing,
+      work: args.work,
+    },
+    signal,
+  );
+
+  if (!drainResult.ok) {
+    throw drainResult.error;
+  }
+
+  const deferredSideEffects = args.work.deferredSideEffects;
+  if (deferredSideEffects) {
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      runTerminalChatCallbackSideEffects({
+        runId: args.runId,
+        status: args.callbackStatus,
+        run: () => {
+          return deferredSideEffects(backgroundSignal);
+        },
+      }),
+    );
+  }
+}
+
 async function processTerminalChatCallback(
   args: TerminalChatCallbackArgs,
   signal: AbortSignal,
+  options?: { readonly deferPostProjection?: boolean },
 ): Promise<void> {
   const { runId, status: callbackStatus } = args.callback;
   if (callbackStatus === "progress") {
@@ -4807,46 +4863,40 @@ async function processTerminalChatCallback(
     return;
   }
   const { work, chatThread } = prepared.value;
+  const postProjectionInput = {
+    callback: args,
+    runId,
+    callbackStatus,
+    work,
+    chatThread,
+    timing,
+  };
 
-  await dispatchCanonicalDeliveryCallbacks(
-    {
-      runId,
-      status: callbackStatus,
-      slackDeliveryCallbackId: work.slackDeliveryCallbackId,
-      feishuDeliveryCallbackId: work.feishuDeliveryCallbackId,
-      teamsDeliveryCallbackId: work.teamsDeliveryCallbackId,
-      telegramDeliveryCallbackId: work.telegramDeliveryCallbackId,
-      agentphoneDeliveryCallbackId: work.agentphoneDeliveryCallbackId,
-      githubDeliveryCallbackId: work.githubDeliveryCallbackId,
-      dependencies: args.dependencies,
-    },
-    signal,
-  );
-
-  const drainResult = await drainAndClearTerminalChatThread(
-    {
-      chatThreadId: chatThread.chatThreadId,
-      callback: args,
-      timing,
-      work,
-    },
-    signal,
-  );
-
-  const deferredSideEffects = work.deferredSideEffects;
-  if (deferredSideEffects) {
-    await runTerminalChatCallbackSideEffects({
-      runId,
-      status: callbackStatus,
-      run: () => {
-        return deferredSideEffects();
-      },
-    });
+  if (options?.deferPostProjection) {
+    // Queue wakeups and external delivery keep their existing detached retry
+    // ownership. The completion ACK only owns canonical terminal projection.
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      tapError(
+        finishTerminalChatCallbackAfterProjection(
+          postProjectionInput,
+          backgroundSignal,
+        ),
+        (error) => {
+          log.error(
+            "Failed to process terminal chat callback after projection",
+            {
+              runId,
+              error,
+            },
+          );
+        },
+      ),
+    );
+    return;
   }
 
-  if (!drainResult.ok) {
-    throw drainResult.error;
-  }
+  await finishTerminalChatCallbackAfterProjection(postProjectionInput, signal);
 }
 
 function withoutQueuedRunDependency(
@@ -5026,16 +5076,18 @@ const createQueuedRunForChatCallback$ = command(
   },
 );
 
-function handleChatInternalCallback(
+async function handleChatInternalCallback(
   args: {
     readonly db: Db;
     readonly callback: InternalRunCallbackEnvelope;
     readonly dependencies: ChatCallbackDependencies;
+    readonly awaitTerminalProjection?: boolean;
   },
   signal: AbortSignal,
-):
+): Promise<
   | { readonly success: true }
-  | { readonly success: false; readonly error: string } {
+  | { readonly success: false; readonly error: string }
+> {
   const payload = chatCallbackPayloadSchema.safeParse(args.callback.payload);
   if (!payload.success) {
     return {
@@ -5075,35 +5127,32 @@ function handleChatInternalCallback(
   }
 
   signal.throwIfAborted();
-  // The webhook sender (dispatchRunCallbacks) awaits this response only to
-  // record delivery; it does not retry and nothing downstream reads the body.
-  // The frontend learns about new messages through Ably realtime signals, not
-  // this HTTP response. Acknowledge before
-  // running heavy terminal processing (message persistence, LLM generation,
-  // and push delivery) in the background, mirroring webhooks-agent-complete.
-  // Use a detached signal so request cancellation cannot interrupt the
-  // idempotency marker -> queued auto-send sequence after acknowledgement.
-  const backgroundSignal = new AbortController().signal;
-  waitUntil(
-    tapError(
-      processTerminalChatCallback(
-        {
-          db: args.db,
-          callback: args.callback,
-          payload: payload.data,
-          dependencies: args.dependencies,
+  const processingInput = {
+    db: args.db,
+    callback: args.callback,
+    payload: payload.data,
+    dependencies: args.dependencies,
+  };
+  if (args.awaitTerminalProjection) {
+    // The completion endpoint may only ACK after canonical lifecycle projection
+    // succeeds. Queue wakeups keep their established detached recovery owner.
+    await processTerminalChatCallback(processingInput, signal, {
+      deferPostProjection: true,
+    });
+  } else {
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      tapError(
+        processTerminalChatCallback(processingInput, backgroundSignal),
+        (error) => {
+          log.error("Failed to process terminal chat callback", {
+            runId: args.callback.runId,
+            error,
+          });
         },
-        backgroundSignal,
       ),
-      (error) => {
-        log.error("Failed to process terminal chat callback", {
-          runId: args.callback.runId,
-          status: args.callback.status,
-          error,
-        });
-      },
-    ),
-  );
+    );
+  }
 
   return { success: true };
 }
@@ -5215,6 +5264,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
   db: Db,
   callback: InternalRunCallbackEnvelope,
   signal = new AbortController().signal,
+  options?: { readonly awaitTerminalProjection?: boolean },
 ): Promise<
   | { readonly success: true }
   | { readonly success: false; readonly error: string }
@@ -5223,6 +5273,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
     {
       db,
       callback,
+      awaitTerminalProjection: options?.awaitTerminalProjection,
       dependencies: {
         releaseBrowsersForRun: (args, inputSignal) => {
           return createStore().set(
@@ -5461,6 +5512,7 @@ export const handleChatInternalCallback$ = command(
     input: {
       readonly callback: InternalRunCallbackEnvelope;
       readonly drainThreadQueue?: ChatCallbackDependencies["drainThreadQueue"];
+      readonly awaitTerminalProjection?: boolean;
     },
     signal: AbortSignal,
   ): Promise<
@@ -5477,6 +5529,7 @@ export const handleChatInternalCallback$ = command(
         db,
         callback: input.callback,
         dependencies,
+        awaitTerminalProjection: input.awaitTerminalProjection,
       },
       signal,
     );

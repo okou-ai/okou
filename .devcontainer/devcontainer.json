@@ -1,6 +1,6 @@
 {
   "name": "Okou Development",
-  "image": "ghcr.io/vm0-ai/vm0-dev:20260825",
+  "image": "ghcr.io/okou-ai/vm0-dev:20260825",
   "features": {
     "ghcr.io/devcontainers/features/sshd:1": {
       "version": "latest"

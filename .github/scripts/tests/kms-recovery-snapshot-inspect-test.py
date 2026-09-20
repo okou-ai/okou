@@ -133,8 +133,8 @@ class SnapshotInspectionTest(unittest.TestCase):
     def test_renamed_repository_uses_the_same_protected_workflow(self):
         result, report, _ = self.invoke(
             overrides={
-                "GITHUB_REPOSITORY": "maxandzoe/okou",
-                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main",
+                "GITHUB_REPOSITORY": "okou-ai/okou",
+                "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main",
             }
         )
         self.assertEqual(result.returncode, 0, result.stderr)

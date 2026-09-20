@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
@@ -383,7 +383,7 @@ jobs:
     timeout-minutes: 10
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -410,7 +410,7 @@ jobs:
     timeout-minutes: 10
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -426,7 +426,7 @@ jobs:
     timeout-minutes: 15
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -447,7 +447,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -506,7 +506,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -563,7 +563,7 @@ jobs:
     timeout-minutes: 8
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -577,7 +577,7 @@ jobs:
     timeout-minutes: 10
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -598,10 +598,10 @@ jobs:
         (github.event_name == 'push' && github.ref == 'refs/heads/main')
       )
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -650,7 +650,7 @@ jobs:
         (github.event_name == 'push' && github.ref == 'refs/heads/main')
       )
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -679,10 +679,10 @@ jobs:
     # Only run when migration, schema, persistent JSONB contract, or database script files changed
     if: needs.prepare.outputs.migration-changed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -785,7 +785,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -821,7 +821,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -857,10 +857,10 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -912,7 +912,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -953,7 +953,7 @@ jobs:
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     needs: [prepare]
     # Deploy if job-ref is set (PR or main), not a release-please commit, and anything
     # that needs a live API preview or E2E API token changed.
@@ -1288,7 +1288,7 @@ jobs:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     if: >-
       ${{
         !cancelled() &&
@@ -2073,7 +2073,7 @@ jobs:
       group: deploy-cli-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     if: >-
       ${{
         !cancelled() &&
@@ -3091,7 +3091,7 @@ jobs:
     # Report-only: this surfaces schema generation/compat issues without blocking CI.
     continue-on-error: true
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     permissions:
       contents: read
     steps:

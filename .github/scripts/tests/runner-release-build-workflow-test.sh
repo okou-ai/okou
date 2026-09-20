@@ -16,7 +16,7 @@ release_json=$(yq -o=json '.' "$RELEASE_WORKFLOW")
 jq -e '
   .jobs["build-runner-release-assets"] as $job |
   $job["runs-on"] == "ubuntu-latest-8-cores" and
-  $job.container.image == "ghcr.io/vm0-ai/vm0-toolchain-rust:20260825" and
+  $job.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
   ($job | has("environment") | not) and
   $job.strategy.matrix.target == [
     "aarch64-unknown-linux-musl",
