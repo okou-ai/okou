@@ -108,6 +108,12 @@ test("The VNC connector page omits the redundant refresh action", async () => {
   mockSettings();
   await page();
   await screen.findByText(host.displayName);
+  expect(
+    screen.getByRole("heading", { name: "VNC remote access" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("Let your agents view and control remote desktops."),
+  ).toBeInTheDocument();
   expect(queryAction("button", "Refresh")).toBeNull();
   expect(getAction("radio", "Hosts")).toHaveAttribute("aria-checked", "true");
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
