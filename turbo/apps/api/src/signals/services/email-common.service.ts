@@ -51,6 +51,7 @@ import {
   renderMorningBriefResultEmail,
 } from "./morning-brief-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
+import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
 
 type Transaction = Tx;
 
@@ -344,34 +345,6 @@ export function buildUnsubscribeHeaders(url: string): Record<string, string> {
   };
 }
 
-function escapeHtml(value: string): string {
-  let escaped = "";
-  for (const char of value) {
-    switch (char) {
-      case "&": {
-        escaped += "&amp;";
-        break;
-      }
-      case "<": {
-        escaped += "&lt;";
-        break;
-      }
-      case ">": {
-        escaped += "&gt;";
-        break;
-      }
-      case '"': {
-        escaped += "&quot;";
-        break;
-      }
-      default: {
-        escaped += char;
-      }
-    }
-  }
-  return escaped;
-}
-
 interface RenderedEmailTemplate {
   readonly html: string;
   readonly text?: string;
@@ -383,18 +356,7 @@ function renderTemplate(
 ): RenderedEmailTemplate {
   switch (template.template) {
     case "data-export-ready": {
-      const unsubscribe = template.props.unsubscribeUrl
-        ? `<p><a href="${escapeHtml(
-            template.props.unsubscribeUrl,
-          )}">Unsubscribe</a></p>`
-        : "";
-      return {
-        html: `<main><h1>Your data export is ready</h1><p>${template.props.artifactCount} artifacts. Expires ${escapeHtml(
-          template.props.expiresAt,
-        )}.</p><p><a href="${escapeHtml(
-          template.props.downloadUrl,
-        )}">Download export</a></p>${unsubscribe}</main>`,
-      };
+      return renderDataExportReadyEmail(template.props);
     }
     case "credit-low-balance": {
       return renderCreditLowBalanceEmail({
