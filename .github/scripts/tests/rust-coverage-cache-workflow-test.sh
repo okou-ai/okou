@@ -26,8 +26,8 @@ jq -e '
   $coverage.if == "needs.detect.outputs.any-changed == '\''true'\''" and
   any($coverage.steps[];
     .name == "Setup R2 sccache" and
-    (.if | contains("github.actor != '\''dependabot[bot]'\''")) and
     (.if | contains("github.event_name != '\''pull_request'\''")) and
+    (.if | contains("github.event.pull_request.user.login != '\''dependabot[bot]'\''")) and
     (.if | contains("github.event.pull_request.head.repo.full_name == github.repository")) and
     .uses == "./.github/actions/setup-r2-sccache" and
     .with.architecture == "x86_64" and

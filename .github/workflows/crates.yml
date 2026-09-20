@@ -436,9 +436,9 @@ jobs:
 
       - name: Setup R2 sccache
         if: >-
-          github.actor != 'dependabot[bot]' &&
           (github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository)
+          (github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository))
         uses: ./.github/actions/setup-r2-sccache
         with:
           architecture: x86_64
