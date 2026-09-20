@@ -1,4 +1,3 @@
-import { delay } from "signal-timers";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 
 type PlausibleEventProps = Record<string, string | number | boolean>;
@@ -71,7 +70,7 @@ function loadPlausible(): void {
   document.head.appendChild(script);
 }
 
-export async function initPlausible(signal: AbortSignal): Promise<void> {
+export function initPlausible(signal: AbortSignal): void {
   if (window.__okouPlausibleLoadScheduled || !plausibleScriptUrl()) {
     return;
   }
@@ -87,21 +86,16 @@ export async function initPlausible(signal: AbortSignal): Promise<void> {
         window.cancelIdleCallback(idleLoad.callbackId);
       }
     };
-    idleLoad.callbackId = window.requestIdleCallback(
-      () => {
-        idleLoad.pending = false;
-        signal.removeEventListener("abort", cancelLoad);
-        loadPlausible();
-      },
-      { timeout: 3000 },
-    );
+    idleLoad.callbackId = window.requestIdleCallback(() => {
+      idleLoad.pending = false;
+      signal.removeEventListener("abort", cancelLoad);
+      loadPlausible();
+    });
     if (idleLoad.pending) {
       signal.addEventListener("abort", cancelLoad, { once: true });
     }
     return;
   }
-  await delay(100, { signal });
-  signal.throwIfAborted();
   loadPlausible();
 }
 

@@ -173,7 +173,7 @@ export async function listRunSshHosts(
       }
       if (row.accessId !== null) {
         if (row.accessConfigId === null) {
-          throw new Error("SSH Cloudflare Access configuration is missing");
+          throw new Error("SSH Cloudflare Access is missing");
         }
       }
       return [

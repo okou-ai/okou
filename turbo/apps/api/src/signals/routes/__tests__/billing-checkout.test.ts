@@ -16361,39 +16361,73 @@ describe("POST /api/billing/checkout/complete", () => {
     expect(context.mocks.stripe.subscriptions.retrieve).not.toHaveBeenCalled();
   });
 
-  it("rejects checkout sessions from another customer", async () => {
-    const fixture = await trackedSeed({
-      stripeCustomerId: `cus_${randomUUID().slice(0, 8)}`,
-    });
+  it("rejects an expired checkout instead of reporting it as pending", async () => {
+    const customerId = `cus_${randomUUID()}`;
+    const sessionId = `cs_${randomUUID()}`;
+    const fixture = await trackedSeed({ stripeCustomerId: customerId });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
-      id: "cs_test_other_customer",
+      id: sessionId,
       mode: "subscription",
-      status: "complete",
-      customer: `cus_${randomUUID().slice(0, 8)}`,
-      subscription: `sub_${randomUUID().slice(0, 8)}`,
+      status: "expired",
+      customer: customerId,
+      subscription: null,
     });
 
     const client = setupApp({ context, routes: billingCheckoutRoutes })(
       billingCheckoutContract,
     );
-
     const response = await accept(
       client.complete({
-        body: { sessionId: "cs_test_other_customer" },
+        body: { sessionId },
         headers: { authorization: "Bearer clerk-session" },
       }),
       [400],
     );
 
     expect(response.body).toStrictEqual({
-      error: {
-        message: "Checkout session does not belong to current organization",
-        code: "BAD_REQUEST",
-      },
+      error: { code: "BAD_REQUEST", message: "Checkout session expired" },
     });
+    expect(context.mocks.stripe.subscriptions.retrieve).not.toHaveBeenCalled();
   });
+
+  it.each(["complete", "expired"])(
+    "rejects %s checkout sessions from another customer",
+    async (status) => {
+      const fixture = await trackedSeed({
+        stripeCustomerId: `cus_${randomUUID().slice(0, 8)}`,
+      });
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+
+      context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+        id: "cs_test_other_customer",
+        mode: "subscription",
+        status,
+        customer: `cus_${randomUUID().slice(0, 8)}`,
+        subscription: `sub_${randomUUID().slice(0, 8)}`,
+      });
+
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingCheckoutContract,
+      );
+
+      const response = await accept(
+        client.complete({
+          body: { sessionId: "cs_test_other_customer" },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [400],
+      );
+
+      expect(response.body).toStrictEqual({
+        error: {
+          message: "Checkout session does not belong to current organization",
+          code: "BAD_REQUEST",
+        },
+      });
+    },
+  );
 });
 
 describe("POST /api/billing/concurrency-checkout", () => {

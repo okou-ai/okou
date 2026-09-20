@@ -47,7 +47,7 @@ export const CHAT_THREAD_USER_MESSAGE_ROW_CLASS =
   "flex flex-col items-end min-w-0 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS =
-  "flex flex-col gap-2 duration-300";
+  "relative flex flex-col gap-2 duration-300";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS =
   "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";

@@ -59,7 +59,6 @@ export enum FeatureSwitchKey {
   McpServer = "mcpServer",
   VncAccess = "vncAccess",
   RunUsage = "runUsage",
-  PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
@@ -81,5 +80,7 @@ export enum FeatureSwitchKey {
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
+  OnboardingSourcesFirst = "onboardingSourcesFirst",
   OptimisticMessageSpinner = "optimisticMessageSpinner",
+  UserMessageLinks = "userMessageLinks",
 }

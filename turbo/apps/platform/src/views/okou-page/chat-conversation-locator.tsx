@@ -126,6 +126,28 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
+export function ChatConversationLandingHighlight({
+  thread,
+  eventId,
+}: {
+  thread: ChatPanelSignals;
+  eventId: string | undefined;
+}) {
+  const landing = useGet(thread.locator.landing$);
+  if (landing.eventId !== eventId) {
+    return null;
+  }
+
+  return (
+    <div
+      key={landing.revision}
+      aria-hidden="true"
+      data-locator-landed
+      className="pointer-events-none absolute inset-0 rounded-xl motion-safe:animate-locator-landed"
+    />
+  );
+}
+
 /** Tick rail beside a long thread: hover to preview a turn, click to jump. */
 export function ChatConversationLocator({
   thread,

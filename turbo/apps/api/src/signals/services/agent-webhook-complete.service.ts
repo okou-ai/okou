@@ -1,8 +1,3 @@
-import {
-  readPiInferenceLifecycle,
-  assertPiInferenceApiFailure,
-  assertPiInferencePublication,
-} from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -66,7 +61,6 @@ type WebhookCompleteBody = z.infer<
 type TerminalStatus = "completed" | "failed";
 
 interface CompleteAgentRunInput {
-  readonly inferenceOwnerEpoch?: number;
   readonly auth: SandboxAuth;
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
@@ -205,9 +199,6 @@ function checkpointInputForCompletion(
   }
   return {
     auth: input.auth,
-    ...(input.inferenceOwnerEpoch === undefined
-      ? {}
-      : { inferenceOwnerEpoch: input.inferenceOwnerEpoch }),
     body: {
       ...input.body.checkpoint,
       runId: input.body.runId,
@@ -371,31 +362,6 @@ async function lockCompletionRun(
   if (!run) {
     return null;
   }
-  const lifecycle = await readPiInferenceLifecycle(
-    tx,
-    input.body.runId,
-    run.launchSnapshot,
-  );
-  const sandboxFence = input.auth.piSandbox;
-  if (sandboxFence) {
-    if (
-      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
-      lifecycle.lease.claimedGeneration !== sandboxFence.generation
-    ) {
-      throw new Error("Stale Pi Sandbox completion");
-    }
-    if (lifecycle.inference.phase !== "terminal") {
-      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
-    }
-  } else if (
-    input.executionOwner === "api-first" &&
-    input.body.exitCode !== 0
-  ) {
-    assertPiInferenceApiFailure(lifecycle, input.inferenceOwnerEpoch);
-  } else {
-    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
-  }
-
   return { ...run, status: runStatusSchema.parse(run.status) };
 }
 

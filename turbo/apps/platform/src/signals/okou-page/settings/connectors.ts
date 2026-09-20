@@ -656,7 +656,6 @@ type ActiveConnectorOAuthDeviceAuthState = {
   readonly verificationUriComplete?: string;
   readonly expiresAtMs: number;
   readonly pollIntervalMs: number;
-  readonly approvalOpened: boolean;
   readonly errorMessage: string | null;
 };
 
@@ -1444,8 +1443,6 @@ export const openBuiltinConnectorOAuthDeviceAuthVerificationPage$ = command(
     verificationWindow.opener = null;
     set(internalConnectorOAuthDeviceAuthState$, {
       ...current,
-      status: "pending",
-      approvalOpened: true,
       errorMessage: null,
     });
     return true;
@@ -1482,15 +1479,6 @@ const pollConnectorOAuthDeviceAuthOnce$ = command(
         const remainingMs = current.expiresAtMs - now();
         if (remainingMs <= 0) {
           return { stop: true, expired: true };
-        }
-
-        if (!current.approvalOpened) {
-          await delay(
-            Math.min(OAUTH_DEVICE_AUTH_MIN_POLL_INTERVAL_MS, remainingMs),
-            { signal },
-          );
-          signal.throwIfAborted();
-          return { stop: false };
         }
 
         set(internalConnectorOAuthDeviceAuthState$, {
@@ -1750,7 +1738,6 @@ const connectConnectorOAuthDeviceAuth$ = command(
             secondsToMilliseconds(startResult.interval),
             OAUTH_DEVICE_AUTH_MIN_POLL_INTERVAL_MS,
           ),
-          approvalOpened: false,
           errorMessage: null,
         });
 

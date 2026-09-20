@@ -3151,7 +3151,6 @@
       "device": {
         "checking": "承認を確認しています...",
         "connect": "{{connector}} を接続します",
-        "copyThenOpen": "このコードをコピーし、確認ページを開いてアクセスを承認します。",
         "description": "プロバイダーの確認ページを開き、この確認コードを入力してアクセスを承認します。",
         "intro": "接続して確認コードを取得し、プロバイダーの確認ページでそれを使用してアクセスを承認します。",
         "openPage": "認証ページを開く",
@@ -4136,6 +4135,489 @@
       "checkingPlan": "計画の確認",
       "runNow": "今すぐ実行",
       "upgradePro": "実行するには Pro をアップグレードしてください"
+    },
+    "sourcesFirst": {
+      "common": {
+        "back": "戻る",
+        "cancel": "キャンセル",
+        "continue": "次へ",
+        "finish": "セットアップを完了",
+        "notNow": "後で",
+        "skip": "今はスキップ"
+      },
+      "documentTitles": {
+        "experience": "AI の利用経験",
+        "industry": "分野を選ぶ",
+        "ready": "Okou の準備ができました",
+        "skills": "スキルをインポート",
+        "slack": "Okou を Slack に追加",
+        "sources": "仕事をつなぐ",
+        "team": "メンバーを招待"
+      },
+      "experience": {
+        "copy": "すでに払っているプランをつなげば、仕事は Okou クレジットではなくそちらで動きます。",
+        "no": "いいえ、はじめてです",
+        "noCopy": "Okou が最初のタスクを選びます。",
+        "title": "Codex か Claude Code を使ったことはありますか？"
+      },
+      "industries": {
+        "coaching": {
+          "name": "コーチング・研修",
+          "summary": "コーチング、講座、研修"
+        },
+        "consulting": {
+          "name": "独立コンサルティング",
+          "summary": "経営・人事・IT のアドバイザリー"
+        },
+        "design": {
+          "name": "デザイン・クリエイティブ",
+          "summary": "グラフィック、Web、クリエイティブ制作"
+        },
+        "finance": {
+          "name": "会計・記帳",
+          "summary": "帳簿、レポート、消し込み"
+        },
+        "investing": {
+          "name": "投資・市場調査",
+          "summary": "投資、マーケット、ポートフォリオ"
+        },
+        "marketing": {
+          "name": "マーケティング・コンテンツ",
+          "summary": "SNS、コンテンツ、ブランド"
+        },
+        "operations": {
+          "name": "経営・オペレーション",
+          "summary": "経営者、アシスタント、オペレーション"
+        },
+        "other": {
+          "name": "その他 / 検討中",
+          "summary": "別の分野、またはまだ検討中"
+        },
+        "research": {
+          "name": "リサーチ・学習",
+          "summary": "調査、学習、勉強"
+        },
+        "sales": {
+          "name": "営業・顧客開拓",
+          "summary": "見込み客開拓、営業、顧客の拡大"
+        },
+        "software": {
+          "name": "ソフトウェア・アプリ",
+          "summary": "アプリ、ゲーム、開発"
+        }
+      },
+      "industry": {
+        "copy": "最初のタスクと、その出発点になるデータソースを選ぶために使います。",
+        "title": "どんな仕事をしていますか？"
+      },
+      "skills": {
+        "confirm": "インポートして次へ",
+        "copy": "SKILL.md をインポートすると Okou のワークフローになり、/ ですぐ実行できます。",
+        "import": "ファイルを選ぶ",
+        "importedCopy": "Okou のワークフローとしてインポートしました。",
+        "importedTitle": "ワークフローができました",
+        "panelCopy": "Codex、Claude Code、あるいは SKILL.md を書けるエージェントから。",
+        "panelTitle": "SKILL.md をここにドロップ",
+        "previewCopy": "Okou のワークフローとしてインポートします。共有するまでは自分だけが使えます。",
+        "previewTitle": "スキルを確認",
+        "replace": "別のファイルを選ぶ",
+        "title": "すでに書いたスキルを持ち込む。"
+      },
+      "slack": {
+        "add": "Slack に追加",
+        "connectedCopy": "Slack で @Okou とメンションすれば仕事を任せられます。",
+        "connectedStatus": "ワークスペースに追加済み",
+        "connectedTitle": "Slack に接続しました",
+        "copy": "一度追加すれば、仕事が動いている場所で @Okou と呼ぶだけです。",
+        "otherAdded": "追加済み",
+        "otherImessage": "iMessage",
+        "othersLabel": "後からでも、今でも追加できます",
+        "otherTeams": "Teams",
+        "otherTelegram": "Telegram",
+        "previewAppBadge": "APP",
+        "previewAsk": "先週の登録数をソース別に集めて、広告アカウントと突き合わせて、表をスプレッドシートにまとめて。",
+        "previewAskAuthor": "Mia Chen",
+        "previewChannel": "# growth",
+        "previewChannelGeneral": "# general",
+        "previewChannelLaunch": "# launch",
+        "previewChannelsLabel": "チャンネル",
+        "previewChannelTopic": "今週の数字と次にリリースするもの",
+        "previewComposer": "#growth へのメッセージ",
+        "previewContext": "取締役会は木曜なのに、先週の数字をまだ出せていません。",
+        "previewContextAuthor": "Dan Rivera",
+        "previewContextTime": "9:06 AM",
+        "previewDirectMessagesLabel": "ダイレクトメッセージ",
+        "previewMention": "@Okou",
+        "previewReplies": "返信 3 件",
+        "previewReply": "先週の登録は 1,284 件、前週の 1,088 件から 18% 増です。シートはスレッドにあります。",
+        "previewReplyAuthor": "Okou",
+        "previewReplyTime": "9:16 AM",
+        "previewTime": "9:14 AM",
+        "previewWorkspace": "Northwind",
+        "rowCopy": "追加したチャンネルならどこでも動きます。",
+        "rowTitle": "Okou for Slack",
+        "title": "Slack から離れずに Okou へ仕事を任せる。"
+      },
+      "sources": {
+        "copy": "クラウドで、チームがすでに使っているツールから動きます。成果は 10 倍、運用の手間は少なく、コストは低く。まずはソースを 1 つつないでください。",
+        "note": "どのアカウントをつなぐかはあなたが選びます。",
+        "searchAction": "仕事に使うソースを探す",
+        "searchCopy": "タスク名やアプリ名でカタログ全体を検索できます。",
+        "searchEmpty": "一致するソースがありません",
+        "searchPlaceholder": "タスク名やアプリ名で検索",
+        "searchTitle": "仕事に使うソースを探す",
+        "title": "Okou はあなたのため、そしてチーム全員で使うためのものです。"
+      },
+      "startingPrompt": {
+        "exact": {
+          "finance_quickbooks": {
+            "outcome": "月次の全体像",
+            "question": "どの会社の、どの月を対象にしますか？",
+            "text": "QuickBooks で先月の収入・支出・未回収の請求をまとめて。確認すべき項目を短いリストにしてください。"
+          },
+          "finance_xero": {
+            "outcome": "月次の全体像",
+            "question": "どの組織の、どの月を対象にしますか？",
+            "text": "Xero で先月の収入・支出・未回収の請求をまとめて。確認すべき項目を短いリストにしてください。"
+          },
+          "marketing_google_ads": {
+            "outcome": "次のキャンペーン検証のアイデア 3 つ",
+            "question": "どのアカウント・キャンペーン・目標に絞りますか？",
+            "text": "先週の Google 広告の結果を見て、次に調べる・試すことを 3 つ提案して。変更は提案のままにしてください。"
+          },
+          "marketing_google_analytics": {
+            "outcome": "トラフィックの改善余地 3 つ",
+            "question": "どのプロパティとコンバージョン目標を使いますか？",
+            "text": "先週の Google アナリティクスのトラフィックを見て、コンテンツやランディングページを改善する機会を 3 つ提案して。"
+          },
+          "marketing_google_search_console": {
+            "outcome": "取り組むべきコンテンツ改善 5 つ",
+            "question": "どのサイトの、どの期間に絞りますか？",
+            "text": "最近の Google Search Console の結果を見て、検索クエリとページをもとにコンテンツ改善案を 5 つ提案して。"
+          },
+          "marketing_meta_ads": {
+            "outcome": "次のクリエイティブ検証のアイデア 3 つ",
+            "question": "どのキャンペーンとオーディエンスに絞りますか？",
+            "text": "先週の Meta 広告の結果を見て、次に試すクリエイティブ案を 3 つ提案して。変更は提案のままにしてください。"
+          },
+          "marketing_tiktok_ads": {
+            "outcome": "次のクリエイティブ検証のアイデア 3 つ",
+            "question": "どのキャンペーンとオーディエンスに絞りますか？",
+            "text": "先週の TikTok 広告の結果を見て、次に試すクリエイティブ案を 3 つ提案して。変更は提案のままにしてください。"
+          },
+          "marketing_youtube": {
+            "outcome": "次の動画のアイデア 5 つ",
+            "question": "どのチャンネルの、どの動画を見ますか？",
+            "text": "最近の YouTube 動画を見て、視聴データと反応をもとに次に扱うテーマを 5 つ提案して。"
+          },
+          "sales_google_contacts": {
+            "outcome": "再び連絡すべき相手",
+            "question": "どんな見込み客と改めて連絡を取りたいですか？",
+            "text": "Google 連絡先を見て、営業で再び連絡すべき相手を絞り込むのを手伝って。良い見込み客の条件を聞いてください。"
+          },
+          "sales_hubspot": {
+            "outcome": "前に進めたい商談 5 件",
+            "question": "どのパイプライン、どの担当者に絞りますか？",
+            "text": "HubSpot の進行中の商談を見て、今週取り組むフォローアップを理由付きで 5 件提案して。"
+          },
+          "software_github": {
+            "outcome": "顧客に届くリリースノート",
+            "question": "どのリポジトリの、どのリリースから始めますか？",
+            "text": "GitHub の先週の変更を、顧客向けのわかりやすいリリースノートにして。どのリポジトリを使うか聞いてください。"
+          },
+          "software_linear": {
+            "outcome": "プロジェクトの進捗をひと目で",
+            "question": "Linear のどのプロジェクトに絞りますか？",
+            "text": "Linear の現在の作業を、完了したもの・止まっているもの・次の優先事項にまとめて。どのプロジェクトか聞いてください。"
+          }
+        },
+        "fallback": {
+          "calendar": {
+            "outcome": "次の打ち合わせの準備",
+            "question": "どのカレンダーの、どの予定を準備しますか？",
+            "text": "{{source}} にある {{short}} の予定を見て、短い準備チェックリストを作って。どのカレンダーを使うか聞いてください。"
+          },
+          "generic": {
+            "outcome": "{{source}} で始める最初の仕事",
+            "question": "このソースで何を実現したいですか？",
+            "text": "{{short}} の仕事で {{source}} を活かすのを手伝って。まず何を実現したいか聞いて、そこにある情報でできる仕事を 1 つ提案して。"
+          },
+          "noSource": {
+            "question": "まず何に取り組みましょうか？"
+          },
+          "projects": {
+            "outcome": "次に取り組む優先事項",
+            "question": "どのプロジェクトやワークスペースから始めますか？",
+            "text": "{{source}} にある {{short}} の作業を見て、未完了のタスク・止まっている点・次の一手をまとめて。どのプロジェクトか聞いてください。"
+          }
+        },
+        "family": {
+          "coaching_calendar": {
+            "outcome": "次のセッションの準備",
+            "question": "どのカレンダーと、どんなセッション目標を使いますか？",
+            "text": "{{source}} にある今週のコーチングセッションを見て、それぞれのアジェンダ作りを手伝って。セッションの目標を聞いてください。"
+          },
+          "coaching_documents": {
+            "outcome": "クライアント向けのアクションプラン",
+            "question": "どのセッションメモをアクションプランにしますか？",
+            "text": "{{source}} のセッションメモを、演習 3 つと次回の重点テーマを含むクライアント向けアクションプランにして。どのメモを使うか聞いてください。"
+          },
+          "coaching_email": {
+            "outcome": "次のセッションのアジェンダ",
+            "question": "どのクライアントの準備をしますか？",
+            "text": "コーチング先の最近の {{source}} のメールを見て、相手の疑問と目標に沿った次回セッションのアジェンダを作って。"
+          },
+          "coaching_sheets": {
+            "outcome": "フォローすべき受講者リスト",
+            "question": "どの受講者の進捗シートを使いますか？",
+            "text": "{{source}} の受講者の進捗シートを見て、誰に声をかけるべきか、何を扱うべきかを提案して。どのシートか聞いてください。"
+          },
+          "consulting_documents": {
+            "outcome": "クライアントのブリーフから作る提案",
+            "question": "どのクライアントのブリーフを提案にしますか？",
+            "text": "{{source}} のクライアントのブリーフを、スコープ・成果物・未確定の論点を含む提案の骨子にして。どのブリーフか聞いてください。"
+          },
+          "consulting_email": {
+            "outcome": "次のクライアントフォロー",
+            "question": "どのクライアントとのやり取りを使いますか？",
+            "text": "{{source}} の直近のクライアントとのやり取りを見て、合意した次の一手と確認事項を添えたフォローアップを作って。"
+          },
+          "consulting_sheets": {
+            "outcome": "クライアント向けの進捗報告",
+            "question": "どのプロジェクト管理シートから始めますか？",
+            "text": "{{source}} のプロジェクト管理シートを見て、リスクと次の一手を含む短い進捗報告を作って。どのシートか聞いてください。"
+          },
+          "design_documents": {
+            "outcome": "はっきりしたクリエイティブの方向性",
+            "question": "どのプロジェクトフォルダやブリーフから始めますか？",
+            "text": "{{source}} のプロジェクトフォルダやブリーフをもとに、クリエイティブの方向性・素材のチェックリスト・次の一手を書いて。どのプロジェクトか聞いてください。"
+          },
+          "design_email": {
+            "outcome": "クライアントの反応から作るブリーフ",
+            "question": "どのやり取りをブリーフにしますか？",
+            "text": "{{source}} の最近のクライアントとのやり取りを、目的・成果物・未確定の論点を含むクリエイティブブリーフにして。"
+          },
+          "design_sheets": {
+            "outcome": "次に進めるデザインの優先事項",
+            "question": "どの管理シートを見ますか？",
+            "text": "{{source}} の管理シートを、デザインの優先事項・締め切り・不足している素材のリストにして。どのシートか聞いてください。"
+          },
+          "finance_documents": {
+            "outcome": "月次決算のチェックリスト",
+            "question": "どの月次メモをもとにしますか？",
+            "text": "{{source}} の月次メモを、足りない資料・未確認の論点・クライアントへの確認事項のチェックリストにして。どのメモか聞いてください。"
+          },
+          "finance_email": {
+            "outcome": "不足資料の催促リスト",
+            "question": "どのクライアントの、どの期間に絞りますか？",
+            "text": "{{source}} で請求書や資料の不足に関する最近のクライアントメールを探して、記帳用のフォローアップリストを作って。"
+          },
+          "finance_sheets": {
+            "outcome": "消し込みの確認結果",
+            "question": "どの消し込みシートの、どの期間を使いますか？",
+            "text": "{{source}} の消し込みシートを見て、一致しない記録・差異・確認すべき項目を洗い出して。どのシートか聞いてください。"
+          },
+          "investing_documents": {
+            "outcome": "投資仮説を整理",
+            "question": "どの企業・投資メモを見ますか？",
+            "text": "{{source}} の投資メモを、仮説・根拠・リスク・未解決の問いを含むブリーフにして。どのメモか聞いてください。"
+          },
+          "investing_email": {
+            "outcome": "最近のリサーチの要約",
+            "question": "どの市場、どのリサーチメールに絞りますか？",
+            "text": "{{source}} の最近の市場リサーチメールを、主要テーマ・日付付きの出典・調べるべき問いにまとめて。"
+          },
+          "investing_sheets": {
+            "outcome": "次に調べること",
+            "question": "どのウォッチリストの、どの記録期間を使いますか？",
+            "text": "{{source}} のウォッチリストを見て、欠けているデータと記録された数値の変化を指摘し、次に調べることを 3 つ提案して。"
+          },
+          "marketing_documents": {
+            "outcome": "ブランドブリーフから作る投稿 5 本",
+            "question": "どのブランドブリーフと、どのオーディエンスから始めますか？",
+            "text": "{{source}} のブランドブリーフから、来週分の SNS 投稿を 5 本作って。どのブリーフと読者層か聞いてください。"
+          },
+          "marketing_email": {
+            "outcome": "顧客の疑問から作る投稿案 5 本",
+            "question": "どの製品や顧客とのやり取りに絞りますか？",
+            "text": "直近 1 週間の {{source}} のメールから繰り返し出てくる顧客の疑問を見つけて、SNS 投稿案を 5 本にして。"
+          },
+          "marketing_sheets": {
+            "outcome": "来週試すアイデア 5 つ",
+            "question": "コンテンツの結果はどのシートにありますか？",
+            "text": "{{source}} のコンテンツの結果を見て、来週試す投稿を 5 つ提案して。どのシートか聞いてください。"
+          },
+          "operations_calendar": {
+            "outcome": "今週の計画",
+            "question": "どのカレンダーを基準に計画しますか？",
+            "text": "{{source}} の今週の予定を見て、締め切りと空けておくべき時間を含む準備リストを作って。"
+          },
+          "operations_documents": {
+            "outcome": "チームが回せる業務手順",
+            "question": "どの手順書をチェックリストにしますか？",
+            "text": "{{source}} の手順書を、担当・期限・抜けている工程を含む実用的なチェックリストにして。どの手順か聞いてください。"
+          },
+          "operations_email": {
+            "outcome": "今日対応すべきこと",
+            "question": "どの顧客・取引先とのやり取りを優先しますか？",
+            "text": "{{source}} の今日の顧客・取引先メールをまとめて。急ぎの依頼、締め切り、先に返すべき返信を抜き出して。"
+          },
+          "operations_sheets": {
+            "outcome": "次の優先事項 3 つ",
+            "question": "どの業務管理シートを見ますか？",
+            "text": "{{source}} の業務管理シートを見て、遅れている作業・止まっている点・次の優先事項 3 つを挙げて。どのシートか聞いてください。"
+          },
+          "other_documents": {
+            "outcome": "資料の要点",
+            "question": "どの資料から始めますか？",
+            "text": "{{source}} の資料を、短い要約と役に立つ次の一手 3 つにして。どの資料か聞いてください。"
+          },
+          "other_email": {
+            "outcome": "受信トレイの優先順位",
+            "question": "どのやり取りに絞りますか？",
+            "text": "{{source}} の今日の仕事のメールをまとめて、返信や判断が必要なものを教えて。"
+          },
+          "other_sheets": {
+            "outcome": "進捗をひと目で",
+            "question": "どの管理シートを見ますか？",
+            "text": "{{source}} の管理シートを、短い進捗報告と対応が必要な項目のリストにして。どのシートか聞いてください。"
+          },
+          "research_documents": {
+            "outcome": "リサーチを 1 ページに",
+            "question": "どのメモ、どのテーマに絞りますか？",
+            "text": "{{source}} のリサーチメモを、主要な発見・出典・未解決の問いを含む 1 ページのブリーフにして。どのメモか聞いてください。"
+          },
+          "research_email": {
+            "outcome": "リサーチの議論を要約",
+            "question": "どのリサーチのやり取りをまとめますか？",
+            "text": "{{source}} のリサーチの議論を、発見・参考資料・未解決の問いにまとめて。どのやり取りか聞いてください。"
+          },
+          "research_sheets": {
+            "outcome": "データに見えるパターン",
+            "question": "どのデータと、どのリサーチの問いから始めますか？",
+            "text": "{{source}} のリサーチデータを見て、パターン・足りない情報・調べる価値のある問いをまとめて。"
+          },
+          "sales_calendar": {
+            "outcome": "商談の準備",
+            "question": "どの商談の準備から始めますか？",
+            "text": "{{source}} の今後の商談を見て、相手ごとの準備チェックリストを作って。"
+          },
+          "sales_documents": {
+            "outcome": "次の商談の準備",
+            "question": "どの見込み客の準備をしますか？",
+            "text": "{{source}} の見込み客の資料を、次の商談で使うヒアリング質問と短いピッチにして。どの見込み客か聞いてください。"
+          },
+          "sales_email": {
+            "outcome": "商談を前に進めるフォロー 3 本",
+            "question": "どの見込み客やメールスレッドから始めますか？",
+            "text": "{{source}} の最近の見込み客とのやり取りを見て、相手の疑問と次の一手に沿ったフォローアップを 3 本作って。"
+          },
+          "sales_sheets": {
+            "outcome": "フォローすべき見込み客 5 件",
+            "question": "どのリードリストと、どんな顧客条件を使いますか？",
+            "text": "{{source}} のリードリストを見て、シートにある情報だけでフォローすべき見込み客を 5 件選んで。"
+          },
+          "software_documents": {
+            "outcome": "スコープの定まった機能",
+            "question": "どの機能ブリーフをもとにしますか？",
+            "text": "{{source}} の機能ブリーフを、明確なスコープ・受け入れ条件・未確定の論点にして。どのブリーフか聞いてください。"
+          },
+          "software_email": {
+            "outcome": "先に調べるべきフィードバック 3 テーマ",
+            "question": "どの製品・顧客フィードバックのスレッドを使いますか？",
+            "text": "{{source}} の最近の製品フィードバックをテーマごとにまとめて、先に調べるべき課題を 3 つ提案して。"
+          },
+          "software_sheets": {
+            "outcome": "リリースの障害をひとまとめに",
+            "question": "どのバグ・リリース管理シートを見ますか？",
+            "text": "{{source}} のバグまたはリリース管理シートを見て、障害・担当・次の一手をまとめて。どのシートか聞いてください。"
+          }
+        },
+        "profile": {
+          "coaching": {
+            "firstTaskPrompt": "学習目標・アクティビティ・持ち帰り課題を含む実践的な研修セッションの構成を作って。まず受講者とテーマを聞いてください。",
+            "firstTaskTitle": "研修セッションを設計する",
+            "short": "コーチング・研修"
+          },
+          "consulting": {
+            "firstTaskPrompt": "見込みクライアントについて、事業内容・最近の動き・初回打ち合わせ用の質問を出典付きでまとめて。会社名を聞いてください。",
+            "firstTaskTitle": "見込みクライアントを調べる",
+            "short": "コンサルティング"
+          },
+          "design": {
+            "firstTaskPrompt": "ターゲット・メッセージ・成果物・ビジュアルの方向性を含むクリエイティブブリーフ作りを手伝って。まずプロジェクトについて聞いてください。",
+            "firstTaskTitle": "クリエイティブブリーフを作る",
+            "short": "クリエイティブ"
+          },
+          "finance": {
+            "firstTaskPrompt": "記帳業務の月次決算チェックリスト作りを手伝って。まず事業内容と必要なレポートを聞いてください。",
+            "firstTaskTitle": "月次決算のチェックリストを作る",
+            "short": "会計"
+          },
+          "investing": {
+            "firstTaskPrompt": "ビジネスモデル・最近の公開資料・主要リスク・日付付きの出典を含む企業リサーチのブリーフを作って。どの企業か聞いてください。",
+            "firstTaskTitle": "企業を調べる",
+            "short": "投資リサーチ"
+          },
+          "marketing": {
+            "firstTaskPrompt": "競合 3 社の公開コンテンツを比較して、自社ブランドの切り口を 3 つ提案して。どのブランドと読者層に絞るか聞いてください。",
+            "firstTaskTitle": "競合を調べる",
+            "short": "マーケティング"
+          },
+          "operations": {
+            "firstTaskPrompt": "優先事項・締め切り・打ち合わせをもとに 1 週間の計画作りを手伝って。何が一番大事で、何がすでに決まっているか聞いてください。",
+            "firstTaskTitle": "今週の予定を立てる",
+            "short": "オペレーション"
+          },
+          "other": {
+            "firstTaskPrompt": "仕事の目標を、優先順位と次の一手が入った実行できる計画にするのを手伝って。目標・締め切り・制約を聞いてください。",
+            "firstTaskTitle": "目標を計画にする",
+            "short": "仕事"
+          },
+          "research": {
+            "firstTaskPrompt": "信頼できる出典・主要な発見・未解決の問いを含むリサーチブリーフを作って。テーマと知りたいことを聞いてください。",
+            "firstTaskTitle": "テーマを調べる",
+            "short": "リサーチ"
+          },
+          "sales": {
+            "firstTaskPrompt": "理想の顧客像に合う企業を調べて、公開情報と適合理由を添えた候補リストを作って。自分の提供内容とターゲット市場を聞いてください。",
+            "firstTaskTitle": "見込み客を見つける",
+            "short": "営業"
+          },
+          "software": {
+            "firstTaskPrompt": "ユーザーの課題・期待する挙動・受け入れ条件・未確定の論点を含む機能ブリーフ作りを手伝って。まずその機能について聞いてください。",
+            "firstTaskTitle": "機能ブリーフを書く",
+            "short": "ソフトウェア"
+          }
+        }
+      },
+      "subscription": {
+        "claudeCode": "Claude Code",
+        "codex": "Codex",
+        "rowCopy": "Okou クレジットではなく、このプランで動きます。"
+      },
+      "team": {
+        "copy": "今すぐ誘っても、後からワークスペースのメニューで誘ってもかまいません。",
+        "invite": "招待を送る",
+        "invited": "招待済み",
+        "label": "メンバーのメールアドレス",
+        "note": "このワークスペースに参加します。相手のアカウントは相手のものです。",
+        "panelTitle": "メンバーを招待",
+        "placeholder": "teammate@company.com",
+        "points": {
+          "accounts": "相手のつないだアカウントは相手のもの。本人の許可なく共有されません。",
+          "workflows": "ここにいる人は、このワークスペースのワークフローを実行できます。",
+          "workspace": "このワークスペースに参加し、いま接続したソースをそのまま使えます。"
+        },
+        "title": "この仕事をしている人たちを一緒に。"
+      },
+      "welcome": {
+        "copy": "いま接続した仕事に合わせて選んだ、最初のタスクから始めましょう。",
+        "offerTitle": "最初の 1 時間のコンサルティングは無料、さらに最大 100 クレジット —",
+        "promptLabel": "最初のプロンプト",
+        "start": "Okou を使い始める",
+        "title": "Okou の準備ができました"
+      }
     },
     "templatePicker": {
       "image": {
@@ -6265,32 +6747,32 @@
     "chooseFile": "ファイルを選択",
     "choosePrivateKeyFile": "秘密鍵ファイルを選択",
     "cloudflare": {
-      "add": "Access 設定を追加",
-      "changed": "編集中にこの Access 設定が変更されました。保存する前に最新の設定を確認してください。",
+      "add": "Cloudflare Access を追加",
+      "changed": "編集中にこの Cloudflare Access が変更されました。保存する前に最新の設定を確認してください。",
       "clientId": "Service Token のクライアント ID",
       "clientSecret": "Service Token のクライアントシークレット",
-      "configuration": "Access 設定",
-      "createNew": "新しい設定を作成",
-      "delete": "設定を削除",
-      "deleteHelp": "未使用の Access 設定を削除しますか？保存された Service Token は復元できません。",
+      "configuration": "Cloudflare Access",
+      "createNew": "新しい Cloudflare Access を作成",
+      "delete": "Cloudflare Access を削除",
+      "deleteHelp": "未使用の Cloudflare Access を削除しますか？保存された Service Token は復元できません。",
       "direct": "直接接続",
-      "edit": "Access 設定を編集",
-      "empty": "Access 設定はまだありません。Service Token を追加して Cloudflare Access で保護された SSH ホストに接続します。",
-      "inUse": "この Access 設定はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
-      "inUseHelp": "この設定を削除する前に、対象ホストに別の Access 設定を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
+      "edit": "Cloudflare Access を編集",
+      "empty": "Cloudflare Access はまだありません。Service Token を追加して保護された SSH ホストに接続します。",
+      "inUse": "この Cloudflare Access はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
+      "inUseHelp": "この Cloudflare Access を削除する前に、対象ホストに別の Cloudflare Access を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
       "keepChanges": "このバージョンに自分の変更を適用",
       "latest": "最後に保存された設定",
-      "loadFailed": "Access 設定を読み込めませんでした。もう一度お試しください。",
-      "loading": "Access 設定を読み込み中…",
-      "missing": "この Access 設定は利用できなくなりました。別の設定を選択するか作成してください。",
+      "loadFailed": "Cloudflare Access を読み込めませんでした。もう一度お試しください。",
+      "loading": "Cloudflare Access を読み込み中…",
+      "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
       "mode": "接続",
-      "name": "設定名",
+      "name": "名前",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "公開ホスト名",
       "replace": "Service Token を置換",
       "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
-      "select": "設定を選択",
-      "summary_other": "{{count}} 件の Access 設定を構成済み",
+      "select": "Cloudflare Access を選択",
+      "summary_other": "{{count}} 件の Cloudflare Access を設定済み",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
       "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
@@ -6484,7 +6966,6 @@
     "add": "ホストを追加",
     "cancel": "キャンセル",
     "close": "閉じる",
-    "configurationHelp": "保存しても接続テストは行われません。Agent が接続時に共有または排他モードを選び、VNC サーバーが接続の可否を決めます。",
     "configured": "設定済み",
     "credential": {
       "add": "認証情報を追加",
@@ -6506,6 +6987,7 @@
       "select": "認証情報を選択",
       "sharedHelp_one": "{{count}} 台のホストで使用中です。パスワード変更はこのホストに影響します。",
       "sharedHelp_other": "{{count}} 台のホストで使用中です。パスワード変更はすべてに影響します。",
+      "summary_other": "{{count}} 件の認証情報を設定済み",
       "unused": "使用しているホストはありません。"
     },
     "credentialsTab": "認証情報",

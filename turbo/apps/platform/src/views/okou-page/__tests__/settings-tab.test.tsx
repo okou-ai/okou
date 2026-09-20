@@ -1,10 +1,4 @@
-import {
-  act,
-  screen,
-  waitFor,
-  waitForElementToBeRemoved,
-  within,
-} from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { HttpResponse } from "msw";
@@ -87,11 +81,6 @@ function renderedAvatarOptionHairSrcs(
 
 function findCreateCustomAvatarButton(): Promise<HTMLElement> {
   return screen.findByLabelText("Create custom avatar");
-}
-
-async function waitForAvatarFeedback(dialog: HTMLElement): Promise<void> {
-  const sparkles = within(dialog).getByTestId("avatar-sparkles");
-  await waitForElementToBeRemoved(sparkles);
 }
 
 async function findAvatarRow(): Promise<HTMLElement> {
@@ -267,7 +256,6 @@ test.each(["preset:0", "svg:r3s2h4c1f5h"])(
       expect.stringContaining("/avatar-svg-v2/"),
     ]);
     click(within(dialog).getByLabelText("Randomize avatar"));
-    await waitForAvatarFeedback(dialog);
     const composerLayerSrcs = renderedAvatarSvgLayerSrcs(dialog).slice(0, 6);
     expect(composerLayerSrcs).toStrictEqual([
       expect.stringContaining("/avatar-svg-v2/"),
@@ -487,7 +475,6 @@ test("Keep incompatible hairstyle previews stable after selecting another style"
   }
 
   click(within(dialog).getByLabelText("Sparse"));
-  await waitForAvatarFeedback(dialog);
   expect(within(dialog).getByLabelText("Sparse")).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -519,18 +506,25 @@ async function openNewComposerAvatar(): Promise<HTMLElement> {
   return dialog;
 }
 
-test("Replace randomized avatar face choices with visible selection feedback", async () => {
+test("Keep repeated avatar changes focused and ready for the next choice", async () => {
   const dialog = await openNewComposerAvatar();
-  click(within(dialog).getByLabelText("Randomize avatar"));
-  await waitForAvatarFeedback(dialog);
-  click(within(dialog).getByLabelText("Round"));
-  await waitForAvatarFeedback(dialog);
+  const user = userEvent.setup({ delay: null });
+  const shuffle = within(dialog).getByLabelText("Randomize avatar");
+  await user.click(shuffle);
+  expect(shuffle).toHaveFocus();
+  await user.keyboard("{Enter}{Enter}");
+  expect(shuffle).toHaveFocus();
+
+  const round = within(dialog).getByLabelText("Round");
+  await user.click(round);
+  expect(round).toHaveFocus();
+  await user.keyboard("{Enter}{Enter}");
+  expect(round).toHaveFocus();
   expect(within(dialog).getByLabelText("Round")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   click(within(dialog).getByLabelText("Oval"));
-  await waitForAvatarFeedback(dialog);
   expect(within(dialog).getByLabelText("Round")).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -544,7 +538,6 @@ test("Replace randomized avatar face choices with visible selection feedback", a
 test("Create, save, and reopen a composed avatar from the profile page", async () => {
   const dialog = await openNewComposerAvatar();
   click(within(dialog).getByLabelText("Oval"));
-  await waitForAvatarFeedback(dialog);
   expect(within(dialog).getByLabelText("Oval")).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -554,9 +547,7 @@ test("Create, save, and reopen a composed avatar from the profile page", async (
     await expect(within(dialog).findByText(step)).resolves.toBeVisible();
   }
   click(within(dialog).getByLabelText("Green"));
-  await waitForAvatarFeedback(dialog);
   click(within(dialog).getByLabelText("Blue"));
-  await waitForAvatarFeedback(dialog);
   expect(within(dialog).getByText("Color")).toBeVisible();
   expect(within(dialog).getByLabelText("Blue")).toHaveAttribute(
     "aria-pressed",
@@ -565,7 +556,6 @@ test("Create, save, and reopen a composed avatar from the profile page", async (
   click(within(dialog).getByLabelText("Next step"));
   await expect(within(dialog).findByText("Sweater")).resolves.toBeVisible();
   click(within(dialog).getByLabelText("Pink"));
-  await waitForAvatarFeedback(dialog);
   click(within(dialog).getByLabelText("Previous step"));
   expect(within(dialog).getByLabelText("Blue")).toHaveAttribute(
     "aria-pressed",

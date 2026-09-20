@@ -1,9 +1,13 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
+  artifactReferencePath,
+  artifactReferencesContract,
+} from "@okouai/api-contracts/contracts/artifact-references";
+import {
   chatThreadArtifactsContract,
   type ChatThreadArtifactFile,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -207,13 +211,29 @@ test("The image viewer supports initial preview and download focus within one as
   });
 });
 
-test("The image viewer supports next image within one assistant response", async () => {
+test("The image viewer shows loading while the next image URL resolves and decodes", async () => {
   const firstImageUrl =
     "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/first.png";
   const secondImageUrl =
     "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/second.png";
+  const secondImageId = "f0000000-0000-4000-a000-000000000050";
+  const secondImageReference = artifactReferencePath(
+    secondImageId,
+    "second.png",
+  );
+  const secondUrlReady = context.mocks.deferred<void>();
   const firstDecode = context.mocks.deferred<void>();
   const secondDecode = context.mocks.deferred<void>();
+  context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
+    await secondUrlReady.promise;
+    return respond(200, {
+      url: secondImageUrl,
+      filename: "second.png",
+      contentType: "image/png",
+      expiresAt: "2026-09-21T00:00:00.000Z",
+      target: { kind: "file", id: secondImageId },
+    });
+  });
   vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
     this: HTMLImageElement,
   ) {
@@ -236,8 +256,8 @@ test("The image viewer supports next image within one assistant response", async
               id: "artifact-body-split-first-image",
               filename: "first.png",
             }),
-            artifactFile(secondImageUrl, {
-              id: "artifact-body-split-second-image",
+            artifactFile(secondImageReference, {
+              id: secondImageId,
               filename: "second.png",
             }),
           ],
@@ -277,7 +297,7 @@ test("The image viewer supports next image within one assistant response", async
       {
         id: "msg-body-image-split-second",
         role: "assistant",
-        content: `2. ![second.png](${secondImageUrl})`,
+        content: `2. ![second.png](${secondImageReference})`,
         runId,
         runEventId: "event:2",
         sequenceNumber: 2,
@@ -326,8 +346,15 @@ test("The image viewer supports next image within one assistant response", async
   });
   click(nextImage);
   await waitFor(() => {
+    expect(
+      within(dialog).getByRole("status", { name: "Loading artifacts" }),
+    ).toBeVisible();
+  });
+  expect(firstLightboxImage).not.toBeInTheDocument();
+  expect(dialog).toHaveAccessibleName("second.png preview");
+  secondUrlReady.resolve();
+  await waitFor(() => {
     const image = getLightboxImage();
-    expect(image).toHaveAttribute("alt", "second.png");
     expect(image).toHaveAttribute("src", secondImageUrl);
   });
   const secondLightboxImage = getLightboxImage();

@@ -60,8 +60,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.RunUsage]: {
     maintainer: "liangyou@okou.ai",
     description:
-      "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
+      "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
@@ -106,6 +107,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
     description: "Lightweight chat task chips and contextual starting ideas",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.UserMessageLinks]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Make plain http(s) URLs clickable in a user's own messages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -320,12 +327,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
-  [FeatureSwitchKey.PiDeferredSandbox]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
-    enabled: false,
-  },
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
     description:
@@ -519,6 +520,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // against hand-built decks; the template corpus has not been checked yet.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.OnboardingSourcesFirst]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
+    enabled: false,
   },
   [FeatureSwitchKey.OptimisticMessageSpinner]: {
     maintainer: "ethan@okou.ai",

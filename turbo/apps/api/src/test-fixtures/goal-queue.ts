@@ -284,7 +284,6 @@ export async function activateLegacyGoalPiFixture(
   await createStore().set(
     runPiApiFirstTurn$,
     {
-      executionMode: "legacy-sandbox-race",
       runId,
       userId: row.run.userId,
       orgId: row.run.orgId,

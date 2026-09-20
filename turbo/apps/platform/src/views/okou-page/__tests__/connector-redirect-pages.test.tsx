@@ -4,11 +4,12 @@ import { expect, test } from "vitest";
 import {
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const MOBILE_WARNING =
+const MOBILE_HINT =
   "The GitHub app may not support this OAuth link. Please complete this connection in the Okou web app on a computer.";
 const IPHONE_USER_AGENT =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1";
@@ -41,6 +42,7 @@ test("The connector redirect page explains the secure provider handoff", async (
     screen.getByLabelText("Connector icon unavailable"),
   ).toBeInTheDocument();
   expect(screen.queryByLabelText("Mercury banking disclosure")).toBeNull();
+  expect(screen.queryByText(MOBILE_HINT)).toBeNull();
   expect(getBackLink()).toHaveAttribute("href", "/");
 });
 
@@ -66,19 +68,22 @@ test("The Mercury redirect page shows its required disclosure", async () => {
   expect(attribution).toHaveAttribute("href", "https://mercury.com");
 });
 
-test("A stalled mobile provider handoff shows guidance", async () => {
+test("A mobile provider handoff includes compatibility guidance on its first page", async () => {
   context.mocks.browser.userAgent(IPHONE_USER_AGENT);
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: "/connectors/github/redirecting?label=GitHub",
     auth: null,
   });
 
-  await expect(
-    screen.findByRole("heading", { name: "Redirecting to GitHub…" }),
-  ).resolves.toBeInTheDocument();
-  await expect(screen.findByText(MOBILE_WARNING)).resolves.toBeInTheDocument();
+  await page.content;
+  expect(
+    screen.getByRole("heading", { name: "Redirecting to GitHub…" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText(MOBILE_HINT)).toBeInTheDocument();
+  expect(getBackLink()).toHaveAttribute("href", "/");
+  await page.ready;
 });
 
 test("An unsafe route icon is not loaded", async () => {
@@ -102,6 +107,8 @@ test("An unsafe route icon is not loaded", async () => {
 });
 
 test("A failed provider handoff offers a return path", async () => {
+  context.mocks.browser.userAgent(IPHONE_USER_AGENT);
+
   await setupPage({
     context,
     path: "/connectors/github/redirecting?label=GitHub&status=error",
@@ -114,5 +121,6 @@ test("A failed provider handoff offers a return path", async () => {
   expect(
     screen.getByText("Return to Okou and try connecting again."),
   ).toBeInTheDocument();
+  expect(screen.queryByText(MOBILE_HINT)).toBeNull();
   expect(getBackLink()).toHaveAttribute("href", "/");
 });
