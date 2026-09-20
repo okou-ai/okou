@@ -27,7 +27,7 @@ import {
 } from "../cron-official-workflow-catalog";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const CRON_SECRET = "official-workflow-catalog-cron-secret";
 const TEST_SUFFIX = randomUUID().replaceAll("-", "").slice(0, 12);
 serializeOfficialWorkflowCatalogTests();

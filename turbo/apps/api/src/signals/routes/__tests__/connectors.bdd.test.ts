@@ -79,7 +79,7 @@ import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { connectorCatalogRoutes } from "../connector-catalog";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectorsApi = createConnectorBddApi(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const storagesApi = createStoragesBddApi(context);

@@ -81,7 +81,7 @@ import {
  * app-internal dispatch does not depend on an HTTP self-call.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);

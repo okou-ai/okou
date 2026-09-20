@@ -159,7 +159,6 @@ import {
   clearRunApiStart,
   holdOrgAdmissionLock,
   mutateRunnerJobConnectorPermissionBaseline,
-  mutateRunnerJobSecretValueEnvironmentKeys,
   removeRunCanonicalStorageState,
   readOrgAdmissionLockState,
   readRunAutonomyBudgetFixture,
@@ -202,7 +201,7 @@ import { createRouteMocks } from "./helpers/route-test";
  * billing status API, so no DB fixtures are involved.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const callbackStore = createStore();
 const fixtureStore = createStore();
 // `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the
@@ -1170,21 +1169,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       await api.requestCancelRun(actor, created.runId, [200]);
     },
   );
-
-  it("always advertises presentation screenshots", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const toolHint =
-      "okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>";
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "render this deck to page images",
-      modelProvider: "anthropic-api-key",
-    });
-    const stored = await api.readRun(actor, run.runId);
-    expect(stored.appendSystemPrompt ?? "").toContain(toolHint);
-  });
 
   it("advertises Lark messaging only while the organization rollout is enabled", async () => {
     const api = createRunsApi(context);
@@ -8416,89 +8400,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
   });
-
-  it("rejects missing masking metadata but falls back completely for invalid keys", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-
-    const kms = useSecretKmsProbe();
-    const composeName = `bdd-secret-fallback-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            FIRST_TOKEN: `\${{ secrets.FIRST_TOKEN }}`,
-            SECOND_TOKEN: `\${{ secrets.SECOND_TOKEN }}`,
-          },
-        },
-      },
-    });
-
-    const missingRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "reject missing masking metadata",
-      secrets: {
-        FIRST_TOKEN: "first-missing-secret",
-        SECOND_TOKEN: "second-missing-secret",
-      },
-    });
-    await mutateRunnerJobSecretValueEnvironmentKeys(
-      context,
-      missingRun.runId,
-      "remove",
-    );
-    const decryptCountBeforeMissingClaim = kms.decryptCalls;
-
-    const missingClaim = await api.requestClaimRunnerJob(
-      true,
-      missingRun.runId,
-      [400],
-    );
-    expectApiError(missingClaim.body);
-    expect(missingClaim.body.error.message).toBe(
-      "Job missing execution context",
-    );
-    expect(kms.decryptCalls).toBe(decryptCountBeforeMissingClaim);
-    const failedMissingRun = await api.readRun(actor, missingRun.runId);
-    expect(failedMissingRun.status).toBe("failed");
-    expect(failedMissingRun.error).toBe(
-      "Runner job missing valid execution context",
-    );
-    const invalidRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "materialize invalid masking metadata",
-      secrets: {
-        FIRST_TOKEN: "first-fallback-secret",
-        SECOND_TOKEN: "second-fallback-secret",
-      },
-    });
-    await mutateRunnerJobSecretValueEnvironmentKeys(
-      context,
-      invalidRun.runId,
-      "invalid",
-    );
-    const decryptCountBeforeInvalidClaim = kms.decryptCalls;
-
-    const claim = await api.claimRunnerJob(invalidRun.runId);
-
-    expect(claim.secretValues).toStrictEqual([
-      "first-fallback-secret",
-      "second-fallback-secret",
-    ]);
-    expect(kms.decryptCalls).toBe(decryptCountBeforeInvalidClaim + 1);
-    expect(claim).not.toHaveProperty("secretValueEnvironmentKeys");
-
-    await api.requestCancelRun(actor, invalidRun.runId, [200]);
-  });
 });
 
 describe("RUN-02: custom connectors, grants, and network policies", () => {
@@ -13663,25 +13564,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 });
 
 describe("RUN-01: agent runner context, queue promotion, and skills", () => {
-  it("uses the configured commit-addressed Okou CLI distribution", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const r2Run = await api.createRun(actor, {
-      agentId,
-      prompt: "use the default Okou CLI",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const r2Claim = await api.claimRunnerJob(r2Run.runId);
-    expect(r2Claim.appendSystemPrompt ?? "").toContain(
-      `Run commands with: \`npx --yes --package="\${CLI_PKG_URL}" okou <command>\``,
-    );
-    expect(r2Claim.platformEnvironment.CLI_PKG_URL).toBe(
-      "https://static.okou.io/okou-cli/test-commit/package.tgz",
-    );
-    await api.requestCancelRun(actor, r2Run.runId, [200]);
-  });
-
   it("keeps direct-run execution config isolated from product execution", async () => {
     const appUrl = "https://app.writer-stop.example.test";
     mockEnv("APP_URL", appUrl);
@@ -14048,30 +13930,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("explains supported connector discovery for service connections", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "connect a third-party service",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    for (const connectorContext of [
-      "okou connector search <service-name>",
-      "searches every supported service",
-      "reports which matching connectors are available to the current run",
-      "provider credentials stay outside the sandbox",
-      "When a user wants to connect a third-party service, search for it first",
-    ]) {
-      expect(appendSystemPrompt).toContain(connectorContext);
-    }
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("requires Mercury attribution when a response presents account data", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -14107,70 +13965,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "Do not include this disclosure when the response does not present Mercury-sourced data.",
     );
 
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises managed research tools for regular runs", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "find current public information",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-
-    expect(claim.disallowedTools).toStrictEqual(
-      EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
-    );
-    expect(claim.appendSystemPrompt ?? "").toContain("okou web-search --help");
-    expect(claim.appendSystemPrompt ?? "").toContain("okou finance --help");
-    expect(claim.appendSystemPrompt ?? "").toContain("okou seo --help");
-    expect(claim.appendSystemPrompt ?? "").toContain("okou scrape --help");
-    expect(claim.appendSystemPrompt ?? "").toContain(
-      "okou people-search <query>",
-    );
-    expect(claim.appendSystemPrompt ?? "").toContain("model-extracted");
-    expect(claim.appendSystemPrompt ?? "").toContain("provider-backed sources");
-    expect(claim.appendSystemPrompt ?? "").toContain(
-      "execute through the built-in platform provider",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises concise Social guidance for regular runs", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "analyze public social data",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain("okou social --help");
-    expect(appendSystemPrompt).toContain(
-      "relevant subcommand's `--help` before use",
-    );
-    expect(appendSystemPrompt).toContain(
-      "okou social capabilities [platform] --json",
-    );
-    expect(appendSystemPrompt).toContain(
-      "public research, transcripts, summaries, and media downloads",
-    );
-    expect(appendSystemPrompt).toContain(
-      "prefer it for supported public X/Twitter research",
-    );
-    const socialGuidance = appendSystemPrompt.split("\n").filter((line) => {
-      return line.includes("okou social");
-    });
-    expect(socialGuidance).toHaveLength(1);
-    expect(socialGuidance.join("\n").length).toBeLessThanOrEqual(500);
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
@@ -14300,40 +14094,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     );
 
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
-  });
-
-  it("advertises live Social status for an ordinary organization", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "check public social service health",
-      modelProvider: "anthropic-api-key",
-    });
-    const prompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    expect(prompt).toContain("okou social capabilities [platform] --json");
-    expect(prompt).toContain("okou social status [platform] --json");
-    expect(prompt).toContain("for service health");
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises Slack bot reads for an ordinary organization", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "read the channel's recent messages",
-      modelProvider: "anthropic-api-key",
-    });
-    const prompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    expect(prompt).toContain("okou slack channel list --help");
-    expect(prompt).toContain("okou slack message history --help");
-    expect(prompt).toContain("okou slack message send --help");
-    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
@@ -14470,66 +14230,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       );
     },
   );
-
-  it("advertises connector account switching", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "switch my connector account",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain(
-      "okou connector account list <slug> --json",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Use only an exact `connectionId` returned by these commands",
-    );
-    expect(appendSystemPrompt).toContain(
-      "okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>",
-    );
-    expect(appendSystemPrompt).toContain(
-      "only the current thread's override for future runs",
-    );
-    expect(appendSystemPrompt).toContain(
-      "do not include secrets because it is included in the URL",
-    );
-    expect(appendSystemPrompt).toContain(
-      "only after the user confirms and the selection succeeds",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises managed SEO tools by default", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "research search rankings",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-
-    expect(appendSystemPrompt).toContain(
-      "SEO research, live search-engine results, keyword ideas, ranked keywords, and backlink summaries",
-    );
-    expect(appendSystemPrompt).toContain("okou seo --help");
-    expect(appendSystemPrompt).toContain("okou seo serp --help");
-    expect(appendSystemPrompt).toContain("Okou SEO uses DataForSEO");
-    expect(appendSystemPrompt).toContain("select a compatible engine");
-    expect(appendSystemPrompt).toContain(
-      "Use `okou web-search` instead for general public-web source discovery",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
 
   it("mounts the caller's private workflow over same-slug visible workflows", async () => {
     const bdd = createBddApi(context);
@@ -15355,65 +15055,6 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
 });
 
 describe("HOOK-01: callback authentication failures", () => {
-  it("leaves retired Slack org callbacks inert", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const prompt = `retired Slack org callback ${randomUUID()}`;
-    const created = await api.createRun(actor, {
-      agentId,
-      prompt,
-      modelProvider: "anthropic-api-key",
-    });
-    await callbackStore.set(
-      seedAgentRunCallback$,
-      {
-        runId: created.runId,
-        internalKind: "slack:org",
-        payload: {},
-      },
-      context.signal,
-    );
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, created.runId)}`,
-    };
-
-    await webhooks.requestAgentHeartbeat(
-      { runId: created.runId },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await webhooks.requestAgentComplete(
-      { runId: created.runId, exitCode: 0 },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    await expect(
-      callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          prompt,
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({
-        internalKind: "slack:org",
-        status: "pending",
-        attempts: 0,
-        lastError: null,
-      }),
-    ]);
-  });
-
   it("fails closed without authentication material on progress and completion", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);

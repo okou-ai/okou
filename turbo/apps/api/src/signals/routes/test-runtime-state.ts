@@ -31,7 +31,6 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { conversations } from "@okouai/db/schema/conversation";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { officialWorkflowDefinitionRevisions } from "@okouai/db/schema/official-workflow-catalog";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 
@@ -957,28 +956,6 @@ async function autonomyBudgetFixtureActionResponse(
       };
     }
   }
-}
-
-async function mutateRunnerJobSecretValueEnvironmentKeys(
-  db: Db,
-  runId: string,
-  mode: "remove" | "invalid",
-  signal: AbortSignal,
-): Promise<void> {
-  const executionContext =
-    mode === "remove"
-      ? sql`${runnerJobQueue.executionContext} - 'secretValueEnvironmentKeys'`
-      : sql`jsonb_set(
-          ${runnerJobQueue.executionContext},
-          '{secretValueEnvironmentKeys}',
-          '["__missing_secret_value_environment_key__"]'::jsonb,
-          true
-        )`;
-  await db
-    .update(runnerJobQueue)
-    .set({ executionContext })
-    .where(eq(runnerJobQueue.runId, runId));
-  signal.throwIfAborted();
 }
 
 type SetRunnerJobPiContextAsVersionedWriterAction = Extract<
@@ -2034,10 +2011,6 @@ type ReadAgentRunFamilyCountsAction = Extract<
   TestRuntimeStateActionBody,
   { action: "read-agent-run-family-counts" }
 >;
-type CorruptOfficialWorkflowRevisionPayloadAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "corrupt-official-workflow-revision-payload" }
->;
 type SetOfficialWorkflowAutomationAdmissionStateAction = Extract<
   TestRuntimeStateActionBody,
   { action: "set-official-workflow-automation-admission-state" }
@@ -2058,7 +2031,6 @@ type OfficialWorkflowRunFixtureAction = Extract<
     action:
       | "read-official-workflow-run-state"
       | "read-agent-run-family-counts"
-      | "corrupt-official-workflow-revision-payload"
       | "set-official-workflow-automation-admission-state"
       | "retarget-workflow-automation"
       | "assert-official-workflow-automation-final-admission-rejected"
@@ -2074,7 +2046,6 @@ function isOfficialWorkflowRunFixtureAction(
   return [
     "read-official-workflow-run-state",
     "read-agent-run-family-counts",
-    "corrupt-official-workflow-revision-payload",
     "set-official-workflow-automation-admission-state",
     "retarget-workflow-automation",
     "assert-official-workflow-automation-final-admission-rejected",
@@ -2199,28 +2170,6 @@ async function readAgentRunFamilyCountsActionResponse(
   };
 }
 
-async function corruptOfficialWorkflowRevisionPayloadActionResponse(
-  db: Db,
-  body: CorruptOfficialWorkflowRevisionPayloadAction,
-  signal: AbortSignal,
-) {
-  const updated = await db
-    .update(officialWorkflowDefinitionRevisions)
-    .set({ payload: sql`'{}'::jsonb` })
-    .where(
-      eq(
-        officialWorkflowDefinitionRevisions.definitionName,
-        body.definition_name,
-      ),
-    )
-    .returning({ revision: officialWorkflowDefinitionRevisions.revision });
-  signal.throwIfAborted();
-  if (updated.length !== 1) {
-    throw new Error("Official Workflow revision fixture is unavailable");
-  }
-  return { status: 200 as const, body: { ok: true as const } };
-}
-
 async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   db: Db,
   body: SetOfficialWorkflowAutomationAdmissionStateAction,
@@ -2339,13 +2288,6 @@ async function officialWorkflowRunFixtureActionResponse(
     }
     case "read-agent-run-family-counts": {
       return await readAgentRunFamilyCountsActionResponse(db, body, signal);
-    }
-    case "corrupt-official-workflow-revision-payload": {
-      return await corruptOfficialWorkflowRevisionPayloadActionResponse(
-        db,
-        body,
-        signal,
-      );
     }
     case "set-official-workflow-automation-admission-state": {
       return await setOfficialWorkflowAutomationAdmissionStateActionResponse(
@@ -2484,15 +2426,6 @@ const postRuntimeStateAction$ = command(
       return specializedFixture;
     }
     switch (body.action) {
-      case "mutate-runner-job-secret-value-environment-keys": {
-        await mutateRunnerJobSecretValueEnvironmentKeys(
-          db,
-          body.run_id,
-          body.mode,
-          signal,
-        );
-        return { status: 200 as const, body: { ok: true as const } };
-      }
       case "set-runner-job-pi-context-as-versioned-writer": {
         await setRunnerJobPiContextAsVersionedWriter(db, body, signal);
         return { status: 200 as const, body: { ok: true as const } };

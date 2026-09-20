@@ -33,7 +33,7 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRouteMocks } from "./helpers/route-test";
 import { installFakeChatEventR2 } from "./helpers/fake-chat-event-r2";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 createRouteMocks(context);
 const bdd = createBddApi(context);
 const api = createRunsApi(context);

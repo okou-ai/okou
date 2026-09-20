@@ -18,7 +18,7 @@ import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);

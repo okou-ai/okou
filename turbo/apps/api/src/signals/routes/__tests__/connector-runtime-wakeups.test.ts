@@ -16,7 +16,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);

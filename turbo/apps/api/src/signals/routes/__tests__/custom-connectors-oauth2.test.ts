@@ -19,7 +19,7 @@ import {
   seedCustomConnectorOAuthStateContext,
 } from "./helpers/connector-credential-storage-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
 
 type CustomOAuthProvider = ReturnType<typeof mockCustomConnectorOAuth2Provider>;

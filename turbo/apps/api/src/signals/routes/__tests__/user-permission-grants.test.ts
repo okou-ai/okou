@@ -24,7 +24,7 @@ import { userPermissionGrantsRoutes } from "../user-permission-grants";
 
 const TEST_APP_ROUTES = Object.freeze([...userPermissionGrantsRoutes]);
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 

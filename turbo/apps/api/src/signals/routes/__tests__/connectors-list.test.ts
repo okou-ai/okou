@@ -25,7 +25,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {

@@ -15,7 +15,7 @@ import {
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const AWS_TOKEN_URL = "https://us-east-1.signin.aws.amazon.com/v1/token";
 const AWS_STS_URL = "https://sts.us-east-1.amazonaws.com/";
 

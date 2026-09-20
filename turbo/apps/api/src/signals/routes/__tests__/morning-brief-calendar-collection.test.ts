@@ -77,7 +77,7 @@ const MAX_TEXT_CHARACTERS = 40_000;
 const MAX_IDENTITY_CHARACTERS = 512;
 const MAX_LINK_CHARACTERS = 2048;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);

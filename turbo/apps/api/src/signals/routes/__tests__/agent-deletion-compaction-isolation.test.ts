@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import {
   holdProductionUsageEventCompactionLockFixture,
   holdUsageEventCompactionLockFixture,
@@ -10,7 +11,9 @@ import {
 } from "../../../test-fixtures/usage-event-compaction";
 import { createBddApi } from "./helpers/api-bdd";
 
-const context = testContext();
+const context = testContext({
+  dbFixtures: [usageEventCompactionDbFixture],
+});
 const bdd = createBddApi(context);
 
 function ownGate(gate: {

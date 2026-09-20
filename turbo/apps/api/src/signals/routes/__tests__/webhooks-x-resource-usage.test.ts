@@ -13,6 +13,10 @@ import {
   removeErasureSubjectsFixture,
 } from "../../../test-fixtures/account-erasure-subject";
 import {
+  usageEventCompactionDbFixture,
+  xResourceAdmissionDbFixture,
+} from "../../../test-fixtures/db-fixture";
+import {
   createUsagePricingFixture,
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
@@ -49,7 +53,10 @@ interface RunFixture {
   readonly authorization: string;
 }
 
-const context = testContext();
+const context = testContext({
+  connectorCatalog: true,
+  dbFixtures: [usageEventCompactionDbFixture, xResourceAdmissionDbFixture],
+});
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const billing = createBillingMediaApi(context);

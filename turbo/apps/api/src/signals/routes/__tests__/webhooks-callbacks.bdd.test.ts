@@ -15,6 +15,7 @@ import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
 import {
   deleteOrgPlanEntitlementFixture,
@@ -66,7 +67,10 @@ import {
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
 
-const context = testContext();
+const context = testContext({
+  connectorCatalog: true,
+  dbFixtures: [usageEventCompactionDbFixture],
+});
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",

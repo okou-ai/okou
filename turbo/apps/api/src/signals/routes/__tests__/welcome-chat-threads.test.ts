@@ -32,7 +32,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
