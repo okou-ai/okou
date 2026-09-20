@@ -55,6 +55,51 @@ test("Artifact cards identify their kind and show available previews", async () 
   );
 });
 
+test("An artifact without a thumbnail covers the tile with its kind", async () => {
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [
+        artifact({ title: "launch-plan.txt" }),
+        artifact({
+          id: "a0000000-0000-4000-a000-000000000002",
+          kind: "hosted-site",
+          title: "launch-site",
+        }),
+        artifact({
+          id: "a0000000-0000-4000-a000-000000000003",
+          kind: "presentation",
+          title: "q3-review",
+        }),
+      ],
+      nextCursor: null,
+    });
+  });
+
+  await setupArtifactCatalogPage(context);
+
+  const fileCard = await findArtifactAction("launch-plan.txt");
+  const siteCard = await findArtifactAction("launch-site");
+  const deckCard = await findArtifactAction("q3-review");
+
+  // `getByLabelText` throws on more than one match, so each card proves both
+  // that the kind is still announced and that only the cover announces it: the
+  // corner badge would otherwise stamp the same icon twice on one card.
+  expect(
+    within(siteCard).getByLabelText("Hosted site artifact"),
+  ).toHaveAttribute("data-testid", "artifact-catalog-kind-cover-hosted-site");
+  expect(
+    within(deckCard).getByLabelText("Presentation artifact"),
+  ).toHaveAttribute("data-testid", "artifact-catalog-kind-cover-presentation");
+  // A file keeps both: its cover states the format, which the badge does not.
+  expect(
+    within(fileCard).getByTestId("artifact-catalog-file-preview-icon"),
+  ).toBeInTheDocument();
+  expect(within(fileCard).getByLabelText("File artifact")).toHaveAttribute(
+    "data-testid",
+    "artifact-catalog-kind-icon-file",
+  );
+});
+
 test("A video artifact without a poster uses its source as the catalog preview", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
