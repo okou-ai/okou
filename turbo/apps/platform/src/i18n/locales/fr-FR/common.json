@@ -116,6 +116,7 @@
         "time": "Temps"
       },
       "log": "Journal",
+      "manualReloadNotice": "Actualisez cette page pour voir les derniers journaux d’activité.",
       "modelProvidedBy": "{{model}} fourni par {{provider}}",
       "networkEmpty": {
         "description": "Aucun trafic réseau n'a été enregistré pour cette exécution.",
@@ -458,6 +459,7 @@
       "description": "Il est peut-être privé ou n’est plus disponible.",
       "help": "Demandez à la personne qui a partagé ce lien de vérifier l’accès.",
       "signedInAs": "Connecté en tant que {{email}}",
+      "signedInDescription": "Il n’existe peut-être pas, ou il est partagé avec un autre compte ou une autre organisation.",
       "signIn": "Se connecter",
       "signInFailed": "Impossible d’ouvrir la connexion. Réessayez.",
       "switchAccount": "Changer de compte",
@@ -519,7 +521,7 @@
       "description": "Parcourez tout ce que vous avez créé ici.",
       "emptyDescription": "Les artéfacts apparaîtront ici lorsqu'ils seront disponibles.",
       "emptyTitle": "Aucun artéfact trouvé",
-      "error": "Impossible de charger les artéfacts. Réessayez plus tard.",
+      "error": "Impossible de charger les artéfacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Afficher les artéfacts d'avatar",
@@ -538,7 +540,8 @@
         "websiteAria": "Afficher les artéfacts du site web"
       },
       "kindIcon": "Artéfact {{kind}}",
-      "loading": "Chargement des artéfacts"
+      "loading": "Chargement des artéfacts",
+      "retry": "Réessayer"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -620,6 +623,7 @@
       "onlyMeDescription": "Vous seul pouvez voir cet artefact",
       "organization": "Organisation",
       "organizationDescription": "Toute personne de {{organization}} disposant du lien",
+      "organizationDescriptionUnnamed": "Toute personne de votre organisation disposant du lien",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
       "publicDescription": "Toute personne disposant du lien peut le voir",
@@ -664,7 +668,6 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer votre propre fichier",
       "importFileHint": "Réutilisez le design de votre fichier",
-      "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
       "multiAccent": "Multi-accents",
       "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
@@ -1460,6 +1463,55 @@
         },
         "inReview": "En cours d'examen",
         "inReviewDescription": "Envoyé, en attente d'examen",
+        "intro": {
+          "checkin": {
+            "amount": "+{{amount}} crédits",
+            "confirm": "Retour au travail",
+            "description": "Les crédits paient le travail lui-même : chaque exécution, chaque artefact, chaque workflow qui tourne à l'heure dite.",
+            "title": "C'est fait pour aujourd'hui"
+          },
+          "connector": {
+            "confirm": "Voir tous les connecteurs",
+            "connected": "Connecté",
+            "description": "Choisissez-en un et {{assistantName}} commence à y travailler.",
+            "notConnected": "Non connecté",
+            "pickerFailed": "Impossible de charger les connecteurs. Ouvrez la page des connecteurs pour réessayer.",
+            "pickerLoading": "Chargement des connecteurs…",
+            "title": "{{assistantName}} travaille dans les outils que vous utilisez déjà"
+          },
+          "invite": {
+            "confirm": "Inviter l'équipe",
+            "description": "Invitez vos collègues dans cet espace de travail.",
+            "note": "Ce que vous avez mis en place une fois cesse d'être à vous seul. Quelqu'un arrivé ce matin peut le lancer cet après-midi, sans vous demander comment.",
+            "title": "Ce qu'une personne sait, toute l'équipe peut l'exécuter"
+          },
+          "later": "Plus tard",
+          "slack": {
+            "appBadge": "APP",
+            "confirm": "Ajouter à Slack",
+            "description": "Ajoutez {{assistantName}} à l'espace Slack de votre équipe.",
+            "note": "Vos collègues n'ont plus à passer par vous. Ils demandent dans le canal, et le travail revient dans le fil, à la vue de tous.",
+            "sampleChannel": "# growth",
+            "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
+          },
+          "workflow": {
+            "browse": "Voir les modèles",
+            "confirm": "Montrez-m'en un",
+            "description": "Transformez une tâche récurrente en workflow que l'équipe peut lancer.",
+            "prompt": "Chaque lundi matin, regarde ce que mes concurrents ont publié la semaine dernière, regroupe-le par thème et donne-moi un tableau comparatif.",
+            "promptConfirm": "L'envoyer à {{assistantName}}",
+            "promptDescription": "Envoyez-le tel quel à {{assistantName}}, ou modifiez d'abord la formulation.",
+            "promptOutcome": "Il lit les sources, regroupe ce qu'il trouve et répond avec le tableau. Si le résultat convient, il propose de garder l'exécution comme workflow.",
+            "promptTitle": "Demandez comme vous le demanderiez à un collègue",
+            "stepRun": "Lancez-le une fois",
+            "stepRunDescription": "Vous voyez le travail terminé avant de vous engager.",
+            "stepSave": "Enregistrez-le, puis donnez-lui un horaire",
+            "stepSaveDescription": "Il tourne sans que personne le demande, et n'importe quel collègue peut le lancer.",
+            "stepTemplate": "Partez d'un modèle",
+            "stepTemplateDescription": "Prenez-en un proche de votre métier plutôt qu'une page blanche.",
+            "title": "Une bonne exécution devient un acquis pour l'équipe"
+          }
+        },
         "invite": {
           "action": "Inviter",
           "description": "Chaque personne ajoutée compte",
@@ -6502,6 +6554,91 @@
       "thread_other": "{{value}} fils"
     }
   },
+  "vnc": {
+    "accessDescription": "Choisissez les agents autorisés à afficher et contrôler vos bureaux VNC. Cet accès est indépendant de SSH.",
+    "accessHelp": "Autoriser cet agent à afficher et contrôler tous vos bureaux VNC configurés, actuels et futurs.",
+    "add": "Ajouter un hôte",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "configurationHelp": "L’enregistrement d’un hôte ne teste pas sa connexion. Les agents choisissent le mode partagé ou exclusif au démarrage d’une session ; le serveur VNC contrôle l’admission.",
+    "configured": "Configuré",
+    "credential": {
+      "add": "Ajouter des identifiants",
+      "createNew": "Créer des identifiants",
+      "delete": "Supprimer les identifiants",
+      "deleteHelp": "Supprimer ces identifiants inutilisés ? Cette action est irréversible.",
+      "edit": "Modifier les identifiants",
+      "empty": "Aucun identifiant VNC enregistré.",
+      "inUse": "Supprimez les hôtes utilisant ces identifiants ou attribuez-leur d’autres identifiants avant de les supprimer.",
+      "label": "Identifiants",
+      "method": "Mot de passe VNC",
+      "name": "Nom des identifiants",
+      "nameHint": "p. ex. Accès au bureau professionnel",
+      "password": "Mot de passe VNC",
+      "passwordHelp": "Les mots de passe VNC classiques utilisent 1 à 8 caractères ASCII imprimables. Les espaces sont conservés.",
+      "passwordHint": "Saisissez le mot de passe VNC du serveur",
+      "replace": "Remplacer le mot de passe",
+      "replaceHelp": "Laissez cette option désactivée pour conserver le mot de passe enregistré. Son remplacement affecte tous les hôtes utilisant ces identifiants.",
+      "select": "Sélectionner un identifiant",
+      "sharedHelp_one": "Utilisés par {{count}} hôte. Les changements de mot de passe affectent cet hôte.",
+      "sharedHelp_many": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
+      "sharedHelp_other": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
+      "unused": "Aucun hôte enregistré n’utilise ces identifiants."
+    },
+    "credentialsTab": "Identifiants",
+    "delete": "Supprimer l’hôte",
+    "deleteHelp": "Supprimer cet hôte enregistré ? Ses identifiants réutilisables seront conservés.",
+    "description": "Permettez à vos agents d’afficher et de contrôler vos bureaux distants.",
+    "displayName": "Nom affiché",
+    "displayNameHint": "p. ex. Bureau professionnel",
+    "edit": "Modifier l’hôte",
+    "editHelp": "Les modifications s’appliquent à cet hôte enregistré et invalident sa configuration de connexion actuelle.",
+    "empty": "Ajoutez un hôte VNC pour commencer.",
+    "errors": {
+      "configurationChanged": "Cet hôte a changé depuis son ouverture.",
+      "credentialChanged": "Ces identifiants ont changé depuis leur ouverture.",
+      "credentialUnavailable": "Les identifiants sélectionnés ne sont plus disponibles.",
+      "failed": "Impossible d’enregistrer la configuration VNC.",
+      "hostUnavailable": "Cet hôte n’est plus disponible.",
+      "invalidHost": "Saisissez un nom d’hôte ou une adresse IP valides, sans URL, nom d’utilisateur ni port.",
+      "invalidInput": "Vérifiez la configuration VNC et réessayez.",
+      "invalidTrust": "Saisissez un ensemble valide de 8 certificats publics d’AC maximum, ne dépassant pas 64 KiB.",
+      "ownerChanged": "Votre accès à l’espace de travail a changé. Actualisez avant de continuer.",
+      "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle."
+    },
+    "host": "Nom d’hôte ou adresse IP",
+    "hostHint": "p. ex. desktop.example.com",
+    "hostsTab": "Hôtes",
+    "label": "VNC",
+    "loadFailed": "Impossible de charger la configuration VNC.",
+    "loading": "Chargement de la configuration VNC…",
+    "loadingAccess": "Chargement des accès des agents…",
+    "manage": "Gérer VNC",
+    "port": "Port",
+    "retry": "Réessayer",
+    "save": "Enregistrer",
+    "saveRecovery": {
+      "resourceIdConflict": "Impossible de créer cette ressource. Fermez cette boîte de dialogue et réessayez.",
+      "review": "La configuration a été actualisée. Fermez cette boîte de dialogue et vérifiez les informations actuelles avant de réessayer.",
+      "uncertain": "Le résultat de l’enregistrement est inconnu. Votre brouillon d’origine est verrouillé. Réessayez la même requête ou fermez puis actualisez pour vérifier la configuration enregistrée."
+    },
+    "saving": "Enregistrement…",
+    "security": {
+      "caBundle": "Certificats d’AC (PEM)",
+      "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
+      "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
+      "custom": "Autorités de certification personnalisées",
+      "help": "Nécessite un serveur VNC compatible avec VeNCrypt X509Vnc. Le certificat du serveur doit correspondre au nom d’hôte ou à l’adresse IP configurés.",
+      "profile": "VNC chiffré (X509Vnc)",
+      "system": "Autorités de certification du système",
+      "title": "Confiance dans le certificat du serveur"
+    },
+    "summary_one": "{{count}} hôte configuré",
+    "summary_many": "{{count}} hôtes configurés",
+    "summary_other": "{{count}} hôtes configurés",
+    "title": "Accès à distance VNC",
+    "unavailable": "VNC n’est pas disponible dans cet espace de travail."
+  },
   "workflows": {
     "automations": {
       "calendar": {
@@ -6854,6 +6991,7 @@
         "calendar": "Calendrier",
         "email": "Email",
         "forms": "Google Forms",
+        "github": "GitHub",
         "integrations": "Intégrations",
         "notion": "Notion",
         "schedule": "Planifier"

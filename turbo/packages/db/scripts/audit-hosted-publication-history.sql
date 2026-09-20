@@ -14,11 +14,11 @@ SET LOCAL search_path = pg_catalog, public;
 
 WITH deployments AS MATERIALIZED (
   SELECT 'public' AS namespace, id, site_id, org_id, user_id, public_brand,
-    status, deployment_version, manifest -> 'immutableContent' = 'true'::jsonb AS immutable
+    status, (manifest->>'deploymentVersion')::integer AS deployment_version, manifest -> 'immutableContent' = 'true'::jsonb AS immutable
   FROM public.hosted_deployments
   UNION ALL
   SELECT 'private', id, site_id, org_id, user_id, public_brand,
-    status, deployment_version, manifest -> 'immutableContent' = 'true'::jsonb
+    status, (manifest->>'deploymentVersion')::integer AS deployment_version, manifest -> 'immutableContent' = 'true'::jsonb
   FROM public.private_hosted_deployments
 ), site_populations AS MATERIALIZED (
   SELECT site_id, count(*) AS deployments,
@@ -68,27 +68,24 @@ WITH deployments AS MATERIALIZED (
     count(*) FILTER (WHERE s.id IS NOT NULL AND d.public_brand IS DISTINCT FROM s.public_brand) AS brand_mismatches
   FROM deployments d LEFT JOIN public.hosted_sites s ON s.id = d.site_id
 ), pointers AS MATERIALIZED (
-  SELECT s.id, s.active_deployment_id, s.active_deployment_version,
+  SELECT s.id, s.active_deployment_id,
     count(d.id) AS matches,
     bool_or(d.site_id IS DISTINCT FROM s.id) AS different_site,
     bool_or(d.org_id IS DISTINCT FROM s.org_id OR d.user_id IS DISTINCT FROM s.user_id) AS different_owner,
     bool_or(d.public_brand IS DISTINCT FROM s.public_brand) AS different_brand,
     bool_or(d.status <> 'ready') AS not_ready,
-    bool_or(d.namespace = 'private') AS private_target,
-    bool_or(d.deployment_version IS DISTINCT FROM s.active_deployment_version) AS different_version
+    bool_or(d.namespace = 'private') AS private_target
   FROM public.hosted_sites s LEFT JOIN deployments d ON d.id = s.active_deployment_id
   GROUP BY s.id
 ), pointer_integrity AS (
   SELECT count(*) FILTER (WHERE active_deployment_id IS NULL) AS absent_pointers,
-    count(*) FILTER (WHERE active_deployment_id IS NULL AND active_deployment_version IS NOT NULL) AS version_without_pointer,
     count(*) FILTER (WHERE active_deployment_id IS NOT NULL AND matches = 0) AS missing_targets,
     count(*) FILTER (WHERE matches > 1) AS ambiguous_targets,
     count(*) FILTER (WHERE matches > 0 AND different_site) AS different_site_targets,
     count(*) FILTER (WHERE matches > 0 AND different_owner) AS different_owner_targets,
     count(*) FILTER (WHERE matches > 0 AND different_brand) AS different_brand_targets,
     count(*) FILTER (WHERE matches > 0 AND not_ready) AS not_ready_targets,
-    count(*) FILTER (WHERE matches > 0 AND private_target) AS private_targets,
-    count(*) FILTER (WHERE matches > 0 AND different_version) AS different_version_targets
+    count(*) FILTER (WHERE matches > 0 AND private_target) AS private_targets
   FROM pointers
 ), shares AS (
   SELECT count(*) AS html_share_rows,
@@ -122,7 +119,7 @@ WITH deployments AS MATERIALIZED (
   FROM uploaded_references
 )
 SELECT jsonb_build_object(
-  'receipt_version', 'hosted_publication_history_v1',
+  'receipt_version', 'hosted_publication_history_v2',
   'observed_at', statement_timestamp(),
   'finished_at', clock_timestamp(),
   'transaction', jsonb_build_object(

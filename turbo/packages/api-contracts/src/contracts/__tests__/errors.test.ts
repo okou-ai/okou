@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
@@ -202,6 +203,28 @@ describe("formatRunErrorForExternalSurface", () => {
     // must not echo the raw provider envelope back to the user.
     expect(formatted).not.toContain("try again later");
     expect(formatted).not.toContain("Content Exists Risk");
+  });
+
+  it("explains a Codex access-program mismatch without exposing or mislabeling it", () => {
+    const rawError = JSON.stringify({
+      type: "invalid_request_error",
+      code: "unsupported_parameter",
+      message:
+        "The access_programs parameter is not enabled for this organization.",
+      param: "access_programs.cyber",
+    });
+    const formatted = formatRunErrorForExternalSurface({
+      code: "UNKNOWN",
+      message: rawError,
+      failureReason: "codex_access_program_unavailable",
+      framework: "codex",
+    });
+
+    expect(formatted).toBe(CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE);
+    expect(formatted).not.toContain(rawError);
+    expect(formatted).not.toContain("unsupported model");
+    expect(formatted).not.toContain("content safety");
+    expect(formatted).not.toContain("obtain");
   });
 
   it("keeps an unclassified provider envelope on the generic message", () => {

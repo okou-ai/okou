@@ -8,7 +8,7 @@ import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/co
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
 import { Button, surfaceVariants, cn } from "@okouai/ui";
-import { connectorCurrentConnectionStatus } from "../../../../signals/okou-page/settings/connectors.ts";
+import { builtinConnectorCurrentConnectionStatus } from "../../../../signals/okou-page/settings/connectors.ts";
 import { ConnectorPermissionRow } from "./connector-permission-row.tsx";
 import {
   ConnectorEntryCard,
@@ -239,7 +239,7 @@ function DirectoryConnectorStatusLine({
   readonly unavailable: boolean;
 }) {
   const { t } = useTranslation();
-  const connectionStatus = connectorCurrentConnectionStatus(connector);
+  const connectionStatus = builtinConnectorCurrentConnectionStatus(connector);
   if (unavailable) {
     return (
       <>

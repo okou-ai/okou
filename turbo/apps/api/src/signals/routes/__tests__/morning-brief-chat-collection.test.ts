@@ -21,6 +21,7 @@ import {
   nowDate,
 } from "../../../lib/time";
 import {
+  barrierQueryBinds,
   barrierQueryText,
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
@@ -32,7 +33,6 @@ import {
   countMorningBriefChatWritesFixture,
   deleteSeededChatThreadFixture,
   excludeMorningBriefChatThreadFixture,
-  holdActiveRunReadFixture,
   holdAgentRowFixture,
   holdChatCandidateDiscoveryFixture,
   holdChatThreadReadBarrierFixture,
@@ -52,6 +52,7 @@ import {
 } from "../../../test-fixtures/morning-brief-chat-collection";
 import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
+import { onRejection } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -270,6 +271,27 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       text.includes('from "chat_events"') &&
       text.includes('"chat_events"."run_id" =') &&
       text.includes('order by "chat_events"."seq_id" asc')
+    );
+  }
+
+  function isExcerptContentQueryForThread(
+    queryArgs: unknown[],
+    threadId: string,
+  ): boolean {
+    return (
+      isExcerptContentQuery(queryArgs) && barrierQueryBinds(queryArgs, threadId)
+    );
+  }
+
+  function isAgentKeyShareQuery(
+    queryArgs: unknown[],
+    agentId: string,
+  ): boolean {
+    const text = barrierQueryText(queryArgs);
+    return (
+      text.includes('from "agents"') &&
+      text.includes("for key share") &&
+      barrierQueryBinds(queryArgs, agentId)
     );
   }
 
@@ -976,17 +998,148 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     }, 60_000);
 
     it("spends successive PostgreSQL waits without starting content after the candidate deadline", async () => {
+      let targetThreadId: string | undefined;
+      let healthyControlArmed = false;
+      let expiredContentQueryObserved = false;
+      const matchesTargetContentQuery = (queryArgs: unknown[]): boolean => {
+        return (
+          targetThreadId !== undefined &&
+          isExcerptContentQueryForThread(queryArgs, targetThreadId)
+        );
+      };
       await withDatabaseTransactionBarrierFixture(
         {
-          select: isExcerptContentQuery,
+          select: (queryArgs) => {
+            return healthyControlArmed && matchesTargetContentQuery(queryArgs);
+          },
+          observe: (queryArgs) => {
+            if (!healthyControlArmed && matchesTargetContentQuery(queryArgs)) {
+              expiredContentQueryObserved = true;
+            }
+          },
           stopAt: (_queryArgs, selectingStatement) => {
             return selectingStatement;
           },
           work: async (contentQuery) => {
+            const releases: (() => Promise<void>)[] = [];
+            const requests: Promise<unknown>[] = [];
+            const ownBarrier = <
+              T extends { readonly release: () => Promise<void> },
+            >(
+              barrier: T,
+            ): T => {
+              releases.push(() => {
+                return barrier.release();
+              });
+              return barrier;
+            };
+            await onRejection(
+              (async () => {
+                const member = await briefMember();
+                const { threadId } = await seedUnreadThread(member, {
+                  prompt: "prompt beyond the cumulative budget",
+                  reply: "reply beyond the cumulative budget",
+                });
+                targetThreadId = threadId;
+                const agent = ownBarrier(
+                  await holdAgentRowFixture(member.agentId, context.signal),
+                );
+                const thread = ownBarrier(
+                  await holdChatThreadReadBarrierFixture(
+                    threadId,
+                    context.signal,
+                  ),
+                );
+                const startedAt = freezeAttemptClock();
+
+                const pending = collectRequest(member);
+                requests.push(pending);
+                await agent.waitForBlocked();
+                // The first owned row wait consumed most of the candidate
+                // allowance while staying within its individual lock cap.
+                mockNow(candidateDeadline(startedAt) - 500);
+                await agent.release();
+                await thread.waitForBlocked();
+                mockNow(candidateDeadline(startedAt));
+                await thread.release();
+
+                const response = await accept(pending, [200]);
+                expect(response.body).toMatchObject({
+                  result: "no-eligible-content",
+                  coverage: "partial",
+                  items: [],
+                  skipped: [],
+                  truncations: ["deadline_exceeded"],
+                });
+                expect(JSON.stringify(response.body)).not.toContain(threadId);
+                expect(expiredContentQueryObserved).toBeFalsy();
+
+                // Guard-removal control: a fresh healthy request reaches this
+                // exact owned-thread content statement. The selected
+                // transaction exposes all three real server settings,
+                // including the whole-transaction bound.
+                healthyControlArmed = true;
+                const healthy = collectRequest(member);
+                requests.push(healthy);
+                const healthyContentQuery = await Promise.race([
+                  contentQuery.entered,
+                  healthy.then(() => {
+                    throw new Error(
+                      "Expected the healthy request to reach the excerpt content query",
+                    );
+                  }),
+                ]);
+                expect(healthyContentQuery).toMatchObject({
+                  lockTimeout: "2s",
+                  statementTimeout: "5s",
+                });
+                // PostgreSQL renders the conservatively floored monotonic
+                // remainder in milliseconds when fractional clock origins
+                // leave it 1ms shy.
+                expect(["11999ms", "12s"]).toContain(
+                  healthyContentQuery.transactionTimeout,
+                );
+                contentQuery.release();
+                const recovered = await accept(healthy, [200]);
+                expect(recovered.body.result).toBe("collected");
+                expect(recovered.body.items).toHaveLength(1);
+              })(),
+              async () => {
+                contentQuery.release();
+                await Promise.allSettled(
+                  releases.map(async (release) => {
+                    await release();
+                  }),
+                );
+                await Promise.allSettled(requests);
+              },
+            );
+          },
+        },
+        context.signal,
+      );
+    }, 60_000);
+
+    it("lets PostgreSQL cancel an in-flight transaction at its remaining absolute deadline", async () => {
+      let targetAgentId: string | undefined;
+      await withDatabaseTransactionBarrierFixture(
+        {
+          select: (queryArgs) => {
+            return (
+              targetAgentId !== undefined &&
+              isAgentKeyShareQuery(queryArgs, targetAgentId)
+            );
+          },
+          stopAt: (_queryArgs, selectingStatement) => {
+            return selectingStatement;
+          },
+          work: async (agentQuery) => {
+            const serverCancellationAllowanceMs = 1000;
             const member = await briefMember();
+            targetAgentId = member.agentId;
             const { threadId } = await seedUnreadThread(member, {
-              prompt: "prompt beyond the cumulative budget",
-              reply: "reply beyond the cumulative budget",
+              prompt: "prompt behind the server deadline",
+              reply: "reply behind the server deadline",
             });
             const discovery = await holdChatCandidateDiscoveryFixture(
               context.signal,
@@ -999,21 +1152,33 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
             const pending = collectRequest(member);
             await discovery.waitForBlocked();
-            // Discovery consumed most of the candidate allowance while queued
-            // in PostgreSQL, but stayed within its individual cap.
-            mockNow(candidateDeadline(startedAt) - 500);
+            // The per-thread transaction starts with less time than either
+            // statement cap. Pause its exact Agent read at the driver boundary,
+            // before dispatch, instead of racing a pg_stat_activity poll inside
+            // the server deadline window.
+            mockNow(
+              candidateDeadline(startedAt) - serverCancellationAllowanceMs,
+            );
+            advanceAttemptIoClock?.(
+              MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
+                MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
+                serverCancellationAllowanceMs,
+            );
             await discovery.release();
-            await agent.waitForBlocked();
+            await expect(agentQuery.entered).resolves.toMatchObject({
+              lockTimeout: "2s",
+              statementTimeout: "5s",
+              transactionTimeout: "1s",
+            });
 
-            // Acquire the final-query blocker only after discovery committed;
-            // candidate selection itself also reads agent_runs.
-            const activeRun = await holdActiveRunReadFixture(context.signal);
-            await agent.release();
-            await activeRun.waitForBlocked();
+            // Move the application clock to the same absolute boundary before
+            // dispatching the already-owned query. The Agent lock remains held,
+            // so PostgreSQL's transaction timeout alone must terminate it.
             mockNow(candidateDeadline(startedAt));
-            await activeRun.release();
-
+            agentQuery.release();
             const response = await accept(pending, [200]);
+            await agent.release();
+
             expect(response.body).toMatchObject({
               result: "no-eligible-content",
               coverage: "partial",
@@ -1022,74 +1187,16 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
               truncations: ["deadline_exceeded"],
             });
             expect(JSON.stringify(response.body)).not.toContain(threadId);
-            expect(contentQuery.enteredYet()).toBeFalsy();
 
-            // Guard-removal control: a fresh healthy request reaches this exact
-            // content statement. The selected transaction exposes all three
-            // real server settings, including the whole-transaction bound.
-            const healthy = collectRequest(member);
-            const healthyContentQuery = await contentQuery.entered;
-            expect(healthyContentQuery).toMatchObject({
-              lockTimeout: "2s",
-              statementTimeout: "5s",
-            });
-            // PostgreSQL renders the conservatively floored monotonic remainder
-            // in milliseconds when fractional clock origins leave it 1ms shy.
-            expect(["11999ms", "12s"]).toContain(
-              healthyContentQuery.transactionTimeout,
-            );
-            contentQuery.release();
-            const recovered = await accept(healthy, [200]);
-            expect(recovered.body.result).toBe("collected");
-            expect(recovered.body.items).toHaveLength(1);
+            // The timed-out transaction was awaited and rolled back
+            // (PostgreSQL may replace its terminated session); the same route
+            // and pool remain usable.
+            const recovered = await collect(member);
+            expect(recovered.result).toBe("collected");
           },
         },
         context.signal,
       );
-    }, 60_000);
-
-    it("lets PostgreSQL cancel an in-flight transaction at its remaining absolute deadline", async () => {
-      const member = await briefMember();
-      const { threadId } = await seedUnreadThread(member, {
-        prompt: "prompt behind the server deadline",
-        reply: "reply behind the server deadline",
-      });
-      const discovery = await holdChatCandidateDiscoveryFixture(context.signal);
-      const agent = await holdAgentRowFixture(member.agentId, context.signal);
-      const startedAt = freezeAttemptClock();
-
-      const pending = collectRequest(member);
-      await discovery.waitForBlocked();
-      // The per-thread transaction starts with only 100ms left. Its Agent read
-      // then remains genuinely blocked; no test timer releases the lock.
-      mockNow(candidateDeadline(startedAt) - 100);
-      advanceAttemptIoClock?.(
-        MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
-          MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
-          100,
-      );
-      await discovery.release();
-      await agent.waitForBlocked();
-      // Arrival proves the real query is already in flight under the 100 ms
-      // server setting. Move the application clock to the same absolute
-      // boundary, but do not release the lock: PostgreSQL alone must end it.
-      mockNow(candidateDeadline(startedAt));
-      const response = await accept(pending, [200]);
-
-      expect(response.body).toMatchObject({
-        result: "no-eligible-content",
-        coverage: "partial",
-        items: [],
-        skipped: [],
-        truncations: ["deadline_exceeded"],
-      });
-      expect(JSON.stringify(response.body)).not.toContain(threadId);
-      await agent.release();
-
-      // The timed-out transaction was awaited and rolled back (PostgreSQL may
-      // replace its terminated session); the same route and pool remain usable.
-      const recovered = await collect(member);
-      expect(recovered.result).toBe("collected");
     }, 60_000);
 
     it("bounds the local final-authority query after the external fence", async () => {

@@ -7,7 +7,7 @@ import {
   decodeSandboxTokenPayload,
 } from "../lib/api/config";
 import {
-  getAgentUserConnectors,
+  getAgentUserBuiltinConnectors,
   listUserPermissionGrants,
 } from "../lib/api/domains/agents";
 import { getOrg } from "../lib/api/domains/orgs";
@@ -208,7 +208,7 @@ async function resolveSandboxConnectorData(
   const [viewResult, grantsResult, enabledResult] = await Promise.allSettled([
     resolveRunConnectorAccountView(),
     listUserPermissionGrants(agentId),
-    getAgentUserConnectors(agentId),
+    getAgentUserBuiltinConnectors(agentId),
   ]);
   if (viewResult.status === "rejected") {
     throw viewResult.reason;

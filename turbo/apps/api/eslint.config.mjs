@@ -412,6 +412,15 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/agent-run-failure-log.service.ts"],
+    rules: {
+      // Guest root filesystem exhaustion is already a classified, bounded
+      // execution condition. Preserve the canonical INFO behavior without
+      // allowing unrelated completion messages to bypass the noise gate.
+      "api/no-logger-info": ["error", { allowedMessages: ["Run failed"] }],
+    },
+  },
+  {
     files: ["src/signals/services/pi-api-first-turn.service.ts"],
     rules: {
       // Recovery, discarded late results and attempt timeouts are the only
@@ -422,6 +431,17 @@ export default [
       "api/no-logger-info": [
         "error",
         { allowedMessages: ["Pi API first-turn outcome"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/pi-api-first-turn-failure-log.service.ts"],
+    rules: {
+      // Classified provider outcomes mirror Runner's bounded execution
+      // diagnostic at INFO; unclassified structural failures remain ERROR.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Pi API first-turn execution failed"] },
       ],
     },
   },
@@ -612,6 +632,11 @@ export default [
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
+      // Authentication necessarily observes an already-aborted HTTP request
+      // before command creation. This one direct production-command case is the
+      // only seam that mutation-tests its pre-BEGIN guard; route coverage owns
+      // the public request, durable outcome and healthy retry.
+      "src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts",
       // Pi resource snapshots are a byte-identical discovery contract shared
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
@@ -841,6 +866,10 @@ export default [
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
+      // Authentication necessarily consumes a pre-aborted HTTP signal before
+      // command creation. The route suite retains every public assertion; this
+      // exception only proves the production command opens no transaction.
+      "src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.

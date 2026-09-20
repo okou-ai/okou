@@ -6,10 +6,10 @@ import {
   type ConnectorCatalogArtifact,
   type ConnectorCatalogArtifactConnector,
 } from "../connector-catalog/artifacts/artifacts";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "../connector-catalog/artifacts/mcp-auth";
 import {
   decodeAttestedConnectorCatalogSnapshot,
   decodeConnectorCatalogSnapshot,
-  decodeRetainedV3ConnectorCatalogSnapshot,
   encodeConnectorCatalogSnapshot,
   loadConnectorCatalogCandidate,
   parseConnectorCatalogActivePointer,
@@ -72,87 +72,6 @@ function filteredMethods(artifact: ConnectorCatalogArtifact) {
   });
 }
 
-describe("retained v3 catalog bootstrap", () => {
-  function retainedCatalog() {
-    const artifact = publishedCatalog();
-    return {
-      ...artifact,
-      artifactSchemaVersion: 3 as const,
-      connectors: artifact.connectors.filter((connector) => {
-        return connector.mcp === undefined;
-      }),
-    };
-  }
-
-  it("preserves the original v3 header and validates its original digest and identity", () => {
-    const artifact = retainedCatalog();
-    const args = snapshot(artifact);
-    expect(decodeRetainedV3ConnectorCatalogSnapshot(args).artifact).toEqual(
-      artifact,
-    );
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot({
-        ...args,
-        catalogDigest: `sha256:${"0".repeat(64)}`,
-      });
-    }).toThrow("digest-mismatch");
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot({
-        ...args,
-        catalogVersion: "another-release",
-      });
-    }).toThrow("invalid-reference");
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot(
-        snapshot({ ...artifact, artifactSchemaVersion: 4 }),
-      );
-    }).toThrow("unsupported-schema");
-  });
-
-  it("rejects v4 capabilities and invalid relationships in retained v3 bytes", () => {
-    const artifact = retainedCatalog();
-    const mcp = requiredConnector(publishedCatalog(), "plaud-mcp");
-    for (const connector of [
-      mcp,
-      { ...mcp, mcp: undefined, replaces: { connectorSlug: "plaud" } },
-      { ...mcp, mcp: undefined },
-    ]) {
-      expect(() => {
-        decodeRetainedV3ConnectorCatalogSnapshot(
-          snapshot({ ...artifact, connectors: [connector] }),
-        );
-      }).toThrow("invalid-artifact");
-    }
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot(
-        snapshot({
-          ...artifact,
-          connectors: [...artifact.connectors, ...artifact.connectors],
-        }),
-      );
-    }).toThrow("invalid-artifact");
-  });
-
-  it("does not accept newly fetched v3 bytes through the v4 candidate loader", async () => {
-    const artifact = retainedCatalog();
-    const rawBytes = Buffer.from(JSON.stringify(artifact));
-    await expect(
-      loadConnectorCatalogCandidate({
-        pointer: {
-          catalogVersion: artifact.catalogVersion,
-          catalogKey: `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`,
-          catalogDigest: snapshot(artifact).catalogDigest,
-        },
-        reader: {
-          readArtifact: async () => {
-            return rawBytes;
-          },
-        },
-      }),
-    ).rejects.toThrow("unsupported-schema");
-  });
-});
-
 describe("v4 connector catalog reader", () => {
   it("reads published v4 HTTP contracts and preserves Plaud metadata without a skill", () => {
     const artifact = publishedCatalog();
@@ -173,15 +92,7 @@ describe("v4 connector catalog reader", () => {
       filteredMethods(decoded).find((method) => {
         return method.connectorSlug === "plaud-mcp";
       }),
-    ).toEqual({
-      connectorSlug: "plaud-mcp",
-      authMethodId: "automatic",
-      reasons: [
-        "unsupported-protocol",
-        "missing-grant-provider",
-        "missing-access-provider",
-      ],
-    });
+    ).toBeUndefined();
   });
 
   it("binds deep and attested snapshots to the supported schema, release, and digest", () => {
@@ -260,8 +171,8 @@ describe("v4 connector catalog reader", () => {
     expect(
       filtered.find((method) => {
         return method.connectorSlug === "recording-tools";
-      })?.reasons,
-    ).toContain("unsupported-protocol");
+      }),
+    ).toBeUndefined();
     expect(
       filtered.filter((method) => {
         return method.connectorSlug === "messages-mcp";
@@ -353,14 +264,10 @@ describe("v4 connector catalog reader", () => {
     }).toThrow("invalid-artifact");
   });
 
-  it("preserves replacement metadata and rejects coexisting predecessors", () => {
+  it("rejects removed replacement metadata", () => {
     const artifact = publishedCatalog();
     const plaud = requiredConnector(artifact, "plaud-mcp");
-    plaud.replaces = { connectorSlug: "plaud" };
-    expect(requiredConnector(decode(artifact), "plaud-mcp").replaces).toEqual({
-      connectorSlug: "plaud",
-    });
-    plaud.replaces = { connectorSlug: "019sms" };
+    Object.assign(plaud, { replaces: { connectorSlug: "plaud" } });
     expect(() => {
       decode(artifact);
     }).toThrow("invalid-artifact");
@@ -404,5 +311,55 @@ describe("v4 connector catalog reader", () => {
     expect(() => {
       decode(artifact);
     }).toThrow("relationship-mismatch");
+  });
+
+  it("accepts catalog-owned OAuth bearer auth for Automatic MCP", () => {
+    const artifact = publishedCatalog();
+    const plaud = requiredConnector(artifact, "plaud-mcp");
+    if (plaud.firewall.kind !== "generated") {
+      throw new Error("Expected generated MCP firewall fixture");
+    }
+    const api = plaud.firewall.config.apis[0];
+    if (!api) {
+      throw new Error("Expected MCP endpoint API fixture");
+    }
+    api.auth = {
+      headers: { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+    };
+
+    expect(requiredConnector(decode(artifact), "plaud-mcp").firewall).toEqual(
+      plaud.firewall,
+    );
+  });
+
+  it("rejects noncanonical catalog auth for Automatic MCP", () => {
+    const invalidAuth = [
+      {
+        headers: {
+          Authorization: "Bearer ${{ secrets.PLAUD_MCP_ACCESS_TOKEN }}",
+        },
+      },
+      {
+        headers: {
+          Authorization: "Basic ${{ secrets.MCP_ACCESS_TOKEN }}",
+        },
+      },
+      { query: { access_token: "${{ secrets.MCP_ACCESS_TOKEN }}" } },
+    ];
+    for (const auth of invalidAuth) {
+      const artifact = publishedCatalog();
+      const plaud = requiredConnector(artifact, "plaud-mcp");
+      if (plaud.firewall.kind !== "generated") {
+        throw new Error("Expected generated MCP firewall fixture");
+      }
+      const api = plaud.firewall.config.apis[0];
+      if (!api) {
+        throw new Error("Expected MCP endpoint API fixture");
+      }
+      api.auth = auth;
+      expect(() => {
+        decode(artifact);
+      }).toThrow("relationship-mismatch");
+    }
   });
 });

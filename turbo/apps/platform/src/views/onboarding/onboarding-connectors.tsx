@@ -6,14 +6,14 @@ import {
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
-  connectConnectorNoAuth$,
-  connectConnectorOAuthAuthCode$,
-  connectFlowConnectorSlug$,
-  justConnectedSlugs$,
-  pollingOAuthAuthCodeConnectorSlug$,
-  pollingOAuthDeviceAuthConnectorSlug$,
-  selectedConnectorSlug$,
-  setSelectedConnectorSlug$,
+  connectBuiltinConnectorNoAuth$,
+  connectBuiltinConnectorOAuthAuthCode$,
+  builtinConnectFlowSlug$,
+  justConnectedBuiltinSlugs$,
+  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthDeviceAuthSlug$,
+  selectedBuiltinConnectorSlug$,
+  setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -49,14 +49,14 @@ export function OnboardingConnectorSetup({
   const connectorCatalogItemsLoadable = useLastLoadable(
     connectorCatalogStatus$,
   );
-  const connect = useSet(connectConnectorOAuthAuthCode$);
-  const connectNoAuth = useSet(connectConnectorNoAuth$);
-  const selectedConnectorSlug = useGet(selectedConnectorSlug$);
-  const setSelectedConnectorSlug = useSet(setSelectedConnectorSlug$);
-  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
-  const justConnectedSlugs = useGet(justConnectedSlugs$);
+  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
+  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
+  const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
+  const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
+  const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
 
   if (validConnectorSlugs.length === 0 && children === undefined) {
     return null;

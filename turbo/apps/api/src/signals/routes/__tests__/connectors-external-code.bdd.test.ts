@@ -386,7 +386,7 @@ describe("CONN-02: external-code session lifecycle", () => {
     expect(readBack.id).toBe(complete.connector.id);
     expect(readBack.connectionStatus).toBe("connected");
 
-    const listed = await connectorsApi.listConnectors(actor);
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(
       listed.connectors.find((connector) => {
         return connector.slug === "aws";
@@ -741,7 +741,7 @@ describe("CONN-02: external-code session lifecycle", () => {
     expectNoVisibleSecret(complete, "bdd-nintendo-session-token");
     expectNoVisibleSecret(complete, "bdd-nintendo-access-token");
 
-    const listed = await connectorsApi.listConnectors(actor);
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(listed.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "nintendo-store",
@@ -870,7 +870,7 @@ describe("CONN-02: external-code session lifecycle", () => {
       NINTENDO_SWITCH_PARENTAL_CONTROLS_UNLOCK_CODE,
     );
 
-    const listed = await connectorsApi.listConnectors(actor);
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
     for (const name of [
       "NINTENDO_SWITCH_PARENTAL_CONTROLS_TOKEN",
       "NINTENDO_SWITCH_PARENTAL_CONTROLS_ACCOUNT_TOKEN",

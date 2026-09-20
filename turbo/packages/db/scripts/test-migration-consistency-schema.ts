@@ -2854,6 +2854,87 @@ async function validateCustomConnectorOauthModeConstraints(
   );
 }
 
+async function validateConnectorAutomaticOAuthConstraints(
+  dbUrl: string,
+): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  const accountId = "73000000-0000-4000-8000-000000000001";
+  const registrationId = "73000000-0000-4000-8000-000000000002";
+  const contractHash = "a".repeat(64);
+  try {
+    await client.query(
+      `INSERT INTO connectors (id, connector_slug, auth_method, automatic_auth_type, storage_version, org_id, user_id) VALUES ($1, 'migration-mcp', 'smart-connect', 'none', 1, 'migration-builtin-org', 'migration-builtin-user')`,
+      [accountId],
+    );
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connectors SET token_expires_at = now() WHERE id = $1`,
+      values: [accountId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connectors SET automatic_auth_type = 'manual' WHERE id = $1`,
+      values: [accountId],
+    });
+    await client.query(
+      `UPDATE connectors SET automatic_auth_type = 'oauth' WHERE id = $1`,
+      [accountId],
+    );
+    await client.query(
+      `INSERT INTO connector_dcr_registrations (id, org_id, connector_slug, auth_method, contract_hash, issuer, client_id, token_endpoint_auth_method, redirect_uri, issued_at) VALUES ($1, 'migration-builtin-org', 'migration-mcp', 'smart-connect', $2, 'https://issuer.example.test', 'builtin-client', 'none', 'https://api.example.test/callback', now())`,
+      [registrationId, contractHash],
+    );
+    const insertBinding = `INSERT INTO connector_account_oauth_bindings (connector_account_id, org_id, user_id, connector_slug, auth_method, storage_version, contract_hash, endpoint, issuer, resource, token_endpoint, client_id, token_endpoint_auth_method, registration_method, dcr_registration_id) VALUES ($1, $2, 'migration-builtin-user', 'migration-mcp', 'smart-connect', 1, $3, 'https://mcp.example.test', 'https://issuer.example.test', 'https://mcp.example.test', 'https://issuer.example.test/token', 'builtin-client', 'none', 'dcr', $4)`;
+    await expectDatabaseError(client, {
+      code: "23503",
+      query: insertBinding,
+      values: [accountId, "foreign-org", contractHash, registrationId],
+    });
+    await expectDatabaseError(client, {
+      code: "23503",
+      query: insertBinding,
+      values: [
+        accountId,
+        "migration-builtin-org",
+        "b".repeat(64),
+        registrationId,
+      ],
+    });
+    await client.query(insertBinding, [
+      accountId,
+      "migration-builtin-org",
+      contractHash,
+      registrationId,
+    ]);
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connector_account_oauth_bindings SET registration_method = 'cimd' WHERE connector_account_id = $1`,
+      values: [accountId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connector_dcr_registrations SET token_endpoint_auth_method = 'client_secret_basic' WHERE id = $1`,
+      values: [registrationId],
+    });
+    await client.query(`DELETE FROM connectors WHERE id = $1`, [accountId]);
+    const bindings = await client.query(
+      `SELECT 1 FROM connector_account_oauth_bindings WHERE connector_account_id = $1`,
+      [accountId],
+    );
+    assert.equal(bindings.rowCount, 0);
+    await client.query(
+      `DELETE FROM connector_dcr_registrations WHERE id = $1`,
+      [registrationId],
+    );
+  } finally {
+    await client.end();
+  }
+  console.log(
+    "   ✅ Builtin Automatic OAuth retains method identity and rejects cross-owner or cross-contract bindings\n",
+  );
+}
+
 async function validateCustomConnectorSkillVersionPair(
   dbUrl: string,
 ): Promise<void> {
@@ -3440,6 +3521,7 @@ async function main(): Promise<void> {
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateConnectorCatalogFinalConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
+    await validateConnectorAutomaticOAuthConstraints(dbUrl1);
     await validateCustomConnectorSkillVersionPair(dbUrl1);
 
     // Step 2: Backup and regenerate migrations
@@ -3461,6 +3543,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateOfficialAutomationResultEmailSchema(dbUrl2);
+    await validateConnectorAutomaticOAuthConstraints(dbUrl2);
 
     // Step 4: Restore original migrations
     await restoreMigrations();

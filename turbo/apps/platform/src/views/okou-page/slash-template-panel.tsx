@@ -17,11 +17,9 @@ import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
-  isSlashTemplateDetailCategory,
   isSlashTemplateNativeAspectCategory,
   slashTemplatePreviews,
   type SlashTemplateCategory,
-  type SlashTemplateDetailCategory,
   type SlashTemplatePreview,
 } from "./composer-template-catalog.ts";
 
@@ -32,7 +30,6 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
   slides: Presentation,
   illustration: Image,
   website: Globe,
-  workflow: Route,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
 interface SlashTemplatePanelProps {
@@ -48,7 +45,7 @@ interface SlashTemplatePanelProps {
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplateDetailCategory,
+    category: SlashTemplateCategory,
   ) => void;
   readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
@@ -74,11 +71,6 @@ export function slashTemplateCategoryLabel(
     case "website": {
       return i18n.t(($) => {
         return $.artifacts.templates.website;
-      });
-    }
-    case "workflow": {
-      return i18n.t(($) => {
-        return $.artifacts.templates.workflow;
       });
     }
   }
@@ -218,10 +210,10 @@ function SlashTemplateDetailPane({
   onSelectTemplate,
   onImportDeck,
 }: {
-  readonly category: SlashTemplateDetailCategory;
+  readonly category: SlashTemplateCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplateDetailCategory,
+    category: SlashTemplateCategory,
   ) => void;
   readonly onImportDeck: (file: File) => void;
 }) {
@@ -420,13 +412,9 @@ export function SlashTemplatePanel({
   // Each row publishes the result as `data-active`, so which row is marked is
   // readable without depending on the utility class that paints it.
   const markedIndex = previewIndex === null ? selectedIndex : -1;
-  const previewCategory = categories[previewIndex ?? selectedIndex] ?? null;
-  // Narrowed here rather than inside the pane, so the pane has no unreachable
-  // branch for a category that can never reach it.
-  const detailCategory =
-    previewCategory !== null && isSlashTemplateDetailCategory(previewCategory)
-      ? previewCategory
-      : null;
+  // A workflow row indexes past the categories, so it previews nothing and the
+  // covers close.
+  const detailCategory = categories[previewIndex ?? selectedIndex] ?? null;
   return (
     <div
       className="flex h-[380px] overflow-hidden"

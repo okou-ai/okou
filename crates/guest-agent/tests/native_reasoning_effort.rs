@@ -60,6 +60,15 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
             Some("ultra"),
             Some("ultra"),
         ),
+        ("codex", &codex_mock, "gpt-6-sol", Some("max"), Some("max")),
+        (
+            "codex",
+            &codex_mock,
+            "openai/gpt-6-sol",
+            Some("ultra"),
+            Some("ultra"),
+        ),
+        ("codex", &codex_mock, "gpt-6-sol", None, Some("max")),
         (
             "codex",
             &codex_mock,

@@ -31,9 +31,9 @@ const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
 const THIRD_WORKFLOW_NAME = "axiom-traces";
 
-// The unfiltered menu has four category rows before the workflows.
+// The unfiltered menu has three category rows before the workflows.
 const WORKFLOW_NAVIGATION_CASES = [
-  { query: "", downCount: 5 },
+  { query: "", downCount: 4 },
   { query: "axi", downCount: 1 },
 ] as const;
 
@@ -139,17 +139,16 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   expect(within(pane).getByText(first.title)).toBeInTheDocument();
 });
 
-test("Make lists the four types it indexes, and Video is not one of them", async () => {
+test("Make lists the three types it indexes; Video and Workflow are not among them", async () => {
   await openSlashMenu();
-  for (const category of [
-    "Presentation",
-    "Illustration",
-    "Website",
-    "Workflow",
-  ]) {
+  for (const category of ["Presentation", "Illustration", "Website"]) {
     expect(slashButton(category)).toBeInTheDocument();
   }
   expect(querySlashButton("Video")).toBeNull();
+  // The agent's own workflows are listed right below Make, so a type row for
+  // them would only reopen the same catalog the panel already indexes.
+  expect(querySlashButton("Workflow")).toBeNull();
+  expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
 });
 
 test("The pane carries the whole category, so its covers match the count it heads", async () => {
@@ -253,19 +252,9 @@ test("Hovering a workflow closes the preview pane", async () => {
   });
 });
 
-test("Hovering the Workflow type closes the preview pane", async () => {
-  const user = userEvent.setup();
-  await openSlashMenu();
-  expect(detailPane()).not.toBeNull();
-  await user.hover(slashButton("Workflow"));
-  await waitFor(() => {
-    expect(detailPane()).toBeNull();
-  });
-});
-
 test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
   await openSlashMenu();
-  const workflow = slashButton("Workflow");
+  const workflow = slashButton(`/${WORKFLOW_NAME}`);
   // The popover is content-width, so closing the pane narrows it. When the
   // popover has been collision-shifted against a boundary, that narrowing
   // re-pins it and the left column slides away from a pointer that never
@@ -404,23 +393,20 @@ test.each([
   },
 );
 
-// The two rows without a create mode are the ones that used to leave the menu
-// standing, so the dialog they opened had to compete with it.
-test.each(["Website", "Workflow"])(
-  "Clicking %s opens the picker on its own tab",
-  async (category) => {
-    const user = userEvent.setup();
-    await openSlashMenu();
+// Website has no create mode, so it is the row that used to leave the menu
+// standing and made the dialog it opened compete with it.
+test("Clicking Website opens the picker on its own tab", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
 
-    await user.click(slashButton(category));
+  await user.click(slashButton("Website"));
 
-    await waitFor(() => {
-      return screen.getByRole("dialog");
-    });
-    expect(tabByText(category)).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  },
-);
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
 test("Browse all templates opens the picker", async () => {
   const user = userEvent.setup();

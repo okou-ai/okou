@@ -125,6 +125,7 @@ type WorkflowAutomationCategoryKey =
   | "calendar"
   | "forms"
   | "notion"
+  | "github"
   | "integrations";
 type WorkflowWebhookAutomationSummary = Extract<
   WorkflowAutomationSummary,

@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { and, eq } from "drizzle-orm";
 
@@ -60,6 +61,7 @@ interface ResolvePersistedChatThreadModelParams {
   readonly requestedCodexServiceTier?: CodexServiceTier;
   readonly requestedReasoningEffort?: ReasoningEffort;
   readonly persistRequestedCodexServiceTier: boolean;
+  readonly featureSwitchContext?: FeatureSwitchContext;
 }
 
 export function persistedChatThreadModelSnapshotColumns() {
@@ -333,6 +335,7 @@ async function evaluatePersistedChatThreadModel(
       db,
       params.orgId,
       params.userId,
+      { featureSwitchContext: params.featureSwitchContext },
     );
     if (!defaultPin.selectedModel) {
       return {
@@ -355,6 +358,7 @@ async function evaluatePersistedChatThreadModel(
       orgId: params.orgId,
       userId: params.userId,
       selectedModel: thread.selectedModel,
+      featureSwitchContext: params.featureSwitchContext,
     });
     if (!modelResolution.route) {
       return {

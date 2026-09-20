@@ -226,7 +226,7 @@ jobs:
             echo "crates-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             echo "CI workflow changes detected"
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else

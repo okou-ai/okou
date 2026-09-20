@@ -1,0 +1,67 @@
+name: "Setup R2 sccache"
+description: "Install sccache and start an R2-backed compiler cache server"
+
+inputs:
+  architecture:
+    description: "Compiler cache architecture: arm64 or x86_64"
+    required: true
+  r2-access-key-id:
+    description: "R2 access key ID"
+    required: true
+  r2-secret-access-key:
+    description: "R2 secret access key"
+    required: true
+  r2-account-id:
+    description: "R2 account ID"
+    required: true
+  r2-bucket-name:
+    description: "R2 bucket for shared compiler outputs"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install sccache
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      with:
+        version: "v0.15.0"
+
+    - name: Configure R2 sccache
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ inputs.r2-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.r2-secret-access-key }}
+        R2_ACCOUNT_ID: ${{ inputs.r2-account-id }}
+        SCCACHE_ARCHITECTURE: ${{ inputs.architecture }}
+        SCCACHE_BUCKET: ${{ inputs.r2-bucket-name }}
+        SCCACHE_GHA_ENABLED: "false"
+        SCCACHE_IDLE_TIMEOUT: "0"
+        SCCACHE_REGION: auto
+      run: |
+        : "${AWS_ACCESS_KEY_ID:?missing R2 access key}"
+        : "${AWS_SECRET_ACCESS_KEY:?missing R2 secret key}"
+        : "${R2_ACCOUNT_ID:?missing R2 account}"
+        : "${SCCACHE_BUCKET:?missing R2 bucket}"
+        case "$SCCACHE_ARCHITECTURE" in
+          arm64|x86_64) ;;
+          "") echo "missing sccache architecture" >&2; exit 2 ;;
+          *) echo "unsupported sccache architecture: ${SCCACHE_ARCHITECTURE}" >&2; exit 2 ;;
+        esac
+
+        export SCCACHE_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        export SCCACHE_S3_KEY_PREFIX="runner-sccache/${SCCACHE_ARCHITECTURE}/"
+        SCCACHE_CONF_PATH="${RUNNER_TEMP:-/tmp}/sccache.toml"
+        cat > "$SCCACHE_CONF_PATH" <<'EOF'
+        server_startup_timeout_ms = 60000
+        EOF
+
+        # Share compiler outputs across PR and merge-group refs without the
+        # GitHub cache quota. Keep the server alive for this job: a restart
+        # from a build step would not inherit the startup-only credentials.
+        SCCACHE_CONF="$SCCACHE_CONF_PATH" ${SCCACHE_PATH:-sccache} --start-server
+
+        {
+          echo "CARGO_INCREMENTAL=0"
+          echo "SCCACHE_CONF=$SCCACHE_CONF_PATH"
+          echo "RUSTC_WRAPPER=sccache"
+        } >> "$GITHUB_ENV"

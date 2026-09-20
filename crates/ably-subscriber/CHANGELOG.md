@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/vm0-ai/okou/compare/ably-subscriber-v1.1.4...ably-subscriber-v1.1.5) (2026-09-20)
+
+
+### Performance Improvements
+
+* **ci:** shorten ably timeout tests ([#35552](https://github.com/vm0-ai/okou/issues/35552)) ([4bacc7c](https://github.com/vm0-ai/okou/commit/4bacc7cf75fa2ec67def2b2ff8f9b67a8ecc7e80))
+
 ## [1.1.4](https://github.com/vm0-ai/okou/compare/ably-subscriber-v1.1.3...ably-subscriber-v1.1.4) (2026-09-18)
 
 

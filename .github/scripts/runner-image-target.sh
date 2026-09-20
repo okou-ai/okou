@@ -92,6 +92,24 @@ runner_image_cache_suffix() {
   esac
 }
 
+runner_image_sccache_architecture() {
+  local target="${1:-}"
+
+  runner_image_validate_target "$target" || return $?
+  case "$target" in
+    aarch64-unknown-linux-musl)
+      printf '%s\n' "arm64"
+      ;;
+    x86_64-unknown-linux-musl)
+      printf '%s\n' "x86_64"
+      ;;
+    *)
+      echo "missing runner image sccache architecture for target: ${target}" >&2
+      return 2
+      ;;
+  esac
+}
+
 runner_image_asset_suffix() {
   local target="${1:-}"
 

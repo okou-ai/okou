@@ -198,6 +198,7 @@ impl AdditionalRun {
         let dispatcher = RpcRuntime {
             ssh: Some(Arc::clone(runtime)),
             vnc: None,
+            usage: None,
         }
         .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
@@ -310,6 +311,7 @@ impl Harness {
         let dispatcher = RpcRuntime {
             ssh: Some(Arc::clone(&runtime)),
             vnc: None,
+            usage: None,
         }
         .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
@@ -441,6 +443,7 @@ impl Harness {
             RpcRuntime {
                 ssh: Some(Arc::clone(&self.runtime)),
                 vnc: None,
+                usage: None,
             }
             .start(
                 Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),

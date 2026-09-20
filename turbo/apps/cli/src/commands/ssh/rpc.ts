@@ -1,6 +1,11 @@
-import { spawn } from "node:child_process";
 import type { Writable } from "node:stream";
 import { z } from "zod";
+
+import {
+  invokeRunnerRpc,
+  RunnerRpcProtocolError,
+  type RunnerRpcLocalFailure,
+} from "../../lib/runner-rpc";
 
 const STREAM_LIMIT = 1024 * 1024;
 const LINE_LIMIT = 24 * 1024;
@@ -142,7 +147,7 @@ export async function writeOutput(
   });
 }
 
-export class SshProtocolError extends Error {
+export class SshProtocolError extends RunnerRpcProtocolError {
   constructor() {
     super("Invalid SSH helper response");
   }
@@ -258,7 +263,10 @@ class SshResponse {
     };
   }
 
-  fail(failureReason: LocalFailure, effects: "not_started" | "unknown") {
+  fail(
+    failureReason: RunnerRpcLocalFailure,
+    effects: "not_started" | "unknown",
+  ) {
     this.terminal = {
       type: "failed",
       failure_reason: failureReason,
@@ -290,7 +298,7 @@ export async function executeSsh(
   command: string,
   json: boolean,
 ) {
-  return invokeSshRpc(
+  return invokeRunnerRpc(
     "ssh.exec",
     { sshConnectionId: connectionId, command },
     new SshResponse(),
@@ -298,112 +306,4 @@ export async function executeSsh(
   );
 }
 
-type LocalFailure = "cancelled" | "timed_out" | "transport" | "protocol";
-
-interface ResponseReader<T> {
-  read(chunk: unknown, json: boolean, signal: AbortSignal): Promise<void>;
-  finish(code: number | null, termination: NodeJS.Signals | null): void;
-  fail(reason: LocalFailure, effects: "not_started" | "unknown"): void;
-  output(): T;
-}
-
-/** One bounded helper invocation. Losing an acknowledgement never triggers replay. */
-export async function invokeSshRpc<T>(
-  method: string,
-  params: Readonly<Record<string, unknown>>,
-  response: ResponseReader<T>,
-  json = true,
-  parentSignal?: AbortSignal,
-): Promise<T> {
-  const parentReason = () => {
-    return parentSignal?.reason instanceof DOMException &&
-      parentSignal.reason.name === "TimeoutError"
-      ? "timed_out"
-      : "cancelled";
-  };
-  if (parentSignal?.aborted) {
-    response.fail(parentReason(), "not_started");
-    return response.output();
-  }
-  const controller = new AbortController();
-  const signal = controller.signal;
-  let localReason: "cancelled" | "timed_out" | "transport" = "transport";
-  const cancel = () => {
-    localReason = "cancelled";
-    controller.abort();
-  };
-  process.once("SIGINT", cancel);
-  const timer = setTimeout(() => {
-    localReason = "timed_out";
-    controller.abort();
-  }, 65_000);
-  let spawnFailed = false;
-  const child = spawn("/usr/local/bin/runner-rpc-client", [], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const closed = new Promise<{
-    code: number | null;
-    exitSignal: NodeJS.Signals | null;
-  }>((resolve) => {
-    child.once("error", () => {
-      spawnFailed = true;
-      controller.abort();
-    });
-    child.once("close", (code, exitSignal) => {
-      resolve({ code, exitSignal });
-    });
-  });
-  const kill = () => {
-    child.kill("SIGKILL");
-  };
-  signal.addEventListener("abort", kill, { once: true });
-  const cancelFromParent = () => {
-    localReason = parentReason();
-    controller.abort();
-  };
-  parentSignal?.addEventListener("abort", cancelFromParent, { once: true });
-  child.stdin.on("error", () => {
-    controller.abort();
-  });
-  // Discard diagnostics: they are not a trusted channel for secrets or outcomes.
-  const drain = (async () => {
-    let bytes = 0;
-    for await (const chunk of child.stderr) {
-      if (!Buffer.isBuffer(chunk)) invalid();
-      bytes += chunk.length;
-      if (bytes > LINE_LIMIT) invalid();
-    }
-  })().catch(() => {
-    controller.abort();
-  });
-  child.stdin.end(
-    JSON.stringify({
-      version: 1,
-      method,
-      params,
-    }),
-  );
-  try {
-    for await (const chunk of child.stdout)
-      await response.read(chunk, json, signal);
-    const exit = await closed;
-    await drain;
-    signal.throwIfAborted();
-    response.finish(exit.code, exit.exitSignal);
-  } catch (error) {
-    // Once dispatched, losing the helper cannot prove execution stopped.
-    response.fail(
-      error instanceof SshProtocolError ? "protocol" : localReason,
-      spawnFailed ? "not_started" : "unknown",
-    );
-  } finally {
-    kill();
-    await closed;
-    await drain;
-    clearTimeout(timer);
-    process.removeListener("SIGINT", cancel);
-    signal.removeEventListener("abort", kill);
-    parentSignal?.removeEventListener("abort", cancelFromParent);
-  }
-  return response.output();
-}
+export const invokeSshRpc = invokeRunnerRpc;

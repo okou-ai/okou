@@ -108,6 +108,7 @@ export function buildAgentToolsPrompt(args: {
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly presentationConvertEnabled: boolean;
 }): string {
   const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
   return [
@@ -176,6 +177,11 @@ export function buildAgentToolsPrompt(args: {
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including deck-to-video work, review, and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
+    ...(args.presentationConvertEnabled
+      ? [
+          "- Presentation delivery: when the user asks for a presentation and names no delivery format, deliver both the hosted HTML deck and a pptx of it in one reply. `PPT`, `slides`, and `deck` name the artifact, not a format. Convert the finished deck with `okou presentation convert --input <deck.html> --verify`, then send the file with this surface's `upload-file` command.",
+        ]
+      : []),
     "- Third-party services (GitHub, Slack, Notion, 100+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
     "- Request one account switch in the current web chat with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. This changes only the current thread's override for future runs, not the current run or global default. Keep the callback prompt concise and do not include secrets because it is included in the URL. Share the returned link and end the turn; Okou starts the callback round only after the user confirms and the selection succeeds.",

@@ -238,6 +238,7 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.PrivateArtifacts, "artifact:write"],
     [FeatureSwitchKey.Banking, "banking:read"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
+    [FeatureSwitchKey.RunUsage, "run-usage:read"],
     [FeatureSwitchKey.VncAccess, "vnc:read"],
     [FeatureSwitchKey.VncAccess, "vnc:write"],
   ] as const)(

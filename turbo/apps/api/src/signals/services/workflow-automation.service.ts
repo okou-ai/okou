@@ -73,6 +73,7 @@ import { publishChatThreadAutomationsChangedSafely } from "../external/realtime"
 import {
   applyMorningBriefLogicalChoice,
   lockMorningBriefNativeSchedule,
+  lockMorningBriefNativeScheduleForWrite,
   type MorningBriefChoiceApplication,
 } from "./morning-brief-native-schedule.service";
 import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
@@ -6041,10 +6042,12 @@ export async function persistNativeMorningBriefPreferenceChoice(
  * choice as one write.
  *
  * Every writer follows the same lock order: the caller's member-preference
- * advisory lock (when present), then the native schedule, then the legacy
- * automation, and finally any occurrence read by the choice application. A
- * native owner never receives a new legacy `next_run_at`; rollback restores the
- * future legacy obligation only after its drain commits.
+ * advisory lock (when present), then the native schedule — the owner key while
+ * no row exists yet — then the legacy automation, and finally any occurrence
+ * read by the choice application. A native owner never receives a new legacy
+ * `next_run_at`; rollback restores the future legacy obligation only after its
+ * drain commits. Taking the owner key here is what stops a first materialization
+ * from publishing the choice this toggle is replacing.
  */
 async function persistMorningBriefAutomationToggle(
   db: Db,
@@ -6070,7 +6073,7 @@ async function persistMorningBriefAutomationToggle(
     userId: args.automation.ownerUserId,
   };
   return await db.transaction(async (tx) => {
-    const native = await lockMorningBriefNativeSchedule(tx, owner);
+    const native = await lockMorningBriefNativeScheduleForWrite(tx, owner);
     const selected =
       native !== undefined &&
       native.legacyAutomationId === args.automation.id &&

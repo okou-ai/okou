@@ -57,6 +57,7 @@ describe("Okou CLI program", () => {
       "mcp",
       "ssh",
       "vnc",
+      "run",
       "mail",
       "credit",
       "upgrade",
@@ -106,7 +107,6 @@ describe("Okou CLI program", () => {
       "auth",
       "compose",
       "volume",
-      "run",
       "preference",
       "secret",
       "variable",
@@ -124,8 +124,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 44 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(44);
+  it("should have exactly 45 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(45);
   });
 });
 

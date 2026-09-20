@@ -114,6 +114,7 @@
         "time": "시간"
       },
       "log": "로그",
+      "manualReloadNotice": "최신 활동 로그를 보려면 이 페이지를 새로고침하세요.",
       "modelProvidedBy": "{{provider}}에서 제공하는 {{model}}",
       "networkEmpty": {
         "description": "이 실행에 대한 네트워크 트래픽이 기록되지 않았습니다.",
@@ -444,6 +445,7 @@
       "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
       "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
       "signedInAs": "{{email}} 계정으로 로그인됨",
+      "signedInDescription": "존재하지 않거나 다른 계정 또는 조직에 공유되었을 수 있습니다.",
       "signIn": "로그인",
       "signInFailed": "로그인 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "switchAccount": "계정 전환",
@@ -503,7 +505,7 @@
       "description": "여기에서 생성한 모든 항목을 탐색하세요.",
       "emptyDescription": "아티팩트가 준비되면 여기에 표시됩니다.",
       "emptyTitle": "아티팩트를 찾을 수 없습니다",
-      "error": "아티팩트를 불러올 수 없습니다. 나중에 다시 시도하세요.",
+      "error": "아티팩트를 불러올 수 없습니다.",
       "filters": {
         "avatar": "아바타",
         "avatarAria": "아바타 아티팩트 표시",
@@ -522,7 +524,8 @@
         "websiteAria": "웹사이트 아티팩트 표시"
       },
       "kindIcon": "{{kind}} 아티팩트",
-      "loading": "아티팩트 로딩 중"
+      "loading": "아티팩트 로딩 중",
+      "retry": "다시 시도"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -601,6 +604,7 @@
       "onlyMeDescription": "나만 이 아티팩트를 볼 수 있습니다",
       "organization": "조직",
       "organizationDescription": "링크가 있는 {{organization}} 구성원",
+      "organizationDescriptionUnnamed": "링크가 있는 조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
       "publicDescription": "링크가 있는 모든 사람이 볼 수 있습니다",
@@ -644,7 +648,6 @@
       "importedSlides_other": "{{count}}장",
       "importFile": "내 파일 가져오기",
       "importFileHint": "파일의 디자인을 재사용",
-      "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "multiAccent": "다중 악센트",
       "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
@@ -1435,6 +1438,55 @@
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
+        "intro": {
+          "checkin": {
+            "amount": "+{{amount}} 크레딧",
+            "confirm": "일하러 가기",
+            "description": "크레딧은 일 자체에 쓰입니다. 실행 한 번, 결과물 하나, 일정에 따라 도는 워크플로 모두에요.",
+            "title": "오늘 몫은 끝났습니다"
+          },
+          "connector": {
+            "confirm": "모든 커넥터 보기",
+            "connected": "연결됨",
+            "description": "하나를 선택하면 {{assistantName}}이(가) 그 안에서 작업을 시작합니다.",
+            "notConnected": "연결 안 됨",
+            "pickerFailed": "커넥터를 불러오지 못했습니다. 커넥터 페이지에서 다시 시도하세요.",
+            "pickerLoading": "커넥터 불러오는 중…",
+            "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"
+          },
+          "invite": {
+            "confirm": "팀원 초대하기",
+            "description": "이 워크스페이스로 팀원을 초대합니다.",
+            "note": "한 번 만들어 둔 것이 더는 나만의 것이 아니게 됩니다. 오늘 아침에 합류한 사람도 방법을 묻지 않고 오후에 바로 돌릴 수 있습니다.",
+            "title": "한 사람이 아는 것을 모두가 실행합니다"
+          },
+          "later": "나중에",
+          "slack": {
+            "appBadge": "APP",
+            "confirm": "Slack에 추가",
+            "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
+            "note": "팀원들이 매번 나를 거치지 않아도 됩니다. 채널에서 부탁하면 결과가 그 스레드로 돌아오고, 모두가 함께 봅니다.",
+            "sampleChannel": "# growth",
+            "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
+          },
+          "workflow": {
+            "browse": "템플릿 둘러보기",
+            "confirm": "하나 해보기",
+            "description": "반복하는 일을 팀이 실행할 수 있는 워크플로로 만듭니다.",
+            "prompt": "매주 월요일 아침에 경쟁사가 지난주에 공개한 내용을 확인하고 주제별로 묶어 비교표로 만들어 주세요.",
+            "promptConfirm": "{{assistantName}}에게 보내기",
+            "promptDescription": "이대로 {{assistantName}}에게 보내거나, 문구를 고쳐서 보내세요.",
+            "promptOutcome": "자료를 읽고, 찾은 것을 묶어서 표로 답합니다. 결과가 괜찮으면 그 실행을 워크플로로 저장할지 물어봅니다.",
+            "promptTitle": "동료에게 부탁하듯 말하세요",
+            "stepRun": "한 번 실행해 보기",
+            "stepRunDescription": "무엇을 정하기 전에 완성된 결과물을 먼저 봅니다.",
+            "stepSave": "저장하고 일정을 정하기",
+            "stepSaveDescription": "아무도 시키지 않아도 실행되고, 팀원 누구나 실행할 수 있습니다.",
+            "stepTemplate": "템플릿에서 시작하기",
+            "stepTemplateDescription": "빈 화면 대신 내 업무에 가까운 것을 고르세요.",
+            "title": "잘된 실행 한 번이 팀의 자산이 됩니다"
+          }
+        },
         "invite": {
           "action": "초대",
           "description": "추가하는 사람마다 적립됩니다",
@@ -6411,6 +6463,89 @@
       "thread_other": "{{value}}개 스레드"
     }
   },
+  "vnc": {
+    "accessDescription": "VNC 데스크톱을 보고 제어할 Agent를 선택하세요. SSH 권한과는 별개입니다.",
+    "accessHelp": "이 Agent가 현재와 앞으로 설정할 모든 VNC 데스크톱을 보고 제어하도록 허용합니다.",
+    "add": "호스트 추가",
+    "cancel": "취소",
+    "close": "닫기",
+    "configurationHelp": "호스트를 저장해도 연결을 테스트하지 않습니다. Agent가 세션 시작 시 공유 또는 독점 모드를 선택하며, VNC 서버가 접속을 허용할지 결정합니다.",
+    "configured": "구성됨",
+    "credential": {
+      "add": "자격 증명 추가",
+      "createNew": "새 자격 증명 만들기",
+      "delete": "자격 증명 삭제",
+      "deleteHelp": "사용하지 않는 자격 증명을 삭제할까요? 되돌릴 수 없습니다.",
+      "edit": "자격 증명 편집",
+      "empty": "저장된 VNC 자격 증명이 없습니다.",
+      "inUse": "삭제하기 전에 이 자격 증명을 사용하는 호스트를 삭제하거나 다른 자격 증명으로 변경하세요.",
+      "label": "자격 증명",
+      "method": "VNC 비밀번호",
+      "name": "자격 증명 이름",
+      "nameHint": "예: 사무실 데스크톱 로그인",
+      "password": "VNC 비밀번호",
+      "passwordHelp": "기존 VNC 비밀번호는 인쇄 가능한 ASCII 문자 1~8자를 사용합니다. 공백은 유지됩니다.",
+      "passwordHint": "서버의 VNC 비밀번호를 입력하세요",
+      "replace": "비밀번호 교체",
+      "replaceHelp": "끄면 저장된 비밀번호를 유지합니다. 교체하면 이 자격 증명을 사용하는 모든 호스트에 영향을 줍니다.",
+      "select": "인증 정보 선택",
+      "sharedHelp_one": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 해당 호스트에 영향을 줍니다.",
+      "sharedHelp_other": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 모두에 영향을 줍니다.",
+      "unused": "사용 중인 호스트가 없습니다."
+    },
+    "credentialsTab": "자격 증명",
+    "delete": "호스트 삭제",
+    "deleteHelp": "이 호스트를 삭제할까요? 재사용 가능한 자격 증명은 유지됩니다.",
+    "description": "Agent가 원격 데스크톱을 보고 제어하도록 허용하세요.",
+    "displayName": "표시 이름",
+    "displayNameHint": "예: 사무실 데스크톱",
+    "edit": "호스트 편집",
+    "editHelp": "변경 사항은 이 호스트에 적용되며 현재 연결 설정을 무효화합니다.",
+    "empty": "VNC 호스트를 추가해 시작하세요.",
+    "errors": {
+      "configurationChanged": "연 이후 호스트가 변경되었습니다.",
+      "credentialChanged": "연 이후 자격 증명이 변경되었습니다.",
+      "credentialUnavailable": "선택한 자격 증명을 더 이상 사용할 수 없습니다.",
+      "failed": "VNC 설정을 저장하지 못했습니다.",
+      "hostUnavailable": "이 호스트를 더 이상 사용할 수 없습니다.",
+      "invalidHost": "URL, 사용자 이름, 포트를 제외한 유효한 호스트 이름 또는 IP 주소를 입력하세요.",
+      "invalidInput": "VNC 설정을 확인하고 다시 시도하세요.",
+      "invalidTrust": "최대 8개, 64 KiB 이하의 유효한 공개 CA 인증서를 입력하세요.",
+      "ownerChanged": "워크스페이스 액세스가 변경되었습니다. 새로고침 후 계속하세요.",
+      "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요."
+    },
+    "host": "호스트 이름 또는 IP 주소",
+    "hostHint": "예: desktop.example.com",
+    "hostsTab": "호스트",
+    "label": "VNC",
+    "loadFailed": "VNC 설정을 불러오지 못했습니다.",
+    "loading": "VNC 설정을 불러오는 중…",
+    "loadingAccess": "에이전트 접근 권한을 불러오는 중…",
+    "manage": "VNC 관리",
+    "port": "포트",
+    "retry": "다시 시도",
+    "save": "저장",
+    "saveRecovery": {
+      "resourceIdConflict": "리소스를 만들지 못했습니다. 이 창을 닫고 다시 시도하세요.",
+      "review": "설정을 새로고침했습니다. 이 창을 닫고 현재 내용을 확인한 후 다시 시도하세요.",
+      "uncertain": "저장 결과를 확인할 수 없어 원래 입력을 잠갔습니다. 같은 요청을 다시 시도하거나 닫고 새로고침하여 저장된 설정을 확인하세요."
+    },
+    "saving": "저장 중…",
+    "security": {
+      "caBundle": "CA 인증서 (PEM)",
+      "caHelp": "최대 8개의 CA 인증서, 총 64 KiB까지 가능합니다. 개인 키나 서버 인증서를 붙여넣지 마세요.",
+      "caHint": "서버 인증서를 발급한 공개 CA 인증서를 붙여넣으세요",
+      "custom": "사용자 지정 인증 기관",
+      "help": "VeNCrypt X509Vnc를 지원하는 VNC 서버가 필요합니다. 인증서는 설정한 호스트 이름 또는 IP 주소와 일치해야 합니다.",
+      "profile": "암호화된 VNC (X509Vnc)",
+      "system": "시스템 인증 기관",
+      "title": "서버 인증서 신뢰"
+    },
+    "summary_one": "설정된 호스트 {{count}}개",
+    "summary_other": "설정된 호스트 {{count}}개",
+    "title": "VNC 원격 액세스",
+    "unavailable": "이 워크스페이스에서는 VNC를 사용할 수 없습니다."
+  },
   "workflows": {
     "automations": {
       "calendar": {
@@ -6760,6 +6895,7 @@
         "calendar": "캘린더",
         "email": "이메일",
         "forms": "Google Forms",
+        "github": "GitHub",
         "integrations": "통합",
         "notion": "Notion",
         "schedule": "일정"

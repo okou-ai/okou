@@ -18,6 +18,7 @@ import {
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
@@ -25,6 +26,7 @@ import {
   mcpRevokeQueuedMessageOutputSchema,
   mcpCancelRunOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
@@ -241,6 +243,11 @@ async function callTool(
     .parse(rpc(response.body)).result;
 }
 
+function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
+  expect(result.isError).toBeTruthy();
+  return mcpToolErrorContentSchema.parse(result.structuredContent).error;
+}
+
 async function listThreads(token: string, args: Record<string, unknown> = {}) {
   const result = await callTool(token, "list_chat_threads", args);
   expect(result.isError).not.toBeTruthy();
@@ -287,6 +294,12 @@ async function createThread(token: string, args: Record<string, unknown>) {
   const result = await callTool(token, "create_chat_thread", args);
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpCreateChatThreadOutputSchema.parse(result.structuredContent);
+}
+
+async function updateThread(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "update_chat_thread", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpUpdateChatThreadOutputSchema.parse(result.structuredContent);
 }
 
 async function sendMessage(token: string, args: Record<string, unknown>) {
@@ -506,7 +519,7 @@ describe("MCP chat discovery and creation", () => {
     const auth = await fixture();
     const first = await callTool(auth.token(), "list_models");
     expect(first.isError).toBeTruthy();
-    expect(first.structuredContent).toBeUndefined();
+    structuredToolError(first);
     await expect(callTool(auth.token(), "list_models")).resolves.toStrictEqual(
       first,
     );
@@ -554,7 +567,7 @@ describe("MCP chat discovery and creation", () => {
 
       const pending = await callTool(token, "list_models");
       expect(pending.isError).toBeTruthy();
-      expect(pending.structuredContent).toBeUndefined();
+      structuredToolError(pending);
       expect(pending.content).toContainEqual({
         type: "text",
         text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
@@ -772,14 +785,269 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "Different intent" },
       { ...args, model: "claude-sonnet-4-6" },
     ]) {
-      expect(
-        (await callTool(token, "create_chat_thread", conflicting)).isError,
-      ).toBeTruthy();
+      const result = await callTool(token, "create_chat_thread", conflicting);
+      expect(structuredToolError(result)).toMatchObject({
+        code: "request_id_conflict",
+        retryable: false,
+      });
     }
     await expect(
       f.chat.readThreadMetadata(f.actor, args.requestId),
     ).resolves.toStrictEqual(before);
     expect((await listThreads(token)).threads).toHaveLength(1);
+  });
+
+  it("atomically updates sparse metadata and replays without reverting newer state", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Original metadata",
+      model: "claude-sonnet-5",
+    });
+    const firstId = randomUUID();
+    const first = await updateThread(token, {
+      requestId: firstId,
+      threadId: created.threadId,
+      patch: { title: "Manual MCP title" },
+    });
+    expect(first).toMatchObject({
+      requestId: firstId,
+      threadId: created.threadId,
+      title: "Manual MCP title",
+      titleTruncated: false,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: false,
+    });
+    expect(Date.parse(first.retryUntil) - Date.parse(first.acceptedAt)).toBe(
+      24 * 60 * 60 * 1000,
+    );
+
+    const second = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: {
+        title: "Newer combined state",
+        model: "claude-sonnet-4-6",
+      },
+    });
+    expect(second).toMatchObject({
+      title: "Newer combined state",
+      model: {
+        selectedModel: "claude-sonnet-4-6",
+        effectiveModel: "claude-sonnet-4-6",
+      },
+      replayed: false,
+    });
+
+    await expect(
+      updateThread(token, {
+        requestId: firstId,
+        threadId: created.threadId,
+        patch: { title: "Manual MCP title" },
+      }),
+    ).resolves.toMatchObject({
+      acceptedAt: first.acceptedAt,
+      title: "Newer combined state",
+      model: { selectedModel: "claude-sonnet-4-6" },
+      replayed: true,
+    });
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: firstId,
+          threadId: created.threadId,
+          patch: { title: "Conflicting reuse" },
+        })
+      ).isError,
+    ).toBeTruthy();
+
+    const cleared = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { model: null },
+    });
+    expect(cleared).toMatchObject({
+      title: "Newer combined state",
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+      },
+    });
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "Newer combined state",
+        model: { selectedModel: null, effectiveModel: "claude-sonnet-5" },
+      },
+    });
+  });
+
+  it("preserves Fast, reasoning, media and browser settings", async () => {
+    const f = await threadFixture();
+    const model = await f.chat.getDefaultCreateThreadModel(f.actor);
+    const created = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Preserve settings",
+      model,
+    });
+    await f.chat.updateThreadModelSelection(f.actor, created.id, model, {
+      reasoningEffort: "high",
+      codexServiceTier: "fast",
+    });
+    await f.chat.updateThreadImageModel(f.actor, created.id, "gpt-image-2");
+    await f.chat.updateThreadVideoModel(f.actor, created.id, "MiniMax-H3");
+    const before = await f.chat.readThreadMetadata(f.actor, created.id);
+    expect(before).toMatchObject({
+      modelSettings: { [model]: { effort: "high" } },
+      serviceTier: "priority",
+      selectedVideoModel: "MiniMax-H3",
+      selectedImageModel: "gpt-image-2",
+    });
+
+    await updateThread(f.auth.token({ scope: defaultScopes }), {
+      requestId: randomUUID(),
+      threadId: created.id,
+      patch: { title: "Still preserved", model },
+    });
+
+    await expect(
+      f.chat.readThreadMetadata(f.actor, created.id),
+    ).resolves.toMatchObject({
+      modelSettings: before.modelSettings,
+      serviceTier: before.serviceTier,
+      computerUseHostId: before.computerUseHostId,
+      cloudBrowserEnabled: before.cloudBrowserEnabled,
+      selectedVideoModel: before.selectedVideoModel,
+      selectedImageModel: before.selectedImageModel,
+    });
+  });
+
+  it("rejects update replay after its 24-hour window without reapplying intent", async () => {
+    const f = await creationFixture();
+    const currentToken = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(currentToken, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Before expiry",
+      model: "claude-sonnet-5",
+    });
+    const requestId = randomUUID();
+    const first = await updateThread(currentToken, {
+      requestId,
+      threadId: created.threadId,
+      patch: { title: "Accepted title" },
+    });
+    await updateThread(currentToken, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { title: "Later title" },
+    });
+    const futureToken = f.auth.token({
+      scope: defaultScopes,
+      exp: Math.floor((Date.parse(first.retryUntil) + 60_000) / 1000),
+    });
+
+    await withMockNowForTest(Date.parse(first.retryUntil) + 1, async () => {
+      const replay = await callTool(futureToken, "update_chat_thread", {
+        requestId,
+        threadId: created.threadId,
+        patch: { title: "Accepted title" },
+      });
+      expect(replay.isError).toBeTruthy();
+      structuredToolError(replay);
+    });
+    await expect(
+      getThread(currentToken, created.threadId),
+    ).resolves.toMatchObject({ thread: { title: "Later title" } });
+  });
+
+  it("validates thread update patches before changing metadata", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Unchanged metadata",
+      model: "claude-sonnet-5",
+    });
+    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
+      .body;
+    for (const patch of [
+      {},
+      { title: " " },
+      { title: "x".repeat(201) },
+      { model: "not-a-supported-model" },
+      { title: "Must roll back", model: "not-a-supported-model" },
+      { title: "Must roll back denied model", model: "claude-opus-4-8" },
+      { title: "Unknown field", extra: true },
+    ]) {
+      expect(
+        (
+          await callTool(token, "update_chat_thread", {
+            requestId: randomUUID(),
+            threadId: created.threadId,
+            patch,
+          })
+        ).isError,
+      ).toBeTruthy();
+    }
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: created.threadId,
+          threadId: created.threadId,
+          patch: { title: "Event collision must roll back" },
+        })
+      ).isError,
+    ).toBeTruthy();
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "Unchanged metadata",
+        model: { selectedModel: "claude-sonnet-5" },
+      },
+    });
+    await expect(
+      f.chat.requestThreadEvents(f.actor, {}, [200]),
+    ).resolves.toMatchObject({ body: eventsBefore });
+  });
+
+  it("deduplicates simultaneous identical thread updates", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Concurrent metadata",
+      model: "claude-sonnet-5",
+    });
+    const args = {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { title: "One accepted update", model: "claude-sonnet-4-6" },
+    };
+    const results = await Promise.all([
+      updateThread(token, args),
+      updateThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "One accepted update",
+        model: { selectedModel: "claude-sonnet-4-6" },
+      },
+    });
   });
 
   it("expires creation retries after 24 hours and does not recreate deleted conversations", async () => {
@@ -806,7 +1074,7 @@ describe("MCP chat discovery and creation", () => {
     await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
       const expired = await callTool(token, "create_chat_thread", args);
       expect(expired.isError).toBeTruthy();
-      expect(expired.structuredContent).toBeUndefined();
+      structuredToolError(expired);
     });
     await f.chat.deleteThread(f.actor, created.threadId);
     expect(
@@ -986,7 +1254,7 @@ describe("MCP chat discovery and creation", () => {
       }
       const result = await callTool(token, "create_chat_thread", args);
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
       expect(result.content).toContainEqual({
         type: "text",
         text: "Account content is closed.",
@@ -1010,19 +1278,39 @@ describe("MCP chat discovery and creation", () => {
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },
-      { ...args, model: "not-a-supported-model" },
     ]) {
-      expect(
-        (await callTool(token, "create_chat_thread", invalid)).isError,
-      ).toBeTruthy();
+      const result = await callTool(token, "create_chat_thread", invalid);
+      expect(structuredToolError(result)).toMatchObject({
+        code: "invalid_arguments",
+        retryable: false,
+        issues: expect.any(Array),
+      });
     }
+    const unavailableModel = await callTool(token, "create_chat_thread", {
+      ...args,
+      model: "not-a-supported-model",
+    });
+    expect(structuredToolError(unavailableModel)).toMatchObject({
+      code: "selection_unavailable",
+      retryable: false,
+    });
     expect((await listThreads(token)).threads).toStrictEqual([]);
-    expect(
-      (await callTool(token, "list_agents", { limit: 51 })).isError,
-    ).toBeTruthy();
-    expect(
-      (await callTool(token, "list_models", { orgId: f.auth.orgId })).isError,
-    ).toBeTruthy();
+    const invalidLimit = await callTool(token, "list_agents", { limit: 51 });
+    expect(structuredToolError(invalidLimit)).toMatchObject({
+      code: "invalid_arguments",
+      retryable: false,
+      issues: [expect.objectContaining({ path: ["limit"], code: "too_big" })],
+    });
+    const invalidModelInput = await callTool(token, "list_models", {
+      orgId: f.auth.orgId,
+    });
+    expect(structuredToolError(invalidModelInput)).toMatchObject({
+      code: "invalid_arguments",
+      retryable: false,
+      issues: [
+        expect.objectContaining({ path: [], code: "unrecognized_keys" }),
+      ],
+    });
   });
 });
 
@@ -1660,7 +1948,7 @@ describe("MCP chat mutations", () => {
     ]) {
       const failed = await callTool(token, "send_chat_message", changed);
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
     }
     await expect(
       f.chat.listThreadEvents(f.actor, first.id),
@@ -1771,7 +2059,7 @@ describe("MCP chat mutations", () => {
         },
       );
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
       await expect(
         f.chat.listThreadEvents(f.actor, thread.id),
       ).resolves.toStrictEqual(before);
@@ -2039,7 +2327,7 @@ describe("MCP chat mutations", () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const expired = await callTool(expiryToken, "send_chat_message", args);
         expect(expired.isError).toBeTruthy();
-        expect(expired.structuredContent).toBeUndefined();
+        structuredToolError(expired);
         expect(expired.content[0]?.text).toContain("expired");
       }
     });
@@ -2113,7 +2401,7 @@ describe("MCP chat mutations", () => {
         }),
       ).resolves.toStrictEqual(hiddenStatus);
       expect(hiddenStatus.isError).toBeTruthy();
-      expect(hiddenStatus.structuredContent).toBeUndefined();
+      structuredToolError(hiddenStatus);
       await expect(
         revokeMessage(foreignToken, thread.id, args.requestId),
       ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
@@ -2141,6 +2429,15 @@ describe("MCP chat mutations", () => {
         agentId: randomUUID(),
         title: "Scope check",
         model: "claude-sonnet-5",
+      },
+    },
+    {
+      name: "update_chat_thread",
+      scope: "okou:chat:manage",
+      args: {
+        requestId: randomUUID(),
+        threadId: randomUUID(),
+        patch: { title: "Scope check" },
       },
     },
     {
@@ -2229,7 +2526,7 @@ describe("MCP chat mutations", () => {
     ]) {
       const failed = await callTool(token, "send_chat_message", args);
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
     }
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
@@ -2393,7 +2690,7 @@ describe("MCP chat mutations", () => {
         { runId },
       );
       expect(failure.isError).toBeTruthy();
-      expect(failure.structuredContent).toBeUndefined();
+      structuredToolError(failure);
       expect(failure.content[0]?.text).toContain("No such run");
     }
     await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
@@ -2654,7 +2951,7 @@ describe("MCP chat mutations", () => {
       { runId: active.runId },
     );
     expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
+    structuredToolError(result);
     await expect(
       f.api.readRun(actor.actor, active.runId),
     ).resolves.toMatchObject({
@@ -2789,7 +3086,7 @@ describe("MCP canonical message reads", () => {
         around,
       });
       expect(failure.isError).toBeTruthy();
-      expect(failure.structuredContent).toBeUndefined();
+      structuredToolError(failure);
     }
   });
 
@@ -2975,7 +3272,7 @@ describe("MCP canonical message reads", () => {
       cursor: target.nextContentCursor,
     });
     expect(staleContent.isError).toBeTruthy();
-    expect(staleContent.structuredContent).toBeUndefined();
+    structuredToolError(staleContent);
     expect(
       (
         await callTool(token, "get_chat_messages", {
@@ -3012,7 +3309,7 @@ describe("MCP canonical message reads", () => {
         invalid,
       );
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
     }
     await expect(
       getMessages(f.auth.token(), { ...args, cursor }),
@@ -3101,7 +3398,7 @@ describe("MCP canonical message reads", () => {
       cursor: page.olderCursor,
     });
     expect(changed.isError).toBeTruthy();
-    expect(changed.structuredContent).toBeUndefined();
+    structuredToolError(changed);
     expect((await getMessages(token, args)).messages[0]?.text).toBe(
       "Visible append",
     );
@@ -3387,7 +3684,7 @@ describe("MCP canonical message reads", () => {
       threadId: sent.threadId,
     });
     expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
+    structuredToolError(result);
     expect(result.content[0]?.text).toContain("metadata");
   });
 
@@ -3490,7 +3787,7 @@ describe("MCP canonical message reads", () => {
 
       const failed = await callTool(token, "get_chat_messages", args);
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
       expect(failed.content[0]?.text).toContain("could not be read completely");
       for (const message of before.messages) {
         expect(JSON.stringify(failed)).not.toContain(message.text);
@@ -3542,7 +3839,7 @@ describe("MCP canonical message reads", () => {
         threadId: sent.threadId,
       });
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
       expect(JSON.stringify(failed)).not.toContain(
         "Visible tail alone is incomplete",
       );
@@ -3608,7 +3905,7 @@ describe("MCP canonical message reads", () => {
         limit: 1,
       });
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
       expect(result.content[0]?.text).toMatch(/budget|limit/u);
     },
   );
@@ -3634,7 +3931,7 @@ describe("MCP canonical message reads", () => {
       limit: 1,
     });
     expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
+    structuredToolError(result);
     expect(result.content[0]?.text).toContain("32 MiB");
   });
 
@@ -4280,7 +4577,7 @@ describe("MCP message search", () => {
     await deleteFakeChatEventObject(archive.key);
     const missing = await callTool(token, "search_chat_messages", args);
     expect(missing.isError).toBeTruthy();
-    expect(missing.structuredContent).toBeUndefined();
+    structuredToolError(missing);
     expect(JSON.stringify(missing)).not.toContain("canonical answer");
   });
 
@@ -4364,7 +4661,7 @@ describe("MCP message search", () => {
     }
     const combined = await callTool(token, "search_chat_messages", { query });
     expect(combined.isError).toBeTruthy();
-    expect(combined.structuredContent).toBeUndefined();
+    structuredToolError(combined);
     expect(combined.content[0]?.text).toMatch(/budget|limit/u);
     expect(JSON.stringify(combined)).not.toContain("VISIBLE_EXCERPT_CANARY_");
   });
@@ -4552,7 +4849,7 @@ describe("MCP message search", () => {
         ...invalid,
       });
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
     }
     expect(
       (await searchMessages(token, { ...args, cursor })).matches[0]?.excerpt
@@ -4643,7 +4940,7 @@ describe("MCP message search", () => {
       const auth = await fixture();
       const result = await callTool(auth.token(), "search_chat_messages", args);
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
     },
   );
 });
@@ -4748,7 +5045,14 @@ describe("external MCP entry", () => {
               annotations: { readOnlyHint: true },
             },
             { name: "get_chat_status", annotations: { readOnlyHint: true } },
-            { name: "list_agents", annotations: { readOnlyHint: true } },
+            {
+              name: "list_agents",
+              inputSchema: {
+                type: "object",
+                properties: { limit: { maximum: 50 } },
+              },
+              annotations: { readOnlyHint: true },
+            },
             { name: "list_models", annotations: { readOnlyHint: true } },
             { name: "list_chat_threads", annotations: { readOnlyHint: true } },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
@@ -4756,6 +5060,10 @@ describe("external MCP entry", () => {
               ? [
                   {
                     name: "create_chat_thread",
+                    annotations: { readOnlyHint: false, idempotentHint: true },
+                  },
+                  {
+                    name: "update_chat_thread",
                     annotations: { readOnlyHint: false, idempotentHint: true },
                   },
                   {
@@ -4859,6 +5167,7 @@ describe("external MCP entry", () => {
         "list_chat_threads",
         "get_chat_thread",
         "create_chat_thread",
+        "update_chat_thread",
         "send_chat_message",
         "revoke_queued_message",
         "cancel_run",
@@ -5530,7 +5839,7 @@ describe("external MCP entry", () => {
     ]) {
       const result = await callTool(f.auth.token(), "list_chat_threads", args);
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
     }
     const second = await listThreads(f.auth.token(), { ...filters, cursor });
     const ids = [...first.threads, ...second.threads].map((thread) => {
@@ -5708,7 +6017,6 @@ describe("external MCP entry", () => {
       exp: Math.floor((now() + 9 * 24 * 60 * 60 * 1000) / 1000),
     });
     await withMockNowForTest(now() + 8 * 24 * 60 * 60 * 1000, async () => {
-      expect((await f.chat.listIndicators(f.actor)).threads).toStrictEqual({});
       expect(
         (await listThreads(retainedToken, { unread: true })).threads.map(
           (thread) => {
@@ -5822,12 +6130,12 @@ describe("external MCP entry", () => {
       await runs.grantProEntitlement(actor);
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
-        displayName: "MCP indicators",
+        displayName: "MCP organization activity",
         visibility: "private",
       });
       const sent = await chat.requestSendEvent(
         actor,
-        { agentId: agent.agentId, prompt: "Read my indicators" },
+        { agentId: agent.agentId, prompt: "Check organization activity" },
         [201],
       );
       if (sent.status !== 201) {
@@ -5843,11 +6151,6 @@ describe("external MCP entry", () => {
         }),
         [200],
       );
-      const projection = await chat.listIndicators(actor);
-      expect(projection).toStrictEqual({
-        agents: { [agent.agentId]: "active" },
-        threads: { [sent.body.threadId]: "active" },
-      });
       expected.push({ threadId: sent.body.threadId, agentId: agent.agentId });
     }
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({

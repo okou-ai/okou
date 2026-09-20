@@ -83,17 +83,26 @@ surface; the index does not replace their detailed rules.
 - [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
   exact host-owner admission, complete online/offline projection, Agent-bound
   narrowing and unbounded host-cardinality evidence.
+- [Computer Use host START](./account-erasure-computer-use-host-start.md):
+  shared user/organization producer admission for legacy creation and stable
+  installation reactivation, including credential and cancellation boundaries.
 - [Standalone Computer Use audit events](./account-erasure-computer-use-audit-events.md):
   exact owner admission, retained selector/redaction semantics and bounded output
   with explicit physical-scan evidence.
 - [Computer Use command GET](./account-erasure-computer-use-command-get.md):
   canonical owner admission around the complete timeout-maintenance sweep,
   response/auth compatibility, abort boundaries and exact SQL sequences.
+- [Computer Use command creation](./account-erasure-computer-use-command-creation.md):
+  canonical owner admission around complete host selection and insertion,
+  fixed closed response, fresh liveness clock and exact SQL sequences.
+- [Computer Use binary content reads](./account-erasure-computer-use-content-read.md):
+  canonical owner admission through complete screenshot/plugin byte acquisition,
+  provider cancellation ownership and the SQL-versus-S3 duration boundary.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
 - [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
-  temporary accepted-v3 read bridge, capability filtering and rollback boundaries.
+  v4-only accepted-snapshot reader, capability filtering and rollback boundaries.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
@@ -130,8 +139,9 @@ surface; the index does not replace their detailed rules.
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
   identities, API configuration, Oregon-first model routing, and rollout gates.
-- [Google Ads browser routing](./google-ads-browser-routing.md): verified account
-  ownership, conversion actions, rollout compatibility, and historical recovery.
+- [Retired App browser attribution](./google-ads-browser-routing.md): the
+  Marketing-owned boundary, App cleanup, rollout compatibility, and historical
+  field inventory.
 - [Connector inspection JSON](./connector-inspection-json.md): command output
   contracts, current versus run evidence, account identity, and next actions.
 - [Social collection output](./social-collection-output.md): aggregate and

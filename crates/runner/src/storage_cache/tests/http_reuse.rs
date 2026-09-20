@@ -183,7 +183,11 @@ impl PendingArchive {
         }
     }
 
-    async fn complete(mut self, home: &HomePaths) {
+    async fn complete(self, home: &HomePaths) {
+        let _ = self.complete_observed(home).await;
+    }
+
+    async fn complete_observed(mut self, home: &HomePaths) -> serde_json::Value {
         let sandbox = MockSandbox::new("pooled-archive");
         assert!(
             populate_cache_with_fresh_delivery(
@@ -211,6 +215,9 @@ impl PendingArchive {
                     && file.content == self.body)
         );
         self.delivery.cancel_and_drain(&mut self.telemetry).await;
+        let mut observations = self.telemetry.pending_archive_connection_attempt_payloads();
+        assert_eq!(observations.len(), 1, "one observed header operation");
+        observations.pop().unwrap()
     }
 }
 
@@ -221,6 +228,18 @@ async fn download(
     name: &str,
     close: bool,
 ) -> usize {
+    download_observed(server, home, admission, name, close)
+        .await
+        .0
+}
+
+async fn download_observed(
+    server: &mut ArchiveServer,
+    home: &HomePaths,
+    admission: &FreshArchiveDeliveryAdmission,
+    name: &str,
+    close: bool,
+) -> (usize, serde_json::Value) {
     let path = format!("/{name}.tar.gz?signature={name}");
     let pending = PendingArchive::start(
         server.url(&path),
@@ -238,12 +257,12 @@ async fn download(
     );
     let connection = request.connection;
     request.respond("200 OK", &pending.body, close);
-    pending.complete(home).await;
+    let observation = pending.complete_observed(home).await;
     assert_eq!(
         admission.permits.available_permits(),
         FRESH_DELIVERY_RUNNER_LIMIT
     );
-    connection
+    (connection, observation)
 }
 
 #[tokio::test]
@@ -252,15 +271,34 @@ async fn fresh_delivery_reuses_connections_across_runs_and_reconnects_after_serv
     let home = home_at(&temp);
     let admission = FreshArchiveDeliveryAdmission::new();
     let mut server = ArchiveServer::start().await;
-    let first = download(&mut server, &home, &admission, "first", false).await;
-    let second = download(&mut server, &home, &admission.clone(), "second", true).await;
+    let (first, first_observation) =
+        download_observed(&mut server, &home, &admission, "first", false).await;
+    let (second, second_observation) =
+        download_observed(&mut server, &home, &admission.clone(), "second", true).await;
     assert_eq!(
         first, second,
         "a second run on the same origin reuses the idle connection"
     );
     assert_eq!(server.closed_connection().await, first);
-    let third = download(&mut server, &home, &admission, "third", false).await;
+    let (third, third_observation) =
+        download_observed(&mut server, &home, &admission, "third", false).await;
     assert_ne!(third, first, "server-closed connections are replaced");
+    assert_eq!(
+        first_observation["archive_connection_attempt"]["started"],
+        1
+    );
+    assert_eq!(
+        first_observation["archive_connection_attempt"]["succeeded"],
+        1
+    );
+    assert_eq!(
+        second_observation["archive_connection_attempt"]["started"], 0,
+        "server-proven pooled reuse does not start the lazy connector"
+    );
+    assert_eq!(
+        third_observation["archive_connection_attempt"]["started"],
+        1
+    );
     drop(admission);
     assert_eq!(server.closed_connection().await, third);
     server.stop().await;

@@ -39,11 +39,72 @@ request timeout, 8 MiB limit, cache flock and permits through staging are unchan
 
 Records contain fixed action names and bounded reasons. A failed `headers`
 phase with `response-size-mismatch` also includes the optional
-`archive_size_mismatch` object described below. Records include no archive URL,
-query, raw headers, object identity, mount path or content. Phase records from
-parallel archives cannot be paired by order. Do not add phase maxima or
-percentiles as one request's latency, or add overlapping early fetch time to
-storage-apply time.
+`archive_size_mismatch` object described below. An entered `headers` phase also
+includes the optional `archive_connection_attempt` object described below.
+Records include no archive URL, query, raw headers, object identity, mount path
+or content. Phase records from parallel archives cannot be paired by order. Do
+not add phase maxima or percentiles as one request's latency, or add overlapping
+early fetch time to storage-apply time.
+
+## Host connection-attempt lifecycle
+
+The Runner-owned reqwest client has one content-free connector layer. For each
+entered headers phase, a request-local observer is active while the request is
+sent and its status and declared size are validated. A connector service call
+starts an attempt guard. That guard follows the connector future if the HTTP
+pool continues it in a background task. The headers phase atomically freezes
+the observer on success, error or interruption; a connector completion or drop
+after that boundary cannot change the recorded summary.
+
+| Field inside `archive_connection_attempt` | Meaning                                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `started`                                  | Connector futures started while the request observer was active.                        |
+| `succeeded`                                | Those futures that returned a connection before the headers observer froze.              |
+| `failed`                                   | Those futures that returned an error before freeze; raw errors are not retained.          |
+| `dropped`                                  | Those futures dropped without returning before freeze.                                   |
+| `active_at_headers`                        | Started futures with no terminal result when the headers observer froze.                  |
+| `terminal_duration_ms`                     | Sum of whole elapsed milliseconds for success, failure and drop recorded before freeze.   |
+| `saturated`                                | At least one count or the duration sum reached its fixed representable cap.               |
+
+Counts are capped at 255 and `terminal_duration_ms` at 4,294,967,295. When an
+observation exceeds a cap the value remains bounded and `saturated` is true. The API
+forwards the seven fields under the `archive_connection_attempt_` prefix in
+Axiom. An emitted object with `started: 0` means no connector call was observed
+before this headers phase froze. An absent object means the headers phase was
+not instrumented, such as an older Runner payload; absence is not zero.
+
+This diagnostic observes connection **attempts**, not the transport used by the
+request. Hyper-util 0.1.20 races its idle-pool checkout against a lazy connector
+future. If an idle connection is immediately ready, the connector never starts,
+so a successful zero-start operation is consistent with immediate pool reuse.
+If checkout becomes ready after a connector starts, the pooled connection can
+serve the response while the losing connector future completes in the
+background and enters the pool. Therefore any nonzero attempt lifecycle remains
+ambiguous about which transport served the response. Do not label these records
+as new or reused connections, and do not subtract their duration distribution
+from the headers distribution as if their per-percentile samples were paired.
+
+The connector covers the client's configured address resolution, TCP, proxy and
+TLS establishment as one operation. Reqwest 0.13.5 does not expose separate
+phase durations or hyper-util's internal pooled-handle reuse bit. This contract
+must be rechecked when those pinned dependencies change. It deliberately avoids
+reqwest verbose connection tracing because that mode can include signed request
+bytes.
+
+The observer stores only fixed counters, duration and a saturation bit. It does
+not inspect or retain the connector destination, URL, origin, host, address,
+certificate, provider/account identity, object identity, headers, credentials,
+content or raw error. It creates no request, retry, event, per-attempt array or
+startup telemetry wait. The connector wrapper allocates one small future only
+when connection establishment starts; immediate pooled checkout does not invoke
+it. Pool keying, eight-idle-socket limit, 30-second idle lifetime, platform TLS,
+environment proxy behavior, redirect policy, request timeout and cancellation
+remain unchanged.
+
+The optional object is additive. New APIs accept old Runner operations that
+omit it. Older APIs strip the unknown object and retain the existing headers
+operation, so either deployment order remains functional; complete queryable
+diagnostics require both updated artifacts.
 
 ## Declared-size disagreement
 

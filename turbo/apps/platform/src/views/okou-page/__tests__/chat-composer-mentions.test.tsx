@@ -140,7 +140,7 @@ function withAgent(
   return { ...thread, agentId };
 }
 
-test("Hide mention suggestions when nothing useful matches", async () => {
+async function setupMentionSearch() {
   const current = withAgent(
     continuityThread(61, 1, "Current mention chat"),
     AGENT_ID,
@@ -166,13 +166,21 @@ test("Hide mention suggestions when nothing useful matches", async () => {
   const user = userEvent.setup({ delay: null });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await user.click(composer);
+  return { composer, user };
+}
+
+test("Show a matching chat mention suggestion", async () => {
+  const { user } = await setupMentionSearch();
   await user.keyboard("@beta");
   const menu = await screen.findByTestId("chat-thread-suggestion-menu");
 
   expect(within(menu).getByText("Project Beta")).toBeVisible();
   expect(within(menu).queryByText("New chat")).toBeNull();
+});
 
-  await user.keyboard("{Control>}a{/Control}{Backspace}@alpha");
+test("Hide mention suggestions when nothing useful matches", async () => {
+  const { composer, user } = await setupMentionSearch();
+  await user.keyboard("@alpha");
 
   await waitFor(() => {
     expect(composer).toHaveTextContent("@alpha");

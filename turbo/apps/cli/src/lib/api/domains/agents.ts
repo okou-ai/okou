@@ -12,7 +12,7 @@ import {
   type UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   agentCustomConnectorsContract,
   agentCustomConnectorGrantsSchema,
@@ -75,11 +75,11 @@ export async function getAgentInstructions(
   handleError(result, `Failed to get instructions for agent "${id}"`);
 }
 
-export async function getAgentUserConnectors(
+export async function getAgentUserBuiltinConnectors(
   id: string,
 ): Promise<ConnectorSlug[]> {
   const config = await getClientConfig();
-  const client = initClient(userConnectorsContract, config);
+  const client = initClient(userBuiltinConnectorsContract, config);
   const result = await client.get({ params: { id } });
   if (result.status === 200) {
     return result.body.enabledConnectorSlugs;

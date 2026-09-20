@@ -21,6 +21,18 @@ const directories: string[] = [];
 const digest = (value: string) => {
   return createHash("sha256").update(value).digest("hex");
 };
+const API_USAGE = {
+  schemaVersion: 1,
+  state: "observed",
+  sampledAt: 1_250,
+  coverage: "complete",
+  tokens: { input: 7, cacheRead: 0, cacheCreation: 2, output: 3 },
+} as const;
+const NO_INFERENCE_API_USAGE = {
+  schemaVersion: 1,
+  state: "no-inference",
+  sampledAt: 1_250,
+} as const;
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(
@@ -95,12 +107,13 @@ async function fixture(mode: ContinuationFixture = "pending") {
     sandboxEventSequenceStart: 12,
     continuation:
       mode === "untouched"
-        ? { mode: "untouched-h0" }
+        ? { mode: "untouched-h0", apiUsage: NO_INFERENCE_API_USAGE }
         : {
             mode: mode === "settled" ? "settled-session" : "pending-tools",
             h1Hash: "c".repeat(64),
             manifestGeneration: 4,
             lastEventSequence: 11,
+            apiUsage: API_USAGE,
             ...(mode === "pending"
               ? { pendingToolIds: ["retained-tool-id"] }
               : {}),
@@ -134,6 +147,9 @@ describe("deferred Pi CLI transport reader", () => {
       expect(await readFile(result.sessionFile, "utf8")).toBe(f.sessionHistory);
       expect(f.fetch).not.toHaveBeenCalled();
       expect(result.resourceSnapshot).toEqual(f.resourceSnapshot);
+      expect(result.apiUsage).toStrictEqual(
+        mode === "untouched" ? NO_INFERENCE_API_USAGE : API_USAGE,
+      );
       expect(result.boundaryControl).toEqual({
         schemaVersion: 2,
         sandboxEventSequenceStart: 12,

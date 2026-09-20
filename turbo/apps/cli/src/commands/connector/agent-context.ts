@@ -1,7 +1,7 @@
 import {
   getAgent,
   getAgentCustomConnectorGrants,
-  getAgentUserConnectors,
+  getAgentUserBuiltinConnectors,
 } from "../../lib/api/domains/agents";
 import { getOkouAgentId } from "../../lib/okou-env";
 
@@ -38,7 +38,7 @@ export async function resolveAgentContext(
 
   const [agent, enabledConnectorSlugs] = await Promise.all([
     getAgent(agentId),
-    getAgentUserConnectors(agentId),
+    getAgentUserBuiltinConnectors(agentId),
   ]);
 
   return {
@@ -56,7 +56,7 @@ export async function resolveConnectorDiscoveryAgentContext(
   const [agent, enabledConnectorSlugs, customConnectorGrants] =
     await Promise.all([
       getAgent(agentId),
-      getAgentUserConnectors(agentId),
+      getAgentUserBuiltinConnectors(agentId),
       getAgentCustomConnectorGrants(agentId),
     ]);
 

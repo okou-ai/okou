@@ -54,6 +54,7 @@ _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
 _OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
 _ANTHROPIC_USAGE_EVENTS = frozenset(("message_start", "message_delta"))
 _ANTHROPIC_MESSAGE_STOP_EVENT = "message_stop"
+_MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
@@ -134,9 +135,15 @@ def _make_model_sse_parse_error_logger(
     usage_protocol: str,
 ) -> _SseUsageParseErrorLogger:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
+    diagnostics_remaining = _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT
 
     def log_parse_error(event: str, error: str) -> None:
-        run_usage.mark(flow, "parse_error")
+        nonlocal diagnostics_remaining
+        if diagnostics_remaining == _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT:
+            run_usage.mark(flow, "parse_error")
+        if diagnostics_remaining == 0:
+            return
+        diagnostics_remaining -= 1
         log_proxy_entry(
             proxy_log_path,
             "warn",

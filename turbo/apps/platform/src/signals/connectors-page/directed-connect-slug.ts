@@ -16,7 +16,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { agents$ } from "../agent.ts";
-import { resetManualGrantForm$ } from "../okou-page/settings/connectors.ts";
+import { resetBuiltinManualGrantForm$ } from "../okou-page/settings/connectors.ts";
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/connect` route params.
@@ -135,7 +135,7 @@ export const directedConnectCustomDialogKey$ = computed((get) => {
 export const setManualGrantDialogKey$ = command(
   ({ set }, key: DirectedConnectManualGrantDialogKey | null) => {
     if (key) {
-      set(resetManualGrantForm$, key.connectorSlug);
+      set(resetBuiltinManualGrantForm$, key.connectorSlug);
     }
     set(internalManualGrantDialogKey$, key);
   },
@@ -143,7 +143,7 @@ export const setManualGrantDialogKey$ = command(
 export const setDirectedConnectModalKey$ = command(
   ({ set }, key: DirectedConnectModalKey | null) => {
     if (key) {
-      set(resetManualGrantForm$, key.connectorSlug);
+      set(resetBuiltinManualGrantForm$, key.connectorSlug);
     }
     set(internalDirectedConnectModalKey$, key);
   },

@@ -10,8 +10,8 @@ import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedSites,
   privateHostedDeployments,
-  type HostedSiteManifest,
-} from "@okouai/db/schema/hosted-site";
+} from "@okouai/db/runtime/hosted-site";
+import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
@@ -21,6 +21,7 @@ import {
 import { settle } from "../utils";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
+import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
 import { db$, writeDb$ } from "../external/db";
 import {
   clerk$,
@@ -162,16 +163,19 @@ function ownedShareTarget(
       return null;
     }
     const deployment = row.deployment;
+    const deploymentVersion = legacyPrivateHostedDeploymentVersion(
+      deployment.manifest,
+    );
     return {
       targetId: deployment.siteId,
       ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
       publicBrand: deployment.publicBrand,
-      candidateVersion: deployment.deploymentVersion,
+      candidateVersion: deploymentVersion,
       target: {
         kind: "html" as const,
         id: deployment.id,
         siteId: deployment.siteId,
-        deploymentVersion: deployment.deploymentVersion,
+        deploymentVersion,
         manifest: hostedSiteDeliveryManifest(deployment.manifest),
       },
     };

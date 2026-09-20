@@ -39,10 +39,10 @@ import {
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
-  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
+import { SCROLL_FADE_Y_END } from "../okou-page/scroll-fade.ts";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
@@ -494,7 +494,7 @@ function SharedThreadTranscript({
         tabIndex={-1}
         className={cn(
           "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
-          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+          SCROLL_FADE_Y_END,
         )}
       >
         <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>

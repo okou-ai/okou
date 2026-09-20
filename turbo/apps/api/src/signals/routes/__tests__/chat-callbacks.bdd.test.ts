@@ -15,6 +15,7 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
@@ -4494,6 +4495,8 @@ describe("CHAT-02: failed chat callbacks", () => {
       "Claude usage limit reached. Visit https://claude.ai/settings/usage or try again at 6:17 AM.";
     const executionTimeoutError =
       "Agent execution timed out after 7200 seconds";
+    const codexAccessProgramError =
+      '{"type":"invalid_request_error","code":"unsupported_parameter","message":"The access_programs parameter is not enabled for this organization.","param":"access_programs.cyber"}';
     const rounds: readonly {
       readonly prompt: string;
       readonly error: string;
@@ -4567,6 +4570,13 @@ describe("CHAT-02: failed chat callbacks", () => {
           "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
         expectedError: CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
         failureReason: "safety_policy_refusal",
+      },
+      {
+        prompt: "Codex access-program rejection",
+        error: codexAccessProgramError,
+        expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
+        failureReason: "codex_access_program_unavailable",
+        selectedModel: "gpt-5.6-sol",
       },
     ];
 
@@ -4708,6 +4718,17 @@ describe("CHAT-02: failed chat callbacks", () => {
     ).toStrictEqual({
       content: "Oops, something went wrong. Please try again later.",
       error: "Oops, something went wrong. Please try again later.",
+    });
+
+    const codexAccessProgramRunId = runIds.at(-1);
+    if (!codexAccessProgramRunId) {
+      throw new Error("Expected Codex access-program run");
+    }
+    await expect(
+      api.readRun(actor, codexAccessProgramRunId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: codexAccessProgramError,
     });
 
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(

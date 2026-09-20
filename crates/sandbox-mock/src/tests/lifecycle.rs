@@ -42,6 +42,7 @@ fn severe_memory_retention() -> SandboxParkNonReusableReason {
             observed_target_mib: None,
             target_observed: false,
             first_actual_mib: None,
+            previous_actual_mib: None,
             actual_mib: None,
             max_actual_mib: None,
             deficit_mib: None,
@@ -56,6 +57,8 @@ fn severe_memory_retention() -> SandboxParkNonReusableReason {
             reported_major_faults: None,
             reported_minor_faults: None,
             reported_disk_caches_bytes: None,
+            progress_extension_blocker: None,
+            guest_memory_snapshot_attempted: false,
             guest_memory_snapshot: None,
         },
     ))

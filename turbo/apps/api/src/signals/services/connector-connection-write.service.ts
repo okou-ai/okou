@@ -3,9 +3,11 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectors } from "@okouai/db/schema/connector";
+import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { deleteConnectorOwnedCredentialRows } from "./connector-credential-storage-write.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
@@ -15,6 +17,7 @@ const log = logger("api:connector-account-mutation");
 export interface StoredConnectorConnectionRow {
   readonly id: string;
   readonly authMethod: string;
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly displayName: string | null;
   readonly isDefault: boolean;
   readonly externalId: string | null;
@@ -60,6 +63,7 @@ export interface ConnectorConnectionMetadataArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly authMethod: string;
+  readonly automaticAuthType?: "none" | "oauth";
   readonly storageVersion: number;
   readonly tokenExpiresAt: Date | null;
   readonly target: ConnectorConnectionTarget;
@@ -75,6 +79,7 @@ interface ReplaceConnectorConnectionArgs extends ConnectorConnectionMetadataArgs
 }
 
 interface ExistingConnectorConnectionRow extends StoredConnectorConnectionRow {
+  readonly stateRevision: string;
   readonly connectorSlug: string | null;
   readonly customConnectorId: string | null;
 }
@@ -148,6 +153,7 @@ function connectorConnectionSelection() {
   return {
     id: connectors.id,
     authMethod: connectors.authMethod,
+    automaticAuthType: connectors.automaticAuthType,
     displayName: connectors.displayName,
     isDefault: connectors.isDefault,
     externalId: connectors.externalId,
@@ -167,6 +173,7 @@ function connectorConnectionSelection() {
 function existingConnectorConnectionSelection() {
   return {
     ...connectorConnectionSelection(),
+    stateRevision: sql`${connectors.updatedAt}::text`.mapWith(pgTextDecoder),
     connectorSlug: connectors.connectorSlug,
     customConnectorId: connectors.customConnectorId,
   };
@@ -334,6 +341,7 @@ export async function writeConnectorConnectionMetadata(
         };
   const replacementValues = {
     authMethod: args.authMethod,
+    automaticAuthType: args.automaticAuthType ?? null,
     storageVersion: args.storageVersion,
     ...identityValues,
     tokenExpiresAt: args.tokenExpiresAt,
@@ -383,6 +391,14 @@ export async function replaceConnectorConnection(
     { connectorId: connection.id },
     signal,
   );
+  await db
+    .delete(builtinConnectorAccountOauthBindings)
+    .where(
+      eq(
+        builtinConnectorAccountOauthBindings.connectorAccountId,
+        connection.id,
+      ),
+    );
   await args.writeCredentials({ db, connectorId: connection.id }, signal);
   signal.throwIfAborted();
 

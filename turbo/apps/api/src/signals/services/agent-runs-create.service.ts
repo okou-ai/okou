@@ -31,6 +31,7 @@ import { now } from "../../lib/time";
 import { testOverride } from "../../lib/singleton";
 import type { AuthContext } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
+import { joinAllInOrder } from "../utils";
 import {
   completeAgentRun$,
   isEmptyRunConnectorScope,
@@ -103,7 +104,7 @@ const DISALLOWED_TOOLS = [
   "Skill(loop *)",
 ] as const;
 
-interface AgentRunRecord {
+export interface AgentRunRequestAgent {
   readonly id: string;
   readonly name: string;
   readonly orgId: string;
@@ -115,6 +116,28 @@ interface AgentRunRecord {
   readonly sound: string | null;
   readonly modelProviderId: string | null;
   readonly selectedModel: string | null;
+}
+
+type AgentRunRecord = AgentRunRequestAgent;
+
+/**
+ * Request-scoped preparation facts from an entry point that already authorized
+ * this exact user, organization, and Agent. These observations can remove
+ * equivalent preflight reads, but they never authorize the later launch
+ * transaction: compute admission still locks and revalidates Agent ownership
+ * and erasure state before it claims input or inserts a Run.
+ *
+ * When this object is present, nullable Agent metadata and feature overrides
+ * are authoritative observations. The bootstrap materializer may enrich an
+ * omitted email from the same request's user-info row. Absence of the object
+ * means those facts were not loaded and every existing database fallback
+ * remains.
+ */
+export interface AuthorizedAgentRunRequestObservation {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agent: AgentRunRequestAgent;
+  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 function optionalAgentSetting(value: string | null): string | undefined {
@@ -183,6 +206,8 @@ interface CreateAgentRunCommandArgs {
   readonly piExecution: boolean;
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
+  readonly preloadedFeatureSwitchContext?: FeatureSwitchContext;
+  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
 interface CreateQueueFirstAgentRunCommandArgs extends Omit<
@@ -367,9 +392,15 @@ function buildAppendSystemPrompt(args: {
 }
 
 type StableAgentPromptBuildHook = () => void;
+type StableContextCacheIdentityBuildHook = () => void;
 
 const stableAgentPromptBuildHook = testOverride<
   StableAgentPromptBuildHook | undefined
+>(() => {
+  return undefined;
+});
+const stableContextCacheIdentityBuildHook = testOverride<
+  StableContextCacheIdentityBuildHook | undefined
 >(() => {
   return undefined;
 });
@@ -384,6 +415,16 @@ export function clearStableAgentPromptBuildHookForTest(): void {
   stableAgentPromptBuildHook.clear();
 }
 
+export function setStableContextCacheIdentityBuildHookForTest(
+  hook: StableContextCacheIdentityBuildHook,
+): void {
+  stableContextCacheIdentityBuildHook.set(hook);
+}
+
+export function clearStableContextCacheIdentityBuildHookForTest(): void {
+  stableContextCacheIdentityBuildHook.clear();
+}
+
 function buildStableAgentPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly agent: AgentRunRecord;
@@ -393,6 +434,7 @@ function buildStableAgentPrompt(args: {
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
 }): PiStableContextPromptProjection {
   stableAgentPromptBuildHook.get()?.();
@@ -407,6 +449,7 @@ function buildStableAgentPrompt(args: {
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
+      presentationConvertEnabled: args.presentationConvertEnabled,
     }),
   };
 }
@@ -666,7 +709,59 @@ async function resolveAgentRunAgentId(
   );
 }
 
-async function loadAgentRunPostAuthorizationContext(
+export type AgentRunPreCreateParallelStage =
+  | "subscription-account"
+  | "post-authorization-context"
+  | "thread-session";
+
+type AgentRunPreCreateParallelHook = (args: {
+  readonly stage: AgentRunPreCreateParallelStage;
+  readonly userId: string;
+  readonly orgId: string;
+}) => Promise<void>;
+
+const agentRunPreCreateParallelHook = testOverride<
+  AgentRunPreCreateParallelHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setAgentRunPreCreateParallelHookForTest(
+  hook: AgentRunPreCreateParallelHook,
+): void {
+  agentRunPreCreateParallelHook.set(hook);
+}
+
+export function clearAgentRunPreCreateParallelHookForTest(): void {
+  agentRunPreCreateParallelHook.clear();
+}
+
+function observeAgentRunPreCreateParallelStage(
+  stage: AgentRunPreCreateParallelStage,
+  input: Pick<AgentRunAfterBootstrap, "command">,
+): Promise<void> | undefined {
+  return agentRunPreCreateParallelHook.get()?.({
+    stage,
+    userId: input.command.auth.userId,
+    orgId: input.command.auth.orgId,
+  });
+}
+
+interface AgentRunAfterBootstrap extends RunBootstrapContext {
+  readonly agent: AgentRunRecord;
+  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
+  readonly timing: ApiDispatchTimingCollector;
+  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly threadSessionResolution?: ChatThreadSessionResolution;
+}
+
+interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
+  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
+  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
+}
+
+async function loadAgentRunBootstrapContext(
   db: Db,
   args: {
     readonly userId: string;
@@ -674,25 +769,36 @@ async function loadAgentRunPostAuthorizationContext(
     readonly agentId: string;
     readonly apiStartTime: number;
     readonly timing: ApiDispatchTimingCollector;
+    readonly preloadedFeatureSwitchContext?: FeatureSwitchContext;
   },
   signal: AbortSignal,
-) {
+): Promise<RunBootstrapContext> {
   let measuredSnapshotRows: RunBootstrapSnapshotRows | undefined;
   const snapshotRows = await measureAgentRunPreCreate(
     args.timing,
     "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
     async () => {
-      const loadedRows = await loadRunBootstrapSnapshotRows(db, {
-        userId: args.userId,
-        orgId: args.orgId,
-        agentId: args.agentId,
-        checkedAt: new Date(args.apiStartTime),
-      });
+      const loadedRows = await loadRunBootstrapSnapshotRows(
+        db,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          agentId: args.agentId,
+          checkedAt: new Date(args.apiStartTime),
+        },
+        args.preloadedFeatureSwitchContext,
+      );
       measuredSnapshotRows = loadedRows;
       return loadedRows;
     },
     () => {
-      return bootstrapLoadTimingDimensions(measuredSnapshotRows);
+      return {
+        ...bootstrapLoadTimingDimensions(measuredSnapshotRows),
+        bootstrap_feature_context_source:
+          args.preloadedFeatureSwitchContext === undefined
+            ? "database"
+            : "request_observation",
+      };
     },
   );
   signal.throwIfAborted();
@@ -702,10 +808,14 @@ async function loadAgentRunPostAuthorizationContext(
     args.timing,
     "api_dispatch_pre_create_agent_materialize_bootstrap_context",
     () => {
-      const context = materializeRunBootstrapContext(snapshotRows, {
-        userId: args.userId,
-        orgId: args.orgId,
-      });
+      const context = materializeRunBootstrapContext(
+        snapshotRows,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        args.preloadedFeatureSwitchContext,
+      );
       measuredBootstrapContext = context;
       return context;
     },
@@ -717,26 +827,39 @@ async function loadAgentRunPostAuthorizationContext(
     },
   );
   signal.throwIfAborted();
+  return bootstrapContext;
+}
 
+async function completeAgentRunPostAuthorizationContext(
+  db: Db,
+  input: AgentRunAfterBootstrap,
+  signal: AbortSignal,
+): Promise<AgentRunAfterPreCreate> {
+  const testHold = observeAgentRunPreCreateParallelStage(
+    "post-authorization-context",
+    input,
+  );
+  if (testHold) {
+    await testHold;
+  }
   const connectorCatalogSelection: RunConnectorCatalogSelection =
-    isEmptyRunConnectorScope(bootstrapContext)
+    isEmptyRunConnectorScope(input)
       ? { kind: "empty" }
       : {
           kind: "scoped",
           selection: await loadConnectorRuntimeSelection(db, {
-            timing: args.timing,
-            requestedConnectorSlugs: bootstrapContext.allowedConnectorSlugs,
-            metadataConnectorSlugs:
-              bootstrapContext.connectorCatalogMetadataSlugs,
+            timing: input.timing,
+            requestedConnectorSlugs: input.allowedConnectorSlugs,
+            metadataConnectorSlugs: input.connectorCatalogMetadataSlugs,
           }),
         };
   signal.throwIfAborted();
   const runPermissionPolicies = await measureAgentRunPreCreate(
-    args.timing,
+    input.timing,
     "api_dispatch_pre_create_agent_resolve_firewall_metadata",
     async () => {
       const storedPermissionPolicies = permissionGrantsToFirewallPolicies(
-        bootstrapContext.permissionGrants,
+        input.permissionGrants,
       );
       if (connectorCatalogSelection.kind === "empty") {
         return storedPermissionPolicies;
@@ -744,14 +867,14 @@ async function loadAgentRunPostAuthorizationContext(
       return await expandConnectorServerFirewallPolicies({
         catalog: connectorCatalogSelection.selection.serverFirewalls,
         stored: storedPermissionPolicies,
-        connectorSlugs: [...bootstrapContext.allowedConnectorSlugs],
+        connectorSlugs: [...input.allowedConnectorSlugs],
       });
     },
   );
   signal.throwIfAborted();
 
   return {
-    ...bootstrapContext,
+    ...input,
     connectorCatalogSelection,
     runPermissionPolicies,
   };
@@ -760,6 +883,7 @@ async function loadAgentRunPostAuthorizationContext(
 interface BuildCreateAgentRunArgsInput {
   readonly command: AnyCreateAgentRunCommandArgs;
   readonly agent: AgentRunRecord;
+  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly userInfo: UserInfo;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly permissionValidityHorizon: string | null;
@@ -809,12 +933,22 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       FeatureSwitchKey.DeliveryFormatGuidance,
       args.featureSwitchContext,
     ),
+    presentationConvertEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationConvert,
+      args.featureSwitchContext,
+    ),
     customConnectorMcpEnabled: true,
     triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   };
   const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
-  const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
+  const connectorScope = {
+    allowedConnectorSlugs: args.allowedConnectorSlugs,
+    allowedCustomConnectorIds: args.allowedCustomConnectorIds,
+    customConnectorGrants: args.customConnectorGrants,
+    customConnectorDefinitions: args.customConnectorDefinitions,
+    workflows: args.workflows,
+  };
   let stablePrompt: PiStableContextPromptProjection | undefined;
   const buildPrompt = () => {
     stablePrompt ??= buildStableAgentPrompt({
@@ -823,12 +957,18 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     });
     return stablePrompt;
   };
-  return {
-    userInfo,
-    initialStablePrompt: args.command.piExecution
-      ? emptyStablePrompt()
-      : buildPrompt(),
-    piStableContext: {
+  let cacheIdentity:
+    | ReturnType<
+        NonNullable<CreateAgentRunArgs["piStableContext"]>["buildCacheIdentity"]
+      >
+    | undefined;
+  const buildCacheIdentity = () => {
+    if (cacheIdentity) {
+      return cacheIdentity;
+    }
+    stableContextCacheIdentityBuildHook.get()?.();
+    const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
+    cacheIdentity = {
       owner: {
         orgId: args.command.auth.orgId,
         userId: args.command.auth.userId,
@@ -843,25 +983,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         cloudBrowserEnabled: promptInputs.cloudBrowserEnabled,
         connectorSource: "stored_agent",
       }),
-      buildPrompt,
-      dynamicAppendSystemPrompt: [
-        buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
-        args.command.appendSystemPrompt,
-      ]
-        .filter((part): part is string => {
-          return Boolean(part);
-        })
-        .join("\n\n"),
-      semantic: {
-        promptInputs,
-        connectorScope: {
-          allowedConnectorSlugs: args.allowedConnectorSlugs,
-          allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-          customConnectorGrants: args.customConnectorGrants,
-          customConnectorDefinitions: args.customConnectorDefinitions,
-          workflows: args.workflows,
-        },
-      },
+      semantic: { promptInputs, connectorScope },
       source: {
         catalogIdentity:
           args.connectorCatalogSelection.kind === "scoped"
@@ -878,17 +1000,30 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         permissionDigest: piStableContextVariantDigest(
           args.runPermissionPolicies ?? null,
         ),
-        connectorScopeDigest: piStableContextVariantDigest({
-          allowedConnectorSlugs: args.allowedConnectorSlugs,
-          allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-          customConnectorGrants: args.customConnectorGrants,
-          customConnectorDefinitions: args.customConnectorDefinitions,
-          workflows: args.workflows,
-        }),
+        connectorScopeDigest: piStableContextVariantDigest(connectorScope),
         validityHorizon: args.permissionValidityHorizon,
         promptSchemaVersion: 1,
         runtimeSchemaVersion: 1,
       },
+    };
+    return cacheIdentity;
+  };
+  return {
+    userInfo,
+    initialStablePrompt: args.command.piExecution
+      ? emptyStablePrompt()
+      : buildPrompt(),
+    piStableContext: {
+      buildPrompt,
+      buildCacheIdentity,
+      dynamicAppendSystemPrompt: [
+        buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
+        args.command.appendSystemPrompt,
+      ]
+        .filter((part): part is string => {
+          return Boolean(part);
+        })
+        .join("\n\n"),
     },
   };
 }
@@ -946,6 +1081,17 @@ function buildCreateAgentRunArgs(
     callbacks: command.callbacks,
     includeOkouTokenSecret: true,
     productAgentExecutionPlan,
+    ...(args.authorizedRequestObservation
+      ? {
+          preloadedAgentExecutionObservation: {
+            requestUserId: args.authorizedRequestObservation.userId,
+            requestOrgId: args.authorizedRequestObservation.orgId,
+            agentId: args.agent.id,
+            ownerUserId: args.agent.owner,
+            agentOrgId: args.agent.orgId,
+          },
+        }
+      : {}),
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
@@ -987,29 +1133,11 @@ function buildCreateAgentRunArgs(
   };
 }
 
-interface AgentRunAfterPreCreate {
-  readonly agent: AgentRunRecord;
-  readonly userInfo: UserInfo;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly permissionValidityHorizon: string | null;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
-  readonly customConnectorDefinitions: readonly CustomConnectorDefinitionVersion[];
-  readonly timing: ApiDispatchTimingCollector;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly command: AnyCreateAgentRunCommandArgs;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
-}
-
 async function captureSubscriptionAccount(
   db: Db,
-  input: AgentRunAfterPreCreate,
+  input: AgentRunAfterBootstrap,
   signal: AbortSignal,
-): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> {
+): Promise<AgentRunAfterBootstrap | ReturnType<typeof conflict>> {
   const { command } = input;
   const pin = command.agentRunModelPin;
   if (
@@ -1019,6 +1147,13 @@ async function captureSubscriptionAccount(
     pin.modelProviderCredentialScope === "org"
   ) {
     return input;
+  }
+  const testHold = observeAgentRunPreCreateParallelStage(
+    "subscription-account",
+    input,
+  );
+  if (testHold) {
+    await testHold;
   }
   const account = await captureActivePersonalModelProviderAccount(
     {
@@ -1049,13 +1184,32 @@ async function captureSubscriptionAccount(
   };
 }
 
+interface AgentRunThreadSessionPreparation {
+  readonly body: AgentRunCreateBody;
+  readonly appendSystemPrompt: string | undefined;
+  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly cloudBrowserEnabled: boolean | undefined;
+}
+
 async function resolveThreadSessionForAgentRun(
   db: Db,
-  input: AgentRunAfterPreCreate,
-): Promise<AgentRunAfterPreCreate> {
+  input: AgentRunAfterBootstrap,
+): Promise<AgentRunThreadSessionPreparation> {
   const threadId = input.command.chatThreadId;
   if (!threadId) {
-    return input;
+    return {
+      body: input.command.body,
+      appendSystemPrompt: input.command.appendSystemPrompt,
+      threadSessionResolution: input.threadSessionResolution,
+      cloudBrowserEnabled: input.cloudBrowserEnabled,
+    };
+  }
+  const testHold = observeAgentRunPreCreateParallelStage(
+    "thread-session",
+    input,
+  );
+  if (testHold) {
+    await testHold;
   }
   const threadSessionRoute = input.command.threadSessionRoute;
   if (!threadSessionRoute) {
@@ -1097,41 +1251,138 @@ async function resolveThreadSessionForAgentRun(
     delete body.sessionId;
   }
   return {
-    ...input,
-    command: { ...input.command, body, appendSystemPrompt: sessionPrompt },
+    body,
+    appendSystemPrompt: sessionPrompt,
     threadSessionResolution: resolution,
     cloudBrowserEnabled: resolution.cloudBrowserEnabled,
+  };
+}
+
+function applyAgentRunThreadSessionPreparation(
+  postAuthorization: AgentRunAfterPreCreate,
+  threadSession: AgentRunThreadSessionPreparation,
+): AgentRunAfterPreCreate {
+  return {
+    ...postAuthorization,
+    command: {
+      ...postAuthorization.command,
+      body: threadSession.body,
+      appendSystemPrompt: threadSession.appendSystemPrompt,
+    },
+    threadSessionResolution: threadSession.threadSessionResolution,
+    cloudBrowserEnabled: threadSession.cloudBrowserEnabled,
+  };
+}
+
+async function joinAgentRunAttemptPreparation(
+  postAuthorization: Promise<AgentRunAfterPreCreate>,
+  threadSession: Promise<AgentRunThreadSessionPreparation>,
+  signal: AbortSignal,
+): Promise<AgentRunAfterPreCreate> {
+  // Preserve the historical post-authorization -> session error precedence,
+  // but settle both owned branches before surfacing either failure.
+  const [postAuthorizationResult, threadSessionResult] = await joinAllInOrder(
+    [postAuthorization, threadSession],
+    signal,
+  );
+  return applyAgentRunThreadSessionPreparation(
+    postAuthorizationResult,
+    threadSessionResult,
+  );
+}
+
+async function captureAndCompleteAgentRunPostAuthorizationContext(
+  db: Db,
+  input: AgentRunAfterBootstrap,
+  signal: AbortSignal,
+): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> {
+  const capturedInput = await measureAgentRunPreCreate(
+    input.timing,
+    "api_dispatch_pre_create_agent_capture_subscription_account",
+    () => {
+      return captureSubscriptionAccount(db, input, signal);
+    },
+  );
+  signal.throwIfAborted();
+  if ("status" in capturedInput) {
+    return capturedInput;
+  }
+  return await completeAgentRunPostAuthorizationContext(
+    db,
+    capturedInput,
+    signal,
+  );
+}
+
+type InitialAgentRunPreparation =
+  | {
+      readonly postAuthorization: AgentRunAfterPreCreate;
+      readonly attemptInput: AgentRunAfterPreCreate;
+    }
+  | ReturnType<typeof conflict>;
+
+async function joinInitialAgentRunPreparation(
+  captureAndPostAuthorization: Promise<
+    AgentRunAfterPreCreate | ReturnType<typeof conflict>
+  >,
+  threadSession: Promise<AgentRunThreadSessionPreparation>,
+  signal: AbortSignal,
+): Promise<InitialAgentRunPreparation> {
+  // Capture can fulfill with a domain conflict instead of rejecting. Settle
+  // both owned branches, then keep the capture dependency authoritative over
+  // any speculative thread failure.
+  const [postAuthorizationResult, threadSessionResult] =
+    await Promise.allSettled([captureAndPostAuthorization, threadSession]);
+
+  if (postAuthorizationResult.status === "rejected") {
+    throw postAuthorizationResult.reason;
+  }
+  if ("status" in postAuthorizationResult.value) {
+    signal.throwIfAborted();
+    return postAuthorizationResult.value;
+  }
+  if (threadSessionResult.status === "rejected") {
+    throw threadSessionResult.reason;
+  }
+  signal.throwIfAborted();
+  return {
+    postAuthorization: postAuthorizationResult.value,
+    attemptInput: applyAgentRunThreadSessionPreparation(
+      postAuthorizationResult.value,
+      threadSessionResult.value,
+    ),
   };
 }
 
 const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 
 const createAgentRunAfterPreCreate$ = command(
-  async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
+  async ({ set }, input: AgentRunAfterBootstrap, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const capturedInput = await measureAgentRunPreCreate(
-      input.timing,
-      "api_dispatch_pre_create_agent_capture_subscription_account",
-      () => {
-        return captureSubscriptionAccount(db, input, signal);
-      },
+    const initialPreparation = await joinInitialAgentRunPreparation(
+      captureAndCompleteAgentRunPostAuthorizationContext(db, input, signal),
+      resolveThreadSessionForAgentRun(db, input),
+      signal,
     );
-    signal.throwIfAborted();
-    if ("status" in capturedInput) {
-      return capturedInput;
+    if ("status" in initialPreparation) {
+      return initialPreparation;
     }
+    const { postAuthorization } = initialPreparation;
     for (
       let attempt = 0;
       attempt < THREAD_SESSION_PREPARATION_ATTEMPTS;
       attempt += 1
     ) {
-      const attemptInput = await resolveThreadSessionForAgentRun(
-        db,
-        capturedInput,
-      );
-      signal.throwIfAborted();
+      const attemptInput =
+        attempt === 0
+          ? initialPreparation.attemptInput
+          : await joinAgentRunAttemptPreparation(
+              Promise.resolve(postAuthorization),
+              resolveThreadSessionForAgentRun(db, postAuthorization),
+              signal,
+            );
       const baseCreateAgentRunArgs = await measureAgentRunPreCreate(
-        capturedInput.timing,
+        postAuthorization.timing,
         "api_dispatch_pre_create_agent_build_create_run_args",
         () => {
           return buildCreateAgentRunArgs(attemptInput);
@@ -1146,27 +1397,27 @@ const createAgentRunAfterPreCreate$ = command(
         },
       };
       const phaseTiming = new ApiDispatchPhaseCollector(
-        capturedInput.command.apiStartTime,
+        postAuthorization.command.apiStartTime,
       );
-      capturedInput.timing.recordElapsed(
+      postAuthorization.timing.recordElapsed(
         "api_dispatch_pre_create_agent_run",
         "top_level",
-        capturedInput.command.apiStartTime,
+        postAuthorization.command.apiStartTime,
       );
       phaseTiming.checkpoint("api_dispatch_phase_pre_create", now());
       const preparedAgentRun = await set(
         prepareAgentRun$,
         {
           args: createAgentRunArgs,
-          timing: capturedInput.timing,
+          timing: postAuthorization.timing,
           phaseTiming,
           checkOrgPlanStatusBeforeContext: false,
-          preloadedFeatureSwitchContext: capturedInput.featureSwitchContext,
-          preloadedUserTimezone: capturedInput.userInfo.timezone,
-          ...(capturedInput.connectorCatalogSelection.kind === "scoped"
+          preloadedFeatureSwitchContext: postAuthorization.featureSwitchContext,
+          preloadedUserTimezone: postAuthorization.userInfo.timezone,
+          ...(attemptInput.connectorCatalogSelection.kind === "scoped"
             ? {
                 preloadedConnectorCatalogSnapshot:
-                  capturedInput.connectorCatalogSelection.selection,
+                  attemptInput.connectorCatalogSelection.selection,
               }
             : {}),
         },
@@ -1195,6 +1446,35 @@ const createAgentRunAfterPreCreate$ = command(
   },
 );
 
+function matchingPreloadedFeatureSwitchContext(
+  args: AnyCreateAgentRunCommandArgs,
+): FeatureSwitchContext | undefined {
+  const context = args.preloadedFeatureSwitchContext;
+  return context?.userId === args.auth.userId &&
+    context.orgId === args.auth.orgId
+    ? context
+    : undefined;
+}
+
+function matchingAuthorizedRequestObservation(
+  args: AnyCreateAgentRunCommandArgs,
+  agentId: string,
+): AuthorizedAgentRunRequestObservation | undefined {
+  const observation = args.authorizedRequestObservation;
+  if (
+    !observation ||
+    observation.userId !== args.auth.userId ||
+    observation.orgId !== args.auth.orgId ||
+    observation.agent.id !== agentId ||
+    observation.agent.orgId !== args.auth.orgId ||
+    observation.featureSwitchContext.userId !== args.auth.userId ||
+    observation.featureSwitchContext.orgId !== args.auth.orgId
+  ) {
+    return undefined;
+  }
+  return observation;
+}
+
 const createAgentRunInternal$ = command(
   async ({ set }, args: AnyCreateAgentRunCommandArgs, signal: AbortSignal) => {
     assertThreadBoundAgentRunHasQueueAssociation(args);
@@ -1219,11 +1499,26 @@ const createAgentRunInternal$ = command(
         : badRequestMessage("Missing agentId or sessionId");
     }
 
+    const authorizedRequestObservation = matchingAuthorizedRequestObservation(
+      args,
+      agentId,
+    );
+    const preloadedFeatureSwitchContext =
+      authorizedRequestObservation?.featureSwitchContext ??
+      matchingPreloadedFeatureSwitchContext(args);
     const agent = await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_load_agent",
       async () => {
-        return await loadAgent(db, agentId);
+        return (
+          authorizedRequestObservation?.agent ?? (await loadAgent(db, agentId))
+        );
+      },
+      {
+        authorized_request_agent_source:
+          authorizedRequestObservation === undefined
+            ? "database"
+            : "request_observation",
       },
     );
     signal.throwIfAborted();
@@ -1257,18 +1552,7 @@ const createAgentRunInternal$ = command(
     });
     signal.throwIfAborted();
 
-    const {
-      userInfo,
-      featureSwitchContext,
-      allowedConnectorSlugs,
-      allowedCustomConnectorIds,
-      customConnectorGrants,
-      customConnectorDefinitions,
-      workflows,
-      runPermissionPolicies,
-      permissionValidityHorizon,
-      connectorCatalogSelection,
-    } = await loadAgentRunPostAuthorizationContext(
+    const bootstrapContext = await loadAgentRunBootstrapContext(
       db,
       {
         userId: args.auth.userId,
@@ -1276,6 +1560,9 @@ const createAgentRunInternal$ = command(
         agentId: agent.id,
         apiStartTime: args.apiStartTime,
         timing,
+        ...(preloadedFeatureSwitchContext
+          ? { preloadedFeatureSwitchContext }
+          : {}),
       },
       signal,
     );
@@ -1283,18 +1570,12 @@ const createAgentRunInternal$ = command(
     return await set(
       createAgentRunAfterPreCreate$,
       {
+        ...bootstrapContext,
         command: args,
         agent,
-        userInfo,
-        featureSwitchContext,
-        runPermissionPolicies,
-        permissionValidityHorizon,
-        connectorCatalogSelection,
-        workflows,
-        allowedConnectorSlugs,
-        allowedCustomConnectorIds,
-        customConnectorGrants,
-        customConnectorDefinitions,
+        ...(authorizedRequestObservation
+          ? { authorizedRequestObservation }
+          : {}),
         timing,
         cloudBrowserEnabled: undefined,
       },

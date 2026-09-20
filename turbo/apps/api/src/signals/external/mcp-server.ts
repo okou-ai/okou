@@ -1,10 +1,23 @@
-import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import {
+  createMcpHandler,
+  McpServer,
+  type CallToolResult,
+  type ServerContext,
+  type StandardSchemaWithJSON,
+  type ToolAnnotations,
+} from "@modelcontextprotocol/server";
 import {
   mcpCreateChatThreadInputSchema,
   mcpCreateChatThreadOutputSchema,
   type McpCreateChatThreadInput,
   type McpCreateChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
+  mcpUpdateChatThreadInputSchema,
+  mcpUpdateChatThreadOutputSchema,
+  type McpUpdateChatThreadInput,
+  type McpUpdateChatThreadOutput,
+} from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import {
   mcpListAgentsInputSchema,
   mcpListAgentsOutputSchema,
@@ -59,6 +72,12 @@ import {
   type McpListChatThreadsOutput,
   type McpThreadReadResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
+import {
+  MCP_TOOL_ERROR_MAX_ISSUES,
+  MCP_TOOL_ERROR_MAX_PATH_SEGMENTS,
+  type McpToolError,
+} from "@okouai/api-contracts/contracts/mcp-tool-errors";
+import { z } from "zod";
 import { onRejection, settle, settleIncludingAbort } from "../utils";
 
 interface McpChatAccess {
@@ -75,6 +94,10 @@ interface McpChatAccess {
     input: McpCreateChatThreadInput,
     signal: AbortSignal,
   ) => Promise<McpChatMutationResult<McpCreateChatThreadOutput>>;
+  readonly updateThread: (
+    input: McpUpdateChatThreadInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatMutationResult<McpUpdateChatThreadOutput>>;
   readonly getStatus: (
     input: McpGetChatStatusInput,
     signal: AbortSignal,
@@ -116,11 +139,115 @@ const readAnnotations = Object.freeze({
   openWorldHint: false,
 });
 
-function toolError(message: string) {
+function toolError(error: McpToolError): CallToolResult {
   return {
     isError: true,
-    content: [{ type: "text" as const, text: message }],
+    content: [{ type: "text", text: error.message }],
+    structuredContent: { error },
   };
+}
+
+function validationToolError(
+  toolName: string,
+  error: z.ZodError,
+): CallToolResult {
+  const issues = error.issues
+    .slice(0, MCP_TOOL_ERROR_MAX_ISSUES)
+    .map((issue) => {
+      return {
+        path: issue.path
+          .slice(0, MCP_TOOL_ERROR_MAX_PATH_SEGMENTS)
+          .map((segment) => {
+            return typeof segment === "number"
+              ? segment
+              : String(segment).slice(0, 256);
+          }),
+        code: issue.code,
+        message: issue.message.slice(0, 1000),
+      };
+    });
+  const detail = issues
+    .map((issue) => {
+      const path = issue.path.join(".");
+      return path.length > 0 ? `${path}: ${issue.message}` : issue.message;
+    })
+    .join(", ");
+  return toolError({
+    code: "invalid_arguments",
+    message:
+      `Input validation error: Invalid arguments for tool ${toolName}: ${detail}`.slice(
+        0,
+        4096,
+      ),
+    retryable: false,
+    issues,
+  });
+}
+
+function uncheckedInputSchema<Input extends Record<string, unknown>>(
+  schema: z.ZodType<Input>,
+): StandardSchemaWithJSON<unknown, unknown> {
+  const advertised = schema as unknown as StandardSchemaWithJSON<
+    unknown,
+    Input
+  >;
+  return {
+    "~standard": {
+      version: 1,
+      vendor: "okou",
+      validate(value) {
+        return { value };
+      },
+      jsonSchema: advertised["~standard"].jsonSchema,
+    },
+  };
+}
+
+interface ChatToolConfig<
+  InputSchema extends z.ZodType<Record<string, unknown>>,
+  OutputSchema extends z.ZodType<Record<string, unknown>>,
+> {
+  readonly description: string;
+  readonly inputSchema: InputSchema;
+  readonly outputSchema: OutputSchema;
+  readonly annotations?: ToolAnnotations;
+}
+
+function registerChatTool<
+  InputSchema extends z.ZodType<Record<string, unknown>>,
+  OutputSchema extends z.ZodType<Record<string, unknown>>,
+>(
+  server: McpServer,
+  name: string,
+  config: ChatToolConfig<InputSchema, OutputSchema>,
+  callback: (
+    input: z.output<InputSchema>,
+    context: ServerContext,
+  ) => CallToolResult | Promise<CallToolResult>,
+): void {
+  const { inputSchema, ...advertisedConfig } = config;
+  server.registerTool(
+    name,
+    {
+      ...advertisedConfig,
+      inputSchema: uncheckedInputSchema(inputSchema),
+    },
+    async (input, context) => {
+      const parsed = inputSchema.safeParse(input);
+      if (!parsed.success) {
+        return validationToolError(name, parsed.error);
+      }
+      return await callback(parsed.data, context);
+    },
+  );
+}
+
+function retryableReadError(code: string): boolean {
+  return (
+    code === "unavailable" ||
+    code === "view_changed" ||
+    code.endsWith("_unavailable")
+  );
 }
 
 async function readTool<T extends Record<string, unknown>>(
@@ -131,17 +258,29 @@ async function readTool<T extends Record<string, unknown>>(
   >,
   signal: AbortSignal,
   unavailableMessage = "Thread information is temporarily unavailable. Retry, or narrow the Agent/time filters for a large search.",
-) {
+): Promise<CallToolResult> {
   if (!access.scopes.includes(access.readScope)) {
-    return toolError("Insufficient scope");
+    return toolError({
+      code: "insufficient_scope",
+      message: "Insufficient scope",
+      retryable: false,
+    });
   }
   signal.throwIfAborted();
   const result = await settle(operation(), signal);
   if (!result.ok) {
-    return toolError(unavailableMessage);
+    return toolError({
+      code: "unavailable",
+      message: unavailableMessage,
+      retryable: true,
+    });
   }
   if (!("data" in result.value)) {
-    return toolError(result.value.message);
+    return toolError({
+      code: result.value.kind,
+      message: result.value.message,
+      retryable: retryableReadError(result.value.kind),
+    });
   }
   return {
     structuredContent: result.value.data,
@@ -156,7 +295,8 @@ function registerMessageTool(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
-  server.registerTool(
+  registerChatTool(
+    server,
     "get_chat_messages",
     {
       description:
@@ -192,17 +332,29 @@ async function mutationTool<T extends Record<string, unknown>>(
   operation: (signal: AbortSignal) => Promise<McpChatMutationResult<T>>,
   requestSignal: AbortSignal,
   unavailableMessage = "The operation result is unavailable. For sends, retry the identical requestId, threadId and text within 24 hours; otherwise inspect the current state before retrying.",
-) {
+): Promise<CallToolResult> {
   if (!access.scopes.includes(scope)) {
-    return toolError("Insufficient scope");
+    return toolError({
+      code: "insufficient_scope",
+      message: "Insufficient scope",
+      retryable: false,
+    });
   }
   requestSignal.throwIfAborted();
   const result = await settle(operation(requestSignal), requestSignal);
   if (!result.ok) {
-    return toolError(unavailableMessage);
+    return toolError({
+      code: "unavailable",
+      message: unavailableMessage,
+      retryable: true,
+    });
   }
   if (result.value.kind === "error") {
-    return toolError(result.value.message);
+    return toolError({
+      code: result.value.code,
+      message: result.value.message,
+      retryable: result.value.retryable,
+    });
   }
   return {
     structuredContent: result.value.data,
@@ -212,41 +364,78 @@ async function mutationTool<T extends Record<string, unknown>>(
   };
 }
 
+function registerManageTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  registerChatTool(
+    server,
+    "create_chat_thread",
+    {
+      description:
+        "Create an empty conversation in the authorized organization, without sending a message or starting a run. First use list_agents and list_models; supply an explicit visible agentId, nonblank title and selectable model. Generate one UUID requestId per intended conversation; retry with that same requestId and identical Agent, exact title and model within 24 hours of acceptance. Retry returns current settings without overwriting later edits. Deleted, expired or conflicting requests fail. Deduplication is not guaranteed beyond retained identity; never automatically retry an uncertain old request. The threadId is the requestId. Follow nextAction to send a message separately; actual run admission is checked on send.",
+      inputSchema: mcpCreateChatThreadInputSchema,
+      outputSchema: mcpCreateChatThreadOutputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (input, context) => {
+      return mutationTool(
+        access,
+        "okou:chat:manage",
+        (signal) => {
+          return access.createThread(input, signal);
+        },
+        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
+      );
+    },
+  );
+  registerChatTool(
+    server,
+    "update_chat_thread",
+    {
+      description:
+        "Atomically update your conversation title and/or future-run model in the authorized organization. patch must contain title and/or model; omitted fields and unrelated service-tier, reasoning, media and browser settings stay unchanged. model:null clears the thread pin. A title update is manual and suppresses later automatic title generation. Model changes affect later runs only; steering an existing run keeps that run's model. Generate one UUID requestId per intended patch and retry only the identical threadId and exact field presence/values within 24 hours. Exact replay returns current state without restoring older settings. Conflicting or expired reuse fails; inspect get_chat_thread before making a new intended change, and never automatically retry an uncertain old request.",
+      inputSchema: mcpUpdateChatThreadInputSchema,
+      outputSchema: mcpUpdateChatThreadOutputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (input, context) => {
+      return mutationTool(
+        access,
+        "okou:chat:manage",
+        (signal) => {
+          return access.updateThread(input, signal);
+        },
+        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        "Update result is unavailable. Retry the identical requestId, threadId and exact patch within 24 hours; otherwise inspect get_chat_thread before making a new intended change.",
+      );
+    },
+  );
+}
+
 function registerMutationTools(
   server: McpServer,
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
   if (access.scopes.includes("okou:chat:manage")) {
-    server.registerTool(
-      "create_chat_thread",
-      {
-        description:
-          "Create an empty conversation in the authorized organization, without sending a message or starting a run. First use list_agents and list_models; supply an explicit visible agentId, nonblank title and selectable model. Generate one UUID requestId per intended conversation; retry with that same requestId and identical Agent, exact title and model within 24 hours of acceptance. Retry returns current settings without overwriting later edits. Deleted, expired or conflicting requests fail. Deduplication is not guaranteed beyond retained identity; never automatically retry an uncertain old request. The threadId is the requestId. Follow nextAction to send a message separately; actual run admission is checked on send.",
-        inputSchema: mcpCreateChatThreadInputSchema,
-        outputSchema: mcpCreateChatThreadOutputSchema,
-        annotations: {
-          readOnlyHint: false,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
-      },
-      (input, context) => {
-        return mutationTool(
-          access,
-          "okou:chat:manage",
-          (signal) => {
-            return access.createThread(input, signal);
-          },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
-          "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
-        );
-      },
-    );
+    registerManageTools(server, access, requestSignal);
   }
   if (access.scopes.includes("okou:chat:send")) {
-    server.registerTool(
+    registerChatTool(
+      server,
       "send_chat_message",
       {
         description:
@@ -273,7 +462,8 @@ function registerMutationTools(
     );
   }
   if (access.scopes.includes("okou:run:cancel")) {
-    server.registerTool(
+    registerChatTool(
+      server,
       "revoke_queued_message",
       {
         description:
@@ -298,7 +488,8 @@ function registerMutationTools(
         );
       },
     );
-    server.registerTool(
+    registerChatTool(
+      server,
       "cancel_run",
       {
         description:
@@ -331,7 +522,8 @@ function registerDiscoveryTools(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
-  server.registerTool(
+  registerChatTool(
+    server,
     "list_agents",
     {
       description:
@@ -352,7 +544,8 @@ function registerDiscoveryTools(
       );
     },
   );
-  server.registerTool(
+  registerChatTool(
+    server,
     "list_models",
     {
       description:
@@ -375,6 +568,78 @@ function registerDiscoveryTools(
   );
 }
 
+function registerSearchAndStatusTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  registerChatTool(
+    server,
+    "search_chat_messages",
+    {
+      description:
+        "Search visible message text in your conversations in the authorized organization. " +
+        "Use whole words or CJK phrases of at least two characters; all query groups must match. " +
+        "Filter by threadId, agentId, role and source-event since (inclusive)/before (exclusive). " +
+        "Returns newest source events first, bounded excerpts and real ref identifiers; pass a ref's " +
+        "threadId and around:{eventId,seqId} to get_chat_messages for context and full content. " +
+        "Follow nextCursor with the identical query, filters and limit (default 20, maximum 50). " +
+        "An empty page may still have a nextCursor: scanLimited means the 100-candidate scan budget " +
+        "was reached. Indexing is asynchronous; use get_chat_messages for recently sent content. " +
+        "An empty search does not prove absence or send failure. Restart to refresh. Search does not mark messages " +
+        "read. Canonical validation shares a 32 MiB/50,000-event/15-second history budget across " +
+        "candidate threads; resource/archive failures are explicit errors, not partial successes.",
+      inputSchema: mcpSearchChatMessagesInputSchema,
+      outputSchema: mcpSearchChatMessagesOutputSchema,
+      annotations: readAnnotations,
+    },
+    async (args, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return await readTool(
+        access,
+        () => {
+          return access.searchMessages(args, signal);
+        },
+        signal,
+        "Message search is temporarily unavailable. Retry or narrow the thread, Agent or time filters.",
+      );
+    },
+  );
+  registerChatTool(
+    server,
+    "get_chat_status",
+    {
+      description:
+        "Observe input delivery, run state and readable output separately in your conversation. " +
+        "Pass threadId and the complete original inputRef returned by send_chat_message; without " +
+        "inputRef, observes the latest run. Missing input associations never select another run. " +
+        "queued/reserved/associated do not prove delivery; delivered means an acknowledged active " +
+        "input, not model compliance. deliveryMode is launch/steer only with evidence, otherwise unknown. " +
+        "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
+        "output, including cancellation recovery. ready means current materialized output is readable; " +
+        "late output may still arrive. Follow the messages tool handoff for content and pagination. " +
+        "Honor retryAfterMs and back off repeated polls. Original references survive live retention " +
+        "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
+        "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
+        "are explicit errors. This immediate read does not mark read, change execution or cancel runs.",
+      inputSchema: mcpGetChatStatusInputSchema,
+      outputSchema: mcpGetChatStatusOutputSchema,
+      annotations: readAnnotations,
+    },
+    async (args, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return await readTool(
+        access,
+        () => {
+          return access.getStatus(args, signal);
+        },
+        signal,
+        "Chat status is temporarily unavailable. Retry later.",
+      );
+    },
+  );
+}
+
 function createChatServer(
   access: McpChatAccess,
   requestSignal: AbortSignal,
@@ -385,71 +650,10 @@ function createChatServer(
   );
   if (access.scopes.includes(access.readScope)) {
     registerMessageTool(server, access, requestSignal);
-    server.registerTool(
-      "search_chat_messages",
-      {
-        description:
-          "Search visible message text in your conversations in the authorized organization. " +
-          "Use whole words or CJK phrases of at least two characters; all query groups must match. " +
-          "Filter by threadId, agentId, role and source-event since (inclusive)/before (exclusive). " +
-          "Returns newest source events first, bounded excerpts and real ref identifiers; pass a ref's " +
-          "threadId and around:{eventId,seqId} to get_chat_messages for context and full content. " +
-          "Follow nextCursor with the identical query, filters and limit (default 20, maximum 50). " +
-          "An empty page may still have a nextCursor: scanLimited means the 100-candidate scan budget " +
-          "was reached. Indexing is asynchronous; use get_chat_messages for recently sent content. " +
-          "An empty search does not prove absence or send failure. Restart to refresh. Search does not mark messages " +
-          "read. Canonical validation shares a 32 MiB/50,000-event/15-second history budget across " +
-          "candidate threads; resource/archive failures are explicit errors, not partial successes.",
-        inputSchema: mcpSearchChatMessagesInputSchema,
-        outputSchema: mcpSearchChatMessagesOutputSchema,
-        annotations: readAnnotations,
-      },
-      async (args, context) => {
-        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
-        return await readTool(
-          access,
-          () => {
-            return access.searchMessages(args, signal);
-          },
-          signal,
-          "Message search is temporarily unavailable. Retry or narrow the thread, Agent or time filters.",
-        );
-      },
-    );
-    server.registerTool(
-      "get_chat_status",
-      {
-        description:
-          "Observe input delivery, run state and readable output separately in your conversation. " +
-          "Pass threadId and the complete original inputRef returned by send_chat_message; without " +
-          "inputRef, observes the latest run. Missing input associations never select another run. " +
-          "queued/reserved/associated do not prove delivery; delivered means an acknowledged active " +
-          "input, not model compliance. deliveryMode is launch/steer only with evidence, otherwise unknown. " +
-          "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
-          "output, including cancellation recovery. ready means current materialized output is readable; " +
-          "late output may still arrive. Follow the messages tool handoff for content and pagination. " +
-          "Honor retryAfterMs and back off repeated polls. Original references survive live retention " +
-          "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
-          "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
-          "are explicit errors. This immediate read does not mark read, change execution or cancel runs.",
-        inputSchema: mcpGetChatStatusInputSchema,
-        outputSchema: mcpGetChatStatusOutputSchema,
-        annotations: readAnnotations,
-      },
-      async (args, context) => {
-        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
-        return await readTool(
-          access,
-          () => {
-            return access.getStatus(args, signal);
-          },
-          signal,
-          "Chat status is temporarily unavailable. Retry later.",
-        );
-      },
-    );
+    registerSearchAndStatusTools(server, access, requestSignal);
     registerDiscoveryTools(server, access, requestSignal);
-    server.registerTool(
+    registerChatTool(
+      server,
       "list_chat_threads",
       {
         description:
@@ -474,7 +678,8 @@ function createChatServer(
         );
       },
     );
-    server.registerTool(
+    registerChatTool(
+      server,
       "get_chat_thread",
       {
         description:

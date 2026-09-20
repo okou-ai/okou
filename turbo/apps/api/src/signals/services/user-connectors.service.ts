@@ -8,7 +8,7 @@ import {
 } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
 import type { Db } from "../external/db";
 import { testOverride } from "../../lib/singleton";
@@ -27,14 +27,14 @@ import type { Tx } from "../../lib/db-types";
 import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
-type UpdateUserConnectorsResult =
+type UpdateUserBuiltinConnectorsResult =
   | {
       readonly status: "updated";
       readonly enabledConnectorSlugs: readonly ConnectorSlug[];
     }
   | { readonly status: "agentNotFound" };
 
-type UserConnectorUpdateOperation = "replace" | "add" | "remove";
+type UserBuiltinConnectorUpdateOperation = "replace" | "add" | "remove";
 
 type UpdateUserCustomConnectorsResult =
   | {
@@ -257,16 +257,16 @@ async function lockCustomConnectorDefinitionsForGrant(
   };
 }
 
-export async function updateUserConnectors(
+export async function updateUserBuiltinConnectors(
   db: Db,
   args: {
     readonly orgId: string;
     readonly userId: string;
     readonly agentId: string;
     readonly enabledConnectorSlugs: readonly ConnectorSlug[];
-    readonly operation?: UserConnectorUpdateOperation;
+    readonly operation?: UserBuiltinConnectorUpdateOperation;
   },
-): Promise<UpdateUserConnectorsResult> {
+): Promise<UpdateUserBuiltinConnectorsResult> {
   const enabledConnectorSlugs = Array.from(new Set(args.enabledConnectorSlugs));
   const operation = args.operation ?? "replace";
 
@@ -281,27 +281,27 @@ export async function updateUserConnectors(
     }
 
     const connectorScope = and(
-      eq(userConnectors.orgId, args.orgId),
-      eq(userConnectors.userId, args.userId),
-      eq(userConnectors.agentId, args.agentId),
+      eq(userBuiltinConnectors.orgId, args.orgId),
+      eq(userBuiltinConnectors.userId, args.userId),
+      eq(userBuiltinConnectors.agentId, args.agentId),
     );
 
     if (operation === "replace") {
-      await tx.delete(userConnectors).where(connectorScope);
+      await tx.delete(userBuiltinConnectors).where(connectorScope);
     } else if (operation === "remove" && enabledConnectorSlugs.length > 0) {
       await tx
-        .delete(userConnectors)
+        .delete(userBuiltinConnectors)
         .where(
           and(
             connectorScope,
-            inArray(userConnectors.connectorSlug, enabledConnectorSlugs),
+            inArray(userBuiltinConnectors.connectorSlug, enabledConnectorSlugs),
           ),
         );
     }
 
     if (operation !== "remove" && enabledConnectorSlugs.length > 0) {
       await tx
-        .insert(userConnectors)
+        .insert(userBuiltinConnectors)
         .values(
           enabledConnectorSlugs.map((connectorSlug) => {
             return {
@@ -325,8 +325,8 @@ export async function updateUserConnectors(
     }
 
     const rows = await tx
-      .select({ connectorSlug: userConnectors.connectorSlug })
-      .from(userConnectors)
+      .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+      .from(userBuiltinConnectors)
       .where(connectorScope);
     const result = {
       status: "updated",

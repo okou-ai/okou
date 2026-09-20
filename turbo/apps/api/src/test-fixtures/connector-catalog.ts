@@ -18,6 +18,7 @@ import { nowDate } from "../lib/time";
 import {
   connectorCatalogArtifactSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+  type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { encodeConnectorCatalogSnapshot } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import {
@@ -103,17 +104,21 @@ export async function installApiTestConnectorCatalog(
     readonly catalogVersion?: string;
     readonly runtimeProjection?: boolean;
     readonly sourceId?: string;
+    readonly catalog?: ConnectorCatalogArtifact;
   } = {},
 ): Promise<void> {
   const catalogVersion =
-    options.catalogVersion ?? DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION;
+    options.catalogVersion ??
+    options.catalog?.catalogVersion ??
+    DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION;
   const catalog =
-    catalogVersion === DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION
+    options.catalog ??
+    (catalogVersion === DEFAULT_API_TEST_CONNECTOR_CATALOG_VERSION
       ? API_TEST_CONNECTOR_CATALOG
       : connectorCatalogArtifactSchema.parse({
           ...API_TEST_CONNECTOR_CATALOG_ARTIFACT,
           catalogVersion,
-        });
+        }));
   validateConnectorCatalogArtifact(catalog);
   const rawBytes = Buffer.from(`${JSON.stringify(catalog)}\n`);
   const catalogDigest = sha256Digest(rawBytes);

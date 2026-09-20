@@ -50,6 +50,9 @@ case "${1:-}" in
       [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "f205ec54fc463f43b1106a3659e5d6a8c979cab8" ]; then
+      [ "${4:-}" != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ] &&
+        [ "${MOCK_HOSTED_PUBLICATION_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "8a5e1299b4d26bd114ccec017b84b7a83fb4a164" ]; then
       [ "${MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6" ]; then
@@ -157,6 +160,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -164,6 +168,17 @@ grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version o
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates hosted publication version-column retirement" \
+  run_resolver "${tmp_dir}/hosted-publication-floor.output" \
+  MOCK_HOSTED_PUBLICATION_RUNTIME_FLOOR_VALID=0
+grep -Fq 'f205ec54fc463f43b1106a3659e5d6a8c979cab8' "${tmp_dir}/failure.err" || fail "hosted publication rejection must identify the canonical runtime transition"
+[ ! -s "${tmp_dir}/hosted-publication-floor.output" ] || fail "old hosted publication API must not publish outputs"
+[ ! -s "${tmp_dir}/failure.out" ] || fail "old hosted publication API must not print resolved targets"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "hosted publication floor rejection must precede API and Runner artifact resolution"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "predates owner-aware provider balance failures" \

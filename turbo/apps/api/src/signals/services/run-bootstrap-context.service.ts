@@ -7,7 +7,7 @@ import type {
 } from "@okouai/connectors/firewall-metadata/policy";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -224,6 +224,7 @@ function agentRunCustomConnectorMetadataQuery(
 async function queryRunBootstrapMetadataSnapshot(
   db: ReadonlyDb,
   args: RunBootstrapSnapshotArgs,
+  includeFeatureSwitches: boolean,
 ): Promise<BootstrapMetadataQueryRow[]> {
   const userInfoQuery = db
     .select({
@@ -273,16 +274,16 @@ async function queryRunBootstrapMetadataSnapshot(
         .mapWith(bootstrapMetadataRowKindDecoder)
         .as("kind"),
       ...emptyBootstrapMetadataFields(),
-      name: sql`${userConnectors.connectorSlug}`
+      name: sql`${userBuiltinConnectors.connectorSlug}`
         .mapWith(nullableTextDecoder)
         .as("name"),
     })
-    .from(userConnectors)
+    .from(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
       ),
     );
   const customConnectorQuery = agentRunCustomConnectorMetadataQuery(db, args);
@@ -312,9 +313,17 @@ async function queryRunBootstrapMetadataSnapshot(
         activeUserPermissionGrantCondition(args.checkedAt),
       ),
     );
+  if (includeFeatureSwitches) {
+    return await unionAll(
+      userInfoQuery,
+      featureSwitchQuery,
+      builtinConnectorQuery,
+      customConnectorQuery,
+      permissionGrantQuery,
+    );
+  }
   return await unionAll(
     userInfoQuery,
-    featureSwitchQuery,
     builtinConnectorQuery,
     customConnectorQuery,
     permissionGrantQuery,
@@ -354,9 +363,14 @@ async function queryAgentRunWorkflowCandidates(
 export async function loadRunBootstrapSnapshotRows(
   db: ReadonlyDb,
   args: RunBootstrapSnapshotArgs,
+  preloadedFeatureSwitchContext?: FeatureSwitchContext,
 ): Promise<RunBootstrapSnapshotRows> {
   const [metadataRows, workflowRows] = await Promise.all([
-    queryRunBootstrapMetadataSnapshot(db, args),
+    queryRunBootstrapMetadataSnapshot(
+      db,
+      args,
+      preloadedFeatureSwitchContext === undefined,
+    ),
     queryAgentRunWorkflowCandidates(db, args),
   ]);
   return { metadataRows, workflowRows };
@@ -385,12 +399,42 @@ function requireCustomConnectorMcpFlag(value: boolean | null): boolean {
   return value;
 }
 
+function materializeBootstrapFeatureSwitchContext(args: {
+  readonly scope: { readonly userId: string; readonly orgId: string };
+  readonly userInfo: UserInfo;
+  readonly rows: readonly UserFeatureSwitchOverrideRow[];
+  readonly preloaded?: FeatureSwitchContext;
+}): FeatureSwitchContext {
+  const context: FeatureSwitchContext = args.preloaded
+    ? {
+        ...args.preloaded,
+        email: args.preloaded.email ?? args.userInfo.email ?? undefined,
+      }
+    : {
+        orgId: args.scope.orgId,
+        userId: args.scope.userId,
+        email: args.userInfo.email ?? undefined,
+        overrides: userFeatureSwitchOverridesFromRows(
+          args.rows,
+          args.scope.userId,
+        ),
+      };
+  if (
+    context.userId !== args.scope.userId ||
+    context.orgId !== args.scope.orgId
+  ) {
+    throw new Error("Preloaded feature-switch context scope mismatch");
+  }
+  return context;
+}
+
 export function materializeRunBootstrapContext(
   rows: RunBootstrapSnapshotRows,
   args: {
     readonly userId: string;
     readonly orgId: string;
   },
+  preloadedFeatureSwitchContext?: FeatureSwitchContext,
 ): RunBootstrapContext {
   let userInfo: UserInfo = {
     name: null,
@@ -481,15 +525,12 @@ export function materializeRunBootstrapContext(
     connectorRows,
     customConnectorRows,
   });
-  const featureSwitchContext: FeatureSwitchContext = {
-    orgId: args.orgId,
-    userId: args.userId,
-    email: userInfo.email ?? undefined,
-    overrides: userFeatureSwitchOverridesFromRows(
-      featureSwitchRows,
-      args.userId,
-    ),
-  };
+  const featureSwitchContext = materializeBootstrapFeatureSwitchContext({
+    scope: args,
+    userInfo,
+    rows: featureSwitchRows,
+    preloaded: preloadedFeatureSwitchContext,
+  });
 
   return {
     userInfo,

@@ -1,6 +1,7 @@
 import { createStore, state } from "ccstate";
 
 import { mockedClerk } from "../../__tests__/mock-auth.ts";
+import { CLERK_UI_VERSION } from "../../lib/clerk-versions.ts";
 import { createDeferredPromise } from "../../signals/utils.ts";
 
 interface ClerkResourceOptions {
@@ -104,7 +105,7 @@ export async function loadScript(src: string): Promise<null> {
   }
   Reflect.set(window, CLERK_UI_GLOBAL, {
     ClerkUI: MockClerkUI,
-    version: "1.26.0",
+    version: CLERK_UI_VERSION,
   });
   return null;
 }
