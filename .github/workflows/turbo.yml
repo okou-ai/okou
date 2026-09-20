@@ -5,6 +5,164 @@ on:
   merge_group:
   # Staging calls the deployment/E2E jobs without repeating code validation.
   workflow_call:
+    # Include credentials rendered indirectly by web-api-env for preview API.
+    secrets:
+      ABLY_API_KEY:
+        required: false
+      AGENTPHONE_API_KEY:
+        required: false
+      AGENTPHONE_WEBHOOK_SECRET:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AXIOM_TOKEN_SESSIONS:
+        required: false
+      AXIOM_TOKEN_TELEMETRY:
+        required: false
+      BYTEPLUS_API_KEY:
+        required: false
+      BYTEPLUS_STT_API_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      CF_API_WORKER_DEPLOY_API_TOKEN:
+        required: false
+      CI_ANTHROPIC_API_KEY:
+        required: false
+      CLERK_SECRET_KEY:
+        required: false
+      CLERK_WEBHOOK_SIGNING_SECRET:
+        required: false
+      CODECOV_TOKEN:
+        required: false
+      CRON_SECRET:
+        required: false
+      DEEPSEEK_API_KEY:
+        required: false
+      FAL_KEY:
+        required: false
+      FINICITY_APP_KEY:
+        required: false
+      FINICITY_APP_SECRET:
+        required: false
+      GOOGLE_ADS_DEVELOPER_TOKEN:
+        required: false
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID:
+        required: false
+      HEYGEN_API_KEY:
+        required: false
+      JOGGAI_API_KEY:
+        required: false
+      JOGGAI_WEBHOOK_SECRET:
+        required: false
+      LANGFUSE_PUBLIC_KEY:
+        required: false
+      LANGFUSE_SECRET_KEY:
+        required: false
+      MICROSOFT_TEAMS_BOT_APP_PASSWORD:
+        required: false
+      MINIMAX_API_KEY:
+        required: false
+      MOONSHOT_API_KEY:
+        required: false
+      NEON_API_KEY:
+        required: false
+      OFFICIAL_RUNNER_SECRET:
+        required: false
+      OKOU_BROWSER_USE_API_KEY:
+        required: false
+      OKOU_FINANCE_APIDOJO_TOKEN:
+        required: false
+      OKOU_GITHUB_APP_CLIENT_SECRET:
+        required: false
+      OKOU_GITHUB_APP_PRIVATE_KEY:
+        required: false
+      OKOU_GITHUB_APP_WEBHOOK_SECRET:
+        required: false
+      OKOU_MACHINE_SECRET_KEY:
+        required: false
+      OKOU_MAPS_GOOGLE_MAPS_TOKEN:
+        required: false
+      OKOU_SCRAPE_FIRECRAWL_TOKEN:
+        required: false
+      OKOU_SEO_DATAFORSEO_LOGIN:
+        required: false
+      OKOU_SEO_DATAFORSEO_PASSWORD:
+        required: false
+      OKOU_SOCIAL_SOCIALKIT_TOKEN:
+        required: false
+      OKOU_WEATHER_GOOGLE_WEATHER_TOKEN:
+        required: false
+      OKOU_WEB_SEARCH_PERPLEXITY_TOKEN:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_HOSTED_SITES_ACCESS_KEY_ID:
+        required: false
+      R2_HOSTED_SITES_SECRET_ACCESS_KEY:
+        required: false
+      R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV:
+        required: false
+      R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      R2_STATIC_ACCESS_KEY_ID:
+        required: false
+      R2_STATIC_SECRET_ACCESS_KEY:
+        required: false
+      R2_USER_ARTIFACTS_ACCESS_KEY_ID:
+        required: false
+      R2_USER_ARTIFACTS_SECRET_ACCESS_KEY:
+        required: false
+      RESEND_API_KEY:
+        required: false
+      RESEND_WEBHOOK_SECRET:
+        required: false
+      SECRETS_ENCRYPTION_KEY:
+        required: false
+      SECRETS_KMS_KEY_ID:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
+      SENTRY_DSN:
+        required: false
+      SENTRY_DSN_API:
+        required: false
+      SENTRY_DSN_WEB:
+        required: false
+      SLACK_SIGNING_SECRET:
+        required: false
+      STEAM_WEB_API_KEY:
+        required: false
+      STRIPE_AUTOMATION_WEBHOOK_SECRET:
+        required: false
+      STRIPE_SECRET_KEY:
+        required: false
+      STRIPE_WEBHOOK_SECRET:
+        required: false
+      TELEGRAM_OFFICIAL_BOT_TOKEN:
+        required: false
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET:
+        required: false
+      VAPID_PRIVATE_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+      VERCEL_TOKEN:
+        required: false
 
 # The staging caller holds its lock through E2E and cleanup. This per-run group
 # must not contend with that caller lock. PR/merge-group behavior is unchanged.
@@ -147,7 +305,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
@@ -384,7 +542,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -411,7 +569,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -427,7 +585,7 @@ jobs:
     timeout-minutes: 15
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -448,7 +606,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -507,7 +665,7 @@ jobs:
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -564,7 +722,7 @@ jobs:
     timeout-minutes: 8
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -578,7 +736,7 @@ jobs:
     timeout-minutes: 10
     if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -594,10 +752,10 @@ jobs:
     # Only run when migration, schema, persistent JSONB contract, or database script files changed
     if: github.event_name != 'push' && needs.prepare.outputs.migration-changed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/okou-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -700,7 +858,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -736,7 +894,7 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -772,10 +930,10 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/okou-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -827,7 +985,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain-rust:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -868,7 +1026,7 @@ jobs:
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     needs: [prepare]
     # Deploy if job-ref is set (PR or main), not a release-please commit, and anything
     # that needs a live API preview or E2E API token changed.
@@ -1203,7 +1361,7 @@ jobs:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     if: >-
       ${{
         !cancelled() &&
@@ -1988,7 +2146,7 @@ jobs:
       group: deploy-cli-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     if: >-
       ${{
         !cancelled() &&
@@ -2995,7 +3153,7 @@ jobs:
     # Report-only: this surfaces schema generation/compat issues without blocking CI.
     continue-on-error: true
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/okou-ai/vm0-toolchain:20260825
     permissions:
       contents: read
     steps:

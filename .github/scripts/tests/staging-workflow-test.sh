@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 root = Path(sys.argv[1])
 
@@ -122,7 +123,62 @@ assert staging['concurrency'] == {'group': 'staging', 'cancel-in-progress': Fals
 assert len(staging['jobs']) == 1, 'staging must own the entire deployment lifecycle in one reusable call'
 caller = next(iter(staging['jobs'].values()))
 assert caller['uses'] == './.github/workflows/turbo.yml'
-assert caller['secrets'] == 'inherit'
+passed_secrets = caller['secrets']
+assert isinstance(passed_secrets, dict), 'staging must explicitly scope its secrets'
+declared_secrets = turbo['on']['workflow_call']['secrets']
+assert set(passed_secrets) <= set(declared_secrets), 'passed secrets must be accepted by the callee'
+for name, value in passed_secrets.items():
+    assert value == '${{ secrets.' + name + ' }}', f'{name} must retain its credential identity'
+required_secrets = set()
+for name in deployed + finalizers:
+    required_secrets.update(re.findall(r'secrets\.([A-Z_0-9]+)', json.dumps(jobs[name])))
+required_secrets.discard('GITHUB_TOKEN')  # GitHub provides this to reusable workflows.
+assert required_secrets <= set(passed_secrets), 'retain deployment and cleanup credentials'
+
+# Exercise the actual preview renderer with synthetic repository credentials.
+# Comparing its output catches indirect secrets selected through toJSON(secrets),
+# including provider suffixes, without mocking the renderer's own accessors.
+action = json.loads(subprocess.check_output([
+    'yq', '-o=json', '.', str(root / '.github/actions/web-api-env/action.yml'),
+], text=True))
+renderer = action['runs']['steps'][0]['run']
+names = set(re.findall(r'\b[A-Z][A-Z_0-9]*\b', renderer))
+names.update('OKOU_' + name for name in list(names))
+synthetic_secrets = {name: 'fixture-secret-' + name for name in names}
+doppler = {name + suffix: 'fixture-oauth-' + name + suffix
+           for name in names for suffix in ['_OAUTH_CLIENT_ID', '_OAUTH_CLIENT_SECRET']}
+with tempfile.TemporaryDirectory() as temporary:
+    environment = dict(os.environ, RUNNER_TEMP=temporary,
+                       GITHUB_OUTPUT=str(Path(temporary) / 'outputs'),
+                       INPUT_APP='api', INPUT_ENVIRONMENT='preview',
+                       INPUT_DATABASE_URL='postgres://database.invalid/staging',
+                       INPUT_JOB_REF='staging', INPUT_WEB_URL='https://staging.invalid',
+                       INPUT_APP_URL='https://staging-app.invalid',
+                       INPUT_API_BACKEND_URL='https://staging-api.invalid',
+                       INPUT_CLI_PKG_URL='https://static.invalid/cli/package.tgz',
+                       REPO_VARS_JSON='{}', DOPPLER_SECRETS_JSON=json.dumps(doppler))
+
+    def render_preview(secrets):
+        result = subprocess.run(['bash', '-c', renderer], cwd=root,
+                                env=environment | {'REPO_SECRETS_JSON': json.dumps(secrets)},
+                                text=True, capture_output=True)
+        assert 'fixture-secret-' not in result.stdout + result.stderr, 'renderer exposed a credential'
+        assert result.returncode == 0, result.stdout + result.stderr
+        return dict(line.split('=', 1) for line in
+                    (Path(temporary) / 'web-api-api-preview.env').read_text().splitlines())
+
+    fallback_keys = {'R2_USER_ARTIFACTS_ACCESS_KEY_ID', 'R2_USER_ARTIFACTS_SECRET_ACCESS_KEY',
+                     'SENTRY_DSN_API'}
+    scenarios = [(set(), 'postgres://database.invalid/staging'), (fallback_keys, ''),
+                 (fallback_keys | {'SENTRY_DSN_WEB'}, 'postgres://database.invalid/staging')]
+    for absent, database_url in scenarios:
+        environment['INPUT_DATABASE_URL'] = database_url
+        fixture = {name: value for name, value in synthetic_secrets.items() if name not in absent}
+        original = render_preview(fixture)
+        scoped = render_preview({name: value for name, value in fixture.items()
+                                 if name in passed_secrets})
+        changed_keys = [name for name in original if original[name] != scoped.get(name)]
+        assert not changed_keys, f'staging secret scoping changed preview configuration: {changed_keys}'
 assert condition(caller, context())
 permissions = caller.get('permissions', staging.get('permissions', {}))
 for permission, level in {
