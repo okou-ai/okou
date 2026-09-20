@@ -1,19 +1,22 @@
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type {
+  McpChatLifecycle,
   McpChatStatusResult,
   McpGetChatStatusInput,
   McpGetChatStatusOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import { trace } from "@opentelemetry/api";
-import { runStatusSchema } from "@okouai/api-contracts/contracts/runs";
+import {
+  runStatusSchema,
+  type RunStatus as AgentRunStatus,
+} from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import {
   activeInputDeliveries,
   activeInputDeliveryItems,
 } from "@okouai/db/schema/active-input-delivery";
 import { computed, type Computed } from "ccstate";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { delay } from "signal-timers";
 
 import type { Tx } from "../../lib/db-types";
@@ -47,11 +50,179 @@ interface Principal {
   readonly orgId: string;
 }
 
-type InputStatus = NonNullable<McpGetChatStatusOutput["input"]>;
-type RunStatus = NonNullable<McpGetChatStatusOutput["run"]>;
+interface InputStatus {
+  readonly ref: NonNullable<McpGetChatStatusInput["inputRef"]>;
+  readonly state:
+    | "queued"
+    | "reserved"
+    | "associated"
+    | "delivered"
+    | "rejected"
+    | "revoked"
+    | "unavailable";
+  readonly runId: string | null;
+}
 
-function reference(row: ChatEventRow) {
-  return { threadId: row.chatThreadId, eventId: row.id, seqId: row.seqId };
+interface RunStatus {
+  readonly id: string;
+  readonly status: AgentRunStatus;
+  readonly cancellationRecovery: "pending" | "complete" | "not_applicable";
+}
+
+interface OutputStatus {
+  readonly state: "pending" | "partial" | "ready" | "unavailable";
+  readonly reason: "no_associated_run" | "run_unavailable" | "no_output" | null;
+}
+
+type TerminalRunOutcome = Extract<
+  McpChatLifecycle,
+  { readonly phase: "finalizing" }
+>["outcome"];
+
+interface StatusObservation {
+  readonly input: InputStatus | null;
+  readonly run: RunStatus | null;
+  readonly output: OutputStatus;
+}
+
+interface StatusProjection {
+  readonly data: McpGetChatStatusOutput;
+  readonly observation: StatusObservation;
+  readonly readyMessagePage: McpGetChatStatusOutput["messagePage"];
+}
+
+function activeLifecycleOutput(
+  output: StatusObservation["output"],
+): Extract<McpChatLifecycle["output"], "pending" | "partial"> {
+  if (
+    (output.state === "pending" || output.state === "partial") &&
+    output.reason === null
+  ) {
+    return output.state;
+  }
+  throw new Error("Active chat lifecycle has settled output");
+}
+
+function terminalLifecycleOutcome(
+  status: RunStatus["status"],
+): TerminalRunOutcome {
+  switch (status) {
+    case "completed":
+    case "failed":
+    case "timeout":
+    case "cancelled": {
+      return status;
+    }
+    case "queued":
+    case "pending":
+    case "running": {
+      throw new Error("Active chat run has a terminal lifecycle outcome");
+    }
+  }
+}
+
+function inputLifecycle(
+  observation: StatusObservation,
+): McpChatLifecycle | null {
+  switch (observation.input?.state) {
+    case "unavailable": {
+      return { phase: "unavailable", outcome: null, output: "unavailable" };
+    }
+    case "rejected": {
+      return { phase: "settled", outcome: "rejected", output: "none" };
+    }
+    case "revoked": {
+      return { phase: "settled", outcome: "revoked", output: "none" };
+    }
+    case "queued":
+    case "reserved": {
+      return { phase: "queued", outcome: null, output: "pending" };
+    }
+    case "associated":
+    case "delivered": {
+      if (observation.run === null) {
+        throw new Error("Associated chat input is missing its selected run");
+      }
+      return null;
+    }
+    case undefined: {
+      return null;
+    }
+  }
+}
+
+function terminalLifecycle(
+  run: NonNullable<StatusObservation["run"]>,
+  output: StatusObservation["output"],
+): McpChatLifecycle {
+  const outcome = terminalLifecycleOutcome(run.status);
+  if (output.state === "pending" || output.state === "partial") {
+    if (output.reason !== null) {
+      throw new Error("Finalizing chat lifecycle has an output reason");
+    }
+    return { phase: "finalizing", outcome, output: output.state };
+  }
+  if (run.cancellationRecovery === "pending") {
+    throw new Error("Recovering chat lifecycle has settled output");
+  }
+  if (output.state === "ready") {
+    if (output.reason !== null) {
+      throw new Error("Ready chat lifecycle has an output reason");
+    }
+    return { phase: "settled", outcome, output: "ready" };
+  }
+  if (output.reason !== "no_output") {
+    throw new Error("Settled chat lifecycle has unavailable output");
+  }
+  return { phase: "settled", outcome, output: "none" };
+}
+
+function runLifecycle(observation: StatusObservation): McpChatLifecycle {
+  const run = observation.run;
+  if (run === null) {
+    if (
+      observation.output.state !== "unavailable" ||
+      observation.output.reason !== "no_associated_run"
+    ) {
+      throw new Error("Idle chat lifecycle has associated output");
+    }
+    return { phase: "idle", outcome: null, output: "none" };
+  }
+  if (
+    run.status !== "cancelled" &&
+    run.cancellationRecovery !== "not_applicable"
+  ) {
+    throw new Error("Non-cancelled chat run has cancellation recovery state");
+  }
+  switch (run.status) {
+    case "queued":
+    case "pending": {
+      return {
+        phase: "queued",
+        outcome: null,
+        output: activeLifecycleOutput(observation.output),
+      };
+    }
+    case "running": {
+      return {
+        phase: "running",
+        outcome: null,
+        output: activeLifecycleOutput(observation.output),
+      };
+    }
+    case "completed":
+    case "failed":
+    case "timeout":
+    case "cancelled": {
+      return terminalLifecycle(run, observation.output);
+    }
+  }
+}
+
+function deriveMcpChatLifecycle(
+  observation: StatusObservation,
+): McpChatLifecycle {
+  return inputLifecycle(observation) ?? runLifecycle(observation);
 }
 
 function resolveInput(
@@ -62,9 +233,7 @@ function resolveInput(
   const status: InputStatus = {
     ref: inputRef,
     state: "unavailable",
-    deliveryMode: "unknown",
     runId: null,
-    visibleMessageRef: null,
   };
   const byId = new Map<string, ChatEventRow>();
   const replacements = new Map<string, ChatEventRow>();
@@ -109,7 +278,6 @@ function resolveInput(
       ...status,
       state: "rejected",
       runId: current.runId,
-      visibleMessageRef: reference(current),
     };
   }
   if (current.eventType !== "input.prompt") {
@@ -119,7 +287,6 @@ function resolveInput(
     ...status,
     state: current.runId === null ? "queued" : "associated",
     runId: current.runId,
-    visibleMessageRef: reference(current),
   };
 }
 
@@ -176,7 +343,7 @@ async function observeDelivery(
     if (input.runId !== receipt.runId) {
       throw new Error("Delivered chat input is missing its run association");
     }
-    return { ...input, state: "delivered", deliveryMode: "steer" };
+    return { ...input, state: "delivered" };
   }
   if (input.state !== "queued") {
     throw new Error("Reserved chat input is already associated");
@@ -200,9 +367,6 @@ async function readRun(
     .select({
       id: agentRuns.id,
       status: agentRuns.status,
-      createdAt: agentRuns.createdAt,
-      startedAt: agentRuns.startedAt,
-      completedAt: agentRuns.completedAt,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     })
     .from(agentRuns)
@@ -224,9 +388,6 @@ async function readRun(
   return {
     id: run.id,
     status: runStatusSchema.parse(run.status),
-    createdAt: run.createdAt.toISOString(),
-    startedAt: run.startedAt?.toISOString() ?? null,
-    completedAt: run.completedAt?.toISOString() ?? null,
     cancellationRecovery:
       run.status !== "cancelled" || run.cancellationRecoveryCompleted === null
         ? "not_applicable"
@@ -236,41 +397,12 @@ async function readRun(
   };
 }
 
-async function observeLaunch(
-  tx: Tx,
-  input: InputStatus,
-  run: RunStatus,
-  budget: HistoryBudget,
-): Promise<InputStatus> {
-  if (input.state !== "associated") {
-    return input;
-  }
-  await boundHistoryQuery(tx, budget);
-  const [launch] = await tx
-    .select({ id: agentRunCallbacks.id })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, run.id),
-        eq(agentRunCallbacks.internalKind, "chat"),
-        eq(sql`${agentRunCallbacks.payload}->>'threadId'`, input.ref.threadId),
-        eq(
-          sql`${agentRunCallbacks.payload}->>'queuedMessageId'`,
-          input.ref.eventId,
-        ),
-      ),
-    )
-    .limit(1);
-  budget.check();
-  return launch ? { ...input, deliveryMode: "launch" } : input;
-}
-
 function outputStatus(
   rows: readonly ChatEventRow[],
   messages: readonly McpCompleteChatMessage[],
   run: RunStatus,
   budget: HistoryBudget,
-): McpGetChatStatusOutput["output"] {
+): OutputStatus {
   const assistantMessages = messages.filter((message) => {
     budget.check();
     return message.runId === run.id && message.role === "assistant";
@@ -300,10 +432,6 @@ function outputStatus(
         : settled
           ? "unavailable"
           : "pending",
-    messageRefs: assistantMessages.slice(-20).map((message) => {
-      return message.ref;
-    }),
-    hasMore: assistantMessages.length > 20,
     reason: settled && assistantMessages.length === 0 ? "no_output" : null,
   };
 }
@@ -332,15 +460,12 @@ async function readStatusSelection(
   const run = await readRun(tx, principal, args.threadId, input, budget);
   const associationUnavailable =
     input !== null && input.runId !== null && run === null;
-  if (input && run) {
-    input = await observeLaunch(tx, input, run, budget);
-  } else if (input && associationUnavailable) {
+  if (input && associationUnavailable) {
     // A reference is never authority for an inaccessible or deleted run.
     input = {
       ...input,
       state: "unavailable",
       runId: null,
-      deliveryMode: "unknown",
     };
   }
   return { input, run, associationUnavailable };
@@ -353,7 +478,7 @@ function readReadyMessagePage(
     readonly principal: Principal;
     readonly args: McpGetChatStatusInput;
     readonly selection: StatusSelection;
-    readonly output: McpGetChatStatusOutput["output"];
+    readonly output: OutputStatus;
   },
 ): McpGetChatStatusOutput["messagePage"] {
   const { principal, args, selection, output } = context;
@@ -383,7 +508,7 @@ async function projectMcpChatStatus(
     readonly args: McpGetChatStatusInput;
     readonly includeMessagePage: boolean;
   },
-): Promise<McpGetChatStatusOutput> {
+): Promise<StatusProjection> {
   const { principal, args, includeMessagePage } = context;
   const selection = await readStatusSelection(
     tx,
@@ -395,12 +520,10 @@ async function projectMcpChatStatus(
   const projectedMessages = selection.run
     ? projectMcpChatMessages(rows, budget.check)
     : [];
-  const output: McpGetChatStatusOutput["output"] = selection.run
+  const output: OutputStatus = selection.run
     ? outputStatus(rows, projectedMessages, selection.run, budget)
     : {
         state: "unavailable",
-        messageRefs: [],
-        hasMore: false,
         reason: selection.associationUnavailable
           ? "run_unavailable"
           : "no_associated_run",
@@ -410,7 +533,7 @@ async function projectMcpChatStatus(
     output.state === "partial" ||
     selection.input?.state === "queued" ||
     selection.input?.state === "reserved";
-  const messagePage = includeMessagePage
+  const readyMessagePage = includeMessagePage
     ? readReadyMessagePage(projectedMessages, budget, {
         principal,
         args,
@@ -419,26 +542,32 @@ async function projectMcpChatStatus(
       })
     : null;
   budget.check();
-  return {
-    threadId: args.threadId,
-    observedAt: nowDate().toISOString(),
+  const observation: StatusObservation = {
     input: selection.input,
-    runSelection: args.inputRef ? "input" : "latest",
     run: selection.run,
     output,
-    messages: selection.run
-      ? {
-          tool: "get_chat_messages",
-          arguments: {
-            threadId: args.threadId,
-            runId: selection.run.id,
-            limit: 20,
-          },
-        }
-      : null,
-    wait: null,
-    messagePage,
-    retryAfterMs: retry ? 2000 : null,
+  };
+  return {
+    data: {
+      threadId: args.threadId,
+      observedAt: nowDate().toISOString(),
+      lifecycle: deriveMcpChatLifecycle(observation),
+      messages: selection.run
+        ? {
+            tool: "get_chat_messages",
+            arguments: {
+              threadId: args.threadId,
+              runId: selection.run.id,
+              limit: 20,
+            },
+          }
+        : null,
+      wait: null,
+      messagePage: null,
+      retryAfterMs: retry ? 2000 : null,
+    },
+    observation,
+    readyMessagePage,
   };
 }
 
@@ -448,7 +577,7 @@ function observeMcpChatStatus(
   args: McpGetChatStatusInput,
   signal: AbortSignal,
   includeMessagePage: boolean,
-): Computed<Promise<McpGetChatStatusOutput | null>> {
+): Computed<Promise<StatusProjection | null>> {
   return computed((get) => {
     return get(
       readMcpChatHistoryProjection(
@@ -492,7 +621,7 @@ type WaitReturnReason = NonNullable<
 interface WaitOperation {
   readonly requestedMs: number;
   readonly effectiveMs: number;
-  latest: McpGetChatStatusOutput | null;
+  latest: StatusProjection | null;
   observations: number;
   waitStartedAt: number;
   principalOccupancy: number;
@@ -510,13 +639,17 @@ function elapsedWait(operation: WaitOperation): number {
 }
 
 function withWaitResult(
-  data: McpGetChatStatusOutput,
+  status: StatusProjection,
   operation: WaitOperation,
   outcome: WaitOutcome,
   returnReason: WaitReturnReason,
-): McpGetChatStatusOutput {
+): StatusProjection {
+  const messagePage = outcome === "ready" ? status.readyMessagePage : null;
+  if (outcome === "ready" && messagePage === null) {
+    throw new Error("Ready chat status wait is missing its message page");
+  }
   const result: McpGetChatStatusOutput = {
-    ...data,
+    ...status.data,
     wait: {
       requestedMs: operation.requestedMs,
       effectiveMs: operation.effectiveMs,
@@ -525,14 +658,14 @@ function withWaitResult(
       outcome,
       returnReason,
     },
-    messagePage: outcome === "ready" ? data.messagePage : null,
+    messagePage,
   };
   checkResponseSize(result);
-  return result;
+  return { ...status, data: result };
 }
 
 function recordWaitTelemetry(
-  data: McpGetChatStatusOutput | null,
+  status: StatusProjection | null,
   details: {
     readonly requestedMs: number;
     readonly effectiveMs: number;
@@ -561,28 +694,32 @@ function recordWaitTelemetry(
     "mcp.chat_status.wait.runtime_occupancy": details.runtimeOccupancy,
     "mcp.chat_status.wait.runtime_capacity":
       MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS,
-    "mcp.chat_status.wait.input_state": data?.input?.state ?? "not_requested",
-    "mcp.chat_status.wait.run_state": data?.run?.status ?? "unavailable",
-    "mcp.chat_status.wait.output_state": data?.output.state ?? "unavailable",
+    "mcp.chat_status.wait.input_state":
+      status?.observation.input?.state ?? "not_requested",
+    "mcp.chat_status.wait.run_state":
+      status?.observation.run?.status ?? "unavailable",
+    "mcp.chat_status.wait.output_state":
+      status?.observation.output.state ?? "unavailable",
     "mcp.chat_status.wait.content_included":
-      data?.messagePage !== null && data?.messagePage !== undefined,
+      status?.data.messagePage !== null &&
+      status?.data.messagePage !== undefined,
   });
 }
 
 function completeObservedWait(
-  data: McpGetChatStatusOutput,
+  status: StatusProjection,
   operation: WaitOperation,
-): McpGetChatStatusOutput | null {
-  if (data.output.state === "ready") {
-    return withWaitResult(data, operation, "ready", "output_ready");
+): StatusProjection | null {
+  if (status.data.lifecycle.output === "ready") {
+    return withWaitResult(status, operation, "ready", "output_ready");
   }
-  if (data.retryAfterMs === null) {
-    return withWaitResult(data, operation, "status", "non_retryable_state");
+  if (status.data.retryAfterMs === null) {
+    return withWaitResult(status, operation, "status", "non_retryable_state");
   }
   return null;
 }
 
-function currentStatus(operation: WaitOperation): McpGetChatStatusOutput {
+function currentStatus(operation: WaitOperation): StatusProjection {
   if (!operation.latest) {
     throw new Error("MCP chat status wait is missing its latest observation");
   }
@@ -595,8 +732,8 @@ function waitForMcpChatStatus(
   args: McpGetChatStatusInput,
   signal: AbortSignal,
   operation: WaitOperation,
-): Computed<Promise<McpGetChatStatusOutput | null>> {
-  return computed(async (get): Promise<McpGetChatStatusOutput | null> => {
+): Computed<Promise<StatusProjection | null>> {
+  return computed(async (get): Promise<StatusProjection | null> => {
     const admission = admitMcpChatStatusWaiter(principal);
     operation.principalOccupancy = admission.principalOccupancy;
     operation.runtimeOccupancy = admission.runtimeOccupancy;
@@ -609,7 +746,7 @@ function waitForMcpChatStatus(
       );
     }
     const result = await settleIncludingAbort(
-      (async (): Promise<McpGetChatStatusOutput | null> => {
+      (async (): Promise<StatusProjection | null> => {
         const deadline = operation.waitStartedAt + operation.effectiveMs;
         for (;;) {
           const remaining = deadline - monotonicNow();
@@ -630,7 +767,10 @@ function waitForMcpChatStatus(
             );
           }
           await delay(
-            Math.min(operation.latest?.retryAfterMs ?? remaining, remaining),
+            Math.min(
+              operation.latest?.data.retryAfterMs ?? remaining,
+              remaining,
+            ),
             { signal },
           );
           operation.latest = await get(
@@ -661,8 +801,8 @@ function executeMcpChatStatus(
   args: McpGetChatStatusInput,
   signal: AbortSignal,
   operation: WaitOperation,
-): Computed<Promise<McpGetChatStatusOutput | null>> {
-  return computed(async (get): Promise<McpGetChatStatusOutput | null> => {
+): Computed<Promise<StatusProjection | null>> {
+  return computed(async (get): Promise<StatusProjection | null> => {
     operation.latest = await get(
       observeMcpChatStatus(
         runtime,
@@ -677,7 +817,7 @@ function executeMcpChatStatus(
       return null;
     }
     if (operation.effectiveMs === 0) {
-      checkResponseSize(operation.latest);
+      checkResponseSize(operation.latest.data);
       return operation.latest;
     }
     operation.waitStartedAt = monotonicNow();
@@ -752,13 +892,13 @@ export function getMcpChatStatus(
     }
     if (operation.effectiveMs > 0) {
       const completed = result.ok ? result.value : null;
-      if (completed?.wait) {
+      if (completed?.data.wait) {
         recordWaitTelemetry(
           completed,
           waitLogDetails(
             operation,
-            completed.wait.outcome,
-            completed.wait.returnReason,
+            completed.data.wait.outcome,
+            completed.data.wait.returnReason,
           ),
         );
       } else if (!result.ok) {
@@ -776,7 +916,7 @@ export function getMcpChatStatus(
     if (result.ok) {
       return result.value === null
         ? { kind: "not_found", message: "Conversation not found." }
-        : { kind: "ok", data: result.value };
+        : { kind: "ok", data: result.value.data };
     }
     if (result.error instanceof McpMessageHistoryError) {
       return { kind: result.error.kind, message: result.error.message };
