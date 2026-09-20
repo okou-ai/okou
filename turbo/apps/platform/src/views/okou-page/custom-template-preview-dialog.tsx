@@ -246,7 +246,14 @@ export function CustomTemplatePreviewDialog({
         height={760}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
-        <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-14 text-left sm:pr-16">
+        {/* A fixed band rather than padding around the line: the close button
+            is the shared one, pinned 16px down the popup and 36px tall, so its
+            center sits at 34px whatever the header does. 68px is twice that,
+            which puts the breadcrumb on the same axis — the height the
+            imported-deck preview header already carries for the same reason.
+            Padding alone left the title 10px above the button and the button
+            itself hanging past the border below it. */}
+        <DialogHeader className="h-[68px] shrink-0 justify-center border-b border-border px-5 pr-14 text-left sm:pr-16">
           <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
             <button
               type="button"
