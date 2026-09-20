@@ -5561,7 +5561,7 @@
         "starting": "Iniciando exportação"
       },
       "backToAssistant": "Voltar ao {{assistantName}}",
-      "description": "Baixe os arquivos e registros de texto que você criou no {{assistantName}}.",
+      "description": "Baixe suas conversas, memória e as instruções dos agentes e fluxos de trabalho aos quais você tem acesso no {{assistantName}}.",
       "documentTitle": "Exportar dados",
       "duration": {
         "soon": "breve"
@@ -5572,11 +5572,12 @@
         "startFailed": "Não foi possível iniciar a exportação"
       },
       "scope": {
-        "agentInstructions": "Documentos de instruções do agente",
-        "artifactsExcluded": "Os artefatos não estão incluídos nesta exportação.",
-        "chatMessages": "Mensagens de texto do usuário e do assistente",
-        "memoryFiles": "Arquivos de memória",
-        "workflowInstructions": "Instruções e arquivos SKILL.md dos fluxos de trabalho"
+        "agentInstructions": "Instruções dos agentes aos quais você tem acesso",
+        "chatMessages": "Suas mensagens de chat",
+        "chatThreads": "Suas conversas de chat",
+        "filesExcluded": "Artefatos, anexos e arquivos de apoio dos fluxos de trabalho não estão incluídos.",
+        "memoryFiles": "Seus arquivos de memória atuais",
+        "workflowInstructions": "Instruções dos fluxos de trabalho aos quais você tem acesso"
       },
       "status": {
         "checkingDescription": "O estado da sua exportação mais recente aparecerá aqui.",

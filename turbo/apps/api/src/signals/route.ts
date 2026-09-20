@@ -44,6 +44,7 @@ import { githubOauthRoutes } from "./routes/github-oauth";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runnersRoutes } from "./routes/runners";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
+import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
 import { userExportRoutes } from "./routes/user-export";
 import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
@@ -234,6 +235,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...desktopUpdateRoutes,
   ...githubOauthRoutes,
   ...userExportRoutes,
+  ...cronProcessBackgroundJobsRoutes,
   ...webhooksClerkRoutes,
   ...webhooksBuiltInGenerationRoutes,
   ...webhooksGithubRoutes,

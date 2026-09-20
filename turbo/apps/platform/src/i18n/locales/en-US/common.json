@@ -5494,7 +5494,7 @@
         "starting": "Starting export"
       },
       "backToAssistant": "Back to {{assistantName}}",
-      "description": "Download the files and text records you created in {{assistantName}}.",
+      "description": "Download your conversations, memory, and the agent and workflow instructions you can access in {{assistantName}}.",
       "documentTitle": "Export data",
       "duration": {
         "soon": "soon"
@@ -5505,11 +5505,12 @@
         "startFailed": "Failed to start export"
       },
       "scope": {
-        "agentInstructions": "Agent instruction documents",
-        "artifactsExcluded": "Artifacts are not included in this export.",
-        "chatMessages": "User and assistant text chat messages",
-        "memoryFiles": "Memory files",
-        "workflowInstructions": "Workflow SKILL.md instructions and files"
+        "agentInstructions": "Instructions for agents you can access",
+        "chatMessages": "Your chat messages",
+        "chatThreads": "Your chat threads",
+        "filesExcluded": "Artifact, attachment, and workflow supporting files are not included.",
+        "memoryFiles": "Your current memory files",
+        "workflowInstructions": "Instructions for workflows you can access"
       },
       "status": {
         "checkingDescription": "Your latest export state will appear here.",

@@ -20,6 +20,7 @@ import {
   cronExtractPiMemoryStage1Contract,
   cronConsolidatePiMemoryPhase2Contract,
   cronOfficialWorkflowCatalogContract,
+  cronProcessBackgroundJobsContract,
   cronProcessUsageEventsContract,
   cronProjectChatEventSearchContract,
   cronRenewGmailWatchesContract,
@@ -57,6 +58,10 @@ function readVercelConfig(): VercelConfig {
 }
 
 const expectedVercelCrons = [
+  {
+    path: cronProcessBackgroundJobsContract.process.path,
+    schedule: "* * * * *",
+  },
   {
     path: cronCleanupSandboxesContract.cleanup.path,
     schedule: "* * * * *",
