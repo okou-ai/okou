@@ -26,6 +26,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
+    expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
   });
 });
@@ -97,6 +98,28 @@ describe("isFeatureEnabled", () => {
       maintainer: "lancy@okou.ai",
       description:
         "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+      rolloutStage: "alpha",
+    });
+  });
+
+  it("keeps current-run usage off until consumers are deployed and an override enables it", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, context)).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.RunUsage, {
+          ...context,
+          overrides: { [FeatureSwitchKey.RunUsage]: true },
+        }),
+      ).toBe(true);
+    }
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.RunUsage]).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description:
+        "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
       rolloutStage: "alpha",
     });
   });

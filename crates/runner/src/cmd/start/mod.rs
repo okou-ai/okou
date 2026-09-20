@@ -962,6 +962,13 @@ async fn run_start_with_home(
         let connector_runtime_sync = provider.connector_runtime_sync_handle();
         (provider, group_name, Some(connector_runtime_sync))
     };
+    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
+        ssh,
+        vnc,
+        usage: Some(crate::run_usage::Runtime::new(
+            crate::MitmUsageHandle::from(&mitm),
+        )),
+    });
 
     let exec_config = Arc::new(ExecutorConfig {
         api_url: server.url,
@@ -973,8 +980,7 @@ async fn run_start_with_home(
         network_log_drain,
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
-        guest_rpc: (ssh.is_some() || vnc.is_some())
-            .then_some(crate::guest_rpc::Runtime { ssh, vnc }),
+        guest_rpc,
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),

@@ -51,6 +51,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.RunUsage]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
+    enabled: false,
+  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",

@@ -54,6 +54,7 @@ mod restored_session_identity;
 mod retry;
 mod run_cancellation;
 mod run_resolution;
+mod run_usage;
 mod runner_dirname;
 mod runner_process_identity;
 mod runtime_overrides;
@@ -74,7 +75,7 @@ mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
 
-// Source-observation API; guest RPC composition is a separate delivery slice.
+// Source-observation API shared by the current-assignment usage composer.
 pub use proxy::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
     TokenTotals,
