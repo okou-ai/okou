@@ -6032,6 +6032,14 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
+        "morningBriefTrigger": {
+          "description": "Exécutez un vrai Morning Brief maintenant. Votre prochaine exécution est mise en file d’attente pour le planificateur habituel, qui envoie un vrai récapitulatif et un vrai e-mail en moins d’une minute. Un déclenchement avant votre heure quotidienne donne deux récapitulatifs ce matin-là.",
+          "failed": "Impossible de mettre le Morning Brief en file d’attente. Réessayez.",
+          "queued": "En file d’attente. Le planificateur enverra le récapitulatif en moins d’une minute.",
+          "title": "Morning Brief",
+          "trigger": "Exécuter Morning Brief maintenant",
+          "triggering": "Mise en file d’attente…"
+        },
         "voiceInput": {
           "default": "Par défaut ({{model}})",
           "description": "Choisissez le modèle pour la saisie vocale v2. Les modèles de transcription utilisent {{model}} pour améliorer le texte.",

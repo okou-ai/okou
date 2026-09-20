@@ -6032,6 +6032,14 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
+        "morningBriefTrigger": {
+          "description": "Esegui subito un Morning Brief reale. Mette in coda la tua prossima esecuzione per lo scheduler abituale, che consegna un brief reale e un'email reale entro un minuto. Attivarlo prima del tuo orario giornaliero produce due brief quella mattina.",
+          "failed": "Impossibile mettere in coda il Morning Brief. Riprova.",
+          "queued": "In coda. Lo scheduler consegnerà il brief entro un minuto.",
+          "title": "Morning Brief",
+          "trigger": "Esegui Morning Brief ora",
+          "triggering": "Messa in coda…"
+        },
         "voiceInput": {
           "default": "Predefinito ({{model}})",
           "description": "Scegli il modello per input vocale v2. I modelli di trascrizione usano {{model}} per rifinire il testo.",

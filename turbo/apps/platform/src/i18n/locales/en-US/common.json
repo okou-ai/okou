@@ -5962,6 +5962,14 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
+        "morningBriefTrigger": {
+          "description": "Run a real Morning Brief now. It queues your own next run for the ordinary scheduler, which delivers a real brief and a real email within a minute. Triggering before your daily time gives you two briefs that morning.",
+          "failed": "Could not queue the Morning Brief. Try again.",
+          "queued": "Queued. The scheduler delivers the brief within a minute.",
+          "title": "Morning Brief",
+          "trigger": "Run Morning Brief now",
+          "triggering": "Queueing…"
+        },
         "voiceInput": {
           "default": "Default ({{model}})",
           "description": "Choose the model for voice input v2. Speech-to-text models and GPT Audio recordings over 90 seconds use {{model}} for cleanup.",

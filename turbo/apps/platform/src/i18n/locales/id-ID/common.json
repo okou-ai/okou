@@ -5956,6 +5956,14 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "morningBriefTrigger": {
+          "description": "Jalankan Morning Brief sungguhan sekarang. Ini mengantrekan proses berikutnya milikmu ke penjadwal biasa, yang mengirimkan brief nyata dan email nyata dalam satu menit. Memicunya sebelum waktu harianmu menghasilkan dua brief pagi itu.",
+          "failed": "Tidak dapat mengantrekan Morning Brief. Coba lagi.",
+          "queued": "Masuk antrean. Penjadwal akan mengirimkan brief dalam satu menit.",
+          "title": "Morning Brief",
+          "trigger": "Jalankan Morning Brief sekarang",
+          "triggering": "Mengantrekan…"
+        },
         "voiceInput": {
           "default": "Default ({{model}})",
           "description": "Pilih model untuk input suara v2. Model transkripsi menggunakan {{model}} untuk merapikan teks.",

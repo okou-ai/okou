@@ -6032,6 +6032,14 @@
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
         },
+        "morningBriefTrigger": {
+          "description": "Ejecuta ahora un Morning Brief real. Pone tu próxima ejecución en la cola del programador habitual, que entrega un resumen real y un correo real en menos de un minuto. Activarlo antes de tu hora diaria te dará dos resúmenes esa mañana.",
+          "failed": "No se pudo poner el Morning Brief en cola. Inténtalo de nuevo.",
+          "queued": "En cola. El programador entregará el resumen en menos de un minuto.",
+          "title": "Morning Brief",
+          "trigger": "Ejecutar Morning Brief ahora",
+          "triggering": "Poniendo en cola…"
+        },
         "voiceInput": {
           "default": "Predeterminado ({{model}})",
           "description": "Elige el modelo para la entrada de voz v2. Los modelos de transcripción usan {{model}} para pulir el texto.",

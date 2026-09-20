@@ -5956,6 +5956,14 @@
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
+        "morningBriefTrigger": {
+          "description": "実際の Morning Brief を今すぐ実行します。自分の次回実行を通常のスケジューラのキューに入れ、1 分以内に実際のブリーフと実際のメールが配信されます。毎日の配信時刻より前に実行すると、その朝はブリーフが 2 回届きます。",
+          "failed": "Morning Brief をキューに追加できませんでした。もう一度お試しください。",
+          "queued": "キューに追加しました。1 分以内にスケジューラがブリーフを配信します。",
+          "title": "Morning Brief",
+          "trigger": "Morning Brief を今すぐ実行",
+          "triggering": "キューに追加中…"
+        },
         "voiceInput": {
           "default": "デフォルト（{{model}}）",
           "description": "音声入力 v2 のモデルを選択します。文字起こしモデルは {{model}} で文章を整えます。",

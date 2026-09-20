@@ -6032,6 +6032,14 @@
           "title": "Armazenamento do IndexedDB",
           "unavailable": "O armazenamento do IndexedDB não está disponível."
         },
+        "morningBriefTrigger": {
+          "description": "Execute um Morning Brief real agora. Isso coloca sua próxima execução na fila do agendador comum, que entrega um resumo real e um e-mail real em até um minuto. Acionar antes do seu horário diário gera dois resumos naquela manhã.",
+          "failed": "Não foi possível enfileirar o Morning Brief. Tente novamente.",
+          "queued": "Na fila. O agendador entrega o resumo em até um minuto.",
+          "title": "Morning Brief",
+          "trigger": "Executar Morning Brief agora",
+          "triggering": "Enfileirando…"
+        },
         "voiceInput": {
           "default": "Padrão ({{model}})",
           "description": "Escolha o modelo para entrada de voz v2. Os modelos de transcrição usam {{model}} para refinar o texto.",

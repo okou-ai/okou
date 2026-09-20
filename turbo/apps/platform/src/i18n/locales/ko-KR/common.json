@@ -5956,6 +5956,14 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
+        "morningBriefTrigger": {
+          "description": "실제 Morning Brief를 지금 실행합니다. 내 다음 실행을 일반 스케줄러 대기열에 넣으며, 1분 이내에 실제 브리프와 실제 이메일이 전송됩니다. 매일 전송 시각 이전에 실행하면 그날 아침에 브리프를 두 번 받게 됩니다.",
+          "failed": "Morning Brief를 대기열에 추가하지 못했습니다. 다시 시도하세요.",
+          "queued": "대기열에 추가했습니다. 스케줄러가 1분 이내에 브리프를 전송합니다.",
+          "title": "Morning Brief",
+          "trigger": "Morning Brief 지금 실행",
+          "triggering": "대기열에 추가하는 중…"
+        },
         "voiceInput": {
           "default": "기본값 ({{model}})",
           "description": "음성 입력 v2 모델을 선택하세요. 음성 인식 모델은 {{model}}로 텍스트를 다듬습니다.",
