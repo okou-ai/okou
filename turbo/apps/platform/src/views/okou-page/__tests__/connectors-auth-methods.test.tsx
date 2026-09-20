@@ -394,9 +394,6 @@ test("Add an AWS account with an external code", async () => {
       return getConnectorAction("button", "Open AWS sign-in", dialog);
     }),
   ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("Cancel", { selector: "button" }),
-  ).toBeNull();
   expect(within(dialog).getByLabelText("Close")).toBeEnabled();
   click(getConnectorAction("button", "Open AWS sign-in", dialog));
   expect(

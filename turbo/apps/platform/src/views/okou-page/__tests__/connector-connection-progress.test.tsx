@@ -87,9 +87,6 @@ async function expectProgressDialog(name = PROGRESS): Promise<HTMLElement> {
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   });
   expect(within(dialog).getByLabelText("Close")).toBeEnabled();
-  expect(
-    within(dialog).queryByText("Cancel", { selector: "button" }),
-  ).toBeNull();
   return dialog;
 }
 

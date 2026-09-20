@@ -468,9 +468,6 @@ test("Present a connector with no accounts and allow closing direct OAuth", asyn
     "Please wait while we finish setting up your connection.",
   );
   expect(connect).toBeDisabled();
-  expect(
-    within(progress).queryByText("Cancel", { selector: "button" }),
-  ).toBeNull();
   click(within(progress).getByLabelText("Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();

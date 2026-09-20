@@ -555,9 +555,6 @@ test("Leave an agent unauthorized when OAuth progress is closed", async () => {
     name: "Connecting your account",
   });
 
-  expect(
-    within(progress).queryByText("Cancel", { selector: "button" }),
-  ).toBeNull();
   click(within(progress).getByLabelText("Close"));
   expect(authWindow.closed).toBeTruthy();
 

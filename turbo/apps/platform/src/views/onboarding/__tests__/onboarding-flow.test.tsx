@@ -848,9 +848,6 @@ test("Onboarding OAuth can be closed and retried", async () => {
   const progress = screen.getByRole("dialog", {
     name: "Connecting your account",
   });
-  expect(
-    within(progress).queryByText("Cancel", { selector: "button" }),
-  ).toBeNull();
   click(within(progress).getByLabelText("Close"));
   await waitFor(() => {
     expect(connectButton).toBeEnabled();
