@@ -98,10 +98,13 @@ prove that a Sandbox attempt occurred. The durable no-replay fence still applies
 
 The winning canonical failure record uses the same persisted product route and
 credential-owner projection for Sandbox Pi, Codex, Claude Code and API-first.
-Only API-first can currently attach its already-classified, content-free model
-diagnostic directly to that internal completion call; missing diagnostics stay
-explicitly unknown and do not change owner or severity policy. This evidence is
-not part of the public completion webhook or a persisted provider response.
+The completion input remains identical in responsibility across executors: it
+carries the canonical reason, not a rich execution diagnostic. Runner records
+Codex, Claude Code and Sandbox Pi execution diagnostics before forwarding that
+reason. API-first mirrors that boundary locally after its terminal transition
+wins, using INFO for classified provider outcomes and ERROR for unclassified
+failures. Its bounded category/status/transport evidence never becomes a
+Pi-only completion field or a persisted provider response.
 
 ## Durable producer mode
 

@@ -57,7 +57,6 @@ import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.s
 import {
   logAgentRunFailure,
   type AgentRunFailureLogSnapshot,
-  type AgentRunModelFailureDiagnostic,
 } from "./agent-run-failure-log.service";
 
 type WebhookCompleteBody = z.infer<
@@ -71,7 +70,6 @@ interface CompleteAgentRunInput {
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
   readonly executionOwner?: "api-first";
-  readonly modelFailureDiagnostic?: AgentRunModelFailureDiagnostic;
 }
 
 export interface TerminalSideEffectsInput {
@@ -192,9 +190,6 @@ function logAgentRunCompletionOutcome(
     failureReason: commit.transitionFailureReason,
     executionOwner: input.executionOwner ?? "sandbox",
     run: commit.run,
-    ...(input.modelFailureDiagnostic
-      ? { modelFailureDiagnostic: input.modelFailureDiagnostic }
-      : {}),
   });
 }
 

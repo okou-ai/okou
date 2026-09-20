@@ -9,7 +9,6 @@ import {
   type KnownRunFailureReason,
   type RunFailureReasonToken,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { PiApiModelFailureDiagnostic } from "@okouai/pi-agent-runtime/api";
 
 import { logger } from "../../lib/log";
 
@@ -24,12 +23,6 @@ export interface AgentRunFailureLogSnapshot {
   readonly modelRuntimeModel: string | null;
 }
 
-export interface AgentRunModelFailureDiagnostic {
-  readonly category: PiApiModelFailureDiagnostic["category"];
-  readonly httpStatus?: number;
-  readonly transportFailure?: PiApiModelFailureDiagnostic["transportFailure"];
-}
-
 interface LogAgentRunFailureInput {
   readonly runId: string;
   readonly exitCode: number;
@@ -37,7 +30,6 @@ interface LogAgentRunFailureInput {
   readonly failureReason?: RunFailureReasonToken;
   readonly executionOwner: "api-first" | "sandbox";
   readonly run: AgentRunFailureLogSnapshot;
-  readonly modelFailureDiagnostic?: AgentRunModelFailureDiagnostic;
 }
 
 type ModelCredentialOwner =
@@ -132,7 +124,6 @@ function projectFailureEvidence(input: LogAgentRunFailureInput) {
           modelRuntimeModel: input.run.modelRuntimeModel,
         }
       : {};
-  const diagnostic = input.modelFailureDiagnostic;
   return {
     framework: input.run.launchSnapshot?.framework ?? "unknown",
     executionOwner: input.executionOwner,
@@ -140,13 +131,6 @@ function projectFailureEvidence(input: LogAgentRunFailureInput) {
     selectedModel: input.run.selectedModel ?? "unknown",
     modelCredentialOwner: credentialOwner,
     ...runtimeRoute,
-    modelFailureCategory: diagnostic?.category ?? "unknown",
-    ...(diagnostic?.httpStatus === undefined
-      ? {}
-      : { modelFailureHttpStatus: diagnostic.httpStatus }),
-    ...(diagnostic?.transportFailure
-      ? { modelTransportFailure: diagnostic.transportFailure }
-      : {}),
   };
 }
 

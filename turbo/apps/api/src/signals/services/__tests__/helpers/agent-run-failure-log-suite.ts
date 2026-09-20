@@ -9,6 +9,7 @@ import {
   logAgentRunFailure,
   type AgentRunFailureLogSnapshot,
 } from "../../agent-run-failure-log.service";
+import { logPiApiFirstTurnExecutionFailure } from "../../pi-api-first-turn-failure-log.service";
 
 interface TestRegistrar {
   (name: string, test: () => void): void;
@@ -58,7 +59,6 @@ export function registerAgentRunFailureLogTests(test: TestRegistrar): void {
       modelCredentialOwner: "platform",
       modelRuntimeProvider: "openai-api-key",
       modelRuntimeModel: "gpt-6-astra-runtime",
-      modelFailureCategory: "unknown",
       context: "webhook:complete",
       [EVENT]: { source: "api" },
     });
@@ -148,25 +148,23 @@ export function registerAgentRunFailureLogTests(test: TestRegistrar): void {
     expect(fields).not.toHaveProperty("modelProviderAccountIdentity");
   });
 
-  test("projects only the bounded API-first diagnostic on an unresolved route", () => {
+  test("reports a classified API-first provider failure at info", () => {
     const transportFailure = {
       phase: "request" as const,
       signalAborted: false,
       errorName: "TypeError" as const,
       causeCode: "ECONNRESET" as const,
     };
-    logAgentRunFailure({
+    logPiApiFirstTurnExecutionFailure({
       runId: "run-api-first-diagnostic",
-      exitCode: 1,
-      error: "[PI_API_MODEL_FAILED] Pi API first-turn model request failed",
+      route: {
+        dialect: "openai-responses",
+        executionOwner: "api-first",
+        productProvider: "built-in",
+      },
+      failureCode: "PI_API_MODEL_FAILED",
       failureReason: "provider_server_error",
-      executionOwner: "api-first",
-      run: runSnapshot({
-        launchSnapshot: { framework: "pi" },
-        modelProvider: "unrecognized-provider",
-        modelProviderCredentialScope: "member",
-        selectedModel: null,
-      }),
+      ownershipStage: "provider-may-have-started",
       modelFailureDiagnostic: {
         category: "http_error",
         httpStatus: 503,
@@ -174,18 +172,51 @@ export function registerAgentRunFailureLogTests(test: TestRegistrar): void {
       },
     });
 
-    expect(axiomLogging.warn).toHaveBeenCalledWith(
-      "Run failed",
-      expect.objectContaining({
-        framework: "pi",
+    expect(axiomLogging.info).toHaveBeenCalledWith(
+      "Pi API first-turn execution failed",
+      {
+        runId: "run-api-first-diagnostic",
+        dialect: "openai-responses",
         executionOwner: "api-first",
-        modelProvider: "unknown",
-        selectedModel: "unknown",
-        modelCredentialOwner: "unresolved",
+        productProvider: "built-in",
+        outcome: "terminal_failure",
+        reason: "PI_API_MODEL_FAILED",
+        failureReason: "provider_server_error",
+        ownershipStage: "provider-may-have-started",
         modelFailureCategory: "http_error",
         modelFailureHttpStatus: 503,
         modelTransportFailure: transportFailure,
-      }),
+        context: "pi-api-first-turn",
+        [EVENT]: { source: "api" },
+      },
+    );
+    expect(axiomLogging.warn).not.toHaveBeenCalled();
+    expect(axiomLogging.error).not.toHaveBeenCalled();
+  });
+
+  test("keeps an unclassified API-first execution failure actionable", () => {
+    logPiApiFirstTurnExecutionFailure({
+      runId: "run-api-first-commit-failure",
+      route: {
+        dialect: "openai-responses",
+        executionOwner: "api-first",
+      },
+      failureCode: "PI_API_COMMIT_FAILED",
+      ownershipStage: "provider-may-have-started",
+    });
+
+    expect(axiomLogging.error).toHaveBeenCalledWith(
+      "Pi API first-turn execution failed",
+      {
+        runId: "run-api-first-commit-failure",
+        dialect: "openai-responses",
+        executionOwner: "api-first",
+        outcome: "terminal_failure",
+        reason: "PI_API_COMMIT_FAILED",
+        ownershipStage: "provider-may-have-started",
+        context: "pi-api-first-turn",
+        [EVENT]: { source: "api" },
+      },
     );
   });
 }

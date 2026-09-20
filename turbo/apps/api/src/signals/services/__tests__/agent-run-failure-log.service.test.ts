@@ -3,6 +3,6 @@ import { describe, it } from "vitest";
 
 import { registerAgentRunFailureLogTests } from "./helpers/agent-run-failure-log-suite";
 
-describe("canonical agent run failure logging", () => {
+describe("agent failure logging contracts", () => {
   registerAgentRunFailureLogTests(it);
 });

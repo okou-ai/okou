@@ -104,6 +104,7 @@ import {
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { createPiApiFirstTurnCheckpoint$ } from "./agent-webhook-checkpoints.service";
+import { logPiApiFirstTurnExecutionFailure } from "./pi-api-first-turn-failure-log.service";
 import {
   isTerminalChatgptRefreshErrorCode,
   readModelProviderRuntimeReconnectStateForApi,
@@ -3431,9 +3432,6 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
           runId: args.activation.runId,
         },
         executionOwner: "api-first",
-        ...(failure instanceof PiApiFirstTurnModelFailureError
-          ? { modelFailureDiagnostic: failure.diagnostic }
-          : {}),
         body: {
           runId: args.activation.runId,
           exitCode: 1,
@@ -3448,6 +3446,23 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
     failureSignal.throwIfAborted();
     if (completion.status !== 200) {
       throw new Error("Pi API first-turn failure transition was rejected");
+    }
+    if (
+      completion.sideEffects?.kind === "terminal" &&
+      completion.sideEffects.status === "failed"
+    ) {
+      logPiApiFirstTurnExecutionFailure({
+        runId: args.activation.runId,
+        route: piApiFirstTurnOutcomeTelemetry(args.activation.executionContext),
+        failureCode: failure.code,
+        ...(failure.failureReason
+          ? { failureReason: failure.failureReason }
+          : {}),
+        ownershipStage: ownership.stage,
+        ...(failure instanceof PiApiFirstTurnModelFailureError
+          ? { modelFailureDiagnostic: failure.diagnostic }
+          : {}),
+      });
     }
     stopPreparedSandbox(args.activation, "failed");
     return completion.sideEffects
