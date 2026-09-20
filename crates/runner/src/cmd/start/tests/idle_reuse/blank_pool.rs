@@ -103,10 +103,10 @@ async fn deferred_pi_uses_fresh_dispatch_while_a_compatible_blank_is_ready() {
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
-        .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
-                .with_deferred_sandbox(true),
-        )
+        .send(crate::provider::JobCandidate::new(
+            run_id,
+            "vm0/default".into(),
+        ))
         .unwrap();
     let completion = env
         .handle

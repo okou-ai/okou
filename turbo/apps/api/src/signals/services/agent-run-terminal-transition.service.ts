@@ -1,10 +1,8 @@
-import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, inArray, type SQL } from "drizzle-orm";
 
-import { fencePiInferenceTerminal } from "./pi-inference-lifecycle.service";
 import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -31,11 +29,7 @@ export async function stopErasureClosedComputeRun(
         eq(agentRuns.id, runId),
         inArray(agentRuns.status, ["pending", "queued"]),
       ),
-    )
-    .returning({ launchSnapshot: agentRuns.launchSnapshot });
-  for (const run of transitioned) {
-    await fencePiInferenceTerminal(tx, runId, run.launchSnapshot, nowDate());
-  }
+    );
 }
 
 type TerminalRunStatus = Extract<
@@ -89,18 +83,9 @@ export async function transitionAgentRunsToTerminal(
       userId: agentRuns.userId,
       runnerGroup: agentRuns.runnerGroup,
       modelProviderId: agentRuns.modelProviderId,
-      launchSnapshot: agentRuns.launchSnapshot,
     });
   if (transitioned.length === 0) {
     return transitioned;
-  }
-  for (const run of transitioned) {
-    await fencePiInferenceTerminal(
-      tx,
-      run.runId,
-      run.launchSnapshot,
-      args.values.completedAt,
-    );
   }
   await tx.delete(agentRunConnectorDiagnosticRegistrations).where(
     inArray(
@@ -112,28 +97,4 @@ export async function transitionAgentRunsToTerminal(
   );
   await cleanupDisconnectedPersonalModelProviderAccounts(tx, transitioned);
   return transitioned;
-}
-
-/** The caller holds complete B1 and Run lifecycle locks. Durable consumer failure
- * fences execution and schedules effects without deleting usage, provider,
- * diagnostic or physical Sandbox cleanup evidence. */
-export async function failDeferredPiRun(
-  tx: Tx,
-  args: {
-    readonly runId: string;
-    readonly snapshot: typeof agentRuns.$inferSelect.launchSnapshot;
-    readonly at: Date;
-    readonly status: "failed" | "cancelled" | "timeout";
-    readonly error: string;
-  },
-): Promise<void> {
-  await tx
-    .update(agentRuns)
-    .set({ status: args.status, completedAt: args.at, error: args.error })
-    .where(eq(agentRuns.id, args.runId));
-  await fencePiInferenceTerminal(tx, args.runId, args.snapshot, args.at);
-  await tx
-    .update(agentRunSandboxIntent)
-    .set({ terminalEffectsPendingAt: args.at })
-    .where(eq(agentRunSandboxIntent.runId, args.runId));
 }
