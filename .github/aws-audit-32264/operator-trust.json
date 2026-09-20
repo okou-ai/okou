@@ -10,10 +10,7 @@
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": [
-            "repo:vm0-ai/okou:environment:production",
-            "repo:maxandzoe/okou:environment:production"
-          ]
+          "token.actions.githubusercontent.com:sub": "repo:okou-ai/okou:environment:production"
         }
       }
     }

@@ -73,6 +73,9 @@ interface DispatchRunCallbacksInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly redriveChatCallbackId?: string;
+  readonly redriveUndeliveredChatCallbackOnly?: true;
+  readonly skipChatCallback?: boolean;
+  readonly awaitTerminalChatProjection?: boolean;
 }
 
 interface DispatchSingleCallbackInput {
@@ -103,6 +106,24 @@ export async function chatCallbackIdForRun(
   return callback?.id;
 }
 
+export async function undeliveredChatCallbackIdForRun(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<string | undefined> {
+  const [callback] = await db
+    .select({ id: agentRunCallbacks.id })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, runId),
+        eq(agentRunCallbacks.internalKind, "chat"),
+        inArray(agentRunCallbacks.status, ["pending", "failed"]),
+      ),
+    )
+    .limit(1);
+  return callback?.id;
+}
+
 interface DispatchInternalRunCallbackInput {
   readonly db: Db;
   readonly callback: CallbackRecord;
@@ -111,11 +132,13 @@ interface DispatchInternalRunCallbackInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly kind: InternalRunCallbackKind;
+  readonly awaitTerminalChatProjection?: boolean;
 }
 
 interface DispatchInternalCallbackInput {
   readonly kind: InternalRunCallbackKind;
   readonly envelope: InternalRunCallbackEnvelope;
+  readonly awaitTerminalChatProjection?: boolean;
 }
 
 const dispatchInternalCallback$ = command(
@@ -136,6 +159,7 @@ const dispatchInternalCallback$ = command(
           handleChatInternalCallback$,
           {
             callback: input.envelope,
+            awaitTerminalProjection: input.awaitTerminalChatProjection,
             drainThreadQueue: async (chatThreadId, inputSignal, timing) => {
               await set(
                 drainChatThreadQueueForThread$,
@@ -234,6 +258,7 @@ const dispatchSingleInternalCallback$ = command(
         {
           kind: input.kind,
           envelope: callbackEnvelope(input),
+          awaitTerminalChatProjection: input.awaitTerminalChatProjection,
         },
         signal,
       ),
@@ -409,7 +434,17 @@ export const dispatchRunCallbacks$ = command(
     input: DispatchRunCallbacksInput,
     signal: AbortSignal,
   ): Promise<DispatchResult[]> => {
-    const { db, runId, status, result, error, redriveChatCallbackId } = input;
+    const {
+      db,
+      runId,
+      status,
+      result,
+      error,
+      redriveChatCallbackId,
+      redriveUndeliveredChatCallbackOnly,
+      skipChatCallback,
+      awaitTerminalChatProjection,
+    } = input;
     const [run] = await db
       .select({
         orgId: agentRuns.orgId,
@@ -448,7 +483,8 @@ export const dispatchRunCallbacks$ = command(
                 eq(agentRunCallbacks.id, redriveChatCallbackId),
                 eq(agentRunCallbacks.internalKind, "chat"),
               ),
-          redriveChatCallbackId === undefined
+          redriveChatCallbackId === undefined ||
+            redriveUndeliveredChatCallbackOnly === true
             ? or(
                 eq(agentRunCallbacks.status, "pending"),
                 eq(agentRunCallbacks.status, "failed"),
@@ -458,6 +494,7 @@ export const dispatchRunCallbacks$ = command(
             isNull(agentRunCallbacks.internalKind),
             notInArray(agentRunCallbacks.internalKind, [
               ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
+              ...(skipChatCallback ? (["chat"] as const) : []),
             ]),
           ),
         ),
@@ -478,6 +515,7 @@ export const dispatchRunCallbacks$ = command(
               result,
               error,
               kind: internalKind,
+              awaitTerminalChatProjection,
             },
             signal,
           )

@@ -39,18 +39,21 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
+  holdAgentRunRowLockFixture,
   holdChatEventInsertTransactionFixture,
+  holdChatThreadRowLockFixture,
   holdRunOutputMaterializationRowFixture,
   insertQueuedSlackMissingContextFixture,
   removeAcknowledgedCancellationLifecycleFixture,
   removeChatCallbackPublicBrandFixture,
 } from "../../../test-fixtures/chat-events";
+import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settle } from "../../utils";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -2027,6 +2030,96 @@ describe("CHAT-02: completed chat callback", () => {
 
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");
+  }, 90_000);
+
+  it("redrives an undelivered terminal callback after lock contention", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "recover terminal projection after lock contention",
+    });
+    // This test isolates /complete: the route cannot otherwise pause between
+    // Runner claim and terminal callback delivery while retaining API auth.
+    const running = await holdAgentRunRowLockFixture({
+      runId: run.runId,
+      statusOnRelease: "running",
+      signal: context.signal,
+    });
+    running.release();
+    await running.done;
+    const sandboxHeaders = {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+    };
+    const completionBody = {
+      runId: run.runId,
+      exitCode: 0,
+      checkpoint: chatRunCheckpoint(run.runId),
+    } as const;
+    const held = await holdAgentRowLockFixture({
+      agentId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+
+    const blockedCompletion = settle(
+      webhooks.requestAgentComplete(completionBody, sandboxHeaders, [500]),
+    );
+    await waitForRunStatus(actor, run.runId, "completed");
+    const heldThread = await holdChatThreadRowLockFixture({
+      threadId: run.threadId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      heldThread.release();
+      await heldThread.done;
+    });
+    held.release();
+    await held.done;
+
+    const blockedResult = await blockedCompletion;
+    if (!blockedResult.ok) {
+      throw blockedResult.error;
+    }
+    expect(blockedResult.value.body).toMatchObject({
+      error: { code: "INTERNAL_SERVER_ERROR" },
+    });
+    const beforeRetry = await chat.listThreadEvents(actor, run.threadId);
+    expect(
+      lifecycleMarkers(beforeRetry.events, run.runId, "completed"),
+    ).toHaveLength(0);
+
+    heldThread.release();
+    await heldThread.done;
+    const recovered = await webhooks.requestAgentComplete(
+      completionBody,
+      sandboxHeaders,
+      [200],
+    );
+    expect(recovered.body).toStrictEqual({
+      success: true,
+      status: "completed",
+    });
+    const afterRetry = await chat.listThreadEvents(actor, run.threadId);
+    expect(
+      lifecycleMarkers(afterRetry.events, run.runId, "completed"),
+    ).toHaveLength(1);
+
+    const duplicate = await webhooks.requestAgentComplete(
+      completionBody,
+      sandboxHeaders,
+      [200],
+    );
+    expect(duplicate.body).toStrictEqual(recovered.body);
+    const afterDuplicate = await chat.listThreadEvents(actor, run.threadId);
+    expect(
+      lifecycleMarkers(afterDuplicate.events, run.runId, "completed"),
+    ).toHaveLength(1);
+    await flushWaitUntilForTest();
   }, 90_000);
 
   it("continues a queued prompt while a historical Goal remains active", async () => {
