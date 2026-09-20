@@ -259,7 +259,7 @@ describe("builtin Automatic firewall credential destinations", () => {
             initialExpiresIn: 3600,
           });
           // The account commits even when notification delivery fails. Keep using
-          // the catalog firewall auth without calling runtime sync.
+          // the Run's inline firewall auth without calling runtime sync.
           context.mocks.ably.batchPublish.mockRejectedValue(
             new Error("Wakeup unavailable"),
           );
