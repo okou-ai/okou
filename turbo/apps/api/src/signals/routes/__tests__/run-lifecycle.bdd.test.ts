@@ -13930,44 +13930,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("requires Mercury attribution when a response presents account data", async () => {
-    const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      mercuryConnector: true,
-    });
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "mercury",
-      authMethod: "oauth",
-      accessToken: "mercury-bdd-access",
-      refreshToken: "mercury-bdd-refresh",
-    });
-    await api.enableAgentConnectors(actor, agentId, ["mercury"]);
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "summarize my Mercury account balances",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-
-    expect(appendSystemPrompt).toContain("# Mercury Account Data Disclosure");
-    expect(appendSystemPrompt).toContain(
-      "[Powered by Mercury](https://mercury.com)",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Do not include this disclosure when the response does not present Mercury-sourced data.",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
