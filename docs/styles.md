@@ -268,6 +268,16 @@ those consumers; deprecated names are removed when their consumers have
 migrated, rather than being copied into component-local registries. A change to
 ownership, naming, or theme mapping must update this guide in the same PR.
 
+`text-link` carries the hyperlink color for first-party body copy, and it is
+paired with an underline rather than used alone. A link that drops the underline
+makes color its only cue, which WCAG then holds to 3:1 against the surrounding
+text as well as 4.5:1 against the background — a pair no single color reaches on
+both the canvas and the tinted user bubble. The token is therefore chosen for
+the 4.5:1 background ratio alone: it clears it on the canvas and on
+`bg-gray-200` in both themes. Markdown that the third-party preview stylesheet
+renders keeps that stylesheet's own link color; this token governs first-party
+markup.
+
 Large editable surfaces use `border-surface-focus` to emphasize their existing
 border on focus: neutral gray in light themes and muted amber in dark themes.
 Keep the border width constant across interaction states. A shadow-only focus
