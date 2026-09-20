@@ -63,11 +63,8 @@ class AuditSetupTests(unittest.TestCase):
     def client(self, service, **_kwargs):
         return self.clients[service]
 
-    def test_iam_trust_allows_only_current_and_renamed_production_subjects(self):
-        expected_subjects = [
-            "repo:vm0-ai/okou:environment:production",
-            "repo:okou-ai/okou:environment:production",
-        ]
+    def test_iam_trust_allows_only_renamed_production_subject(self):
+        expected_subject = "repo:okou-ai/okou:environment:production"
         github_directory = SCRIPT.parent.parent
         for relative_path in [
             "aws-audit-32264/operator-trust.json",
@@ -82,7 +79,7 @@ class AuditSetupTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     conditions["token.actions.githubusercontent.com:sub"],
-                    expected_subjects,
+                    expected_subject,
                 )
 
     def main(self, account=audit.ACCOUNT, denied=False, oidc_status="200"):
