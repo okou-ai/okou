@@ -13,6 +13,7 @@ import {
   createImageLoadSignals,
   embedImageLoadSignals,
 } from "../../../../signals/image-load.ts";
+import { openDiagramLightbox$ } from "../../../../signals/okou-page/attachment-chips.ts";
 import {
   createMermaidDiagramRegistry,
   embedMermaidSignals,
@@ -34,7 +35,7 @@ const context = testContext();
 
 // Match the chat parse pass: registration only returns signals to embed;
 // prewarming or a visible diagram starts layout by reading its computed.
-const mermaidDiagrams = createMermaidDiagramRegistry();
+const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
 
 function progressMessage(index: number): string {
   return [

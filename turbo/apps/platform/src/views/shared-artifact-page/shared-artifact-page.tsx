@@ -24,6 +24,7 @@ import {
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
+import { PublicArtifactLightbox } from "../components/public-artifact-lightbox.tsx";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
 import {
   ArtifactActionSeparator,
@@ -346,6 +347,7 @@ export function SharedArtifactPage({
           </IconButton>
         )}
       </main>
+      <PublicArtifactLightbox signals={viewer.diagram} />
     </div>
   );
 }

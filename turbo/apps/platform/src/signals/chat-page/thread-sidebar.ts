@@ -27,6 +27,7 @@ import {
   previewAttachmentFromUrl,
 } from "./parse-body-blocks.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
+import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
 import {
   createZoomableImageCanvasSignals,
   type ZoomableImageCanvasSignals,
@@ -111,7 +112,9 @@ function withTextPreview(ref: ArtifactRef): ArtifactRef {
     ...ref,
     text$,
     ...(ref.kind === "markdown"
-      ? { markdownTree$: createMarkdownPreviewTree(text$) }
+      ? {
+          markdownTree$: createMarkdownPreviewTree(text$, openDiagramLightbox$),
+        }
       : {}),
   };
 }
@@ -240,6 +243,7 @@ function createCatalogArtifactPreviewSignals(
   });
   const selectedArtifactMarkdownTree$ = createMarkdownPreviewTree(
     selectedArtifactText$,
+    openDiagramLightbox$,
   );
 
   return {

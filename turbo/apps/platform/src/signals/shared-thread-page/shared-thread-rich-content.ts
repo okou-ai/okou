@@ -23,7 +23,7 @@ import {
   createMermaidDiagramRegistry,
   embedMermaidSignals,
 } from "../mermaid-diagram.ts";
-import type { SharedThreadArtifactPreviewSignals } from "./shared-thread-artifact-preview.ts";
+import type { PublicArtifactPreviewSignals } from "../public-artifact-preview.ts";
 
 export interface SharedThreadRichContentSignals {
   readonly trees$: Computed<Promise<ReadonlyMap<number, Root>>>;
@@ -35,7 +35,7 @@ export interface SharedThreadArtifactSignals extends ArtifactSignals {
 
 export function createSharedThreadArtifactSignals(
   descriptor: ArtifactDescriptor,
-  viewer: SharedThreadArtifactPreviewSignals,
+  viewer: PublicArtifactPreviewSignals,
 ): SharedThreadArtifactSignals {
   const previewImageUrlsByUrl$ = computed(() => {
     return Promise.resolve(new Map<string, string>());
@@ -74,12 +74,12 @@ function createScopedResolver<Key, Value>(
 /** Derive the rich bodies and resource graphs of one immutable shared thread. */
 export function createSharedThreadRichContentSignals(
   messages: readonly SharedMessage[],
-  viewer: SharedThreadArtifactPreviewSignals,
+  viewer: PublicArtifactPreviewSignals,
 ): SharedThreadRichContentSignals {
   const trees$ = computed(async (): Promise<ReadonlyMap<number, Root>> => {
     // Let the page shell and plain bodies render before rich parsing begins.
     await Promise.resolve();
-    const diagrams = createMermaidDiagramRegistry();
+    const diagrams = createMermaidDiagramRegistry(viewer.openDiagram$);
     const resolveImageLoad = createScopedResolver(() => {
       return createImageLoadSignals();
     });

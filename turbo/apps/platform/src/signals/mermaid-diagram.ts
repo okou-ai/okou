@@ -21,7 +21,19 @@ export interface MermaidDiagramSignals {
   readonly code: string;
   /** Resolves `null` when the source is not a supported Mermaid diagram. */
   readonly diagram$: Computed<Promise<MermaidDiagramImage | null>>;
+  /**
+   * Where this surface presents an expanded diagram. Required, because a
+   * surface that renders Markdown outside the app shell has no viewer of its
+   * own to fall back on: an omitted destination is a button that does nothing.
+   */
+  readonly openPreview$: MermaidDiagramPreviewCommand;
 }
+
+/** Opens one rendered diagram, owned by the caller's page lifetime. */
+export type MermaidDiagramPreviewCommand = Command<
+  void,
+  [file: File, signal: AbortSignal]
+>;
 
 // Declared here rather than in the parse pipeline: the pipeline emits only
 // `data.mermaid` ({code}), and this field is written by the signals layer
@@ -76,9 +88,13 @@ export interface MermaidDiagramRegistry {
 /**
  * A registry scoped to one surface. Source signals and their memoized files
  * live with this graph; there is no application-wide source cache. Each
- * mounted image owns a separate URL and releases it on ref cleanup.
+ * mounted image owns a separate URL and releases it on ref cleanup. The
+ * surface states where an expanded diagram opens, since that differs between
+ * the app shell and a public page.
  */
-export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
+export function createMermaidDiagramRegistry(
+  openPreview$: MermaidDiagramPreviewCommand,
+): MermaidDiagramRegistry {
   const signalsByCode = new Map<string, MermaidDiagramSignals>();
 
   const register = (code: string): MermaidDiagramSignals => {
@@ -90,7 +106,7 @@ export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
       const file = await renderMermaidDiagramFile(code);
       return file === null ? null : createDiagramImage(file);
     });
-    const signals: MermaidDiagramSignals = { code, diagram$ };
+    const signals: MermaidDiagramSignals = { code, diagram$, openPreview$ };
     signalsByCode.set(code, signals);
     return signals;
   };

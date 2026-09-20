@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
@@ -421,6 +421,27 @@ test("A shared Markdown artifact displays its diagram", async () => {
   }
   expect(browser.blobForUrl(imageUrl)?.type).toBe("image/svg+xml");
   expect(action("button", "Expand diagram")).toBeEnabled();
+
+  click(action("button", "Expand diagram"));
+
+  const dialog = await screen.findByRole("dialog");
+  // The expanded copy mounts its own image, so it owns a separate object URL
+  // for the same rendered diagram.
+  const expanded = await within(dialog).findByTestId(
+    "attachment-lightbox-image",
+  );
+  const expandedUrl = expanded.getAttribute("src");
+  if (!expandedUrl) {
+    throw new Error("Expected the expanded diagram to have a source");
+  }
+  expect(browser.blobForUrl(expandedUrl)?.type).toBe("image/svg+xml");
+  expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
+  // A diagram drawn in this browser has no address worth copying.
+  expect(
+    queryAllByRoleFast("button", dialog).map((button) => {
+      return button.getAttribute("aria-label") ?? button.textContent?.trim();
+    }),
+  ).not.toContain("Copy link");
 });
 
 test.each([
