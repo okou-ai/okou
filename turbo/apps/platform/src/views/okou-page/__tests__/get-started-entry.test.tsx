@@ -78,6 +78,7 @@ function catalogItem(
   label: string,
   grantKind: "auth-code" | "manual",
   connected = false,
+  popularityRank?: number,
 ): PublicConnectorCatalogStatusItem {
   return {
     slug,
@@ -88,6 +89,7 @@ function catalogItem(
       invertInDarkMode: false,
     },
     category: "test",
+    popularityRank,
     generation: [],
     tags: [],
     authMethods: [
@@ -778,14 +780,14 @@ test("Picking a connector in the dialog starts its authorization", async () => {
 
 test("The dialog leads with the connectors the step can still be completed with", async () => {
   configureQuestPage(context, "admin");
-  // Slack outranks Notion in the catalog order, and is already connected. The
-  // step can only be finished on Notion, so Notion is what the reader meets
-  // first regardless of that ranking.
+  // Slack is the better-ranked connector and is already connected, so the
+  // catalog order alone would put it first. The step can only be finished on
+  // Notion, so Notion is what the reader meets first in spite of that rank.
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, {
       connectors: [
-        catalogItem("slack", "Slack", "auth-code", true),
-        catalogItem("notion", "Notion", "auth-code"),
+        catalogItem("slack", "Slack", "auth-code", true, 1),
+        catalogItem("notion", "Notion", "auth-code", false, 2),
       ],
     });
   });

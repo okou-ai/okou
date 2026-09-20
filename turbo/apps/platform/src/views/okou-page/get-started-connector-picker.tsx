@@ -17,18 +17,7 @@ import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/s
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-
-/**
- * The last row of a scrolled list is cut on the viewport's edge, and a tile
- * sliced through its label reads as a rendering fault rather than as "the list
- * continues". The transcript softens its own bottom edge over the same 20px for
- * the same reason; the two are one decision that has not been promoted to a
- * shared token yet, so changing one means changing the other.
- */
-const QUEST_PICKER_EDGE_FADE_CLASS = cn(
-  "[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
-  "[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
-);
+import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 
 /**
  * The connectors the Get started quest can actually deliver on.
@@ -239,7 +228,7 @@ export function QuestConnectorPicker({
         // growing the dialog past the window.
         className={cn(
           "max-h-[288px] pr-3 focus:outline-none",
-          QUEST_PICKER_EDGE_FADE_CLASS,
+          SCROLL_FADE_Y_END,
         )}
       >
         <ScrollArea.Content className="flex flex-col gap-3.5">
