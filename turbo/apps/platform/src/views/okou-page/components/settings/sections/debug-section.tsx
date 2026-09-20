@@ -18,6 +18,7 @@ import { ConnectorCatalogDiagnosticsBlock } from "../connector-catalog-diagnosti
 import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnostics-block.tsx";
 import { BuiltInModelCooldownDiagnosticsBlock } from "../built-in-model-cooldown-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
+import { MorningBriefTriggerCard } from "../morning-brief-trigger-card.tsx";
 import { VoiceInputModelSettings } from "../voice-input-model-settings.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
 
@@ -87,6 +88,12 @@ export function DebugSection() {
     <div className="flex flex-col gap-6">
       <BuildInfoBlock />
       {features[FeatureSwitchKey.WelcomeThread] && <WelcomeThreadCard />}
+      {/* Each trigger spends real platform budget, so the card stays behind the
+          debug switch and the native pipeline's own switch together. */}
+      {features[FeatureSwitchKey.OkouDebug] &&
+        features[FeatureSwitchKey.SimpleMorningBrief] && (
+          <MorningBriefTriggerCard />
+        )}
       <VoiceInputModelSettings />
       <ConnectionDiagnosticsBlock />
       <WorkerConnectionDiagnosticsBlock />

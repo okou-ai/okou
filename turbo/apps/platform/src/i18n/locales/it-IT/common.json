@@ -679,7 +679,6 @@
       "previewSlide": "Diapositiva di anteprima {{slideNumber}}",
       "previewVoice": "Ascolta la voce {{title}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",
-      "previousHtmlPreview": "{{title}} anteprima HTML precedente",
       "previousSlide": "Anteprima della diapositiva precedente",
       "recommended": "Consigliato",
       "renameImportedTemplate": "Rinomina modello",
@@ -3547,21 +3546,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Mittente autorizzato",
+        "codeExpiry": "Scade tra 10 minuti",
         "connectAria": "Collega il telefono",
-        "connectDescription": "Invia un messaggio a questo numero AgentPhone dal telefono che vuoi collegare.",
+        "connectDescription": "Scansiona il codice o apri Messaggi, quindi invia il codice precompilato.",
         "connectTitle": "Collega il telefono",
         "copyAria": "Copia {{phone}}",
+        "copyCodeAria": "Copia il codice di connessione {{code}}",
+        "copyCodeError": "Impossibile copiare il codice di connessione",
+        "copyCodeSuccess": "Codice di connessione copiato",
         "copyError": "Impossibile copiare il numero di telefono",
         "copySuccess": "Numero di telefono copiato",
+        "createCodeError": "Impossibile creare un codice di connessione. Riprova.",
+        "creatingCode": "Creazione del codice di connessione…",
         "description": "Accesso via SMS a {{assistantName}}",
         "destination": "iMessage o SMS a",
-        "messageInstruction": "Invia “hi”",
+        "manualSend": "oppure invia",
+        "manualSendTo": "a",
         "openMessages": "Apri Messaggi",
         "options": "Opzioni del telefono",
         "phoneLabel": "Telefono",
-        "replyInstruction": "Apri il link di connessione entro 10 minuti per completare.",
-        "replyTitle": "Apri la nostra risposta",
-        "risk": "Usa iMessage quando possibile. Le risposte SMS e MMS potrebbero non arrivare in modo affidabile."
+        "qrTitle": "Scansiona per aprire Messaggi con il codice di connessione precompilato",
+        "risk": "Usa iMessage quando possibile. Le risposte SMS e MMS potrebbero non arrivare in modo affidabile.",
+        "tryAgain": "Riprova"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -6032,6 +6038,14 @@
           "stores": "object store",
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
+        },
+        "morningBriefTrigger": {
+          "description": "Esegui subito un Morning Brief reale. Mette in coda la tua prossima esecuzione per lo scheduler abituale, che consegna un brief reale e un'email reale entro un minuto. Attivarlo prima del tuo orario giornaliero produce due brief quella mattina.",
+          "failed": "Impossibile mettere in coda il Morning Brief. Riprova.",
+          "queued": "In coda. Lo scheduler consegnerà il brief entro un minuto.",
+          "title": "Morning Brief",
+          "trigger": "Esegui Morning Brief ora",
+          "triggering": "Messa in coda…"
         },
         "voiceInput": {
           "default": "Predefinito ({{model}})",

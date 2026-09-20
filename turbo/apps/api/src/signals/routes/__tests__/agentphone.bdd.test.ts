@@ -13,6 +13,7 @@ import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   findAgentphoneChatEventByPromptFixture,
@@ -374,6 +375,142 @@ const EXPECTED_PLAIN_RUN_OUTPUT = [
 ].join("\n");
 
 describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it("links a direct-message sender with a one-time connection code", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const actor = bdd.user();
+    const phone = uniquePhoneHandle();
+    const conversationId = uniqueConversationId();
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    expect(issued.body.code).toMatch(/^\d{8}$/u);
+    expect(Date.parse(issued.body.expiresAt) - now()).toBeGreaterThan(
+      9 * 60 * 1000,
+    );
+
+    const inboundMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: issued.body.code,
+      conversationId,
+      isGroup: false,
+    });
+
+    expect(lastSend(sends)).toMatchObject({
+      conversationId,
+      replyToMessageId: inboundMessageId,
+      body: expect.stringContaining("Your phone number is now connected"),
+    });
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: uniquePhoneHandle(),
+      body: issued.body.code,
+    });
+    expect(lastSend(sends).body).toContain("invalid or expired");
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+  });
+
+  it("invalidates a previous connection code when a new one is issued", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const actor = bdd.user();
+    const phone = uniquePhoneHandle();
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+
+    const first = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    const second = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    expect(second.body.code).not.toBe(first.body.code);
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: first.body.code,
+    });
+    expect(lastSend(sends).body).toContain("invalid or expired");
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: false });
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: second.body.code,
+    });
+    expect(lastSend(sends).body).toContain(
+      "Your phone number is now connected",
+    );
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
+  });
+
+  it("rejects an expired connection code", async () => {
+    const bdd = createBddApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const actor = bdd.user();
+    integrations.configureAgentPhoneProvider();
+    integrations.configureAgentPhoneWebhook();
+    const sends = ap.captureAgentPhoneSends();
+
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    mockNow(Date.parse(issued.body.expiresAt) + 1);
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: uniquePhoneHandle(),
+      body: issued.body.code,
+    });
+
+    expect(lastSend(sends).body).toContain("invalid or expired");
+    await expect(
+      integrations.getAgentPhoneLinkStatus(actor),
+    ).resolves.toMatchObject({ linked: false });
+  });
+
+  it("runs an all-digit prompt from an already linked sender", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "20260920",
+    });
+
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toContain("20260920");
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
+  });
+
   it("links an AgentPhone user without provisioning artifact storage", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);

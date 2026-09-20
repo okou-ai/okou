@@ -200,7 +200,7 @@ describe("chat thread event sequence contract", () => {
   });
 
   it("accepts video model fields and pre-image-model payloads", () => {
-    const selectedImageModel = imageModelIdSchema.parse("fal-ai/qwen-image");
+    const selectedImageModel = imageModelIdSchema.parse("fal-ai/flux-pro/v1.1");
     const createdAt = "2026-08-17T00:00:00.000Z";
     const imageModelEvent = {
       id: "11111111-1111-4111-8111-111111111111",

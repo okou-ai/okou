@@ -169,8 +169,8 @@ snapshots and memory archives are copied without whole-object decompression.
 
 ## Rollout and rollback
 
-Migrations 1174 and 1175 add the job control table, nullable export execution
-mode, and export entry/part inventory. Apply them before promoting the API.
+Migration 1175 adds the job control table, nullable export execution mode,
+and export entry/part inventory. Apply it before promoting the API.
 Old code after migration ignores the additive tables/column; new code before
 migration is unsupported, including its unconditional cleanup reads.
 

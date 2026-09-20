@@ -388,8 +388,8 @@ describe("okou generate image command", () => {
       name: "outside a run with an explicit model",
       insideRun: false,
       runDefaultImageModel: undefined,
-      modelArguments: ["--model", "qwen-image"],
-      expectedModel: "qwen-image",
+      modelArguments: ["--model", "flux-pro-1.1"],
+      expectedModel: "flux-pro-1.1",
     },
     {
       name: "inside a run with an implicit model",
@@ -401,7 +401,7 @@ describe("okou generate image command", () => {
     {
       name: "inside a gated run with an implicit model",
       insideRun: true,
-      runDefaultImageModel: "qwen-image",
+      runDefaultImageModel: "flux-pro-1.1",
       modelArguments: [],
       expectedModel: undefined,
     },
@@ -409,13 +409,13 @@ describe("okou generate image command", () => {
       name: "inside a gated run with an explicit model",
       insideRun: true,
       runDefaultImageModel: "seedream4",
-      modelArguments: ["--model", "qwen-image"],
-      expectedModel: "qwen-image",
+      modelArguments: ["--model", "flux-pro-1.1"],
+      expectedModel: "flux-pro-1.1",
     },
     {
       name: "inside a gated run with an explicit value equal to the CLI default",
       insideRun: true,
-      runDefaultImageModel: "qwen-image",
+      runDefaultImageModel: "flux-pro-1.1",
       modelArguments: ["--model", "gpt-image-1"],
       expectedModel: "gpt-image-1",
     },
@@ -954,12 +954,12 @@ describe("okou generate image command", () => {
       "A florist named Luna Floral",
       "--compile",
       "--model",
-      "qwen-image",
+      "flux-pro-1.1",
     ]);
 
     const explicitStdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(explicitStdout).toContain(
-      "Explicit model if direct image generation is used: qwen-image",
+      "Explicit model if direct image generation is used: flux-pro-1.1",
     );
     expect(explicitStdout).not.toContain(
       "Run default model if direct image generation is used",
@@ -1314,7 +1314,6 @@ describe("okou generate image command", () => {
     expect(normalizedHelpOutput).toContain("xhigh and max");
     expect(helpOutput).toContain("gpt-image-1 (default)");
     expect(helpOutput).toContain("flux-pro-1.1");
-    expect(helpOutput).toContain("qwen-image");
     expect(helpOutput).toContain("nano-banana-2");
     expect(helpOutput).toContain("seedream5-pro");
     expect(helpOutput).toContain("seedream5-lite");

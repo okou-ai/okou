@@ -65,9 +65,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
-    description: "Manually create a welcome conversation with fixed examples",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    description:
+      "Deliver a welcome conversation with fixed examples to every member joining a workspace",
+    enabled: true,
   },
   [FeatureSwitchKey.ThreadActivitySummary]: {
     maintainer: "lancy@okou.ai",
@@ -94,9 +94,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Convert an HTML presentation into an editable pptx from the CLI.",
     enabled: false,
-    // Held to the maintainer while fidelity is still being measured against
-    // real decks: conversion succeeds, but what a viewer without the deck's
-    // fonts makes of the result is only known for the decks tried so far.
+    // Opened to the staff org: the open question is how a converted deck reads
+    // for a viewer without its fonts, and that needs more decks than the
+    // maintainer alone can try.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Kept beside the org so the maintainer keeps the feature while signed
+    // into a customer workspace, where the org hash does not apply.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
@@ -120,11 +123,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Enable the Monday.com MCP connector",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PlaudConnector]: {
     maintainer: "liangyou@okou.ai",
     description: "Enable the Plaud MCP connector",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillConnector]: {
     maintainer: "yuma@okou.ai",

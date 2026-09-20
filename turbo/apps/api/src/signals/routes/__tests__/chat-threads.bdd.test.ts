@@ -1916,7 +1916,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await chat.updateThreadImageModel(
       actor,
       liveThread.id,
-      "fal-ai/qwen-image",
+      "fal-ai/flux-pro/v1.1",
     );
 
     const incrementalSnapshotAt = initialSnapshotAt + 1000;
@@ -1952,7 +1952,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         // The compaction projection is hand-written SQL, so a column missing
         // from it survives every read until compaction runs and drops it.
         selectedVideoModel: "fal-ai/veo3.1/fast",
-        selectedImageModel: "fal-ai/qwen-image",
+        selectedImageModel: "fal-ai/flux-pro/v1.1",
       }),
     ]);
 

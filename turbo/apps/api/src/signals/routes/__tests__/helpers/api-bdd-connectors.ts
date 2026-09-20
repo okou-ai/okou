@@ -313,7 +313,10 @@ interface AutomaticMcpOAuthProviderOptions {
     | "invalid_grant"
     | "temporarily_unavailable"
   )[];
-  readonly refreshResponse?: (attempt: number) => Response | Promise<Response>;
+  readonly refreshResponse?: (
+    attempt: number,
+    signal: AbortSignal,
+  ) => Response | Promise<Response>;
   readonly initialExpiresIn?: number;
   readonly initialRefreshToken?: string;
   readonly omitRefreshToken?: boolean;
@@ -555,7 +558,7 @@ export function mockAutomaticMcpOAuthProvider(
       if (refresh) {
         refreshAttempts += 1;
         if (options.refreshResponse) {
-          return await options.refreshResponse(refreshAttempts);
+          return await options.refreshResponse(refreshAttempts, request.signal);
         }
       } else {
         authorizationCodeAttempts += 1;

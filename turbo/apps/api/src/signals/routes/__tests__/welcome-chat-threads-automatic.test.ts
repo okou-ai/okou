@@ -231,6 +231,9 @@ describe("automatic welcome thread delivery", () => {
   it("creates nothing when the switch is disabled for the workspace", async () => {
     const admin = await establishedWorkspace();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+    // The switch is on for everyone now, so an override is the only way a
+    // recipient can still be opted out of the welcome.
+    await enable(member, false);
 
     await deliverMembershipCreated(member);
 

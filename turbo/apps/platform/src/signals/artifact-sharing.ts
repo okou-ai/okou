@@ -5,6 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   artifactSharesContract,
+  artifactShareTargetSchema,
   type ArtifactShareStatus,
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
@@ -15,7 +16,10 @@ import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
 import { resolveApiBase } from "./api-base.ts";
-import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
+import {
+  isAuthenticatedAttachmentUrl,
+  type ArtifactShareIdentity,
+} from "./attachment-resource-url.ts";
 import { throttleCommand } from "./command-scheduling.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import {
@@ -48,6 +52,7 @@ export function isShareableArtifactReference(url: string): boolean {
 interface ShareSource {
   readonly url: string;
   readonly copyUrl?: string;
+  readonly artifactShareIdentity?: ArtifactShareIdentity;
 }
 type Audience = ArtifactShareStatus["audience"];
 interface AudienceDraft {
@@ -56,17 +61,19 @@ interface AudienceDraft {
 
 async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
   const reference = parseArtifactReference(source.url, location.origin);
-  const resolved = reference
-    ? (
-        await accept(
-          client(artifactReferencesContract).resolve({
-            params: { reference: `${reference.hash}${reference.extension}` },
-            fetchOptions: { cache: "no-store" },
-          }),
-          [200],
-        )
-      ).body
-    : null;
+  const resolved =
+    source.artifactShareIdentity ??
+    (reference
+      ? (
+          await accept(
+            client(artifactReferencesContract).resolve({
+              params: { reference: `${reference.hash}${reference.extension}` },
+              fetchOptions: { cache: "no-store" },
+            }),
+            [200],
+          )
+        ).body
+      : null);
   const target = resolved?.target ?? artifactSharingTarget(source.url);
   if (!target) {
     return null;
@@ -255,7 +262,24 @@ function createArtifactShareScope() {
         }
         const signal = set(resetMountSignal$, mountSignal, get(pageSignal$));
         signal.throwIfAborted();
-        const source = { url, copyUrl: element.dataset.copyUrl };
+        const target = artifactShareTargetSchema.safeParse({
+          kind: element.dataset.shareTargetKind,
+          id: element.dataset.shareTargetId,
+        });
+        const source = {
+          url,
+          copyUrl: element.dataset.copyUrl,
+          ...(target.success
+            ? {
+                artifactShareIdentity: {
+                  target: target.data,
+                  ...(element.dataset.sharedThreadSnapshot === "true"
+                    ? { sharedThreadSnapshot: true as const }
+                    : {}),
+                },
+              }
+            : {}),
+        };
         set(source$, source);
         const session = get(session$)!;
         set(session.signal$, signal);

@@ -424,6 +424,10 @@ test("Opening a deck shows its pages and management controls", async () => {
   const page = await screen.findByAltText("Page 1");
   expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
   const preview = previewDialogAround(page);
+  // The preview is a dialog inside the picker, which is what lets the picker
+  // step out of view rather than stay half-visible around a narrower panel.
+  expect(dialog).toHaveAttribute("data-nested-dialog-open");
+  expect(preview).not.toHaveAttribute("data-nested-dialog-open");
   expect(
     within(preview).getByText("18 pages · from q3-board-final-v4.pptx"),
   ).toBeVisible();

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
@@ -17,37 +17,7 @@ const PRESENTATION_URL =
 const TEMPLATE_NAME = "Sunburst playroom";
 const PREVIEW_TITLE = `${TEMPLATE_NAME} HTML preview`;
 
-interface PresentationObjectUrls {
-  readonly htmlFor: (frame: HTMLIFrameElement) => Promise<string>;
-}
-
-function installPresentationObjectUrls(): PresentationObjectUrls {
-  const sources = new Map<string, Blob>();
-  let nextObjectUrl = 0;
-  vi.spyOn(URL, "createObjectURL").mockImplementation((source) => {
-    if (!(source instanceof Blob)) {
-      throw new Error("Presentation preview created a non-Blob object URL");
-    }
-    nextObjectUrl += 1;
-    const url = `blob:https://app.okou.ai/presentation-preview-${String(nextObjectUrl)}`;
-    sources.set(url, source);
-    return url;
-  });
-  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-
-  return {
-    htmlFor(frame) {
-      const url = frame.getAttribute("src");
-      const source = url === null ? undefined : sources.get(url);
-      if (source === undefined) {
-        throw new Error(`No captured presentation document for ${url ?? ""}`);
-      }
-      return source.text();
-    },
-  };
-}
-
-function arrangePresentation(html: string): PresentationObjectUrls {
+function arrangePresentation(html: string): void {
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -59,7 +29,6 @@ function arrangePresentation(html: string): PresentationObjectUrls {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   });
-  return installPresentationObjectUrls();
 }
 
 function namedButton(
@@ -120,11 +89,8 @@ async function openPresentationDetail(): Promise<HTMLIFrameElement> {
 
 async function hydratePreviewFrame(
   frame: HTMLIFrameElement,
-  objectUrls: PresentationObjectUrls,
 ): Promise<Document> {
-  const html = await objectUrls.htmlFor(frame);
-  frame.removeAttribute("src");
-  frame.srcdoc = html;
+  const html = frame.srcdoc;
   const frameDocument = frame.contentDocument;
   if (frameDocument === null) {
     throw new Error("Presentation preview iframe has no document");
@@ -139,11 +105,12 @@ async function hydratePreviewFrame(
   return frameDocument;
 }
 
-async function openReadyPresentation(
-  objectUrls: PresentationObjectUrls,
-): Promise<{ readonly document: Document; readonly frame: HTMLIFrameElement }> {
+async function openReadyPresentation(): Promise<{
+  readonly document: Document;
+  readonly frame: HTMLIFrameElement;
+}> {
   const frame = await openPresentationDetail();
-  return { document: await hydratePreviewFrame(frame, objectUrls), frame };
+  return { document: await hydratePreviewFrame(frame), frame };
 }
 
 function elementBySelector(
@@ -170,7 +137,7 @@ function expectCssColor(actual: string, expected: readonly string[]): void {
 }
 
 test("Selecting a slide preserves its authored layout", async () => {
-  const objectUrls = arrangePresentation(`<!doctype html>
+  arrangePresentation(`<!doctype html>
     <html>
       <head>
         <style>
@@ -201,19 +168,16 @@ test("Selecting a slide preserves its authored layout", async () => {
   });
 
   const firstFrame = await openPresentationDetail();
-  // Selection depends on the iframe load event, not on reading the first
-  // slide's document. Render and inspect the selected slide below.
   fireEvent.load(firstFrame);
   await waitFor(() => {
     expect(firstFrame).toHaveAttribute("data-loaded", "true");
   });
-  const firstFrameUrl = firstFrame.getAttribute("src");
   click(await waitForNamedButton("Preview slide 2"));
   await waitFor(() => {
-    expect(activePreviewFrame().getAttribute("src")).not.toBe(firstFrameUrl);
+    expect(activePreviewFrame().srcdoc).toContain("Selected slide");
   });
   const secondFrame = activePreviewFrame();
-  const frameDocument = await hydratePreviewFrame(secondFrame, objectUrls);
+  const frameDocument = await hydratePreviewFrame(secondFrame);
 
   expect(frameDocument.querySelector('[data-slide-id="slide-one"]')).toBeNull();
   expect(frameDocument.querySelectorAll("[data-okou-slide]")).toHaveLength(1);
@@ -237,7 +201,7 @@ test("Selecting a slide preserves its authored layout", async () => {
 });
 
 test("A generically authored deck still previews", async () => {
-  const objectUrls = arrangePresentation(`<!doctype html>
+  arrangePresentation(`<!doctype html>
     <html>
       <body>
         <div data-slide data-slide-id="slide-one">
@@ -255,16 +219,12 @@ test("A generically authored deck still previews", async () => {
   });
 
   const firstFrame = await openPresentationDetail();
-  await hydratePreviewFrame(firstFrame, objectUrls);
-  const firstFrameUrl = firstFrame.getAttribute("src");
+  await hydratePreviewFrame(firstFrame);
   click(await waitForNamedButton("Preview slide 2"));
   await waitFor(() => {
-    expect(activePreviewFrame().getAttribute("src")).not.toBe(firstFrameUrl);
+    expect(activePreviewFrame().srcdoc).toContain("Generic second");
   });
-  const frameDocument = await hydratePreviewFrame(
-    activePreviewFrame(),
-    objectUrls,
-  );
+  const frameDocument = await hydratePreviewFrame(activePreviewFrame());
 
   expect(frameDocument.querySelectorAll("[data-slide]")).toHaveLength(1);
   expect(frameDocument.querySelector('[data-slide-id="slide-one"]')).toBeNull();
@@ -275,7 +235,7 @@ test("A generically authored deck still previews", async () => {
 });
 
 test("A presentation slide fills its preview frame cleanly", async () => {
-  const objectUrls = arrangePresentation(`<!doctype html>
+  arrangePresentation(`<!doctype html>
     <html>
       <body>
         <section data-okou-slide data-slide-id="slide-one" style="width: 100vw; height: 100vh; border-radius: 32px; box-shadow: 0 20px 60px #0008">
@@ -291,7 +251,7 @@ test("A presentation slide fills its preview frame cleanly", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const { document: frameDocument } = await openReadyPresentation(objectUrls);
+  const { document: frameDocument } = await openReadyPresentation();
   const slide = elementBySelector(frameDocument, "[data-okou-slide]");
   const stage = elementBySelector(frameDocument, ".stage");
   const slideStyle = computedStyle(slide);
@@ -310,7 +270,7 @@ test("A presentation slide fills its preview frame cleanly", async () => {
 });
 
 test("An unusable generated theme does not break the presentation preview", async () => {
-  const objectUrls = arrangePresentation(`<!doctype html>
+  arrangePresentation(`<!doctype html>
     <html>
       <body>
         <section data-okou-slide data-slide-id="slide-one" style="background-color: #fef3c7; color: #1f2937">
@@ -335,8 +295,7 @@ test("An unusable generated theme does not break the presentation preview", asyn
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const { document: frameDocument, frame } =
-    await openReadyPresentation(objectUrls);
+  const { document: frameDocument, frame } = await openReadyPresentation();
   const slide = elementBySelector(frameDocument, "[data-okou-slide]");
   const slideStyle = computedStyle(slide);
 
@@ -351,7 +310,7 @@ test("An unusable generated theme does not break the presentation preview", asyn
 });
 
 test("Presentation previews preserve the selected theme", async () => {
-  const objectUrls = arrangePresentation(`<!doctype html>
+  arrangePresentation(`<!doctype html>
     <html>
       <head>
         <style>
@@ -381,7 +340,7 @@ test("Presentation previews preserve the selected theme", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const { document: frameDocument } = await openReadyPresentation(objectUrls);
+  const { document: frameDocument } = await openReadyPresentation();
   const rootStyle = computedStyle(frameDocument.documentElement);
 
   expect(rootStyle.getPropertyValue("--bg").trim()).toBe("#FFFDF7");
