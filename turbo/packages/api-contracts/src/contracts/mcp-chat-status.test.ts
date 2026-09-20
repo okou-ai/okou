@@ -210,6 +210,19 @@ describe("MCP chat status response coherence", () => {
       },
       messagePage: {
         ...messagePage,
+        messages: [],
+      },
+    }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+      messages,
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage: {
+        ...messagePage,
         messages: [
           {
             ...pageMessage,

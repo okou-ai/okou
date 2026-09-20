@@ -233,6 +233,12 @@ function waitStatusCoherenceIssues(
   if (!status.wait) {
     return issues;
   }
+  if (status.messagePage?.messages.length === 0) {
+    issues.push({
+      path: ["messagePage", "messages"],
+      message: "ready messagePage must contain readable output",
+    });
+  }
   if (status.messagePage && status.messages) {
     for (const [index, message] of status.messagePage.messages.entries()) {
       if (message.ref.threadId !== status.threadId) {
