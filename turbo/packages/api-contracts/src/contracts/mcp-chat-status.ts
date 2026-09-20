@@ -267,13 +267,11 @@ function waitStatusCoherenceIssues(
       message: "wait returnReason does not match its outcome",
     });
   }
-  if (
-    status.wait.returnReason === "output_ready" &&
-    status.lifecycle.output !== "ready"
-  ) {
+  if (waitReturnsReady !== (status.lifecycle.output === "ready")) {
     issues.push({
       path: ["wait", "returnReason"],
-      message: "output_ready requires ready lifecycle output",
+      message:
+        "a positive wait must return output_ready exactly when lifecycle output is ready",
     });
   }
   const retryable = isRetryableLifecycle(status.lifecycle);
