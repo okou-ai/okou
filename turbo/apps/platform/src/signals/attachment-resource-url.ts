@@ -8,6 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
@@ -31,6 +32,11 @@ export function isAuthenticatedAttachmentUrl(url: string): boolean {
   );
 }
 
+export interface ArtifactShareIdentity {
+  readonly target: ArtifactShareTarget;
+  readonly sharedThreadSnapshot?: true;
+}
+
 interface AttachmentPresignedToken {
   /** The temporary URL that authorizes this browser to load the resource. */
   readonly token: string;
@@ -40,6 +46,8 @@ interface AttachmentPresignedToken {
   readonly previewImageUrl?: string;
   /** Signed bytes served as an attachment, distinct from a hosted preview. */
   readonly downloadUrl?: string;
+  /** Stable resource identity returned while resolving an artifact reference. */
+  readonly artifactShareIdentity?: ArtifactShareIdentity;
   /**
    * Stable URL that another viewer can open. A signature cannot be converted
    * into one, so null means that the attachment remains private.
@@ -76,6 +84,12 @@ function createArtifactReferencePresignedToken$(
       contentType: response.body.contentType,
       previewImageUrl: response.body.previewImageUrl,
       downloadUrl: response.body.downloadUrl,
+      artifactShareIdentity: {
+        target: response.body.target,
+        ...(response.body.sharedThreadSnapshot
+          ? { sharedThreadSnapshot: true as const }
+          : {}),
+      },
       publicUrl: null,
     };
   });
@@ -173,6 +187,9 @@ export function createAttachmentPreviewSignals(
     const token = await get(presignedToken$);
     return token === null ? url : token.publicUrl;
   });
+  const artifactShareIdentity$ = computed(async (get) => {
+    return (await get(presignedToken$))?.artifactShareIdentity ?? null;
+  });
   const thumbnailUrl$ = computed(async (get) => {
     const token = await get(presignedToken$);
     return r2ImageTransformUrl(
@@ -186,6 +203,7 @@ export function createAttachmentPreviewSignals(
     presignedToken$,
     resourceUrl$,
     shareUrl$,
+    artifactShareIdentity$,
     thumbnailUrl$,
   };
 }

@@ -64,7 +64,13 @@ const canonical = artifactReferencePath(deploymentId, "index.html");
 const organizationUrl = `https://app.okou.ai${artifactReferencePath(shareId, "index.html")}`;
 const publicUrl = `https://${"b".repeat(24)}.okou.app/`;
 
-async function openArtifact(enabled = true) {
+async function openArtifact({
+  enabled = true,
+  repeatedResolutionUnavailable = false,
+}: {
+  enabled?: boolean;
+  repeatedResolutionUnavailable?: boolean;
+} = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Private report" })],
@@ -86,7 +92,17 @@ async function openArtifact(enabled = true) {
       },
     });
   });
+  let resolutionRequestCount = 0;
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    resolutionRequestCount += 1;
+    if (resolutionRequestCount > 1 && repeatedResolutionUnavailable) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Preview grant unavailable",
+        },
+      });
+    }
     return respond(200, {
       url: `https://pv-${"a".repeat(48)}.okou.app/`,
       expiresAt: "2099-01-01T00:00:00Z",
@@ -102,6 +118,11 @@ async function openArtifact(enabled = true) {
   });
   click(await findArtifactAction("Private report"));
   await screen.findByTestId("artifact-dialog-site-frame");
+  return {
+    readResolutionRequestCount() {
+      return resolutionRequestCount;
+    },
+  };
 }
 
 function sharingStatus(
@@ -297,6 +318,26 @@ test("failed permission saves retain the current audience and can be retried", a
       "true",
     );
   });
+});
+
+test("reopening a site reuses its resolved identity for sharing", async () => {
+  context.mocks.api(artifactSharesContract.status, ({ body, respond }) => {
+    expect(body).toStrictEqual({ kind: "html", id: deploymentId });
+    return respond(200, sharingStatus());
+  });
+  const { readResolutionRequestCount } = await openArtifact({
+    repeatedResolutionUnavailable: true,
+  });
+
+  click(action("button", "Close"));
+  await waitFor(() => {
+    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+  });
+  click(await findArtifactAction("Private report"));
+  await screen.findByTestId("artifact-dialog-site-frame");
+  await openShareMenu();
+  expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
+  expect(readResolutionRequestCount()).toBe(1);
 });
 
 test("permissions prefetch on lightbox open and pending reads use an in-menu skeleton", async () => {
@@ -501,7 +542,7 @@ test("status errors do not treat an owner as a recipient, and the action can be 
 });
 
 test("the shared rollout switch keeps the private share menu hidden", async () => {
-  await openArtifact(false);
+  await openArtifact({ enabled: false });
   expect(queryAction("button", "Share")).toBeUndefined();
 });
 
