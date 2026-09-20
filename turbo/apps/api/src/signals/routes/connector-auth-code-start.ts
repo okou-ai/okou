@@ -13,7 +13,7 @@ function normalizeAuthUrlResult(result: string | AuthUrlResult): AuthUrlResult {
   return typeof result === "string" ? { url: result } : result;
 }
 
-type PrepareConnectorAuthCodeStartWithMethodResult =
+type PrepareBuiltinConnectorAuthCodeStartWithMethodResult =
   | {
       readonly ok: true;
       readonly state: string;
@@ -25,11 +25,11 @@ type PrepareConnectorAuthCodeStartWithMethodResult =
       readonly reason: "auth_client_not_configured" | "wrong_grant_kind";
     };
 
-export function prepareConnectorAuthCodeStartWithMethod(args: {
+export function prepareBuiltinConnectorAuthCodeStartWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
   readonly redirectUri: string;
   readonly readEnv: ConnectorEnvReader;
-}): PrepareConnectorAuthCodeStartWithMethodResult {
+}): PrepareBuiltinConnectorAuthCodeStartWithMethodResult {
   if (args.method.grant.kind !== "auth-code" || !args.method.client) {
     return { ok: false, reason: "wrong_grant_kind" };
   }
@@ -49,7 +49,7 @@ export function prepareConnectorAuthCodeStartWithMethod(args: {
   };
 }
 
-export async function buildConnectorAuthCodeAuthUrlWithMethod(args: {
+export async function buildBuiltinConnectorAuthCodeAuthUrlWithMethod(args: {
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly method: ConnectorAuthMethodRuntimeConfig;

@@ -14,7 +14,7 @@ import {
   cliAuthTestEnableConnectorContract,
   cliAuthTestTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth-test";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   type DesktopAuthCallbackScheme,
@@ -596,7 +596,7 @@ export function createAuthDeviceApiActions(context: TestContext) {
     },
 
     async readUserConnectors(actor: ApiTestUser, agentId: string) {
-      const client = authDeviceApp(context)(userConnectorsContract);
+      const client = authDeviceApp(context)(userBuiltinConnectorsContract);
       const response = await accept(
         client.get({ params: { id: agentId }, headers: authenticate(actor) }),
         [200],

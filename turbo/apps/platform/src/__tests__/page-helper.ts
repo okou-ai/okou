@@ -307,7 +307,10 @@ async function setupPageAsync(
     options.appVersion ?? TEST_APP_VERSION,
     () => {
       setupRouter(store, (element) => {
-        const { unmount } = render(element);
+        const container = document.createElement("div");
+        container.id = "root";
+        document.body.appendChild(container);
+        const { unmount } = render(element, { container });
         pageRendered();
         signal.addEventListener("abort", unmount, {
           once: true,

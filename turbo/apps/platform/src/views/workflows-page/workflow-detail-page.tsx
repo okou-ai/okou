@@ -4051,6 +4051,7 @@ type AutomationCategoryKey =
   | "calendar"
   | "forms"
   | "notion"
+  | "github"
   | "integrations";
 
 type AutomationCreateOption = {
@@ -4105,6 +4106,31 @@ function buildIntegrationAutomationOptions({
       }),
       icon: MessageCircle,
     },
+    ...buildStripeInvoicePaidAutomationOptions(
+      stripeInvoicePaidAutomationsEnabled,
+    ),
+    {
+      kind: "webhook",
+      title: i18n.t(($) => {
+        return $.workflows.automations.webhook.createTitle;
+      }),
+      description: i18n.t(($) => {
+        return $.workflows.automations.webhook.createDescription;
+      }),
+      icon: LinkIcon,
+      ...(webhookTierEligible
+        ? {}
+        : {
+            badge: i18n.t(($) => {
+              return $.workflows.automations.webhook.paidBadge;
+            }),
+          }),
+    },
+  ];
+}
+
+function buildGithubAutomationOptions(): AutomationCreateOption[] {
+  return [
     {
       kind: "github-workflow-run",
       title: i18n.t(($) => {
@@ -4164,26 +4190,6 @@ function buildIntegrationAutomationOptions({
         return $.workflows.automations.github.issueCommentDescription;
       }),
       icon: BrandGithub,
-    },
-    ...buildStripeInvoicePaidAutomationOptions(
-      stripeInvoicePaidAutomationsEnabled,
-    ),
-    {
-      kind: "webhook",
-      title: i18n.t(($) => {
-        return $.workflows.automations.webhook.createTitle;
-      }),
-      description: i18n.t(($) => {
-        return $.workflows.automations.webhook.createDescription;
-      }),
-      icon: LinkIcon,
-      ...(webhookTierEligible
-        ? {}
-        : {
-            badge: i18n.t(($) => {
-              return $.workflows.automations.webhook.paidBadge;
-            }),
-          }),
     },
   ];
 }
@@ -4248,6 +4254,7 @@ const AUTOMATION_CATEGORY_CHIP: Readonly<
   calendar: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   forms: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
   notion: "bg-gray-500/10 text-gray-700 dark:text-gray-300",
+  github: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
   integrations: "bg-amber-500/10 text-amber-600 dark:text-amber-500",
 });
 
@@ -4369,6 +4376,7 @@ function buildAutomationCreateCategories({
     webhookTierEligible,
   });
   const notionOptions = buildNotionAutomationOptions();
+  const githubOptions = buildGithubAutomationOptions();
 
   const categories: readonly AutomationCreateCategory[] = [
     {
@@ -4410,6 +4418,14 @@ function buildAutomationCreateCategories({
       }),
       icon: BrandNotion,
       options: notionOptions,
+    },
+    {
+      key: "github",
+      label: i18n.t(($) => {
+        return $.workflows.automations.picker.github;
+      }),
+      icon: BrandGithub,
+      options: githubOptions,
     },
     {
       key: "integrations",

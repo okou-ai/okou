@@ -29,7 +29,12 @@ import {
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
-import { currentAgent$, agents$ } from "./agent.ts";
+import {
+  agents$,
+  currentAgent$,
+  reloadAgents$,
+  reloadAgentById$,
+} from "./agent.ts";
 import { accept } from "../lib/accept.ts";
 import {
   createDeferredPromise,
@@ -536,6 +541,9 @@ const initializeSshSelections$ = command(
   },
 );
 export const retrySsh$ = command(async ({ set }, signal: AbortSignal) => {
+  // Grant views also depend on shared Agent data that may have failed to load.
+  set(reloadAgents$);
+  set(reloadAgentById$);
   set(invalidateSsh$);
   await set(initializeSshSelections$, signal);
 });

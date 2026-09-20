@@ -153,14 +153,14 @@ test("A site the answer embeds presents itself instead of a broken image", async
 
   await setupSharedThreadPage(context, { host: "app.okou.ai" });
 
-  const card = await screen.findByTestId("markdown-site-preview");
+  const card = await screen.findByTestId("markdown-artifact-preview-html");
   expect(card).toHaveAttribute("href", siteUrl);
   expect(card).toHaveAttribute("target", "_blank");
   expect(card).toHaveAttribute("rel", "noopener noreferrer");
   expect(within(card).getByText("Launch plan review")).toBeInTheDocument();
-  expect(
-    within(card).getByTitle("Site preview for Launch plan review"),
-  ).toHaveAttribute("src", siteUrl);
+  await expect(
+    within(card).findByTitle("Site preview for Launch plan review"),
+  ).resolves.toHaveAttribute("src", siteUrl);
   expect(within(card).queryByRole("img")).not.toBeInTheDocument();
   expect(
     screen.queryByTestId("markdown-image-preview-loading"),

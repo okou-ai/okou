@@ -965,6 +965,7 @@ const INTEGRATION_USER_ID_TABLES = [
   "agentphone_user_agent_preferences",
   "agentphone_user_links",
   "feishu_org_connections",
+  "feishu_platform_user_agent_preferences",
   "feishu_user_agent_preferences",
   "github_user_links",
   "slack_org_connections",
@@ -979,22 +980,32 @@ const INTEGRATION_USER_ID_TABLES = [
 const INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS = [
   {
     constraintName: "agentphone_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "agentphone_user_agent_preferences",
   },
   {
+    constraintName: "feishu_platform_user_agent_preferences_pk",
+    definition: "PRIMARY KEY (user_id, org_id, platform)",
+    tableName: "feishu_platform_user_agent_preferences",
+  },
+  {
     constraintName: "feishu_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "feishu_user_agent_preferences",
   },
   {
     constraintName: "slack_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "slack_user_agent_preferences",
   },
   {
     constraintName: "teams_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "teams_user_agent_preferences",
   },
   {
     constraintName: "telegram_user_agent_preferences_user_id_org_id_pk",
+    definition: "PRIMARY KEY (user_id, org_id)",
     tableName: "telegram_user_agent_preferences",
   },
 ] as const;
@@ -1023,6 +1034,14 @@ const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
     isUnique: false,
     name: "idx_feishu_org_connections_user_id_installation",
     tableName: "feishu_org_connections",
+  },
+  {
+    definition:
+      "CREATE UNIQUE INDEX feishu_platform_user_agent_preferences_pk ON public.feishu_platform_user_agent_preferences USING btree (user_id, org_id, platform)",
+    isPrimary: true,
+    isUnique: true,
+    name: "feishu_platform_user_agent_preferences_pk",
+    tableName: "feishu_platform_user_agent_preferences",
   },
   {
     definition:
@@ -1145,15 +1164,7 @@ async function assertCanonicalIntegrationIdentitySchema(
   );
   assert.deepEqual(
     primaryKeys.rows,
-    INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS.map(
-      ({ constraintName, tableName }) => {
-        return {
-          constraintName,
-          definition: "PRIMARY KEY (user_id, org_id)",
-          tableName,
-        };
-      },
-    ),
+    INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS,
   );
 
   await client.query("SET search_path TO public, pg_catalog");
@@ -1187,6 +1198,74 @@ async function assertCanonicalIntegrationIdentitySchema(
   assert.deepEqual(indexes.rows, INTEGRATION_USER_ID_CANONICAL_INDEXES);
 }
 
+async function assertFeishuPlatformPreferenceConstraints(
+  client: Client,
+): Promise<void> {
+  const agentId = "00000000-0000-4000-8000-000000116401";
+  const userId = "platform-preference-test-user";
+  const orgId = "platform-preference-test-org";
+  const insertPreference = `
+    INSERT INTO "feishu_platform_user_agent_preferences"
+      ("user_id", "org_id", "platform", "selected_agent_id")
+    VALUES ($1, $2, $3, $4)
+  `;
+
+  try {
+    await client.query(
+      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
+       VALUES ($1, $2, $3, 'platform-preference-test')`,
+      [agentId, orgId, userId],
+    );
+    for (const platform of ["feishu", "lark"]) {
+      await client.query(insertPreference, [userId, orgId, platform, agentId]);
+    }
+    await expectDatabaseError(client, {
+      code: "23505",
+      messageIncludes: "feishu_platform_user_agent_preferences_pk",
+      query: insertPreference,
+      values: [userId, orgId, "lark", agentId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chk_feishu_platform_user_agent_preferences_platform",
+      query: insertPreference,
+      values: [userId, orgId, "unknown", agentId],
+    });
+    await expectDatabaseError(client, {
+      code: "23503",
+      query: insertPreference,
+      values: [
+        `${userId}-missing-agent`,
+        orgId,
+        "lark",
+        "00000000-0000-4000-8000-000000116402",
+      ],
+    });
+
+    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    const remaining = await client.query<{
+      platform: string;
+      selectedAgentId: string | null;
+    }>(
+      `SELECT "platform", "selected_agent_id" AS "selectedAgentId"
+       FROM "feishu_platform_user_agent_preferences"
+       WHERE "user_id" = $1 AND "org_id" = $2
+       ORDER BY "platform"`,
+      [userId, orgId],
+    );
+    assert.deepEqual(remaining.rows, [
+      { platform: "feishu", selectedAgentId: null },
+      { platform: "lark", selectedAgentId: null },
+    ]);
+  } finally {
+    await client.query(
+      `DELETE FROM "feishu_platform_user_agent_preferences" WHERE "org_id" = $1`,
+      [orgId],
+    );
+    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+  }
+}
+
 async function validateCanonicalIntegrationIdentitySchema(
   dbUrl: string,
 ): Promise<void> {
@@ -1198,6 +1277,7 @@ async function validateCanonicalIntegrationIdentitySchema(
 
   try {
     await assertCanonicalIntegrationIdentitySchema(client);
+    await assertFeishuPlatformPreferenceConstraints(client);
     console.log(
       "   ✅ Canonical integration identity columns, keys, and indexes match\n",
     );
@@ -1223,6 +1303,13 @@ type PermanentFunction = {
 // Exported from a database built by the existing migration chain. Extension-owned
 // pgcrypto and vector functions are deliberately absent from the function list.
 const EXPECTED_PERMANENT_TRIGGERS = [
+  {
+    definition:
+      "CREATE TRIGGER mirror_hosted_site_active_version BEFORE UPDATE OF active_deployment_id ON public.hosted_sites FOR EACH ROW EXECUTE FUNCTION mirror_hosted_site_active_version()",
+    schemaName: "public",
+    tableName: "hosted_sites",
+    triggerName: "mirror_hosted_site_active_version",
+  },
   {
     definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
@@ -1352,6 +1439,13 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
+  {
+    bodyHash: "a59eea5918c16453c35e349862d6059d",
+    functionName: "mirror_hosted_site_active_version",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
   {
     bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
     functionName: "billing_usage_source",
@@ -2774,6 +2868,87 @@ async function validateCustomConnectorOauthModeConstraints(
   );
 }
 
+async function validateConnectorAutomaticOAuthConstraints(
+  dbUrl: string,
+): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  const accountId = "73000000-0000-4000-8000-000000000001";
+  const registrationId = "73000000-0000-4000-8000-000000000002";
+  const contractHash = "a".repeat(64);
+  try {
+    await client.query(
+      `INSERT INTO connectors (id, connector_slug, auth_method, automatic_auth_type, storage_version, org_id, user_id) VALUES ($1, 'migration-mcp', 'smart-connect', 'none', 1, 'migration-builtin-org', 'migration-builtin-user')`,
+      [accountId],
+    );
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connectors SET token_expires_at = now() WHERE id = $1`,
+      values: [accountId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connectors SET automatic_auth_type = 'manual' WHERE id = $1`,
+      values: [accountId],
+    });
+    await client.query(
+      `UPDATE connectors SET automatic_auth_type = 'oauth' WHERE id = $1`,
+      [accountId],
+    );
+    await client.query(
+      `INSERT INTO connector_dcr_registrations (id, org_id, connector_slug, auth_method, contract_hash, issuer, client_id, token_endpoint_auth_method, redirect_uri, issued_at) VALUES ($1, 'migration-builtin-org', 'migration-mcp', 'smart-connect', $2, 'https://issuer.example.test', 'builtin-client', 'none', 'https://api.example.test/callback', now())`,
+      [registrationId, contractHash],
+    );
+    const insertBinding = `INSERT INTO connector_account_oauth_bindings (connector_account_id, org_id, user_id, connector_slug, auth_method, storage_version, contract_hash, endpoint, issuer, resource, token_endpoint, client_id, token_endpoint_auth_method, registration_method, dcr_registration_id) VALUES ($1, $2, 'migration-builtin-user', 'migration-mcp', 'smart-connect', 1, $3, 'https://mcp.example.test', 'https://issuer.example.test', 'https://mcp.example.test', 'https://issuer.example.test/token', 'builtin-client', 'none', 'dcr', $4)`;
+    await expectDatabaseError(client, {
+      code: "23503",
+      query: insertBinding,
+      values: [accountId, "foreign-org", contractHash, registrationId],
+    });
+    await expectDatabaseError(client, {
+      code: "23503",
+      query: insertBinding,
+      values: [
+        accountId,
+        "migration-builtin-org",
+        "b".repeat(64),
+        registrationId,
+      ],
+    });
+    await client.query(insertBinding, [
+      accountId,
+      "migration-builtin-org",
+      contractHash,
+      registrationId,
+    ]);
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connector_account_oauth_bindings SET registration_method = 'cimd' WHERE connector_account_id = $1`,
+      values: [accountId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      query: `UPDATE connector_dcr_registrations SET token_endpoint_auth_method = 'client_secret_basic' WHERE id = $1`,
+      values: [registrationId],
+    });
+    await client.query(`DELETE FROM connectors WHERE id = $1`, [accountId]);
+    const bindings = await client.query(
+      `SELECT 1 FROM connector_account_oauth_bindings WHERE connector_account_id = $1`,
+      [accountId],
+    );
+    assert.equal(bindings.rowCount, 0);
+    await client.query(
+      `DELETE FROM connector_dcr_registrations WHERE id = $1`,
+      [registrationId],
+    );
+  } finally {
+    await client.end();
+  }
+  console.log(
+    "   ✅ Builtin Automatic OAuth retains method identity and rejects cross-owner or cross-contract bindings\n",
+  );
+}
+
 async function validateCustomConnectorSkillVersionPair(
   dbUrl: string,
 ): Promise<void> {
@@ -3360,6 +3535,7 @@ async function main(): Promise<void> {
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateConnectorCatalogFinalConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
+    await validateConnectorAutomaticOAuthConstraints(dbUrl1);
     await validateCustomConnectorSkillVersionPair(dbUrl1);
 
     // Step 2: Backup and regenerate migrations
@@ -3381,6 +3557,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateOfficialAutomationResultEmailSchema(dbUrl2);
+    await validateConnectorAutomaticOAuthConstraints(dbUrl2);
 
     // Step 4: Restore original migrations
     await restoreMigrations();

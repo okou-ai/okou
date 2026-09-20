@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
-import type { HostedSiteManifest } from "@okouai/db/schema/hosted-site";
+import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
 import { generateHostedSitesPresignedGetUrl } from "../external/s3";
 

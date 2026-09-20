@@ -672,7 +672,7 @@ test("Inspect empty IndexedDB storage before the first snapshot arrives", async 
   expect(within(snapshot).queryByRole("definition")).not.toBeInTheDocument();
 });
 
-test("Measure the threads inside a singleton snapshot on demand", async () => {
+async function setupSnapshotMeasurement() {
   const agentId = crypto.randomUUID();
   const snapshotRequested = context.mocks.deferred<void>();
   const releaseSnapshot = context.mocks.deferred<void>();
@@ -739,13 +739,24 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
     name: "Thread snapshot",
   });
   expect(within(snapshot).queryByRole("definition")).not.toBeInTheDocument();
+  return { diagnostics, details, snapshot };
+}
 
+test("Measure the threads inside a singleton snapshot on demand", async () => {
+  const { snapshot } = await setupSnapshotMeasurement();
   click(buttonWithText(snapshot, "Measure snapshot"));
   await within(snapshot).findByText("Threads in snapshot");
   const values = within(snapshot).getAllByRole("definition");
   expect(values[0]).toHaveTextContent("3");
   expect(values[1]).toHaveTextContent(/^[1-9][\d.]*KB$/u);
   expect(values[2]).toHaveTextContent(/^[\d,.]+ ms$/u);
+});
+
+test("Refresh clears a snapshot measurement and allows measuring the same singleton again", async () => {
+  const { diagnostics, details, snapshot } = await setupSnapshotMeasurement();
+  click(buttonWithText(snapshot, "Measure snapshot"));
+  await within(snapshot).findByText("Threads in snapshot");
+  expect(within(snapshot).getAllByRole("definition")[0]).toHaveTextContent("3");
 
   click(buttonWithText(diagnostics, "Refresh"));
   await waitFor(() => {

@@ -31,19 +31,43 @@ function button(name: string, root: ParentNode = document.body) {
   return element;
 }
 
-async function setupComposer(enabled = true, taskChips = false) {
+async function setupComposer(
+  enabled = true,
+  taskChips = false,
+  chatPreference = true,
+) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.PaidToolControls]: enabled,
+      [FeatureSwitchKey.ChatPreference]: chatPreference,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: taskChips,
-      [FeatureSwitchKey.IntroVideo]: true,
     },
   });
   return findComposerEditor();
 }
+
+test("Paid tool guidance requires both UI rollouts", async () => {
+  mockTemplateChat();
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  await setupComposer(true, false, false);
+  const dialog = await openTemplatePicker(
+    userEvent.setup({ delay: null }),
+    "Illustration",
+  );
+  expect(
+    within(dialog).queryByText("Loading your tool settings…"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText(
+      "Image generation is disabled in your paid tool settings.",
+    ),
+  ).not.toBeInTheDocument();
+});
 
 async function selectCreation(mode: "image" | "video") {
   const user = userEvent.setup({ delay: null });
@@ -212,7 +236,7 @@ test("Gallery notices follow each paid branch without blocking unrelated preview
   await within(dialog).findByText(
     "Avatar video generation is disabled in your paid tool settings.",
   );
-  click(tabByText("Creative video"));
+  click(tabByText("Video"));
   await within(dialog).findByLabelText(
     `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
   );
@@ -229,7 +253,7 @@ test("A selected disabled video template can still be discussed without a Create
   const editor = await setupComposer();
   const dialog = await openTemplatePicker(
     userEvent.setup({ delay: null }),
-    "Creative video",
+    "Video",
   );
   await within(dialog).findByText(
     "Video generation is disabled in your paid tool settings.",

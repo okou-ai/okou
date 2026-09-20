@@ -13,7 +13,7 @@ import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { expect, test } from "vitest";
 
@@ -142,7 +142,7 @@ function mockConnectorSurface(
     },
   );
   testContextValue.mocks.api(
-    userConnectorsContract.get,
+    userBuiltinConnectorsContract.get,
     ({ params, respond }) => {
       return respond(200, {
         enabledConnectorSlugs: [...(builtInByAgent.get(params.id) ?? [])],
@@ -150,7 +150,7 @@ function mockConnectorSurface(
     },
   );
   testContextValue.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.update,
     async ({ body, params, respond }) => {
       await options.onBuiltInSave?.({
         agentId: params.id,

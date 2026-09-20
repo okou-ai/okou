@@ -17,6 +17,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { mockEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -28,6 +30,7 @@ import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflo
 const context = testContext();
 const CRON_SECRET = "official-workflow-catalog-cron-secret";
 const TEST_SUFFIX = randomUUID().replaceAll("-", "").slice(0, 12);
+serializeOfficialWorkflowCatalogTests();
 
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
@@ -184,18 +187,28 @@ function syncClient(candidate: unknown) {
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await accept(
-    syncClient(candidate).sync({ headers: cronHeaders() }),
-    [200],
+  return await withOwnedPiStableContextGlobalInvalidationFixture(
+    [],
+    async () => {
+      return await accept(
+        syncClient(candidate).sync({ headers: cronHeaders() }),
+        [200],
+      );
+    },
   );
 }
 
 async function syncDeployedCatalog() {
-  return await accept(
-    setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-      cronOfficialWorkflowCatalogContract,
-    ).sync({ headers: cronHeaders() }),
-    [200],
+  return await withOwnedPiStableContextGlobalInvalidationFixture(
+    [],
+    async () => {
+      return await accept(
+        setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+          cronOfficialWorkflowCatalogContract,
+        ).sync({ headers: cronHeaders() }),
+        [200],
+      );
+    },
   );
 }
 

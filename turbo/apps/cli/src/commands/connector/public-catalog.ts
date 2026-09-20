@@ -4,7 +4,7 @@ import { findConnectorBySelector } from "./connector-selector";
 
 export type PublicConnectorStatus = ConnectorCatalogStatus;
 
-interface ConnectorSearchItem {
+interface ConnectorDiscoverySearchItem {
   readonly slug: string;
   readonly label: string;
   readonly description: string;
@@ -18,13 +18,13 @@ interface ConnectorSearchItem {
   }[];
 }
 
-interface ConnectorSearchResult<T extends ConnectorSearchItem> {
+interface ConnectorSearchResult<T extends ConnectorDiscoverySearchItem> {
   readonly connector: T;
   readonly score: number;
   readonly matchedField: string;
 }
 
-interface ConnectorSearchOutput<T extends ConnectorSearchItem> {
+interface ConnectorSearchOutput<T extends ConnectorDiscoverySearchItem> {
   readonly results: readonly ConnectorSearchResult<T>[];
   readonly total: number;
 }
@@ -45,7 +45,7 @@ function tokenize(input: string): Set<string> {
   return tokens;
 }
 
-function publicStrings(connector: ConnectorSearchItem): string[] {
+function publicStrings(connector: ConnectorDiscoverySearchItem): string[] {
   return [
     connector.slug,
     connector.label,
@@ -76,7 +76,7 @@ function best(candidates: readonly (ScoreHit | null)[]): ScoreHit | null {
 function scoreExact(
   keywordLower: string,
   skipPrivateIdentifierMatches: boolean,
-  connector: ConnectorSearchItem,
+  connector: ConnectorDiscoverySearchItem,
 ): ScoreHit | null {
   if (connector.slug.toLowerCase() === keywordLower) {
     return { score: 100, matchedField: "slug" };
@@ -112,7 +112,7 @@ function scoreExact(
 function scoreSubstring(
   keywordLower: string,
   skipPrivateIdentifierMatches: boolean,
-  connector: ConnectorSearchItem,
+  connector: ConnectorDiscoverySearchItem,
 ): ScoreHit | null {
   const candidates: ScoreHit[] = [];
   if (connector.slug.toLowerCase().includes(keywordLower)) {
@@ -158,7 +158,7 @@ function scoreSubstring(
 
 function scoreTokens(
   keywordTokens: ReadonlySet<string>,
-  connector: ConnectorSearchItem,
+  connector: ConnectorDiscoverySearchItem,
 ): ScoreHit | null {
   const candidateTokens = new Set<string>();
   for (const source of publicStrings(connector)) {
@@ -183,7 +183,7 @@ function scoreConnector(
   keywordLower: string,
   keyword: string,
   keywordTokens: ReadonlySet<string>,
-  connector: ConnectorSearchItem,
+  connector: ConnectorDiscoverySearchItem,
 ): ScoreHit | null {
   const skipPrivateIdentifierMatches =
     /^[A-Za-z0-9_]+$/.test(keyword) && keyword.includes("_");
@@ -199,7 +199,7 @@ function scoreConnector(
   return hit;
 }
 
-export function searchConnectorCatalog<T extends ConnectorSearchItem>(
+export function searchConnectorCatalog<T extends ConnectorDiscoverySearchItem>(
   connectors: readonly T[],
   keyword: string,
   limit: number,

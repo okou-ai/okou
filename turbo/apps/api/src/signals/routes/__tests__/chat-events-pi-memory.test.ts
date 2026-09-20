@@ -1731,6 +1731,7 @@ describe("CHAT-02: model-first provider policies", () => {
       slack: null,
       teams: null,
       feishu: null,
+      lark: null,
       email: null,
       telegram: null,
       agentphone: null,

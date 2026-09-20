@@ -46,6 +46,7 @@ import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
 import { setupTelegramConnectPage$ } from "./okou-page/telegram-connect-page.ts";
 import { setupTelegramSettingsPage$ } from "./okou-page/telegram-settings-page.ts";
 import { setupSshConnectorPage$ } from "./okou-page/ssh-connector-page.ts";
+import { setupVncConnectorPage$ } from "./okou-page/vnc-connector-page.ts";
 import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
@@ -96,6 +97,7 @@ import {
   setupSignInV1Page$,
   setupSignUpV1Page$,
 } from "./auth-v1-page-setup.ts";
+import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
@@ -235,6 +237,10 @@ const ROUTE_CONFIG = [
     path: ROUTES.signUpCatchAll,
     setup: setupPageWrapper(setupSignUpV1Page$),
   },
+  {
+    path: ROUTES.oauthConsent,
+    setup: setupPageWrapper(setupOAuthConsentPage$),
+  },
 
   // --- New routes ---
   {
@@ -312,6 +318,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectorSsh,
     setup: setupAuthSidebarPageWrapper(setupSshConnectorPage$),
+  },
+  {
+    path: ROUTES.connectorVnc,
+    setup: setupAuthSidebarPageWrapper(setupVncConnectorPage$),
   },
   {
     path: ROUTES.agentIdeas,

@@ -20,7 +20,7 @@ export type GenerationTarget =
   | "dashboard-design"
   | "mobile-app-design"
   | "poster"
-  | "intro-video"
+  | "video"
   | "report"
   | "docs-design";
 
@@ -357,8 +357,8 @@ const OPEN_DESIGN_SKILL_TARGETS = {
   ],
   deck: ["presentation"],
   image: ["image", "poster"],
-  video: ["intro-video"],
-  template: ["intro-video"],
+  video: ["video"],
+  template: ["video"],
   "design-system": [],
 } as const satisfies Record<
   "prototype" | "deck" | "image" | "video" | "template" | "design-system",
@@ -1155,7 +1155,7 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     description:
       "Audio generation skill — jingles, beds, voiceover, and sound effects. Routes music requests to Suno V5 / Udio / Lyria, speech to MiniMax TTS / FishAudio / ElevenLabs V3, and SFX to ElevenLabs SFX or AudioCraft. Output is one MP3/WAV file…",
     source: { path: "design-templates/audio-jingle" },
-    targets: ["intro-video"],
+    targets: ["video"],
   },
   {
     id: "template:blog-post",
@@ -1338,7 +1338,7 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     description:
       "HTML video composition skill — captions, voiceover, audio-reactive animation, scene transitions, and timing in HyperFrames HTML. For CLI commands see hyperframes-cli.",
     source: { path: "design-templates/hyperframes" },
-    targets: ["intro-video"],
+    targets: ["video"],
   },
   {
     id: "template:ib-pitch-book",
@@ -1447,7 +1447,7 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     description:
       "A single-frame motion-design composition with looping CSS animations — rotating type ring, animated globe, ticking timer, parallax labels. Renders as a hero video poster you can hand straight to HyperFrames or any keyframe-based exporter.",
     source: { path: "design-templates/motion-frames" },
-    targets: ["intro-video"],
+    targets: ["video"],
   },
   {
     id: "template:open-design-landing",
@@ -1566,7 +1566,7 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     description:
       "A pixel / sprite-style animated explainer slide — full-bleed cream stage, bold display year, animated pixel-art mascot (e.g. Hanafuda card, mushroom, or 8-bit console), kinetic Japanese display type, ticking timeline ribbon. Reads like a…",
     source: { path: "design-templates/sprite-animation" },
-    targets: ["intro-video"],
+    targets: ["video"],
   },
   {
     id: "template:team-okrs",
@@ -1609,7 +1609,7 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
     description:
       "Short-form video generation skill — 3-10 second clips for product reveals, motion teasers, ambient loops. Defaults to Seedance 2 but works the same with Kling 3 / 4, Veo 3 or Sora 2. Output is one MP4 saved to the project folder. When th…",
     source: { path: "design-templates/video-shortform" },
-    targets: ["intro-video"],
+    targets: ["video"],
   },
   {
     id: "template:waitlist-page",

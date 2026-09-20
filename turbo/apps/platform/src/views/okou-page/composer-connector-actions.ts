@@ -1,8 +1,8 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
 import {
-  connectConnectorNoAuthAndSettle$,
-  connectConnectorOAuthAuthCodeAndSettle$,
+  connectBuiltinConnectorNoAuthAndSettle$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
 } from "../../signals/okou-page/settings/connectors.ts";
 
 export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
@@ -16,10 +16,10 @@ export function useComposerConnectorActions(signals: ComposerConnectorSignals) {
     signals.accounts.useDefault$,
   );
   const [browserAuth, connectBrowserAuth] = useLoadableSet(
-    connectConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
   const [noAuth, connectNoAuth] = useLoadableSet(
-    connectConnectorNoAuthAndSettle$,
+    connectBuiltinConnectorNoAuthAndSettle$,
   );
   return {
     savingAuthorization: authorization.state === "loading",

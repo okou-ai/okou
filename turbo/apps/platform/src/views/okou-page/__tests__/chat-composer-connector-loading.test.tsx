@@ -1,4 +1,4 @@
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -129,7 +129,7 @@ test("Allow authorization retry after a rejected save", async () => {
     catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
-  context.mocks.api(userConnectorsContract.update, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
     return respond(500, {
       error: {
         code: "INTERNAL_ERROR",
@@ -149,10 +149,10 @@ test("Allow authorization retry after a rejected save", async () => {
       "true",
     );
   });
-  context.mocks.api(userConnectorsContract.update, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [] });
   });
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [] });
   });
   click(screen.getByLabelText("Remove GitHub"));

@@ -77,7 +77,6 @@ export async function setArtifactAudience(
     status.url &&
     status.selectedTarget?.kind === target.kind &&
     status.selectedTarget.id === target.id &&
-    status.selectedVersion === status.candidateVersion &&
     !(
       (audience === "organization" || target.kind === "html") &&
       status.shortUrl === null

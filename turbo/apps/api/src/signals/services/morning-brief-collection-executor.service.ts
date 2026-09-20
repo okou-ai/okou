@@ -120,7 +120,14 @@ type MorningBriefCollectionExecution =
  */
 interface AdmittedCollection {
   readonly admission: MorningBriefCollectionAdmission;
-  readonly botToken: string;
+  /**
+   * Null for a scope that reads no Slack.
+   *
+   * An empty string here would be a credential-shaped value that no
+   * installation produced, and the Slack collector would carry it to the
+   * provider instead of refusing.
+   */
+  readonly botToken: string | null;
 }
 
 type AdmissionResult =
@@ -421,11 +428,21 @@ const admitMorningBriefCollection$ = command(
     args: {
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
+      /**
+       * The scope being admitted. Defaults to the Slack-only collection.
+       *
+       * A source-independent collection pins no Slack binding, so requiring one
+       * here would refuse an owner who never had Slack and would make adding
+       * Slack later look like a changed binding for a brief that never read it.
+       */
+      readonly collectionKind?: string;
     },
     signal: AbortSignal,
   ): Promise<AdmissionResult> => {
     const db = set(writeDb$);
     const { owner } = args;
+    const collectionKind =
+      args.collectionKind ?? MORNING_BRIEF_COLLECTION_KIND_SLACK;
     const local = await resolveLocalMorningBriefInstallation(db, owner);
     signal.throwIfAborted();
     if (local.kind !== "resolved") {
@@ -442,22 +459,26 @@ const admitMorningBriefCollection$ = command(
       slackUserInstallation({ orgId: owner.orgId, userId: owner.userId }),
     );
     signal.throwIfAborted();
-    if (installation.kind !== "connected") {
+    const slackRequired =
+      collectionKind === MORNING_BRIEF_COLLECTION_KIND_SLACK;
+    if (slackRequired && installation.kind !== "connected") {
       return {
         kind: "not-executed",
         reason: slackBindingSkipReason(installation.kind),
       };
     }
+    const slack =
+      slackRequired && installation.kind === "connected" ? installation : null;
 
     return {
       kind: "admitted",
       admitted: {
-        botToken: installation.botToken,
+        botToken: slack?.botToken ?? null,
         admission: {
           owner,
           memberCreatedAt: local.memberCreatedAt,
           scheduledFor: args.scheduledFor,
-          collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
+          collectionKind,
           windowStart: new Date(
             args.scheduledFor.getTime() - COLLECTION_WINDOW_MS,
           ),
@@ -467,8 +488,8 @@ const admitMorningBriefCollection$ = command(
           workflowId: local.workflowId,
           automationId: local.automationId,
           agentId: local.agentId,
-          slackWorkspaceId: installation.workspaceId,
-          slackUserId: installation.slackUserId,
+          slackWorkspaceId: slack?.workspaceId ?? null,
+          slackUserId: slack?.slackUserId ?? null,
         },
       },
     };
@@ -599,14 +620,7 @@ async function morningBriefLocalAuthorityStillCurrent(
   if (local.kind !== "resolved") {
     return local;
   }
-  const binding = await loadSlackUserBinding(db, owner);
-  if (binding.kind !== "connected") {
-    return {
-      kind: "not-executed",
-      reason: slackBindingSkipReason(binding.kind),
-    };
-  }
-  return morningBriefCollectionBindingMatches(occurrence, {
+  const comparable = {
     owner,
     memberCreatedAt: local.memberCreatedAt,
     scheduledFor: occurrence.scheduledFor,
@@ -618,6 +632,30 @@ async function morningBriefLocalAuthorityStillCurrent(
     workflowId: local.workflowId,
     automationId: local.automationId,
     agentId: local.agentId,
+  };
+  // A source-independent occurrence pins no Slack binding, so there is nothing
+  // about Slack for it to still match. Demanding a live Slack installation here
+  // would make an owner who never had one fail a check about an authority they
+  // were never admitted under — and adding one later would look like a changed
+  // binding for a brief that never read it.
+  if (occurrence.collectionKind !== MORNING_BRIEF_COLLECTION_KIND_SLACK) {
+    return morningBriefCollectionBindingMatches(occurrence, {
+      ...comparable,
+      slackWorkspaceId: null,
+      slackUserId: null,
+    })
+      ? { kind: "current" }
+      : { kind: "binding-changed" };
+  }
+  const binding = await loadSlackUserBinding(db, owner);
+  if (binding.kind !== "connected") {
+    return {
+      kind: "not-executed",
+      reason: slackBindingSkipReason(binding.kind),
+    };
+  }
+  return morningBriefCollectionBindingMatches(occurrence, {
+    ...comparable,
     slackWorkspaceId: binding.installation.slackWorkspaceId,
     slackUserId: binding.slackUserId,
   })
@@ -642,7 +680,7 @@ async function morningBriefLocalAuthorityStillCurrent(
  * Clerk membership generation is carried over from the occurrence — because a
  * transaction must never be held open across a network round trip.
  */
-async function admitCollectionCompletion(
+export async function admitCollectionCompletion(
   tx: Tx,
   occurrence: MorningBriefCollectionOccurrenceRow,
   signal: AbortSignal,
@@ -684,6 +722,7 @@ export const currentMorningBriefCollectionAuthority$ = command(
     args: {
       readonly owner: MorningBriefCollectionOwner;
       readonly scheduledFor: Date;
+      readonly collectionKind?: string;
     },
     signal: AbortSignal,
   ): Promise<
@@ -897,6 +936,17 @@ export const executeMorningBriefSlackCollection$ = command(
         MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
       ),
     );
+    if (
+      botToken === null ||
+      admission.slackUserId === null ||
+      admission.slackWorkspaceId === null
+    ) {
+      // A Slack occurrence always pins a real binding; these are nullable only
+      // so a source-independent occurrence can honestly carry none.
+      throw new Error(
+        "Morning Brief Slack collection admitted without a binding",
+      );
+    }
     const collected = await collectMorningBriefSlackBundle(
       {
         botToken,

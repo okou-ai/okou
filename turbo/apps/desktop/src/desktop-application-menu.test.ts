@@ -48,7 +48,6 @@ async function application() {
     fetchFeatureSwitches: async () =>
       new Response(JSON.stringify({ effectiveSwitches: { _debug: true } })),
     setFilesystemPluginFeatureEnabled: () => {},
-    setScreenRecordingFeatureEnabled: () => {},
     onChange: () => menu.refresh(),
   });
   const menu = new DesktopApplicationMenu({

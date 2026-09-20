@@ -1039,7 +1039,7 @@ describe("Morning Brief platform-funded generation", () => {
     await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
   });
 
-  it("drops an expired preview result and leaves other owners alone", async () => {
+  it("drops expired content while retaining its replay fence and leaves other owners alone", async () => {
     const f = await fixture();
     const other = await fixture();
     slackWithMessages();
@@ -1054,7 +1054,11 @@ describe("Morning Brief platform-funded generation", () => {
     expect(response.body.result).toBe(
       "collection-completed-without-generation",
     );
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.contentPurgedAt).not.toBeNull();
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.resultBytes).toBeNull();
     await expect(readMorningBriefGenerations(other)).resolves.toHaveLength(1);
   });
 
@@ -2604,7 +2608,9 @@ describe("Morning Brief platform-funded generation release fence", () => {
     expect(response.body.result).toBe(
       "collection-completed-without-generation",
     );
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.contentPurgedAt).not.toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
     // The anonymous receipt outlives the content it paid for.
     await expect(
       readPlatformGenerationReceipts([attemptId]),
@@ -2731,7 +2737,11 @@ describe("Morning Brief platform-funded generation retention", () => {
     // removes the content, on an existing tick rather than a new scheduler.
     await expect(runRetentionMaintenance([f, other])).resolves.toBe(1);
 
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.contentPurgedAt).not.toBeNull();
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.resultBytes).toBeNull();
     const [survivor] = await readMorningBriefGenerations(other);
     expect(survivor?.state).toBe("succeeded");
     expect(survivor?.resultMarkdown).toContain("# Release readiness");
@@ -2740,12 +2750,14 @@ describe("Morning Brief platform-funded generation retention", () => {
       readPlatformGenerationReceipts([expiring.attemptId, live.attemptId]),
     ).resolves.toHaveLength(2);
 
-    // A purged slot is a completed collection that holds no generation, so the
-    // occurrence still refuses a second invocation for the same anchor.
+    // A purged slot keeps only a content-free invocation fence, so the same
+    // anchor cannot be called again under this or a widened source contract.
     const after = await accept(generate(f), [200]);
     expect(after.body.result).toBe("collection-completed-without-generation");
     expect(traffic.bodies).toHaveLength(2);
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [stillFenced] = await readMorningBriefGenerations(f);
+    expect(stillFenced?.attemptId).toBe(expiring.attemptId);
+    expect(stillFenced?.resultMarkdown).toBeNull();
   });
 });
 
@@ -3780,6 +3792,21 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     return generation.attemptId;
   }
 
+  it("keeps the replay fence through the inclusive seven-day anchor boundary", async () => {
+    const f = await fixture();
+    const attemptId = await storedGeneration(f);
+    mockNow(ANCHOR_MS + 7 * 24 * 60 * 60 * 1000);
+
+    // The anchor validator rejects only instants older than seven days. At this
+    // exact boundary maintenance may purge content, but not the cross-kind and
+    // cross-version proof that a provider request already happened.
+    await expect(runRetentionMaintenance([f])).resolves.toBe(1);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.attemptId).toBe(attemptId);
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.contentPurgedAt).not.toBeNull();
+  });
+
   it("releases no cached markdown when retention is reached after the row lock wins", async () => {
     const f = await fixture();
     const attemptId = await storedGeneration(f);
@@ -3807,7 +3834,14 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     const [row] = await readMorningBriefGenerations(f);
     expect(row?.state).toBe("succeeded");
     await expect(runRetentionMaintenance([f])).resolves.toBe(1);
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.attemptId).toBe(attemptId);
+    expect(purged?.state).toBe("succeeded");
+    expect(purged?.decision).toBe("deliver");
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.resultBytes).toBeNull();
+    expect(purged?.contentPurgedAt?.getTime()).toBe(stored.expiresAt.getTime());
     await expect(
       readPlatformGenerationReceipts([attemptId]),
     ).resolves.toHaveLength(1);
@@ -3837,7 +3871,14 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     expect(response.body.result).toBe(
       "collection-completed-without-generation",
     );
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.attemptId).toBe(attemptId);
+    expect(purged?.state).toBe("succeeded");
+    expect(purged?.decision).toBe("deliver");
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.resultBytes).toBeNull();
+    expect(purged?.contentPurgedAt?.getTime()).toBe(stored.expiresAt.getTime());
     await expect(
       readPlatformGenerationReceipts([attemptId]),
     ).resolves.toHaveLength(1);

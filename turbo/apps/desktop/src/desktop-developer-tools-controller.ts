@@ -4,7 +4,6 @@ import { latestWinsSingleFlight } from "./desktop-async-control";
 const OKOU_DEBUG_FEATURE_SWITCH_KEY = "_debug";
 const COMPUTER_USE_DESKTOP_PLUGINS_FEATURE_SWITCH_KEY =
   "computerUseDesktopPlugins";
-const INTRO_VIDEO_FEATURE_SWITCH_KEY = "introVideo";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -32,11 +31,6 @@ interface DeveloperToolsControllerOptions {
   readonly fetchFeatureSwitches: () => Promise<Response>;
   /** Propagates the `computerUseDesktopPlugins` switch to the plugin manager. */
   readonly setFilesystemPluginFeatureEnabled: (enabled: boolean) => void;
-  /**
-   * Propagates the `introVideo` switch to the recorder. Turning it off must
-   * release the native helper, not just hide the entry point.
-   */
-  readonly setScreenRecordingFeatureEnabled: (enabled: boolean) => void;
   /** Zero-arg "something changed" signal; defaults to a no-op. */
   readonly onChange?: () => void;
   /** Called when a refresh fails; availability is reset to false first. */
@@ -54,7 +48,6 @@ export class DeveloperToolsController {
   private readonly setFilesystemPluginFeatureEnabled: (
     enabled: boolean,
   ) => void;
-  private readonly setScreenRecordingFeatureEnabled: (enabled: boolean) => void;
   private readonly onChange: () => void;
   private readonly logRefreshError: (error: unknown) => void;
 
@@ -74,8 +67,6 @@ export class DeveloperToolsController {
     this.fetchFeatureSwitches = options.fetchFeatureSwitches;
     this.setFilesystemPluginFeatureEnabled =
       options.setFilesystemPluginFeatureEnabled;
-    this.setScreenRecordingFeatureEnabled =
-      options.setScreenRecordingFeatureEnabled;
     this.onChange = options.onChange ?? (() => {});
     this.logRefreshError = options.logRefreshError ?? (() => {});
   }
@@ -133,7 +124,6 @@ export class DeveloperToolsController {
       if (response.status === 401) {
         this.setAvailability(false);
         this.setFilesystemPluginFeatureEnabled(false);
-        this.setScreenRecordingFeatureEnabled(false);
         this.onChange();
         return;
       }
@@ -154,15 +144,11 @@ export class DeveloperToolsController {
           COMPUTER_USE_DESKTOP_PLUGINS_FEATURE_SWITCH_KEY,
         ),
       );
-      this.setScreenRecordingFeatureEnabled(
-        featureSwitchEnabledFromBody(body, INTRO_VIDEO_FEATURE_SWITCH_KEY),
-      );
       this.onChange();
     } catch (error) {
       if (!current()) return;
       this.setAvailability(false);
       this.setFilesystemPluginFeatureEnabled(false);
-      this.setScreenRecordingFeatureEnabled(false);
       this.onChange();
       throw error;
     }

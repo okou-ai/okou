@@ -12,11 +12,23 @@ export const testPiResourceIndexWorkContract = c.router({
     path: "/api/test/pi-resource-index-work",
     body: z.object({
       versionIds: z.array(z.string().length(64)).min(1).max(32),
+      stableContextOwner: z
+        .object({
+          orgId: z.string().min(1),
+          userId: z.string().min(1),
+          agentId: z.string().uuid(),
+        })
+        .optional(),
+      removeStableContextResourceIndexes: z
+        .object({
+          ownedStorageNames: z.array(z.string().min(1)).min(1).max(16),
+        })
+        .optional(),
     }),
     responses: {
       200: cronMaterializePiResourceIndexesContract.materialize.responses[200],
       404: z.string(),
     },
-    summary: "Run resource indexing only for this test's immutable versions",
+    summary: "Run resource and stable-context work owned by one test fixture",
   },
 });

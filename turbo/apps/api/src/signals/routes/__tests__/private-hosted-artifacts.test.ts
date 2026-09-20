@@ -56,7 +56,9 @@ test("keeps runless deployments private across switch rollback and only issues o
   );
   const draft = prepared.body;
   const canonical = draft.url;
-  expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+  expect(canonical).toMatch(
+    /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+  );
   expect(draft).toMatchObject({ url: canonical, artifactUrl: canonical });
   expect(draft.aliasUrl).toBeUndefined();
   await billing.updateFeatureSwitches(actor, {
@@ -237,11 +239,13 @@ test("allocates independent slugs across public and private publication policies
   await api.requestHostedSiteFiles(colleague, draft.publicSlug, [404]);
 });
 
-test("creates hostless references without requiring an API hostname", async () => {
+test("creates complete App references without requiring an API hostname", async () => {
   const { actor, body, capture } = await fixture();
   mockEnv("OKOU_API_BACKEND_URL", undefined);
   const draft = await api.prepareHostedSite(actor, body);
-  expect(draft.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+  expect(draft.url).toMatch(
+    /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+  );
   expect(
     capture.puts.some(({ key }) => {
       return key.startsWith("sites/");

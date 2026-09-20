@@ -47,13 +47,7 @@ interface BuiltInGenerationRequestInternal {
   readonly privateArtifacts?: boolean;
   readonly admissionId?: string;
   readonly publicBrand?: PublicBrand;
-  readonly provider?:
-    | "openai"
-    | "fal"
-    | "byteplus"
-    | "minimax"
-    | "joggai"
-    | "heygen";
+  readonly provider?: "openai" | "fal" | "byteplus" | "minimax" | "joggai";
   readonly providerJobId?: string;
   readonly providerSessionId?: string;
   readonly providerStatus?: string;
@@ -174,8 +168,7 @@ export function readBuiltInGenerationRequestInternal(
       value.provider === "fal" ||
       value.provider === "byteplus" ||
       value.provider === "minimax" ||
-      value.provider === "joggai" ||
-      value.provider === "heygen"
+      value.provider === "joggai"
         ? value.provider
         : undefined,
     providerJobId:
@@ -322,15 +315,6 @@ function isStuckBuiltInGenerationJob(
   },
   referenceTime: Date,
 ): boolean {
-  // Managed HeyGen jobs can remain active beyond the generic video timeout.
-  // Only an authoritative provider failure ends these resumable jobs.
-  if (
-    ["intro-video-agent", "intro-video-render"].includes(
-      readBuiltInGenerationRequestInternal(job.request).providerTask ?? "",
-    )
-  ) {
-    return false;
-  }
   if (!isActiveBuiltInGenerationStatus(job.status)) {
     return false;
   }

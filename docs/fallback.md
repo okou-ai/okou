@@ -16,6 +16,23 @@ about, and a silent failure mode that turns a loud bug into wrong behavior.
 A fallback is worth that cost only when a real, currently-reachable state
 needs it.
 
+### Pi stable-context compatibility is an explicit bounded exception
+
+The Pi stable-context projection is an optimization over a pre-existing
+canonical exact-version composer. During additive rollout, a missing head, a
+pending or failed build, an unindexable resource, a same-version encoding repair
+or an old writer can still be a reachable state. Those states may run that same
+canonical composer once, under its existing typed eligibility, cancellation,
+32 MiB compressed, 64 MiB expanded and 2 MiB aggregate limits. The result is
+observable separately and may create a generation-fenced read repair.
+
+This exception does not permit stale-ready substitution, a reduced instruction
+or tool set, cross-owner/session reuse, relaxed archive limits, indefinite
+waiting, or replay of an uncertain external action. A ready artifact that fails
+owner, generation, digest, validity-horizon or final live-authority checks is not
+a fallback candidate; it is rejected. Remove the old-writer branch only after a
+separate deployed-version and retained-state drain proves it unreachable.
+
 ## 1. Do Not Write Negative Tests Against Old Code
 
 A negative test asserts that removed behavior stays removed: the retired route

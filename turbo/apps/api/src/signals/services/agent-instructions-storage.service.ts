@@ -16,12 +16,19 @@ import {
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import {
+  completePiStableContextPublication,
+  lockPiStableContextPublication,
+  refreshPiStableContextStorageDemands,
+  type PiStableContextPublicationFence,
+} from "./pi-stable-context-generation.service";
 
 interface WriteAgentInstructionsStorageArgs {
   readonly orgId: string;
   readonly agentName: string;
   readonly instructions: string;
   readonly framework?: string;
+  readonly stableContextPublication?: PiStableContextPublicationFence;
 }
 
 function instructionFilesForFramework(args: {
@@ -47,6 +54,9 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
     orgId: args.orgId,
     storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
     piResourceIndex: true as const,
+    ...(args.stableContextPublication
+      ? { stableContextPublication: args.stableContextPublication }
+      : {}),
     files: instructionFilesForFramework({
       content: args.instructions,
       framework: args.framework,
@@ -95,7 +105,41 @@ export const writeAgentInstructionsStorageInTransaction$ = command(
       { db: args.tx, input: instructionVolumeInput(args) },
       signal,
     );
+    if (
+      args.stableContextPublication &&
+      !(await lockPiStableContextPublication(
+        args.tx,
+        args.stableContextPublication,
+      ))
+    ) {
+      throw new Error(
+        "Stable-context publication was superseded before Storage HEAD commit",
+      );
+    }
     await commitPreparedVolumeServerSide({ db: args.tx, volume }, signal);
+    if (args.stableContextPublication) {
+      await refreshPiStableContextStorageDemands(
+        args.tx,
+        args.stableContextPublication,
+        {
+          storageId: volume.version.storageId,
+          versionId: volume.version.versionId,
+          archiveSize: volume.version.archiveSize,
+          fileCount: volume.version.fileCount,
+        },
+      );
+      signal.throwIfAborted();
+      if (
+        !(await completePiStableContextPublication(
+          args.tx,
+          args.stableContextPublication,
+        ))
+      ) {
+        throw new Error(
+          "Stable-context publication fence changed while locked",
+        );
+      }
+    }
     signal.throwIfAborted();
   },
 );

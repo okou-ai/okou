@@ -99,8 +99,13 @@ export const artifactReferencesContract = c.router({
       200: z.object({
         url: z.url(),
         expiresAt: z.string().optional(),
+        downloadUrl: z.url().optional(),
         sharedThreadSnapshot: z.literal(true).optional(),
-        preview: z.object({ filename: z.string(), contentType: z.string() }),
+        preview: z.object({
+          filename: z.string(),
+          contentType: z.string(),
+          previewImageUrl: z.url().optional(),
+        }),
       }),
       400: apiErrorSchema,
       404: apiErrorSchema,
@@ -125,9 +130,11 @@ export const artifactReferencesContract = c.router({
       200: z.object({
         url: z.url(),
         expiresAt: z.string(),
+        downloadUrl: z.url().optional(),
         sharedThreadSnapshot: z.literal(true).optional(),
         filename: z.string(),
         contentType: z.string(),
+        previewImageUrl: z.url().optional(),
         target: z.object({ kind: z.enum(["file", "html"]), id: z.uuid() }),
       }),
       400: apiErrorSchema,

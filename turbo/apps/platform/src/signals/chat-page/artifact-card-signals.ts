@@ -8,6 +8,7 @@ import {
   isTextPreviewKind,
 } from "../text-preview.ts";
 import {
+  artifactReferenceLookupKey,
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
@@ -15,6 +16,7 @@ import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
+import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 
 export type ArtifactKind =
   | "image"
@@ -61,7 +63,9 @@ export function createArtifactSignals(
       return undefined;
     }
     const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
-    const url = previewImageUrlsByUrl.get(descriptor.url);
+    const url =
+      previewImageUrlsByUrl.get(artifactReferenceLookupKey(descriptor.url)) ??
+      (await get(preview.presignedToken$))?.previewImageUrl;
     return url
       ? await get(createAttachmentPreviewSignals(url).thumbnailUrl$)
       : undefined;
@@ -87,7 +91,7 @@ export function createArtifactCardSignalsRegistry(
 ): ArtifactCardSignalsRegistry {
   return createCardSignalsRegistry(
     (descriptor: ArtifactDescriptor) => {
-      return descriptor.url;
+      return publicAttachmentUrl(descriptor.url);
     },
     (descriptor) => {
       return createArtifactSignals(descriptor, previewImageUrlsByUrl$);

@@ -12,6 +12,15 @@ import {
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
 import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
+import {
+  mcpListAgentsOutputSchema,
+  mcpListModelsOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-discovery";
+import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   mcpSendChatMessageOutputSchema,
   mcpRevokeQueuedMessageOutputSchema,
@@ -41,8 +50,19 @@ import { mcpServerRoutes } from "../mcp-server";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
+import { userModelPreferenceRoutes } from "../user-model-preference";
+import { modelPoliciesRoutes } from "../model-policies";
+import {
+  closeErasureSubjectFixture,
+  removeErasureSubjectsFixture,
+} from "../../../test-fixtures/account-erasure-subject";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
+import {
+  completeRunWithoutCallbacksFixture,
+  holdChatThreadRowLockFixture,
+  setQueuedUserMessageCreatedAtFixture,
+  timeoutRunWithoutCallbacksFixture,
+} from "../../../test-fixtures/chat-events";
 import {
   rejectSearchablePromptFixture,
   setChatSearchEventTimestampPrecisionFixture,
@@ -53,6 +73,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { updateChatEventSnapshotHead } from "./helpers/runtime-state";
@@ -245,6 +266,36 @@ async function searchMessages(token: string, args: Record<string, unknown>) {
   return mcpSearchChatMessagesOutputSchema.parse(result.structuredContent);
 }
 
+async function getStatus(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "get_chat_status", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpGetChatStatusOutputSchema.parse(result.structuredContent);
+}
+
+async function listAgents(token: string, args: Record<string, unknown> = {}) {
+  const result = await callTool(token, "list_agents", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpListAgentsOutputSchema.parse(result.structuredContent);
+}
+
+async function listModels(token: string) {
+  const result = await callTool(token, "list_models");
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpListModelsOutputSchema.parse(result.structuredContent);
+}
+
+async function createThread(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "create_chat_thread", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpCreateChatThreadOutputSchema.parse(result.structuredContent);
+}
+
+async function updateThread(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "update_chat_thread", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpUpdateChatThreadOutputSchema.parse(result.structuredContent);
+}
+
 async function sendMessage(token: string, args: Record<string, unknown>) {
   const result = await callTool(token, "send_chat_message", args);
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
@@ -346,6 +397,1359 @@ async function chatRunFixture() {
   return { auth, actor, chat, agent, runs };
 }
 
+async function creationFixture() {
+  const f = await threadFixture();
+  const runs = createRunsApi(context);
+  const { providerId } = await runs.ensureOrgModelProvider(f.actor);
+  await runs.updateOrgModelPolicies(
+    f.actor,
+    (["claude-sonnet-5", "claude-sonnet-4-6"] as const).map((model) => {
+      return {
+        model,
+        isDefault: model === "claude-sonnet-5",
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      };
+    }),
+  );
+  return { ...f, runs, providerId };
+}
+
+describe("MCP chat discovery and creation", () => {
+  it("lists only visible Agents with bounded descriptions and principal-bound pagination", async () => {
+    const f = await threadFixture();
+    const peer = f.bdd.user({ orgId: f.auth.orgId });
+    const shared = await f.bdd.createAgent(peer, {
+      displayName: "Shared Agent",
+      visibility: "public",
+      description: "Public description ".repeat(500),
+    });
+    const hidden = await f.bdd.createAgent(peer, {
+      displayName: "PRIVATE_AGENT_CANARY",
+      visibility: "private",
+    });
+    const otherOrg = f.bdd.user();
+    const foreign = await f.bdd.createAgent(otherOrg, {
+      displayName: "FOREIGN_ORG_CANARY",
+      visibility: "public",
+    });
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          id: randomUUID(),
+          role: "org:member",
+          organization: { id: f.auth.orgId },
+        },
+      ],
+      totalCount: 1,
+    });
+    const token = f.auth.token();
+    let page = await listAgents(token, { limit: 1 });
+    const firstCursor = page.nextCursor;
+    if (!firstCursor) {
+      throw new Error("Expected visible Agents to span multiple pages");
+    }
+    const agents = [...page.agents];
+    while (page.nextCursor !== null) {
+      expect(agents.length).toBeLessThan(10);
+      page = await listAgents(token, { limit: 1, cursor: page.nextCursor });
+      agents.push(...page.agents);
+    }
+    const ids = agents.map((agent) => {
+      return agent.agentId;
+    });
+    expect(ids).toContain(f.agent.agentId);
+    expect(ids).toContain(shared.agentId);
+    expect(ids).not.toContain(hidden.agentId);
+    expect(ids).not.toContain(foreign.agentId);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(
+      agents.find((agent) => {
+        return agent.agentId === shared.agentId;
+      }),
+    ).toMatchObject({ name: "Shared Agent", descriptionTruncated: true });
+    expect(JSON.stringify(agents)).not.toContain("CANARY");
+    const tampered = `${firstCursor.startsWith("A") ? "B" : "A"}${firstCursor.slice(1)}`;
+    for (const args of [
+      { limit: 1, cursor: tampered },
+      { limit: 2, cursor: firstCursor },
+    ]) {
+      expect((await callTool(token, "list_agents", args)).isError).toBeTruthy();
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        userId: peer.userId,
+        orgId: f.auth.orgId,
+      },
+      { [FeatureSwitchKey.McpServer]: true },
+    );
+    expect(
+      (
+        await callTool(f.auth.token({ sub: peer.userId }), "list_agents", {
+          limit: 1,
+          cursor: firstCursor,
+        })
+      ).isError,
+    ).toBeTruthy();
+    const longToken = f.auth.token({
+      exp: Math.floor((now() + 2 * 24 * 60 * 60 * 1000) / 1000),
+    });
+    await withMockNowForTest(now() + 24 * 60 * 60 * 1000, async () => {
+      expect(
+        (
+          await callTool(longToken, "list_agents", {
+            limit: 1,
+            cursor: firstCursor,
+          })
+        ).isError,
+      ).toBeTruthy();
+      expect((await listAgents(longToken)).agents.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("does not initialize missing model policies through a discovery read", async () => {
+    const auth = await fixture();
+    const first = await callTool(auth.token(), "list_models");
+    expect(first.isError).toBeTruthy();
+    expect(first.structuredContent).toBeUndefined();
+    await expect(callTool(auth.token(), "list_models")).resolves.toStrictEqual(
+      first,
+    );
+  });
+
+  it.each([false, true])(
+    "reports pending model setup after a plan downgrade with personal priority %s",
+    async (personalSubscriptionPriority) => {
+      const f = await threadFixture();
+      const runs = createRunsApi(context);
+      const { subscriptionId } = await runs.grantProEntitlement(f.actor);
+      await runs.updateOrgModelPolicies(f.actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: "codex-oauth-token",
+          credentialScope: "member",
+          modelProviderId: null,
+        },
+      ]);
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: f.auth.userId, orgId: f.auth.orgId },
+        {
+          [FeatureSwitchKey.PersonalSubscriptionPriority]:
+            personalSubscriptionPriority,
+        },
+      );
+      const token = f.auth.token({ scope: defaultScopes });
+      expect((await listModels(token)).models).toContainEqual(
+        expect.objectContaining({
+          id: "gpt-5.6-luna",
+          selectable: true,
+          availability: "connection_required",
+        }),
+      );
+      await createWebhookCallbackApi(context).postStripeEvent(
+        {
+          id: `evt_${randomUUID()}`,
+          type: "customer.subscription.deleted",
+          data: { object: { id: subscriptionId, metadata: {} } },
+        },
+        [200],
+      );
+
+      const pending = await callTool(token, "list_models");
+      expect(pending.isError).toBeTruthy();
+      expect(pending.structuredContent).toBeUndefined();
+      expect(pending.content).toContainEqual({
+        type: "text",
+        text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+      });
+      await expect(callTool(token, "list_models")).resolves.toStrictEqual(
+        pending,
+      );
+
+      createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+      const settings = await accept(
+        setupApp({ context, routes: modelPoliciesRoutes })(
+          modelPoliciesMainContract,
+        ).list({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+      const models = await listModels(token);
+      expect(models.defaultModel).toStrictEqual({
+        model: "gpt-5.6-luna",
+        source: "org_default",
+      });
+      expect(models.models).toContainEqual(
+        expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
+      );
+      const created = await createThread(token, {
+        requestId: randomUUID(),
+        agentId: f.agent.agentId,
+        title: "After plan synchronization",
+        model: "gpt-5.6-luna",
+      });
+      expect(created.model.selectedModel).toBe("gpt-5.6-luna");
+      expect(
+        (await getMessages(token, { threadId: created.threadId })).messages,
+      ).toStrictEqual([]);
+    },
+  );
+
+  it("distinguishes configured models, missing member credentials and the member default", async () => {
+    const f = await creationFixture();
+    expect((await listModels(f.auth.token())).models).toContainEqual(
+      expect.objectContaining({
+        id: "claude-sonnet-5",
+        selectable: true,
+        availability: "plan_restricted",
+        reason: expect.any(String),
+      }),
+    );
+    await f.runs.grantProEntitlement(f.actor);
+    await f.runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+      {
+        model: "gpt-5.6-sol",
+        isDefault: false,
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
+      },
+    ]);
+    const token = f.auth.token();
+    const models = await listModels(token);
+    expect(models).toMatchObject({
+      defaultModel: { model: "claude-sonnet-5", source: "org_default" },
+      admission: "checked_on_send",
+    });
+    expect(models.models).toContainEqual(
+      expect.objectContaining({
+        id: "claude-sonnet-5",
+        selectable: true,
+        availability: "available",
+      }),
+    );
+    for (const personalSubscriptionPriority of [false, true]) {
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: f.auth.userId, orgId: f.auth.orgId },
+        {
+          [FeatureSwitchKey.PersonalSubscriptionPriority]:
+            personalSubscriptionPriority,
+        },
+      );
+      expect((await listModels(token)).models).toContainEqual(
+        expect.objectContaining({
+          id: "gpt-5.6-sol",
+          selectable: true,
+          availability: "connection_required",
+        }),
+      );
+    }
+    const visible = JSON.stringify(models);
+    expect(visible).not.toContain(f.providerId);
+    expect(visible).not.toContain("test-anthropic-key");
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    await accept(
+      setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      ).update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    await expect(listModels(token)).resolves.toMatchObject({
+      defaultModel: { model: "gpt-5.6-sol", source: "member_default" },
+    });
+    expect((await listAgents(token)).agents).toContainEqual(
+      expect.objectContaining({ isDefault: true }),
+    );
+  });
+
+  it("creates an empty conversation using an explicit model and returns a send handoff", async () => {
+    const f = await creationFixture();
+    const requestId = randomUUID();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(
+      f.auth.token({ scope: `${requiredScopes} okou:chat:manage` }),
+      {
+        requestId: requestId.toUpperCase(),
+        agentId: f.agent.agentId.toUpperCase(),
+        title: "Review the quarterly plan",
+        model: "claude-sonnet-4-6",
+      },
+    );
+    expect(created).toMatchObject({
+      threadId: requestId,
+      agentId: f.agent.agentId,
+      title: "Review the quarterly plan",
+      titleTruncated: false,
+      model: {
+        selectedModel: "claude-sonnet-4-6",
+        effectiveModel: "claude-sonnet-4-6",
+        source: "thread",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      nextAction: {
+        tool: "send_chat_message",
+        arguments: { threadId: requestId },
+      },
+    });
+    expect(Date.parse(created.retryUntil) - Date.parse(created.createdAt)).toBe(
+      24 * 60 * 60 * 1000,
+    );
+    expect(new URL(created.url).pathname).toBe(`/chats/${requestId}`);
+    await expect(
+      getStatus(token, { threadId: requestId }),
+    ).resolves.toMatchObject({
+      input: null,
+      run: null,
+      output: { state: "unavailable" },
+    });
+    expect(
+      (await getMessages(token, { threadId: requestId })).messages,
+    ).toStrictEqual([]);
+    const sent = await sendMessage(token, {
+      ...created.nextAction.arguments,
+      requestId: randomUUID(),
+      text: "This first message contains its own context.",
+    });
+    expect(sent.inputRef.threadId).toBe(requestId);
+  });
+
+  it("deduplicates simultaneous creation and replays current mutable settings without overwriting them", async () => {
+    const f = await creationFixture();
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Original title",
+      model: "claude-sonnet-5",
+    };
+    const token = f.auth.token({ scope: defaultScopes });
+    const results = await Promise.all([
+      createThread(token, args),
+      createThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    expect(results[0]?.threadId).toBe(args.requestId);
+    expect(results[1]?.threadId).toBe(args.requestId);
+    expect((await listThreads(token)).threads).toHaveLength(1);
+    await f.chat.renameThread(
+      f.actor,
+      args.requestId,
+      "Renamed after creation",
+    );
+    await f.chat.updateThreadModelSelection(
+      f.actor,
+      args.requestId,
+      "claude-sonnet-4-6",
+    );
+    const before = await f.chat.readThreadMetadata(f.actor, args.requestId);
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      replayed: true,
+      title: "Renamed after creation",
+      model: {
+        selectedModel: "claude-sonnet-4-6",
+        effectiveModel: "claude-sonnet-4-6",
+      },
+    });
+    await expect(
+      f.chat.readThreadMetadata(f.actor, args.requestId),
+    ).resolves.toStrictEqual(before);
+    for (const conflicting of [
+      { ...args, title: "Different intent" },
+      { ...args, model: "claude-sonnet-4-6" },
+    ]) {
+      expect(
+        (await callTool(token, "create_chat_thread", conflicting)).isError,
+      ).toBeTruthy();
+    }
+    await expect(
+      f.chat.readThreadMetadata(f.actor, args.requestId),
+    ).resolves.toStrictEqual(before);
+    expect((await listThreads(token)).threads).toHaveLength(1);
+  });
+
+  it("atomically updates sparse metadata and replays without reverting newer state", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Original metadata",
+      model: "claude-sonnet-5",
+    });
+    const firstId = randomUUID();
+    const first = await updateThread(token, {
+      requestId: firstId,
+      threadId: created.threadId,
+      patch: { title: "Manual MCP title" },
+    });
+    expect(first).toMatchObject({
+      requestId: firstId,
+      threadId: created.threadId,
+      title: "Manual MCP title",
+      titleTruncated: false,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: false,
+    });
+    expect(Date.parse(first.retryUntil) - Date.parse(first.acceptedAt)).toBe(
+      24 * 60 * 60 * 1000,
+    );
+
+    const second = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: {
+        title: "Newer combined state",
+        model: "claude-sonnet-4-6",
+      },
+    });
+    expect(second).toMatchObject({
+      title: "Newer combined state",
+      model: {
+        selectedModel: "claude-sonnet-4-6",
+        effectiveModel: "claude-sonnet-4-6",
+      },
+      replayed: false,
+    });
+
+    await expect(
+      updateThread(token, {
+        requestId: firstId,
+        threadId: created.threadId,
+        patch: { title: "Manual MCP title" },
+      }),
+    ).resolves.toMatchObject({
+      acceptedAt: first.acceptedAt,
+      title: "Newer combined state",
+      model: { selectedModel: "claude-sonnet-4-6" },
+      replayed: true,
+    });
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: firstId,
+          threadId: created.threadId,
+          patch: { title: "Conflicting reuse" },
+        })
+      ).isError,
+    ).toBeTruthy();
+
+    const cleared = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { model: null },
+    });
+    expect(cleared).toMatchObject({
+      title: "Newer combined state",
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+      },
+    });
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "Newer combined state",
+        model: { selectedModel: null, effectiveModel: "claude-sonnet-5" },
+      },
+    });
+  });
+
+  it("preserves Fast, reasoning, media and browser settings", async () => {
+    const f = await threadFixture();
+    const model = await f.chat.getDefaultCreateThreadModel(f.actor);
+    const created = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Preserve settings",
+      model,
+    });
+    await f.chat.updateThreadModelSelection(f.actor, created.id, model, {
+      reasoningEffort: "high",
+      codexServiceTier: "fast",
+    });
+    await f.chat.updateThreadImageModel(f.actor, created.id, "gpt-image-2");
+    await f.chat.updateThreadVideoModel(f.actor, created.id, "MiniMax-H3");
+    const before = await f.chat.readThreadMetadata(f.actor, created.id);
+    expect(before).toMatchObject({
+      modelSettings: { [model]: { effort: "high" } },
+      serviceTier: "priority",
+      selectedVideoModel: "MiniMax-H3",
+      selectedImageModel: "gpt-image-2",
+    });
+
+    await updateThread(f.auth.token({ scope: defaultScopes }), {
+      requestId: randomUUID(),
+      threadId: created.id,
+      patch: { title: "Still preserved", model },
+    });
+
+    await expect(
+      f.chat.readThreadMetadata(f.actor, created.id),
+    ).resolves.toMatchObject({
+      modelSettings: before.modelSettings,
+      serviceTier: before.serviceTier,
+      computerUseHostId: before.computerUseHostId,
+      cloudBrowserEnabled: before.cloudBrowserEnabled,
+      selectedVideoModel: before.selectedVideoModel,
+      selectedImageModel: before.selectedImageModel,
+    });
+  });
+
+  it("rejects update replay after its 24-hour window without reapplying intent", async () => {
+    const f = await creationFixture();
+    const currentToken = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(currentToken, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Before expiry",
+      model: "claude-sonnet-5",
+    });
+    const requestId = randomUUID();
+    const first = await updateThread(currentToken, {
+      requestId,
+      threadId: created.threadId,
+      patch: { title: "Accepted title" },
+    });
+    await updateThread(currentToken, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { title: "Later title" },
+    });
+    const futureToken = f.auth.token({
+      scope: defaultScopes,
+      exp: Math.floor((Date.parse(first.retryUntil) + 60_000) / 1000),
+    });
+
+    await withMockNowForTest(Date.parse(first.retryUntil) + 1, async () => {
+      const replay = await callTool(futureToken, "update_chat_thread", {
+        requestId,
+        threadId: created.threadId,
+        patch: { title: "Accepted title" },
+      });
+      expect(replay.isError).toBeTruthy();
+      expect(replay.structuredContent).toBeUndefined();
+    });
+    await expect(
+      getThread(currentToken, created.threadId),
+    ).resolves.toMatchObject({ thread: { title: "Later title" } });
+  });
+
+  it("validates thread update patches before changing metadata", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Unchanged metadata",
+      model: "claude-sonnet-5",
+    });
+    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
+      .body;
+    for (const patch of [
+      {},
+      { title: " " },
+      { title: "x".repeat(201) },
+      { model: "not-a-supported-model" },
+      { title: "Must roll back", model: "not-a-supported-model" },
+      { title: "Must roll back denied model", model: "claude-opus-4-8" },
+      { title: "Unknown field", extra: true },
+    ]) {
+      expect(
+        (
+          await callTool(token, "update_chat_thread", {
+            requestId: randomUUID(),
+            threadId: created.threadId,
+            patch,
+          })
+        ).isError,
+      ).toBeTruthy();
+    }
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: created.threadId,
+          threadId: created.threadId,
+          patch: { title: "Event collision must roll back" },
+        })
+      ).isError,
+    ).toBeTruthy();
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "Unchanged metadata",
+        model: { selectedModel: "claude-sonnet-5" },
+      },
+    });
+    await expect(
+      f.chat.requestThreadEvents(f.actor, {}, [200]),
+    ).resolves.toMatchObject({ body: eventsBefore });
+  });
+
+  it("deduplicates simultaneous identical thread updates", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Concurrent metadata",
+      model: "claude-sonnet-5",
+    });
+    const args = {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { title: "One accepted update", model: "claude-sonnet-4-6" },
+    };
+    const results = await Promise.all([
+      updateThread(token, args),
+      updateThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "One accepted update",
+        model: { selectedModel: "claude-sonnet-4-6" },
+      },
+    });
+  });
+
+  it("expires creation retries after 24 hours and does not recreate deleted conversations", async () => {
+    const f = await creationFixture();
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Retry window",
+      model: "claude-sonnet-5",
+    };
+    const created = await createThread(
+      f.auth.token({ scope: defaultScopes }),
+      args,
+    );
+    const token = f.auth.token({
+      scope: defaultScopes,
+      exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
+    });
+    await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
+      await expect(createThread(token, args)).resolves.toMatchObject({
+        replayed: true,
+      });
+    });
+    await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
+      const expired = await callTool(token, "create_chat_thread", args);
+      expect(expired.isError).toBeTruthy();
+      expect(expired.structuredContent).toBeUndefined();
+    });
+    await f.chat.deleteThread(f.actor, created.threadId);
+    expect(
+      (await callTool(token, "create_chat_thread", args)).isError,
+    ).toBeTruthy();
+    expect((await listThreads(token)).threads).toStrictEqual([]);
+  });
+
+  it("rejects an unrelated created-event collision and an existing thread without matching creation evidence", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const collidingEventId = randomUUID();
+    const first = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Other event owner",
+      model: "claude-sonnet-5",
+      eventId: collidingEventId,
+    });
+    const args = {
+      requestId: collidingEventId,
+      agentId: f.agent.agentId,
+      title: "MCP creation intent",
+      model: "claude-sonnet-5",
+    };
+    expect(
+      (await callTool(token, "create_chat_thread", args)).isError,
+    ).toBeTruthy();
+    expect(
+      (await callTool(token, "get_chat_thread", { threadId: collidingEventId }))
+        .isError,
+    ).toBeTruthy();
+    const existingId = randomUUID();
+    const existing = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: args.title,
+      model: "claude-sonnet-5",
+      clientThreadId: existingId,
+      eventId: randomUUID(),
+    });
+    expect(
+      (
+        await callTool(token, "create_chat_thread", {
+          ...args,
+          requestId: existingId,
+        })
+      ).isError,
+    ).toBeTruthy();
+    const ids = (await listThreads(token)).threads.map((thread) => {
+      return thread.threadId;
+    });
+    expect(new Set(ids)).toStrictEqual(new Set([first.id, existing.id]));
+    expect(
+      (await getMessages(token, { threadId: existing.id })).messages,
+    ).toStrictEqual([]);
+  });
+
+  it("does not disclose private Agents or let another principal reuse a creation identity", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Owner's conversation",
+      model: "claude-sonnet-5",
+    };
+    await createThread(token, args);
+    const second = await f.bdd.createAgent(f.actor, {
+      displayName: "Another owned Agent",
+      visibility: "private",
+    });
+    expect(
+      (
+        await callTool(token, "create_chat_thread", {
+          ...args,
+          agentId: second.agentId,
+        })
+      ).isError,
+    ).toBeTruthy();
+    const missing = await callTool(token, "create_chat_thread", {
+      ...args,
+      requestId: randomUUID(),
+      agentId: randomUUID(),
+    });
+    for (const actor of [
+      f.bdd.user({ orgId: f.auth.orgId }),
+      f.bdd.user({ userId: f.auth.userId }),
+    ]) {
+      if (!actor.orgId) {
+        throw new Error("Expected the peer's organization");
+      }
+      const hidden = await f.bdd.createAgent(actor, {
+        displayName: "Private selection",
+        visibility: "private",
+      });
+      await expect(
+        callTool(token, "create_chat_thread", {
+          ...args,
+          requestId: randomUUID(),
+          agentId: hidden.agentId,
+        }),
+      ).resolves.toStrictEqual(missing);
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: actor.userId, orgId: actor.orgId },
+        { [FeatureSwitchKey.McpServer]: true },
+      );
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [f.auth.orgId, actor.orgId].map((orgId) => {
+            return {
+              id: randomUUID(),
+              role: "org:member",
+              organization: { id: orgId },
+            };
+          }),
+          totalCount: 2,
+        },
+      );
+      const foreignToken = f.auth.token({
+        sub: actor.userId,
+        org_id: actor.orgId,
+        scope: defaultScopes,
+      });
+      const failed = await callTool(foreignToken, "create_chat_thread", {
+        ...args,
+        agentId: hidden.agentId,
+      });
+      expect(failed.isError).toBeTruthy();
+      expect(JSON.stringify(failed)).not.toContain("Owner's conversation");
+    }
+    expect((await listThreads(token)).threads).toHaveLength(1);
+  });
+
+  it.each([false, true])(
+    "rejects closed-account creation with cached membership %s",
+    async (cachedMembership) => {
+      const f = await creationFixture();
+      const token = f.auth.token({ scope: defaultScopes });
+      if (cachedMembership) {
+        expect((await listAgents(token)).agents).toContainEqual(
+          expect.objectContaining({ agentId: f.agent.agentId }),
+        );
+      }
+      // Infrastructure exception: account-erasure closure has no production
+      // ingress. Install only this test-owned dormant decision, without a worker.
+      const closed = await closeErasureSubjectFixture({
+        subjectKind: "user",
+        subjectId: f.auth.userId,
+      });
+      onTestFinished(async () => {
+        await removeErasureSubjectsFixture([closed.jobId]);
+      });
+      const args = {
+        requestId: randomUUID(),
+        agentId: f.agent.agentId,
+        title: "Must not be created",
+        model: "claude-sonnet-5",
+      };
+      if (!cachedMembership) {
+        const response = await accept(
+          client().request({
+            extraHeaders: protocolHeaders(
+              token,
+              "tools/call",
+              true,
+              "create_chat_thread",
+            ),
+            body: requestBody("tools/call", true, {
+              name: "create_chat_thread",
+              arguments: args,
+            }),
+          }),
+          [401],
+        );
+        expect(response.body).toStrictEqual({ error: "invalid_token" });
+        return;
+      }
+      const result = await callTool(token, "create_chat_thread", args);
+      expect(result.isError).toBeTruthy();
+      expect(result.structuredContent).toBeUndefined();
+      expect(result.content).toContainEqual({
+        type: "text",
+        text: "Account content is closed.",
+      });
+    },
+  );
+
+  it("requires explicit creation choices and rejects unrelated execution controls", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "A new conversation",
+      model: "claude-sonnet-5",
+    };
+    for (const invalid of [
+      { ...args, title: "  " },
+      { ...args, title: "x".repeat(201) },
+      { ...args, model: undefined },
+      { ...args, requestId: undefined },
+      { ...args, prompt: "Must not execute" },
+      { ...args, orgId: f.auth.orgId },
+      { ...args, model: "not-a-supported-model" },
+    ]) {
+      expect(
+        (await callTool(token, "create_chat_thread", invalid)).isError,
+      ).toBeTruthy();
+    }
+    expect((await listThreads(token)).threads).toStrictEqual([]);
+    expect(
+      (await callTool(token, "list_agents", { limit: 51 })).isError,
+    ).toBeTruthy();
+    expect(
+      (await callTool(token, "list_models", { orgId: f.auth.orgId })).isError,
+    ).toBeTruthy();
+  });
+});
+
+describe("MCP chat status", () => {
+  it("reports an empty thread without changing its unread or message state", async () => {
+    const f = await threadFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const before = await f.chat.readThread(f.actor, thread.id);
+    const status = await getStatus(f.auth.token(), { threadId: thread.id });
+    expect(status).toMatchObject({
+      threadId: thread.id,
+      input: null,
+      run: null,
+      runSelection: "latest",
+      output: {
+        state: "unavailable",
+        messageRefs: [],
+        hasMore: false,
+        reason: "no_associated_run",
+      },
+      messages: null,
+      retryAfterMs: null,
+    });
+    expect(Number.isNaN(Date.parse(status.observedAt))).toBeFalsy();
+    await expect(f.chat.readThread(f.actor, thread.id)).resolves.toStrictEqual(
+      before,
+    );
+  });
+
+  it("tracks an original launch through running, partial output and materialized completion", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "PRIVATE_STATUS_PROMPT: summarize the findings",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const pending = await getStatus(token, args);
+    expect(pending).toMatchObject({
+      input: {
+        ref: sent.inputRef,
+        state: "associated",
+        // Immediate admission does not retain a launch receipt. Association
+        // proves the run identity, not how the runtime consumed the input.
+        deliveryMode: "unknown",
+        runId,
+      },
+      run: { id: runId, status: "pending", completedAt: null },
+      runSelection: "input",
+      output: { state: "pending", messageRefs: [], reason: null },
+      messages: {
+        tool: "get_chat_messages",
+        arguments: { threadId: thread.id, runId, limit: 20 },
+      },
+    });
+    expect(pending.retryAfterMs).toBeGreaterThan(0);
+    expect(pending.input?.visibleMessageRef).not.toStrictEqual(sent.inputRef);
+    expect(JSON.stringify(pending)).not.toContain("PRIVATE_STATUS_PROMPT");
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      run: { id: runId, status: "running", completedAt: null },
+      output: { state: "pending" },
+    });
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              content: [
+                { type: "text", text: "A readable intermediate result." },
+              ],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const partial = await getStatus(token, args);
+    expect(partial).toMatchObject({
+      run: { status: "running" },
+      output: { state: "partial", hasMore: false, reason: null },
+    });
+    expect(partial.output.messageRefs).toHaveLength(1);
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    const ready = await getStatus(token, args);
+    expect(ready).toMatchObject({
+      run: { id: runId, status: "completed", completedAt: expect.any(String) },
+      output: { state: "ready", messageRefs: partial.output.messageRefs },
+      retryAfterMs: null,
+    });
+    if (!ready.messages) {
+      throw new Error("Expected a message retrieval handoff");
+    }
+    const messages = await getMessages(token, ready.messages.arguments);
+    expect(
+      messages.messages
+        .filter((message) => {
+          return message.role === "assistant";
+        })
+        .map((message) => {
+          return message.ref;
+        }),
+    ).toStrictEqual(ready.output.messageRefs);
+    await expect(
+      getStatus(token, { threadId: thread.id }),
+    ).resolves.toMatchObject({
+      input: null,
+      runSelection: "latest",
+      run: { id: runId, status: "completed" },
+      output: { state: "ready" },
+    });
+    const invalidRefs = [
+      { ...sent.inputRef, eventId: randomUUID() },
+      { ...sent.inputRef, seqId: sent.inputRef.seqId + 1 },
+      pending.input?.visibleMessageRef,
+    ];
+    for (const inputRef of invalidRefs) {
+      if (!inputRef) {
+        throw new Error("Expected a visible replacement reference");
+      }
+      await expect(
+        getStatus(token, { threadId: thread.id, inputRef }),
+      ).resolves.toMatchObject({
+        input: { state: "unavailable", runId: null },
+        run: null,
+        runSelection: "input",
+        messages: null,
+      });
+    }
+    await expect(
+      getStatus(token, {
+        threadId: thread.id.toUpperCase(),
+        inputRef: {
+          ...sent.inputRef,
+          threadId: thread.id.toUpperCase(),
+          eventId: sent.inputRef.eventId.toUpperCase(),
+        },
+      }),
+    ).resolves.toMatchObject({
+      threadId: thread.id,
+      input: { ref: sent.inputRef, runId },
+      run: { id: runId, status: "completed" },
+    });
+  });
+
+  it("keeps cancellation recovery separate from readable partial and late output", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Cancel after partial progress",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: sent.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: { content: [{ type: "text", text: "Partial progress" }] },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const token = auth.token({ scope: defaultScopes });
+    await cancelRun(token, sent.runId);
+    await flushWaitUntilForTest();
+    const recovering = await getStatus(token, { threadId: sent.threadId });
+    expect(recovering).toMatchObject({
+      run: {
+        id: sent.runId,
+        status: "cancelled",
+        cancellationRecovery: "pending",
+      },
+      output: { state: "partial" },
+    });
+    expect(recovering.retryAfterMs).toBeGreaterThan(0);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: sent.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 1,
+            message: {
+              content: [{ type: "text", text: "Recovered final progress" }],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await f.completeChatRunOk(sent.runId, claimed.sandboxHeaders, {
+      lastEventSequence: 1,
+    });
+    await flushWaitUntilForTest();
+    const recovered = await getStatus(token, { threadId: sent.threadId });
+    expect(recovered).toMatchObject({
+      run: {
+        id: sent.runId,
+        status: "cancelled",
+        cancellationRecovery: "complete",
+      },
+      output: { state: "ready" },
+      retryAfterMs: null,
+    });
+    expect(recovered.output.messageRefs).toHaveLength(2);
+  });
+
+  it("reports failed runs without inventing assistant messages from terminal errors", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Fail before producing output",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    await f.failChatRun(
+      sent.runId,
+      claimed.sandboxHeaders,
+      "PRIVATE_RAW_ERROR",
+    );
+    await flushWaitUntilForTest();
+    const status = await getStatus(auth.token(), { threadId: sent.threadId });
+    expect(status).toMatchObject({
+      run: { id: sent.runId, status: "failed" },
+      output: { state: "unavailable", reason: "no_output", messageRefs: [] },
+      retryAfterMs: null,
+    });
+    expect(JSON.stringify(status)).not.toContain("PRIVATE_RAW_ERROR");
+  });
+
+  it("identifies a queued launch and preserves its association after original-input retention", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const active = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Finish before the queued launch",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+    const token = auth.token({ scope: defaultScopes });
+    const submitted = await sendMessage(token, {
+      threadId: active.threadId,
+      requestId: randomUUID(),
+      text: "Start a new run when the previous one completes",
+    });
+    const args = { threadId: active.threadId, inputRef: submitted.inputRef };
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      input: { state: "queued", runId: null, deliveryMode: "unknown" },
+      run: null,
+    });
+    await f.completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const launched = await getStatus(token, args);
+    const nextRunId = launched.run?.id;
+    if (!nextRunId) {
+      throw new Error("Expected the queued input to start its own run");
+    }
+    onTestFinished(async () => {
+      await f.api.requestCancelRun(actor.actor, nextRunId, [200, 400, 404]);
+    });
+    expect(nextRunId).not.toBe(active.runId);
+    expect(launched).toMatchObject({
+      input: {
+        ref: submitted.inputRef,
+        state: "associated",
+        deliveryMode: "launch",
+        runId: nextRunId,
+      },
+      run: { id: nextRunId, status: "pending" },
+      output: { state: "pending" },
+    });
+    // Infrastructure exception: the retention cutoff uses the database clock;
+    // public requests cannot backdate this original submission by 31 days.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: submitted.inputRef.eventId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(active.threadId);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [active.threadId] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const archived = await getStatus(token, args);
+    expect(archived.input).toStrictEqual(launched.input);
+    expect(archived.run).toStrictEqual(launched.run);
+    expect(archived.output).toStrictEqual(launched.output);
+  });
+
+  it.each(["completed", "timeout"] as const)(
+    "keeps %s output pending or partial until its canonical terminal marker exists",
+    async (status) => {
+      const auth = await fixture();
+      const f = createChatEventsFixture(context);
+      const actor = await f.entitledChatActor({
+        userId: auth.userId,
+        orgId: auth.orgId,
+      });
+      const sent = await f.sendChatRun(actor.actor, {
+        agentId: actor.agentId,
+        prompt: "Observe a delayed terminal callback",
+      });
+      const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+      // Infrastructure exception: a successful public completion schedules its
+      // callback. Only a process crash can leave the committed terminal run
+      // without that dispatch; the existing scoped fixture recreates this gap.
+      if (status === "completed") {
+        await completeRunWithoutCallbacksFixture({ runId: sent.runId });
+      } else {
+        await timeoutRunWithoutCallbacksFixture({ runId: sent.runId });
+      }
+      const token = auth.token();
+      await expect(
+        getStatus(token, { threadId: sent.threadId }),
+      ).resolves.toMatchObject({
+        run: { id: sent.runId, status },
+        output: { state: "pending", messageRefs: [] },
+        retryAfterMs: expect.any(Number),
+      });
+      await f.webhooks.requestAgentEvents(
+        {
+          runId: sent.runId,
+          events: [
+            {
+              type: "assistant",
+              sequenceNumber: 0,
+              message: {
+                content: [{ type: "text", text: "Late canonical output" }],
+              },
+            },
+          ],
+        },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      const observed = await getStatus(token, { threadId: sent.threadId });
+      expect(observed.run?.status).toBe(status);
+      // Timeout fencing discards late output; an ordinary completed run can
+      // materialize it, but neither case invents the missing terminal marker.
+      expect(observed.output.state).toBe(
+        status === "completed" ? "partial" : "pending",
+      );
+      expect(observed.output.messageRefs).toHaveLength(
+        status === "completed" ? 1 : 0,
+      );
+      expect(observed.retryAfterMs).toBeGreaterThan(0);
+    },
+  );
+
+  it("resolves archived original inputs and rejects an incomplete archive", async () => {
+    const f = await messageFixture();
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const token = f.auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Retain my original input reference",
+    });
+    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const before = await getStatus(token, args);
+    // Infrastructure exception: public sends cannot backdate acceptance past
+    // the database-clock retention cutoff. Archive, retention and all status
+    // assertions still execute their real HTTP endpoints.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: sent.inputRef.eventId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(thread.id);
+    const archive = puts.at(-1);
+    if (!archive) {
+      throw new Error("Expected the canonical archive");
+    }
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [thread.id] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const after = await getStatus(token, args);
+    expect(after.input).toStrictEqual(before.input);
+    expect(after.output).toStrictEqual(before.output);
+    await deleteFakeChatEventObject(archive.key);
+    const failure = await callTool(token, "get_chat_status", args);
+    expect(failure.isError).toBeTruthy();
+    expect(failure.content[0]?.text).toContain("could not be read completely");
+  });
+
+  it("rejects cross-thread references and unsupported status controls", async () => {
+    const f = await threadFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const token = f.auth.token();
+    const before = await f.chat.readThread(f.actor, thread.id);
+    for (const args of [
+      { threadId: thread.id, waitMs: 30_000 },
+      { threadId: thread.id, runId: randomUUID() },
+      {
+        threadId: thread.id,
+        inputRef: { threadId: randomUUID(), eventId: randomUUID(), seqId: 1 },
+      },
+      {
+        threadId: thread.id,
+        inputRef: { threadId: thread.id, eventId: randomUUID(), seqId: 0 },
+      },
+    ]) {
+      expect(
+        (await callTool(token, "get_chat_status", args)).isError,
+      ).toBeTruthy();
+    }
+    await expect(f.chat.readThread(f.actor, thread.id)).resolves.toStrictEqual(
+      before,
+    );
+  });
+});
+
 describe("MCP chat mutations", () => {
   it("treats UUID letter case as the same submission identity", async () => {
     const f = await messageFixture();
@@ -410,6 +1814,26 @@ describe("MCP chat mutations", () => {
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text, eventType: "input.rejected", runId: null }]);
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: result.inputRef,
+    });
+    expect(status).toMatchObject({
+      input: {
+        ref: result.inputRef,
+        state: "rejected",
+        deliveryMode: "unknown",
+        runId: null,
+      },
+      run: null,
+      runSelection: "input",
+      output: { state: "unavailable", reason: "no_associated_run" },
+      messages: null,
+      retryAfterMs: null,
+    });
+    expect(status.input?.visibleMessageRef).toStrictEqual(
+      (await getMessages(token, { threadId: thread.id })).messages[0]?.ref,
+    );
     const replay = await sendMessage(token, {
       threadId: thread.id,
       text,
@@ -895,7 +2319,7 @@ describe("MCP chat mutations", () => {
       requestId: randomUUID(),
     };
     const token = f.auth.token({ scope: defaultScopes });
-    await sendMessage(token, args);
+    const submitted = await sendMessage(token, args);
     const strangers = [
       f.bdd.user({ orgId: f.auth.orgId }),
       f.bdd.user({ userId: f.auth.userId }),
@@ -937,6 +2361,19 @@ describe("MCP chat mutations", () => {
       expect(failure).toStrictEqual(missing);
       expect(failure.isError).toBeTruthy();
       expect(JSON.stringify(failure)).not.toContain("PRIVATE_MCP_RECEIPT");
+      const hiddenStatus = await callTool(foreignToken, "get_chat_status", {
+        threadId: thread.id,
+        inputRef: submitted.inputRef,
+      });
+      const missingThreadId = randomUUID();
+      await expect(
+        callTool(foreignToken, "get_chat_status", {
+          threadId: missingThreadId,
+          inputRef: { ...submitted.inputRef, threadId: missingThreadId },
+        }),
+      ).resolves.toStrictEqual(hiddenStatus);
+      expect(hiddenStatus.isError).toBeTruthy();
+      expect(hiddenStatus.structuredContent).toBeUndefined();
       await expect(
         revokeMessage(foreignToken, thread.id, args.requestId),
       ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
@@ -945,9 +2382,36 @@ describe("MCP chat mutations", () => {
     expect(
       (await callTool(token, "send_chat_message", args)).isError,
     ).toBeTruthy();
+    expect(
+      (
+        await callTool(token, "get_chat_status", {
+          threadId: thread.id,
+          inputRef: submitted.inputRef,
+        })
+      ).isError,
+    ).toBeTruthy();
   });
 
   it.each([
+    {
+      name: "create_chat_thread",
+      scope: "okou:chat:manage",
+      args: {
+        requestId: randomUUID(),
+        agentId: randomUUID(),
+        title: "Scope check",
+        model: "claude-sonnet-5",
+      },
+    },
+    {
+      name: "update_chat_thread",
+      scope: "okou:chat:manage",
+      args: {
+        requestId: randomUUID(),
+        threadId: randomUUID(),
+        patch: { title: "Scope check" },
+      },
+    },
     {
       name: "send_chat_message",
       scope: "okou:chat:send",
@@ -1065,6 +2529,14 @@ describe("MCP chat mutations", () => {
       };
       const sent = await sendMessage(token, args);
       expect(sent).toMatchObject({ disposition: "queued", runId: null });
+      await expect(
+        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+      ).resolves.toMatchObject({
+        input: { state: "queued", runId: null },
+        run: null,
+        runSelection: "input",
+        output: { state: "unavailable", reason: "no_associated_run" },
+      });
       const revoked = await revokeMessage(
         token,
         letterCase === "uppercase"
@@ -1087,6 +2559,19 @@ describe("MCP chat mutations", () => {
         replayed: true,
         disposition: "revoked",
         runId: null,
+      });
+      await expect(
+        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+      ).resolves.toMatchObject({
+        input: {
+          ref: sent.inputRef,
+          state: "revoked",
+          runId: null,
+          visibleMessageRef: null,
+        },
+        run: null,
+        output: { state: "unavailable", reason: "no_associated_run" },
+        retryAfterMs: null,
       });
       expect(
         (await getMessages(token, { threadId: args.threadId })).messages.map(
@@ -1192,15 +2677,23 @@ describe("MCP chat mutations", () => {
       userId: auth.userId,
       orgId: auth.orgId,
     });
-    const active = await f.sendChatRun(actor.actor, {
+    const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
-      prompt: "Active steer target",
     });
+    const token = auth.token({ scope: defaultScopes });
+    const initial = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Active steer target",
+    });
+    if (!initial.runId) {
+      throw new Error("Expected MCP input to start the steer target");
+    }
+    const active = { threadId: thread.id, runId: initial.runId };
     onTestFinished(async () => {
       await f.cancelChatRun(actor.actor, active.runId);
     });
     const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
-    const token = auth.token({ scope: defaultScopes });
     const args = {
       threadId: active.threadId,
       text: "Steer the current run",
@@ -1228,6 +2721,18 @@ describe("MCP chat mutations", () => {
       runId: active.runId,
     });
     await expect(
+      getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+    ).resolves.toMatchObject({
+      input: {
+        ref: sent.inputRef,
+        state: "reserved",
+        deliveryMode: "unknown",
+        runId: active.runId,
+      },
+      run: { id: active.runId, status: "running" },
+      output: { state: "pending", messageRefs: [] },
+    });
+    await expect(
       f.api.recordRunnerActiveInputDelivery(
         claimed.claim.sandboxToken,
         active.runId,
@@ -1240,6 +2745,22 @@ describe("MCP chat mutations", () => {
       disposition: "associated",
       runId: active.runId,
     });
+    const delivered = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: sent.inputRef,
+    });
+    expect(delivered).toMatchObject({
+      input: {
+        ref: sent.inputRef,
+        state: "delivered",
+        deliveryMode: "steer",
+        runId: active.runId,
+      },
+      run: { id: active.runId, status: "running" },
+      runSelection: "input",
+      output: { state: "pending", messageRefs: [] },
+    });
+    expect(delivered.input?.visibleMessageRef).not.toStrictEqual(sent.inputRef);
     await expect(
       revokeMessage(token, args.threadId, args.requestId),
     ).resolves.toMatchObject({
@@ -1258,6 +2779,73 @@ describe("MCP chat mutations", () => {
     ).resolves.toMatchObject({
       status: "running",
     });
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: active.runId,
+        events: Array.from({ length: 21 }, (_, sequenceNumber) => {
+          return {
+            type: "assistant",
+            sequenceNumber,
+            message: {
+              content: [
+                { type: "text", text: `Shared output ${sequenceNumber}` },
+              ],
+            },
+          };
+        }),
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const steered = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: sent.inputRef,
+    });
+    const launched = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: initial.inputRef,
+    });
+    expect(launched.run).toStrictEqual(steered.run);
+    expect(launched.output).toStrictEqual(steered.output);
+    expect(steered.output).toMatchObject({ state: "partial", hasMore: true });
+    expect(steered.output.messageRefs).toHaveLength(20);
+    if (!steered.messages) {
+      throw new Error("Expected shared output retrieval instructions");
+    }
+    const page = await getMessages(token, steered.messages.arguments);
+    expect(
+      page.messages.map((message) => {
+        return message.ref;
+      }),
+    ).toStrictEqual(steered.output.messageRefs);
+    expect(page.olderCursor).not.toBeNull();
+    installFakeChatEventR2(context, []);
+    // Infrastructure exception: public sends cannot backdate acceptance past
+    // the database retention cutoff. Retaining this settled source also removes
+    // its delivery receipt, while canonical archived replacement links survive.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: sent.inputRef.eventId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(args.threadId);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [args.threadId] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const archived = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: sent.inputRef,
+    });
+    expect(archived.input).toStrictEqual({
+      ...steered.input,
+      state: "associated",
+      deliveryMode: "unknown",
+    });
+    expect(archived.run).toStrictEqual(steered.run);
+    expect(archived.output).toStrictEqual(steered.output);
   });
 
   it.each(["lowercase", "uppercase"] as const)(
@@ -3428,10 +5016,21 @@ describe("external MCP entry", () => {
               name: "search_chat_messages",
               annotations: { readOnlyHint: true },
             },
+            { name: "get_chat_status", annotations: { readOnlyHint: true } },
+            { name: "list_agents", annotations: { readOnlyHint: true } },
+            { name: "list_models", annotations: { readOnlyHint: true } },
             { name: "list_chat_threads", annotations: { readOnlyHint: true } },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
             ...(scopes === defaultScopes
               ? [
+                  {
+                    name: "create_chat_thread",
+                    annotations: { readOnlyHint: false, idempotentHint: true },
+                  },
+                  {
+                    name: "update_chat_thread",
+                    annotations: { readOnlyHint: false, idempotentHint: true },
+                  },
                   {
                     name: "send_chat_message",
                     annotations: { readOnlyHint: false, idempotentHint: true },
@@ -3527,8 +5126,13 @@ describe("external MCP entry", () => {
       ).toStrictEqual([
         "get_chat_messages",
         "search_chat_messages",
+        "get_chat_status",
+        "list_agents",
+        "list_models",
         "list_chat_threads",
         "get_chat_thread",
+        "create_chat_thread",
+        "update_chat_thread",
         "send_chat_message",
         "revoke_queued_message",
         "cancel_run",
@@ -3652,7 +5256,7 @@ describe("external MCP entry", () => {
 
   it("denies discovery and manual invocation without the read grant", async () => {
     const auth = await fixture();
-    const token = auth.token({ scope: "okou:chat:manage" });
+    const token = auth.token({ scope: `${orgScope} okou:chat:manage` });
     for (const { method, name, args } of [
       { method: "tools/list", name: "list_chat_threads", args: {} },
       { method: "tools/call", name: "list_chat_threads", args: {} },
@@ -3660,6 +5264,23 @@ describe("external MCP entry", () => {
         method: "tools/call",
         name: "get_chat_thread",
         args: { threadId: randomUUID() },
+      },
+      {
+        method: "tools/call",
+        name: "get_chat_status",
+        args: { threadId: randomUUID() },
+      },
+      { method: "tools/call", name: "list_agents", args: {} },
+      { method: "tools/call", name: "list_models", args: {} },
+      {
+        method: "tools/call",
+        name: "create_chat_thread",
+        args: {
+          requestId: randomUUID(),
+          agentId: randomUUID(),
+          title: "Missing read grant",
+          model: "claude-sonnet-5",
+        },
       },
     ]) {
       const result = await accept(
@@ -4361,7 +5982,6 @@ describe("external MCP entry", () => {
       exp: Math.floor((now() + 9 * 24 * 60 * 60 * 1000) / 1000),
     });
     await withMockNowForTest(now() + 8 * 24 * 60 * 60 * 1000, async () => {
-      expect((await f.chat.listIndicators(f.actor)).threads).toStrictEqual({});
       expect(
         (await listThreads(retainedToken, { unread: true })).threads.map(
           (thread) => {
@@ -4475,12 +6095,12 @@ describe("external MCP entry", () => {
       await runs.grantProEntitlement(actor);
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
-        displayName: "MCP indicators",
+        displayName: "MCP organization activity",
         visibility: "private",
       });
       const sent = await chat.requestSendEvent(
         actor,
-        { agentId: agent.agentId, prompt: "Read my indicators" },
+        { agentId: agent.agentId, prompt: "Check organization activity" },
         [201],
       );
       if (sent.status !== 201) {
@@ -4496,11 +6116,6 @@ describe("external MCP entry", () => {
         }),
         [200],
       );
-      const projection = await chat.listIndicators(actor);
-      expect(projection).toStrictEqual({
-        agents: { [agent.agentId]: "active" },
-        threads: { [sent.body.threadId]: "active" },
-      });
       expected.push({ threadId: sent.body.threadId, agentId: agent.agentId });
     }
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({

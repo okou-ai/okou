@@ -115,9 +115,7 @@ const statusSchema = z.object({
   candidateVersion: z.number().nullable(),
   // Organization shares return the same short reference in both URL fields.
   url: z.url().nullable(),
-  // Existing-link compatibility (#32492): retire optionality when old API
-  // targets leave serving/rollback. Keep `url` available to existing clients.
-  shortUrl: z.url().nullable().optional(),
+  shortUrl: z.url().nullable(),
 });
 export type ArtifactShareStatus = z.infer<typeof statusSchema>;
 

@@ -318,7 +318,6 @@ export const apiBillingHandlers = [
   mockApi(billingInvoicesContract.get, ({ respond }) => {
     return respond(200, {
       invoices: mockBillingInvoices,
-      receiptDownloadsSupported: true,
     });
   }),
 

@@ -41,6 +41,7 @@ import type { Db } from "../external/db";
 import { settle } from "../utils";
 import {
   admitMorningBriefCollection,
+  admitMorningBriefNativeCollection,
   revalidateMorningBriefRetainedRead,
   withMorningBriefDatabaseDeadline,
   type MorningBriefCollectionScope,
@@ -240,18 +241,21 @@ async function retainedOwnerLossReason(
   if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
     return "deadline-exceeded";
   }
+  const admissionArgs = {
+    db: input.db,
+    clerk: input.clerk,
+    orgId: input.scope.orgId,
+    userId: input.scope.userId,
+    anchor: input.scope.anchor,
+    deadline: input.deadline,
+  };
   const admitted = await settle(
-    admitMorningBriefCollection(
-      {
-        db: input.db,
-        clerk: input.clerk,
-        orgId: input.scope.orgId,
-        userId: input.scope.userId,
-        anchor: input.scope.anchor,
-        deadline: input.deadline,
-      },
-      bounded,
-    ),
+    input.scope.nativeAuthority === undefined
+      ? admitMorningBriefCollection(admissionArgs, bounded)
+      : admitMorningBriefNativeCollection(
+          { ...admissionArgs, authority: input.scope.nativeAuthority },
+          bounded,
+        ),
     signal,
   );
   signal.throwIfAborted();

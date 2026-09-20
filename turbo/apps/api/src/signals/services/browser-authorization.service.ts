@@ -289,6 +289,108 @@ export const createBrowserAuthorizationRequest$ = command(
   },
 );
 
+/**
+ * Rechecks every non-key thread identity field and reads the browser flag under
+ * the UPDATE lock already acquired by the shared helper's read-only opt-in.
+ * Acquiring that mode on the first thread lock is deliberate: browser Apply
+ * retains KEY SHARE before its request pin, so delaying UPDATE until this query
+ * would let two GETs retain KEY SHARE and deadlock while both upgraded. The
+ * repeated UPDATE is same-transaction lock retention, not an upgrade.
+ *
+ * The read never locks a host, so this thread-first lock introduces no inverse
+ * with Computer Use lifecycle paths that lock host -> clear thread bindings.
+ */
+async function retainBrowserAuthorizationReadThread(
+  tx: Tx,
+  identity: ChatThreadContentIdentity,
+): Promise<boolean> {
+  const [thread] = await tx
+    .select({
+      userId: chatThreads.userId,
+      agentId: chatThreads.agentId,
+      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, identity.chatThreadId))
+    .limit(1)
+    .for("update");
+  if (
+    !thread ||
+    thread.userId !== identity.userId ||
+    thread.agentId !== identity.agentId
+  ) {
+    throw new ChatThreadContentOwnershipChangedError();
+  }
+  return thread.cloudBrowserEnabled;
+}
+
+/**
+ * Pins the fixed request identity after canonical subject, Agent and thread
+ * admission, then reads the clock. The transaction retains B1 and both rows
+ * through its final cancellation check and COMMIT, which is the database read
+ * linearization boundary. HTTP delivery can still happen after that COMMIT.
+ */
+async function readAuthorizedBrowserProjection(
+  tx: Tx,
+  args: {
+    readonly identity: ChatThreadContentIdentity & {
+      readonly agentId: string;
+    };
+    readonly request: BrowserAuthorizationRequestRow;
+    readonly requestToken: string;
+    readonly orgId: string;
+    readonly userId: string;
+  },
+  signal: AbortSignal,
+): Promise<ReadBrowserAuthorizationRequestResult> {
+  const cloudBrowserEnabled = await retainBrowserAuthorizationReadThread(
+    tx,
+    args.identity,
+  );
+  signal.throwIfAborted();
+
+  const [request] = await tx
+    .select({
+      expiresAt: browserAuthorizationRequests.expiresAt,
+      completedAt: browserAuthorizationRequests.completedAt,
+    })
+    .from(browserAuthorizationRequests)
+    .where(
+      and(
+        eq(browserAuthorizationRequests.id, args.request.id),
+        eq(
+          browserAuthorizationRequests.requestTokenHash,
+          hashSecret(args.requestToken),
+        ),
+        eq(browserAuthorizationRequests.orgId, args.orgId),
+        eq(browserAuthorizationRequests.userId, args.userId),
+        eq(browserAuthorizationRequests.runId, args.request.runId),
+        eq(
+          browserAuthorizationRequests.chatThreadId,
+          args.identity.chatThreadId,
+        ),
+      ),
+    )
+    .limit(1)
+    .for("share");
+  signal.throwIfAborted();
+  if (!request) {
+    return { status: "not_found" };
+  }
+
+  // Acquiring the request pin can wait. A fresh clock after that wait keeps a
+  // request that crosses its TTL from returning a stale success projection.
+  if (request.expiresAt.getTime() <= nowDate().getTime()) {
+    return { status: "expired" };
+  }
+  return {
+    status: "found",
+    expiresAt: request.expiresAt.toISOString(),
+    completedAt: request.completedAt?.toISOString() ?? null,
+    cloudBrowserEnabled,
+  };
+}
+
 export const readBrowserAuthorizationRequest$ = command(
   async (
     { set },
@@ -300,6 +402,8 @@ export const readBrowserAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<ReadBrowserAuthorizationRequestResult> => {
     const db = set(writeDb$);
+    // This lookup is only a token locator. Its exact actor/org predicates also
+    // preserve the route's non-oracular 404 before any canonical scope read.
     const loaded = await loadRequestByToken({
       db,
       ...args,
@@ -310,26 +414,42 @@ export const readBrowserAuthorizationRequest$ = command(
       return loaded;
     }
 
-    const [thread] = await db
-      .select({ cloudBrowserEnabled: chatThreads.cloudBrowserEnabled })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, loaded.request.chatThreadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1);
+    const result = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: loaded.request.chatThreadId,
+        authorize: (identity) => {
+          return (
+            identity.userId === args.userId &&
+            identity.agentId !== null &&
+            identity.orgId === args.orgId
+          );
+        },
+        threadLock: "update",
+      },
+      async (tx, identity) => {
+        if (identity.agentId === null) {
+          return { status: "not_found" as const };
+        }
+        return await readAuthorizedBrowserProjection(
+          tx,
+          {
+            identity: { ...identity, agentId: identity.agentId },
+            request: loaded.request,
+            requestToken: args.requestToken,
+            orgId: args.orgId,
+            userId: args.userId,
+          },
+          signal,
+        );
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    if (!thread) {
+    if (result.outcome !== "written") {
       return { status: "not_found" };
     }
-    return {
-      status: "found",
-      expiresAt: loaded.request.expiresAt.toISOString(),
-      completedAt: loaded.request.completedAt?.toISOString() ?? null,
-      cloudBrowserEnabled: thread.cloudBrowserEnabled,
-    };
+    return result.value;
   },
 );
 

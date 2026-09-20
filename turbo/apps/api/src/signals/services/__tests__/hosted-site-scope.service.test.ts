@@ -403,6 +403,10 @@ describe.each([true, false])(
               id: randomUUID(),
               runId: runId ?? null,
               deploymentVersion: 2,
+              manifest: {
+                ...created.deployment.manifest,
+                deploymentVersion: 2,
+              },
             });
           });
           if (allowed) {
@@ -427,6 +431,7 @@ describe.each([true, false])(
         ...created.deployment,
         id: randomUUID(),
         deploymentVersion: 2,
+        manifest: { ...created.deployment.manifest, deploymentVersion: 2 },
         runId: otherRun,
       });
       if (retained) {
@@ -590,7 +595,7 @@ describe.each([true, false])(
           ...args,
           body: nextBody,
         });
-        expect(retry.deployment.deploymentVersion).toBe(1);
+        expect(retry.site.publicSlug).toBe(nextBody.site);
         const table = privateArtifacts
           ? privateHostedDeployments
           : hostedDeployments;

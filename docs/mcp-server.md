@@ -1,15 +1,129 @@
 # External MCP server
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
-official MCP SDK and serves `list_chat_threads`, `get_chat_thread`,
-`get_chat_messages`, `search_chat_messages`, `send_chat_message`,
-`revoke_queued_message` and `cancel_run`. The read tools query current
+official MCP SDK and serves `list_agents`, `list_models`, `create_chat_thread`,
+`list_chat_threads`, `get_chat_thread`,
+`get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
+`revoke_queued_message`, `cancel_run` and `update_chat_thread`. The read tools query current
 user/organization-owned conversations; mutations reuse the existing input queue
 and run lifecycle. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
-#35100; sending and cancellation are delivered in #34934. Results include both structured content and a
+#35100; sending and cancellation are delivered in #34934, status in #35101,
+and Agent/model discovery and empty conversation creation in #35102.
+Results include both structured content and a
 JSON text representation.
+
+## Starting a conversation
+
+Call `list_agents` and `list_models` before `create_chat_thread`. Discovery
+requires `okou:chat:read`; creation additionally requires `okou:chat:manage`.
+All calls retain the endpoint's organization/read-scope requirements.
+
+`list_agents` accepts optional `limit` (default 20, maximum 50) and `cursor`.
+It lists public or caller-owned Agents in the authorized organization, with
+`agentId`, name, a description bounded to 500 Unicode characters,
+`descriptionTruncated`, and `isDefault`. Instructions and private configuration
+are excluded. Pages use ascending Agent UUID order. Follow `nextCursor` with the
+same limit; the 16 KiB response budget may shorten a page. Cursors bind the caller,
+organization and page size, expire after 24 hours, and recheck current visibility
+on each page. Restart without a cursor after an invalid or expired cursor.
+
+`list_models` takes `{}` and reads persisted active model policies without
+initializing or repairing them. Each model includes `id`, `name`, `selectable`,
+`availability`, and an optional explanation in `reason`. Availability is
+`available`, `reconnect_required`, `connection_required`, `plan_restricted`, or
+`unavailable`. `selectable` describes whether canonical model selection accepts
+the configuration; a selectable model can still require a connection or plan
+change before execution. `available` is a metadata observation, not a credential
+probe or admission guarantee. `defaultModel` chooses a valid member preference,
+then the organization default, or returns null model/source. Provider account
+identifiers, credentials and configuration are excluded. Missing policies or
+defaults awaiting canonical repair after a plan change return a setup error.
+Open model settings to synchronize the policies, then retry discovery. Discovery
+reads enforce a 15-second deadline, three-second SQL limits and a 16 KiB data budget.
+
+For example:
+
+```json
+{
+  "requestId": "<new UUID for this intended conversation>",
+  "agentId": "<visible Agent UUID from list_agents>",
+  "title": "Review the quarterly plan",
+  "model": "<selectable model id from list_models>"
+}
+```
+
+All four fields are required; title must be nonblank and at most 200 UTF-16 units.
+Creation returns `threadId` (the normalized `requestId`), Agent, current title,
+selected/effective model, service tier, creation time, authenticated App URL,
+`replayed`, `retryUntil`, and `nextAction` pointing to `send_chat_message` with
+that thread ID. The conversation starts empty: no message is submitted, no run
+starts, and no context or run is inherited. Existing media/reasoning defaults
+apply; the service tier starts unset. Sending is a separate call with its own
+request ID and self-contained text. Credentials, quota and execution policy are
+checked on send, as indicated by `admission: "checked_on_send"`.
+
+Retry an uncertain creation using the identical request ID, Agent, exact title
+and model within 24 hours of acceptance. The canonical `created` event retains
+the original intent; replay returns current stored settings without undoing
+later title/model edits. Concurrent identical requests converge on one thread.
+Conflicting input, deleted conversations, expired retries or missing creation
+evidence return an error. The guarantee is limited to accessible conversations
+and the 24-hour window; creation events have seven-day live retention. There is
+no permanent request-ID ledger. Never automatically retry an uncertain old
+request after the window; inspect the original thread before intentionally
+creating new work. No new table or schema migration is introduced.
+
+Creation checks current Agent visibility and account-content admission in its
+transaction, including the Agent owner's account. It uses the existing creation
+event and publishes thread-list changes after commit. Once admitted, finite
+mutation work retains server ownership if the HTTP client disconnects; the
+client must use the same retry identity when the result was not received.
+
+## Updating conversation metadata
+
+`update_chat_thread` requires `okou:chat:manage` and accepts one explicit sparse
+patch:
+
+```json
+{
+  "requestId": "<new UUID for this intended update>",
+  "threadId": "<owned conversation UUID>",
+  "patch": {
+    "title": "Quarterly plan review",
+    "model": "<selectable model id, or null>"
+  }
+}
+```
+
+The patch must contain `title` and/or `model`. Omitted fields remain unchanged;
+`model: null` clears the thread model pin so later runs use the current member or
+organization default. A title is nonblank and at most 200 UTF-16 units. The patch
+never implicitly changes service tier, per-model reasoning settings, image/video
+models, computer-use or browser settings. A preserved setting that is incompatible
+with the requested model makes the whole update fail.
+
+Title and model validation, metadata changes and durable sidebar events commit in
+one transaction. Failure leaves both fields and their events unchanged. A title
+patch is a manual rename: it records rename precedence, so a title generation that
+finishes later cannot overwrite it. A model patch changes only later run creation.
+An existing run retains its run-scoped model, and a message steered into that run
+continues with the existing model.
+
+The result contains the current bounded title, selected/effective model and source,
+current service tier, update timestamp, authenticated App URL and retry metadata.
+Generate one UUID `requestId` for each intended patch. Retry an uncertain response
+with the identical request ID, thread ID, exact field presence and exact values
+within 24 hours. Concurrent identical requests converge. Exact replay does not
+reapply old intent: it returns current state, so retrying update A after update B
+cannot restore A. Reusing the key with a different patch conflicts.
+
+After the retry window, inspect `get_chat_thread` before making a new intended
+change. Do not automatically retry an uncertain old request. Deduplication is not
+promised beyond retained mutation identity. As with other MCP mutations, admitted
+finite work remains server-owned after HTTP disconnection, and thread-list
+invalidation is published only after a new commit.
 
 ## Conversation discovery
 
@@ -66,8 +180,7 @@ archive-complete unread history. Missing activity does not prove a run succeeded
 `unread: false` does not prove every historical result was read.
 
 Listing and reading never mark a thread read, change recency or reconcile model
-settings. The MCP catalog replaces `get_indicators` with these two tools; the
-first-party indicators API and its existing sparse semantics remain unchanged.
+settings.
 
 ## Message history
 
@@ -263,7 +376,7 @@ A definitive admission failure after input persistence can leave its disposition
 its current disposition; it does not mean the input was never accepted.
 This call does not wait for the whole run. A later read can observe a newer state.
 
-`inputRef` identifies the original submission for withdrawal and future input
+`inputRef` identifies the original submission for withdrawal and input
 status reads. Queue dispatch or active-input delivery can append a replacement
 event, so the currently visible message from `get_chat_messages` can have a
 different reference. Do not assume the original input is a valid visible
@@ -299,6 +412,82 @@ fingerprint, permanent identity record or migration is added. Current thread
 ownership is checked before resolving a receipt; deleting the thread ends the
 retry contract. The default-off `McpServer` feature and OAuth configuration are
 unchanged.
+
+### Input, execution and output status
+
+Call `get_chat_status` with `threadId` and the complete original `inputRef`
+returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
+match. With no input reference, `runSelection: "latest"` observes the latest
+authorized run by creation time, with run ID as a deterministic tie breaker.
+With an input reference, `runSelection: "input"` observes only its associated
+or reserved run. A queued, revoked, missing or inaccessible association never
+falls back to another run in the conversation.
+
+The result separates three observations:
+
+| Field                | Meaning                                                                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
+| `input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
+| `run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
+| `output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
+| `output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
+| `messages`           | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `retryAfterMs`       | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
+
+Initial admission is `associated`, even when the run has started: the service
+does not invent a runtime delivery receipt for the initial prompt. `reserved`
+means an active-input handoff is open. `delivered` requires an acknowledged
+active-input receipt and its canonical replacement; it never proves model
+compliance. Several inputs may share one run and its conversation output.
+`visibleMessageRef` can differ from the immutable original `ref` and may be
+null after revocation. Reads never submit, revoke, cancel, change recency or
+mark a conversation read.
+
+Run status preserves `queued`, `pending`, `running`, `completed`, `failed`,
+`timeout` and `cancelled`. A terminal run is not enough for output readiness.
+Actual visible assistant output plus the matching canonical terminal marker
+is required for `ready`; unresolved cancellation recovery keeps it `partial`.
+Without messages the state is `pending` until materialization completes, then
+`unavailable` with `no_output`. Missing associations use `no_associated_run`,
+and a deleted or inaccessible associated run uses `run_unavailable`. Terminal
+error/control markers are not fabricated as message references. Read the run
+status to distinguish success, failure and cancellation.
+
+`ready` describes the current materialized view, not an immutable final answer:
+late output can still arrive. Cancellation recovery reports `pending`,
+`complete` or `not_applicable`; a stale recovery barrier does not count as
+complete merely because the scheduler permits another run.
+
+Status uses the same verified archive plus live tail as message history, with
+run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
+`observedAt` records completion of that bounded observation; concurrent later
+changes appear on the next call. Every call reconstructs the supported history
+and inherits the limits above, including three-second SQL statements and a
+15-second overall budget. Disconnect cancels the read only.
+Status data is capped at 16 KiB, leaving space for the duplicated MCP wire
+representation below 64 KiB. Oversized historical reference metadata fails
+explicitly instead of truncating identities. Poll no faster
+than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
+and stop automatic polling when it is null or the tool returns a resource
+error. A queued input with no run has unavailable output but a non-null retry
+delay: continue tracking that original input instead of submitting it again.
+
+Original input lookup lasts while the exact canonical input and linkage remain
+in readable retained thread history. It continues through archives after the
+30-day live-event window, within the stated history limits; it is not a new
+permanent identity store. Deleted/mismatched/absent references return
+`input.state: "unavailable"`; corrupt, missing or oversized required archives
+fail the tool explicitly. Historical launch/steer evidence can become `unknown`
+when receipt or callback records are no longer available. None of this extends
+the independent 24-hour send retry guarantee. References and artifact links
+retain their existing user/org/thread authorization and grant no new access.
+
+Combined native Codex acceptance in #34936 should exercise send returning a
+null run ID → status by inputRef → queued/associated execution → partial/ready
+output → `get_chat_messages`, then repeat with an active steer, queued revoke
+and cancellation recovery. Also verify that a missing reference does not show
+an unrelated latest run. ChatGPT acceptance remains deferred.
 
 `revoke_queued_message` takes `threadId` and the original `inputId` (the
 `inputRef.eventId`). It returns those identifiers, a nullable `runId`, and
@@ -390,20 +579,20 @@ organization selection, chat operations and refresh-token access, so
 clients can request them in one consent flow without relying on incremental
 authorization support.
 
-Only `user:org:read` and `okou:chat:read` are required for the endpoint and
-all four conversation read tools. Tokens with just these two scopes remain valid
-for reads. A `403 insufficient_scope` challenge names those required scopes.
+The endpoint and all read tools require `user:org:read` and `okou:chat:read`.
+Tokens with just these two scopes remain valid for reads.
+A `403 insufficient_scope` challenge names those required scopes.
 Mutation permissions are checked on every tool invocation:
 
 | Tool                                  | Additional required scope |
 | ------------------------------------- | ------------------------- |
+| `create_chat_thread`                  | `okou:chat:manage`        |
 | `send_chat_message`                   | `okou:chat:send`          |
 | `revoke_queued_message`, `cancel_run` | `okou:run:cancel`         |
 
 Tools requiring a missing mutation scope are not advertised. Direct invocation
 is rejected and performs no operation.
-`okou:chat:manage` remains reserved for conversation metadata operations;
-advertising it does not implement those tools. A tool argument cannot select or override
+Title/model editing is delivered separately. A tool argument cannot select or override
 the organization. Existing grants do not automatically gain scopes; clients must
 reauthorize to obtain additional permissions.
 
@@ -437,24 +626,26 @@ consent or token issuance. Do not treat their success as completing this gate.
 
 ### Login and consent return
 
-Keep Clerk's default Account Portal OAuth consent page. The App derives its
-trusted Account Portal origin from the active Clerk publishable key and preserves
-only that instance's HTTPS `/oauth-consent` return. This origin is shared with
-Clerk's redirect validation; client callback URLs are not App login destinations.
-The original consent query survives login, registration and switching between
-them. A fully active session on a root auth route continues through
-`clerk.redirectWithAuth()`, which carries development browser authentication
-across origins. Pending session tasks, factor routes and explicit authentication
-or account-selection intents remain with Clerk's forms. Consent and organization
-selection still happen on Clerk's hosted page.
+Host Clerk's prebuilt `<OAuthConsent />` on the App's `/oauth-consent` route.
+The component keeps Clerk's consent metadata, organization selection, scope
+rendering, allow/deny submission and redirect validation while avoiding the
+Account Portal's separately challenged static assets. The App accepts only its
+own exact HTTPS `/oauth-consent` URL as a completed-session consent continuation;
+client callback URLs are not App login destinations. The original consent query
+survives login, registration and switching between them. A fully active session
+on a root auth route continues through `clerk.redirectWithAuth()`. Pending
+session tasks, factor routes and explicit authentication or account-selection
+intents remain with Clerk's forms.
 
 In the development Clerk Dashboard **Paths**, point sign-in and sign-up to the
 local App (`https://app.vm7.ai:8443/sign-in` and
-`https://app.vm7.ai:8443/sign-up`). The Marketing service does not host these
-pages. Keep OAuth consent on the default Account Portal. Production uses
+`https://app.vm7.ai:8443/sign-up`) and set **OAuth consent** to
+`/oauth-consent`; Clerk resolves that path on the configured local development
+host. The Marketing service does not host these pages. Production uses
 `https://app.okou.ai/sign-in`, `https://app.okou.ai/sign-up` and
-`https://accounts.okou.ai/oauth-consent`. No additional App environment variable
-is needed for the default hosted consent page.
+`https://app.okou.ai/oauth-consent`. Deploy the App route before changing either
+Clerk instance's path, then verify one allow and one deny flow in that environment.
+No additional App environment variable is required.
 
 ## HTTP behavior
 
@@ -487,16 +678,16 @@ metadata supports public cross-origin discovery.
 ## Acceptance evidence
 
 Automated route tests use real Hono routing, SDK transport, RSA signature checks,
-the membership service, feature overrides and the indicators projection. Only
-external provider/network boundaries are simulated. They cover both protocol
-eras, complete response consumption, invalid grants, scope/membership isolation,
-Origin checks and provider outages.
+the membership service and feature overrides. Only external provider/network
+boundaries are simulated. They cover both protocol eras, complete response
+consumption, invalid grants, scope/membership isolation, Origin checks and
+provider outages.
 
 Before enabling broader access, record a generic MCP client/Inspector check
 against a real hosted preview or staging endpoint, including complete JSON and
-SSE response delivery. Then record basic OAuth, discovery and indicators results
-for Claude, ChatGPT, Claude Code and Codex, with client version/account conditions.
-Local HTTP tests do not establish hosted-client reachability. OAuth foundation
-and discovery shipped separately in #34931 and #34932. The client matrix for the
-full tool set remains #34936; the new message-reader tests do not establish that
-broader hosted acceptance.
+SSE response delivery. Then record basic OAuth, discovery and current-tool
+workflow results for Claude, ChatGPT, Claude Code and Codex, with client
+version/account conditions. Local HTTP tests do not establish hosted-client
+reachability. OAuth foundation and discovery shipped separately in #34931 and
+#34932. The client matrix for the full tool set remains #34936; the new
+message-reader tests do not establish that broader hosted acceptance.

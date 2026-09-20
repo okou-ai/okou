@@ -70,10 +70,15 @@ schedule, or be resurrected by a later re-enable.
 
 A writer that touches both the legacy automation and the native row takes:
 
-1. the member's Morning Brief preference **advisory lock**
-   (`morning_brief_preference:<org>:<user>`),
-2. the `morning_brief_native_schedules` row `FOR UPDATE`,
-3. any `morning_brief_native_occurrences` row `FOR UPDATE`.
+1. the member's Morning Brief preference/admission **advisory lock** when the
+   operation has one (`morning_brief_preference:<org>:<user>`),
+2. the owner-key **advisory lock**
+   (`morning-brief-native-owner:<org>:<user>`) while the member has no
+   `morning_brief_native_schedules` row,
+3. the `morning_brief_native_schedules` row `FOR UPDATE`,
+4. the selected `workflow_automations` row `FOR UPDATE`,
+5. the exact S7a claim, Run, or callback row when the operation owns one,
+6. any `morning_brief_native_occurrences` row `FOR UPDATE`.
 
 Nothing else is permitted. External preflight — Clerk, Slack, the model
 provider — happens **outside** short transactions, and the transaction
@@ -81,19 +86,65 @@ re-reads every predicate it depends on before it commits. Each mutation's
 `WHERE` carries the epoch (and, for transitions, the phase) it read, so a stale
 compensation cannot restore an older epoch's state over a newer writer.
 
+### The owner key covers the member's first row
+
+`SELECT ... FOR UPDATE` locks rows, so it locks nothing for a member who has no
+durable row yet: reading that absence inside a transaction is not a lock on it.
+First materialization and every writer that classifies the selected legacy
+automation therefore take the owner key when they find no row, then re-read it
+under that key. A writer either observes the first row that committed while it
+waited and continues under it, or it holds the key and no first row can appear
+until it commits. An `ordinary` classification can never be carried across a
+concurrent first insert, and bootstrap can never publish a legacy snapshot a
+selected writer is still changing.
+
+Step 2 costs nothing once the member is materialized: the row lock in step 3 is
+the fence from then on, and an existing durable row is never resampled.
+
 ## Writers
 
-| Writer                                    | Effect on the native row                                      |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| Settings enable / disable                 | Logical choice; `enabled` change bumps the epoch (revocation) |
-| Settings / system timezone update         | `timezone` only. **No epoch bump, no revocation**             |
-| Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**      |
-| Enrollment adoption / materialization     | Bootstrap insert only; an existing row is authority           |
-| Generic automation enable/disable/update  | Logical choice, same rules as Settings                        |
-| Official reconciliation pause / restore   | Retained legacy readiness only; native choice is unchanged    |
-| Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded    |
-| Native cron claim                         | Takes the obligation; owes exactly one settlement             |
-| Native settlement                         | Installs the next obligation from the **current** recurrence  |
+| Writer                                    | Effect on the native row                                           |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| Settings enable / disable                 | Logical choice; `enabled` change bumps the epoch (revocation)      |
+| Settings / system timezone update         | `timezone` only. **No epoch bump, no revocation**                  |
+| Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**           |
+| Enrollment adoption / materialization     | Bootstrap insert under the owner key; an existing row is authority |
+| Generic automation enable/disable/update  | Logical choice, same rules as Settings                             |
+| Official reconciliation pause / restore   | Configuration/readiness only; durable choice is preserved          |
+| Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded         |
+| Native cron claim                         | Takes the obligation; owes exactly one settlement                  |
+| Native settlement                         | Installs the next obligation from the **current** recurrence       |
+
+### Selected legacy writers are schedule-first
+
+Once a Morning Brief is materialized into the native schedule row, that row is
+the authority even while `phase = legacy`. Every legacy reconciliation, S7a
+claim, pre-run failure and callback transaction locks the native row before the
+legacy automation. Claims must consume the exact durable legacy-owned anchor.
+Settlements mirror the exact successor and the three-failure pause into both
+rows atomically.
+
+Reconciliation carries a composite fence across transaction boundaries:
+phase, target, epoch, enabled choice, cron, timezone, obligation owner and
+instant, legacy lineage, and row version. A changed field makes finalize or
+compensation stale. Reconciliation may converge retained configuration, but it
+can publish legacy recurrence only in `legacy`; `draining`, `native`, and
+`rollback-draining` force legacy admission closed. A late journalled callback
+may settle only its exact drain fact, while an unjournalled callback after
+cutover is a no-op.
+
+Removing and recreating the Blueprint retains the durable legacy automation ID
+and samples the current durable choice at finalization. A Settings write that
+lands after reservation therefore wins; recreation and rollback cannot replay
+the older retained choice.
+
+An unjournalled compatibility callback revalidates the automation identity under
+its write transaction. If an optimistic ordinary or absent read has become a
+Morning Brief row, the callback releases that attempt and retries schedule-first;
+it never locks durable authority after the automation. Even in `legacy`, the
+selected callback may advance only when both retained and durable recurrence
+slots are still empty. Disable/re-enable or any writer that already published a
+successor wins without changing either failure count, choice, epoch or schedule.
 
 ### Timezone and cron edits do not revoke in-flight work
 
@@ -141,19 +192,43 @@ deferred at most **3 times, 15 minutes apart** (`NATIVE_CONFIGURATION_DEFER_LIMI
 provider call, no false invocation receipt, and no enabled owner left with an
 unowned `NULL` schedule.
 
-### Delivery recovery
+### Bound-attempt recovery
 
-`delivery_pending` is owned by the delivery consumer, not by the scheduler. The
-slot is already settled, so the next daily occurrence may become due while this
-recovery is still running; a pending receipt must never wedge the future
-scheduler or re-open its slot.
+S5 binds `generation_attempt_id` and sets `delivery_pending` in the reservation
+transaction, before the sole provider POST. Recovery therefore owns two forms
+of the same durable obligation: an accepted result whose native slot already
+settled with delivery pending, and a process interruption after a bound S5
+attempt committed but before native settlement. A bound attempt is never
+reachable through ordinary occurrence resume, so neither form can recollect or
+open a second invocation.
 
-The consumer resolves the **durable receipt by the native occurrence identity
-first**, without requiring the S5 result to still be present. A Chat receipt
-committed before a crash stays delivered after the result expires, and its
-shared-outbox email recovery is preserved. Only when no committed receipt
-exists may the same saved result be retried under current authority and valid
-retention. Neither path regenerates, and neither settles the schedule again.
+The consumer resolves the **durable S6 receipt by the native occurrence
+identity first**, without requiring the S5 result to still be present. A Chat
+receipt committed before a crash stays delivered after the result expires or
+is physically purged, and its shared-outbox email recovery remains with S2.
+
+Without a receipt, recovery consults S5's content-free readback for that exact
+attempt:
+
+- a retained accepted `deliver` result alone enters S6 under current authority;
+- a validated model skip settles `model-skip`;
+- `provider_failed`, `output_rejected`, `not_invoked`, and `result_discarded`
+  settle `generation-failed`;
+- `invocation_outcome_unknown`, a lapsed reservation, or a conclusively missing
+  result settles `generation-unknown`;
+- a live reservation and a temporarily unreleasable accepted result stay
+  pending.
+
+Logical retention does not erase known terminal metadata while its row still
+exists. Physical deletion does make a receipt-less result unknown. A lapsed
+reservation transition is fenced by that exact attempt, so a replacement row
+cannot inherit the old attempt's unknown outcome. Closing is a compare-and-set
+over the exact occurrence epoch, lease, bound attempt and pending flag. It locks
+the schedule before rechecking the S6 receipt, so a delivery that commits while
+recovery waits still wins as `delivered`; overlapping ticks can consume the
+obligation once, and an old epoch cannot rewrite a newer schedule obligation.
+Neither recovery path changes platform receipt/cost facts, reparses provider
+output, or settles the schedule twice.
 
 ### Missed ticks coalesce
 

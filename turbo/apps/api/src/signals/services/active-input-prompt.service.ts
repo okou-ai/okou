@@ -1,4 +1,3 @@
-import { loadIntroVideoTemplateAccess } from "./intro-video-access.service";
 import { ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEvents,
@@ -298,10 +297,6 @@ async function materializeActiveInputPrompt(
     );
   }
   const generationTemplates = resolveThreadGenerationTemplatePrompt({
-    introVideoEnabled: loadIntroVideoTemplateAccess(
-      projection.templates,
-      args.featureSwitchContext,
-    ),
     explicit: projection.primaryTemplate,
     explicitTemplates: projection.templates,
     // Steered into a run that is already executing, whose volumes were fixed

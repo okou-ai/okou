@@ -116,7 +116,6 @@ test.each([
   "video-generation",
   "voice-generation",
   "avatar-video-generation",
-  "video-rendering",
 ] as const)("saves and re-enables the %s preference", async (toolId) => {
   const identity = await owner();
   await accept(

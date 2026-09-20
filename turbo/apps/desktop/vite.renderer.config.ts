@@ -42,10 +42,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        // The recorder overlays run in their own windows and load a separate
-        // document, so the bundle needs both entries.
         index: path.join(__dirname, "src", "renderer", "index.html"),
-        recorder: path.join(__dirname, "src", "renderer", "recorder.html"),
       },
     },
     outDir: path.join(__dirname, "dist", "renderer"),

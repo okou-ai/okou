@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  XResourceDeduplication = "xResourceDeduplication",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
@@ -19,6 +18,7 @@ export enum FeatureSwitchKey {
   DocuSignConnector = "docusignConnector",
   FigmaConnector = "figmaConnector",
   ExpensifyConnector = "expensifyConnector",
+  MondayConnector = "mondayConnector",
   MercuryConnector = "mercuryConnector",
   NeonConnector = "neonConnector",
   NetSuiteConnector = "netSuiteConnector",
@@ -28,6 +28,7 @@ export enum FeatureSwitchKey {
   WebflowConnector = "webflowConnector",
   CloseConnector = "closeConnector",
   PayPalConnector = "payPalConnector",
+  PlaudConnector = "plaudConnector",
   RampConnector = "rampConnector",
   ResendConnector = "resendConnector",
   SpotifyConnector = "spotifyConnector",
@@ -52,6 +53,7 @@ export enum FeatureSwitchKey {
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",
+  AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   McpServer = "mcpServer",
@@ -61,7 +63,6 @@ export enum FeatureSwitchKey {
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   LangfuseTrace = "_langfuseTrace",
-  IntroVideo = "introVideo",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
   GradientColorThemes = "gradientColorThemes",
@@ -73,9 +74,12 @@ export enum FeatureSwitchKey {
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",
+  GetStartedQuestIntro = "getStartedQuestIntro",
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
+  PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
   OnboardingSourcesFirst = "onboardingSourcesFirst",
+  OptimisticMessageSpinner = "optimisticMessageSpinner",
 }

@@ -14,7 +14,6 @@ import {
 } from "../../views/okou-page/presentation-html-preview.ts";
 import { readableAttachmentResourceUrl } from "../../views/okou-page/attachment-url.ts";
 import { createAvatarTemplatePickerSignals } from "./avatar-template-picker.ts";
-import { createIntroVideoPickerSignals } from "./intro-video-picker.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
 import { createModelPickerMenuSignals } from "./model-picker-menu.ts";
 import type { VideoRunOptionsPatch } from "./video-run-options.ts";
@@ -459,7 +458,6 @@ function createTemplatePickerDialogSignals() {
 
 function createTemplatePickerListSignals() {
   const avatarTemplates = createAvatarTemplatePickerSignals();
-  const introVideo = createIntroVideoPickerSignals();
   // Null until an entry point names a category, so the picker can open on the
   // one the member's own switches lead the nav with.
   const internalTemplatePickerCategory$ = state<string | null>(null);
@@ -532,7 +530,6 @@ function createTemplatePickerListSignals() {
 
   return {
     signals: {
-      introVideo,
       templatePickerCategory$,
       setTemplatePickerCategory$,
       templatePickerSearch$,
@@ -559,7 +556,6 @@ function createOpenTemplatePickerDialogCommand(
     set(list.signals.setTemplatePickerSearch$, "");
     set(list.signals.setTemplatePickerPreviewSlug$, null);
     set(dialog.setTemplatePickerReferenceValue$, options.referenceValue);
-    set(list.signals.introVideo.restore$, options.referenceValue);
     set(list.signals.setTemplatePickerCategory$, options.category);
     set(dialog.setTemplatePickerOpen$, true);
   });

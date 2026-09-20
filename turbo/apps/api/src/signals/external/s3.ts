@@ -30,10 +30,7 @@ import {
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
-import {
-  PRIVATE_ARTIFACT_CACHE_CONTROL,
-  PRIVATE_NO_STORE_CACHE_CONTROL,
-} from "@okouai/api-contracts/contracts/artifact-cache";
+import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
@@ -1002,11 +999,16 @@ export function generateHostedSitesPresignedGetUrl(
   bucket: string,
   key: string,
   usePublicEndpoint = false,
+  options?: {
+    readonly filename?: string;
+    readonly signingDate?: Date;
+  },
 ): Computed<Promise<string>> {
   return generatePresignedGetUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
     bucket,
     key,
+    options,
   );
 }
 
@@ -1027,19 +1029,6 @@ export function generatePresignedGetUrl(
           ? PRIVATE_ARTIFACT_CACHE_CONTROL
           : undefined,
     },
-  );
-}
-
-/** Private inputs must not remain cached after their signed access expires. */
-export function generatePrivatePresignedGetUrl(
-  bucket: string,
-  key: string,
-): Computed<Promise<string>> {
-  return generatePresignedGetUrlWithClient(
-    s3ClientForBucket(bucket, true),
-    bucket,
-    key,
-    { responseCacheControl: PRIVATE_NO_STORE_CACHE_CONTROL },
   );
 }
 
@@ -1218,25 +1207,6 @@ export function putImmutableS3Object(
       cacheControl: IMMUTABLE_CACHE_CONTROL,
     },
     writeOptions?.signal,
-  );
-}
-
-export function putPrivateImmutableS3Object(
-  bucket: string,
-  key: string,
-  body: string | Buffer,
-  contentType: string,
-  signal: AbortSignal,
-): Computed<Promise<void>> {
-  return putImmutableS3ObjectWithOptions(
-    {
-      bucket,
-      key,
-      body,
-      contentType,
-      cacheControl: PRIVATE_NO_STORE_CACHE_CONTROL,
-    },
-    signal,
   );
 }
 

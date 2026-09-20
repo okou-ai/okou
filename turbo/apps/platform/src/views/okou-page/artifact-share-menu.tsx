@@ -70,11 +70,13 @@ function PermissionChoices({
   selected,
   organizationName,
   saving,
+  unavailable = false,
   onChange,
 }: {
   readonly selected: ArtifactShareStatus["audience"] | undefined;
-  readonly organizationName: string;
+  readonly organizationName: string | null;
   readonly saving: boolean;
+  readonly unavailable?: boolean;
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
 }) {
   const { t } = useTranslation();
@@ -95,14 +97,21 @@ function PermissionChoices({
       label: t(($) => {
         return $.artifacts.sharing.organization;
       }),
-      description: t(
-        ($) => {
-          return $.artifacts.sharing.organizationDescription;
-        },
-        {
-          organization: organizationName,
-        },
-      ),
+      // A failed permission read still knows the option exists, but not which
+      // workspace it names, so the unnamed wording stands in for it.
+      description:
+        organizationName === null
+          ? t(($) => {
+              return $.artifacts.sharing.organizationDescriptionUnnamed;
+            })
+          : t(
+              ($) => {
+                return $.artifacts.sharing.organizationDescription;
+              },
+              {
+                organization: organizationName,
+              },
+            ),
     },
     {
       audience: "public",
@@ -131,10 +140,12 @@ function PermissionChoices({
             type="button"
             role="radio"
             aria-checked={selected === audience}
+            disabled={unavailable}
             tabIndex={selected === audience ? 0 : -1}
             aria-busy={selected === audience && saving}
             className={cn(
-              "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-state-hover",
+              "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
+              unavailable ? "opacity-50" : "hover:bg-state-hover",
               selected === audience && "bg-state-hover",
             )}
             onClick={() => {
@@ -162,14 +173,12 @@ function PermissionChoices({
 }
 
 function ShareFooter({
-  saving,
   failed,
   copying,
   ready,
   onRetry,
   onCopy,
 }: {
-  readonly saving: boolean;
   readonly failed: boolean;
   readonly copying: boolean;
   readonly ready: boolean;
@@ -178,20 +187,19 @@ function ShareFooter({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-2 flex items-center justify-between gap-3 border-t border-divider px-3 pb-2 pt-4">
-      <span className="text-xs text-muted-foreground" role="status">
-        {saving
-          ? t(($) => {
-              return $.artifacts.sharing.saving;
-            })
-          : failed
-            ? t(($) => {
-                return $.artifacts.sharing.loadFailed;
-              })
-            : t(($) => {
-                return $.artifacts.sharing.savedAutomatically;
-              })}
-      </span>
+    <div
+      className={cn(
+        "mt-2 flex items-center gap-3 border-t border-divider px-3 pb-2 pt-4",
+        failed ? "justify-between" : "justify-end",
+      )}
+    >
+      {failed && (
+        <span className="text-xs text-muted-foreground" role="status">
+          {t(($) => {
+            return $.artifacts.sharing.loadFailed;
+          })}
+        </span>
+      )}
       {failed ? (
         <Button
           size="sm"
@@ -321,7 +329,7 @@ function ShareSessionMenu({
           <ShareSkeleton />
         ) : (
           <>
-            {details?.status && (
+            {details?.status ? (
               <PermissionChoices
                 selected={draft?.audience ?? details.audience}
                 organizationName={details.status.organization.name}
@@ -330,9 +338,23 @@ function ShareSessionMenu({
                   return detach(change(audience, signal), Reason.DomCallback);
                 }}
               />
+            ) : (
+              /* A failed read leaves the audience unknown, not absent. Keeping
+                 the choices in place, inert and unselected, holds the menu's
+                 shape and shows what Retry will restore. */
+              loadable.state === "hasError" && (
+                <PermissionChoices
+                  selected={undefined}
+                  organizationName={null}
+                  saving={false}
+                  unavailable
+                  onChange={() => {
+                    return undefined;
+                  }}
+                />
+              )
             )}
             <ShareFooter
-              saving={draft !== null}
               failed={loadable.state === "hasError"}
               copying={copying.state === "loading"}
               ready={Boolean(details?.status)}

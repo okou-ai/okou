@@ -9,8 +9,8 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
-  connectorManualGrantContract,
-  connectorsBySlugContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorByIdContract,
@@ -29,7 +29,7 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
@@ -47,7 +47,7 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...connectorAccountRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsRoutes,
   ...customConnectorsRoutes,
   ...customConnectorsDeleteRoutes,
   ...customConnectorsValuesSetRoutes,
@@ -83,11 +83,11 @@ function accountClient() {
 }
 
 function connectorClient() {
-  return setupApp({ context, routes })(connectorManualGrantContract);
+  return setupApp({ context, routes })(builtinConnectorManualGrantContract);
 }
 
 function connectorProjectionClient() {
-  return setupApp({ context, routes })(connectorsBySlugContract);
+  return setupApp({ context, routes })(builtinConnectorsBySlugContract);
 }
 
 function customConnectorClient() {

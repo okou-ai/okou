@@ -1,13 +1,7 @@
-import {
-  INTRO_VIDEO_RENDER_TASK,
-  recordIntroVideoRenderCallback$,
-  loadIntroVideoRenderJob$,
-} from "../services/intro-video-render.service";
 import { command } from "ccstate";
 import {
   webhookBuiltInGenerationBytePlusContract,
   webhookBuiltInGenerationFalContract,
-  webhookBuiltInGenerationHeyGenContract,
   webhookBuiltInGenerationJoggAiContract,
   webhookBuiltInGenerationMiniMaxContract,
 } from "@okouai/api-contracts/contracts/webhooks";
@@ -72,25 +66,6 @@ import {
   parseJoggAiWebhookPayload,
   recordGeneratedAvatarVideo$,
 } from "../services/avatar-video.service";
-import {
-  downloadHeyGenAvatarVideo,
-  getHeyGenAvatarVideoStatus,
-  isHeyGenErrorResponse,
-  parseHeyGenVideoAgentCallback,
-  type HeyGenAvatarVideoStatus,
-} from "../services/heygen.service";
-import {
-  reconcileIntroVideoAgentJob$,
-  loadIntroVideoAgentJob$,
-  recordIntroVideoAgentIdentity$,
-} from "../services/intro-video-agent.service";
-import {
-  introVideoPresenterPricing$,
-  isIntroVideoPresenterErrorResponse,
-  parseIntroVideoPresenterOptions,
-  parsedIntroVideoPresenterGeneration,
-  recordGeneratedIntroVideoPresenter$,
-} from "../services/intro-video-presenter.service";
 
 const L = logger("BuiltInGenerationWebhooks");
 
@@ -109,12 +84,6 @@ const miniMaxWebhookPathParams$ = pathParamsOf(
 );
 const miniMaxWebhookQuery$ = queryOf(
   webhookBuiltInGenerationMiniMaxContract.post,
-);
-const heyGenWebhookPathParams$ = pathParamsOf(
-  webhookBuiltInGenerationHeyGenContract.post,
-);
-const heyGenWebhookQuery$ = queryOf(
-  webhookBuiltInGenerationHeyGenContract.post,
 );
 interface GenerationErrorResponse {
   readonly status: number;
@@ -208,14 +177,6 @@ function parseJobVideoOptions(job: BuiltInGenerationWebhookJob) {
 function parseJobAvatarVideoOptions(job: BuiltInGenerationWebhookJob) {
   const options = parseAvatarVideoOptions(job.request);
   if (isAvatarVideoErrorResponse(options)) {
-    throw new Error(options.body.error.message);
-  }
-  return options;
-}
-
-function parseJobIntroVideoPresenterOptions(job: BuiltInGenerationWebhookJob) {
-  const options = parseIntroVideoPresenterOptions(job.request);
-  if (isIntroVideoPresenterErrorResponse(options)) {
     throw new Error(options.body.error.message);
   }
   return options;
@@ -1280,90 +1241,6 @@ const handleJoggAiAvatarVideoCompletion$ = command(
   },
 );
 
-const handleHeyGenIntroVideoPresenterCompletion$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly job: BuiltInGenerationWebhookJob;
-      readonly status: Extract<
-        HeyGenAvatarVideoStatus,
-        { readonly kind: "completed" }
-      >;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const options = parseJobIntroVideoPresenterOptions(args.job);
-    if (!args.job.runId) {
-      throw new Error("Expected a run-bound Intro Video presenter job");
-    }
-    const pricing = await get(introVideoPresenterPricing$);
-    signal.throwIfAborted();
-    if (!pricing) {
-      await set(
-        failBuiltInGenerationJob$,
-        {
-          generationId: args.job.id,
-          error: failError(
-            "HeyGen Intro Video presenter pricing is not configured",
-            "NOT_CONFIGURED",
-          ),
-        },
-        signal,
-      );
-      await set(completeAdmissionForJob$, {
-        job: args.job,
-        status: "failed",
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    const downloaded = await downloadHeyGenAvatarVideo(args.status, signal);
-    if (isHeyGenErrorResponse(downloaded)) {
-      await set(
-        failBuiltInGenerationJob$,
-        { generationId: args.job.id, error: downloaded.body.error },
-        signal,
-      );
-      await set(completeAdmissionForJob$, {
-        job: args.job,
-        status: "failed",
-      });
-      signal.throwIfAborted();
-      return;
-    }
-    const result = await set(
-      recordGeneratedIntroVideoPresenter$,
-      {
-        orgId: args.job.orgId,
-        userId: args.job.userId,
-        runId: args.job.runId,
-        publicBrand: builtInGenerationPublicBrand(args.job.request),
-        privateArtifacts: builtInGenerationIsPrivate(args.job.request),
-        pricing,
-        generation: parsedIntroVideoPresenterGeneration({
-          ...downloaded,
-          options,
-        }),
-        usageIdempotency: {
-          generationId: args.job.id,
-          scope: "intro-video-presenter",
-        },
-      },
-      signal,
-    );
-    await set(
-      completeBuiltInGenerationJob$,
-      { generationId: args.job.id, result },
-      signal,
-    );
-    await set(completeAdmissionForJob$, {
-      job: args.job,
-      status: "completed",
-    });
-    signal.throwIfAborted();
-  },
-);
-
 const postFalBuiltInGenerationWebhook$ = command(
   async (
     { get, set },
@@ -1810,196 +1687,6 @@ const postJoggAiBuiltInGenerationWebhook$ = command(
   },
 );
 
-const handleHeyGenIntroVideoAgentWebhook$ = command(
-  async (
-    { get, set },
-    job: BuiltInGenerationWebhookJob,
-    signal: AbortSignal,
-  ): Promise<ProviderWebhookResponse> => {
-    const internal = readBuiltInGenerationRequestInternal(job.request);
-    if (!internal.providerSessionId || !internal.providerJobId) {
-      const rawBody = await get(request$).text();
-      signal.throwIfAborted();
-      const hints = parseHeyGenVideoAgentCallback(
-        safeJsonParse(rawBody),
-        job.id,
-      );
-      if (hints) {
-        if (
-          (internal.providerSessionId &&
-            hints.sessionId &&
-            internal.providerSessionId !== hints.sessionId) ||
-          (internal.providerJobId &&
-            hints.videoId &&
-            internal.providerJobId !== hints.videoId)
-        ) {
-          return jsonError("Video Agent callback identity mismatch", 400);
-        }
-        const recorded = await set(
-          recordIntroVideoAgentIdentity$,
-          {
-            generationId: job.id,
-            ...(hints.sessionId ? { sessionId: hints.sessionId } : {}),
-            ...(hints.videoId ? { videoId: hints.videoId } : {}),
-          },
-          signal,
-        );
-        if (!recorded) {
-          return jsonError("Video Agent callback identity mismatch", 400);
-        }
-      }
-    }
-    await set(reconcileIntroVideoAgentJob$, job.id, signal);
-    const updated = await set(loadIntroVideoAgentJob$, job.id, signal);
-    return updated?.status === "completed" || updated?.status === "failed"
-      ? okResponse()
-      : jsonError("Video Agent generation is still pending", 503);
-  },
-);
-
-const handleHeyGenCloudRenderWebhook$ = command(
-  async (
-    { get, set },
-    id: string,
-    signal: AbortSignal,
-  ): Promise<ProviderWebhookResponse> => {
-    const raw = await get(request$).text();
-    signal.throwIfAborted();
-    await set(recordIntroVideoRenderCallback$, id, safeJsonParse(raw), signal);
-    const updated = await set(loadIntroVideoRenderJob$, id, signal);
-    return updated?.status === "completed" || updated?.status === "failed"
-      ? okResponse()
-      : jsonError("Cloud render is still pending", 503);
-  },
-);
-
-const postHeyGenBuiltInGenerationWebhook$ = command(
-  async (
-    { get, set },
-    signal: AbortSignal,
-  ): Promise<ProviderWebhookResponse> => {
-    const params = get(heyGenWebhookPathParams$);
-    const query = get(heyGenWebhookQuery$);
-    if (
-      !verifyBuiltInGenerationProviderWebhookToken({
-        provider: "heygen",
-        generationId: params.generationId,
-        visualKey: undefined,
-        token: query.token,
-      })
-    ) {
-      L.warn("HeyGen built-in generation webhook rejected invalid token", {
-        generationId: params.generationId,
-      });
-      return jsonError("Invalid token", 401);
-    }
-
-    const job = await set(
-      getBuiltInGenerationWebhookJob$,
-      params.generationId,
-      signal,
-    );
-    if (!job) {
-      L.debug("HeyGen built-in generation webhook ignored inactive job", {
-        generationId: params.generationId,
-      });
-      return okResponse();
-    }
-    const internal = readBuiltInGenerationRequestInternal(job.request);
-    if (
-      internal.provider === "heygen" &&
-      internal.providerTask === INTRO_VIDEO_RENDER_TASK
-    ) {
-      return await set(handleHeyGenCloudRenderWebhook$, job.id, signal);
-    }
-    if (
-      internal.provider === "heygen" &&
-      internal.providerTask === "intro-video-agent"
-    ) {
-      return await set(handleHeyGenIntroVideoAgentWebhook$, job, signal);
-    }
-    if (
-      internal.provider !== "heygen" ||
-      internal.providerTask !== "intro-video-presenter" ||
-      !internal.providerJobId
-    ) {
-      L.warn("HeyGen built-in generation webhook found an invalid job", {
-        generationId: job.id,
-      });
-      return jsonError("Invalid generation job", 400);
-    }
-    const apiKey = env("HEYGEN_API_KEY");
-    if (!apiKey) {
-      return jsonError("Webhook is not configured", 503);
-    }
-    const status = await getHeyGenAvatarVideoStatus(
-      internal.providerJobId,
-      apiKey,
-      signal,
-    );
-    if (isHeyGenErrorResponse(status)) {
-      if (status.status === 503) {
-        return jsonError(status.body.error.message, 503);
-      }
-      L.warn("HeyGen built-in generation webhook received invalid status", {
-        generationId: job.id,
-        providerVideoId: internal.providerJobId,
-        providerMessage: status.body.error.message,
-      });
-      await set(
-        failBuiltInGenerationJob$,
-        { generationId: job.id, error: status.body.error },
-        signal,
-      );
-      await set(completeAdmissionForJob$, { job, status: "failed" });
-      signal.throwIfAborted();
-      return okResponse();
-    }
-    if (status.kind === "pending") {
-      return jsonError("Generation is still pending", 503);
-    }
-    if (status.kind === "failed") {
-      L.warn("HeyGen built-in generation webhook reported failure", {
-        generationId: job.id,
-        providerVideoId: internal.providerJobId,
-        providerMessage: redactPresignedUrls(status.message),
-      });
-      await set(
-        failBuiltInGenerationJob$,
-        {
-          generationId: job.id,
-          error: failError(
-            "HeyGen Intro Video presenter generation failed",
-            "HEYGEN_GENERATION_FAILED",
-          ),
-        },
-        signal,
-      );
-      await set(completeAdmissionForJob$, { job, status: "failed" });
-      signal.throwIfAborted();
-      return okResponse();
-    }
-
-    waitUntil(
-      tapError(
-        set(
-          handleHeyGenIntroVideoPresenterCompletion$,
-          { job, status },
-          signal,
-        ),
-        (error) => {
-          L.error("HeyGen built-in generation webhook processing failed", {
-            generationId: job.id,
-            providerVideoId: internal.providerJobId,
-            error,
-          });
-        },
-      ),
-    );
-    return okResponse();
-  },
-);
-
 export const webhooksBuiltInGenerationRoutes: readonly RouteEntry[] = [
   {
     route: webhookBuiltInGenerationFalContract.post,
@@ -2016,9 +1703,5 @@ export const webhooksBuiltInGenerationRoutes: readonly RouteEntry[] = [
   {
     route: webhookBuiltInGenerationJoggAiContract.post,
     handler: postJoggAiBuiltInGenerationWebhook$,
-  },
-  {
-    route: webhookBuiltInGenerationHeyGenContract.post,
-    handler: postHeyGenBuiltInGenerationWebhook$,
   },
 ];

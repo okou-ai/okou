@@ -89,42 +89,42 @@ describe("okou artifact", () => {
       url: OWNER_URL,
       organization: PRIVATE.organization,
       selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
     });
   });
 
   it.each(["organization", "public"] as const)(
-    "reads %s visibility and its URL without changing permissions",
+    "reads %s visibility and returns the stable App URL without changing permissions",
     async (audience) => {
-      const url = audience === "organization" ? ORG_URL : PUBLIC_URL;
+      const sharingUrl = audience === "organization" ? ORG_URL : PUBLIC_URL;
       serveStatus({
         ...PRIVATE,
         audience,
         shareId: SHARE_ID,
         selectedTarget: TARGET,
-        url,
+        url: sharingUrl,
       });
       await artifactCommand.parseAsync([REFERENCE, "--json"], { from: "user" });
-      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      const output = log.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({
         visibility: audience === "organization" ? "org" : "public",
-        url,
+        url: OWNER_URL,
       });
+      expect(output).not.toContain(PUBLIC_URL);
     },
   );
 
   it.each(["organization", "public"] as const)(
-    "shares a file to %s using the UI endpoint",
+    "shares a file to %s using the UI endpoint and returns the stable App URL",
     async (audience) => {
       serveStatus();
-      const url = audience === "organization" ? ORG_URL : PUBLIC_URL;
+      const sharingUrl = audience === "organization" ? ORG_URL : PUBLIC_URL;
       const shared = {
         ...PRIVATE,
         audience,
         shareId: SHARE_ID,
         selectedTarget: TARGET,
-        url,
-        shortUrl: audience === "organization" ? url : null,
+        url: sharingUrl,
+        shortUrl: audience === "organization" ? sharingUrl : null,
       };
       server.use(
         http.put(`${API}/api/artifact-shares`, async ({ request }) => {
@@ -140,8 +140,11 @@ describe("okou artifact", () => {
         ],
         { from: "user" },
       );
-      expect(log.mock.calls.flat().join("\n")).toContain(`URL: ${url}`);
-      expect(log.mock.calls.flat().join("\n")).toContain(
+      const output = log.mock.calls.flat().join("\n");
+      expect(output).toContain(`URL: ${OWNER_URL}`);
+      expect(output).not.toContain(PUBLIC_URL);
+      expect(output).toContain(`Shared artifact: ${TARGET.kind} ${TARGET.id}`);
+      expect(output).toContain(
         `Visibility: ${audience === "organization" ? "org" : "public"}`,
       );
     },
@@ -170,7 +173,7 @@ describe("okou artifact", () => {
       version: 1,
     },
   ] as const)(
-    "reuses the Share button's $kind $audience link without a write",
+    "reuses the Share button's $kind $audience grant and returns the stable App URL without a write",
     async ({ kind, audience, url, shortUrl, version }) => {
       const shared = {
         ...PRIVATE,
@@ -192,13 +195,15 @@ describe("okou artifact", () => {
         ],
         { from: "user" },
       );
-      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+      const output = log.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({
         visibility: audience === "organization" ? "org" : "public",
-        url,
+        url: OWNER_URL,
         selectedTarget: { ...TARGET, kind },
-        selectedVersion: version,
-        candidateVersion: version,
       });
+      if (url !== OWNER_URL) {
+        expect(output).not.toContain(url);
+      }
     },
   );
 
@@ -213,8 +218,6 @@ describe("okou artifact", () => {
       url: OWNER_URL,
       organization: PRIVATE.organization,
       selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
     });
   });
 
@@ -246,7 +249,7 @@ describe("okou artifact", () => {
     expect(log.mock.calls.flat().join("\n")).not.toContain(PUBLIC_URL);
   });
 
-  it("explicitly shares a new hosted version instead of returning the older link", async () => {
+  it("explicitly shares the requested deployment when another deployment is currently shared", async () => {
     const target = { ...TARGET, kind: "html" as const };
     const shared = {
       ...PRIVATE,
@@ -275,7 +278,6 @@ describe("okou artifact", () => {
     );
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       selectedTarget: target,
-      selectedVersion: 2,
     });
   });
 
@@ -305,9 +307,9 @@ describe("okou artifact", () => {
     await artifactCommand.parseAsync([REFERENCE, "--visibility", "public"], {
       from: "user",
     });
-    expect(log.mock.calls.flat().join("\n")).toContain(
-      "URL: https://report.okou.app/",
-    );
+    const output = log.mock.calls.flat().join("\n");
+    expect(output).toContain(`URL: ${OWNER_URL}`);
+    expect(output).not.toContain("https://report.okou.app/");
   });
 
   it("preserves a permission denial without retrying a publication", async () => {
@@ -338,7 +340,7 @@ describe("okou artifact", () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 
-  it("reports a historical organization share without a URL without allocating one on read", async () => {
+  it("returns the stable App URL for a historical organization share without allocating an alias", async () => {
     serveStatus({
       ...PRIVATE,
       audience: "organization",
@@ -346,8 +348,9 @@ describe("okou artifact", () => {
       selectedTarget: TARGET,
     });
     await artifactCommand.parseAsync([REFERENCE], { from: "user" });
-    expect(log.mock.calls.flat().join("\n")).toContain("--visibility org");
-    expect(log.mock.calls.flat().join("\n")).not.toContain(`URL: ${OWNER_URL}`);
+    const output = log.mock.calls.flat().join("\n");
+    expect(output).toContain(`URL: ${OWNER_URL}`);
+    expect(output).not.toContain("--visibility org");
   });
 
   it("rejects an invalid visibility before making any request", async () => {

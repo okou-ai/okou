@@ -139,13 +139,6 @@ interface BillingStatusResponse {
   autoRechargeAllowed: boolean;
   supportByok: boolean;
   restrictedBuiltInModels: boolean;
-  // Retired brand alias of restrictedBuiltInModels, carrying an identical
-  // value from the same source. Surface: old web/app -> API. Apps older than
-  // this release read only this name, and because the contract marks both
-  // optional they would silently fall back to their hardcoded legacy tier
-  // table instead of failing. Remove once the replacement app is live and the
-  // client-version floor excludes those builds: #33658 step 2.
-  restrictedVm0Models: boolean;
   videoGenerationAllowed: boolean;
   workflowWebhookAutomationAllowed: boolean;
   credits: number;
@@ -623,7 +616,6 @@ function billingStatusResponse(args: {
     autoRechargeAllowed: args.autoRechargeAllowed,
     supportByok: args.supportByok,
     restrictedBuiltInModels: args.restrictedBuiltInModels,
-    restrictedVm0Models: args.restrictedBuiltInModels,
     videoGenerationAllowed: args.videoGenerationAllowed,
     workflowWebhookAutomationAllowed: args.workflowWebhookAutomationAllowed,
     credits: displayedCredits,

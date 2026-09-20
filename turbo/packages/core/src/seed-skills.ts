@@ -11,6 +11,3 @@ export const SEED_SKILLS: readonly string[] = [
   "ppt-avatar-video",
   "workflow-setup",
 ] as const;
-
-/** Mounted only for runs whose organization or user has Intro Video enabled. */
-export const INTRO_VIDEO_SKILL_NAME = "intro-video";

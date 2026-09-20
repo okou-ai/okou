@@ -6,6 +6,8 @@ describe("getModelDisplayName", () => {
   it("uses friendly labels for OpenAI model IDs", () => {
     expect(getModelDisplayName("gpt-6-astra")).toBe("GPT 6 Astra");
     expect(getModelDisplayName("openai/gpt-6-astra")).toBe("GPT 6 Astra");
+    expect(getModelDisplayName("gpt-6-sol")).toBe("GPT 6 Sol");
+    expect(getModelDisplayName("openai/gpt-6-sol")).toBe("GPT 6 Sol");
     expect(getModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
     expect(getModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
     expect(getModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");

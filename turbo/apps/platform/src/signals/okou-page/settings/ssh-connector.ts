@@ -4,7 +4,7 @@ import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
 import { agents$ } from "../../agent.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { sshSummary$ } from "../../ssh.ts";
+import { sshAgentAccessRows$, sshSummary$ } from "../../ssh.ts";
 import {
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -35,6 +35,17 @@ export const filteredSshSummary$ = computed(async (get) => {
   }
   if (filter.kind === "not-connected" && summary.configuredCount > 0) {
     return null;
+  }
+  if (filter.kind === "unshared") {
+    const rows = await get(sshAgentAccessRows$);
+    if (
+      rows === null ||
+      rows.some((row) => {
+        return row.enabled;
+      })
+    ) {
+      return null;
+    }
   }
   if (filter.kind === "agent") {
     const agents = await get(agents$);

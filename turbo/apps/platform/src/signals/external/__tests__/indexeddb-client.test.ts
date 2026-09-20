@@ -12,11 +12,6 @@ import {
 } from "../../__tests__/test-helpers.ts";
 import { createAuthedContractClient } from "../../api-client-base.ts";
 import { createChatIdbOpener } from "../chat-idb-opener.ts";
-import {
-  deleteIntroVideoDraft,
-  readIntroVideoDraft,
-  saveIntroVideoDraft,
-} from "../intro-video-draft-store.ts";
 import { runIndexedDbTransaction } from "../indexeddb-client.ts";
 
 const axiomTelemetry = vi.hoisted(() => {
@@ -241,7 +236,7 @@ test("Reports an aborted IndexedDB transaction without hiding its error", async 
     await expect(
       runIndexedDbTransaction(
         {
-          database: "intro_video_drafts",
+          database: "voice_drafts",
           template: "records.put",
           transaction_mode: "readwrite",
         },
@@ -266,7 +261,7 @@ test("Reports an aborted IndexedDB transaction without hiding its error", async 
   const event = events[1]!;
   expect(creationEvent).toMatchObject({
     "attributes.custom": {
-      "db.namespace": "intro_video_drafts",
+      "db.namespace": "voice_drafts",
       "okou.client.outcome": "success",
       "okou.db.transaction.mode": "readwrite",
     },
@@ -275,7 +270,7 @@ test("Reports an aborted IndexedDB transaction without hiding its error", async 
   });
   expect(event).toMatchObject({
     "attributes.custom": {
-      "db.namespace": "intro_video_drafts",
+      "db.namespace": "voice_drafts",
       "okou.client.outcome": "aborted",
       "okou.db.request.count": 1,
       "okou.db.transaction.mode": "readwrite",
@@ -324,89 +319,6 @@ test("Reports a synchronous IndexedDB transaction creation failure", async () =>
   expect(event.duration).toStrictEqual(expect.any(Number));
   expect(event).not.toHaveProperty("attributes.custom.okou.db.request.count");
   expect(JSON.stringify(event)).not.toContain(creationError.message);
-});
-
-test("Reports all intro video draft IndexedDB lifecycle events", async () => {
-  const draft = {
-    blob: new Blob(["private draft"]),
-    contentType: "video/mp4",
-    createdAt: 1_777_777_777_777,
-    durationSeconds: 12,
-    kind: "video" as const,
-    name: "private-draft.mp4",
-  };
-
-  await saveIntroVideoDraft(draft);
-  const restoredDraft = await readIntroVideoDraft();
-  expect(restoredDraft).toMatchObject({
-    contentType: draft.contentType,
-    createdAt: draft.createdAt,
-    durationSeconds: draft.durationSeconds,
-    kind: draft.kind,
-    name: draft.name,
-  });
-  expect(restoredDraft?.blob).toBeDefined();
-  await deleteIntroVideoDraft();
-  await expect(readIntroVideoDraft()).resolves.toBeNull();
-
-  const events = await capturedEvents(12);
-  const operations = [
-    { mode: "readwrite", template: "intro_video_drafts.put" },
-    { mode: "readonly", template: "intro_video_drafts.get" },
-    { mode: "readwrite", template: "intro_video_drafts.delete" },
-    { mode: "readonly", template: "intro_video_drafts.get" },
-  ] as const;
-  expect(
-    events.map((event) => {
-      return event.name;
-    }),
-  ).toStrictEqual(
-    operations.flatMap(({ template }) => {
-      return [
-        "intro_video_drafts.open",
-        `${template}.transaction.create`,
-        template,
-      ];
-    }),
-  );
-  for (const [index, operation] of operations.entries()) {
-    const openEvent = events[index * 3]!;
-    const creationEvent = events[index * 3 + 1]!;
-    const transactionEvent = events[index * 3 + 2]!;
-    expect(openEvent).toMatchObject({
-      "attributes.custom": {
-        "db.namespace": "intro_video_drafts",
-        "okou.client.outcome": "success",
-      },
-      "status.code": "OK",
-    });
-    expect(openEvent).not.toHaveProperty(
-      "attributes.custom.okou.db.request.count",
-    );
-    expect(openEvent).not.toHaveProperty(
-      "attributes.custom.okou.db.transaction.mode",
-    );
-    expect(creationEvent).toMatchObject({
-      "attributes.custom": {
-        "db.namespace": "intro_video_drafts",
-        "okou.client.outcome": "success",
-        "okou.db.transaction.mode": operation.mode,
-      },
-      "status.code": "OK",
-    });
-    expect(creationEvent).not.toHaveProperty(
-      "attributes.custom.okou.db.request.count",
-    );
-    expect(transactionEvent).toMatchObject({
-      "attributes.custom": {
-        "db.namespace": "intro_video_drafts",
-        "okou.client.outcome": "success",
-        "okou.db.request.count": 1,
-        "okou.db.transaction.mode": operation.mode,
-      },
-      "status.code": "OK",
-    });
-  }
 });
 
 test("Reports typed API requests with route templates and no parameters", async () => {

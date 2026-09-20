@@ -1,7 +1,10 @@
+import type {
+  HostedSiteManifest,
+  HostedSiteManifestFile,
+} from "@okouai/db/jsonb-contracts/hosted-site";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
-import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type {
   HostedArtifactKind,
   HostedSiteFilesResponse,
@@ -14,12 +17,18 @@ import {
   hostedDeployments,
   privateHostedDeployments,
   hostedSites,
-  type HostedSiteManifest,
-  type HostedSiteManifestFile,
-} from "@okouai/db/schema/hosted-site";
-import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
+} from "@okouai/db/runtime/hosted-site";
+import { and, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
+import {
+  legacyHostedDeploymentVersion,
+  legacyPrivateHostedDeploymentVersion,
+} from "../../lib/hosted-publication";
+import {
+  nullableDriverValueDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
 import { type Db, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import type { Tx } from "../../lib/db-types";
@@ -29,7 +38,10 @@ import {
   putHostedSitesS3Object,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
+import {
+  privateArtifactCreationEnabled,
+  privateArtifactReferenceUrl,
+} from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
 import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
@@ -186,11 +198,6 @@ interface CreateHostedSiteDeploymentContext {
   readonly privateReference: string | null;
 }
 
-interface HostedSiteAllocation {
-  readonly site: HostedSiteRow;
-  readonly deploymentVersion: number;
-}
-
 type HostedSiteFilesTargetResult =
   | {
       readonly status: "ok";
@@ -272,14 +279,6 @@ function immutableDeploymentPointerKey(
   deploymentId: string,
 ): string {
   return `${pointerNamespace(publicBrand)}/deployments/${deploymentId}.json`;
-}
-
-function deploymentPrefix(
-  orgId: string,
-  site: string,
-  deploymentVersion: number,
-): string {
-  return `sites/orgs/${encodeURIComponent(orgId)}/${site}/versions/${deploymentVersion}`;
 }
 
 function hostedSiteRequestedSlug(site: HostedSiteRow): string {
@@ -393,14 +392,12 @@ function deploymentVersionResponseFields(deployment: HostedDeploymentRow): {
   readonly artifactUrl?: string;
   readonly aliasUrl?: string;
 } {
-  if (
-    deployment.deploymentVersion === null ||
-    deployment.artifactUrl === null
-  ) {
+  const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
+  if (deploymentVersion === null || deployment.artifactUrl === null) {
     return {};
   }
   return {
-    deploymentVersion: deployment.deploymentVersion,
+    deploymentVersion,
     artifactUrl: deployment.artifactUrl,
     ...(deployment.manifest.access ? {} : { aliasUrl: deployment.url }),
   };
@@ -546,7 +543,8 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
     artifactKind,
     siteId: deployment.siteId,
     deploymentId: deployment.id,
-    deploymentVersion: deployment.deploymentVersion,
+    deploymentVersion: legacyHostedDeploymentVersion(deployment.manifest),
+    immutableContent: deployment.manifest.immutableContent === true,
     site: deployment.manifest.site ?? deployment.manifest.publicSlug,
     publicSlug: deployment.manifest.publicSlug,
     aliasUrl: deployment.manifest.access ? undefined : deployment.url,
@@ -601,37 +599,15 @@ async function createHostedSite(
   return null;
 }
 
-async function allocateHostedSite(
-  db: Tx,
-  args: ScopedPrepareDeploymentArgs,
-  context: CreateHostedSiteDeploymentContext,
-): Promise<HostedSiteAllocation | null> {
-  const site = await createHostedSite(db, args, context);
-  if (!site) {
-    return null;
-  }
-  const deploymentVersion = site.nextDeploymentVersion;
-  const [updatedSite] = await db
-    .update(hostedSites)
-    .set({
-      nextDeploymentVersion: deploymentVersion + 1,
-      updatedAt: context.now,
-    })
-    .where(eq(hostedSites.id, site.id))
-    .returning();
-  if (!updatedSite) {
-    throw new Error("Failed to allocate hosted deployment version");
-  }
-  return { site: updatedSite, deploymentVersion };
-}
-
 async function insertHostedDeployment(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
-  allocation: HostedSiteAllocation,
+  site: HostedSiteRow,
 ): Promise<HostedDeploymentRow> {
-  const { deploymentVersion, site } = allocation;
+  // Retained wire/storage projection for pinned CLIs and old API readers.
+  // Publication identity and storage paths use deploymentId, never this value.
+  const deploymentVersion = 1;
   const { deploymentId } = context;
   if (args.privateArtifacts !== (context.privateReference !== null)) {
     throw new Error("Deployment reference does not match its storage policy");
@@ -639,13 +615,13 @@ async function insertHostedDeployment(
   const artifactUrl =
     context.privateReference === null
       ? deploymentUrl(site.publicBrand, deploymentId)
-      : artifactShareReferencePath(context.privateReference, "index.html");
+      : privateArtifactReferenceUrl(context.privateReference, "index.html");
   const aliasUrl = args.privateArtifacts
     ? artifactUrl
     : publicUrl(site.publicBrand, site.publicSlug);
   const prefix = args.privateArtifacts
     ? `private-sites/${site.publicBrand}/${deploymentId}`
-    : deploymentPrefix(args.orgId, site.slug, deploymentVersion);
+    : `${pointerNamespace(site.publicBrand)}/publications/${deploymentId}`;
   const manifest: HostedSiteManifest = {
     ...buildManifest({
       deploymentId,
@@ -679,7 +655,6 @@ async function insertHostedDeployment(
       runId: args.runId,
       publicBrand: site.publicBrand,
       status: "uploading",
-      deploymentVersion,
       artifactUrl,
       r2Prefix: prefix,
       manifest,
@@ -712,17 +687,17 @@ export async function createHostedSiteDeployment(
       // FOR SHARE also blocks non-key metadata updates and run cleanup.
       const chatThreadId = await lockHostedRunChatThreadId(tx, args.runId);
       const scopedArgs = { ...args, chatThreadId };
-      const allocation = await allocateHostedSite(tx, scopedArgs, context);
-      if (!allocation) {
+      const site = await createHostedSite(tx, scopedArgs, context);
+      if (!site) {
         return { kind: "slug_conflict" };
       }
       const deployment = await insertHostedDeployment(
         tx,
         scopedArgs,
         context,
-        allocation,
+        site,
       );
-      return { kind: "ok", site: allocation.site, deployment };
+      return { kind: "ok", site, deployment };
     }),
   );
   if (!result.ok) {
@@ -850,15 +825,14 @@ function activeSitePointerForDeployment(
   manifestKey: string,
   readyAt: Date,
 ): ActiveSitePointer {
+  const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
   return {
     version: 1,
     publicBrand: deployment.publicBrand,
     publicSlug: deployment.manifest.publicSlug,
     siteId: deployment.siteId,
     deploymentId: deployment.id,
-    ...(deployment.deploymentVersion === null
-      ? {}
-      : { deploymentVersion: deployment.deploymentVersion }),
+    ...(deploymentVersion === null ? {} : { deploymentVersion }),
     ...(deployment.artifactUrl === null
       ? {}
       : { artifactUrl: deployment.artifactUrl }),
@@ -869,7 +843,35 @@ function activeSitePointerForDeployment(
   };
 }
 
-const promoteHostedSiteDeployment$ = command(
+async function loadActiveHostedDeploymentVersion(
+  db: Db | Tx,
+  site: HostedSiteRow,
+): Promise<number | null> {
+  if (site.activeDeploymentId === null) {
+    return null;
+  }
+  const [deployment] = await db
+    .select({
+      version:
+        sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
+    })
+    .from(hostedDeployments)
+    .where(
+      and(
+        eq(hostedDeployments.id, site.activeDeploymentId),
+        eq(hostedDeployments.siteId, site.id),
+      ),
+    )
+    .limit(1);
+  if (!deployment) {
+    throw new Error("Hosted site has an invalid public deployment binding");
+  }
+  return deployment.version;
+}
+
+const bindHostedSiteDeployment$ = command(
   (
     { get, set },
     args: {
@@ -898,13 +900,26 @@ const promoteHostedSiteDeployment$ = command(
         throw new Error("Hosted site not found for deployment");
       }
 
-      const shouldPromote =
+      const activeDeploymentVersion = await loadActiveHostedDeploymentVersion(
+        tx,
+        site,
+      );
+      signal.throwIfAborted();
+      const deploymentVersion = legacyHostedDeploymentVersion(
+        args.deployment.manifest,
+      );
+      const shouldBind =
         !args.deployment.manifest.access &&
-        (args.deployment.deploymentVersion === null
-          ? site.activeDeploymentVersion === null
-          : site.activeDeploymentVersion === null ||
-            args.deployment.deploymentVersion >= site.activeDeploymentVersion);
-      if (shouldPromote) {
+        (args.deployment.manifest.immutableContent
+          ? site.activeDeploymentId === null ||
+            site.activeDeploymentId === args.deployment.id
+          : // Historical pending uploads can still complete out of order.
+            // Keep their alias selection until the #35240 migration/drain gate.
+            deploymentVersion === null
+            ? activeDeploymentVersion === null
+            : activeDeploymentVersion === null ||
+              deploymentVersion >= activeDeploymentVersion);
+      if (shouldBind) {
         await set(
           registerLegacyHostedSite$,
           {
@@ -943,24 +958,23 @@ const promoteHostedSiteDeployment$ = command(
           error: null,
         })
         .where(eq(deploymentTable.id, args.deployment.id));
-      if (shouldPromote) {
+      if (shouldBind) {
         await tx
           .update(hostedSites)
           .set({
             activeDeploymentId: args.deployment.id,
-            activeDeploymentVersion: args.deployment.deploymentVersion,
             updatedAt: args.readyAt,
           })
           .where(eq(hostedSites.id, args.deployment.siteId));
       }
 
       return {
-        activeDeploymentId: shouldPromote
+        activeDeploymentId: shouldBind
           ? args.deployment.id
           : site.activeDeploymentId,
-        activeDeploymentVersion: shouldPromote
-          ? args.deployment.deploymentVersion
-          : site.activeDeploymentVersion,
+        activeDeploymentVersion: shouldBind
+          ? deploymentVersion
+          : activeDeploymentVersion,
       };
     });
   },
@@ -1056,7 +1070,10 @@ export const completeHostedSiteDeployment$ = command(
       readyAt,
     );
 
-    if (deployment.deploymentVersion !== null && !deployment.manifest.access) {
+    const deploymentVersion = legacyHostedDeploymentVersion(
+      deployment.manifest,
+    );
+    if (deploymentVersion !== null && !deployment.manifest.access) {
       await set(
         registerLegacyHostedSite$,
         {
@@ -1081,7 +1098,7 @@ export const completeHostedSiteDeployment$ = command(
     }
 
     const promotion = await set(
-      promoteHostedSiteDeployment$,
+      bindHostedSiteDeployment$,
       {
         bucket: hostedR2.config.bucket,
         deployment,
@@ -1116,7 +1133,7 @@ export const completeHostedSiteDeployment$ = command(
         publicSlug: deployment.manifest.publicSlug,
         url: deployment.url,
         ...deploymentVersionResponseFields(deployment),
-        ...(deployment.deploymentVersion === null
+        ...(deploymentVersion === null
           ? {}
           : {
               isActive: promotion.activeDeploymentId === deployment.id,
@@ -1157,7 +1174,7 @@ async function loadImmutableHostedSiteFilesTarget(
   }
   if (
     args.version !== undefined &&
-    deployment.deploymentVersion !== args.version
+    legacyHostedDeploymentVersion(deployment.manifest) !== args.version
   ) {
     return {
       status: "not_found",
@@ -1240,7 +1257,10 @@ async function loadAliasedHostedSiteFilesTarget(
       .from(hostedDeployments)
       .where(
         and(
-          eq(hostedDeployments.deploymentVersion, args.version),
+          eq(
+            sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`,
+            args.version,
+          ),
           eq(hostedDeployments.siteId, site.id),
           or(
             eq(hostedDeployments.status, "ready"),
@@ -1288,23 +1308,34 @@ async function loadPrivateHostedSiteFilesTarget(
           : eq(hostedSites.publicSlug, args.publicSlug),
         args.version === undefined
           ? undefined
-          : eq(privateHostedDeployments.deploymentVersion, args.version),
+          : eq(
+              sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`,
+              args.version,
+            ),
       ),
     )
-    .orderBy(desc(privateHostedDeployments.deploymentVersion))
+    .orderBy(
+      desc(
+        sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`,
+      ),
+    )
     .limit(1);
   signal.throwIfAborted();
   if (target && target.deployment.manifest.access !== "owner-private-v1") {
     throw new Error("Private hosted deployment has an invalid access policy");
   }
-  if (
-    target &&
-    !deploymentId &&
-    args.version === undefined &&
-    target.deployment.deploymentVersion <=
-      (target.site.activeDeploymentVersion ?? 0)
-  ) {
-    return null;
+  if (target && !deploymentId && args.version === undefined) {
+    const activeVersion = await loadActiveHostedDeploymentVersion(
+      db,
+      target.site,
+    );
+    signal.throwIfAborted();
+    if (
+      legacyPrivateHostedDeploymentVersion(target.deployment.manifest) <=
+      (activeVersion ?? 0)
+    ) {
+      return null;
+    }
   }
   return target ? { status: "ok", ...target } : null;
 }
@@ -1556,6 +1587,12 @@ export const getHostedSiteDeployments$ = command(
       return { status: "not_found", message: "Hosted site not found" };
     }
 
+    const activeDeployment = deployments.find((deployment) => {
+      return deployment.id === site.activeDeploymentId;
+    });
+    if (site.activeDeploymentId !== null && !activeDeployment) {
+      throw new Error("Hosted site has an invalid public deployment binding");
+    }
     return {
       status: "ok",
       body: {
@@ -1567,7 +1604,9 @@ export const getHostedSiteDeployments$ = command(
             ? publicUrl(site.publicBrand, site.publicSlug)
             : null,
         activeDeploymentId: site.activeDeploymentId,
-        activeDeploymentVersion: site.activeDeploymentVersion,
+        activeDeploymentVersion: activeDeployment
+          ? legacyHostedDeploymentVersion(activeDeployment.manifest)
+          : null,
         deployments: [...privateVersions, ...deployments]
           .sort((a, b) => {
             return b.createdAt.getTime() - a.createdAt.getTime();
@@ -1575,7 +1614,9 @@ export const getHostedSiteDeployments$ = command(
           .map((deployment) => {
             return {
               deploymentId: deployment.id,
-              deploymentVersion: deployment.deploymentVersion,
+              deploymentVersion: legacyHostedDeploymentVersion(
+                deployment.manifest,
+              ),
               artifactUrl: deployment.artifactUrl,
               status: deployment.status,
               isActive: deployment.id === site.activeDeploymentId,

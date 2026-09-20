@@ -1,5 +1,132 @@
 # Changelog
 
+## [9.346.1](https://github.com/vm0-ai/okou/compare/cli-v9.346.0...cli-v9.346.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.685.0
+
+## [9.346.0](https://github.com/vm0-ai/okou/compare/cli-v9.345.0...cli-v9.346.0) (2026-09-20)
+
+
+### Features
+
+* **vnc:** retain authentication timeout stages ([#35423](https://github.com/vm0-ai/okou/issues/35423)) ([6628561](https://github.com/vm0-ai/okou/commit/662856111e607397edd681142fc6af42287bfba5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.476.1
+    * @okouai/connectors bumped to 3.14.1
+    * @okouai/core bumped to 8.684.1
+    * @okouai/pi-agent-runtime bumped to 1.33.25
+
+## [9.345.0](https://github.com/vm0-ai/okou/compare/cli-v9.344.0...cli-v9.345.0) (2026-09-19)
+
+
+### Features
+
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+* **contracts:** prepare handoff readers for api usage ([#35384](https://github.com/vm0-ai/okou/issues/35384)) ([f105098](https://github.com/vm0-ai/okou/commit/f105098d105126215ef209cd43ba487242f8a28d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.476.0
+    * @okouai/connectors bumped to 3.14.0
+    * @okouai/core bumped to 8.684.0
+    * @okouai/pi-agent-runtime bumped to 1.33.24
+
+## [9.344.0](https://github.com/vm0-ai/okou/compare/cli-v9.343.3...cli-v9.344.0) (2026-09-19)
+
+
+### Features
+
+* move paid tools into chat settings ([#35381](https://github.com/vm0-ai/okou/issues/35381)) ([3ac2ba5](https://github.com/vm0-ai/okou/commit/3ac2ba574a056d26870db201d0d88dceccba6028))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.475.0
+    * @okouai/core bumped to 8.683.0
+    * @okouai/pi-agent-runtime bumped to 1.33.23
+
+## [9.343.3](https://github.com/vm0-ai/okou/compare/cli-v9.343.2...cli-v9.343.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **cli:** return app urls for private artifacts ([#35289](https://github.com/vm0-ai/okou/issues/35289)) ([08e6cb3](https://github.com/vm0-ai/okou/commit/08e6cb3d8d7976412218b8e8637db13ec0e5ac88))
+* persist complete private artifact urls ([#35318](https://github.com/vm0-ai/okou/issues/35318)) ([40ba5df](https://github.com/vm0-ai/okou/commit/40ba5dfa253b8d5f3815f920d423e9452fbb4694))
+* remove retired video rendering paid-tool control ([#35334](https://github.com/vm0-ai/okou/issues/35334)) ([53fc6ab](https://github.com/vm0-ai/okou/commit/53fc6ab900151e2a67ecf260c98c41327ddf9940))
+
+
+### Refactoring
+
+* remove the intro video product ([#35196](https://github.com/vm0-ai/okou/issues/35196)) ([75fccd3](https://github.com/vm0-ai/okou/commit/75fccd328813fd9e2b8b27b1075053b13ae7be50))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.474.0
+    * @okouai/core bumped to 8.682.0
+    * @okouai/pi-agent-runtime bumped to 1.33.22
+
+## [9.343.2](https://github.com/vm0-ai/okou/compare/cli-v9.343.1...cli-v9.343.2) (2026-09-18)
+
+
+### Refactoring
+
+* retire hosted version controls and audit historical publications ([#35281](https://github.com/vm0-ai/okou/issues/35281)) ([a8fed1e](https://github.com/vm0-ai/okou/commit/a8fed1e3bf69e3ab7133db0f6d08ada0419f42fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.473.1
+    * @okouai/core bumped to 8.681.4
+    * @okouai/pi-agent-runtime bumped to 1.33.21
+
+## [9.343.1](https://github.com/vm0-ai/okou/compare/cli-v9.343.0...cli-v9.343.1) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.473.0
+    * @okouai/core bumped to 8.681.3
+    * @okouai/pi-agent-runtime bumped to 1.33.20
+
+## [9.343.0](https://github.com/vm0-ai/okou/compare/cli-v9.342.1...cli-v9.343.0) (2026-09-18)
+
+
+### Features
+
+* extend personal paid-tool controls to media generation ([#35264](https://github.com/vm0-ai/okou/issues/35264)) ([a686e46](https://github.com/vm0-ai/okou/commit/a686e46b0f2a149b0519582e066ec2d752f798de))
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.472.0
+    * @okouai/core bumped to 8.681.2
+    * @okouai/pi-agent-runtime bumped to 1.33.19
+
 ## [9.342.1](https://github.com/vm0-ai/okou/compare/cli-v9.342.0...cli-v9.342.1) (2026-09-18)
 
 

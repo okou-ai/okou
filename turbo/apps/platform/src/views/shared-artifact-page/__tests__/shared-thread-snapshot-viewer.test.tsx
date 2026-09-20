@@ -169,6 +169,7 @@ test("a snapshot pasted into an ordinary thread cannot expose source permissions
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
     return respond(200, {
       ownerUrl: "https://app.okou.ai/artifacts/ownerfile1.png",
+      shortUrl: null,
       shareId: null,
       audience: "private",
       organization: { id: "org_test", name: "Acme" },

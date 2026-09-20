@@ -31,8 +31,6 @@ import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type { MountedUserTemplate } from "../signals/services/user-template-data.service";
-import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
-import { introVideoInstructionLines } from "@okouai/core/intro-video-template";
 
 interface PresentationGenerationTemplateInput {
   readonly type: "presentation";
@@ -80,11 +78,15 @@ interface WebsiteGenerationTemplateInput {
   };
 }
 
-interface IntroVideoGenerationTemplateInput {
+/**
+ * Intro Video selections that survive in the append-only chat event log.
+ *
+ * The product is gone, so this never resolves to a prompt: a selection that
+ * somehow reaches a send is rejected rather than silently producing an
+ * untemplated run. The arm exists so archived messages stay parseable.
+ */
+interface RetiredIntroVideoGenerationTemplateInput {
   readonly type: "intro-video";
-  readonly selection: {
-    readonly options?: IntroVideoOptions;
-  };
 }
 
 interface CustomGenerationTemplateInput {
@@ -96,7 +98,7 @@ type GenerationTemplateInput =
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
   | VideoGenerationTemplateInput
-  | IntroVideoGenerationTemplateInput
+  | RetiredIntroVideoGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
   | WebsiteGenerationTemplateInput;
@@ -122,7 +124,6 @@ type GenerationTemplatePromptResult =
  * leave it empty and lose the guidance rather than point at nothing.
  */
 interface GenerationTemplatePromptOptions {
-  readonly introVideoEnabled?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
    * The custom templates this run will carry, each with the kind its row says
@@ -146,10 +147,7 @@ export function buildGenerationTemplatePrompt(
     return buildVideoGenerationTemplatePrompt(generationTemplate);
   }
   if (generationTemplate.type === "intro-video") {
-    return buildIntroVideoGenerationTemplatePrompt(
-      generationTemplate,
-      options.introVideoEnabled === true,
-    );
+    return { status: "invalid", message: "Intro video is no longer available" };
   }
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(generationTemplate);
@@ -439,26 +437,6 @@ function buildWebsiteTemplatePackagePrompt(
       "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
       "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
       "- Return the hosted website URL and keep the generated static site as the final deliverable.",
-    ].join("\n"),
-  };
-}
-
-function buildIntroVideoGenerationTemplatePrompt(
-  generationTemplate: IntroVideoGenerationTemplateInput,
-  introVideoEnabled: boolean,
-): GenerationTemplatePromptResult {
-  if (!introVideoEnabled) {
-    return { status: "invalid", message: "Intro video is not available" };
-  }
-  const options = generationTemplate.selection.options;
-  if (!options) {
-    return { status: "invalid", message: "Intro video settings are missing" };
-  }
-  return {
-    status: "resolved",
-    prompt: [
-      ...templateFraming("an intro video"),
-      ...introVideoInstructionLines(options),
     ].join("\n"),
   };
 }

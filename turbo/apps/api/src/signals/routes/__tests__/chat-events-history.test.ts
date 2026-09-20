@@ -974,20 +974,27 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     await cancelChatRun(actor, third.runId);
 
     const recommendedFollowupQueueEventId = randomUUID();
+    const recommendedFollowupRequest = {
+      agentId,
+      threadId: first.threadId,
+      prompt: "use the recommended follow-up",
+      revokesEventId: recommender.id,
+      clientEventId: recommendedFollowupQueueEventId,
+    };
     const normalFollowup = await chat.requestSendEvent(
       actor,
-      {
-        agentId,
-        threadId: first.threadId,
-        prompt: "use the recommended follow-up",
-        revokesEventId: recommender.id,
-        clientEventId: recommendedFollowupQueueEventId,
-      },
+      recommendedFollowupRequest,
       [201],
     );
     if (normalFollowup.status !== 201) {
       throw new Error("Expected recommended follow-up send to succeed");
     }
+    const retriedFollowup = await chat.requestSendEvent(
+      actor,
+      recommendedFollowupRequest,
+      [201],
+    );
+    expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
     const normalFollowupRunId = normalFollowup.body.runId;
     if (normalFollowupRunId === null) {
       throw new Error("Expected recommended follow-up send to create a run");

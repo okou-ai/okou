@@ -278,6 +278,73 @@ test("Return to the conversation that started a chat message", async () => {
   expect(unlinkedPhoneLabel).toBeInTheDocument();
 });
 
+test.each([
+  {
+    description: "canonical Lark source with a chat link",
+    kind: "lark" as const,
+    href: "https://open.larksuite.com/chat/ch_123",
+    label: "Lark",
+  },
+  {
+    description: "canonical Lark source without a chat link",
+    kind: "lark" as const,
+    href: undefined,
+    label: "Lark",
+  },
+  {
+    description: "historical Feishu source with a Lark chat link",
+    kind: "feishu" as const,
+    href: "https://applink.larksuite.com/client/chat/open?openChatId=oc_123",
+    label: "Lark",
+  },
+  {
+    description: "historical Feishu source without platform evidence",
+    kind: "feishu" as const,
+    href: undefined,
+    label: "Feishu",
+  },
+])("Show the $description", async ({ kind, href, label }) => {
+  installRunChat({
+    chatEvents: [
+      {
+        id: "platform-source-prompt",
+        eventType: "input.prompt",
+        role: "user",
+        content: null,
+        runId: RUN_A,
+        seqId: 1,
+        createdAt: "2026-08-01T10:00:01.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "A platform-specific message." },
+            { type: "source", kind, ...(href ? { href } : {}) },
+          ],
+        },
+      },
+      completedEvent({
+        id: "platform-source-complete",
+        runId: RUN_A,
+        seqId: 2,
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await expect(
+    screen.findByText("A platform-specific message."),
+  ).resolves.toBeInTheDocument();
+  const sourceLabel = screen.getByText(label);
+  expect(sourceLabel).toBeInTheDocument();
+  const link = sourceLabel.closest("a");
+  expect(Boolean(link)).toBe(Boolean(href));
+  expect(link?.getAttribute("href")).toBe(href);
+  expect(link?.getAttribute("aria-label")).toBe(
+    href ? `Open original chat in ${label}` : undefined,
+  );
+});
+
 test("Show the current usage settlement on the correct run", async () => {
   const user = userEvent.setup({ delay: null });
   installRunChat({

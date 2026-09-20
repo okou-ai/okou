@@ -119,6 +119,40 @@ the existing R2 access share this cache; forks without those secrets cannot
 populate it. The sccache server retains the startup step's credentials for its
 job-local lifetime. Missing R2 configuration fails cache startup explicitly.
 
+### Shared R2 sccache action
+
+Jobs that use the shared compiler cache call
+`.github/actions/setup-r2-sccache` once after checkout. The action installs the
+pinned sccache version, validates the architecture and R2 configuration, starts
+the job-local server, and exports only the compiler settings needed by later
+steps:
+
+```yaml
+- uses: actions/checkout@v7.0.1
+
+- name: Setup R2 sccache
+  uses: ./.github/actions/setup-r2-sccache
+  with:
+    architecture: ${{ matrix.id }}
+    r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+    r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+    r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+```
+
+The `architecture` input is the runner architecture-group ID, not an arbitrary
+cache prefix:
+
+| Architecture input | Rust target                  | sccache prefix           |
+| ------------------ | ---------------------------- | ------------------------ |
+| `arm64`            | `aarch64-unknown-linux-musl` | `runner-sccache/arm64/`  |
+| `x86_64`           | `x86_64-unknown-linux-musl`  | `runner-sccache/x86_64/` |
+
+Callers pass the existing R2 configuration explicitly. They do not pass a raw
+prefix or add job, crate, branch, or commit namespaces. Use the action only once
+per job so the server keeps the startup credentials for the complete compiler
+lifetime without exposing them to later build steps.
+
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;
 main often reuses the complete runner binary and skips compilation, so that
@@ -180,6 +214,34 @@ deterministic host selection as `runner-build`. That job validates the entire
 selected architecture group; a parallel manifest matrix validates only the
 remaining groups. The full matrix still drives NBD COW and rootfs process tests.
 The CI gate requires both validation paths when applicable, including on reruns.
+
+Native CPU fairness and guest RPC tests compile as soon as `runner-host-groups`
+selects a target, in parallel with `runner-build` waiting for the image. The
+`host-cpu-fairness-build` and `guest-rpc-firecracker-build` jobs retain their
+existing `release` and `ci` profiles and separate Cargo cache keys. Compilation
+does not use a metal host, rootfs, or snapshot. Execution waits for both its
+compiled test and the selected image, then uses the same host and immutable image
+hashes supplied by `runner-build`.
+
+Each producer uploads its compressed test binary and provenance to R2 under
+`runner-binaries/<target>/<run_id>/<producer_attempt>/<test>.zst` and the matching
+`.json` key. This follows the existing runner binary layout: the first directory
+is the validated target triple (`aarch64-unknown-linux-musl` or
+`x86_64-unknown-linux-musl`). These objects transfer a compiled test between jobs in the same
+workflow run; they are not reused across runs or PRs. They use the existing
+seven-day lifecycle policy for the `runner-binaries/` prefix.
+
+Before contacting metal, the consumer validates the source SHA, repository,
+workflow run, producer attempt, test identity, target, and binary hash. A
+consumer-only rerun uses the earlier successful producer's attempt, even when its
+own attempt has advanced. Missing, expired, or invalid artifacts fail the job;
+rerun the producer to publish a fresh artifact after expiration. There is no
+fallback to another run or target.
+
+The Crates gate requires both compilation and execution when a native test is
+selected. A failed or skipped producer cannot turn its dependent execution into
+an allowed skip. The existing selection rules still allow CPU fairness to be
+omitted for unrelated changes and all native tests for release-only workflows.
 
 Playwright uses the same metal inventory to bootstrap the runner exercised by
 the deployed product chat flow. Architecture-specific runner behavior remains

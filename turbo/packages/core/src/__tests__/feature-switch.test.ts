@@ -165,6 +165,31 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
+  it("keeps the Monday MCP connector off until explicitly enabled", () => {
+    expect(FeatureSwitchKey.MondayConnector).toBe("mondayConnector");
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.MondayConnector, context)).toBe(
+        false,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
+        overrides: { [FeatureSwitchKey.MondayConnector]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.MondayConnector],
+    ).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description: "Enable the Monday.com MCP connector",
+      rolloutStage: "alpha",
+    });
+  });
+
   it("should return true when orgId hash matches enabledOrgIdHashes", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
@@ -342,15 +367,18 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
-    expect(staffOrgStates[FeatureSwitchKey.IntroVideo]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
+      true,
+    );
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -361,14 +389,17 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.IntroVideo]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
+      false,
+    );
+    expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       false,
     );
   });
@@ -495,7 +526,6 @@ describe("getFeatureSwitchMetadata", () => {
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
-    expect(metadata[FeatureSwitchKey.IntroVideo].rolloutStage).toBe("beta");
     expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe("beta");
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",

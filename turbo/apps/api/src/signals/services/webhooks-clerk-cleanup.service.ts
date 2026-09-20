@@ -12,8 +12,8 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
-import { connectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
-import { connectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
+import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
+import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
@@ -73,12 +73,13 @@ import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
-  deleteConnectorLocalState$,
-  loadStoredConnectorRuntimeSnapshot,
+  deleteBuiltinConnectorLocalState$,
+  loadStoredBuiltinConnectorRuntimeSnapshot,
 } from "./connector-data.service";
 import {
   AGENT_LIFECYCLE_LOCK_TIMEOUT,
   deleteClerkAgentLifecycleData,
+  deleteStableContextLifecycleAfterAuthorityRemoval,
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
@@ -441,7 +442,7 @@ const revokeOrgConnectorTokens$ = command(
     orgId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const snapshot = await loadStoredConnectorRuntimeSnapshot(db);
+    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -459,7 +460,7 @@ const revokeOrgConnectorTokens$ = command(
 
     for (const row of rows) {
       await set(
-        deleteConnectorLocalState$,
+        deleteBuiltinConnectorLocalState$,
         {
           orgId,
           userId: row.userId,
@@ -480,7 +481,7 @@ const revokeUserConnectorTokens$ = command(
     userId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const snapshot = await loadStoredConnectorRuntimeSnapshot(db);
+    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -498,7 +499,7 @@ const revokeUserConnectorTokens$ = command(
 
     for (const row of rows) {
       await set(
-        deleteConnectorLocalState$,
+        deleteBuiltinConnectorLocalState$,
         {
           orgId: row.orgId,
           userId,
@@ -874,11 +875,11 @@ async function deleteOrgData(
   await db.delete(secrets).where(eq(secrets.orgId, orgId));
   await db.delete(variables).where(eq(variables.orgId, orgId));
   await db
-    .delete(connectorOauthDeviceAuthorizationSessions)
-    .where(eq(connectorOauthDeviceAuthorizationSessions.orgId, orgId));
+    .delete(builtinConnectorOauthDeviceAuthorizationSessions)
+    .where(eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, orgId));
   await db
-    .delete(connectorExternalCodeSessions)
-    .where(eq(connectorExternalCodeSessions.orgId, orgId));
+    .delete(builtinConnectorExternalCodeSessions)
+    .where(eq(builtinConnectorExternalCodeSessions.orgId, orgId));
   await db.delete(exportJobs).where(eq(exportJobs.orgId, orgId));
   await db
     .delete(orgConcurrencyEntitlements)
@@ -887,6 +888,13 @@ async function deleteOrgData(
     .delete(orgConcurrencySubscriptions)
     .where(eq(orgConcurrencySubscriptions.orgId, orgId));
   await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
+  // Membership is the durable stable-context admission parent. Re-run only
+  // stable-context cleanup after removing it so a request that raced the early
+  // pass cannot recreate state or repeat unrelated usage/billing lifecycle.
+  await deleteStableContextLifecycleAfterAuthorityRemoval(db, {
+    kind: "organization",
+    orgId,
+  });
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.orgId, orgId));
@@ -951,16 +959,23 @@ async function deleteUserData(
   await db.delete(cliTokens).where(eq(cliTokens.userId, userId));
   await db.delete(composeJobs).where(eq(composeJobs.userId, userId));
   await db
-    .delete(connectorOauthDeviceAuthorizationSessions)
-    .where(eq(connectorOauthDeviceAuthorizationSessions.userId, userId));
+    .delete(builtinConnectorOauthDeviceAuthorizationSessions)
+    .where(eq(builtinConnectorOauthDeviceAuthorizationSessions.userId, userId));
   await db
-    .delete(connectorExternalCodeSessions)
-    .where(eq(connectorExternalCodeSessions.userId, userId));
+    .delete(builtinConnectorExternalCodeSessions)
+    .where(eq(builtinConnectorExternalCodeSessions.userId, userId));
   await db.delete(deviceCodes).where(eq(deviceCodes.userId, userId));
   await db
     .delete(userPermissionGrants)
     .where(eq(userPermissionGrants.userId, userId));
   await db.delete(orgMembersCache).where(eq(orgMembersCache.userId, userId));
+  // Close the initialization interval between the early Agent cleanup and the
+  // authoritative membership removal. Future initialization now fails its
+  // parent lock; this narrow second pass removes any state created before it.
+  await deleteStableContextLifecycleAfterAuthorityRemoval(db, {
+    kind: "user",
+    userId,
+  });
   await db
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.userId, userId));

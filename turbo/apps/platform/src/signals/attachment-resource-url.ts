@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
@@ -14,6 +14,11 @@ import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
 
 const AUTHENTICATED_FILE_PATH = "/api/web/download-file";
+
+export function artifactReferenceLookupKey(url: string): string {
+  const reference = parseArtifactReference(url, location.origin);
+  return reference ? `artifact:${reference.hash}${reference.extension}` : url;
+}
 
 export function isAuthenticatedAttachmentUrl(url: string): boolean {
   if (!URL.canParse(url)) {
@@ -31,6 +36,10 @@ interface AttachmentPresignedToken {
   readonly token: string;
   readonly expiresAt: string;
   readonly contentType?: string;
+  /** Stable reference to the independent screenshot or video poster. */
+  readonly previewImageUrl?: string;
+  /** Signed bytes served as an attachment, distinct from a hosted preview. */
+  readonly downloadUrl?: string;
   /**
    * Stable URL that another viewer can open. A signature cannot be converted
    * into one, so null means that the attachment remains private.
@@ -65,6 +74,8 @@ function createArtifactReferencePresignedToken$(
       token: withFragment(response.body.url, reference.fragment),
       expiresAt: response.body.expiresAt,
       contentType: response.body.contentType,
+      previewImageUrl: response.body.previewImageUrl,
+      downloadUrl: response.body.downloadUrl,
       publicUrl: null,
     };
   });
@@ -182,6 +193,59 @@ export function createAttachmentPreviewSignals(
 export type AttachmentPreviewSignals = ReturnType<
   typeof createAttachmentPreviewSignals
 >;
+
+interface AttachmentPreviewSource {
+  readonly url: string;
+  readonly preview?: AttachmentPreviewSignals;
+}
+
+/**
+ * Keep one resource-resolution graph with the surface that owns a preview.
+ * Callers pass that graph through cards, dialogs, and sidebars; only a caller
+ * without an owner yet creates it here.
+ */
+export function attachmentPreviewSignalsFor(
+  source: AttachmentPreviewSource,
+): AttachmentPreviewSignals {
+  return source.preview ?? createAttachmentPreviewSignals(source.url);
+}
+
+interface AttachmentPreviewRegistry {
+  /** Get or create the one preview graph owned for a canonical resource URL. */
+  readonly register$: Command<
+    AttachmentPreviewSignals,
+    [AttachmentPreviewSource]
+  >;
+}
+
+/** A lifecycle-scoped registry for owners that retain multiple previews. */
+export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
+  const internalPreviewsByUrl$ = state<
+    ReadonlyMap<string, AttachmentPreviewSignals>
+  >(new Map());
+  const register$ = command(
+    (
+      { get, set },
+      source: AttachmentPreviewSource,
+    ): AttachmentPreviewSignals => {
+      const url = publicAttachmentUrl(source.url);
+      const previews = get(internalPreviewsByUrl$);
+      const existing = previews.get(url);
+      if (existing) {
+        return existing;
+      }
+      const preview = attachmentPreviewSignalsFor({
+        url,
+        ...(source.preview ? { preview: source.preview } : {}),
+      });
+      const next = new Map(previews);
+      next.set(url, preview);
+      set(internalPreviewsByUrl$, next);
+      return preview;
+    },
+  );
+  return { register$ };
+}
 
 export function createAttachmentResourceUrl$(url: string) {
   return createAttachmentPreviewSignals(url).resourceUrl$;

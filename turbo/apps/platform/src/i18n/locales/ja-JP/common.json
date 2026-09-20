@@ -114,6 +114,7 @@
         "time": "時間"
       },
       "log": "ログ",
+      "manualReloadNotice": "最新のアクティビティログを表示するには、このページを再読み込みしてください。",
       "modelProvidedBy": "{{model}} は {{provider}} によって提供されます",
       "networkEmpty": {
         "description": "この実行ではネットワーク トラフィックは記録されませんでした。",
@@ -444,6 +445,7 @@
       "description": "非公開か、利用できなくなった可能性があります。",
       "help": "リンクを共有した人にアクセス権の確認を依頼してください。",
       "signedInAs": "{{email}} としてログイン中",
+      "signedInDescription": "存在しないか、別のアカウントまたは組織に共有されている可能性があります。",
       "signIn": "ログイン",
       "signInFailed": "ログイン画面を開けませんでした。もう一度お試しください。",
       "switchAccount": "アカウントを切り替える",
@@ -503,7 +505,7 @@
       "description": "ここで作成したものをすべて参照してください。",
       "emptyDescription": "アーティファクトが利用可能になると、ここに表示されます。",
       "emptyTitle": "アーティファクトは見つかりませんでした",
-      "error": "アーティファクトをロードできませんでした。後でもう一度試してください。",
+      "error": "アーティファクトをロードできませんでした。",
       "filters": {
         "avatar": "アバター",
         "avatarAria": "アバターのアーティファクトを表示する",
@@ -522,7 +524,8 @@
         "websiteAria": "Web サイトのアーティファクトを表示する"
       },
       "kindIcon": "{{kind}} アーティファクト",
-      "loading": "アーティファクトをロードしています"
+      "loading": "アーティファクトをロードしています",
+      "retry": "再試行"
     },
     "fileBadges": {
       "artwork": "アート",
@@ -601,12 +604,11 @@
       "onlyMeDescription": "このアーティファクトを表示できるのは自分だけです",
       "organization": "組織",
       "organizationDescription": "リンクを知っている {{organization}} のメンバー",
+      "organizationDescriptionUnnamed": "リンクを知っている組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
       "publicDescription": "リンクを知っている全員が表示できます",
-      "retry": "再試行",
-      "savedAutomatically": "変更は自動的に保存されます",
-      "saving": "保存中…"
+      "retry": "再試行"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
@@ -623,7 +625,6 @@
       "categories": "テンプレートのカテゴリ",
       "category": "テンプレートカテゴリ",
       "chooseVoice": "{{title}}の音声を選択",
-      "creativeVideo": "クリエイティブ動画",
       "filters": {
         "age": "年齢",
         "all": "すべて",
@@ -646,10 +647,7 @@
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
-      "importFileHint": "({{formats}})",
-      "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
-      "introVideo": "イントロ動画",
-      "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
+      "importFileHint": "ファイルのデザインを再利用",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -667,7 +665,6 @@
       "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
-      "selected": "選択中",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
       "selectVideo": "ビデオ テンプレート {{title}} を選択してください",
@@ -1441,6 +1438,53 @@
         },
         "inReview": "確認中",
         "inReviewDescription": "送信済み、確認待ち",
+        "intro": {
+          "checkin": {
+            "amount": "+{{amount}} クレジット",
+            "confirm": "仕事に戻る",
+            "description": "クレジットは仕事そのものに使われます。1 回の実行、1 つの成果物、スケジュールで動くワークフローのすべてに。",
+            "title": "今日のぶんは完了です"
+          },
+          "connector": {
+            "confirm": "すべてのコネクターを見る",
+            "description": "普段使っているツールをつないで、{{assistantName}} がその中で作業できるようにします。",
+            "pickerFailed": "コネクターを読み込めませんでした。コネクターページで再試行してください。",
+            "pickerLoading": "コネクターを読み込み中…",
+            "title": "{{assistantName}} は、あなたが普段使っているツールの中で働きます"
+          },
+          "invite": {
+            "confirm": "メンバーを招待",
+            "description": "このワークスペースにチームメンバーを招待します。",
+            "note": "一度つくった仕組みが、あなただけのものではなくなります。今朝入ったばかりの人でも、やり方を聞かずに午後には動かせます。",
+            "title": "ひとりが覚えたことを、全員が実行できます"
+          },
+          "later": "後で",
+          "slack": {
+            "appBadge": "APP",
+            "confirm": "Slack に追加",
+            "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
+            "note": "チームが毎回あなたを経由しなくてよくなります。チャンネルで頼めば、結果はそのスレッドに返ってきて、全員が見られます。",
+            "sampleChannel": "# growth",
+            "title": "チームがすでに会話している場所で {{assistantName}} を使う"
+          },
+          "workflow": {
+            "browse": "テンプレートを見る",
+            "confirm": "ひとつ試してみる",
+            "description": "繰り返している仕事を、チームが実行できるワークフローにします。",
+            "prompt": "毎週月曜の朝に、競合が先週公開した内容を調べて、テーマごとにまとめて比較表にしてください。",
+            "promptConfirm": "{{assistantName}} に送る",
+            "promptDescription": "このまま {{assistantName}} に送るか、文言を変えてから送ってください。",
+            "promptOutcome": "情報源を読み、見つけたものを整理して、表にして返します。結果が良ければ、その実行をワークフローとして保存するか聞いてきます。",
+            "promptTitle": "同僚に頼むように伝えてください",
+            "stepRun": "まず 1 回動かす",
+            "stepRunDescription": "何かを決める前に、仕上がった成果物を確認できます。",
+            "stepSave": "保存して、スケジュールを決める",
+            "stepSaveDescription": "誰も頼まなくても動き、チームの誰でも実行できます。",
+            "stepTemplate": "テンプレートから始める",
+            "stepTemplateDescription": "白紙からではなく、自分の仕事に近いものを選びます。",
+            "title": "うまくいった 1 回が、チームの資産になります"
+          }
+        },
         "invite": {
           "action": "招待",
           "description": "追加した人数だけ加算されます",
@@ -1875,69 +1919,6 @@
       "sent": "転送しました",
       "threads": "チャット",
       "title": "転送先"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "アバターを選択",
-        "label": "アバター",
-        "none": "アバターなし",
-        "noneDetail": "スタイルのみ",
-        "previewLook": "{{name}} の外見をプレビュー"
-      },
-      "catalog": {
-        "error": "カタログを読み込めませんでした。",
-        "loading": "さらに読み込み中",
-        "reload": "一覧を再読み込み",
-        "retry": "再試行"
-      },
-      "footer": {
-        "cancel": "キャンセル"
-      },
-      "picker": {
-        "allPresenters": "すべてのプレゼンター",
-        "allPresentersCount": "すべてのプレゼンター ({{total}})",
-        "allVoices": "すべての音声",
-        "allVoicesCount": "すべての音声 ({{total}})",
-        "autoVoiceDescription": "スタイルに合う音声",
-        "avatarVoice": "アバターの音声",
-        "back": "戻る",
-        "closeOptions": "オプションを閉じる",
-        "done": "完了",
-        "moreOptions": "その他のオプション",
-        "noMatches": "見つかりませんでした。",
-        "optionsNote": "チャットのチップからいつでも変更できます。",
-        "pickStyle": "スタイルを選択",
-        "reset": "リセット",
-        "searchPresenters": "プレゼンターを検索",
-        "searchStyles": "スタイルを検索",
-        "searchVoices": "音声を検索",
-        "selectedStyle": "選択中: {{name}}",
-        "settings": "イントロ動画の設定",
-        "styleCount_other": "{{count}} 件のスタイル",
-        "styleCountOf": "{{total}} 件中 {{shown}} 件",
-        "useStyle": "{{name}} を使用"
-      },
-      "style": {
-        "auto": "Okou におまかせ",
-        "browseGroups": "スタイルから探す",
-        "groups": {
-          "cinematic": "映画と写真",
-          "handmade": "手作りと素材",
-          "iconic-artist": "アートとデザイン",
-          "other": "その他のスタイル",
-          "pop-culture": "ポップカルチャー",
-          "print": "印刷と出版",
-          "retro-tech": "レトロテックとインターフェース"
-        },
-        "preview": "{{title}} のプレビュー"
-      },
-      "voice": {
-        "auto": "Okou におまかせ",
-        "defaultDescription": "選択したアバターのデフォルト音声を使用",
-        "label": "音声",
-        "none": "ナレーションなし",
-        "noneShortDescription": "元の音声を残す"
-      }
     },
     "mail": {
       "bcc": "BCC",
@@ -3731,7 +3712,7 @@
           "iconAlt": "任意の {{brandName}} アプリ アイコン",
           "iconHint": "、またはお好みのアイコンを使用してください。",
           "iconTitle": "任意の {{brandName}} アプリ アイコン",
-          "imageAlt": "Feishu アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
+          "imageAlt": "Lark アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
           "title": "Agent タイプのアプリを作成"
         },
         "credentials": {
@@ -6339,10 +6320,6 @@
           "description": "組み込みモデルで動画を生成します。",
           "name": "動画生成"
         },
-        "video-rendering": {
-          "description": "クラウドで動画をレンダリングします。",
-          "name": "動画レンダリング"
-        },
         "voice-generation": {
           "description": "組み込みの音声で読み上げを生成します。",
           "name": "音声生成"
@@ -6726,8 +6703,9 @@
     },
     "notFound": {
       "action": "ホームに戻る",
-      "description": "お探しのページは存在しません。",
-      "title": "ページが見つかりません"
+      "browse": "ワークフローを見る",
+      "description": "移動されたか、リンクが古い可能性があります。それ以外はすべて元の場所にあります。",
+      "title": "そのページはここにありません。"
     },
     "workerFailure": {
       "action": "リフレッシュ",
@@ -6965,6 +6943,89 @@
       "thread_one": "{{value}}件のスレッド",
       "thread_other": "{{value}}件のスレッド"
     }
+  },
+  "vnc": {
+    "accessDescription": "VNC デスクトップを表示・操作できる Agent を選択します。SSH とは別の権限です。",
+    "accessHelp": "この Agent が、現在および今後設定するすべての VNC デスクトップを表示・操作できるようにします。",
+    "add": "ホストを追加",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "configurationHelp": "保存しても接続テストは行われません。Agent が接続時に共有または排他モードを選び、VNC サーバーが接続の可否を決めます。",
+    "configured": "設定済み",
+    "credential": {
+      "add": "認証情報を追加",
+      "createNew": "新しい認証情報を作成",
+      "delete": "認証情報を削除",
+      "deleteHelp": "未使用の認証情報を削除しますか？元に戻せません。",
+      "edit": "認証情報を編集",
+      "empty": "保存済み VNC 認証情報はありません。",
+      "inUse": "削除する前に、この認証情報を使うホストを削除するか別の認証情報に変更してください。",
+      "label": "認証情報",
+      "method": "VNC パスワード",
+      "name": "認証情報名",
+      "nameHint": "例：オフィスのログイン",
+      "password": "VNC パスワード",
+      "passwordHelp": "従来の VNC パスワードは印字可能な ASCII 文字 1～8 文字です。空白は保持されます。",
+      "passwordHint": "サーバーの VNC パスワードを入力",
+      "replace": "パスワードを置き換える",
+      "replaceHelp": "オフのままなら保存済みパスワードを保持します。置き換えると、この認証情報を使うすべてのホストに影響します。",
+      "select": "認証情報を選択",
+      "sharedHelp_one": "{{count}} 台のホストで使用中です。パスワード変更はこのホストに影響します。",
+      "sharedHelp_other": "{{count}} 台のホストで使用中です。パスワード変更はすべてに影響します。",
+      "unused": "使用しているホストはありません。"
+    },
+    "credentialsTab": "認証情報",
+    "delete": "ホストを削除",
+    "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
+    "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
+    "displayName": "表示名",
+    "displayNameHint": "例：オフィスのデスクトップ",
+    "edit": "ホストを編集",
+    "editHelp": "変更はこのホストに適用され、現在の接続設定は無効になります。",
+    "empty": "VNC ホストを追加して始めましょう。",
+    "errors": {
+      "configurationChanged": "開いた後にホストが変更されました。",
+      "credentialChanged": "開いた後に認証情報が変更されました。",
+      "credentialUnavailable": "選択した認証情報は利用できなくなりました。",
+      "failed": "VNC 設定を保存できませんでした。",
+      "hostUnavailable": "このホストは利用できなくなりました。",
+      "invalidHost": "URL、ユーザー名、ポートを含めず、有効なホスト名または IP アドレスを入力してください。",
+      "invalidInput": "VNC 設定を確認して再試行してください。",
+      "invalidTrust": "最大 8 件、64 KiB 以下の有効な公開 CA 証明書を入力してください。",
+      "ownerChanged": "ワークスペースへのアクセスが変更されました。更新してから続行してください。",
+      "revisionExhausted": "これ以上更新できません。新しく作成してください。"
+    },
+    "host": "ホスト名または IP アドレス",
+    "hostHint": "例：desktop.example.com",
+    "hostsTab": "ホスト",
+    "label": "VNC",
+    "loadFailed": "VNC 設定を読み込めませんでした。",
+    "loading": "VNC 設定を読み込み中…",
+    "loadingAccess": "エージェントのアクセスを読み込み中…",
+    "manage": "VNC を管理",
+    "port": "ポート",
+    "retry": "再試行",
+    "save": "保存",
+    "saveRecovery": {
+      "resourceIdConflict": "作成できませんでした。この画面を閉じて再試行してください。",
+      "review": "設定を更新しました。この画面を閉じ、現在の内容を確認してから再試行してください。",
+      "uncertain": "保存結果を確認できません。元の入力内容をロックしました。同じリクエストを再試行するか、閉じて更新し、保存済み設定を確認してください。"
+    },
+    "saving": "保存中…",
+    "security": {
+      "caBundle": "CA 証明書（PEM）",
+      "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
+      "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
+      "custom": "カスタム認証局",
+      "help": "VeNCrypt X509Vnc 対応サーバーが必要です。証明書は設定したホスト名または IP アドレスと一致する必要があります。",
+      "profile": "暗号化 VNC（X509Vnc）",
+      "system": "システムの認証局",
+      "title": "サーバー証明書の信頼"
+    },
+    "summary_one": "設定済みホスト {{count}} 台",
+    "summary_other": "設定済みホスト {{count}} 台",
+    "title": "VNC リモートアクセス",
+    "unavailable": "このワークスペースでは VNC を利用できません。"
   },
   "workflows": {
     "automations": {
@@ -7315,6 +7376,7 @@
         "calendar": "カレンダー",
         "email": "メール",
         "forms": "Google Forms",
+        "github": "GitHub",
         "integrations": "統合",
         "notion": "Notion",
         "schedule": "スケジュール"

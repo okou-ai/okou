@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.202.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.1...runner-rs-v0.202.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **python:** preserve auth base abort socket ownership ([#35521](https://github.com/vm0-ai/okou/issues/35521)) ([db151cf](https://github.com/vm0-ai/okou/commit/db151cf53b9b9df4f8b3bbafd6b7d4e24698675c))
+* **runner:** classify heartbeat connection resets ([#35511](https://github.com/vm0-ai/okou/issues/35511)) ([59bb98c](https://github.com/vm0-ai/okou/commit/59bb98c6c7192f5cab127c736d82750eef21cc1a))
+* **runner:** release catalog ownership on overflow ([#35514](https://github.com/vm0-ai/okou/issues/35514)) ([9c1d985](https://github.com/vm0-ai/okou/commit/9c1d9857f134b7e99005b479b721acbf137187da))
+
+
+### Performance Improvements
+
+* **runner:** bound sse parse diagnostics ([#35517](https://github.com/vm0-ai/okou/issues/35517)) ([f2146ee](https://github.com/vm0-ai/okou/commit/f2146eeacd252a357fc62ccf5c80b2fe0b715590))
+
+## [0.202.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.0...runner-rs-v0.202.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **runner:** inject oauth for platform mcp connector ([#35442](https://github.com/vm0-ai/okou/issues/35442)) ([2689ef3](https://github.com/vm0-ai/okou/commit/2689ef3a9814a649e548737478e9fa2833ea1a84))
+
+## [0.202.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.201.0...runner-rs-v0.202.0) (2026-09-20)
+
+
+### Features
+
+* **vnc:** retain authentication timeout stages ([#35423](https://github.com/vm0-ai/okou/issues/35423)) ([6628561](https://github.com/vm0-ai/okou/commit/662856111e607397edd681142fc6af42287bfba5))
+
+## [0.201.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.4...runner-rs-v0.201.0) (2026-09-19)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-sol run model ([#35391](https://github.com/vm0-ai/okou/issues/35391)) ([a1f2db4](https://github.com/vm0-ai/okou/commit/a1f2db4d50af3a79a6212f478c447b3d8ac6c6f9))
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+
+## [0.200.4](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.3...runner-rs-v0.200.4) (2026-09-18)
+
+
+### Refactoring
+
+* **billing:** remove x resource protocol compatibility ([#35333](https://github.com/vm0-ai/okou/issues/35333)) ([0fd1159](https://github.com/vm0-ai/okou/commit/0fd11599fb30efa045085f0302ed53cd52b24d5c))
+
+## [0.200.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.2...runner-rs-v0.200.3) (2026-09-18)
+
+
+### Performance Improvements
+
+* **runner:** compress large raw histories without sampling ([#35279](https://github.com/vm0-ai/okou/issues/35279)) ([294edd0](https://github.com/vm0-ai/okou/commit/294edd0a8f6c29dc07ebf558437a6d71c046b88e))
+
 ## [0.200.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.1...runner-rs-v0.200.2) (2026-09-18)
 
 

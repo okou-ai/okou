@@ -248,7 +248,11 @@ function runtimeAccess(
     return { kind: "none" };
   }
   if (access.kind === "automatic") {
-    throw new Error("Unsupported accepted connector access capability");
+    return {
+      kind: "automatic",
+      inputs: refreshInputBindings(access.inputs),
+      outputs: refreshOutputBindings(access.outputs),
+    };
   }
   const envBindings: Record<string, ConnectorEnvBindingValue> = {};
   for (const [name, binding] of Object.entries(access.envBindings)) {
@@ -388,7 +392,19 @@ function runtimeMethod(
       return { storage, grant: { kind: "none" }, access, revoke };
     }
     case "automatic": {
-      throw new Error("Unsupported accepted connector grant capability");
+      if (access.kind !== "automatic" || revoke.kind !== "none") {
+        throw new Error("Accepted Automatic connector has incompatible access");
+      }
+      return {
+        storage,
+        grant: {
+          kind: "automatic",
+          callbackOrigin: "api",
+          outputs: outputBindings(method.grant.outputs),
+        },
+        access,
+        revoke,
+      };
     }
     case "manual": {
       return {
@@ -500,17 +516,16 @@ function runtimeConnector(
     if (method.visible) {
       authoredVisibleMethodIds.add(method.id);
     }
-    // Automatic and provider-backed MCP authentication require their own
-    // installed handlers. Catalog presence alone does not enable them.
+    // Provider-backed MCP methods require separately installed handlers.
     if (
-      method.grant.kind === "automatic" ||
-      method.access.kind === "automatic" ||
-      (connector.mcp !== undefined &&
-        !(
-          method.revoke.kind === "none" &&
-          ((method.grant.kind === "none" && method.access.kind === "none") ||
-            (method.grant.kind === "manual" && method.access.kind === "static"))
-        ))
+      connector.mcp !== undefined &&
+      !(
+        method.revoke.kind === "none" &&
+        ((method.grant.kind === "none" && method.access.kind === "none") ||
+          (method.grant.kind === "manual" && method.access.kind === "static") ||
+          (method.grant.kind === "automatic" &&
+            method.access.kind === "automatic"))
+      )
     ) {
       continue;
     }
@@ -739,13 +754,13 @@ function runtimeSelectionFromProjectedConnectors(args: {
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): ConnectorRuntimeSelection {
-  const connectorBySlug = new Map(
+  const builtinConnectorBySlug = new Map(
     args.connectors.map((connector) => {
       return [connector.slug, connector] as const;
     }),
   );
   const runtimeArtifacts = selectedArtifacts({
-    connectorBySlug,
+    connectorBySlug: builtinConnectorBySlug,
     connectorSlugs: args.runtimeConnectorSlugs,
   });
   const runtimeConnectors = new Map(
@@ -768,7 +783,7 @@ function runtimeSelectionFromProjectedConnectors(args: {
       },
     });
   const metadataArtifacts = selectedArtifacts({
-    connectorBySlug,
+    connectorBySlug: builtinConnectorBySlug,
     connectorSlugs: uniqueSortedConnectorSlugs([
       ...args.runtimeConnectorSlugs,
       ...args.metadataConnectorSlugs,

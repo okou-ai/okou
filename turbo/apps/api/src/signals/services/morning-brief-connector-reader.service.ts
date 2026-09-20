@@ -39,14 +39,19 @@ import {
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-runtime.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import {
+  morningBriefNativeCollectionAuthorityIsCurrent,
+  type MorningBriefNativeCollectionAuthority,
+} from "./morning-brief-native-generation-admission.service";
+import { readMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
@@ -90,6 +95,8 @@ export interface MorningBriefCollectionScope {
    * previous one collected.
    */
   readonly membershipId: string;
+  /** Present only when the native scheduler, not the legacy automation, owns this attempt. */
+  readonly nativeAuthority?: MorningBriefNativeCollectionAuthority;
 }
 
 interface MorningBriefReaderBudget {
@@ -243,26 +250,16 @@ export async function withMorningBriefDatabaseDeadline<T>(
         }
         const transactionTimeout = `${transactionRemaining.toString()}ms`;
         await tx.execute(sql`SELECT
-            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
-            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('lock_timeout', ${`${args.caps.lockTimeoutMs.toString()}ms`}, true),
+            set_config('statement_timeout', ${`${args.caps.statementTimeoutMs.toString()}ms`}, true),
             set_config('transaction_timeout', ${transactionTimeout}, true)`);
 
-        const beforeStatement = async (): Promise<void> => {
-          signal.throwIfAborted();
-          if (applicationRemaining() === 0) {
-            throw new MorningBriefDatabaseDeadlineExceededError();
-          }
-          const statementRemaining = ioRemaining();
-          if (statementRemaining === 0) {
-            throw new MorningBriefDatabaseDeadlineExceededError();
-          }
-          await tx.execute(sql`SELECT
-              set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
-              set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+        const beforeStatement = (): Promise<void> => {
           signal.throwIfAborted();
           if (applicationRemaining() === 0 || ioRemaining() === 0) {
             throw new MorningBriefDatabaseDeadlineExceededError();
           }
+          return Promise.resolve();
         };
 
         await beforeStatement();
@@ -577,9 +574,21 @@ async function subjectIsWritable(
  * even when the installation stays enabled on the same Agent.
  */
 async function ownershipIsUnchanged(
-  db: ReadonlyDb,
+  db: Db,
   scope: MorningBriefCollectionScope,
 ): Promise<boolean> {
+  if (scope.nativeAuthority !== undefined) {
+    return await morningBriefNativeCollectionAuthorityIsCurrent(db, {
+      orgId: scope.orgId,
+      userId: scope.userId,
+      scheduledFor: scope.anchor,
+      installationId: scope.installationId,
+      automationId: scope.automationId,
+      agentId: scope.agentId,
+      chatThreadId: scope.chatThreadId,
+      authority: scope.nativeAuthority,
+    });
+  }
   const state = await loadMorningBriefMigrationState(db, {
     orgId: scope.orgId,
     userId: scope.userId,
@@ -1020,7 +1029,7 @@ async function loadCredential(
   const connectorId = request.selection.connectorId;
   const snapshot = await loadConnectorRuntimeSnapshot(db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db,
     snapshot,
     orgId: scope.orgId,
@@ -1036,14 +1045,14 @@ async function loadCredential(
     return { kind: "unavailable", reason: "reconnect-required" };
   }
   const connection = loaded.connection;
-  const valueRef = connectorCredentialRuntimeValueRef(
+  const valueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     request.environmentName,
   );
   if (valueRef === null) {
     return { kind: "unavailable", reason: "reconnect-required" };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db,
     valueRefs: [valueRef],
@@ -1061,7 +1070,7 @@ async function loadCredential(
   if (!credentialNeedsRefresh(connection.tokenExpiresAt)) {
     return { kind: "ok", credential: { accessToken: storedToken, pinned } };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection,
       db,
@@ -1735,6 +1744,26 @@ interface MorningBriefAdmissionArgs {
   readonly deadline: MorningBriefSourceDeadline;
 }
 
+export async function admitMorningBriefNativeCollection(
+  args: MorningBriefAdmissionArgs & {
+    readonly authority: MorningBriefNativeCollectionAuthority;
+  },
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionAdmission> {
+  const bounded = AbortSignal.any([signal, args.deadline.signal]);
+  const admitted = await settle(
+    admitNativeWithinDeadline(args, bounded),
+    signal,
+  );
+  if (admitted.ok) {
+    return admitted.value;
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
+  }
+  throw admitted.error;
+}
+
 export async function admitMorningBriefCollection(
   args: MorningBriefAdmissionArgs,
   signal: AbortSignal,
@@ -1757,6 +1786,69 @@ export async function admitMorningBriefCollection(
   // A genuine preflight failure stays a failure; it is not relabelled as a
   // refusal this member could act on.
   throw admitted.error;
+}
+
+async function admitNativeWithinDeadline(
+  args: MorningBriefAdmissionArgs & {
+    readonly authority: MorningBriefNativeCollectionAuthority;
+  },
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionAdmission> {
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    args.db,
+    args.orgId,
+    args.userId,
+  );
+  signal.throwIfAborted();
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
+  ) {
+    return { kind: "denied", reason: "feature-disabled" };
+  }
+  const schedule = await readMorningBriefNativeSchedule(args.db, args);
+  signal.throwIfAborted();
+  if (
+    schedule === undefined ||
+    (schedule.phase !== "native" && schedule.phase !== "rollback-draining") ||
+    !schedule.enabled ||
+    schedule.ownerEpoch !== args.authority.ownerEpoch ||
+    schedule.membershipId !== args.authority.membershipId ||
+    schedule.legacyWorkflowId === null ||
+    schedule.legacyAutomationId === null
+  ) {
+    return { kind: "denied", reason: "not-installed" };
+  }
+  const membershipId = await loadCurrentMembershipId(args.clerk, args, signal);
+  signal.throwIfAborted();
+  if (
+    membershipId === null ||
+    membershipId !== args.authority.membershipId ||
+    !(await subjectIsWritable(args.db, args, args.deadline, signal))
+  ) {
+    return { kind: "denied", reason: "no-membership" };
+  }
+  const scope: MorningBriefCollectionScope = {
+    orgId: args.orgId,
+    userId: args.userId,
+    installationId: schedule.legacyWorkflowId,
+    automationId: schedule.legacyAutomationId,
+    agentId: schedule.agentId,
+    chatThreadId: schedule.chatThreadId,
+    anchor: args.anchor,
+    timezone: schedule.timezone,
+    membershipId,
+    nativeAuthority: args.authority,
+  };
+  if (
+    !(await ownershipIsUnchanged(args.db, scope)) ||
+    !(await agentIsVisible(args.db, scope))
+  ) {
+    return { kind: "denied", reason: "not-installed" };
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
+  }
+  return { kind: "ok", scope };
 }
 
 async function admitWithinDeadline(

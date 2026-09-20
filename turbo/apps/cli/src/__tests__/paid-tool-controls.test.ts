@@ -202,43 +202,14 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         "voice",
       ],
     },
-    {
-      tool: "video-generation",
-      args: [
-        "__intro-video-agent",
-        "--prompt-file",
-        "missing.txt",
-        "--style-id",
-        "editorial",
-        "--orientation",
-        "landscape",
-      ],
-    },
-    {
-      tool: "avatar-video-generation",
-      args: [
-        "__intro-video-presenter",
-        "--avatar-id",
-        "presenter",
-        "--audio-url",
-        "https://example.com/audio.mp3",
-      ],
-    },
-    {
-      tool: "voice-generation",
-      args: ["__intro-video-voice", "--voice-id", "voice", "--text", "Hello"],
-    },
-    {
-      tool: "video-rendering",
-      args: ["video", "render", "missing-project"],
-    },
   ])("rejects disabled $tool before any request", async ({ tool, args }) => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
 
     await expect(run(args)).rejects.toThrow("process.exit(1)");
 
     expect(errors).toContain(`Paid tool "${tool}" is disabled`);
-    expect(errors).toContain("http://localhost:3000/?settings=paid-tools");
+    expect(errors).toContain("Settings > Personal > Chat");
+    expect(errors).toContain("http://localhost:3000/?settings=chat");
     expect(requests).toEqual([]);
     expect(await readdir(directory)).toEqual([]);
   });
@@ -332,7 +303,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   it("allows voice generation when only unrelated and future tools are disabled", async () => {
     vi.stubEnv(
       DISABLED_PAID_TOOLS_ENV_VAR,
-      '["image-generation", "video-generation", "avatar-video-generation", "video-rendering", "future-tool"]',
+      '["image-generation", "video-generation", "avatar-video-generation", "future-tool"]',
     );
     let submissions = 0;
     server.use(
@@ -362,41 +333,42 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(requests).toEqual([]);
   });
 
-  it.each([
-    { args: ["generate", "image"], tool: "image-generation" },
-    { args: ["video", "render"], tool: "video-rendering" },
-  ])("annotates relevant media help for $tool", async ({ args, tool }) => {
-    vi.stubEnv(
-      DISABLED_PAID_TOOLS_ENV_VAR,
-      '["image-generation", "video-rendering"]',
-    );
-    await expect(run([...args, "--help"])).rejects.toMatchObject({
-      code: "commander.helpDisplayed",
-    });
-    expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
-    expect(requests).toEqual([]);
-  });
+  it.each([{ args: ["generate", "image"], tool: "image-generation" }])(
+    "annotates relevant media help for $tool",
+    async ({ args, tool }) => {
+      vi.stubEnv(
+        DISABLED_PAID_TOOLS_ENV_VAR,
+        '["image-generation", "video-generation"]',
+      );
+      await expect(run([...args, "--help"])).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
+      expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
+      expect(output).toContain("Settings > Personal > Chat");
+      expect(requests).toEqual([]);
+    },
+  );
 
   it.each([
     {
       api: "https://api.okou.ai",
       app: undefined,
-      expected: "https://app.okou.ai/?settings=paid-tools",
+      expected: "https://app.okou.ai/?settings=chat",
     },
     {
       api: "https://staging-api.vm6.ai",
       app: undefined,
-      expected: "https://staging-app.omby.ai/?settings=paid-tools",
+      expected: "https://staging-app.omby.ai/?settings=chat",
     },
     {
       api: "https://pr-123-api.vm6.ai",
       app: undefined,
-      expected: "https://pr-123-app.omby.ai/?settings=paid-tools",
+      expected: "https://pr-123-app.omby.ai/?settings=chat",
     },
     {
       api: "https://api.okou.ai",
       app: "https://preview.example.test/path",
-      expected: "https://preview.example.test/?settings=paid-tools",
+      expected: "https://preview.example.test/?settings=chat",
     },
   ])(
     "uses the current platform recovery URL for $expected",

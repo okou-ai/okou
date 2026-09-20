@@ -116,6 +116,7 @@
         "time": "Tiempo"
       },
       "log": "Registro",
+      "manualReloadNotice": "Recarga esta página para ver los registros de actividad más recientes.",
       "modelProvidedBy": "{{model}} proporcionado por {{provider}}",
       "networkEmpty": {
         "description": "No se registró tráfico de red durante esta ejecución.",
@@ -458,6 +459,7 @@
       "description": "Puede que sea privado o que ya no esté disponible.",
       "help": "Pide a la persona que compartió este enlace que revise el acceso.",
       "signedInAs": "Sesión iniciada como {{email}}",
+      "signedInDescription": "Puede que no exista o que se haya compartido con otra cuenta u organización.",
       "signIn": "Iniciar sesión",
       "signInFailed": "No se pudo abrir el inicio de sesión. Inténtalo de nuevo.",
       "switchAccount": "Cambiar de cuenta",
@@ -519,7 +521,7 @@
       "description": "Explora todo lo que hayas creado aquí.",
       "emptyDescription": "Los artefactos aparecerán aquí cuando estén disponibles.",
       "emptyTitle": "No se han encontrado artefactos",
-      "error": "No se pudo cargar artefactos. Inténtalo de nuevo más tarde.",
+      "error": "No se pudo cargar artefactos.",
       "filters": {
         "avatar": "Avatares",
         "avatarAria": "Mostrar artefactos de avatar",
@@ -538,7 +540,8 @@
         "websiteAria": "Mostrar artefactos de sitios web"
       },
       "kindIcon": "{{kind}} artefacto",
-      "loading": "Cargando artefactos"
+      "loading": "Cargando artefactos",
+      "retry": "Reintentar"
     },
     "fileBadges": {
       "artwork": "ARTE",
@@ -620,12 +623,11 @@
       "onlyMeDescription": "Solo tú puedes ver este artefacto",
       "organization": "Organización",
       "organizationDescription": "Cualquier persona de {{organization}} con el enlace",
+      "organizationDescriptionUnnamed": "Cualquier persona de tu organización con el enlace",
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
       "publicDescription": "Cualquier persona con el enlace puede verlo",
-      "retry": "Reintentar",
-      "savedAutomatically": "Los cambios se guardan automáticamente",
-      "saving": "Guardando…"
+      "retry": "Reintentar"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversación compartida",
@@ -642,7 +644,6 @@
       "categories": "Categorías de plantilla",
       "category": "Categoría de plantilla",
       "chooseVoice": "Elige una voz para {{title}}",
-      "creativeVideo": "Vídeo creativo",
       "filters": {
         "age": "Edad",
         "all": "Todos",
@@ -666,10 +667,7 @@
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importa tu propio archivo",
-      "importFileHint": "({{formats}})",
-      "importUnsupported": "Elige un archivo {{formats}} para crear una plantilla.",
-      "introVideo": "Vídeo de introducción",
-      "introVideoUnavailable": "Esta plantilla de vídeo ya no está disponible. Elimínala para enviar tu mensaje.",
+      "importFileHint": "Reutiliza el diseño de tu archivo",
       "multiAccent": "Multiacentos",
       "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
@@ -687,7 +685,6 @@
       "renameImportedTemplate": "Cambiar nombre de la plantilla",
       "searchConnector": "Buscar plantillas",
       "searchConnectors": "Buscar plantillas",
-      "selected": "Seleccionado",
       "selectStyle": "Selecciona el estilo {{style}}",
       "selectTemplate": "Seleccionar plantilla {{title}}",
       "selectVideo": "Seleccionar plantilla de vídeo {{title}}",
@@ -1466,6 +1463,53 @@
         },
         "inReview": "En revisión",
         "inReviewDescription": "Enviado, pendiente de revisión",
+        "intro": {
+          "checkin": {
+            "amount": "+{{amount}} créditos",
+            "confirm": "Volver al trabajo",
+            "description": "Los créditos pagan el trabajo en sí: cada ejecución, cada artefacto, cada flujo que corre con un horario.",
+            "title": "Lo de hoy está hecho"
+          },
+          "connector": {
+            "confirm": "Ver todos los conectores",
+            "description": "Conecta una de tus herramientas para que {{assistantName}} pueda trabajar en ella.",
+            "pickerFailed": "No se han podido cargar los conectores. Abre la página de conectores para reintentarlo.",
+            "pickerLoading": "Cargando conectores…",
+            "title": "{{assistantName}} trabaja dentro de las herramientas que ya usas"
+          },
+          "invite": {
+            "confirm": "Invitar al equipo",
+            "description": "Invita a tus compañeros a este espacio de trabajo.",
+            "note": "Lo que montaste una vez deja de ser solo tuyo. Quien entró esta mañana puede ejecutarlo esta tarde sin preguntarte cómo funciona.",
+            "title": "Lo que sabe una persona, lo ejecuta todo el equipo"
+          },
+          "later": "Más tarde",
+          "slack": {
+            "appBadge": "APP",
+            "confirm": "Añadir a Slack",
+            "description": "Añade {{assistantName}} al espacio de Slack de tu equipo.",
+            "note": "Tus compañeros dejan de pasar por ti. Lo piden en el canal y el trabajo vuelve al hilo, donde lo ve todo el mundo.",
+            "sampleChannel": "# growth",
+            "title": "Trabaja con {{assistantName}} donde tu equipo ya habla"
+          },
+          "workflow": {
+            "browse": "Ver plantillas",
+            "confirm": "Enséñame una",
+            "description": "Convierte un trabajo que repites en un flujo que el equipo puede ejecutar.",
+            "prompt": "Cada lunes por la mañana, mira qué publicaron mis competidores la semana pasada, agrúpalo por temas y dame una tabla comparativa.",
+            "promptConfirm": "Enviárselo a {{assistantName}}",
+            "promptDescription": "Envíaselo a {{assistantName}} tal cual, o cambia antes la redacción.",
+            "promptOutcome": "Lee las fuentes, agrupa lo que encuentra y responde con la tabla. Si el resultado está bien, te ofrece guardar esa ejecución como flujo.",
+            "promptTitle": "Pídelo como se lo pedirías a un compañero",
+            "stepRun": "Ejecútala una vez",
+            "stepRunDescription": "Ves el trabajo terminado antes de comprometerte con nada.",
+            "stepSave": "Guárdala y dale un horario",
+            "stepSaveDescription": "Se ejecuta sin que nadie lo pida, y cualquier compañero puede lanzarla también.",
+            "stepTemplate": "Empieza por una plantilla",
+            "stepTemplateDescription": "Elige una cercana a tu trabajo en lugar de partir de una página en blanco.",
+            "title": "Una buena ejecución se convierte en algo que el equipo conserva"
+          }
+        },
         "invite": {
           "action": "Invitar",
           "description": "Cada persona que añadas cuenta",
@@ -1921,71 +1965,6 @@
       "sent": "Reenviado correctamente",
       "threads": "Conversaciones",
       "title": "Reenviar a"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Elige un avatar",
-        "label": "Avatar",
-        "none": "Sin avatar",
-        "noneDetail": "Solo estilo",
-        "previewLook": "Vista previa del aspecto {{name}}"
-      },
-      "catalog": {
-        "error": "No se pudo cargar el catálogo.",
-        "loading": "Cargando más opciones",
-        "reload": "Recargar catálogo",
-        "retry": "Volver a intentar"
-      },
-      "footer": {
-        "cancel": "Cancelar"
-      },
-      "picker": {
-        "allPresenters": "Todos los presentadores",
-        "allPresentersCount": "Todos los presentadores ({{total}})",
-        "allVoices": "Todas las voces",
-        "allVoicesCount": "Todas las voces ({{total}})",
-        "autoVoiceDescription": "Una voz que encaja con tu estilo",
-        "avatarVoice": "Voz del avatar",
-        "back": "Atrás",
-        "closeOptions": "Cerrar opciones",
-        "done": "Listo",
-        "moreOptions": "Más opciones",
-        "noMatches": "No hay resultados.",
-        "optionsNote": "Puedes cambiarlo cuando quieras desde el chip del chat.",
-        "pickStyle": "Elige un estilo",
-        "reset": "Restablecer",
-        "searchPresenters": "Buscar presentadores",
-        "searchStyles": "Buscar estilos",
-        "searchVoices": "Buscar voces",
-        "selectedStyle": "Seleccionado: {{name}}",
-        "settings": "Configuración del vídeo de introducción",
-        "styleCount_one": "{{count}} estilo",
-        "styleCount_many": "{{count}} estilos",
-        "styleCount_other": "{{count}} estilos",
-        "styleCountOf": "{{shown}} de {{total}}",
-        "useStyle": "Usar {{name}}"
-      },
-      "style": {
-        "auto": "Dejar que Okou elija",
-        "browseGroups": "Explorar por estilo",
-        "groups": {
-          "cinematic": "Cine y fotografía",
-          "handmade": "Artesanía y materiales",
-          "iconic-artist": "Arte y diseño",
-          "other": "Otros estilos",
-          "pop-culture": "Cultura pop",
-          "print": "Impresión y publicaciones",
-          "retro-tech": "Tecnología retro e interfaces"
-        },
-        "preview": "Vista previa de {{title}}"
-      },
-      "voice": {
-        "auto": "Dejar que Okou elija",
-        "defaultDescription": "Usar la voz predeterminada del avatar elegido",
-        "label": "Voz",
-        "none": "Sin narración",
-        "noneShortDescription": "Mantener el audio original"
-      }
     },
     "mail": {
       "bcc": "BCC",
@@ -3801,7 +3780,7 @@
           "iconAlt": "Icono opcional de la aplicación {{brandName}}",
           "iconHint": ", o usa cualquier icono que prefieras.",
           "iconTitle": "Icono opcional de la aplicación {{brandName}}",
-          "imageAlt": "Formulario de creación de aplicaciones de Feishu con el nombre, el icono y el botón Crear resaltados",
+          "imageAlt": "Formulario de creación de aplicaciones de Lark con el nombre, el icono y el botón Crear resaltados",
           "title": "Crear una aplicación de tipo Agent"
         },
         "credentials": {
@@ -6416,10 +6395,6 @@
           "description": "Crea vídeos con modelos integrados.",
           "name": "Generación de vídeos"
         },
-        "video-rendering": {
-          "description": "Renderiza composiciones de vídeo en la nube.",
-          "name": "Renderizado de vídeo"
-        },
         "voice-generation": {
           "description": "Crea audio con voces integradas.",
           "name": "Generación de voz"
@@ -6804,8 +6779,9 @@
     },
     "notFound": {
       "action": "Volver al inicio",
-      "description": "La página que buscas no existe.",
-      "title": "Página no encontrada"
+      "browse": "Explorar flujos de trabajo",
+      "description": "Puede que se haya movido o que el enlace sea antiguo. Todo lo demás sigue donde lo dejaste.",
+      "title": "Esta página no está aquí."
     },
     "workerFailure": {
       "action": "Actualizar",
@@ -7058,6 +7034,91 @@
       "thread_many": "{{value}} hilos",
       "thread_other": "{{value}} hilos"
     }
+  },
+  "vnc": {
+    "accessDescription": "Elige qué agentes pueden ver y controlar tus escritorios VNC. El acceso es independiente de SSH.",
+    "accessHelp": "Permite que este agente vea y controle todos tus escritorios VNC configurados, actuales y futuros.",
+    "add": "Añadir host",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "configurationHelp": "Guardar un host no comprueba su conexión. Los agentes eligen el modo compartido o exclusivo al iniciar una sesión; el servidor VNC controla la admisión.",
+    "configured": "Configurado",
+    "credential": {
+      "add": "Añadir credenciales",
+      "createNew": "Crear credenciales",
+      "delete": "Eliminar credenciales",
+      "deleteHelp": "¿Eliminar estas credenciales sin usar? Esta acción no se puede deshacer.",
+      "edit": "Editar credenciales",
+      "empty": "No hay credenciales VNC guardadas.",
+      "inUse": "Elimina o reasigna los hosts que usan estas credenciales antes de eliminarlas.",
+      "label": "Credenciales",
+      "method": "Contraseña VNC",
+      "name": "Nombre de las credenciales",
+      "nameHint": "p. ej., Acceso al escritorio de la oficina",
+      "password": "Contraseña VNC",
+      "passwordHelp": "Las contraseñas VNC clásicas usan entre 1 y 8 caracteres ASCII imprimibles. Se conservan los espacios.",
+      "passwordHint": "Introduce la contraseña VNC del servidor",
+      "replace": "Reemplazar contraseña",
+      "replaceHelp": "Deja esta opción desactivada para conservar la contraseña guardada. Reemplazarla afecta a todos los hosts que usan estas credenciales.",
+      "select": "Seleccionar una credencial",
+      "sharedHelp_one": "Utilizadas por {{count}} host. Los cambios de contraseña afectan a este host.",
+      "sharedHelp_many": "Utilizadas por {{count}} hosts. Los cambios de contraseña afectan a todos ellos.",
+      "sharedHelp_other": "Utilizadas por {{count}} hosts. Los cambios de contraseña afectan a todos ellos.",
+      "unused": "Ningún host guardado las utiliza."
+    },
+    "credentialsTab": "Credenciales",
+    "delete": "Eliminar host",
+    "deleteHelp": "¿Eliminar este host guardado? Sus credenciales reutilizables se conservarán.",
+    "description": "Permite que tus agentes vean y controlen tus escritorios remotos.",
+    "displayName": "Nombre de visualización",
+    "displayNameHint": "p. ej., Escritorio de la oficina",
+    "edit": "Editar host",
+    "editHelp": "Los cambios se aplican a este host guardado e invalidan su configuración de conexión actual.",
+    "empty": "Añade un host VNC para empezar.",
+    "errors": {
+      "configurationChanged": "Este host ha cambiado desde que lo abriste.",
+      "credentialChanged": "Estas credenciales han cambiado desde que las abriste.",
+      "credentialUnavailable": "Las credenciales seleccionadas ya no están disponibles.",
+      "failed": "No se pudo guardar la configuración de VNC.",
+      "hostUnavailable": "Este host ya no está disponible.",
+      "invalidHost": "Introduce un nombre de host o una dirección IP válidos, sin URL, nombre de usuario ni puerto.",
+      "invalidInput": "Comprueba la configuración de VNC y vuelve a intentarlo.",
+      "invalidTrust": "Introduce un paquete válido de hasta 8 certificados públicos de CA, con un tamaño máximo de 64 KiB.",
+      "ownerChanged": "Tu acceso al espacio de trabajo ha cambiado. Actualiza antes de continuar.",
+      "revisionExhausted": "Esta configuración ya no se puede actualizar. Crea una nueva."
+    },
+    "host": "Nombre de host o dirección IP",
+    "hostHint": "p. ej., desktop.example.com",
+    "hostsTab": "Hosts",
+    "label": "VNC",
+    "loadFailed": "No se pudo cargar la configuración de VNC.",
+    "loading": "Cargando la configuración de VNC…",
+    "loadingAccess": "Cargando acceso de los agentes…",
+    "manage": "Gestionar VNC",
+    "port": "Puerto",
+    "retry": "Reintentar",
+    "save": "Guardar",
+    "saveRecovery": {
+      "resourceIdConflict": "No se pudo crear este recurso. Cierra este diálogo y vuelve a intentarlo.",
+      "review": "La configuración se ha actualizado. Cierra este diálogo y revisa los datos actuales antes de volver a intentarlo.",
+      "uncertain": "Se desconoce el resultado del guardado. Tu borrador original está bloqueado. Reintenta la misma solicitud o cierra y actualiza para comprobar la configuración guardada."
+    },
+    "saving": "Guardando…",
+    "security": {
+      "caBundle": "Certificados de CA (PEM)",
+      "caHelp": "Hasta 8 certificados de CA, 64 KiB en total. No pegues una clave privada ni un certificado de servidor.",
+      "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
+      "custom": "Autoridades de certificación personalizadas",
+      "help": "Requiere un servidor VNC compatible con VeNCrypt X509Vnc. El certificado del servidor debe coincidir con el nombre de host o la dirección IP configurados.",
+      "profile": "VNC cifrado (X509Vnc)",
+      "system": "Autoridades de certificación del sistema",
+      "title": "Confianza en el certificado del servidor"
+    },
+    "summary_one": "{{count}} host configurado",
+    "summary_many": "{{count}} hosts configurados",
+    "summary_other": "{{count}} hosts configurados",
+    "title": "Acceso remoto VNC",
+    "unavailable": "VNC no está disponible en este espacio de trabajo."
   },
   "workflows": {
     "automations": {
@@ -7411,6 +7472,7 @@
         "calendar": "Calendario",
         "email": "Correo electrónico",
         "forms": "Google Forms",
+        "github": "GitHub",
         "integrations": "Integraciones",
         "notion": "Notion",
         "schedule": "Programación"

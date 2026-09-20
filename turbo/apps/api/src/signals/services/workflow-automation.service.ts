@@ -73,6 +73,7 @@ import { publishChatThreadAutomationsChangedSafely } from "../external/realtime"
 import {
   applyMorningBriefLogicalChoice,
   lockMorningBriefNativeSchedule,
+  lockMorningBriefNativeScheduleForWrite,
   type MorningBriefChoiceApplication,
 } from "./morning-brief-native-schedule.service";
 import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
@@ -6041,10 +6042,12 @@ export async function persistNativeMorningBriefPreferenceChoice(
  * choice as one write.
  *
  * Every writer follows the same lock order: the caller's member-preference
- * advisory lock (when present), then the native schedule, then the legacy
- * automation, and finally any occurrence read by the choice application. A
- * native owner never receives a new legacy `next_run_at`; rollback restores the
- * future legacy obligation only after its drain commits.
+ * advisory lock (when present), then the native schedule — the owner key while
+ * no row exists yet — then the legacy automation, and finally any occurrence
+ * read by the choice application. A native owner never receives a new legacy
+ * `next_run_at`; rollback restores the future legacy obligation only after its
+ * drain commits. Taking the owner key here is what stops a first materialization
+ * from publishing the choice this toggle is replacing.
  */
 async function persistMorningBriefAutomationToggle(
   db: Db,
@@ -6054,6 +6057,7 @@ async function persistMorningBriefAutomationToggle(
     readonly nextRunAt: Date | null;
     readonly now: Date;
     readonly inheritedAutonomyBudget?: number;
+    readonly useDurableChoice?: boolean;
   },
 ): Promise<AutomationRow | undefined> {
   if (
@@ -6069,21 +6073,34 @@ async function persistMorningBriefAutomationToggle(
     userId: args.automation.ownerUserId,
   };
   return await db.transaction(async (tx) => {
-    const native = await lockMorningBriefNativeSchedule(tx, owner);
-    await recordMorningBriefChoice(tx, owner, args.enabled);
+    const native = await lockMorningBriefNativeScheduleForWrite(tx, owner);
+    const selected =
+      native !== undefined &&
+      native.legacyAutomationId === args.automation.id &&
+      native.legacyWorkflowId === args.automation.workflowId;
+    // Reserved Official materialization is reconciliation, not a user toggle.
+    // It may restore only the durable choice it locks now; a retained identity
+    // captured before a Settings write cannot replay that older choice.
+    const reconciliationOwned = selected && args.useDurableChoice === true;
+    const enabled = reconciliationOwned
+      ? (native?.enabled ?? args.enabled)
+      : args.enabled;
+    if (!reconciliationOwned) {
+      await recordMorningBriefChoice(tx, owner, enabled);
+    }
     const [row] = await tx
       .update(workflowAutomations)
       .set({
-        enabled: args.enabled,
+        enabled,
         nextRunAt:
-          args.enabled && native !== undefined && native.phase !== "legacy"
+          enabled && native !== undefined && native.phase !== "legacy"
             ? null
-            : args.nextRunAt,
-        consecutiveFailures: args.enabled
-          ? 0
-          : args.automation.consecutiveFailures,
+            : enabled
+              ? args.nextRunAt
+              : null,
+        consecutiveFailures: enabled ? 0 : args.automation.consecutiveFailures,
         updatedAt: args.now,
-        officialIntendedEnabled: args.enabled,
+        officialIntendedEnabled: enabled,
         ...(args.inheritedAutonomyBudget === undefined
           ? {}
           : { autonomyBudget: args.inheritedAutonomyBudget }),
@@ -6093,14 +6110,11 @@ async function persistMorningBriefAutomationToggle(
     if (row === undefined) {
       return undefined;
     }
-    if (
-      native !== undefined &&
-      native.legacyAutomationId === args.automation.id
-    ) {
+    if (selected && native !== undefined) {
       const applied = await applyMorningBriefLogicalChoice(
         tx,
         owner,
-        { enabled: args.enabled, expectedEpoch: native.ownerEpoch },
+        { enabled, expectedEpoch: native.ownerEpoch },
         args.now,
       );
       if (applied.kind !== "applied") {
@@ -6202,6 +6216,7 @@ export const enableWorkflowAutomation$ = command(
       nextRunAt,
       now,
       inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+      useDurableChoice: args.allowReservedOfficialMaterialization === true,
     });
     signal.throwIfAborted();
     if (morningBriefRow !== undefined) {

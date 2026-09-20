@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.634.0",
+  "version": "1.640.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -50,7 +50,6 @@
     "@okouai/core": "workspace:*",
     "@okouai/db": "workspace:*",
     "@okouai/pi-agent-runtime": "workspace:*",
-    "@zip.js/zip.js": "^2.14.1",
     "ably": "^2.21.0",
     "archiver": "^8.0.0",
     "ccstate": "^5.5.0",
@@ -88,7 +87,7 @@
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "clerk": "^3.0.1",
     "eslint": "^9.34.0",
     "msw": "^2.13.2",

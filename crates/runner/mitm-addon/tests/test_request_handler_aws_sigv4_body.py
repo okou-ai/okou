@@ -795,11 +795,13 @@ def test_bounded_sigv4_revalidates_public_destination_after_prebind(
         *,
         kind: upstream_destination_binding.BindingKind,
         api_url: str,
+        platform_connector_auth: bool = False,
     ) -> bool:
         admitted = ensure_bound_destination(
             current_flow,
             kind=kind,
             api_url=api_url,
+            platform_connector_auth=platform_connector_auth,
         )
         if admitted:
             mark_connected_tls_upstream(

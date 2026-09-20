@@ -493,9 +493,7 @@ describe("GET /api/usage/record", () => {
     expect(response.body.period).not.toBeNull();
 
     expect(response.body.rows[0]).toMatchObject({
-      source: "chat",
       threadId: mixed.threadId,
-      runId: null,
       title: "Mixed-source thread",
       credits: 300,
       tokens: 50,
@@ -527,17 +525,13 @@ describe("GET /api/usage/record", () => {
     ]);
 
     expect(response.body.rows[1]).toMatchObject({
-      source: "chat",
       threadId: null,
-      runId: null,
       title: "Unavailable thread",
       credits: 10,
       tokens: 10,
     });
     expect(response.body.rows[2]).toMatchObject({
-      source: "chat",
       threadId: older.threadId,
-      runId: null,
       title: "Older thread",
       credits: 80,
     });
@@ -591,9 +585,7 @@ describe("GET /api/usage/record", () => {
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.rows).toStrictEqual([
       expect.objectContaining({
-        source: "chat",
         threadId: null,
-        runId: null,
         title: "Unavailable thread",
         credits: 70,
         tokens: 50,
@@ -664,9 +656,7 @@ describe("GET /api/usage/record", () => {
     expect(response.body.rows).toHaveLength(1);
     expect(response.body.totalCredits).toBe(200);
     expect(response.body.rows[0]).toMatchObject({
-      source: "chat",
       threadId: null,
-      runId: null,
       title: "Unavailable thread",
       credits: 200,
       tokens: 0,
@@ -733,9 +723,7 @@ describe("GET /api/usage/record", () => {
     expect(response.body.totalCredits).toBe(170);
 
     expect(response.body.rows[0]).toMatchObject({
-      source: "chat",
       threadId: null,
-      runId: null,
       title: "Unavailable thread",
       credits: 130,
       tokens: 0,
@@ -766,9 +754,7 @@ describe("GET /api/usage/record", () => {
     ]);
 
     expect(response.body.rows[1]).toMatchObject({
-      source: "chat",
       threadId: current.threadId,
-      runId: null,
       title: "Current chat",
       credits: 40,
       tokens: 0,
@@ -803,9 +789,7 @@ describe("GET /api/usage/record", () => {
     expect(response.body.rows).toHaveLength(1);
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.rows[0]).toMatchObject({
-      source: "chat",
       threadId: null,
-      runId: null,
       title: "Unavailable thread",
       credits: 40,
       tokens: 40,
@@ -1006,9 +990,7 @@ describe("GET /api/usage/record", () => {
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.totalCredits).toBe(6);
     expect(response.body.rows[0]).toMatchObject({
-      source: "chat",
       threadId: null,
-      runId: null,
       credits: 6,
       tokens: 0,
     });

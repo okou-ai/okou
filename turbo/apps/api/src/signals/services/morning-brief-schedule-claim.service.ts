@@ -18,6 +18,12 @@ import {
   type MorningBriefStateReader,
 } from "./morning-brief-migration-state.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
+import {
+  consumeSelectedLegacyMorningBriefObligation,
+  lockMorningBriefLegacyWriterAuthority,
+  settleSelectedLegacyMorningBriefObligation,
+  type MorningBriefLegacyWriterAuthority,
+} from "./morning-brief-native-schedule.service";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
@@ -129,6 +135,16 @@ export async function claimMorningBriefSchedule(
     { subjectKind: "organization", subjectId: args.owner.orgId },
     { subjectKind: "user", subjectId: args.owner.ownerUserId },
   ]);
+  const lineage = {
+    orgId: args.owner.orgId,
+    userId: args.owner.ownerUserId,
+    workflowId: args.owner.workflowId,
+    automationId: args.automationId,
+  };
+  const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
+  if (authority.kind === "stale") {
+    return { kind: "unavailable" };
+  }
   const [locked] = await tx
     .select(workflowAutomationColumns())
     .from(workflowAutomations)
@@ -142,6 +158,17 @@ export async function claimMorningBriefSchedule(
     locked.ownerUserId !== args.owner.ownerUserId ||
     locked.workflowId !== args.owner.workflowId ||
     locked.nextRunAt?.getTime() !== args.scheduledAnchorAt.getTime()
+  ) {
+    return { kind: "unavailable" };
+  }
+
+  if (
+    !(await consumeSelectedLegacyMorningBriefObligation(
+      tx,
+      lineage,
+      authority,
+      { occurrenceAt: locked.nextRunAt, claimedAt: args.claimedAt },
+    ))
   ) {
     return { kind: "unavailable" };
   }
@@ -395,6 +422,13 @@ async function isCurrentClaim(
 
 interface SettleMorningBriefScheduleArgs {
   readonly automationId: string;
+  readonly owner:
+    | {
+        readonly orgId: string;
+        readonly userId: string;
+        readonly workflowId: string;
+      }
+    | undefined;
   readonly subject: MorningBriefScheduleSettlementSubject;
   readonly settlement: Exclude<
     MorningBriefScheduleClaimSettlement,
@@ -402,6 +436,36 @@ interface SettleMorningBriefScheduleArgs {
   >;
   /** Insufficient credits never counts as a failure or disables the schedule. */
   readonly isCreditError: boolean;
+}
+
+async function lockSettlementAuthority(
+  tx: Tx,
+  args: SettleMorningBriefScheduleArgs,
+): Promise<{
+  readonly lineage:
+    | (NonNullable<SettleMorningBriefScheduleArgs["owner"]> & {
+        readonly automationId: string;
+      })
+    | undefined;
+  readonly authority: MorningBriefLegacyWriterAuthority;
+}> {
+  const lineage =
+    args.owner === undefined
+      ? undefined
+      : { ...args.owner, automationId: args.automationId };
+  const authority: MorningBriefLegacyWriterAuthority =
+    lineage === undefined
+      ? { kind: "ordinary", fence: { kind: "ordinary" } }
+      : await lockMorningBriefLegacyWriterAuthority(tx, lineage);
+  return { lineage, authority };
+}
+
+function canPublishLegacySettlement(automation: AutomationRow): boolean {
+  return (
+    automation.enabled &&
+    automation.nextRunAt === null &&
+    automation.scheduleType === "cron"
+  );
 }
 
 /**
@@ -425,6 +489,10 @@ async function settleMorningBriefSchedule(
     automationId: args.automationId,
     subjectKind: args.subject.kind,
   });
+  const { lineage, authority } = await lockSettlementAuthority(tx, args);
+  if (authority.kind === "stale") {
+    return { settled: false };
+  }
   const [automation] = await tx
     .select(workflowAutomationColumns())
     .from(workflowAutomations)
@@ -442,15 +510,18 @@ async function settleMorningBriefSchedule(
     // A newer journaled claim already owns the schedule.
     return { settled: false };
   }
-  // Sampled only now: waiting on the automation and occurrence row locks can
-  // outlast a recurrence boundary, and an instant read taken before the wait
+  if (authority.kind === "selected" && authority.row.phase !== "legacy") {
+    // Cutover already owns recurrence. The old execution remains a real drain
+    // fact, but its callback has no authority to publish or pause either side.
+    const settledAt = nowDate();
+    await markSettled(tx, claim.id, args, settledAt);
+    return { settled: true };
+  }
+  // Sampled only now: waiting on the schedule, automation and occurrence row
+  // locks can outlast a recurrence boundary, and an instant read before them
   // would publish a successor that is already in the past.
   const settledAt = nowDate();
-  if (
-    !automation.enabled ||
-    automation.nextRunAt !== null ||
-    automation.scheduleType !== "cron"
-  ) {
+  if (!canPublishLegacySettlement(automation)) {
     // A user action already published the schedule this occurrence would have
     // written, or the automation is no longer a running cron schedule. The
     // occurrence is still consumed so a later duplicate cannot advance it.
@@ -477,6 +548,9 @@ async function settleMorningBriefSchedule(
     .set({
       consecutiveFailures,
       ...(shouldDisable ? { enabled: false } : {}),
+      ...(shouldDisable && authority.kind === "selected"
+        ? { officialIntendedEnabled: false }
+        : {}),
       nextRunAt,
       updatedAt: settledAt,
     })
@@ -488,6 +562,15 @@ async function settleMorningBriefSchedule(
       ),
     );
   await markSettled(tx, claim.id, args, settledAt);
+  if (lineage !== undefined) {
+    await settleSelectedLegacyMorningBriefObligation(tx, lineage, authority, {
+      enabled: automation.enabled && !shouldDisable,
+      cronExpression: automation.cronExpression,
+      timezone: automation.timezone,
+      nextRunAt,
+      at: settledAt,
+    });
+  }
   if (shouldDisable) {
     log.warn(
       "Morning Brief schedule auto-disabled after consecutive failures",
@@ -523,6 +606,40 @@ async function markSettled(
     );
 }
 
+async function resolveSettlementOwner(
+  db: Db,
+  automationId: string,
+  binding: {
+    readonly orgId: string | null;
+    readonly userId: string | null;
+    readonly workflowId: string;
+  },
+): Promise<SettleMorningBriefScheduleArgs["owner"]> {
+  if (binding.orgId !== null && binding.userId !== null) {
+    return {
+      orgId: binding.orgId,
+      userId: binding.userId,
+      workflowId: binding.workflowId,
+    };
+  }
+  const [automation] = await db
+    .select({
+      orgId: workflowAutomations.orgId,
+      userId: workflowAutomations.ownerUserId,
+      workflowId: workflowAutomations.workflowId,
+    })
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, automationId))
+    .limit(1);
+  return automation?.userId === null || automation === undefined
+    ? undefined
+    : {
+        orgId: automation.orgId,
+        userId: automation.userId,
+        workflowId: automation.workflowId,
+      };
+}
+
 /**
  * Settle a journaled occurrence identified by its Run.
  *
@@ -544,7 +661,12 @@ export async function settleMorningBriefScheduleForRun(
   },
 ): Promise<boolean> {
   const [binding] = await db
-    .select({ id: morningBriefScheduleClaims.id })
+    .select({
+      id: morningBriefScheduleClaims.id,
+      orgId: morningBriefScheduleClaims.orgId,
+      userId: morningBriefScheduleClaims.ownerUserId,
+      workflowId: morningBriefScheduleClaims.workflowId,
+    })
     .from(morningBriefScheduleClaims)
     .where(
       and(
@@ -557,9 +679,11 @@ export async function settleMorningBriefScheduleForRun(
     return false;
   }
   const isCreditError = await args.resolveIsCreditError();
+  const owner = await resolveSettlementOwner(db, args.automationId, binding);
   await db.transaction(async (tx) => {
     return await settleMorningBriefSchedule(tx, {
       automationId: args.automationId,
+      owner,
       subject: { kind: "run", runId: args.runId },
       settlement: args.settlement,
       isCreditError,
@@ -585,9 +709,28 @@ export async function settleMorningBriefSchedulePreRunFailure(
     readonly isCreditError: boolean;
   },
 ): Promise<void> {
+  const [binding] = await db
+    .select({
+      orgId: morningBriefScheduleClaims.orgId,
+      userId: morningBriefScheduleClaims.ownerUserId,
+      workflowId: morningBriefScheduleClaims.workflowId,
+    })
+    .from(morningBriefScheduleClaims)
+    .where(
+      and(
+        eq(morningBriefScheduleClaims.id, args.claimId),
+        eq(morningBriefScheduleClaims.automationId, args.automationId),
+      ),
+    )
+    .limit(1);
+  if (!binding) {
+    return;
+  }
+  const owner = await resolveSettlementOwner(db, args.automationId, binding);
   await db.transaction(async (tx) => {
     return await settleMorningBriefSchedule(tx, {
       automationId: args.automationId,
+      owner,
       subject: { kind: "claim", claimId: args.claimId },
       settlement: "pre_run_failure",
       isCreditError: args.isCreditError,

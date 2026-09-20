@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  getCustomConnectorSkillStorageName,
+  getCustomSkillStorageName,
+} from "@okouai/core/storage-names";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -9,6 +13,7 @@ import {
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
   CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/errors";
+import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
   PI_DEFERRED_SANDBOX_HEADER,
@@ -22,12 +27,14 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
+import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { UsagePricingResolution } from "../../context/usage-pricing-resolution";
 import { createDeferredPromise, settle } from "../../utils";
 import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
@@ -44,14 +51,30 @@ import {
   nativeCodexSseResponse,
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
+import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import {
+  removePiInferenceFixture,
+  removePiInferenceFixtures,
+} from "../../../test-fixtures/pi-inference-lifecycle";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
+import {
+  captureApiTestConnectorCatalogCleanup,
+  installApiTestConnectorCatalog,
+  invalidateApiTestConnectorCatalogCompatibility,
+  withApiTestConnectorCatalogSource,
+} from "../../../test-fixtures/connector-catalog";
+import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
+const workflows = createWorkflowsBddApi(context);
 const {
   api,
+  bdd,
   chat,
+  misc,
   webhooks,
   entitledChatActor,
   configureBuiltInPiModel,
@@ -329,6 +352,588 @@ async function releaseDeferredPiRun(
 }
 
 describe("durable Pi API producer", () => {
+  it("uses complete published context after permission expiry and revocation", async () => {
+    const capturedAt = Date.parse("2026-09-17T00:00:00.000Z");
+    mockNow(capturedAt);
+    configureNativeCliArtifact();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const providerBodies: string[] = [];
+    const resourceArchiveReadsAtProvider: number[] = [];
+    let resourceArchiveReads = 0;
+    let providerCalls = 0;
+    server.use(
+      http.post(PROVIDER_URL, async ({ request }) => {
+        resourceArchiveReadsAtProvider.push(resourceArchiveReads);
+        providerCalls += 1;
+        providerBodies.push(JSON.stringify(await request.json()));
+        return new HttpResponse(
+          piResponsesTextSse("stable context answer", providerCalls),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+
+    const first = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "seed the stable context projection",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, first.runId, "completed", 10_000);
+
+    const workflowId = await workflows.createWorkflow(actor, {
+      agentId,
+      name: `stable-membership-${randomUUID()}`,
+    });
+    const creationWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(creationWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    let archiveReadsAfterWorkflowCreate = 0;
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+        archiveReadsAfterWorkflowCreate += 1;
+        return HttpResponse.json(
+          { error: "workflow-add publication unexpectedly fetched an archive" },
+          { status: 503 },
+        );
+      }),
+    );
+    const workflowAdded = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-add publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowAdded.runId, "completed", 10_000);
+    expect(archiveReadsAfterWorkflowCreate).toBe(0);
+    mockPiResourceArchiveDownloads();
+
+    const sourceAgent = await bdd.createAgent(actor, {
+      displayName: `Stable Copy Source ${randomUUID()}`,
+      visibility: "private",
+    });
+    onTestFinished(async () => {
+      await bdd.deleteAgent(actor, sourceAgent.agentId);
+    });
+    const copiedWorkflowName = `stable-copy-${randomUUID()}`;
+    const sourceWorkflowId = await workflows.createWorkflow(actor, {
+      agentId: sourceAgent.agentId,
+      name: copiedWorkflowName,
+      visibility: "private",
+      description: `Published copy description ${randomUUID()}`,
+      instruction: `Published copy instruction ${randomUUID()}`,
+    });
+    const copiedWorkflowId = await workflows.copyWorkflow(
+      actor,
+      sourceWorkflowId,
+      agentId,
+    );
+    const copyWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(copyWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    mockPiResourceArchiveDownloads(false, () => {
+      resourceArchiveReads += 1;
+    });
+    resourceArchiveReads = 0;
+    const copyProviderIndex = providerCalls;
+    const workflowCopied = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-copy publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowCopied.runId, "completed", 10_000);
+    expect(resourceArchiveReadsAtProvider[copyProviderIndex]).toBe(0);
+    expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
+
+    await workflows.publishWorkflow(actor, copiedWorkflowId);
+    const publishWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(publishWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    resourceArchiveReads = 0;
+    const publishProviderIndex = providerCalls;
+    const workflowPublished = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-publish publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowPublished.runId, "completed", 10_000);
+    expect(resourceArchiveReadsAtProvider[publishProviderIndex]).toBe(0);
+    expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
+
+    await workflows.demoteWorkflow(actor, copiedWorkflowId);
+    const demoteWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(demoteWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    resourceArchiveReads = 0;
+    const demoteProviderIndex = providerCalls;
+    const workflowDemoted = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-demotion publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowDemoted.runId, "completed", 10_000);
+    expect(resourceArchiveReadsAtProvider[demoteProviderIndex]).toBe(0);
+    expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
+    mockPiResourceArchiveDownloads();
+
+    await misc.deleteWorkflow(actor, workflowId, [204]);
+    await api.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "slack",
+      permission: "conversations:read",
+      action: "allow",
+      expiresIn: "1h",
+    });
+    await api.enableAgentConnectors(actor, agentId, ["slack"]);
+    const expiringInstructions = `Expiring projection ${randomUUID()}`;
+    await bdd.updateAgentInstructions(actor, agentId, expiringInstructions);
+    const firstWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(firstWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+
+    let archiveReadsAfterWorkflowDelete = 0;
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+        archiveReadsAfterWorkflowDelete += 1;
+        return HttpResponse.json(
+          { error: "write-published context unexpectedly fetched an archive" },
+          { status: 503 },
+        );
+      }),
+    );
+    const workflowDeleted = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-deletion publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowDeleted.runId, "completed", 10_000);
+    expect(archiveReadsAfterWorkflowDelete).toBe(0);
+
+    const catalogSourceId = randomUUID().replaceAll("-", "").repeat(2);
+    await withApiTestConnectorCatalogSource(
+      {
+        bucket: `stable-context-authority-${randomUUID()}`,
+        sourceId: catalogSourceId,
+      },
+      async () => {
+        const cleanupCatalog = captureApiTestConnectorCatalogCleanup();
+        onTestFinished(cleanupCatalog);
+        await installApiTestConnectorCatalog({
+          catalogVersion: `stable-context-authority-${randomUUID()}`,
+        });
+        await invalidateApiTestConnectorCatalogCompatibility();
+        await expect(
+          updateFeatureSwitchesForUser(
+            context,
+            { ...actor, orgId },
+            { [FeatureSwitchKey.DeliveryFormatGuidance]: true },
+          ),
+        ).resolves.toBeUndefined();
+        const callsBeforeCatalogRejection = providerCalls;
+        await expect(
+          sendChatRun(
+            actor,
+            {
+              agentId,
+              prompt: "reject invalid catalog authority before transport",
+              model: SELECTED_MODEL,
+            },
+            usagePricingResolution,
+          ),
+        ).rejects.toThrow(
+          "Unknown response status 500 for POST /api/chat/events",
+        );
+        expect(providerCalls).toBe(callsBeforeCatalogRejection);
+      },
+    );
+
+    mockPiResourceArchiveDownloads();
+    // Cross the one-hour grant horizon while retaining the captured fixture
+    // timeline. Runner queue expiry is owned by PostgreSQL's clock.
+    mockNow(capturedAt + 24 * 60 * 60 * 1000);
+    const expired = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "reject the expired warm permission",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, expired.runId, "completed", 10_000);
+
+    const expiredBoundary = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "/native-command",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    await expirePiInference(expiredBoundary.runId);
+    await expect(
+      cleanupRun(expiredBoundary.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({ body: { errors: 0 } });
+    const expiredClaim = await claimDeferredPiRun(
+      expiredBoundary.runId,
+      runnerGroup,
+    );
+    expect(
+      expiredClaim.claim.networkPolicies?.slack?.allow ?? [],
+    ).not.toContain("conversations:read");
+    await api.requestCancelRun(
+      actor,
+      expiredBoundary.runId,
+      [200],
+      usagePricingResolution,
+    );
+    await releaseDeferredPiRun(
+      expiredBoundary.runId,
+      expiredClaim.runnerId,
+      expiredClaim.claim,
+    );
+    await waitForRunStatus(actor, expiredBoundary.runId, "cancelled", 10_000);
+
+    await api.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "slack",
+      permission: "conversations:read",
+      action: "allow",
+    });
+    const refreshedWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(refreshedWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    await api.replaceUserPermissionGrants(actor, {
+      agentId,
+      connectorSlug: "slack",
+      grants: [],
+    });
+    const revokedBoundary = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "/native-command",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    await expirePiInference(revokedBoundary.runId);
+    await expect(
+      cleanupRun(revokedBoundary.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({ body: { errors: 0 } });
+    const revokedClaim = await claimDeferredPiRun(
+      revokedBoundary.runId,
+      runnerGroup,
+    );
+    expect(
+      revokedClaim.claim.networkPolicies?.slack?.allow ?? [],
+    ).not.toContain("conversations:read");
+    await api.requestCancelRun(
+      actor,
+      revokedBoundary.runId,
+      [200],
+      usagePricingResolution,
+    );
+    await releaseDeferredPiRun(
+      revokedBoundary.runId,
+      revokedClaim.runnerId,
+      revokedClaim.claim,
+    );
+    await waitForRunStatus(actor, revokedBoundary.runId, "cancelled", 10_000);
+    await api.enableAgentConnectors(actor, agentId, []);
+    const instructions = `Worker-published instructions ${randomUUID()}`;
+    const displayName = `Published identity ${randomUUID()}`;
+    await bdd.updateAgentInstructions(actor, agentId, instructions);
+    await bdd.updateAgentMetadata(actor, agentId, { displayName });
+    const secondWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+          removeStableContextResourceIndexes: {
+            ownedStorageNames: [getCustomSkillStorageName(copiedWorkflowId)],
+          },
+        },
+      }),
+      [200],
+    );
+    expect(secondWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+
+    let archiveReadsAfterWorker = 0;
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+        archiveReadsAfterWorker += 1;
+        return HttpResponse.json(
+          { error: "ready context unexpectedly fetched an archive" },
+          { status: 503 },
+        );
+      }),
+    );
+    const {
+      buildCount,
+      cacheIdentityBuildCount,
+      result: ready,
+    } = await withStableAgentPromptBuildCountFixture(async () => {
+      return await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "use the worker-published projection",
+          model: SELECTED_MODEL,
+        },
+        usagePricingResolution,
+      );
+    });
+    expect(buildCount).toBe(0);
+    expect(cacheIdentityBuildCount).toBe(1);
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      await removePiInferenceFixtures({
+        runIds: [
+          first.runId,
+          workflowAdded.runId,
+          workflowCopied.runId,
+          workflowPublished.runId,
+          workflowDemoted.runId,
+          workflowDeleted.runId,
+          expired.runId,
+          expiredBoundary.runId,
+          revokedBoundary.runId,
+          ready.runId,
+        ],
+        agentId,
+        orgId,
+      });
+    });
+    await waitForRunStatus(actor, ready.runId, "completed", 10_000);
+    expect(archiveReadsAfterWorker).toBe(0);
+    expect(providerCalls).toBe(8);
+    expect(providerBodies.at(-1)).toContain(instructions);
+    expect(providerBodies.at(-1)).toContain(displayName);
+    expect(providerBodies.at(-1)).toContain(
+      "Pick the delivery format before authoring",
+    );
+    expect(providerBodies.at(-1)).toContain("# Restricted Explicit Content");
+  }, 45_000);
+
+  it("keeps canonical and recaptured mount order aligned for two reverse-granted custom skills", async () => {
+    configureNativeCliArtifact();
+    bdd.acceptAgentStorageWrites();
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `stable-custom-order-${randomUUID()}`,
+    );
+    const connectors = createConnectorBddApi(context);
+    const storages = createStoragesBddApi(context);
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    const cleanupCatalog = captureApiTestConnectorCatalogCleanup();
+    onTestFinished(cleanupCatalog);
+    await installApiTestConnectorCatalog({
+      catalogVersion: `stable-custom-order-${randomUUID()}`,
+    });
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    let providerCalls = 0;
+    server.use(
+      http.post(PROVIDER_URL, () => {
+        providerCalls += 1;
+        return new HttpResponse(
+          piResponsesTextSse("ordered custom context", providerCalls),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+
+    const suffix = randomUUID().slice(0, 8);
+    const first = await connectors.createCustomConnector(actor, {
+      kind: "http",
+      displayName: "Stable Custom Order First",
+      prefixTemplates: [`https://first-${suffix}.example.test/api/`],
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "none",
+      skillMarkdown: "Use the first deterministic custom skill.",
+    });
+    const second = await connectors.createCustomConnector(actor, {
+      kind: "http",
+      displayName: "Stable Custom Order Second",
+      prefixTemplates: [`https://second-${suffix}.example.test/api/`],
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "none",
+      skillMarkdown: "Use the second deterministic custom skill.",
+    });
+    const ordered = [first, second].sort((left, right) => {
+      return left.id.localeCompare(right.id);
+    });
+    await connectors.updateAgentCustomConnectors(
+      actor,
+      agentId,
+      [...ordered].reverse().map((connector) => {
+        return connector.id;
+      }),
+    );
+    const skillVersions = await Promise.all(
+      ordered.map(async (connector) => {
+        return await storages.downloadStorage(actor, {
+          name: getCustomConnectorSkillStorageName(connector.id),
+          owner: "organization",
+        });
+      }),
+    );
+
+    const seeded = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "seed reverse-granted custom skills",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, seeded.runId, "completed", 10_000);
+    await bdd.updateAgentInstructions(
+      actor,
+      agentId,
+      `Recapture ordered custom skills ${randomUUID()}`,
+    );
+    const work = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: skillVersions.map((skill) => {
+            return skill.versionId;
+          }),
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(work.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+
+    const {
+      buildCount,
+      cacheIdentityBuildCount,
+      result: ready,
+    } = await withStableAgentPromptBuildCountFixture(async () => {
+      return await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "consume ordered custom skills",
+          model: SELECTED_MODEL,
+        },
+        usagePricingResolution,
+      );
+    });
+    expect(buildCount).toBe(0);
+    expect(cacheIdentityBuildCount).toBe(1);
+    await waitForRunStatus(actor, ready.runId, "completed", 10_000);
+    expect(providerCalls).toBe(2);
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      await removePiInferenceFixtures({
+        runIds: [seeded.runId, ready.runId],
+        agentId,
+        orgId,
+      });
+    });
+  }, 30_000);
+
   it.each(
     (
       [
@@ -711,7 +1316,16 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "untouched-h0" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "untouched-h0",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "no-inference",
+            sampledAt: expect.any(Number),
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
@@ -1621,7 +2235,23 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "settled-session" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "settled-session",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "partial",
+            tokens: {
+              input: null,
+              cacheRead: null,
+              cacheCreation: null,
+              output: 3,
+            },
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
@@ -1769,6 +2399,18 @@ describe("durable Pi API producer", () => {
         continuation: {
           mode: "pending-tools",
           pendingToolIds: [expect.stringMatching(/^call_durable_pi_tool\|/u)],
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "partial",
+            tokens: {
+              input: null,
+              cacheRead: null,
+              cacheCreation: null,
+              output: 3,
+            },
+          },
         },
       },
     });

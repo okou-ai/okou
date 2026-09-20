@@ -32,6 +32,7 @@ import registry_firewalls
 import upstream_admission
 import upstream_destination_binding
 from request_authority import AuthorityValidationError, TrustedAuthority, get_trusted_authority
+from runtime_url_parsing import strip_url_query_and_fragment
 
 REQUEST_CLASSIFICATION_METADATA_KEY = "_request_classification"
 # Metadata that the requestheaders probe path may write while using this
@@ -188,6 +189,7 @@ class FirewallAllow:
     sandbox_info: dict
     firewall_allow: matching.FirewallAllow
     builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
+    platform_connector_auth: bool = False
     kind: Literal["firewall_allow"] = field(init=False, default="firewall_allow")
 
 
@@ -330,9 +332,9 @@ def classify_request(
     """Classify a flow and write metadata needed by downstream hook handling.
 
     The decision order is registry/TLS admission, registered sandbox resolution,
-    trusted authority validation, platform path admission, platform API allow,
-    browser passthrough, fixed Gmail send restriction, firewall match, publicDestination validation,
-    and default allow.
+    trusted authority validation, platform path admission, platform API allow or
+    allowlisted connector eligibility, browser passthrough, fixed Gmail send
+    restriction, firewall match, publicDestination validation, and default allow.
 
     After registry and TLS admission checks accept a registered sandbox,
     classification stores sandbox/run metadata on the flow. Once trusted authority
@@ -380,6 +382,21 @@ def classify_request_with_trusted_authority(
         trusted_authority=trusted_authority,
         defer_unresolved_public_destination=defer_unresolved_public_destination,
     )
+
+
+def _firewall_base_is_exact_platform_connector_resource(
+    raw_base: object,
+    *,
+    original_url: str,
+) -> bool:
+    """Return whether a selected static firewall base owns this platform resource."""
+    if not isinstance(raw_base, str):
+        return False
+    base_key = matching.static_firewall_base_config_key(raw_base)
+    request_key = matching.static_firewall_base_config_key(
+        strip_url_query_and_fragment(original_url)
+    )
+    return base_key is not None and base_key == request_key
 
 
 def _classify_request(
@@ -457,6 +474,8 @@ def _classify_request(
         port=trusted_authority.port,
     )
 
+    intent = connector_intent.from_flow(flow)
+    platform_connector_api_fallback: ApiAllow | None = None
     if upstream_admission.api_destination_matches(
         api_url,
         scheme=flow.request.scheme,
@@ -469,16 +488,28 @@ def _classify_request(
         if platform_path_decision == "deny":
             return PlatformPathDenied(sandbox_info=sandbox_info)
         if platform_path_decision == "api_allow":
-            return ApiAllow(sandbox_info=sandbox_info)
+            if not (
+                intent.status == "present"
+                and upstream_admission.platform_connector_auth_path_decision(flow.request.path)
+                == "allow"
+            ):
+                return ApiAllow(sandbox_info=sandbox_info)
+            # A present connector intent makes an allowlisted platform resource
+            # eligible for normal firewall owner selection. It does not authorize
+            # credentials by itself; every non-selected outcome falls back to the
+            # ordinary platform API path below.
+            platform_connector_api_fallback = ApiAllow(sandbox_info=sandbox_info)
 
-    if flow.metadata.get(metadata_keys.BROWSER_USER_AGENT):
+    if (
+        flow.metadata.get(metadata_keys.BROWSER_USER_AGENT)
+        and platform_connector_api_fallback is None
+    ):
         return BrowserAllow(sandbox_info=sandbox_info)
 
     if gmail_send.blocks_gmail_send(trusted_authority.host, flow.request.path):
         return GmailSendBlocked(sandbox_info=sandbox_info)
 
     is_asterisk_form = flow.request.path == "*"
-    intent = connector_intent.from_flow(flow)
     omitted_builtin_firewalls = registry_state.omitted_builtin_firewalls.get(
         client_ip,
         frozenset(),
@@ -490,6 +521,8 @@ def _classify_request(
     if intent.status == "present" and (
         intent.value in omitted_builtin_firewalls or intent.value in omitted_custom_connector_ids
     ):
+        if platform_connector_api_fallback is not None:
+            return platform_connector_api_fallback
         return Allow(
             sandbox_info=sandbox_info,
             builtin_firewall_catalog_snapshot=(registry_state.builtin_firewall_catalog_snapshot),
@@ -508,12 +541,21 @@ def _classify_request(
             is_asterisk_form=is_asterisk_form,
         )
         if isinstance(result, matching.FirewallAmbiguous):
+            if platform_connector_api_fallback is not None:
+                return platform_connector_api_fallback
             return FirewallAmbiguous(
                 sandbox_info=sandbox_info,
                 firewall_ambiguous=result,
                 builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
             )
         if isinstance(result, matching.FirewallBlock):
+            if platform_connector_api_fallback is not None and not (
+                _firewall_base_is_exact_platform_connector_resource(
+                    result.base,
+                    original_url=original_url,
+                )
+            ):
+                return platform_connector_api_fallback
             return FirewallBlock(
                 sandbox_info=sandbox_info,
                 firewall_block=result,
@@ -524,6 +566,13 @@ def _classify_request(
                 if isinstance(result, matching.FirewallPolicyAllow)
                 else result
             )
+            if platform_connector_api_fallback is not None and not (
+                _firewall_base_is_exact_platform_connector_resource(
+                    firewall_allow.api_entry.get("base"),
+                    original_url=original_url,
+                )
+            ):
+                return platform_connector_api_fallback
             public_destination_denial = _public_destination_denial(
                 flow,
                 firewall_allow,
@@ -546,7 +595,11 @@ def _classify_request(
                 builtin_firewall_catalog_snapshot=(
                     registry_state.builtin_firewall_catalog_snapshot
                 ),
+                platform_connector_auth=platform_connector_api_fallback is not None,
             )
+
+    if platform_connector_api_fallback is not None:
+        return platform_connector_api_fallback
 
     return Allow(
         sandbox_info=sandbox_info,

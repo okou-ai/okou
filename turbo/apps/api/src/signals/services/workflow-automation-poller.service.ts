@@ -1,3 +1,4 @@
+import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import {
@@ -34,6 +35,10 @@ import type {
   ScheduleUnclaimed,
   WorkflowScheduleClaimPlan,
 } from "./workflow-chat-event-queue.service";
+import {
+  lockMorningBriefLegacyWriterAuthority,
+  settleSelectedLegacyMorningBriefObligation,
+} from "./morning-brief-native-schedule.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
@@ -335,6 +340,98 @@ function logPreRunFailure(automation: AutomationRow, error: unknown): void {
   }
 }
 
+async function recordSelectedMorningBriefPreRunFailure(
+  db: Db,
+  automation: AutomationRow,
+  error: unknown,
+  signal: AbortSignal,
+  stillDueAt?: Date,
+): Promise<boolean> {
+  if (
+    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    automation.ownerUserId === null
+  ) {
+    return false;
+  }
+  const isCreditError = isInsufficientCreditsFailure(error);
+  const outcome = await db.transaction(async (tx) => {
+    const lineage = {
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      workflowId: automation.workflowId,
+      automationId: automation.id,
+    };
+    const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
+    if (authority.kind === "ordinary") {
+      // Additional Morning Brief installations are not durable authority. Keep
+      // their exact legacy pre-run failure path below.
+      return undefined;
+    }
+    if (authority.kind === "stale") {
+      return { disabled: false, consecutiveFailures: 0 };
+    }
+    const [current] = await tx
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, automation.id))
+      .limit(1)
+      .for("update");
+    if (
+      current === undefined ||
+      authority.row.phase !== "legacy" ||
+      (stillDueAt !== undefined &&
+        current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
+      (current.scheduleType !== "once" && !current.enabled)
+    ) {
+      return { disabled: false, consecutiveFailures: 0 };
+    }
+    const failureTime = nowDate();
+    const consecutiveFailures = isCreditError
+      ? current.consecutiveFailures
+      : current.consecutiveFailures + 1;
+    const shouldDisable =
+      !isCreditError && consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
+    const nextRunAt = advanceAfterPreRunFailure(
+      current,
+      failureTime,
+      shouldDisable,
+    );
+    await tx
+      .update(workflowAutomations)
+      .set({
+        consecutiveFailures,
+        ...(shouldDisable ? { enabled: false } : {}),
+        ...(shouldDisable ? { officialIntendedEnabled: false } : {}),
+        nextRunAt,
+        updatedAt: failureTime,
+      })
+      .where(eq(workflowAutomations.id, current.id));
+    await settleSelectedLegacyMorningBriefObligation(tx, lineage, authority, {
+      enabled: !shouldDisable,
+      cronExpression: current.cronExpression,
+      timezone: current.timezone,
+      nextRunAt,
+      at: failureTime,
+    });
+    return { disabled: shouldDisable, consecutiveFailures };
+  });
+  signal.throwIfAborted();
+  if (outcome === undefined) {
+    return false;
+  }
+  if (outcome.disabled) {
+    log.warn("Workflow automation auto-disabled after consecutive failures", {
+      automationId: automation.id,
+      workflowId: automation.workflowId,
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      error: failureMessage(error),
+      consecutiveFailures: outcome.consecutiveFailures,
+    });
+  }
+  return true;
+}
+
 /**
  * `stillDueAt` restricts the update to the exact unconsumed occurrence this
  * tick resolved. A journal-aware tick that failed before it acquired any claim
@@ -359,6 +456,18 @@ async function recordPreRunFailure(
     error: failureMessage(error),
   };
   logPreRunFailure(automation, error);
+
+  if (
+    await recordSelectedMorningBriefPreRunFailure(
+      db,
+      automation,
+      error,
+      signal,
+      stillDueAt,
+    )
+  ) {
+    return;
+  }
 
   const failureTime = nowDate();
   const newFailureCount = isCreditError

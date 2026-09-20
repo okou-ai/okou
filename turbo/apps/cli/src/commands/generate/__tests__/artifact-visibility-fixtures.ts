@@ -15,7 +15,7 @@ export function serveGenerationVisibility(
   const target = { kind: "file" as const, id: GENERATION_ARTIFACT_ID };
   const reference = artifactReferencePath(target.id, filename);
   const ownerUrl = `https://app.okou.ai${reference}`;
-  const url =
+  const sharingUrl =
     visibility === "public"
       ? `https://a.okou.io/generated1.${filename.split(".").at(-1)}`
       : ownerUrl;
@@ -54,12 +54,12 @@ export function serveGenerationVisibility(
             shareId: "00000000-0000-4000-8000-000000000002",
             audience,
             selectedTarget: target,
-            url,
-            shortUrl: visibility === "org" ? url : null,
+            url: sharingUrl,
+            shortUrl: visibility === "org" ? sharingUrl : null,
           });
         },
       ),
     );
   }
-  return { ownerUrl, url, reference };
+  return { ownerUrl, url: ownerUrl, sharingUrl, reference };
 }

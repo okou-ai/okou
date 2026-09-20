@@ -15,8 +15,6 @@ import type {
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { checkPaidToolForCreation$, templatePaidTool } from "./paid-tools.ts";
-import { generationTemplateKind } from "@okouai/core/generation-template-kind";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -240,9 +238,16 @@ interface ComposerSubmissionSignals {
   readonly sending$: Computed<Promise<boolean>>;
   readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
+  /**
+   * Sends what the composer currently holds. The second argument is agent-only
+   * context for this one send: it reaches the run's prompt through the
+   * message's additional_info part and never the text the member reads, which
+   * is how a caller states how the run should be carried out without spending
+   * the member's own message on instructions addressed to it.
+   */
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, AbortSignal]
+    [ComposerPrimaryAction, string | undefined, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -877,6 +882,22 @@ function createComposerPrimaryActionSignal(args: {
   });
 }
 
+/**
+ * One message carries one additional_info part, so a caller's context for this
+ * send and the composer's own selections are joined into it rather than one
+ * replacing the other.
+ */
+function joinAdditionalInfo(
+  ...blocks: readonly (string | undefined)[]
+): string | undefined {
+  const text = blocks
+    .filter((block): block is string => {
+      return block !== undefined && block.length > 0;
+    })
+    .join("\n\n");
+  return text.length > 0 ? text : undefined;
+}
+
 function createSubmitCurrentInput({
   options,
   workflowComposer,
@@ -902,6 +923,7 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
+      callerAdditionalInfo: string | undefined,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
@@ -921,26 +943,6 @@ function createSubmitCurrentInput({
         signal,
       );
       signal.throwIfAborted();
-      if (get(featureSwitch$)[FeatureSwitchKey.IntroVideo] !== true) {
-        const message = submission.editorDocument.toMessageDocument({
-          selectedTemplate: get(draft.generationTemplate$),
-        });
-        if (
-          message?.parts.some((part) => {
-            return (
-              part.type === "template" &&
-              generationTemplateKind(part.template) === "intro-video"
-            );
-          })
-        ) {
-          toast.error(
-            i18n.t(($) => {
-              return $.artifacts.templates.introVideoUnavailable;
-            }),
-          );
-          return false;
-        }
-      }
       const visiblePrompt = submission.prompt.trim();
       if (visiblePrompt.length === 0 && get(draft.attachments$).length === 0) {
         return false;
@@ -954,7 +956,7 @@ function createSubmitCurrentInput({
         : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
-      const additionalInfo = get(create.enabled$)
+      const composerAdditionalInfo = get(create.enabled$)
         ? buildComposerAdditionalInfo(
             mode,
             videoRunOptions,
@@ -964,6 +966,10 @@ function createSubmitCurrentInput({
               : undefined,
           )
         : undefined;
+      const additionalInfo = joinAdditionalInfo(
+        callerAdditionalInfo,
+        composerAdditionalInfo,
+      );
       const editorDocument = additionalInfo
         ? createEditorDocumentSnapshot(
             workflowComposer.editor.schema.nodeFromJSON(
@@ -976,7 +982,11 @@ function createSubmitCurrentInput({
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+        // Read from the composer's own block rather than the joined text: the
+        // video parameters are only inside that one, so a caller's context
+        // must not be what drops the structured field a composer outside the
+        // rollout still depends on.
+        videoRunOptions: composerAdditionalInfo ? undefined : videoRunOptions,
         taskSelection: {
           task: get(taskChips.task$) ?? mode,
           presentationSlideCount: get(create.presentationSlideCount$),
@@ -1055,7 +1065,9 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      return await set(submitCurrentInput$, action, signal);
+      // A member pressing the composer's own button asks for exactly what they
+      // typed, so this send adds no context of its own.
+      return await set(submitCurrentInput$, action, undefined, signal);
     },
   );
 

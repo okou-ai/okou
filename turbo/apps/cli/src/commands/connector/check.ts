@@ -30,9 +30,9 @@ import { printConnectorCheckJson } from "./check-json";
 import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
 import {
   diagnoseConnectorCheck,
-  getConnector,
+  getBuiltinConnector,
 } from "../../lib/api/domains/connectors";
-import { getAgentUserConnectors } from "../../lib/api/domains/agents";
+import { getAgentUserBuiltinConnectors } from "../../lib/api/domains/agents";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../lib/okou-env";
 import { toPlatformUrl } from "../../lib/platform-url";
@@ -277,14 +277,16 @@ async function checkConnectorStatus(ctx: BuiltinDiagContext): Promise<{
             runAccount,
           } satisfies ConnectorConfigurationStatus;
         })
-      : getConnector(ctx.connectorSlug).then((connector) => {
+      : getBuiltinConnector(ctx.connectorSlug).then((connector) => {
           return {
             isConnected: connector !== null,
             isExpired: connector?.connectionStatus === "reconnect-required",
             runAccount: null,
           } satisfies ConnectorConfigurationStatus;
         }),
-    ctx.agentId ? getAgentUserConnectors(ctx.agentId) : Promise.resolve(null),
+    ctx.agentId
+      ? getAgentUserBuiltinConnectors(ctx.agentId)
+      : Promise.resolve(null),
   ]);
 
   const hasPermission =

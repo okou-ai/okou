@@ -17,7 +17,7 @@ import {
   readConnectorAccount$,
   settingsConnectorAccounts,
 } from "./connector-accounts.ts";
-import { resetManualGrantForm$ } from "./connectors.ts";
+import { resetBuiltinManualGrantForm$ } from "./connectors.ts";
 
 export type ConnectorAccountConnectMode =
   | { readonly kind: "add" }
@@ -149,7 +149,7 @@ export const openBuiltinAccountConnectDialog$ = command(
     connector: PlatformConnectorCatalogStatusItem,
     mode: ConnectorAccountConnectMode,
   ) => {
-    set(resetManualGrantForm$, connector.slug);
+    set(resetBuiltinManualGrantForm$, connector.slug);
     set(internalBuiltinAccountManager$, null);
     set(settingsConnectorAccounts.clearTarget$);
     set(internalBuiltinAccountConnectDialog$, { connector, mode });

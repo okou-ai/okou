@@ -6,7 +6,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
+import { and, countDistinct, eq, inArray, isNotNull } from "drizzle-orm";
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
 import {
@@ -111,7 +111,7 @@ async function loadFeishuChatDeliveryContext(
     .where(
       and(
         eq(agentRuns.id, args.callback.runId),
-        eq(agentRuns.triggerSource, "feishu"),
+        inArray(agentRuns.triggerSource, ["feishu", "lark"]),
       ),
     )
     .limit(1);

@@ -15,13 +15,14 @@ import { deriveAppUrl } from "../playwright.config";
 // from the shared feature-test account and its parallel chat tests.
 test.use({ storageState: { cookies: [], origins: [] } });
 
-async function expectPrimaryTheme(
-  button: Locator,
-  state: "rest" | "hover" | "pressed",
-) {
+// Every denial answers with the same status so artifacts cannot be enumerated,
+// which leaves the page unable to tell a missing reference from a withheld one.
+// Neither recovery action is known to work, so neither may take the primary
+// fill and present itself as the answer.
+async function expectNoPrimaryFill(button: Locator) {
   await expect
     .poll(() =>
-      button.evaluate((element, interaction) => {
+      button.evaluate((element) => {
         const style = getComputedStyle(element);
         const context = document.createElement("canvas").getContext("2d");
         if (!context) throw new Error("Canvas color conversion is unavailable");
@@ -31,19 +32,13 @@ async function expectPrimaryTheme(
           context.fillRect(0, 0, 1, 1);
           return Array.from(context.getImageData(0, 0, 1, 1).data).join(",");
         };
-        const fill =
-          interaction === "rest"
-            ? `hsl(${style.getPropertyValue("--primary")})`
-            : style.getPropertyValue(`--color-primary-${interaction}`);
-        return {
-          fill: rgba(style.backgroundColor) === rgba(fill),
-          label:
-            rgba(style.color) ===
-            rgba(`hsl(${style.getPropertyValue("--primary-foreground")})`),
-        };
-      }, state),
+        return (
+          rgba(style.backgroundColor) ===
+          rgba(`hsl(${style.getPropertyValue("--primary")})`)
+        );
+      }),
     )
-    .toEqual({ fill: true, label: true });
+    .toBe(false);
 }
 
 async function buttonContrast(button: Locator): Promise<number> {
@@ -138,7 +133,7 @@ test("unavailable artifacts recover access with readable actions that follow the
   const heading = page.getByRole("heading", {
     name: "You can’t view this artifact",
   });
-  const primary = page.getByRole("button", {
+  const switchAccount = page.getByRole("button", {
     name: "Switch account",
     exact: true,
   });
@@ -192,11 +187,11 @@ test("unavailable artifacts recover access with readable actions that follow the
         page.getByRole("button", { name: "Share", exact: true }),
       ).toHaveCount(0);
       for (const [action, button] of [
-        ["switch", primary],
+        ["switch", switchAccount],
         ["retry", retry],
       ] as const) {
         await page.mouse.move(0, 0);
-        if (action === "switch") await expectPrimaryTheme(button, "rest");
+        await expectNoPrimaryFill(button);
         await expect
           .poll(() => buttonContrast(button))
           .toBeGreaterThanOrEqual(4.5);
@@ -208,7 +203,6 @@ test("unavailable artifacts recover access with readable actions that follow the
           contrast: await buttonContrast(button),
         });
         await button.hover();
-        if (action === "switch") await expectPrimaryTheme(button, "hover");
         await expect
           .poll(() => buttonContrast(button))
           .toBeGreaterThanOrEqual(4.5);
@@ -221,7 +215,6 @@ test("unavailable artifacts recover access with readable actions that follow the
         });
         await page.mouse.down();
         try {
-          if (action === "switch") await expectPrimaryTheme(button, "pressed");
           await expect
             .poll(() => buttonContrast(button))
             .toBeGreaterThanOrEqual(4.5);
@@ -249,7 +242,7 @@ test("unavailable artifacts recover access with readable actions that follow the
       );
       if (palette === "Blue horizon") {
         await page.setViewportSize({ width: 390, height: 844 });
-        await expect(primary).toBeInViewport();
+        await expect(switchAccount).toBeInViewport();
         await expect(retry).toBeInViewport();
         expect(
           await page.evaluate(
@@ -276,7 +269,7 @@ test("unavailable artifacts recover access with readable actions that follow the
   await expect(
     page.getByRole("link", { name: "Back to Okou" }),
   ).toHaveAttribute("href", "/");
-  await primary.click();
+  await switchAccount.click();
   await expect(page.getByRole("dialog")).toBeVisible();
   expect(page.url()).toBe(artifactUrl);
   await testInfo.attach("artifact-access-button-contrast", {
