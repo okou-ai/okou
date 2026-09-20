@@ -83,7 +83,7 @@ jq -e '
   ) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] == ["coverage"]) and
+    .key] == ["coverage", "runner-rootfs-process-test"]) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?;
       (.uses // "") | startswith("mozilla-actions/sccache-action@")
