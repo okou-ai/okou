@@ -3156,7 +3156,6 @@
       "device": {
         "checking": "Checking for approval...",
         "connect": "Connect {{connector}}",
-        "copyThenOpen": "Copy this code, then open the verification page to approve access.",
         "description": "Open the provider's verification page, then enter this verification code to approve access.",
         "intro": "Connect to get a verification code, then use it on the provider's verification page to approve access.",
         "openPage": "Open verification page",

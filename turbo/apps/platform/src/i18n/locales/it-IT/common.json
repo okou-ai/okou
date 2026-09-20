@@ -3216,7 +3216,6 @@
       "device": {
         "checking": "Verifica dell'approvazione...",
         "connect": "Connetti {{connector}}",
-        "copyThenOpen": "Copia questo codice, quindi apri la pagina di verifica per approvare l'accesso.",
         "description": "Apri la pagina di verifica del provider, quindi inserisci questo codice di verifica per approvare l'accesso.",
         "intro": "Connettiti per ottenere un codice di verifica, quindi utilizzalo nella pagina di verifica del provider per approvare l'accesso.",
         "openPage": "Apri la pagina di verifica",

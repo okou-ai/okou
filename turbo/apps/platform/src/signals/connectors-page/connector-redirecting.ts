@@ -1,38 +1,17 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
-import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
-import { IN_VITEST } from "../../env.ts";
+import { computed } from "ccstate";
 import { generateRouterPath } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 
 export type ConnectorRedirectingStatus = "redirecting" | "error";
 
-const MOBILE_REDIRECT_WARNING_DELAY_MS = IN_VITEST ? 100 : 2000;
-const internalMobileWarningVisible$ = state(false);
-
-export const connectorRedirectingMobileWarningVisible$ = computed((get) => {
-  return get(internalMobileWarningVisible$);
+export const connectorRedirectingMobileHintVisible$ = computed(() => {
+  return (
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+  );
 });
-
-export const resetConnectorRedirectingMobileWarning$ = command(({ set }) => {
-  set(internalMobileWarningVisible$, false);
-});
-
-export const showConnectorRedirectingMobileWarningAfterDelay$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    const mobileDevice =
-      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-      (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-    if (!mobileDevice) {
-      return;
-    }
-
-    await delay(MOBILE_REDIRECT_WARNING_DELAY_MS, { signal });
-    signal.throwIfAborted();
-    set(internalMobileWarningVisible$, true);
-  },
-);
 
 export function connectorRedirectingPath(args: {
   readonly connectorSlug: ConnectorSlug;
