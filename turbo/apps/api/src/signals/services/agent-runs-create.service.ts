@@ -393,6 +393,7 @@ function buildStableAgentPrompt(args: {
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
 }): PiStableContextPromptProjection {
   stableAgentPromptBuildHook.get()?.();
@@ -407,6 +408,7 @@ function buildStableAgentPrompt(args: {
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
+      presentationConvertEnabled: args.presentationConvertEnabled,
     }),
   };
 }
@@ -807,6 +809,10 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     ),
     deliveryFormatGuidanceEnabled: isFeatureEnabled(
       FeatureSwitchKey.DeliveryFormatGuidance,
+      args.featureSwitchContext,
+    ),
+    presentationConvertEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationConvert,
       args.featureSwitchContext,
     ),
     customConnectorMcpEnabled: true,
