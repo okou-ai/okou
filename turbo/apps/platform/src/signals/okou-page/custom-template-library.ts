@@ -66,6 +66,12 @@ export const reloadCustomTemplates$ = command(({ get, set }) => {
  * `runOnSubscribe` closes the window between the first read of the catalog and
  * the subscription attaching, which is the window a publish would otherwise
  * have to land in to be missed until the next mutation.
+ *
+ * The feature switch is deliberately not read here. The catalog above answers
+ * for it, so a notification that reaches a member without the feature resolves
+ * an empty catalog and asks the API for nothing; and switches arrive from the
+ * API after this daemon starts, so a subscription that read one at startup
+ * would be absent for exactly the members who have the feature.
  */
 export const subscribeCustomTemplatesChanged$ = command(
   ({ set }, signal: AbortSignal): void => {
