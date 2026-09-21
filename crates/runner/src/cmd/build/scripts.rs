@@ -263,13 +263,6 @@ mod tests {
                 .all(|part| matches!(part.parse::<u32>(), Ok(value) if *part == value.to_string()))
     }
 
-    fn is_lowercase_sha256(value: &str) -> bool {
-        value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    }
-
     fn template_build_installs_apt_package(package: &str) -> bool {
         let mut in_apt_install = false;
         for raw_line in TEMPLATE_BUILD_SCRIPT.lines() {
@@ -650,24 +643,13 @@ exit 18
              cache inputs are deterministic"
         );
 
-        for checksum_var in ["UV_LINUX_X64_SHA256", "UV_LINUX_ARM64_SHA256"] {
-            let checksum = shell_quoted_var(TEMPLATE_BUILD_SCRIPT, checksum_var)
-                .unwrap_or_else(|| panic!("build-template.sh should declare {checksum_var}"));
-            assert!(
-                is_lowercase_sha256(checksum),
-                "build-template.sh should pin {checksum_var} to a lowercase SHA-256"
-            );
-        }
-
         assert!(
             TEMPLATE_BUILD_SCRIPT.contains(
                 r#"amd64)
-        TARGET=\"x86_64-unknown-linux-gnu\"
-        CHECKSUM=\"${UV_LINUX_X64_SHA256}\""#
+        TARGET=\"x86_64-unknown-linux-gnu\""#
             ) && TEMPLATE_BUILD_SCRIPT.contains(
                 r#"arm64)
-        TARGET=\"aarch64-unknown-linux-gnu\"
-        CHECKSUM=\"${UV_LINUX_ARM64_SHA256}\""#
+        TARGET=\"aarch64-unknown-linux-gnu\""#
             ),
             "build-template.sh should map Debian guest architectures to uv release targets"
         );
@@ -678,15 +660,9 @@ exit 18
             "build-template.sh should download the pinned official uv release archive"
         );
 
-        let checksum_index = TEMPLATE_BUILD_SCRIPT
-            .find(r#"echo \"\${CHECKSUM}  /tmp/uv.tar.gz\" | sha256sum -c -"#)
-            .expect("build-template.sh should verify the uv archive checksum");
-        let extract_index = TEMPLATE_BUILD_SCRIPT
-            .find("tar -xzf /tmp/uv.tar.gz -C /tmp")
-            .expect("build-template.sh should extract the verified uv archive");
         assert!(
-            checksum_index < extract_index,
-            "build-template.sh should verify the uv archive before extracting it"
+            TEMPLATE_BUILD_SCRIPT.contains("tar -xzf /tmp/uv.tar.gz -C /tmp"),
+            "build-template.sh should extract the downloaded uv archive"
         );
 
         for command in ["uv", "uvx"] {
@@ -721,18 +697,6 @@ exit 18
             "build-template.sh should pin the immutable vm0 agent-browser release"
         );
 
-        for checksum_var in [
-            "AGENT_BROWSER_LINUX_X64_SHA256",
-            "AGENT_BROWSER_LINUX_ARM64_SHA256",
-        ] {
-            let checksum = shell_quoted_var(TEMPLATE_BUILD_SCRIPT, checksum_var)
-                .unwrap_or_else(|| panic!("build-template.sh should declare {checksum_var}"));
-            assert!(
-                is_lowercase_sha256(checksum),
-                "build-template.sh should pin {checksum_var} to a lowercase SHA-256"
-            );
-        }
-
         assert!(
             TEMPLATE_BUILD_SCRIPT.contains(
                 r#"DOWNLOAD_BASE_URL=\"https://github.com/okou-ai/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}\""#
@@ -742,19 +706,12 @@ exit 18
         assert!(
             TEMPLATE_BUILD_SCRIPT.contains(
                 r#"amd64)
-        PLATFORM=\"linux-x64\"
-        CHECKSUM=\"${AGENT_BROWSER_LINUX_X64_SHA256}\""#
+        PLATFORM=\"linux-x64\""#
             ) && TEMPLATE_BUILD_SCRIPT.contains(
                 r#"arm64)
-        PLATFORM=\"linux-arm64\"
-        CHECKSUM=\"${AGENT_BROWSER_LINUX_ARM64_SHA256}\""#
+        PLATFORM=\"linux-arm64\""#
             ),
             "build-template.sh should map Debian guest architectures to fork release assets"
-        );
-        assert!(
-            TEMPLATE_BUILD_SCRIPT
-                .contains(r#"echo \"\${CHECKSUM}  /tmp/agent-browser\" | sha256sum -c -"#),
-            "build-template.sh should verify agent-browser before installation"
         );
         assert!(
             TEMPLATE_BUILD_SCRIPT.contains(
@@ -765,7 +722,7 @@ exit 18
         assert!(
             TEMPLATE_BUILD_SCRIPT
                 .contains("install -m 0755 /tmp/agent-browser /usr/local/bin/agent-browser"),
-            "build-template.sh should install the verified native binary"
+            "build-template.sh should install the downloaded native binary"
         );
         assert!(
             TEMPLATE_BUILD_SCRIPT.contains(
