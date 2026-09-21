@@ -2073,7 +2073,10 @@ describe("CHAT-02: model-first provider policies", () => {
       );
       const environment = claimEnvironment(claim);
       const messages = model.startsWith("claude");
-      const usesUs = enabled && model !== "claude-fable-5-1";
+      const usesUs =
+        enabled &&
+        model !== "claude-fable-5-1" &&
+        !model.startsWith("deepseek");
       const baseUrl = `https://${usesUs ? "us." : ""}openrouter.ai/api${messages ? "" : "/v1"}`;
       expect(
         environment[messages ? "ANTHROPIC_BASE_URL" : "OPENAI_BASE_URL"],
