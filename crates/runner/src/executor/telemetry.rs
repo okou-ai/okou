@@ -190,7 +190,7 @@ pub(crate) enum BlankPoolSelection {
 }
 
 impl BlankPoolSelection {
-    fn record(self, telemetry: &mut JobTelemetry) {
+    pub(crate) fn record(self, telemetry: &mut JobTelemetry) {
         let (outcome, reason) = match self {
             Self::Hit => ("hit", None),
             Self::Miss(reason) => ("miss", Some(reason.as_str())),
@@ -449,6 +449,10 @@ impl RunnerPreSpawnTiming {
         // claim metadata is available. Retain only the latest decision so one
         // run emits one terminal blank-selection operation.
         self.blank_pool_selection = Some(selection);
+    }
+
+    pub(crate) fn blank_pool_selection(&self) -> Option<BlankPoolSelection> {
+        self.blank_pool_selection
     }
 
     pub(crate) fn record_phase(&mut self, phase: RunnerPreSpawnPhase, duration: Duration) {

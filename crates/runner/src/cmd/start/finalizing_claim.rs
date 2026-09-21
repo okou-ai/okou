@@ -439,16 +439,19 @@ async fn run_finalizing_claim(
                     "active_status_persistence_failed",
                     format!("persist active runner ownership: {error}"),
                 )
+                .await
+                .into_cancellation()
                 .await;
         }
         Err(panic) => {
-            let cancellation = activation
+            activation
                 .recover(
                     "activation_setup_panicked",
                     "claimed activation setup panicked".to_owned(),
                 )
+                .await
+                .finish()
                 .await;
-            cancellation.unregister().await;
             std::panic::resume_unwind(panic);
         }
     };

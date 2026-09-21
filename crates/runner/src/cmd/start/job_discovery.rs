@@ -144,6 +144,7 @@ use crate::run_cancellation::{
 };
 use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::status::{StatusPersistenceError, StatusTracker};
+use crate::telemetry::JobTelemetry;
 use crate::types::{
     CompleteRequest, ExecutionContext, HeldWorkspaceState, SandboxReuseResult,
     WORKSPACE_AFFINITY_VERSION, reuse_key_kind,
@@ -424,7 +425,7 @@ pub(super) async fn handle_discovered_job(
             cancellation,
             resource,
             job_workspace_disk_mb,
-            None,
+            ClaimedFailureDiagnostics::without_timing(None),
             crate::executor::ExecutionFailure::cancelled(),
             &mut ctx,
         )
@@ -452,7 +453,7 @@ pub(super) async fn handle_discovered_job(
             cancellation,
             resource,
             job_workspace_disk_mb,
-            None,
+            ClaimedFailureDiagnostics::from_timing(None, &pre_spawn_timing),
             crate::executor::ExecutionFailure::from_error(error),
             &mut ctx,
         )
@@ -500,15 +501,19 @@ pub(super) async fn handle_discovered_job(
                 {
                     Ok(ready) => ready,
                     Err(failure) => {
-                        complete_claimed_failure(
+                        let completion = complete_claimed_failure(
                             claimed,
                             cancellation,
-                            Some(failure.reuse_result),
+                            ClaimedFailureDiagnostics::from_timing(
+                                Some(failure.reuse_result),
+                                &pre_spawn_timing,
+                            ),
                             crate::executor::ExecutionFailure::from_error(failure.error),
                             &ctx,
                         )
                         .await;
                         drop(active_run_guard);
+                        completion.flush_telemetry().await;
                         return DiscoveredJobResult::completed(true);
                     }
                 };
@@ -531,7 +536,7 @@ pub(super) async fn handle_discovered_job(
                     cancellation,
                     SandboxAdmittedResource::Reusable(reservation),
                     job_workspace_disk_mb,
-                    None,
+                    ClaimedFailureDiagnostics::from_timing(None, &pre_spawn_timing),
                     crate::executor::ExecutionFailure::cancelled(),
                     &mut ctx,
                 )
@@ -578,20 +583,27 @@ pub(super) async fn handle_discovered_job(
                             cancellation,
                             SandboxAdmittedResource::Fresh(budget_lease),
                             job_workspace_disk_mb,
-                            Some(reuse_result),
+                            ClaimedFailureDiagnostics::from_timing(
+                                Some(reuse_result),
+                                &pre_spawn_timing,
+                            ),
                             failure,
                             &mut ctx,
                         )
                         .await;
                     } else {
-                        complete_claimed_failure(
+                        let completion = complete_claimed_failure(
                             claimed,
                             cancellation,
-                            Some(reuse_result),
+                            ClaimedFailureDiagnostics::from_timing(
+                                Some(reuse_result),
+                                &pre_spawn_timing,
+                            ),
                             failure,
                             &ctx,
                         )
                         .await;
+                        completion.flush_telemetry().await;
                     }
                     return DiscoveredJobResult::completed(true);
                 }
@@ -630,14 +642,15 @@ pub(super) async fn handle_discovered_job(
                     resource,
                     reuse_result,
                 } => {
-                    let run_id = complete_claimed_failure(
+                    let completion = complete_claimed_failure(
                         claimed,
                         cancellation,
-                        reuse_result,
+                        ClaimedFailureDiagnostics::from_timing(reuse_result, &pre_spawn_timing),
                         crate::executor::ExecutionFailure::cancelled(),
                         &ctx,
                     )
                     .await;
+                    let run_id = completion.run_id;
                     match resource {
                         CancelledExactResource::Prepared(sandbox) => {
                             rollback_exact_speculation_outcome(
@@ -650,6 +663,7 @@ pub(super) async fn handle_discovered_job(
                         }
                         CancelledExactResource::Fresh(budget_lease) => drop(budget_lease),
                     }
+                    completion.flush_telemetry().await;
                     return DiscoveredJobResult::completed(true);
                 }
                 ExactActivation::CannotStart {
@@ -662,7 +676,10 @@ pub(super) async fn handle_discovered_job(
                         cancellation,
                         SandboxAdmittedResource::Fresh(budget_lease),
                         job_workspace_disk_mb,
-                        Some(reuse_result),
+                        ClaimedFailureDiagnostics::from_timing(
+                            Some(reuse_result),
+                            &pre_spawn_timing,
+                        ),
                         crate::executor::ExecutionFailure::from_error(error),
                         &mut ctx,
                     )
@@ -701,24 +718,26 @@ pub(super) async fn handle_discovered_job(
     {
         Ok(Ok(request)) => request,
         Ok(Err(error)) => {
-            let cancellation = activation
+            activation
                 .recover(
                     "active_status_persistence_failed",
                     format!("persist active runner ownership: {error}"),
                 )
+                .await
+                .finish()
                 .await;
-            cancellation.unregister().await;
             drop(activation_transfer_guard);
             return DiscoveredJobResult::completed(true);
         }
         Err(panic) => {
-            let cancellation = activation
+            activation
                 .recover(
                     "activation_setup_panicked",
                     "claimed activation setup panicked".to_owned(),
                 )
+                .await
+                .finish()
                 .await;
-            cancellation.unregister().await;
             drop(activation_transfer_guard);
             std::panic::resume_unwind(panic);
         }
@@ -753,6 +772,7 @@ pub(super) struct ClaimedJobSetup {
 #[derive(Clone)]
 struct ActivationRecoveryContext {
     provider: Arc<dyn JobProvider>,
+    exec_config: Arc<crate::executor::ExecutorConfig>,
     status: Arc<StatusTracker>,
     orphaned_active_runs: super::orphan_reap::OrphanedActiveRuns,
     reuse_state_notify: Arc<tokio::sync::Notify>,
@@ -762,6 +782,7 @@ impl ActivationRecoveryContext {
     fn new(ctx: &SpawnContext) -> Self {
         Self {
             provider: Arc::clone(&ctx.provider),
+            exec_config: Arc::clone(&ctx.exec_config),
             status: Arc::clone(&ctx.status),
             orphaned_active_runs: ctx.orphaned_active_runs.clone(),
             reuse_state_notify: Arc::clone(&ctx.reuse_state_notify),
@@ -796,7 +817,7 @@ impl ClaimedActivationGuard {
         mut self,
         reason: &'static str,
         error: String,
-    ) -> RunCancellationRegistration {
+    ) -> ClaimedActivationRecovery {
         recover_claimed_activation_failure(
             self.take_setup(),
             self.sandbox_id,
@@ -825,18 +846,40 @@ impl Drop for ClaimedActivationGuard {
         let recovery = self.recovery.clone();
         self.cleanup.spawn_cleanup(
             async move {
-                let cancellation = recover_claimed_activation_failure(
+                recover_claimed_activation_failure(
                     setup,
                     sandbox_id,
                     "activation_task_dropped",
                     "claimed activation task dropped before executor ownership transfer".to_owned(),
                     &recovery,
                 )
+                .await
+                .finish()
                 .await;
-                cancellation.unregister().await;
             },
             "claimed_activation_drop",
         );
+    }
+}
+
+pub(super) struct ClaimedActivationRecovery {
+    cancellation: RunCancellationRegistration,
+    telemetry: Option<JobTelemetry>,
+}
+
+impl ClaimedActivationRecovery {
+    pub(super) async fn finish(self) {
+        self.cancellation.unregister().await;
+        if let Some(telemetry) = self.telemetry {
+            telemetry.flush().await;
+        }
+    }
+
+    pub(super) async fn into_cancellation(self) -> RunCancellationRegistration {
+        if let Some(telemetry) = self.telemetry {
+            telemetry.flush().await;
+        }
+        self.cancellation
     }
 }
 
@@ -962,7 +1005,7 @@ async fn recover_claimed_activation_failure(
     reason: &'static str,
     error: String,
     ctx: &ActivationRecoveryContext,
-) -> RunCancellationRegistration {
+) -> ClaimedActivationRecovery {
     let ClaimedJobSetup {
         claimed,
         cancellation,
@@ -974,7 +1017,7 @@ async fn recover_claimed_activation_failure(
         device_rate_limits: _,
         factory,
         resource,
-        pre_spawn_timing: _,
+        pre_spawn_timing,
         active_run_guard,
     } = setup;
     let ReadyClaimedResource {
@@ -986,6 +1029,11 @@ async fn recover_claimed_activation_failure(
     let (context, completion_auth, active_input_source) = claimed.into_parts();
     let run_id = context.run_id;
     drop(active_input_source);
+    let telemetry = blank_pool_selection_telemetry(
+        &context,
+        pre_spawn_timing.blank_pool_selection(),
+        &ctx.exec_config,
+    );
     warn!(
         run_id = %run_id,
         sandbox_id = %sandbox_id,
@@ -1037,7 +1085,10 @@ async fn recover_claimed_activation_failure(
         );
     }
     drop(active_run_guard);
-    cancellation
+    ClaimedActivationRecovery {
+        cancellation,
+        telemetry,
+    }
 }
 
 async fn claim_with_local_admission(
@@ -2569,24 +2620,69 @@ async fn complete_claimed_without_sandbox(
     cancellation: RunCancellationRegistration,
     resource: SandboxAdmittedResource,
     workspace_disk_mb: u32,
-    reuse_result: Option<SandboxReuseResult>,
+    diagnostics: ClaimedFailureDiagnostics,
     failure: crate::executor::ExecutionFailure,
     ctx: &mut DiscoveredJobContext<'_>,
 ) {
-    let run_id = complete_claimed_failure(claimed, cancellation, reuse_result, failure, ctx).await;
-    rollback_sandbox_admitted_resource(resource, run_id, workspace_disk_mb, ctx).await;
+    let completion =
+        complete_claimed_failure(claimed, cancellation, diagnostics, failure, ctx).await;
+    rollback_sandbox_admitted_resource(resource, completion.run_id, workspace_disk_mb, ctx).await;
+    completion.flush_telemetry().await;
+}
+
+#[derive(Clone, Copy)]
+struct ClaimedFailureDiagnostics {
+    reuse_result: Option<SandboxReuseResult>,
+    blank_pool_selection: Option<BlankPoolSelection>,
+}
+
+impl ClaimedFailureDiagnostics {
+    const fn without_timing(reuse_result: Option<SandboxReuseResult>) -> Self {
+        Self {
+            reuse_result,
+            blank_pool_selection: None,
+        }
+    }
+
+    fn from_timing(
+        reuse_result: Option<SandboxReuseResult>,
+        timing: &RunnerPreSpawnTiming,
+    ) -> Self {
+        Self {
+            reuse_result,
+            blank_pool_selection: timing.blank_pool_selection(),
+        }
+    }
+}
+
+struct ClaimedFailureCompletion {
+    run_id: RunId,
+    telemetry: Option<JobTelemetry>,
+}
+
+impl ClaimedFailureCompletion {
+    async fn flush_telemetry(self) {
+        if let Some(telemetry) = self.telemetry {
+            telemetry.flush().await;
+        }
+    }
 }
 
 async fn complete_claimed_failure(
     claimed: ClaimedJob,
     cancellation: RunCancellationRegistration,
-    reuse_result: Option<SandboxReuseResult>,
+    diagnostics: ClaimedFailureDiagnostics,
     failure: crate::executor::ExecutionFailure,
     ctx: &DiscoveredJobContext<'_>,
-) -> RunId {
+) -> ClaimedFailureCompletion {
     let (context, completion_auth, active_input_source) = claimed.into_parts();
     let run_id = context.run_id;
     drop(active_input_source);
+    let telemetry = blank_pool_selection_telemetry(
+        &context,
+        diagnostics.blank_pool_selection,
+        &ctx.spawn_ctx.exec_config,
+    );
     ctx.spawn_ctx
         .provider
         .complete(
@@ -2596,7 +2692,7 @@ async fn complete_claimed_failure(
                 failure_reason: None,
                 error: Some(failure.error),
                 sandbox_id: None,
-                sandbox_reuse_result: reuse_result,
+                sandbox_reuse_result: diagnostics.reuse_result,
                 workspace_reuse_result: None,
                 active_input_delivery_ids: Vec::new(),
             },
@@ -2604,7 +2700,24 @@ async fn complete_claimed_failure(
         )
         .await;
     cancellation.unregister().await;
-    run_id
+    ClaimedFailureCompletion { run_id, telemetry }
+}
+
+fn blank_pool_selection_telemetry(
+    context: &ExecutionContext,
+    selection: Option<BlankPoolSelection>,
+    exec_config: &crate::executor::ExecutorConfig,
+) -> Option<JobTelemetry> {
+    selection.map(|selection| {
+        let mut telemetry = JobTelemetry::new(
+            exec_config.http.clone(),
+            context.run_id,
+            context.sandbox_token.clone(),
+            exec_config.runner_hostname.clone(),
+        );
+        selection.record(&mut telemetry);
+        telemetry
+    })
 }
 
 async fn try_reuse_from_pool(
