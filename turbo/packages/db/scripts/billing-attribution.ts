@@ -298,13 +298,19 @@ try {
               ? await client.query(
                   // Captured identity is never overwritten; the conflict branch
                   // only fills a grouping identity this pass has not seen yet,
-                  // so repeating the phase converges instead of rewriting.
+                  // so repeating the phase converges instead of rewriting. A row
+                  // whose identity disagrees with its run stays reported and
+                  // unmodified, exactly as the source phases below require.
                   `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context)
                 SELECT id, org_id, user_id, created_at, billing_usage_source(trigger_source), chat_thread_id,
                   CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
                 FROM agent_runs WHERE id = ANY($1::uuid[])
                 ON CONFLICT (run_id) DO UPDATE SET thread_id = EXCLUDED.thread_id, thread_context = EXCLUDED.thread_context
-                  WHERE billing_run_attribution.thread_context = 'unknown'`,
+                  WHERE billing_run_attribution.thread_context = 'unknown'
+                    AND billing_run_attribution.org_id = EXCLUDED.org_id
+                    AND billing_run_attribution.user_id = EXCLUDED.user_id
+                    AND billing_run_attribution.run_started_at = EXCLUDED.run_started_at
+                    AND billing_run_attribution.source = EXCLUDED.source`,
                   [ids],
                 )
               : await client.query(

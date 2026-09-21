@@ -123,16 +123,19 @@ the requesting run while it is still executing.
 Two transitional fallbacks remain until the operator backfill converges, both
 declared at their call sites:
 
-| Fallback                                         | Protects                                                | Removal condition                  |
-| ------------------------------------------------ | ------------------------------------------------------- | ---------------------------------- |
-| `usage-record.service.ts` `agent_runs` join      | Rows whose attribution predates the grouping identity   | Inventory `thread_gaps: 0`         |
-| `usage-allowance.service.ts` `loadRunCreatedAts` | Pending rows written before A1 whose run is still alive | Inventory `pending_anchor_gaps: 0` |
+| Fallback                                         | Protects                                                | Removal condition                             |
+| ------------------------------------------------ | ------------------------------------------------------- | --------------------------------------------- |
+| `usage-record.service.ts` `agent_runs` join      | Rows whose attribution predates the grouping identity   | Inventory `thread_gaps: 0` and `conflicts: 0` |
+| `usage-allowance.service.ts` `loadRunCreatedAts` | Pending rows written before A1 whose run is still alive | Inventory `pending_anchor_gaps: 0`            |
 
 Both counters come from a complete, non-truncated
 `pnpm -F @okouai/db billing:attribution` dry-run inventory for the scope. The
-drop pull request removes the two joins together; it must re-run the backfill
-immediately beforehand so rows written by an older instance during the deploy
-window are not left without a grouping identity.
+backfill refuses to capture a grouping identity for a run whose attribution
+disagrees with it, so a non-zero `conflicts` count is a human-resolution gate
+rather than a reason to drop the join. The drop pull request removes the two
+joins together; it must re-run the backfill immediately beforehand so rows
+written by an older instance during the deploy window are not left without a
+grouping identity.
 
 ## Compaction and deployment
 

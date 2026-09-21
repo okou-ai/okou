@@ -171,6 +171,8 @@ const late = randomUUID();
 const missing = randomUUID();
 const historicalThread = randomUUID();
 const capturedThread = randomUUID();
+const conflictRun = randomUUID();
+const conflictThread = randomUUID();
 try {
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET search_path TO "${schema}"`);
@@ -634,6 +636,43 @@ try {
       },
     ],
   );
+  // The runs phase must not write a grouping identity into an attribution row
+  // whose identity disagrees with its run. Those stay reported for a human, so
+  // a conflict keeps the reader's transitional join alive by design.
+  await client.query(
+    "ALTER TABLE agent_runs DISABLE TRIGGER capture_billing_run_attribution",
+  );
+  await client.query(
+    "INSERT INTO agent_runs VALUES ($1, 'org', 'user', '2026-08-09 10:00:00', 'web', 'private', $2)",
+    [conflictRun, conflictThread],
+  );
+  await client.query(
+    "ALTER TABLE agent_runs ENABLE TRIGGER capture_billing_run_attribution",
+  );
+  await client.query(
+    "INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source) VALUES ($1, 'org', 'user', '2026-08-10 10:00:00', 'chat')",
+    [conflictRun],
+  );
+  await cli([
+    "--migrate",
+    "--ack-writer-drain",
+    "--job-id",
+    randomUUID(),
+    "--max-rows",
+    "100",
+    "--max-ms",
+    "10000",
+  ]);
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT thread_id, thread_context FROM billing_run_attribution WHERE run_id=$1",
+        [conflictRun],
+      )
+    ).rows,
+    [{ thread_id: null, thread_context: "unknown" }],
+  );
+
   await concurrentFirstUsage();
   console.log(
     "Billing attribution: atomic capture, immutable conflicts, deletion isolation, runless provenance, bounded restart and exact monetary preservation passed",

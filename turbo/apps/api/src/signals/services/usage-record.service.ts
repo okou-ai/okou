@@ -93,7 +93,10 @@ function tokenExpr(usage: FinalizedUsageRelation) {
  * ROLLOUT FALLBACK — the `agent_runs` join. Surface: DB vs API, for rows written
  * before migration 1192 whose attribution still reports `thread_context =
  * 'unknown'`. Removal condition: `pnpm -F @okouai/db billing:attribution`
- * reports `thread_gaps: 0` on a complete (non-truncated) production inventory.
+ * reports `thread_gaps: 0` and `conflicts: 0` on a complete (non-truncated)
+ * production inventory; the backfill leaves a conflicting row uncaptured on
+ * purpose, so a non-zero conflict count is a human-resolution gate rather than
+ * a reason to drop this join.
  * Follow-up: the drop pull request of #35875, which deletes this join.
  */
 const groupingThreadId = sql`COALESCE(${billingRunAttribution.threadId}, ${agentRuns.chatThreadId})`;
