@@ -92,6 +92,7 @@ fn publish_command(staging_path: &str, destination: &str, sibling: &str) -> io::
     let sibling = quote_shell_arg(sibling);
     Ok(format!(
         "src={source}; dest={destination}; parent={parent}; tmp={sibling}; \
+         expected_owner=; \
          if ! test -f \"$src\" || test -L \"$src\"; then printf '%s\\n' not_published:invalid_source; exit 0; fi; \
          if ! mkdir -p -- \"$parent\" >/dev/null 2>&1; then printf '%s\\n' not_published:invalid_parent; exit 0; fi; \
          resolved_parent=$(realpath -e -- \"$parent\" 2>/dev/null) || {{ printf '%s\\n' not_published:invalid_parent; exit 0; }}; \
@@ -102,6 +103,7 @@ fn publish_command(staging_path: &str, destination: &str, sibling: &str) -> io::
            dest_owner=$(stat -c %u:%g -- \"$dest\" 2>/dev/null) || {{ printf '%s\\n' not_published:metadata_failed; exit 0; }}; \
            dest_mode=$(stat -c %a -- \"$dest\" 2>/dev/null) || {{ printf '%s\\n' not_published:metadata_failed; exit 0; }}; \
            if test \"$src_owner\" != \"$dest_owner\" || ! chmod \"$dest_mode\" -- \"$src\" >/dev/null 2>&1; then printf '%s\\n' not_published:metadata_failed; exit 0; fi; \
+           expected_owner=$dest_owner; \
          fi; \
          src_dev=$(stat -c %d -- \"$src\" 2>/dev/null) || {{ printf '%s\\n' not_published:invalid_source; exit 0; }}; \
          parent_dev=$(stat -c %d -- \"$parent\" 2>/dev/null) || {{ printf '%s\\n' not_published:invalid_parent; exit 0; }}; \
@@ -110,6 +112,10 @@ fn publish_command(staging_path: &str, destination: &str, sibling: &str) -> io::
          else \
            if test -e \"$tmp\" || test -L \"$tmp\"; then printf '%s\\n' not_published:copy_failed; exit 0; fi; \
            if cp --preserve=mode --no-target-directory -- \"$src\" \"$tmp\" >/dev/null 2>&1; then \
+             if test -n \"$expected_owner\"; then \
+               tmp_owner=$(stat -c %u:%g -- \"$tmp\" 2>/dev/null) || {{ rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:metadata_failed; exit 0; }}; \
+               if test \"$tmp_owner\" != \"$expected_owner\"; then rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:metadata_failed; exit 0; fi; \
+             fi; \
              if mv -fT -- \"$tmp\" \"$dest\" >/dev/null 2>&1; then rm -f -- \"$src\" >/dev/null 2>&1 || true; printf '%s\\n' published_cross; \
              else rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:rename_failed; fi; \
            else rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:copy_failed; fi; \
@@ -293,7 +299,7 @@ impl GuestControlClient {
 mod tests {
     use super::*;
     use std::fs;
-    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
     use std::process::{Command, Output};
 
     fn terminal_result(
@@ -487,6 +493,31 @@ mod tests {
             fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
             0o640
         );
+        assert!(!staging.exists());
+        assert!(!sibling.exists());
+    }
+
+    #[test]
+    fn forced_cross_device_publish_preserves_existing_metadata() {
+        let temp = tempfile::tempdir().unwrap();
+        let (staging, destination, sibling) = command_paths(temp.path());
+        fs::write(&staging, b"new history").unwrap();
+        fs::set_permissions(&staging, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::write(&destination, b"old history").unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o640)).unwrap();
+        let previous = fs::metadata(&destination).unwrap();
+        let command = force_cross_device(publish_for_test(&staging, &destination, &sibling));
+
+        let output = run_shell(&command, None);
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout, PUBLISHED_CROSS);
+        assert!(output.stderr.is_empty());
+        assert_eq!(fs::read(&destination).unwrap(), b"new history");
+        let published = fs::metadata(&destination).unwrap();
+        assert_eq!(published.permissions().mode() & 0o777, 0o640);
+        assert_eq!(published.uid(), previous.uid());
+        assert_eq!(published.gid(), previous.gid());
         assert!(!staging.exists());
         assert!(!sibling.exists());
     }
