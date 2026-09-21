@@ -1,6 +1,7 @@
 import { buildDiscoveryUrls } from "@modelcontextprotocol/client";
 import {
   createLocalJWKSet,
+  decodeJwt,
   jwtVerify,
   type JSONWebKeySet,
   type JWTPayload,
@@ -56,6 +57,12 @@ const userInfoClaimsSchema = z
     preferred_username: identityClaimSchema.optional(),
     name: identityClaimSchema.optional(),
     email: identityClaimSchema.optional(),
+  })
+  .passthrough();
+
+const untrustedIssuerClaimSchema = z
+  .object({
+    iss: z.url({ protocol: /^https$/u }),
   })
   .passthrough();
 
@@ -278,4 +285,53 @@ export async function discoverMcpAutomaticOAuthUserInfo(
     return null;
   }
   return result.value;
+}
+
+export async function discoverStaticCustomOAuthUserInfo(
+  args: {
+    readonly authorizationEndpoint: string;
+    readonly tokenEndpoint: string;
+    readonly clientId: string;
+    readonly accessToken: string;
+    readonly idToken: string | null;
+  },
+  signal: AbortSignal,
+): Promise<McpAutomaticOAuthUserInfo | null> {
+  const idToken = args.idToken;
+  if (!idToken) {
+    return null;
+  }
+  const issuerResult = await settle(
+    (async () => {
+      return untrustedIssuerClaimSchema.parse(decodeJwt(idToken)).iss;
+    })(),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!issuerResult.ok) {
+    return null;
+  }
+  const publicIssuer = await settle(
+    validateMcpOAuthPublicUrl(issuerResult.value, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!publicIssuer.ok) {
+    return null;
+  }
+  // The decoded issuer is only a discovery hint. The shared verifier accepts
+  // it only when signed metadata rebinds it to both configured OAuth endpoints.
+  return await discoverMcpAutomaticOAuthUserInfo(
+    {
+      context: {
+        issuer: issuerResult.value,
+        authorizationEndpoint: args.authorizationEndpoint,
+        tokenEndpoint: args.tokenEndpoint,
+        clientId: args.clientId,
+      },
+      accessToken: args.accessToken,
+      idToken,
+    },
+    signal,
+  );
 }

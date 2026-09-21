@@ -90,7 +90,10 @@ import {
   isAutomaticOAuthInvalidClient,
   isAutomaticOAuthInvalidGrant,
 } from "./mcp-automatic-oauth.service";
-import type { McpAutomaticOAuthUserInfo } from "./mcp-oauth-identity.service";
+import {
+  discoverStaticCustomOAuthUserInfo,
+  type McpAutomaticOAuthUserInfo,
+} from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
@@ -448,7 +451,20 @@ export async function exchangeCustomConnectorOAuth2Code(
   if (args.codeVerifier) {
     form.set("code_verifier", args.codeVerifier);
   }
-  return await requestToken({ ...args, form }, signal);
+  const token = await requestToken({ ...args, form }, signal);
+  return {
+    ...token,
+    userInfo: await discoverStaticCustomOAuthUserInfo(
+      {
+        authorizationEndpoint: args.config.authorizationUrl,
+        tokenEndpoint: args.config.tokenUrl,
+        clientId: args.config.clientId,
+        accessToken: token.accessToken,
+        idToken: token.idToken,
+      },
+      signal,
+    ),
+  };
 }
 
 async function refreshCustomConnectorOAuth2Token(
