@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.208.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.3...runner-rs-v0.208.0) (2026-09-21)
+
+
+### Features
+
+* **runner:** add run-owned ssh direct-tcpip streams ([#35899](https://github.com/okou-ai/okou/issues/35899)) ([bd1327e](https://github.com/okou-ai/okou/commit/bd1327e146ed93210cedce07e8900be2929f4afe))
+
 ## [0.207.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.2...runner-rs-v0.207.3) (2026-09-21)
 
 ## [0.207.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.1...runner-rs-v0.207.2) (2026-09-21)
