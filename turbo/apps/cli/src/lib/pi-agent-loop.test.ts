@@ -46,6 +46,7 @@ const TSX_IMPORT = import.meta.resolve("tsx");
 const CONFIG: PiSandboxAgentConfig = {
   runId: RUN_ID,
   sessionId: SESSION_ID,
+  reportPreparationTiming: true,
   launchPayload: {
     schemaVersion: 1,
     appendSystemPrompt: "exact immutable Pi append prompt",
@@ -396,6 +397,7 @@ function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "DEEPSEEK_API_KEY",
     }),
+    OKOU_PI_PREPARATION_TIMING: "1",
     OPENAI_API_KEY: "test-api-key",
   };
 }
@@ -1000,6 +1002,22 @@ describe("sandbox Pi agent loop", () => {
       durationMs: 41.6,
       outcome: "success",
     });
+  });
+
+  it("stays silent about preparation phases until guest-agent opts the child in", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    delete env.OKOU_PI_PREPARATION_TIMING;
+
+    // An older guest-agent does not recognize the envelope and would surface it
+    // as user-visible failure output, so the child must not emit it.
+    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+      reportPreparationTiming: false,
+    });
+    const looseValue = piEnv({ OKOU_RUN_ID: RUN_ID });
+    looseValue.OKOU_PI_PREPARATION_TIMING = "true";
+    await expect(
+      piSandboxAgentConfigFromEnv(looseValue),
+    ).resolves.toMatchObject({ reportPreparationTiming: false });
   });
 
   it("resolves the Pi session, launch payload file, and model credential", async () => {

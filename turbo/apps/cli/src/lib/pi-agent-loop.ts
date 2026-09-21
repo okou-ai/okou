@@ -31,6 +31,7 @@ const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
+const PI_PREPARATION_TIMING_ENV = "OKOU_PI_PREPARATION_TIMING";
 const PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE =
   "vm0_pi_api_first_turn_boundary";
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
@@ -88,6 +89,8 @@ export interface PiSandboxAgentConfig {
   readonly sessionId: string;
   readonly launchPayload: PiLaunchPayload;
   readonly model: PiAgentModelConfig;
+  /** guest-agent owns the sandbox operation log and opts this child in. */
+  readonly reportPreparationTiming: boolean;
   readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }
 
@@ -156,6 +159,7 @@ export async function piSandboxAgentConfigFromEnv(
     runId,
     sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
     launchPayload: await readLaunchPayload(env),
+    reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
     model: await materializePiAgentModelConfig({
       config: parsedModel,
       target: "sandbox-firewall",
@@ -286,9 +290,13 @@ export async function runPiSandboxAgentLoop(args: {
         sourceUse,
       );
     },
-    onPreparationTiming(observation) {
-      recordPiPreparationTiming(args.config.runId, observation);
-    },
+    ...(args.config.reportPreparationTiming
+      ? {
+          onPreparationTiming(observation: PiPreparationObservation) {
+            recordPiPreparationTiming(args.config.runId, observation);
+          },
+        }
+      : {}),
     sessionFile: handoff.sessionFile,
     ownershipTransferMode: handoff.ownershipTransferMode,
     ...(handoff.langfuseParent

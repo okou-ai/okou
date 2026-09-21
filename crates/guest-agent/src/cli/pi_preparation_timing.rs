@@ -108,12 +108,15 @@ fn parse_observation(line: &[u8]) -> Option<PiPreparationObservation> {
     })
 }
 
-/// Clamp a reported duration into a recordable, finite, non-negative value.
+/// Accept only a finite, non-negative, representable duration.
+///
+/// An unusable value is dropped rather than clamped: a fabricated duration
+/// would read as a real measurement in the telemetry dataset.
 fn bounded_duration(duration_ms: f64) -> Option<Duration> {
     if !duration_ms.is_finite() || duration_ms < 0.0 {
         return None;
     }
-    Some(Duration::try_from_secs_f64(duration_ms / 1000.0).unwrap_or(Duration::MAX))
+    Duration::try_from_secs_f64(duration_ms / 1000.0).ok()
 }
 
 #[cfg(test)]
@@ -205,7 +208,7 @@ mod tests {
 
     #[test]
     fn unusable_durations_are_dropped() {
-        for duration in ["-1", "1e400"] {
+        for duration in ["-1", "1e400", "1e30"] {
             let line = format!(
                 r#"{{"type":"pi_preparation_timing","phase":"model_runtime","durationMs":{duration},"outcome":"success"}}"#
             );

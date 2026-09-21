@@ -610,11 +610,19 @@ fn write_claude_append_system_prompt_file(
     Ok(())
 }
 
-fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] {
+fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 5] {
     [
         (
             guest_contracts::env::RUN_ID_ENV.to_string(),
             runtime.run_id.to_string(),
+        ),
+        // This guest recognizes the preparation-timing stderr envelope, so the
+        // child may report its phases. A child that does not see this stays
+        // silent against an older guest that would treat the envelope as
+        // user-visible failure output.
+        (
+            guest_contracts::env::PI_PREPARATION_TIMING_ENV.to_string(),
+            guest_contracts::env::PI_PREPARATION_TIMING_ENABLED.to_string(),
         ),
         (
             guest_contracts::env::PI_SESSION_ID_ENV.to_string(),

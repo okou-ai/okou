@@ -121,6 +121,11 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
         "an unknown phase must not widen op_type cardinality: {operations:?}"
     );
     assert_eq!(
+        std::fs::read_to_string(tmp.path().join("preparation-timing-env.txt"))?,
+        "1",
+        "the guest must opt its Pi child into preparation reporting"
+    );
+    assert_eq!(
         operations_named(&operations, PI_LAUNCH_PAYLOAD_ACTION).len(),
         1,
         "the guest-owned launch payload write must be measured: {operations:?}"
@@ -133,7 +138,9 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
 /// commands, and reports its preparation phases on stderr the way the real
 /// sandbox CLI does.
 fn serving_pi_host_script() -> String {
-    let mut script = String::from("#!/bin/sh\nset -eu\n");
+    let mut script = String::from(
+        "#!/bin/sh\nset -eu\nprintf '%s' \"${OKOU_PI_PREPARATION_TIMING:-}\" > \"$HOME/preparation-timing-env.txt\"\n",
+    );
     for (phase, outcome) in OBSERVED_PHASES {
         script.push_str(&format!(
             "printf '%s\\n' '{{\"type\":\"pi_preparation_timing\",\"runId\":\"run\",\"phase\":\"{phase}\",\"durationMs\":7.5,\"outcome\":\"{outcome}\"}}' >&2\n"
