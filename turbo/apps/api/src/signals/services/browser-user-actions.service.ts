@@ -25,14 +25,13 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
-  activateBrowserUseUserActionTarget,
   applyBrowserUseUserAction,
   BrowserUseProviderError,
-  type BrowserUseUserActionCapture,
-  BrowserUseUserActionCaptureError,
+  type BrowserUseUserActionValidation,
+  BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
-  captureBrowserUseUserAction,
   getBrowserUseSession,
+  validateBrowserUseUserAction,
 } from "./browser-use.service";
 import {
   type ChatThreadContentIdentity,
@@ -124,7 +123,19 @@ function decodePayload(row: RequestRow): BrowserUserActionPayload | null {
   const parsed = safeSync(() => {
     return parseBrowserUserActionPayload(row.payload);
   });
-  return "ok" in parsed && parsed.ok.kind === row.kind ? parsed.ok : null;
+  if (!("ok" in parsed) || parsed.ok.kind !== row.kind) {
+    return null;
+  }
+  if (
+    parsed.ok.kind === "input" &&
+    (!row.pageTargetId ||
+      !row.documentLoaderId ||
+      !row.siteOrigin ||
+      !row.pageUrlHash)
+  ) {
+    return null;
+  }
+  return parsed.ok;
 }
 
 function publicRequest(
@@ -135,7 +146,6 @@ function publicRequest(
   const common = {
     requestToken,
     state: row.status,
-    siteOrigin: row.siteOrigin,
     expiresAt: row.expiresAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
     agentId: row.agentId,
@@ -151,23 +161,28 @@ function publicRequest(
       },
     },
   };
-  return payload.kind === "input"
-    ? {
-        ...common,
-        kind: payload.kind,
-        fields: payload.fields.map((field) => {
-          return {
-            key: field.key,
-            label: field.label,
-            ...(field.description === undefined
-              ? {}
-              : { description: field.description }),
-            fieldKind: field.fieldKind,
-            required: field.required,
-          };
-        }),
-      }
-    : { ...common, kind: payload.kind, reason: payload.reason };
+  if (payload.kind === "direct_interaction") {
+    return { ...common, kind: payload.kind, reason: payload.reason };
+  }
+  if (!row.siteOrigin) {
+    throw new Error("Browser input request has no site origin");
+  }
+  return {
+    ...common,
+    kind: payload.kind,
+    siteOrigin: row.siteOrigin,
+    fields: payload.fields.map((field) => {
+      return {
+        key: field.key,
+        label: field.label,
+        ...(field.description === undefined
+          ? {}
+          : { description: field.description }),
+        fieldKind: field.fieldKind,
+        required: field.required,
+      };
+    }),
+  };
 }
 
 function authorized(
@@ -326,7 +341,7 @@ interface CreateBrowserUserActionArgs {
 interface PreparedBrowserUserAction {
   readonly chatThreadId: string;
   readonly providerSessionId: string;
-  readonly capture: BrowserUseUserActionCapture;
+  readonly validation: BrowserUseUserActionValidation | null;
 }
 
 async function prepareBrowserUserAction(
@@ -371,6 +386,16 @@ async function prepareBrowserUserAction(
       "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
     );
   }
+  if (args.input.kind === "direct_interaction") {
+    return {
+      kind: "ok",
+      value: {
+        chatThreadId: run.chatThreadId,
+        providerSessionId: live.providerSessionId,
+        validation: null,
+      },
+    };
+  }
   const providerResult = await settle(
     getBrowserUseSession(live.providerSessionId, signal),
   );
@@ -387,37 +412,39 @@ async function prepareBrowserUserAction(
       "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
     );
   }
-  const selectors =
-    args.input.kind === "input"
-      ? args.input.fields.map((field) => {
-          return field.selector;
-        })
-      : [];
-  const captureResult = await settle(
-    captureBrowserUseUserAction(providerResult.value.cdpUrl, selectors, signal),
+  const validationResult = await settle(
+    validateBrowserUseUserAction(
+      providerResult.value.cdpUrl,
+      {
+        pageTargetId: args.input.pageTargetId,
+        backendNodeIds: args.input.fields.map((field) => {
+          return field.backendNodeId;
+        }),
+      },
+      signal,
+    ),
   );
   signal.throwIfAborted();
-  if (!captureResult.ok) {
-    return captureResult.error instanceof BrowserUseUserActionCaptureError
+  if (!validationResult.ok) {
+    return validationResult.error instanceof BrowserUseUserActionValidationError
       ? conflict(
-          "The focused Browser page or requested controls are not available",
-          `BROWSER_USER_ACTION_${captureResult.error.code.toUpperCase()}`,
+          "The Browser page target or requested controls are not available",
+          `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
         )
-      : providerFailure(captureResult.error);
+      : providerFailure(validationResult.error);
   }
   if (
-    args.input.kind === "input" &&
-    (captureResult.value.fields.length !== args.input.fields.length ||
-      args.input.fields.some((field, index) => {
-        const target = captureResult.value.fields[index];
-        return (
-          !target ||
-          !browserUserActionFieldSupportsTarget(
-            field.fieldKind,
-            target.fingerprint,
-          )
-        );
-      }))
+    validationResult.value.fields.length !== args.input.fields.length ||
+    args.input.fields.some((field, index) => {
+      const target = validationResult.value.fields[index];
+      return (
+        !target ||
+        !browserUserActionFieldSupportsTarget(
+          field.fieldKind,
+          target.fingerprint,
+        )
+      );
+    })
   ) {
     return conflict(
       "The requested Browser field kind does not match its control",
@@ -429,25 +456,28 @@ async function prepareBrowserUserAction(
     value: {
       chatThreadId: run.chatThreadId,
       providerSessionId: live.providerSessionId,
-      capture: captureResult.value,
+      validation: validationResult.value,
     },
   };
 }
 
 function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
-  capture: BrowserUseUserActionCapture,
+  validation: BrowserUseUserActionValidation | null,
 ): BrowserUserActionPayload {
   if (input.kind === "direct_interaction") {
     return { version: 1, kind: input.kind, reason: input.reason };
+  }
+  if (!validation) {
+    throw new Error("Browser input request has no validated targets");
   }
   return {
     version: 1,
     kind: input.kind,
     fields: input.fields.map((field, index) => {
-      const target = capture.fields[index];
+      const target = validation.fields[index];
       if (!target) {
-        throw new Error("Missing captured Browser field");
+        throw new Error("Missing validated Browser field");
       }
       return {
         key: field.key,
@@ -565,10 +595,12 @@ async function persistBrowserUserAction(
           kind: args.input.kind,
           status: "pending",
           providerSessionId: prepared.providerSessionId,
-          pageTargetId: prepared.capture.pageTargetId,
-          documentLoaderId: prepared.capture.documentLoaderId,
-          siteOrigin: prepared.capture.siteOrigin,
-          pageUrlHash: hash(prepared.capture.pageUrl),
+          pageTargetId: prepared.validation?.pageTargetId ?? null,
+          documentLoaderId: prepared.validation?.documentLoaderId ?? null,
+          siteOrigin: prepared.validation?.siteOrigin ?? null,
+          pageUrlHash: prepared.validation
+            ? hash(prepared.validation.pageUrl)
+            : null,
           payloadVersion: 1,
           payload,
           ...callbackIds,
@@ -607,7 +639,7 @@ export const createBrowserUserAction$ = command(
     };
     const payload = buildBrowserUserActionPayload(
       args.input,
-      prepared.value.capture,
+      prepared.value.validation,
     );
     const created = await persistBrowserUserAction(
       db,
@@ -798,6 +830,20 @@ function submittedValues(
   };
 }
 
+function exactInputTarget(row: RequestRow): {
+  readonly pageTargetId: string;
+  readonly documentLoaderId: string;
+  readonly pageUrlHash: string;
+} | null {
+  return row.pageTargetId && row.documentLoaderId && row.pageUrlHash
+    ? {
+        pageTargetId: row.pageTargetId,
+        documentLoaderId: row.documentLoaderId,
+        pageUrlHash: row.pageUrlHash,
+      }
+    : null;
+}
+
 async function claimBrowserUserAction(
   db: Db,
   located: RequestRow,
@@ -893,6 +939,18 @@ async function applyClaimedBrowserUserAction(
           ? { kind: "ok", value: terminal }
           : conflict("Browser input state changed during application");
       }
+      const target = exactInputTarget(current);
+      if (!target) {
+        const terminal = await finalize(
+          operationDb,
+          current.id,
+          "stale",
+          "target_unavailable",
+        );
+        return terminal
+          ? { kind: "ok", value: terminal }
+          : conflict("Browser input state changed during application");
+      }
       const provider = await settleIncludingAbort(
         getBrowserUseSession(current.providerSessionId, signal),
       );
@@ -908,9 +966,7 @@ async function applyClaimedBrowserUserAction(
         applyBrowserUseUserAction(
           provider.value.cdpUrl,
           {
-            pageTargetId: current.pageTargetId,
-            documentLoaderId: current.documentLoaderId,
-            pageUrlHash: current.pageUrlHash,
+            ...target,
             fields: payload.fields.map((field) => {
               const value = values.get(field.key);
               return {
@@ -1133,121 +1189,5 @@ export const completeBrowserUserAction$ = command(
       { row, requestToken: args.requestToken, terminal: "succeeded" },
       signal,
     );
-  },
-);
-
-export const openBrowserUserAction$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly requestToken: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
-    const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
-    signal.throwIfAborted();
-    if (!row) {
-      return notFound();
-    }
-    const payload = decodePayload(row);
-    if (!payload) {
-      return conflict(
-        "Browser user-action request payload is unavailable",
-        "BROWSER_USER_ACTION_UNAVAILABLE",
-      );
-    }
-    if (payload.kind !== "direct_interaction") {
-      return conflict("This Browser request is not a direct interaction");
-    }
-    const admitted = await withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: row.chatThreadId,
-        authorize: (identity) => {
-          return authorized(row, identity);
-        },
-        threadLock: "update",
-      },
-      async (tx): Promise<ServiceResult<RequestRow>> => {
-        const operationDb = tx as Db;
-        const current = await loadExactRequest(operationDb, row);
-        if (!current) {
-          return notFound();
-        }
-        if (current.expiresAt <= nowDate()) {
-          return expired();
-        }
-        if (current.status !== "pending") {
-          return conflict("Browser direct interaction is no longer pending");
-        }
-        if (!(await touchExactProvider(operationDb, current))) {
-          return conflict(
-            "The captured managed Browser is no longer live",
-            "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
-          );
-        }
-        const provider = await settle(
-          getBrowserUseSession(current.providerSessionId, signal),
-        );
-        if (
-          !provider.ok ||
-          provider.value.status !== "active" ||
-          !provider.value.cdpUrl
-        ) {
-          return provider.ok
-            ? providerFailure(new Error("Browser provider is not active"))
-            : providerFailure(provider.error);
-        }
-        const activated = await settle(
-          activateBrowserUseUserActionTarget(
-            provider.value.cdpUrl,
-            current.pageTargetId,
-            signal,
-          ),
-        );
-        if (!activated.ok) {
-          return providerFailure(activated.error);
-        }
-        if (activated.value === "stale") {
-          const now = nowDate();
-          const [stale] = await operationDb
-            .update(browserUserActionRequests)
-            .set({
-              status: "stale",
-              terminalReason: "target_stale",
-              completedAt: now,
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(browserUserActionRequests.id, current.id),
-                eq(browserUserActionRequests.status, "pending"),
-              ),
-            )
-            .returning();
-          return stale
-            ? { kind: "ok", value: stale }
-            : conflict("Browser user-action state changed");
-        }
-        return { kind: "ok", value: current };
-      },
-      signal,
-    );
-    if (admitted.outcome !== "written") {
-      return notFound();
-    }
-    return admitted.value.kind === "error"
-      ? admitted.value
-      : {
-          kind: "ok",
-          value: publicRequest(
-            admitted.value.value,
-            args.requestToken,
-            payload,
-          ),
-        };
   },
 );

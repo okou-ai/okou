@@ -106,20 +106,6 @@ function browserInputVerifications() {
   });
 }
 
-function browserUserActionNodeId(selector: unknown): number {
-  if (selector === "#username") {
-    return 12;
-  }
-  return selector === "#code" ? 13 : 11;
-}
-
-function browserUserActionBackendNodeId(nodeId: unknown): number {
-  if (nodeId === 12) {
-    return 43;
-  }
-  return nodeId === 13 ? 44 : 42;
-}
-
 function browserUserActionObjectId(backendNodeId: unknown): string {
   if (backendNodeId === 43) {
     return "native-username-object";
@@ -132,7 +118,7 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
-  it("creates and applies native Browser input without exposing selector or value data", async () => {
+  it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
     const current = await createClaimedChatRun(
@@ -180,9 +166,6 @@ describe("Browser user-action route", () => {
       if (command.method === "Target.attachToTarget") {
         return { sessionId: "native-input-session" };
       }
-      if (command.method === "Runtime.evaluate") {
-        return { result: { value: true } };
-      }
       if (command.method === "Page.getFrameTree") {
         return {
           frameTree: {
@@ -191,21 +174,6 @@ describe("Browser user-action route", () => {
               loaderId: currentLoaderId,
               url: "https://example.com/login",
             },
-          },
-        };
-      }
-      if (command.method === "DOM.getDocument") {
-        return { root: { nodeId: 1 } };
-      }
-      if (command.method === "DOM.querySelectorAll") {
-        return { nodeIds: [browserUserActionNodeId(command.params.selector)] };
-      }
-      if (command.method === "DOM.describeNode") {
-        return {
-          node: {
-            backendNodeId: browserUserActionBackendNodeId(
-              command.params.nodeId,
-            ),
           },
         };
       }
@@ -324,13 +292,14 @@ describe("Browser user-action route", () => {
       body: {
         kind: "input",
         callbackPrompt: "Continue after unsupported input",
+        pageTargetId: "native-input-target",
         fields: [
           {
             key: "password",
             label: "Password",
             fieldKind: "password",
             required: true,
-            selector: "#password",
+            backendNodeId: 42,
           },
         ],
       },
@@ -349,13 +318,14 @@ describe("Browser user-action route", () => {
       body: {
         kind: "input",
         callbackPrompt: "Continue after mismatched input",
+        pageTargetId: "native-input-target",
         fields: [
           {
             key: "password",
             label: "Password",
             fieldKind: "password",
             required: true,
-            selector: "#username",
+            backendNodeId: 43,
           },
         ],
       },
@@ -368,26 +338,54 @@ describe("Browser user-action route", () => {
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;
 
+    resolveNodeAvailable = false;
+    const missingBackendNode = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after validated input",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    });
+    expect(missingBackendNode).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_BACKEND_NODE_NOT_FOUND" } },
+    });
+    resolveNodeAvailable = true;
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
+
     const created = await accept(
       userActionClient().create({
         headers: current.claim.browserHeaders,
         body: {
           kind: "input",
           callbackPrompt: "Continue after password entry",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "username",
               label: "Username",
               fieldKind: "username",
               required: true,
-              selector: "#username",
+              backendNodeId: 43,
             },
             {
               key: "password",
               label: "Password",
               fieldKind: "password",
               required: true,
-              selector: "#password",
+              backendNodeId: 42,
             },
           ],
         },
@@ -405,12 +403,23 @@ describe("Browser user-action route", () => {
       ],
     });
     expect(created.body.action).not.toHaveProperty("selector");
+    expect(created.body.action).not.toHaveProperty("pageTargetId");
+    expect(created.body.action).not.toHaveProperty("backendNodeId");
     expect(providerReadCount).toBe(1);
     expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
     expect(browserControlInspections()).toHaveLength(1);
     expect(browserControlInspections()[0]?.[0].params.arguments).toStrictEqual([
       { objectId: "native-password-object" },
     ]);
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
+        return [
+          "DOM.getDocument",
+          "DOM.querySelectorAll",
+          "DOM.describeNode",
+        ].includes(command.method);
+      }),
+    ).toBeFalsy();
 
     const otherUser = createBddApi(context).user({ orgId: actor.orgId });
     routeMocks.clerk.session(
@@ -545,20 +554,21 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue without changing the optional username",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "username",
               label: "Username",
               fieldKind: "username",
               required: false,
-              selector: "#username",
+              backendNodeId: 43,
             },
             {
               key: "password",
               label: "Password",
               fieldKind: "password",
               required: true,
-              selector: "#password",
+              backendNodeId: 42,
             },
           ],
         },
@@ -603,35 +613,10 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
-    expect(providerReadCount).toBe(1);
-    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
-        return command.method === "Page.getFrameTree";
-      }),
-    ).toBeTruthy();
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
-        return command.method.startsWith("DOM.");
-      }),
-    ).toBeFalsy();
-    const opened = await accept(
-      userActionClient().open({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: direct.body.action.requestToken },
-        body: {},
-      }),
-      [200],
-    );
-    expect(opened.body.state).toBe("pending");
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
-        return command.method === "Target.activateTarget";
-      }),
-    ).toBeTruthy();
-    context.mocks.browserUseCdp.connect.mockClear();
-    context.mocks.browserUseCdp.command.mockClear();
-    providerReadCount = 0;
+    expect(direct.body.action).not.toHaveProperty("siteOrigin");
+    expect(providerReadCount).toBe(0);
+    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
+    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
     const completed = await accept(
       userActionClient().complete({
         headers: { authorization: "Bearer clerk-session" },
@@ -700,13 +685,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after provider recovery",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "password",
               label: "Password",
               fieldKind: "password",
               required: true,
-              selector: "#password",
+              backendNodeId: 42,
             },
           ],
         },
@@ -754,13 +740,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after stale input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },
@@ -787,13 +774,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after detached input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },
@@ -819,13 +807,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after uncertain input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },
@@ -858,13 +847,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after rerendered input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },
@@ -904,13 +894,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after stuck input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },
@@ -944,13 +935,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after concurrent input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },
@@ -994,13 +986,14 @@ describe("Browser user-action route", () => {
         body: {
           kind: "input",
           callbackPrompt: "Continue after expiring input",
+          pageTargetId: "native-input-target",
           fields: [
             {
               key: "code",
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#code",
+              backendNodeId: 44,
             },
           ],
         },

@@ -13,7 +13,6 @@ import {
   cancelBrowserUserAction$,
   completeBrowserUserAction$,
   createBrowserUserAction$,
-  openBrowserUserAction$,
   readBrowserUserAction$,
   type BrowserUserActionServiceError,
 } from "../services/browser-user-actions.service";
@@ -63,8 +62,6 @@ const applyParams$ = pathParamsOf(browserUserActionsContract.apply);
 const applyBody$ = bodyResultOf(browserUserActionsContract.apply);
 const cancelParams$ = pathParamsOf(browserUserActionsContract.cancel);
 const cancelBody$ = bodyResultOf(browserUserActionsContract.cancel);
-const openParams$ = pathParamsOf(browserUserActionsContract.open);
-const openBody$ = bodyResultOf(browserUserActionsContract.open);
 const completeParams$ = pathParamsOf(browserUserActionsContract.complete);
 const completeBody$ = bodyResultOf(browserUserActionsContract.complete);
 
@@ -172,32 +169,6 @@ const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
-const openInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const enabled = await set(browserNativeInputEnabled$);
-  signal.throwIfAborted();
-  if (!enabled) {
-    return disabled;
-  }
-  const body = await get(openBody$);
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const result = await set(
-    openBrowserUserAction$,
-    {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      requestToken: get(openParams$).requestToken,
-    },
-    signal,
-  );
-  return result.kind === "error"
-    ? errorResponse(result)
-    : { status: 200 as const, body: result.value };
-});
-
 const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const enabled = await set(browserNativeInputEnabled$);
@@ -240,10 +211,6 @@ export const browserUserActionRoutes: readonly RouteEntry[] = [
   {
     route: browserUserActionsContract.cancel,
     handler: authRoute(authOptions, cancelInner$),
-  },
-  {
-    route: browserUserActionsContract.open,
-    handler: authRoute(authOptions, openInner$),
   },
   {
     route: browserUserActionsContract.complete,

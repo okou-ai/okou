@@ -9,7 +9,7 @@ export const BROWSER_USER_ACTION_MAX_FIELDS = 8;
 export const BROWSER_USER_ACTION_MAX_KEY_LENGTH = 64;
 export const BROWSER_USER_ACTION_MAX_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH = 512;
-export const BROWSER_USER_ACTION_MAX_SELECTOR_LENGTH = 2048;
+export const BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_VALUE_LENGTH = 4096;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
 
@@ -47,7 +47,7 @@ export const browserUserActionInputFieldCreateSchema = z
       .optional(),
     fieldKind: browserUserActionFieldKindSchema,
     required: z.boolean(),
-    selector: boundedNonblank(BROWSER_USER_ACTION_MAX_SELECTOR_LENGTH),
+    backendNodeId: z.number().int().positive().safe(),
   })
   .strict();
 
@@ -57,6 +57,7 @@ const inputCreateSchema = z
     callbackPrompt: boundedNonblank(
       BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
     ),
+    pageTargetId: boundedNonblank(BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH),
     fields: z
       .array(browserUserActionInputFieldCreateSchema)
       .min(1)
@@ -65,6 +66,7 @@ const inputCreateSchema = z
   .strict()
   .superRefine((value, context) => {
     const keys = new Set<string>();
+    const backendNodeIds = new Set<number>();
     for (const [index, field] of value.fields.entries()) {
       if (keys.has(field.key)) {
         context.addIssue({
@@ -74,6 +76,14 @@ const inputCreateSchema = z
         });
       }
       keys.add(field.key);
+      if (backendNodeIds.has(field.backendNodeId)) {
+        context.addIssue({
+          code: "custom",
+          message: "Input field backend node IDs must be unique",
+          path: ["fields", index, "backendNodeId"],
+        });
+      }
+      backendNodeIds.add(field.backendNodeId);
     }
   });
 
@@ -153,7 +163,6 @@ const callbackIdsSchema = z
 const responseBaseSchema = z.object({
   requestToken: z.string().min(1),
   state: browserUserActionStateSchema,
-  siteOrigin: z.url(),
   expiresAt: z.iso.datetime(),
   completedAt: z.iso.datetime().nullable(),
   agentId: z.uuid(),
@@ -165,6 +174,7 @@ export const browserUserActionResponseSchema = z.discriminatedUnion("kind", [
   responseBaseSchema
     .extend({
       kind: z.literal("input"),
+      siteOrigin: z.url(),
       fields: z
         .array(browserUserActionDisplayFieldSchema)
         .min(1)
@@ -235,15 +245,6 @@ export const browserUserActionsContract = c.router({
     body: emptyBodySchema,
     responses: { 200: browserUserActionResponseSchema, ...commonErrors },
     summary: "Cancel a pending Browser user-action request",
-  },
-  open: {
-    method: "POST",
-    path: "/api/browser/user-actions/:requestToken/open",
-    headers: authHeadersSchema,
-    pathParams: requestTokenParamsSchema,
-    body: emptyBodySchema,
-    responses: { 200: browserUserActionResponseSchema, ...commonErrors },
-    summary: "Open the exact Browser target for direct interaction",
   },
   complete: {
     method: "POST",

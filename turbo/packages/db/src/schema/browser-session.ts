@@ -182,10 +182,12 @@ export const browserUserActionRequests = pgTable(
       .$type<BrowserUserActionState>()
       .notNull(),
     providerSessionId: uuid("provider_session_id").notNull(),
-    pageTargetId: text("page_target_id").notNull(),
-    documentLoaderId: text("document_loader_id").notNull(),
-    siteOrigin: text("site_origin").notNull(),
-    pageUrlHash: text("page_url_hash").notNull(),
+    // Input requests bind to an exact page/document. Direct-interaction
+    // requests reuse the thread Browser card and intentionally capture none.
+    pageTargetId: text("page_target_id"),
+    documentLoaderId: text("document_loader_id"),
+    siteOrigin: text("site_origin"),
+    pageUrlHash: text("page_url_hash"),
     payloadVersion: integer("payload_version").notNull(),
     payload: jsonb("payload").$type<BrowserUserActionPayload>().notNull(),
     successClientEventId: uuid("success_client_event_id").notNull(),

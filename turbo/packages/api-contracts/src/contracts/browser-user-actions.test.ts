@@ -17,13 +17,14 @@ describe("Browser user-action contracts", () => {
       browserUserActionCreateRequestSchema.parse({
         kind: "input",
         callbackPrompt: "Continue after the user supplies the code",
+        pageTargetId: "page-target",
         fields: [
           {
             key: "code",
             label: "Verification code",
             fieldKind: "one_time_code",
             required: true,
-            selector: "input[autocomplete=one-time-code]",
+            backendNodeId: 42,
           },
         ],
       }),
@@ -36,12 +37,13 @@ describe("Browser user-action contracts", () => {
       label: "Username",
       fieldKind: "username" as const,
       required: true,
-      selector: "#username",
+      backendNodeId: 42,
     };
     expect(
       browserUserActionCreateRequestSchema.safeParse({
         kind: "input",
         callbackPrompt: "Enter credentials",
+        pageTargetId: "page-target",
         fields: [field, field],
       }).success,
     ).toBe(false);
@@ -110,8 +112,38 @@ describe("Browser user-action contracts", () => {
       browserUserActionResponseSchema.safeParse({
         ...safe,
         pageTargetId: "target",
-        selector: "#password",
+        backendNodeId: 42,
         value: "secret",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("does not require page metadata for direct interaction responses", () => {
+    const direct = {
+      requestToken: "vm0_browser_user_action_public-token",
+      kind: "direct_interaction" as const,
+      state: "pending" as const,
+      reason: "Complete the site challenge",
+      expiresAt: "2026-09-21T10:00:00.000Z",
+      completedAt: null,
+      agentId: uuid("1"),
+      threadId: uuid("2"),
+      callbackIds: {
+        success: {
+          clientEventId: uuid("3"),
+          chatThreadSortEventId: uuid("4"),
+        },
+        cancellation: {
+          clientEventId: uuid("5"),
+          chatThreadSortEventId: uuid("6"),
+        },
+      },
+    };
+    expect(browserUserActionResponseSchema.parse(direct)).toStrictEqual(direct);
+    expect(
+      browserUserActionResponseSchema.safeParse({
+        ...direct,
+        siteOrigin: "https://example.com",
       }).success,
     ).toBe(false);
   });

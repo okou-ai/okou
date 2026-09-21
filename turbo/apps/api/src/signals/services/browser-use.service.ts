@@ -86,15 +86,6 @@ const browserUseCdpFrameTreeSchema = z.object({
     }),
   }),
 });
-const browserUseCdpDocumentSchema = z.object({
-  root: z.object({ nodeId: z.number().int().positive() }),
-});
-const browserUseCdpNodeIdsSchema = z.object({
-  nodeIds: z.array(z.number().int().positive()),
-});
-const browserUseCdpNodeSchema = z.object({
-  node: z.object({ backendNodeId: z.number().int().positive() }),
-});
 const browserUseCdpRemoteObjectSchema = z.object({
   object: z.object({ objectId: z.string().min(1) }),
 });
@@ -181,7 +172,7 @@ export interface BrowserUseUserActionTarget {
   readonly fingerprint: BrowserUseUserActionFingerprint;
 }
 
-export interface BrowserUseUserActionCapture {
+export interface BrowserUseUserActionValidation {
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly pageUrl: string;
@@ -189,21 +180,18 @@ export interface BrowserUseUserActionCapture {
   readonly fields: readonly BrowserUseUserActionTarget[];
 }
 
-export type BrowserUseUserActionCaptureFailureCode =
-  | "focused_page_not_found"
-  | "focused_page_ambiguous"
+export type BrowserUseUserActionValidationFailureCode =
+  | "page_target_not_found"
   | "unsupported_page"
-  | "invalid_selector"
-  | "selector_not_found"
-  | "selector_ambiguous"
+  | "backend_node_not_found"
   | "unsupported_control";
 
-export class BrowserUseUserActionCaptureError extends Error {
-  readonly code: BrowserUseUserActionCaptureFailureCode;
+export class BrowserUseUserActionValidationError extends Error {
+  readonly code: BrowserUseUserActionValidationFailureCode;
 
-  constructor(code: BrowserUseUserActionCaptureFailureCode) {
-    super(`Browser user-action capture failed: ${code}`);
-    this.name = "BrowserUseUserActionCaptureError";
+  constructor(code: BrowserUseUserActionValidationFailureCode) {
+    super(`Browser user-action validation failed: ${code}`);
+    this.name = "BrowserUseUserActionValidationError";
     this.code = code;
   }
 }
@@ -728,8 +716,9 @@ async function inspectBrowserUseControls(
   return safeControlInspections(inspected.result.value, objectIds.length);
 }
 
-async function findFocusedBrowserUsePage(
+async function openBrowserUseValidationPage(
   socket: WebSocket,
+  pageTargetId: string,
   signal: AbortSignal,
 ): Promise<{
   readonly page: AttachedBrowserUsePage;
@@ -743,131 +732,68 @@ async function findFocusedBrowserUsePage(
     ),
     { reportInput: true },
   );
-  const pageTargets = targets.targetInfos.filter((target) => {
-    return target.type === "page" && httpPageUrl(target.url) !== null;
+  const pageTarget = targets.targetInfos.find((target) => {
+    return target.type === "page" && target.targetId === pageTargetId;
   });
-  let commandId = 2;
-  const focusedPages: AttachedBrowserUsePage[] = [];
-  for (const target of pageTargets) {
-    const attached = await attachBrowserUsePage(
-      socket,
-      target,
-      commandId,
-      signal,
-    );
-    commandId += 1;
-    const focus = browserUseCdpFocusSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: commandId,
-          method: "Runtime.evaluate",
-          params: {
-            expression: "document.hasFocus()",
-            returnByValue: true,
-          },
-          sessionId: attached.sessionId,
-        },
-        signal,
-      ),
-      { reportInput: true },
-    );
-    commandId += 1;
-    if (focus.result.value === true) {
-      focusedPages.push(attached);
-    }
+  if (!pageTarget) {
+    throw new BrowserUseUserActionValidationError("page_target_not_found");
   }
-  if (focusedPages.length === 0) {
-    throw new BrowserUseUserActionCaptureError("focused_page_not_found");
-  }
-  if (focusedPages.length !== 1) {
-    throw new BrowserUseUserActionCaptureError("focused_page_ambiguous");
-  }
-  const page = focusedPages[0];
-  if (!page) {
-    throw new BrowserUseUserActionCaptureError("focused_page_not_found");
-  }
-  return { page, commandId };
+  return {
+    page: await attachBrowserUsePage(socket, pageTarget, 2, signal),
+    commandId: 3,
+  };
 }
 
-async function captureBrowserUseControl(
+async function resolveBrowserUseValidationControl(
   socket: WebSocket,
   args: {
     readonly sessionId: string;
-    readonly rootNodeId: number;
-    readonly selector: string;
+    readonly backendNodeId: number;
     readonly commandId: number;
   },
   signal: AbortSignal,
 ): Promise<{
-  readonly backendNodeId: number;
   readonly objectId: string;
   readonly commandId: number;
 }> {
-  const queried = await settle(
+  const resolved = await settle(
     sendBrowserUseCdpCommand(
       socket,
       {
         id: args.commandId,
-        method: "DOM.querySelectorAll",
-        params: { nodeId: args.rootNodeId, selector: args.selector },
-        sessionId: args.sessionId,
-      },
-      signal,
-    ),
-  );
-  if (!queried.ok) {
-    throw new BrowserUseUserActionCaptureError("invalid_selector");
-  }
-  const nodeIds = browserUseCdpNodeIdsSchema.parse(queried.value, {
-    reportInput: true,
-  }).nodeIds;
-  if (nodeIds.length === 0) {
-    throw new BrowserUseUserActionCaptureError("selector_not_found");
-  }
-  if (nodeIds.length !== 1) {
-    throw new BrowserUseUserActionCaptureError("selector_ambiguous");
-  }
-  const described = browserUseCdpNodeSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: args.commandId + 1,
-        method: "DOM.describeNode",
-        params: { nodeId: nodeIds[0] },
-        sessionId: args.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
-  );
-  const remote = browserUseCdpRemoteObjectSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: args.commandId + 2,
         method: "DOM.resolveNode",
-        params: { backendNodeId: described.node.backendNodeId },
+        params: { backendNodeId: args.backendNodeId },
         sessionId: args.sessionId,
       },
       signal,
     ),
-    { reportInput: true },
   );
+  const remote = resolved.ok
+    ? browserUseCdpRemoteObjectSchema.safeParse(resolved.value)
+    : null;
+  if (!remote?.success) {
+    throw new BrowserUseUserActionValidationError("backend_node_not_found");
+  }
   return {
-    backendNodeId: described.node.backendNodeId,
-    objectId: remote.object.objectId,
-    commandId: args.commandId + 3,
+    objectId: remote.data.object.objectId,
+    commandId: args.commandId + 1,
   };
 }
 
-async function captureBrowserUseUserActionOnSocket(
+async function validateBrowserUseUserActionOnSocket(
   socket: WebSocket,
-  selectors: readonly string[],
+  target: {
+    readonly pageTargetId: string;
+    readonly backendNodeIds: readonly number[];
+  },
   signal: AbortSignal,
-): Promise<BrowserUseUserActionCapture> {
-  const focused = await findFocusedBrowserUsePage(socket, signal);
-  let commandId = focused.commandId;
+): Promise<BrowserUseUserActionValidation> {
+  const opened = await openBrowserUseValidationPage(
+    socket,
+    target.pageTargetId,
+    signal,
+  );
+  let commandId = opened.commandId;
   const frameTree = browserUseCdpFrameTreeSchema.parse(
     await sendBrowserUseCdpCommand(
       socket,
@@ -875,7 +801,7 @@ async function captureBrowserUseUserActionOnSocket(
         id: commandId,
         method: "Page.getFrameTree",
         params: {},
-        sessionId: focused.page.sessionId,
+        sessionId: opened.page.sessionId,
       },
       signal,
     ),
@@ -884,52 +810,28 @@ async function captureBrowserUseUserActionOnSocket(
   commandId += 1;
   const pageUrl = httpPageUrl(frameTree.frameTree.frame.url);
   if (!pageUrl) {
-    throw new BrowserUseUserActionCaptureError("unsupported_page");
+    throw new BrowserUseUserActionValidationError("unsupported_page");
   }
-  if (selectors.length === 0) {
-    return {
-      pageTargetId: focused.page.targetId,
-      documentLoaderId: frameTree.frameTree.frame.loaderId,
-      pageUrl: pageUrl.toString(),
-      siteOrigin: pageUrl.origin,
-      fields: [],
-    };
-  }
-  const document = browserUseCdpDocumentSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: commandId,
-        method: "DOM.getDocument",
-        params: { depth: 0, pierce: false },
-        sessionId: focused.page.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
-  );
-  commandId += 1;
   const capturedControls: {
     readonly backendNodeId: number;
     readonly objectId: string;
   }[] = [];
-  for (const selector of selectors) {
-    const captured = await captureBrowserUseControl(
+  for (const backendNodeId of target.backendNodeIds) {
+    const captured = await resolveBrowserUseValidationControl(
       socket,
       {
-        sessionId: focused.page.sessionId,
-        rootNodeId: document.root.nodeId,
-        selector,
+        sessionId: opened.page.sessionId,
+        backendNodeId,
         commandId,
       },
       signal,
     );
     commandId = captured.commandId;
-    capturedControls.push(captured);
+    capturedControls.push({ backendNodeId, objectId: captured.objectId });
   }
   const inspections = await inspectBrowserUseControls(
     socket,
-    focused.page.sessionId,
+    opened.page.sessionId,
     capturedControls.map((control) => {
       return control.objectId;
     }),
@@ -946,12 +848,12 @@ async function captureBrowserUseUserActionOnSocket(
       );
     })
   ) {
-    throw new BrowserUseUserActionCaptureError("unsupported_control");
+    throw new BrowserUseUserActionValidationError("unsupported_control");
   }
   const fields = capturedControls.map((control, index) => {
     const inspection = inspections[index];
     if (!inspection) {
-      throw new BrowserUseUserActionCaptureError("unsupported_control");
+      throw new BrowserUseUserActionValidationError("unsupported_control");
     }
     return {
       backendNodeId: control.backendNodeId,
@@ -962,7 +864,7 @@ async function captureBrowserUseUserActionOnSocket(
     } satisfies BrowserUseUserActionTarget;
   });
   return {
-    pageTargetId: focused.page.targetId,
+    pageTargetId: opened.page.targetId,
     documentLoaderId: frameTree.frameTree.frame.loaderId,
     pageUrl: pageUrl.toString(),
     siteOrigin: pageUrl.origin,
@@ -971,19 +873,22 @@ async function captureBrowserUseUserActionOnSocket(
 }
 
 /**
- * Resolve creation-time selectors once against the one focused top-level page.
- * The returned targets contain no selector or value data.
+ * Validate CLI-resolved creation targets without querying or rediscovering
+ * controls. The returned fingerprints are derived from the current document.
  */
-export async function captureBrowserUseUserAction(
+export async function validateBrowserUseUserAction(
   cdpUrl: string,
-  selectors: readonly string[],
+  target: {
+    readonly pageTargetId: string;
+    readonly backendNodeIds: readonly number[];
+  },
   signal: AbortSignal,
-): Promise<BrowserUseUserActionCapture> {
+): Promise<BrowserUseUserActionValidation> {
   const cdpSignal = browserUseCdpSignal(signal);
   return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    return await captureBrowserUseUserActionOnSocket(
+    return await validateBrowserUseUserActionOnSocket(
       socket,
-      selectors,
+      target,
       cdpSignal,
     );
   });
@@ -1299,41 +1204,6 @@ export async function applyBrowserUseUserAction(
     throw new BrowserUseUserActionMutationError(mutation.writeStarted);
   }
   return operation.value;
-}
-
-export async function activateBrowserUseUserActionTarget(
-  cdpUrl: string,
-  pageTargetId: string,
-  signal: AbortSignal,
-): Promise<"activated" | "stale"> {
-  const cdpSignal = browserUseCdpSignal(signal);
-  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    const targets = browserUseCdpTargetsSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        { id: 1, method: "Target.getTargets", params: {} },
-        cdpSignal,
-      ),
-      { reportInput: true },
-    );
-    if (
-      !targets.targetInfos.some((target) => {
-        return target.type === "page" && target.targetId === pageTargetId;
-      })
-    ) {
-      return "stale";
-    }
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: 2,
-        method: "Target.activateTarget",
-        params: { targetId: pageTargetId },
-      },
-      cdpSignal,
-    );
-    return "activated";
-  });
 }
 
 function disposableBrowserUseTabUrl(url: string): boolean {
