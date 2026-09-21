@@ -18,22 +18,12 @@ use super::cli_framework::{EffectiveCliFramework, effective_cli_framework};
 use super::env::validate_resume_session_id;
 use super::{RunnerError, RunnerResult};
 use crate::restored_session_identity::RestoredSessionIdentity;
-use crate::telemetry::HistoryTransferMeasurements;
+use crate::telemetry::{HistoryCodecDecision, HistoryTransferMeasurements};
 use crate::types::{ExecutionContext, ResumeSessionHistoryRefKind, SandboxReuseResult};
-use api_contracts::generated::constants::runners::paths::{
-    CANONICAL_CODEX_SESSIONS_DIR, CANONICAL_PI_SESSION_DIR,
-};
+use api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR;
 
 const CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR: &str =
     "/home/user/.claude/projects/-home-user-workspace";
-
-pub(super) const fn history_restore_write_root(framework: EffectiveCliFramework) -> &'static str {
-    match framework {
-        EffectiveCliFramework::ClaudeCode => CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR,
-        EffectiveCliFramework::Codex => CANONICAL_CODEX_SESSIONS_DIR,
-        EffectiveCliFramework::Pi => CANONICAL_PI_SESSION_DIR,
-    }
-}
 
 impl RestoredSessionIdentity {
     pub(crate) fn from_context(context: &ExecutionContext) -> Option<Self> {
@@ -151,6 +141,128 @@ pub(super) struct SessionRestoreDiagnostics {
     pub(super) session_id: String,
     pub(super) bytes_in: usize,
     pub(super) transfer: HistoryTransferMeasurements,
+}
+
+#[derive(Debug)]
+pub(super) struct FreshSessionRestorePlan {
+    final_path: String,
+    framework: &'static str,
+    session_id: String,
+    compression: sandbox::FileCompression,
+    codec_decision: HistoryCodecDecision,
+    selection_elapsed: std::time::Duration,
+}
+
+impl FreshSessionRestorePlan {
+    pub(super) fn final_path(&self) -> &str {
+        &self.final_path
+    }
+
+    pub(super) async fn write_to(
+        &self,
+        sandbox: &dyn Sandbox,
+        path: &str,
+        session: &MaterializedResumeSession,
+    ) -> RunnerResult<HistoryTransferMeasurements> {
+        let wire = sandbox
+            .write_file_with_compression(path, session.history_bytes(), self.compression)
+            .await
+            .map_err(RunnerError::Sandbox)?;
+        Ok(HistoryTransferMeasurements::new(
+            self.compression,
+            self.codec_decision,
+            self.selection_elapsed,
+            session.history_bytes().len(),
+            session.codex_zstd_history().is_some(),
+            wire,
+        ))
+    }
+
+    pub(super) async fn write_final(
+        &self,
+        sandbox: &dyn Sandbox,
+        context: &ExecutionContext,
+        session: &MaterializedResumeSession,
+    ) -> RunnerResult<SessionRestoreDiagnostics> {
+        let transfer = self.write_to(sandbox, &self.final_path, session).await?;
+        Ok(self.complete(context, session, transfer))
+    }
+
+    pub(super) fn complete(
+        &self,
+        context: &ExecutionContext,
+        session: &MaterializedResumeSession,
+        transfer: HistoryTransferMeasurements,
+    ) -> SessionRestoreDiagnostics {
+        let diagnostics = SessionRestoreDiagnostics {
+            framework: self.framework,
+            session_id: self.session_id.clone(),
+            bytes_in: session.history_bytes().len(),
+            transfer,
+        };
+        info!(
+            run_id = %context.run_id,
+            framework = diagnostics.framework,
+            session_id = %diagnostics.session_id,
+            bytes_in = diagnostics.bytes_in,
+            "restored session history",
+        );
+        diagnostics
+    }
+}
+
+pub(super) fn plan_fresh_session_restore(
+    context: &ExecutionContext,
+    session: &MaterializedResumeSession,
+    sandbox_reuse_result: SandboxReuseResult,
+) -> RunnerResult<Option<FreshSessionRestorePlan>> {
+    if sandbox_reuse_result == SandboxReuseResult::Reused {
+        return Ok(None);
+    }
+    if !is_valid_cli_agent_session_id(session.cli_agent_session_id()) {
+        return Err(RunnerError::Internal("invalid session_id".into()));
+    }
+    let selection_started = Instant::now();
+    let (compression, codec_decision) = compression::select(session);
+    let selection_elapsed = selection_started.elapsed();
+    let (framework, session_id, final_path) = match effective_cli_framework(&context.cli_agent_type)
+    {
+        EffectiveCliFramework::ClaudeCode => {
+            if !matches!(context.cli_agent_type.as_str(), "" | "claude-code") {
+                warn!(
+                    run_id = %context.run_id,
+                    framework = %context.cli_agent_type,
+                    "restoring session as claude-code for unknown framework"
+                );
+            }
+            let session_id = session.cli_agent_session_id().to_string();
+            (
+                "claude-code",
+                session_id.clone(),
+                format!("{CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR}/{session_id}.jsonl"),
+            )
+        }
+        EffectiveCliFramework::Pi => {
+            let session_id = session.cli_agent_session_id().to_string();
+            (
+                "pi",
+                session_id.clone(),
+                format!("{CANONICAL_PI_SESSION_DIR}/restored-{session_id}.jsonl"),
+            )
+        }
+        EffectiveCliFramework::Codex => {
+            let (session_id, final_path) = codex::fresh_codex_session_target(session)?;
+            ("codex", session_id, final_path)
+        }
+    };
+    Ok(Some(FreshSessionRestorePlan {
+        final_path,
+        framework,
+        session_id,
+        compression,
+        codec_decision,
+        selection_elapsed,
+    }))
 }
 
 pub(super) async fn restore_session(

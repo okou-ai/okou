@@ -354,59 +354,6 @@ pub(crate) fn build_storage_plan(
 }
 
 impl StoragePlan {
-    /// Build the bounded observation descriptor from the complete semantic write set.
-    ///
-    /// Whole operation roots are intentionally conservative. The descriptor is consumed only by
-    /// a serial pre-mutation observation and does not authorize concurrent filesystem work.
-    pub(crate) fn history_overlap_shadow(
-        &self,
-        history_root: &str,
-    ) -> Result<wire::HistoryOverlapShadow, String> {
-        let mut seen = HashSet::new();
-        let mut roots = Vec::new();
-        let mut push = |path: &str| {
-            if seen.insert(path.to_string()) {
-                roots.push(path.to_string());
-            }
-        };
-
-        for path in &self.cleanup_paths {
-            push(path);
-        }
-        for cleanup in &self.instruction_cleanups {
-            push(&cleanup.mount_path);
-        }
-        for entry in &self.storages {
-            match &entry.action {
-                StorageAction::Download { .. } => push(&entry.mount_path),
-                StorageAction::ReuseExisting => {}
-                StorageAction::DownloadAndNormalize { .. } => {
-                    if let Some(extract_path) = entry.extract_path.as_deref() {
-                        push(extract_path);
-                        let extract_path = std::path::Path::new(extract_path);
-                        if extract_path
-                            .parent()
-                            .and_then(std::path::Path::file_name)
-                            .and_then(|name| name.to_str())
-                            == Some("storage-instructions")
-                            && let Some(parent) =
-                                extract_path.parent().and_then(|path| path.to_str())
-                        {
-                            push(parent);
-                        }
-                    }
-                    push(&entry.mount_path);
-                }
-                StorageAction::NormalizeInPlace => push(&entry.mount_path),
-            }
-        }
-        for entry in &self.artifacts {
-            push(&entry.mount_path);
-        }
-
-        wire::HistoryOverlapShadow::new(history_root.to_string(), roots)
-    }
-
     pub(crate) fn decoded_prepared(&self) -> bool {
         self.decoded_prepared
     }
@@ -451,7 +398,6 @@ impl StoragePlan {
             artifacts: Vec::new(),
             cleanup_paths: Vec::new(),
             instruction_cleanups: Vec::new(),
-            history_overlap_shadow: None,
         };
         let bytes = serde_json::to_vec(&manifest)
             .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?;
@@ -722,7 +668,6 @@ impl StoragePlan {
                     target_filename: entry.target_filename,
                 })
                 .collect(),
-            history_overlap_shadow: None,
         }
     }
 

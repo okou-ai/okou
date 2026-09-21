@@ -6,6 +6,10 @@ import {
   ONBOARDING_INDUSTRY_IDS,
   type OnboardingIndustry,
 } from "@okouai/core/onboarding-industry";
+import {
+  captureSourceOnboardingPromptEdited$,
+  captureSourceOnboardingStartClicked$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
@@ -43,6 +47,8 @@ export function OnboardingReadyPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("ready");
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
+  const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const pageSignal = useGet(pageSignal$);
@@ -85,14 +91,14 @@ export function OnboardingReadyPage() {
    * their run goes straight to the prompt. When completion fails the rejected
    * command keeps the user on this step, with the button ready to try again.
    */
-  const completeAndRun = async (): Promise<void> => {
+  const completeAndRun = async (request: string): Promise<void> => {
     if (flow.flow === "owner") {
       await complete(
         searchParams.get("redeemCode")?.trim() || null,
         pageSignal,
       );
     }
-    runPrompt(text.trim());
+    runPrompt(request);
   };
 
   return (
@@ -109,7 +115,10 @@ export function OnboardingReadyPage() {
         return $.onboarding.sourcesFirst.welcome.start;
       })}
       onPrimary={() => {
-        detach(completeAndRun(), Reason.DomCallback);
+        const request = text.trim();
+        // The request's length, never the request itself.
+        captureStartClicked(request.length);
+        detach(completeAndRun(request), Reason.DomCallback);
       }}
       primaryDisabled={text.trim().length === 0}
       primaryBusy={completeLoadable.state === "loading"}
@@ -163,6 +172,7 @@ export function OnboardingReadyPage() {
                 startingPromptKey: promptKey,
                 startingPromptDraft: event.target.value,
               });
+              capturePromptEdited(event.target.value.length);
             }}
           />
         </div>

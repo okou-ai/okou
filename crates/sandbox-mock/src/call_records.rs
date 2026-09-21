@@ -200,6 +200,24 @@ pub struct WriteFileCall {
     pub content: Vec<u8>,
 }
 
+/// Owned staged-file disposition recorded by the mock.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StagedFileDispositionCall {
+    /// Publish to the recorded final guest path.
+    Publish { destination: String },
+    /// Remove the staging file without publication.
+    Discard,
+}
+
+/// Captured staged-file finalizer request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FinalizeStagedFileCall {
+    /// Guest staging path supplied by the caller.
+    pub staging_path: String,
+    /// Requested terminal disposition.
+    pub disposition: StagedFileDispositionCall,
+}
+
 /// Captured `write_files` batch request fields recorded for test assertions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteFilesCall {

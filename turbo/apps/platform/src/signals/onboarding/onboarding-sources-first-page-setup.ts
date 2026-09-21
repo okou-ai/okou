@@ -14,9 +14,11 @@ import {
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { connectorCatalogStatus$ } from "../external/connectors.ts";
+import { sendEvent$ } from "../marketing/events.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
@@ -26,6 +28,7 @@ import {
   setupOnboardingMakePage$,
 } from "./onboarding-page-setup.ts";
 import {
+  claimSourcesFirstStartEvent$,
   setSourcesFirstFlow$,
   sourcesFirstDraft$,
   sourcesFirstSteps,
@@ -92,6 +95,12 @@ function createSourcesFirstPageSetup(
       return;
     }
 
+    // The run started, whichever step this setup ended up on: a guard redirect
+    // below, or the way back, still belongs to the same run.
+    if (set(claimSourcesFirstStartEvent$)) {
+      set(sendEvent$, "onboarding-start");
+    }
+
     // A member invited into an existing org runs the flow without the invite
     // and Slack steps.
     const flow = status.isAdmin ? "owner" : "member";
@@ -120,6 +129,7 @@ function createSourcesFirstPageSetup(
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
     await set(hideAppSkeleton$, signal);
+    set(captureSourceOnboardingStepViewed$, config.step);
   });
 }
 

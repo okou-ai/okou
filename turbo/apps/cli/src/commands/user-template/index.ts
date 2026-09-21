@@ -151,7 +151,7 @@ const publishCommand = new Command()
   .addHelpText(
     "after",
     `
-This is the publish step, not page rendering. First follow the authoritative reverse-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document has one --cover and --page-count instead, and an illustration has neither. publish uploads the original file, any page PNGs, the cover, and the guidance package, then commits them together.
+This is the publish step, not page rendering. First follow the authoritative extract-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document has one --cover and --page-count instead, and an illustration has neither. publish uploads the original file, any page PNGs, the cover, and the guidance package, then commits them together.
 
 A document published without --cover still appears under Custom; the catalog names it by its file rather than showing its first page.
 
