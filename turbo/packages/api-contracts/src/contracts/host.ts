@@ -248,38 +248,6 @@ const creationRoute = {
 } as const;
 
 export const hostContract = c.router({
-  privatePreview: {
-    method: "GET",
-    path: "/api/host/private-deployments/:deploymentId/preview",
-    pathParams: z.object({ deploymentId: z.string().uuid() }),
-    headers: authHeadersSchema,
-    responses: {
-      200: z.object({
-        url: z.string().url(),
-        expiresAt: z.string().datetime(),
-      }),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Authorize an isolated private HTML preview",
-  },
-  privateView: {
-    method: "GET",
-    path: "/api/host/private-deployments/:deploymentId/view",
-    pathParams: z.object({ deploymentId: z.string().uuid() }),
-    headers: authHeadersSchema,
-    responses: {
-      302: c.otherResponse({ contentType: "text/plain", body: z.unknown() }),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Redirect an authorized owner to isolated HTML content",
-  },
-
   prepare: creationRoute,
   preparePrivate: {
     ...creationRoute,

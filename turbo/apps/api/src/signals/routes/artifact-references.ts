@@ -1,14 +1,9 @@
 import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
 import {
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  hostedSites,
-  privateHostedDeployments,
-} from "@okouai/db/runtime/hosted-site";
 import { notFound } from "../../lib/error";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -17,7 +12,6 @@ import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
-import { createPrivateHostedPreview$ } from "../services/private-hosted-preview.service";
 import {
   resolveArtifactShare$,
   resolveArtifactTargetShare$,
@@ -85,74 +79,6 @@ const resolveFileReference$ = command(
   },
 );
 
-const resolveHostedReference$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly id: string;
-      readonly ownerKind: "file" | "html" | "artifact" | undefined;
-    },
-    signal: AbortSignal,
-  ) => {
-    const { id, ownerKind } = args;
-    const auth = get(authContext$);
-    const [site] = await get(db$)
-      .select({ deployment: privateHostedDeployments })
-      .from(privateHostedDeployments)
-      .innerJoin(
-        hostedSites,
-        eq(hostedSites.id, privateHostedDeployments.siteId),
-      )
-      .where(
-        and(eq(privateHostedDeployments.id, id), isNull(hostedSites.deletedAt)),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (site) {
-      if (ownerKind === "file") {
-        return notFound("Artifact unavailable");
-      }
-      const deployment = site.deployment;
-      if (
-        deployment.userId !== auth.userId ||
-        deployment.orgId !== auth.orgId
-      ) {
-        if (ownerKind) {
-          return notFound("Artifact unavailable");
-        }
-        const shared = await set(
-          resolveArtifactTargetShare$,
-          {
-            target: { kind: "html", id },
-            targetId: deployment.siteId,
-            userId: auth.userId,
-          },
-          signal,
-        );
-        return shared
-          ? { status: 200 as const, body: shared }
-          : notFound("Artifact unavailable");
-      }
-      const preview = await set(
-        createPrivateHostedPreview$,
-        { deploymentId: id, userId: auth.userId, orgId: deployment.orgId },
-        signal,
-      );
-      return preview
-        ? {
-            status: 200 as const,
-            body: {
-              ...preview,
-              filename: "index.html",
-              contentType: "text/html",
-              target: { kind: "html" as const, id },
-            },
-          }
-        : notFound("Artifact unavailable");
-    }
-    return null;
-  },
-);
 
 const resolveReference$ = command(
   async (
@@ -211,14 +137,6 @@ const resolveReference$ = command(
     }
     if (targetKind === "file") {
       return notFound("Artifact unavailable");
-    }
-    const hosted = await set(
-      resolveHostedReference$,
-      { id, ownerKind },
-      signal,
-    );
-    if (hosted) {
-      return hosted;
     }
     if (targetKind || ownerKind) {
       return notFound("Artifact unavailable");

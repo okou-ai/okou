@@ -614,7 +614,6 @@ function artifactPreviewArgs(
     contentType: "text/html",
     publicBrand: deployment.publicBrand,
     deploymentId: deployment.id,
-    privateHosted: deployment.manifest.access === "owner-private-v1",
   };
 }
 

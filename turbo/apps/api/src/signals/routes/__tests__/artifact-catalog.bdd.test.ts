@@ -893,78 +893,6 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual(expect.arrayContaining([first.siteId, secondChat.siteId]));
   }, 180_000);
 
-  it("allocates new sites for a name already used by an organization-scoped site", async () => {
-    const owner = await catalogActor(
-      "Artifact catalog mixed-scope hosted owner",
-      bdd.user(),
-    );
-    host.captureHostedSitesS3();
-    const site = `catalog-mixed-scope-${randomUUID().slice(0, 8)}`;
-
-    const organizationSite = await publishHostedSiteFromDirectRun({
-      owner,
-      site,
-    });
-    const chatSite = await publishHostedSite({
-      owner,
-      site,
-      claimRun: false,
-    });
-    const secondOrganizationSite = await publishHostedSiteFromDirectRun({
-      owner,
-      site,
-      runId: organizationSite.runId,
-    });
-    expect(
-      new Set([
-        organizationSite.siteId,
-        chatSite.siteId,
-        secondOrganizationSite.siteId,
-      ]).size,
-    ).toBe(3);
-    expect(chatSite.publicSlug).toMatch(
-      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
-    );
-    expect(secondOrganizationSite.publicSlug).toMatch(
-      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
-    );
-    expect(secondOrganizationSite.publicSlug).not.toBe(chatSite.publicSlug);
-
-    const originalHistory = await chat.readHostedSiteDeploymentsWithBearer(
-      `Bearer ${scopedOkouToken(owner, organizationSite.runId, ["host:read"])}`,
-      organizationSite.publicSlug,
-    );
-    expect(originalHistory).toMatchObject({
-      siteId: organizationSite.siteId,
-      publicSlug: organizationSite.publicSlug,
-      activeDeploymentVersion: 1,
-    });
-    expect(originalHistory.deployments).toHaveLength(1);
-    await accept(
-      setupApp({ context, routes: hostRoutes })(hostContract).deployments({
-        headers: {
-          authorization: `Bearer ${scopedOkouToken(owner, chatSite.runId, ["host:read"])}`,
-        },
-        params: { site: organizationSite.publicSlug },
-      }),
-      [404],
-    );
-
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(catalog.artifacts).toHaveLength(3);
-    expect(catalog.artifacts).toStrictEqual(
-      expect.arrayContaining(
-        [organizationSite, chatSite, secondOrganizationSite].map(
-          (published) => {
-            return expect.objectContaining({
-              kind: "hosted-site",
-              title: published.publicSlug,
-            });
-          },
-        ),
-      ),
-    );
-  }, 180_000);
 
   it("catalogues a published deck as a presentation", async () => {
     const owner = await catalogActor("Artifact catalog deck owner");
@@ -1019,42 +947,6 @@ describe("GET /api/artifacts/catalog", () => {
     );
   }, 180_000);
 
-  it("keeps hosted artifacts with their original owner when a colleague publishes", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const firstOwner = await catalogActor(
-      "Artifact catalog first org member",
-      bdd.user({ orgId, orgRole: "org:admin" }),
-    );
-    const secondOwner = await catalogActor(
-      "Artifact catalog second org member",
-      bdd.user({ orgId, orgRole: "org:member" }),
-      { bootstrapOrg: false },
-    );
-    const site = `catalog-shared-${randomUUID().slice(0, 8)}`;
-    const firstDeployment = await publishHostedSiteFromDirectRun({
-      owner: firstOwner,
-      site,
-    });
-    const secondDeployment = await publishHostedSiteFromDirectRun({
-      owner: secondOwner,
-      site,
-    });
-    expect(secondDeployment.siteId).not.toBe(firstDeployment.siteId);
-    expect(secondDeployment.publicSlug).toMatch(
-      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
-    );
-    const firstCatalog = await chat.listArtifactCatalog(firstOwner.actor);
-    expect(firstCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({ kind: "hosted-site", title: site }),
-    ]);
-    const secondCatalog = await chat.listArtifactCatalog(secondOwner.actor);
-    expect(secondCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "hosted-site",
-        title: secondDeployment.publicSlug,
-      }),
-    ]);
-  }, 180_000);
 
   it("filters by kind without leaking other kinds", async () => {
     const owner = await catalogActor("Artifact catalog filter owner");
