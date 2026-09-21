@@ -89,27 +89,29 @@ impl BlankPoolDiagnostics {
             return BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape);
         }
 
-        let budget_allocated = budget.allocated();
-        match &*self.lock_state() {
+        let (reason, observed_revision, observed_budget) = match &*self.lock_state() {
             BlankPoolObservedState::Ready => {
-                BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory)
+                return BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory);
             }
             BlankPoolObservedState::Preparing(cancel) if cancel.is_cancelled() => {
-                BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
+                return BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted);
             }
             BlankPoolObservedState::Preparing(_) => {
-                BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
+                return BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress);
             }
             BlankPoolObservedState::Suppressed {
                 reason,
                 pool_revision: observed_revision,
                 budget_allocated: observed_budget,
-            } if *observed_revision == pool_revision && *observed_budget == budget_allocated => {
-                BlankPoolSelection::Miss(*reason)
+            } => (*reason, *observed_revision, *observed_budget),
+            BlankPoolObservedState::Unknown => {
+                return BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown);
             }
-            BlankPoolObservedState::Suppressed { .. } | BlankPoolObservedState::Unknown => {
-                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
-            }
+        };
+        if observed_revision == pool_revision && observed_budget == budget.allocated() {
+            BlankPoolSelection::Miss(reason)
+        } else {
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
         }
     }
 
