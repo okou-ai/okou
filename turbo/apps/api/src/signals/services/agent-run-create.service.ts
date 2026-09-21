@@ -387,6 +387,7 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
+  checkRunModelFeatureAdmission,
   checkOrgPlanRunAdmission,
   checkOrgCreditsForRunAdmission,
   checkResolvedOrgCreditsForRunAdmission,
@@ -9042,6 +9043,23 @@ async function commitPreparedLaunchUnderLock(
   args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
 ): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
+  const featureGate = await args.timing.measure(
+    "api_dispatch_check_model_feature",
+    "nested",
+    async () => {
+      return await checkRunModelFeatureAdmission({
+        db: tx,
+        orgId: args.createArgs.orgId,
+        userId: args.createArgs.userId,
+        selectedModel:
+          args.context.modelProvider?.selectedModel ??
+          args.createArgs.selectedModelOverride,
+      });
+    },
+  );
+  if (featureGate) {
+    return featureGate;
+  }
   const officialAdmissionFailure = await args.timing.measure(
     "api_dispatch_validate_official_workflow_admission",
     "nested",

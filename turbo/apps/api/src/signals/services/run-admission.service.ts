@@ -2,8 +2,13 @@ import {
   isBuiltInModelProviderType,
   getRunModelAccess,
   getRunModelRouteAccess,
+  isOkouRunModel,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isRunModelAvailable,
+  RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE,
+} from "@okouai/core/run-model-availability";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -27,6 +32,7 @@ import {
   resolveUsageAllowanceAvailability,
   resolveUsageAllowanceAvailabilityForLockedOrg,
 } from "./usage-allowance.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
@@ -51,6 +57,25 @@ export interface RunCreditAdmissionState {
   readonly orgId: string;
   readonly status: typeof agentRuns.$inferSelect.status;
   readonly creditAdmitted: boolean;
+}
+
+export async function checkRunModelFeatureAdmission(params: {
+  readonly db: Pick<Db, "select">;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly selectedModel: string | null | undefined;
+}): Promise<ReturnType<typeof badRequestMessage> | undefined> {
+  if (!isOkouRunModel(params.selectedModel)) {
+    return undefined;
+  }
+  const context = await loadUserFeatureSwitchContext(
+    params.db,
+    params.orgId,
+    params.userId,
+  );
+  return isRunModelAvailable(params.selectedModel, context)
+    ? undefined
+    : badRequestMessage(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
 }
 
 export function runHasActiveCreditAdmission(
