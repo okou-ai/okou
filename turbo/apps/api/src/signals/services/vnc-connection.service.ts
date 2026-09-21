@@ -6,6 +6,7 @@ import type {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq } from "drizzle-orm";
@@ -16,6 +17,7 @@ import {
   canonicalizeVncHost,
   isVncProfileCompatible,
   prepareVncSecurity,
+  prepareVncTransport,
   vncFailure,
   type VncResult,
   type VncTransaction,
@@ -36,6 +38,9 @@ const metadata = Object.freeze({
   displayName: vncConnections.displayName,
   host: vncConnections.host,
   port: vncConnections.port,
+  transportType: vncConnections.transportType,
+  sshConnectionId: vncConnections.sshConnectionId,
+  x509ServerName: vncConnections.x509ServerName,
   credentialId: vncConnections.credentialId,
   authMethod: vncConnections.authMethod,
   securityType: vncConnections.securityType,
@@ -74,15 +79,41 @@ function response(
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
   }
+  if (
+    (row.transportType === "direct" && row.sshConnectionId !== null) ||
+    (row.transportType === "ssh" && row.sshConnectionId === null)
+  ) {
+    throw new Error("VNC connection has an invalid stored transport");
+  }
   const trust =
     row.trustMode === "custom_ca" && row.caBundle !== null
       ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
       : ({ mode: "system" } as const);
   const security =
     row.securityType === "x509_plain"
-      ? ({ type: "x509_plain", trust } as const)
-      : ({ type: "x509_vnc", trust } as const);
+      ? ({
+          type: "x509_plain",
+          trust,
+          ...(row.x509ServerName === null
+            ? {}
+            : { serverName: row.x509ServerName }),
+        } as const)
+      : ({
+          type: "x509_vnc",
+          trust,
+          ...(row.x509ServerName === null
+            ? {}
+            : { serverName: row.x509ServerName }),
+        } as const);
   return {
+    ...(row.transportType === "ssh" && row.sshConnectionId !== null
+      ? {
+          transport: {
+            type: "ssh" as const,
+            connectionId: row.sshConnectionId,
+          },
+        }
+      : {}),
     id: row.id,
     displayName: row.displayName,
     host: row.host,
@@ -94,6 +125,26 @@ function response(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function hasOwnedSshConnection(
+  tx: VncTransaction,
+  owner: VncOwner,
+  connectionId: string,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: sshConnections.id })
+    .from(sshConnections)
+    .where(
+      and(
+        eq(sshConnections.id, connectionId),
+        eq(sshConnections.orgId, owner.orgId),
+        eq(sshConnections.userId, owner.userId),
+      ),
+    )
+    .limit(1)
+    .for("key share");
+  return row !== undefined;
 }
 
 export async function listVncConnections(
@@ -194,6 +245,10 @@ export async function createVncConnection(args: {
   if (!security.ok) {
     return security;
   }
+  const transport = prepareVncTransport(args.body.transport, host.value);
+  if (!transport.ok) {
+    return transport;
+  }
   if (
     "create" in args.body.credential &&
     !isVncProfileCompatible(
@@ -223,6 +278,12 @@ export async function createVncConnection(args: {
     }
     if (!creation.value) {
       return { ok: true as const, value: undefined };
+    }
+    if (
+      transport.value.sshConnectionId !== null &&
+      !(await hasOwnedSshConnection(tx, owner, transport.value.sshConnectionId))
+    ) {
+      return vncFailure("sshConnectionNotFound");
     }
     const credential = await selectVncCredential(tx, owner, preparedCredential);
     if (!credential.ok) {
@@ -261,6 +322,7 @@ export async function createVncConnection(args: {
         displayName: args.body.displayName,
         host: host.value,
         port: args.body.port,
+        ...transport.value,
         credentialId: credential.value.id,
         authMethod: credential.value.authMethod,
         ...security.value,
@@ -342,6 +404,24 @@ export async function updateVncConnection(args: {
     }
     const newHost = host?.value ?? current.host;
     const newPort = args.body.port ?? current.port;
+    const requestedTransport =
+      args.body.transport ??
+      (current.transportType === "ssh" && current.sshConnectionId !== null
+        ? ({
+            type: "ssh",
+            connectionId: current.sshConnectionId,
+          } as const)
+        : ({ type: "direct" } as const));
+    const transport = prepareVncTransport(requestedTransport, newHost);
+    if (!transport.ok) {
+      return transport;
+    }
+    if (
+      transport.value.sshConnectionId !== null &&
+      !(await hasOwnedSshConnection(tx, owner, transport.value.sshConnectionId))
+    ) {
+      return vncFailure("sshConnectionNotFound");
+    }
     const securityType = security?.value.securityType ?? current.securityType;
     const credential = await selectUpdateVncCredential({
       tx,
@@ -359,6 +439,7 @@ export async function updateVncConnection(args: {
         displayName: args.body.displayName,
         host: newHost,
         port: newPort,
+        ...transport.value,
         credentialId: credential.value.id,
         authMethod: credential.value.authMethod,
         ...security?.value,

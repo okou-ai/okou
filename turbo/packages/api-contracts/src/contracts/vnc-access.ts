@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { vncConnectionResponseSchema } from "./vnc-connections";
+import { vncConnectionMetadataSchema } from "./vnc-connections";
 
 const c = initContract();
 const agentPath = z.object({ agentId: z.uuid() }).strict();
@@ -15,7 +15,7 @@ const errors = {
   500: apiErrorSchema,
 };
 
-const vncHostBaseSchema = vncConnectionResponseSchema.pick({
+const vncHostBaseSchema = vncConnectionMetadataSchema.pick({
   id: true,
   displayName: true,
   host: true,

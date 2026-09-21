@@ -51,6 +51,13 @@ Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
 creating an implicit downgrade path.
 
+Saved owner configuration also has an outer direct/SSH transport discriminator.
+This authority slice resolves only direct rows. An authorized SSH-backed row
+returns `unsupported_profile` before trust parsing or KMS decryption; it never
+falls back to the VNC destination as public TCP. The typed SSH reference and
+optional certificate server identity remain private saved metadata until the
+combined VNC/SSH Runner capability is delivered.
+
 A resolved response contains host, port, typed authentication/security and
 `generation`, matching SSH's connection identity. Generation changes on credential
 rotation, rebinding or connection edits.
@@ -134,6 +141,14 @@ contract rejects the added advertised profile. A new Runner also rejects
 malformed or cross-paired responses before DNS; there is no fallback to classic
 authentication. No database migration, stored-data rewrite, guest RPC change or
 feature activation is part of this extension.
+
+For saved SSH transport, apply the generated SSH owner-key migration before the
+generated VNC route migration, then deploy the typed-route owner API before
+admitting tunneled rows. Current Runners fail closed on those rows before KMS.
+After the first SSH-backed row exists, do not roll the API below the typed-route
+reader/writer; disabling `VncAccess` preserves data and does not make that
+rollback safe. Runner tunnel composition and product exposure require their own
+later rollout evidence.
 
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new

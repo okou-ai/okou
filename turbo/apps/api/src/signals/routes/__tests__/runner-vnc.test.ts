@@ -3,15 +3,18 @@ import {
   runnerVncContract,
   type RunnerVncCheckRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
+import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { inlineSshKey } from "./helpers/ssh-credential";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -274,6 +277,41 @@ describe("private Runner VNC authority", () => {
       expect(result.status).toBe(400);
     }
     expect(kms.decryptCalls).toBe(0);
+  });
+
+  it("refuses saved SSH transport before decrypting VNC credentials", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [200],
+    );
+    const kms = useSecretKmsProbe();
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "unsupported_profile",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    expect((await check(f, 2)).body).toStrictEqual({ outcome: "valid" });
   });
 
   it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {

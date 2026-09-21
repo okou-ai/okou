@@ -1,0 +1,7 @@
+ALTER TABLE "vnc_connections" ADD COLUMN "transport_type" varchar(16) DEFAULT 'direct' NOT NULL;--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD COLUMN "ssh_connection_id" uuid;--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD COLUMN "x509_server_name" varchar(253);--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD CONSTRAINT "vnc_connections_ssh_owner_fk" FOREIGN KEY ("ssh_connection_id","org_id","user_id") REFERENCES "public"."ssh_connections"("id","org_id","user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_vnc_connections_ssh" ON "vnc_connections" USING btree ("ssh_connection_id","id");--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD CONSTRAINT "chk_vnc_connections_transport" CHECK (("vnc_connections"."transport_type" = 'direct' AND "vnc_connections"."ssh_connection_id" IS NULL) OR ("vnc_connections"."transport_type" = 'ssh' AND "vnc_connections"."ssh_connection_id" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD CONSTRAINT "chk_vnc_connections_x509_server_name" CHECK ("vnc_connections"."x509_server_name" IS NULL OR (char_length("vnc_connections"."x509_server_name") BETWEEN 1 AND 253 AND "vnc_connections"."x509_server_name" = lower("vnc_connections"."x509_server_name") AND "vnc_connections"."x509_server_name" !~ '[[:space:]/@?#%\[\]\\]'));

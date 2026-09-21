@@ -50,11 +50,24 @@ Hosts contain a canonical DNS name or IP address, a port (default 5900), a
 credential selection and explicit `security`. Owner configuration accepts
 `{ type: "x509_vnc", trust }` and `{ type: "x509_plain", trust }`; trust is
 either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
+Each security variant may also carry `serverName`, a separately canonicalized
+DNS name or IP identity for future certificate verification. Omitting it means
+use the saved VNC host; it never replaces the socket destination.
 The exact stored pairs are `vnc_password` / `x509_vnc` and
 `username_password` / `x509_plain`.
 A custom bundle is at most 64 KiB and contains at most eight public CA
 certificates. Private keys, non-CA certificates, malformed material and insecure
 trust modes are rejected. Saving configuration does not dial or verify the host.
+
+Connection create and update accept an optional strict outer `transport`:
+`{ type: "direct" }` or `{ type: "ssh", connectionId }`. Omission on create
+means direct and omission on update preserves the current transport. SSH
+references must belong to the same organization/user owner and are deleted only
+after every VNC reference is reassigned or removed. Direct metadata retains its
+legacy response shape; SSH metadata includes the typed reference. Private and
+loopback literal VNC destinations require SSH transport. The current Runner
+returns `unsupported_profile` for every saved SSH route before VNC credential
+decryption; tunnel composition remains a later delivery slice.
 
 Connection creation accepts either `credential: { id }` or
 `credential: { create: { name, authentication } }`. Inline credential and host
@@ -99,6 +112,8 @@ needed to verify the server. Custom trust accepts at most eight CA certificates
 and 64 KiB; do not paste private keys or leaf server certificates. The server
 certificate must identify the configured hostname or IP address. Saving a host
 records configuration; it does not test reachability or authenticate a session.
+The current app does not expose the saved SSH transport or separate certificate
+identity controls; those remain behind later UI/runtime delivery.
 
 Adding the first VNC host automatically grants access to every Agent currently
 visible to the owner, including another workspace member's public Agents. The
@@ -145,8 +160,9 @@ The only VNC encrypted field is
 `vnc_credentials.encrypted_password`. It uses the existing stored-secret KMS
 envelope. Passwords and ciphertext never appear in owner responses; current API
 configuration paths do not decrypt them. The private Runner resolve endpoint
-decrypts only after current authorization and profile validation. Usernames and
-public CA certificates are stored as public configuration. The active KMS
+decrypts only after current authorization and profile validation. Usernames,
+SSH connection references, certificate server identities and public CA
+certificates are stored as public configuration. The active KMS
 recovery verifier includes this field and accepts
 retained snapshots that predate the VNC table. If the table exists, its exact
 primary key and password column are required and every ciphertext is checked
@@ -188,8 +204,10 @@ authentication method explicitly; a same-row check and composite credential
 foreign key enforce both pair and reference compatibility. Unknown methods,
 profiles and unsupported trust shapes are rejected, with no implicit default.
 
-Credentialless, client-certificate and tunnel profiles must add their own
-validated variants and matching runtime support. Their credential requirements
+Credentialless and client-certificate profiles must add their own validated
+variants and matching runtime support. SSH is a typed outer transport rather
+than a credential or security profile, and its runtime composition is still
+required before use. New credential requirements
 and length limits must not inherit classic VNC's eight-byte limit. Binding or
 changing a credential must remain compatible with every referencing connection;
 authentication changes invalidate those connection generations.
@@ -209,7 +227,7 @@ before KMS. There is no compatibility downgrade.
 
 The authentication roadmap is tracked in
 [#35041](https://github.com/vm0-ai/okou/issues/35041), with separate work for
-standard/VeNCrypt profiles, SSH tunnels, Apple DH, RSA-AES, client certificates,
+standard/VeNCrypt profiles, SSH tunnel runtime, Apple DH, RSA-AES, client certificates,
 SASL and vendor-specific compatibility research. Each implementation must record
 the exact server versions tested and distinguish client authentication, server
 identity verification and full-session encryption.
@@ -231,12 +249,23 @@ is a bounded backfill rather than a policy inference. The final schema requires
 all new writes to select a method explicitly. No VNC credentials, connections or
 Agent grants are deleted or rewritten.
 
+Two later generated migrations establish the SSH route reference in dependency
+order: the first adds the composite SSH connection owner key, and the second adds
+the direct-default transport discriminator, nullable SSH reference, optional
+X.509 server identity, restrictive same-owner foreign key, lookup index and
+shape checks. Existing and old-writer rows remain direct because the database
+default is intentionally retained.
+
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band
 migration, or activate UI or Runner support.
 
 Before enabling the feature, every serving API must include the new owner reader,
 VNC-aware cleanup and the runtime/UI slices required for the selected activation.
+Before any SSH-backed VNC row is admitted, every serving and rollback API must
+understand this transport schema. Once such a row exists, rolling the API below
+the typed-route slice is unsafe: an old writer cannot preserve or validate its
+transport semantics. Disabling the feature does not remove that rollback floor.
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
 that floor requires a separately verified disablement, drain and VNC erasure.
@@ -252,9 +281,10 @@ concurrent first-host creation, live-resource retries, recreation after deletion
 optimistic concurrency, rotation, inline rollback and scoped cleanup through
 production HTTP boundaries.
 The dedicated migration test seeds populated pre-change credentials,
-connections, grants and unrelated owner data, applies all three additive
+connections, grants and unrelated owner data, applies the profile and typed-route
 migrations, and verifies row identity, ciphertext, versions, trust configuration
-and grants are unchanged. It also verifies the exact backfill, absence of a final
-column default, both exact pairs, ownership, credential compatibility, version
-and trust constraints on a disposable schema. Broader API tests and required
-checks run in the PR pipeline.
+and grants are unchanged. It also verifies the authentication backfill, retained
+direct transport default, both exact pairs, same-owner SSH reference, restrictive
+deletion, route/server-identity checks, credential compatibility, version and
+trust constraints on a disposable schema. Broader API tests and required checks
+run in the PR pipeline.

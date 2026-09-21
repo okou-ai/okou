@@ -18,6 +18,7 @@ import {
   sshCredentialFailure,
 } from "./ssh-credential.service";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, asc, count, eq, sql } from "drizzle-orm";
 
 import {
@@ -58,6 +59,11 @@ const SSH_FAILURES = {
     kind: "not_found",
     message: "SSH connection not found",
     code: SSH_ERROR_CODES.CONNECTION_NOT_FOUND,
+  },
+  connectionInUse: {
+    kind: "conflict",
+    message: "SSH connection is used by a VNC connection",
+    code: SSH_ERROR_CODES.CONNECTION_IN_USE,
   },
   generationConflict: {
     kind: "conflict",
@@ -585,9 +591,34 @@ export async function deleteSshConnection(args: {
   const result = await args.db.transaction<SshConnectionResult<undefined>>(
     async (tx) => {
       await lockSshOwner(tx, args);
-      const current = await findOwnerConnection(tx, args);
+      const [current] = await tx
+        .select()
+        .from(sshConnections)
+        .where(
+          and(
+            eq(sshConnections.id, args.connectionId),
+            eq(sshConnections.orgId, args.orgId),
+            eq(sshConnections.userId, args.userId),
+          ),
+        )
+        .limit(1)
+        .for("update");
       if (!current) {
         return failure("notFound");
+      }
+      const [dependent] = await tx
+        .select({ id: vncConnections.id })
+        .from(vncConnections)
+        .where(
+          and(
+            eq(vncConnections.sshConnectionId, current.id),
+            eq(vncConnections.orgId, args.orgId),
+            eq(vncConnections.userId, args.userId),
+          ),
+        )
+        .limit(1);
+      if (dependent) {
+        return failure("connectionInUse");
       }
       const [deleted] = await tx
         .delete(sshConnections)
