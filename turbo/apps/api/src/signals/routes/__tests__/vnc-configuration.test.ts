@@ -233,7 +233,7 @@ describe("VNC owner configuration", () => {
       [201],
     );
 
-    for (const host of ["127.0.0.1", "::ffff:192.168.1.8"]) {
+    for (const host of ["127.0.0.1", "0:0:0:0:0:0:0:1", "::ffff:192.168.1.8"]) {
       const directPrivate = await rawRequest(
         "/api/vnc/connections",
         hostBody(host),

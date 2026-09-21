@@ -25,8 +25,10 @@ import {
   SSH_ERROR_CODES,
   type SshErrorCode,
 } from "@okouai/api-contracts/contracts/ssh-errors";
+import { safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
@@ -76,6 +78,21 @@ function failure(
   reason: keyof typeof SSH_FAILURES,
 ): SshConnectionFailure & { readonly ok: false } {
   return { ok: false, ...SSH_FAILURES[reason] };
+}
+
+function isVncReferenceRestriction(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const { cause } = error;
+  const code = safeSqlStateCode(error);
+  return (
+    (code === "23503" || code === "23001") &&
+    typeof cause === "object" &&
+    cause !== null &&
+    "constraint" in cause &&
+    cause.constraint === "vnc_connections_ssh_owner_fk"
+  );
 }
 
 function canonicalizeIpv6(host: string): string {
@@ -588,8 +605,8 @@ export async function deleteSshConnection(args: {
   readonly userId: string;
   readonly connectionId: string;
 }): Promise<SshConnectionResult<undefined>> {
-  const result = await args.db.transaction<SshConnectionResult<undefined>>(
-    async (tx) => {
+  const transaction = await settle(
+    args.db.transaction<SshConnectionResult<undefined>>(async (tx) => {
       await lockSshOwner(tx, args);
       const [current] = await tx
         .select()
@@ -634,8 +651,15 @@ export async function deleteSshConnection(args: {
         return failure("notFound");
       }
       return { ok: true, value: undefined };
-    },
+    }),
   );
+  if (!transaction.ok) {
+    if (isVncReferenceRestriction(transaction.error)) {
+      return failure("connectionInUse");
+    }
+    throw transaction.error;
+  }
+  const result = transaction.value;
   if (result.ok) {
     await publishSshRuntimeInvalidation(args.db, {
       orgId: args.orgId,

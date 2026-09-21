@@ -187,10 +187,6 @@ function isPrivateIpv6(host: string): boolean {
   if ((first & 0xfe_00) === 0xfc_00 || (first & 0xff_c0) === 0xfe_80) {
     return true;
   }
-  const dottedMapped = host.slice("::ffff:".length);
-  if (host.startsWith("::ffff:") && isIP(dottedMapped) === 4) {
-    return isPrivateIpv4(dottedMapped);
-  }
   const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u.exec(host);
   if (!mapped?.[1] || !mapped[2]) {
     return false;
