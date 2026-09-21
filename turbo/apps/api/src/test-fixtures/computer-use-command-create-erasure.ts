@@ -46,12 +46,16 @@ function assertCommandCreateStatements(args: {
   readonly stopAt: "host_selection" | "insert" | "commit";
 }): void {
   const pathStatements = commandCreateStatements(args.path);
-  const expected =
+  // Derive the stop from the pattern itself: the shared fence prefix decides
+  // how many statements precede this route's own, and that must not be
+  // restated here as an index.
+  const stopIndex =
     args.stopAt === "host_selection"
-      ? pathStatements.slice(0, 7)
+      ? pathStatements.indexOf(HOST_SELECTION)
       : args.stopAt === "insert"
-        ? pathStatements.slice(0, 8)
-        : pathStatements;
+        ? pathStatements.indexOf(COMMAND_INSERT)
+        : pathStatements.length - 1;
+  const expected = pathStatements.slice(0, stopIndex + 1);
   if (args.statements.length !== expected.length) {
     throw new Error(
       `Unexpected computer-use command creation SQL count: ${args.statements.length}; expected ${expected.length}: ${args.statements.join(" | ")}`,

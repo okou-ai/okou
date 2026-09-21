@@ -7,7 +7,9 @@ import { aroundEach, describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import {
+  classifyErasureFenceStatement,
   closeErasureSubjectFixture,
+  erasureFenceStatementKinds,
   removeErasureSubjectsFixture,
   withErasureSubjectClosureCommitBarrierFixture,
 } from "../../../test-fixtures/account-erasure-subject";
@@ -316,29 +318,9 @@ async function captureSqlPath(args: {
 }
 
 function classifySql(statement: string): string {
-  if (statement.startsWith("begin")) {
-    return "BEGIN READ COMMITTED";
-  }
-  if (statement === "commit") {
-    return "COMMIT";
-  }
-  if (statement === "rollback") {
-    return "ROLLBACK";
-  }
-  if (statement.includes("set_config('lock_timeout'")) {
-    return "LOCK TIMEOUT";
-  }
-  if (statement.includes("set_config('statement_timeout'")) {
-    return "STATEMENT TIMEOUT";
-  }
-  if (statement.includes("erasure_isolation_probe")) {
-    return "B1 ISOLATION + FIRST SHARED LOCK";
-  }
-  if (statement.includes("pg_advisory_xact_lock_shared")) {
-    return "B1 SHARED LOCK";
-  }
-  if (statement.includes('from "account_erasure_jobs"')) {
-    return "B1 CLOSED LOOKUP";
+  const fence = classifyErasureFenceStatement(statement);
+  if (fence) {
+    return fence;
   }
   if (
     statement.includes('from "computer_use_commands"') &&
@@ -1590,11 +1572,7 @@ describe("GET /api/computer-use/commands/:commandId account-erasure fence", () =
       });
       expect(sqlShape(open.statements)).toStrictEqual([
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
+        ...erasureFenceStatementKinds("write"),
         "OWNER RUNNING SWEEP SKIP LOCKED",
         "EXACT COMMAND + HOST PROJECTION LIMIT 1",
         "COMMIT",
@@ -1604,20 +1582,12 @@ describe("GET /api/computer-use/commands/:commandId account-erasure fence", () =
       );
       expect(sqlShape(closed.statements)).toStrictEqual([
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
+        ...erasureFenceStatementKinds("write"),
         "COMMIT",
       ]);
       expect(sqlShape(maintained.statements)).toStrictEqual([
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
+        ...erasureFenceStatementKinds("write"),
         "OWNER RUNNING SWEEP SKIP LOCKED",
         "TIMEOUT UPDATE RETURNING",
         "TIMEOUT AUDIT INSERT",
@@ -1626,11 +1596,7 @@ describe("GET /api/computer-use/commands/:commandId account-erasure fence", () =
       ]);
       expect(sqlShape(variableMaintenance.statements)).toStrictEqual([
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
+        ...erasureFenceStatementKinds("write"),
         "OWNER RUNNING SWEEP SKIP LOCKED",
         "TIMEOUT UPDATE RETURNING",
         "TIMEOUT AUDIT INSERT",
