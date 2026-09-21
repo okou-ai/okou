@@ -4600,6 +4600,7 @@
         "invited": "Diundang",
         "label": "Email rekan kerja",
         "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "notSent": "Tidak terkirim",
         "panelTitle": "Undang rekan kerja",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4607,6 +4608,7 @@
           "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
           "workspace": "Mereka masuk ke workspace ini, dengan sumber yang baru Anda hubungkan."
         },
+        "sending": "Mengirim…",
         "title": "Bawa serta orang-orang yang mengerjakan ini bersama Anda."
       },
       "welcome": {
