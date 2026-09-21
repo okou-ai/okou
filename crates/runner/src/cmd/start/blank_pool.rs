@@ -21,7 +21,7 @@ use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use crate::idle_pool::{DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate};
 use crate::lifecycle::RunnerMode;
 use crate::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
-use crate::resource_budget::{BudgetLease, ResourceBudget};
+use crate::resource_budget::{BudgetLease, ReservationWithHeadroomStatus, ResourceBudget};
 use crate::status::StatusTracker;
 use crate::workspace_mount::ensure_workspace_drive_mounted;
 
@@ -57,7 +57,7 @@ enum BlankPoolObservedState {
     Suppressed {
         reason: BlankPoolSelectionReason,
         pool_revision: u64,
-        budget_allocated: (u32, u32, usize),
+        budget_allocated: Option<(u32, u32, usize)>,
     },
     Unknown,
 }
@@ -108,10 +108,12 @@ impl BlankPoolDiagnostics {
                 return BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown);
             }
         };
-        if observed_revision == pool_revision && observed_budget == budget.allocated() {
-            BlankPoolSelection::Miss(reason)
-        } else {
+        if observed_revision != pool_revision
+            || observed_budget.is_some_and(|observed| observed != budget.allocated())
+        {
             BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
+        } else {
+            BlankPoolSelection::Miss(reason)
         }
     }
 
@@ -127,10 +129,9 @@ impl BlankPoolDiagnostics {
         &self,
         reason: BlankPoolSelectionReason,
         pool: &IdlePool,
-        budget: &ResourceBudget,
+        budget_allocated: Option<(u32, u32, usize)>,
     ) {
         let pool_revision = pool.revision();
-        let budget_allocated = budget.allocated();
         *self.lock_state() = BlankPoolObservedState::Suppressed {
             reason,
             pool_revision,
@@ -177,6 +178,23 @@ struct BlankPrepareInput {
 enum BlankPrepareBudget {
     Available(BudgetLease),
     RetiringExact(Box<IdleDestroyJob>),
+}
+
+#[derive(Clone, Copy)]
+enum BlankRefillSuppression {
+    ResourceUnavailable,
+    HeadroomReserved,
+    MaxIdle,
+}
+
+impl BlankRefillSuppression {
+    const fn selection_reason(self) -> BlankPoolSelectionReason {
+        match self {
+            Self::ResourceUnavailable => BlankPoolSelectionReason::ResourceUnavailable,
+            Self::HeadroomReserved => BlankPoolSelectionReason::HeadroomReserved,
+            Self::MaxIdle => BlankPoolSelectionReason::MaxIdle,
+        }
+    }
 }
 
 enum BackgroundStageResult<T, E> {
@@ -302,7 +320,7 @@ impl BlankPoolReplenisher {
             };
 
             let ordinary_budget = if plan.max_idle > 0 && total_idle >= plan.max_idle {
-                Err(BlankPoolSelectionReason::MaxIdle)
+                Err(BlankRefillSuppression::MaxIdle)
             } else {
                 match ResourceBudget::try_reserve_lease(
                     budget,
@@ -316,9 +334,9 @@ impl BlankPoolReplenisher {
                     }
                     Some(lease) => {
                         drop(lease);
-                        Err(BlankPoolSelectionReason::HeadroomReserved)
+                        Err(BlankRefillSuppression::HeadroomReserved)
                     }
-                    None => Err(BlankPoolSelectionReason::ResourceUnavailable),
+                    None => Err(BlankRefillSuppression::ResourceUnavailable),
                 }
             };
 
@@ -329,7 +347,8 @@ impl BlankPoolReplenisher {
                     BlankPrepareBudget::Available(lease),
                     None,
                 ),
-                Err(reason) => {
+                Err(suppression) => {
+                    let reason = suppression.selection_reason();
                     let Some((job, idle_age)) = pool.evict_oldest_exact_for_blank(
                         Instant::now(),
                         EXACT_IDLE_CAPACITY_YIELD_AGE,
@@ -338,7 +357,34 @@ impl BlankPoolReplenisher {
                         plan.profile.vcpu,
                         plan.profile.memory_mb,
                     ) else {
-                        self.diagnostics.suppressed(reason, &pool, budget);
+                        match suppression {
+                            BlankRefillSuppression::MaxIdle => {
+                                self.diagnostics.suppressed(reason, &pool, None);
+                            }
+                            BlankRefillSuppression::ResourceUnavailable
+                            | BlankRefillSuppression::HeadroomReserved => {
+                                let (status, allocated) = budget.observe_reservation_with_headroom(
+                                    plan.profile.vcpu,
+                                    plan.profile.memory_mb,
+                                    plan.headroom_vcpu,
+                                    plan.headroom_memory_mb,
+                                );
+                                let observed_reason = match status {
+                                    ReservationWithHeadroomStatus::ResourceUnavailable => {
+                                        Some(BlankPoolSelectionReason::ResourceUnavailable)
+                                    }
+                                    ReservationWithHeadroomStatus::HeadroomReserved => {
+                                        Some(BlankPoolSelectionReason::HeadroomReserved)
+                                    }
+                                    ReservationWithHeadroomStatus::Available => None,
+                                };
+                                if observed_reason == Some(reason) {
+                                    self.diagnostics.suppressed(reason, &pool, Some(allocated));
+                                } else {
+                                    self.diagnostics.unknown();
+                                }
+                            }
+                        }
                         info!(
                             target = plan.target,
                             inventory,
@@ -956,24 +1002,43 @@ mod tests {
     fn diagnostics_keep_only_fresh_bounded_suppression() {
         let diagnostics = enabled_diagnostics();
         let pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
-        let budget = ResourceBudget::new(8, 16_384, 1.0, 0);
+        let budget = Arc::new(ResourceBudget::new(8, 16_384, 1.0, 0));
 
         for reason in [
             BlankPoolSelectionReason::ResourceUnavailable,
             BlankPoolSelectionReason::HeadroomReserved,
-            BlankPoolSelectionReason::MaxIdle,
         ] {
-            diagnostics.suppressed(reason, &pool, &budget);
+            diagnostics.suppressed(reason, &pool, Some(budget.allocated()));
             assert_eq!(
                 diagnostics.classify_empty("vm0/default", &None, pool.revision(), &budget,),
                 BlankPoolSelection::Miss(reason)
             );
         }
 
+        diagnostics.suppressed(BlankPoolSelectionReason::MaxIdle, &pool, None);
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        assert_eq!(
+            diagnostics.classify_empty("vm0/default", &None, pool.revision(), &budget),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::MaxIdle)
+        );
+        drop(lease);
+
         diagnostics.suppressed(
             BlankPoolSelectionReason::ResourceUnavailable,
             &pool,
-            &budget,
+            Some(budget.allocated()),
+        );
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        assert_eq!(
+            diagnostics.classify_empty("vm0/default", &None, pool.revision(), &budget),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
+        );
+        drop(lease);
+
+        diagnostics.suppressed(
+            BlankPoolSelectionReason::ResourceUnavailable,
+            &pool,
+            Some(budget.allocated()),
         );
         assert_eq!(
             diagnostics.classify_empty("vm0/default", &None, pool.revision() + 1, &budget,),

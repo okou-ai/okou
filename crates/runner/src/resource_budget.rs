@@ -92,6 +92,13 @@ struct BudgetState {
     running_count: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReservationWithHeadroomStatus {
+    ResourceUnavailable,
+    HeadroomReserved,
+    Available,
+}
+
 impl BudgetLease {
     fn new(budget: Arc<ResourceBudget>, vcpu: u32, memory_mb: u32) -> Self {
         Self {
@@ -297,6 +304,43 @@ impl ResourceBudget {
     pub fn can_afford(&self, vcpu: u32, memory_mb: u32) -> bool {
         let state = self.lock();
         self.can_admit_locked(&state, vcpu, memory_mb)
+    }
+
+    /// Observe whether one reservation and its required remaining headroom fit
+    /// the same current allocation snapshot without mutating the budget.
+    pub(crate) fn observe_reservation_with_headroom(
+        &self,
+        vcpu: u32,
+        memory_mb: u32,
+        headroom_vcpu: u32,
+        headroom_memory_mb: u32,
+    ) -> (ReservationWithHeadroomStatus, (u32, u32, usize)) {
+        let state = self.lock();
+        let allocated = (
+            state.running_vcpu,
+            state.running_memory_mb,
+            state.running_count,
+        );
+        if !self.can_admit_locked(&state, vcpu, memory_mb) {
+            return (
+                ReservationWithHeadroomStatus::ResourceUnavailable,
+                allocated,
+            );
+        }
+
+        let mut after_reservation = BudgetState {
+            running_vcpu: state.running_vcpu,
+            running_memory_mb: state.running_memory_mb,
+            running_count: state.running_count,
+        };
+        Self::reserve_locked(&mut after_reservation, vcpu, memory_mb);
+        let status = if self.can_admit_locked(&after_reservation, headroom_vcpu, headroom_memory_mb)
+        {
+            ReservationWithHeadroomStatus::Available
+        } else {
+            ReservationWithHeadroomStatus::HeadroomReserved
+        };
+        (status, allocated)
     }
 
     fn can_admit_locked(&self, state: &BudgetState, vcpu: u32, memory_mb: u32) -> bool {
@@ -606,6 +650,35 @@ mod tests {
         let state = budget.lock();
         assert_eq!(state.running_vcpu, 4);
         assert_eq!(state.running_memory_mb, 4096);
+    }
+
+    #[test]
+    fn reservation_with_headroom_observes_one_budget_snapshot() {
+        let available = ResourceBudget::new(20, 40_960, 1.0, 0);
+        assert_eq!(
+            available.observe_reservation_with_headroom(2, 4096, 2, 4096),
+            (ReservationWithHeadroomStatus::Available, (0, 0, 0))
+        );
+
+        let resource_limited = ResourceBudget::new(20, 40_960, 1.0, 0);
+        assert!(resource_limited.try_reserve_inner(18, 36_864));
+        assert_eq!(
+            resource_limited.observe_reservation_with_headroom(2, 4096, 2, 4096),
+            (
+                ReservationWithHeadroomStatus::ResourceUnavailable,
+                (18, 36_864, 1),
+            )
+        );
+
+        let headroom_limited = ResourceBudget::new(20, 40_960, 1.0, 0);
+        assert!(headroom_limited.try_reserve_inner(17, 34_816));
+        assert_eq!(
+            headroom_limited.observe_reservation_with_headroom(2, 4096, 2, 4096),
+            (
+                ReservationWithHeadroomStatus::HeadroomReserved,
+                (17, 34_816, 1),
+            )
+        );
     }
 
     #[test]
