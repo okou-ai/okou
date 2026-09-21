@@ -23,8 +23,12 @@ import {
  *   Re-evaluated only when that principle changes.
  * - `subscription-terms`: the vendor's subscription terms do not permit Pi to
  *   use the credential. Never re-evaluated.
- * - `capability`: the pinned Pi runtime cannot resolve the model. It clears
- *   itself once the pinned SDK catalog carries the identity.
+ * - `capability`: the pinned Pi runtime cannot resolve the model. The dynamic
+ *   gate in `isPiRouteRuntimeCapable` does clear itself once the pinned SDK
+ *   catalog carries the identity, but a model also pinned `pi: false` here for
+ *   this reason — `gpt-6-sol` today — still needs a human to flip the table.
+ *   Keeping the static exclusion is deliberate: a model must not reach Pi
+ *   without a recorded decision and a billing check.
  */
 export type PiExclusionReason =
   | "frontier-vendor-harness"
@@ -52,7 +56,11 @@ export type PiModelPolicy =
  * reader vocabulary in `pi-native-models.ts` stays frozen.
  */
 export const PI_MODEL_POLICY = {
-  "claude-fable-5-1": { pi: true, route: "claude-native" },
+  "claude-fable-5-1": {
+    pi: false,
+    exception: "frontier-vendor-harness",
+    reason: "The Fable frontier line runs on the Claude Code vendor harness.",
+  },
   "claude-opus-5": { pi: true, route: "claude-native" },
   "claude-opus-4-8": { pi: true, route: "claude-native" },
   "claude-sonnet-5": { pi: true, route: "claude-native" },
