@@ -1,6 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { availableRunModels } from "@okouai/core/run-model-availability";
 import {
   PUBLIC_BRAND_PRESENTATION,
   PUBLIC_BRAND,
@@ -56,11 +55,8 @@ import {
   OFFICIAL_SLACK_PRIMARY_COMMAND,
   officialSlackBotMention,
 } from "../../lib/slack-official-app";
-import { db$, writeDb$, type Db } from "../external/db";
-import {
-  loadUserFeatureSwitchContext,
-  userFeatureSwitchOverrides,
-} from "./feature-switches.service";
+import { writeDb$, type Db } from "../external/db";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import {
   resolveIntegrationModelRouteForUser$,
@@ -1027,15 +1023,12 @@ const slackModelPickerState$ = command(
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const [policies, preference, featureSwitchContext] = await Promise.all([
+    const visibleModels = new Set(getBuiltInVisibleModels());
+    const [policies, preference] = await Promise.all([
       set(listOrgModelPolicies$, { orgId, userId }, signal),
       get(userModelPreference({ orgId, userId })),
-      loadUserFeatureSwitchContext(get(db$), orgId, userId),
     ]);
     signal.throwIfAborted();
-    const visibleModels = new Set(
-      availableRunModels(getBuiltInVisibleModels(), featureSwitchContext),
-    );
     return {
       enabled: true,
       options: policies.policies.flatMap((policy) => {

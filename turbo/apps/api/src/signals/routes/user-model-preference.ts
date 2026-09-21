@@ -10,10 +10,6 @@ import {
   type ModelSettingsPatch,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
-import {
-  isRunModelAvailable,
-  RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE,
-} from "@okouai/core/run-model-availability";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 
 import { badRequestMessage } from "../../lib/error";
@@ -28,7 +24,6 @@ import {
   updateUserModelPreference$,
   userModelPreference,
 } from "../services/user-data.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
@@ -94,13 +89,6 @@ const updateUserModelPreferenceInner$ = command(
 
     if (getRunModelAccess(body.data.selectedModel) === "retired") {
       return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-    }
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    if (!isRunModelAvailable(body.data.selectedModel, featureSwitchContext)) {
-      return badRequestMessage(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
     }
 
     const policies =

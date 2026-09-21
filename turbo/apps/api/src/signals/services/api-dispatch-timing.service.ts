@@ -158,7 +158,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_pre_create_agent_automation_event_handoff_run"
   | "api_dispatch_check_org_tier"
   | "api_dispatch_check_run_admission"
-  | "api_dispatch_check_model_feature"
   | "api_dispatch_prepare_run_callbacks"
   | "api_dispatch_prepare_durable_pi_context"
   | "api_dispatch_prepare_durable_pi_inference"

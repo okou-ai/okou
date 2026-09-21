@@ -5,7 +5,6 @@ import {
   PUBLIC_BRAND,
   PUBLIC_BRAND_PRESENTATION,
 } from "@okouai/core/public-brand";
-import { availableRunModels } from "@okouai/core/run-model-availability";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -62,7 +61,6 @@ import {
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent } from "./chat-event.service";
 import {
@@ -1326,20 +1324,16 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
-    const [policies, preference, featureSwitchContext] = await Promise.all([
+    const visibleModels = new Set(getBuiltInVisibleModels());
+    const [policies, preference] = await Promise.all([
       set(
         listOrgModelPolicies$,
         { orgId: args.orgId, userId: args.userId },
         signal,
       ),
       get(userModelPreference({ orgId: args.orgId, userId: args.userId })),
-      loadUserFeatureSwitchContext(db, args.orgId, args.userId),
     ]);
     signal.throwIfAborted();
-    const visibleModels = new Set(
-      availableRunModels(getBuiltInVisibleModels(), featureSwitchContext),
-    );
 
     const options = policies.policies.flatMap((policy) => {
       if (

@@ -47,10 +47,7 @@ import {
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import {
-  checkOrgCreditsForRunAdmissionInTransaction,
-  checkRunModelFeatureAdmission,
-} from "./run-admission.service";
+import { checkOrgCreditsForRunAdmissionInTransaction } from "./run-admission.service";
 import {
   COMPUTE_CLOSURE_ERROR,
   transitionAgentRunsToTerminal,
@@ -181,11 +178,6 @@ interface PromotedQueuedCandidateTransactionResult {
 interface FailedQueuedCandidateTransactionResult {
   readonly status: "failed";
   readonly terminalTransition: QueuedRunPromotionFailure;
-}
-
-interface QueuedRunAdmissionFailure {
-  readonly error: string;
-  readonly reason: "insufficient_credits" | "unsupported_model";
 }
 
 type PromotionResult =
@@ -417,15 +409,15 @@ async function failQueuedRunAdmission(
   tx: DbTransaction,
   args: PromoteQueuedCandidateArgs,
   lockedRun: LockedQueuedRun,
-  failure: QueuedRunAdmissionFailure,
+  error: string,
 ): Promise<PromotionResult> {
   const [failed] = await transitionAgentRunsToTerminal(tx, {
     values: {
       status: "failed",
       completedAt: nowDate(),
       creditAdmitted: false,
-      error: failure.error,
-      failureReason: failure.reason,
+      error,
+      failureReason: "insufficient_credits",
     },
     conditions: [
       eq(agentRuns.id, args.row.runId),
@@ -446,41 +438,9 @@ async function failQueuedRunAdmission(
       kind: "terminal",
       runId: args.row.runId,
       orgId: lockedRun.orgId,
-      error: failure.error,
+      error,
       queueMarkerNotification,
     },
-  };
-}
-
-async function checkQueuedRunAdmission(
-  tx: DbTransaction,
-  lockedRun: LockedQueuedRun,
-): Promise<QueuedRunAdmissionFailure | undefined> {
-  const featureFailure = await checkRunModelFeatureAdmission({
-    db: tx,
-    orgId: lockedRun.orgId,
-    userId: lockedRun.userId,
-    selectedModel: lockedRun.selectedModel,
-  });
-  if (featureFailure) {
-    return {
-      error: featureFailure.body.error.message,
-      reason: "unsupported_model",
-    };
-  }
-  const creditFailure = await checkOrgCreditsForRunAdmissionInTransaction({
-    db: tx,
-    orgId: lockedRun.orgId,
-    userId: lockedRun.userId,
-    modelProviderType: lockedRun.modelProvider,
-    selectedModel: lockedRun.selectedModel,
-  });
-  if (!creditFailure) {
-    return undefined;
-  }
-  return {
-    error: creditFailure.body.error.message,
-    reason: "insufficient_credits",
   };
 }
 
@@ -658,9 +618,20 @@ async function promoteQueuedCandidateInTransaction(
       `Queued run "${args.row.runId}" does not match its queue owner`,
     );
   }
-  const admissionFailure = await checkQueuedRunAdmission(tx, lockedRun);
+  const admissionFailure = await checkOrgCreditsForRunAdmissionInTransaction({
+    db: tx,
+    orgId: lockedRun.orgId,
+    userId: lockedRun.userId,
+    modelProviderType: lockedRun.modelProvider,
+    selectedModel: lockedRun.selectedModel,
+  });
   const result = admissionFailure
-    ? await failQueuedRunAdmission(tx, args, lockedRun, admissionFailure)
+    ? await failQueuedRunAdmission(
+        tx,
+        args,
+        lockedRun,
+        admissionFailure.body.error.message,
+      )
     : await promoteAdmittedQueuedRun(tx, args, lockedRun, args.payload);
   return complete(result);
 }

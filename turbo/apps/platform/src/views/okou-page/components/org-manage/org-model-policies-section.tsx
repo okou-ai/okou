@@ -60,7 +60,7 @@ import {
   type ModelProviderConnectionResponse,
   type ModelProviderSurfaceProtocol,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { availableRunModels } from "@okouai/core/run-model-availability";
+import { isRunModelAddable } from "@okouai/core/run-model-addability";
 import {
   orgModelPolicies$,
   updateOrgModelPolicies$,
@@ -1770,16 +1770,16 @@ export function OrgModelPoliciesSection() {
   }
 
   const policies = data.policies;
-  const availableModels = availableRunModels(ACTIVE_RUN_MODELS, {
-    overrides: featureSwitches,
-  });
   const visiblePolicies = policies.filter((policy) => {
-    return availableModels.includes(policy.model);
+    return ACTIVE_RUN_MODELS.includes(policy.model);
   });
   // A new App can briefly reach an API from before this projection existed.
   // Fail closed during that rollback window; make the field required in #35900.
   const addableModels = (data.modelsAvailableToAdd ?? []).filter((model) => {
-    return isAddableBuiltInModel(model) && availableModels.includes(model);
+    return (
+      isAddableBuiltInModel(model) &&
+      isRunModelAddable(model, { overrides: featureSwitches })
+    );
   });
 
   const submit = (next: UpdateOrgModelPolicy[]) => {

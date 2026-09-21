@@ -21,10 +21,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  isRunModelAvailable,
-  RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE,
-} from "@okouai/core/run-model-availability";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
@@ -49,7 +45,6 @@ import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =
@@ -76,8 +71,6 @@ export interface DefaultModelFirstPin extends ModelFirstPin {
 interface PersistedModelFirstRouteResolution {
   readonly route: ResolvedModelFirstPolicyRoute | null;
   readonly selectedModelChanged: boolean;
-  /** The runtime route changed only because a rollout switch hid saved state. */
-  readonly preservePersistedSelection: boolean;
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
 }
 
@@ -97,7 +90,6 @@ interface ModelRoutingFacts {
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
   readonly policies: readonly OrgModelPolicyRow[];
   readonly member: PreparedMemberModelRouteContext;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly [modelRoutingFactsSource]: Db;
 }
 
@@ -169,13 +161,6 @@ async function prepareModelRoutingFacts(params: {
   readonly selectedModel: string | null;
   readonly featureSwitchContext?: FeatureSwitchContext;
 }): Promise<ModelRoutingFacts> {
-  const featureSwitchContext =
-    params.featureSwitchContext ??
-    (await loadUserFeatureSwitchContext(
-      params.db,
-      params.orgId,
-      params.userId,
-    ));
   const policyFactsPromise =
     params.userId === "__no_preference__"
       ? loadOrgModelPolicyFacts(params.db, params.orgId)
@@ -186,7 +171,7 @@ async function prepareModelRoutingFacts(params: {
       params.db,
       params.orgId,
       params.userId,
-      featureSwitchContext,
+      params.featureSwitchContext,
     ),
   ]);
   return Object.freeze({
@@ -205,7 +190,6 @@ async function prepareModelRoutingFacts(params: {
       }),
     ),
     member,
-    featureSwitchContext,
     [modelRoutingFactsSource]: params.db,
   });
 }
@@ -219,14 +203,6 @@ async function resolveValidPolicyRoute(params: {
   readonly selectedModel: string;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
   if (!isSupportedRunModel(params.selectedModel)) {
-    return null;
-  }
-  if (
-    !isRunModelAvailable(
-      params.selectedModel,
-      params.facts.featureSwitchContext,
-    )
-  ) {
     return null;
   }
   const policy = params.facts.policies.find((candidate) => {
@@ -315,30 +291,13 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
   const policy = params.facts.policies.find((candidate) => {
     return candidate.isDefault;
   });
-  if (!policy) {
-    return null;
-  }
-  if (isRunModelAvailable(policy.model, params.facts.featureSwitchContext)) {
-    return await resolveValidPolicyRoute({
-      facts: params.facts,
-      capabilities: params.capabilities,
-      selectedModel: policy.model,
-    });
-  }
-  for (const fallback of params.facts.policies) {
-    if (fallback.model === policy.model) {
-      continue;
-    }
-    const route = await resolveValidPolicyRoute({
-      facts: params.facts,
-      capabilities: params.capabilities,
-      selectedModel: fallback.model,
-    });
-    if (route) {
-      return route;
-    }
-  }
-  return null;
+  return policy
+    ? await resolveValidPolicyRoute({
+        facts: params.facts,
+        capabilities: params.capabilities,
+        selectedModel: policy.model,
+      })
+    : null;
 }
 
 export async function resolvePersistedModelFirstRoute(params: {
@@ -361,7 +320,6 @@ export async function resolvePersistedModelFirstRoute(params: {
     return {
       route: currentRoute,
       selectedModelChanged: false,
-      preservePersistedSelection: false,
       orgPlanCapabilities: facts.orgPlanCapabilities,
     };
   }
@@ -375,10 +333,6 @@ export async function resolvePersistedModelFirstRoute(params: {
     selectedModelChanged:
       defaultRoute !== null &&
       defaultRoute.selectedModel !== params.selectedModel,
-    preservePersistedSelection: !isRunModelAvailable(
-      params.selectedModel,
-      facts.featureSwitchContext,
-    ),
     orgPlanCapabilities: facts.orgPlanCapabilities,
   };
 }
@@ -420,14 +374,6 @@ export async function resolveModelSelectionPin(params: {
   const { db, orgId, userId, modelSelection } = params;
   if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-  }
-  const featureSwitchContext =
-    params.featureSwitchContext ??
-    (await loadUserFeatureSwitchContext(db, orgId, userId));
-  if (
-    !isRunModelAvailable(modelSelection.selectedModel, featureSwitchContext)
-  ) {
-    return badRequestMessage(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
   }
   const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
   const capabilities = modelRouteCapabilities(orgPlanCapabilities);
@@ -473,7 +419,7 @@ export async function resolveModelSelectionPin(params: {
     orgId,
     userId,
     selectedModel: modelSelection.selectedModel,
-    featureSwitchContext,
+    featureSwitchContext: params.featureSwitchContext,
   });
   // Resolve the configured route without plan filtering first. Model access is
   // decided from that route so BYOK never inherits a built-in-only model gate.

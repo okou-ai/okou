@@ -1870,6 +1870,9 @@ describe("CHAT-02: model-first provider policies", () => {
           modelProviderId: null,
         },
       ]);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouModels]: false,
+      });
 
       const run = await sendChatRun(actor, {
         agentId,
@@ -1886,61 +1889,6 @@ describe("CHAT-02: model-first provider policies", () => {
       await cancelChatRun(actor, run.runId);
     },
   );
-
-  it("uses a visible route without rewriting a switch-disabled Okou thread", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
-    await seedBuiltInModelCandidateKeys(context, "gpt-5.6-luna");
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouModels]: true,
-      [FeatureSwitchKey.PiLoop]: false,
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "okou-1.0",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-      {
-        model: "gpt-5.6-luna",
-        isDefault: false,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-
-    const first = await sendChatRun(actor, {
-      agentId,
-      model: "okou-1.0",
-      prompt: "start on the gated Okou model",
-    });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    await cancelChatRun(actor, first.runId);
-    expect(claimEnvironment(firstClaim.claim).OPENAI_MODEL).toBe(
-      "@preset/okou-1-0",
-    );
-
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouModels]: false,
-    });
-    const followUp = await sendChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "continue without mutating the saved selection",
-    });
-    const followUpClaim = await claimChatRun(runnerGroup, followUp.runId);
-    expect(claimEnvironment(followUpClaim.claim).OPENAI_MODEL).toBe(
-      "gpt-5.6-luna",
-    );
-    expect(
-      (await readThreadProjection(actor, first.threadId)).selectedModel,
-    ).toBe("okou-1.0");
-    await expectNoThreadModelUpdateEvent(actor, first.threadId, "gpt-5.6-luna");
-    await cancelChatRun(actor, followUp.runId);
-  }, 90_000);
 
   it.each(
     (

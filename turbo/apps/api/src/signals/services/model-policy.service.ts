@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import {
-  isRunModelAvailable,
-  RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE,
-} from "@okouai/core/run-model-availability";
+  isRunModelAddable,
+  RUN_MODEL_ADD_UNAVAILABLE_MESSAGE,
+} from "@okouai/core/run-model-addability";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
@@ -873,12 +873,8 @@ async function validateUpdatePolicies(
       return bad(`Unknown model "${policy.model}"`);
     }
     const existing = existingByModel.get(policy.model);
-    if (
-      !isRunModelAvailable(policy.model, featureSwitchContext) &&
-      (!storedRouteUnchanged(policy, existing) ||
-        (policy.isDefault && existing?.isDefault !== true))
-    ) {
-      return bad(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
+    if (!existing && !isRunModelAddable(policy.model, featureSwitchContext)) {
+      return bad(RUN_MODEL_ADD_UNAVAILABLE_MESSAGE);
     }
     if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
       return bad(`Model "${model}" is not available to add`);
@@ -1183,7 +1179,9 @@ async function listOrgModelPolicies(
     modelsAvailableToAdd: modelsAvailableToAdd(
       persistedRows,
       modelsAllowedForNewPolicy,
-    ),
+    ).filter((model) => {
+      return isRunModelAddable(model, featureSwitchContext);
+    }),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };

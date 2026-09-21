@@ -24,7 +24,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
-  allowNewOrgPolicyForRunModelFixture,
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
@@ -194,7 +193,7 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
-  it("gates Okou policy and preference writes while preserving stored rows", async () => {
+  it("gates only adding Okou policies with a personal switch", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -203,6 +202,7 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     const model = "okou-1.0";
+    expect(existing.body.modelsAvailableToAdd).not.toContain(model);
     const unavailable = await accept(
       client.update({
         headers: authHeaders(),
@@ -213,21 +213,23 @@ describe("GET/PUT /api/model-policies", () => {
       [400],
     );
     expect(unavailable.body.error.message).toBe(
-      "This model is not currently available for this workspace.",
+      "This model is not currently available to add.",
     );
 
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouModels]: true,
     });
-    const restoreCatalogEntry =
-      await allowNewOrgPolicyForRunModelFixture(model);
-    onTestFinished(restoreCatalogEntry);
     await seedBuiltInModelCandidateKeys(context, model);
+    const addable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(addable.body.modelsAvailableToAdd).toContain(model);
     const enabled = await accept(
       client.update({
         headers: authHeaders(),
         body: {
-          policies: [...toUpdate(existing.body), makeBuiltInPolicy(model)],
+          policies: [...toUpdate(addable.body), makeBuiltInPolicy(model)],
         },
       }),
       [200],
@@ -244,10 +246,20 @@ describe("GET/PUT /api/model-policies", () => {
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouModels]: false,
     });
+    const listedAfterDisable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listedAfterDisable.body.modelsAvailableToAdd).not.toContain(model);
+    expect(
+      listedAfterDisable.body.policies.some((policy) => {
+        return policy.model === model;
+      }),
+    ).toBeTruthy();
     const preserved = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: toUpdate(enabled.body) },
+        body: { policies: toUpdate(listedAfterDisable.body) },
       }),
       [200],
     );
@@ -266,11 +278,9 @@ describe("GET/PUT /api/model-policies", () => {
         headers: authHeaders(),
         body: { selectedModel: model, serviceTier: null },
       }),
-      [400],
+      [200],
     );
-    expect(preference.body.error.message).toBe(
-      "This model is not currently available for this workspace.",
-    );
+    expect(preference.body.selectedModel).toBe(model);
   });
 
   it("offers only catalog-enabled models and rejects a staged model addition", async () => {

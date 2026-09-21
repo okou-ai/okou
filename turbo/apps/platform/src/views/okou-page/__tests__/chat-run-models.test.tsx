@@ -174,12 +174,9 @@ async function selectComposerModel(
   );
 }
 
-test.each([
-  { enabled: false, visibleCount: 0 },
-  { enabled: true, visibleCount: 3 },
-])(
-  "shows $visibleCount Okou models when the rollout switch is $enabled",
-  async ({ enabled, visibleCount }) => {
+test.each([{ enabled: false }, { enabled: true }])(
+  "shows configured Okou models when the Add Model switch is $enabled",
+  async ({ enabled }) => {
     configureModelPolicies(
       ["okou-1.0-max", "okou-1.0-pro", "okou-1.0", "gpt-5.6-luna"],
       { defaultModel: "gpt-5.6-luna" },
@@ -206,7 +203,7 @@ test.each([
       optionNames.filter((name) => {
         return name.includes("Okou 1.0");
       }),
-    ).toHaveLength(visibleCount);
+    ).toHaveLength(3);
     expect(
       optionNames.some((name) => {
         return name.includes("GPT 5.6 Luna");

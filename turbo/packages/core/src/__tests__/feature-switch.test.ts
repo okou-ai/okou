@@ -223,7 +223,7 @@ describe("isFeatureEnabled", () => {
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
       maintainer: "liangyou@okou.ai",
       description:
-        "Enable the Okou 1.0 built-in model family backed by platform OpenRouter presets. Off for everyone by default, including the staff org.",
+        "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
       rolloutStage: "alpha",
     });
   });

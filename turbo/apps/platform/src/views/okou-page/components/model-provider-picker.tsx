@@ -46,10 +46,8 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import { isRunModelAvailable } from "@okouai/core/run-model-availability";
 import { useTranslation } from "react-i18next";
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies";
-import { featureSwitch$ } from "../../../signals/external/feature-switch";
 import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelAllowedForPlan,
@@ -1200,7 +1198,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   const { t } = useTranslation();
   const policiesLoadable = useLastLoadable(orgModelPolicies$);
   const policyResponse = useLastResolved(orgModelPolicies$);
-  const featureSwitches = useGet(featureSwitch$);
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   if (policyResponse === undefined) {
@@ -1236,13 +1233,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   }
   const state = resolveModelFirstModelPickerState({
     value,
-    policyResponse: {
-      policies: policyResponse.policies.filter((policy) => {
-        return isRunModelAvailable(policy.model, {
-          overrides: featureSwitches,
-        });
-      }),
-    },
+    policyResponse,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel,
