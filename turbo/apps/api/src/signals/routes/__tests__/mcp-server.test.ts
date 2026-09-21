@@ -231,10 +231,10 @@ const fullCatalogBudgets = {
   },
   get_chat_status: {
     description: 1064,
-    inputSchema: 722,
+    inputSchema: 836,
     outputSchema: 5309,
     annotations: 89,
-    total: 7271,
+    total: 7378,
   },
   list_agents: {
     description: 321,
@@ -311,8 +311,11 @@ const representativeSchemaValues: readonly unknown[] = [
   { query: "chat" },
   { runId: "00000000-0000-4000-8000-000000000000" },
   {
-    threadId: "00000000-0000-4000-8000-000000000000",
-    inputId: "00000000-0000-4000-8000-000000000000",
+    inputRef: {
+      threadId: "00000000-0000-4000-8000-000000000000",
+      eventId: "00000000-0000-4000-8000-000000000001",
+      seqId: 1,
+    },
   },
   {
     threadId: "00000000-0000-4000-8000-000000000000",
@@ -333,8 +336,11 @@ const representativeSchemaValues: readonly unknown[] = [
   { messages: [], olderCursor: null, newerCursor: null },
   { matches: [], nextCursor: null, scanLimited: false },
   {
-    threadId: "00000000-0000-4000-8000-000000000000",
-    inputId: "00000000-0000-4000-8000-000000000000",
+    inputRef: {
+      threadId: "00000000-0000-4000-8000-000000000000",
+      eventId: "00000000-0000-4000-8000-000000000001",
+      seqId: 1,
+    },
     outcome: "not_revocable",
     runId: null,
     reason: "not_queued",
