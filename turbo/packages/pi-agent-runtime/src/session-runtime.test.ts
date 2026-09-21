@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
@@ -1867,4 +1867,39 @@ describe("Okou Harness base system prompt", () => {
       created.session.dispose();
     }
   });
+});
+
+describe("Pi 0.86.1 prompt cache warming", () => {
+  // 0.86 resolves an unset `cacheWarming` to `streaming`, which would issue
+  // background prompt-cache requests during a long tool run. Every session
+  // path must resolve it to "off", including the fallback that has no resource
+  // snapshot and therefore loads its settings from disk.
+  it.each([true, false])(
+    "pins cache warming off with resourceSnapshot=%s",
+    async (withSnapshot) => {
+      const root = await mkdtemp(join(tmpdir(), "pi-cache-warming-"));
+      onTestFinished(async () => {
+        await rm(root, { recursive: true, force: true });
+      });
+      const cwd = join(root, "workspace");
+      await mkdir(cwd, { recursive: true });
+      const created = await createPiAgentSessionForRuntime({
+        cwd,
+        agentDir: root,
+        sessionManager: SessionManager.inMemory(cwd, { id: randomUUID() }),
+        model: TERRA_MODEL,
+        appendSystemPrompt: null,
+        ...(withSnapshot
+          ? { resourceSnapshot: readyMemorySnapshot("# Memory\n") }
+          : {}),
+      });
+      try {
+        expect(created.services.settingsManager.getCacheWarmingMode()).toBe(
+          "off",
+        );
+      } finally {
+        created.session.dispose();
+      }
+    },
+  );
 });
