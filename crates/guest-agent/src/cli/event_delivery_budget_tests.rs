@@ -449,3 +449,74 @@ async fn reduced_http_failure_still_breaks_acknowledgement_and_retries_identical
     assert!(requests.len() > 1);
     assert!(requests.iter().all(|body| body == &requests[0]));
 }
+
+struct SystemLogOverrideGuard;
+
+impl SystemLogOverrideGuard {
+    fn set(path: &std::path::Path) -> Self {
+        guest_telemetry::log::set_system_log_file(path);
+        Self
+    }
+}
+
+impl Drop for SystemLogOverrideGuard {
+    fn drop(&mut self) {
+        guest_telemetry::log::clear_system_log_file();
+    }
+}
+
+#[tokio::test]
+async fn delivery_request_log_names_the_delivered_record_type() {
+    let _system_log_state_guard = crate::lock_system_log_test_state_async().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let system_log_path = tmp.path().join("system.log");
+    let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
+
+    for (framework, labels) in [
+        (Framework::Pi, "event_type=assistant item_type=text"),
+        (
+            Framework::Codex,
+            "event_type=item.completed item_type=agent_message",
+        ),
+    ] {
+        let server = MockServer::start_async().await;
+        let request = server.mock(|when, then| {
+            when.method(POST).path("/api/webhooks/agent/events");
+            then.status(200);
+        });
+        let http = HttpClient::with_api_config(
+            server.base_url(),
+            "test-token",
+            "",
+            "test-session",
+            Duration::ZERO,
+        )
+        .unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, false).unwrap();
+        runtime
+            .sender()
+            .try_send_for_framework(
+                19,
+                text_event(framework, "ordinary delivery"),
+                framework,
+                &SecretMasker::from_raw(""),
+            )
+            .unwrap();
+        let report = runtime.finish().await.unwrap();
+        assert_eq!(report.last_acknowledged_sequence, Some(19));
+        request.assert_calls_async(1).await;
+
+        let log = std::fs::read_to_string(&system_log_path).unwrap();
+        let delivered = log
+            .lines()
+            .rfind(|line| line.contains("Event delivery request:"))
+            .expect("ordinary delivery is logged");
+        assert!(
+            delivered.contains("first_sequence=19 last_sequence=19 events=1 conservative_bytes=")
+                && delivered.contains(&format!("{labels} result=success")),
+            "unexpected delivery line: {delivered}"
+        );
+        // The labels reach the ordinary line, not only the reduction one.
+        assert!(!log.contains("event reduced for delivery"));
+    }
+}

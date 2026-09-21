@@ -25,6 +25,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::JoinHandle;
 
 use super::LOG_TAG;
+use super::record_labels::EventLabels;
 
 const EVENT_DELIVERY_QUEUE_CAPACITY: usize = 512;
 const EVENT_DELIVERY_MAX_BYTES: usize = 16 * 1024 * 1024;
@@ -37,6 +38,7 @@ struct PreparedEvent {
     event: Bytes,
     private_citation: Option<Bytes>,
     conservative_bytes: usize,
+    labels: EventLabels,
     byte_budget: OwnedSemaphorePermit,
 }
 
@@ -64,7 +66,13 @@ impl EventDeliverySender {
             crate::env::Framework::ClaudeCode => {
                 let serialized_event = serde_json::to_vec(&event)?;
                 drop(event);
-                return self.try_send_prepared(sequence, serialized_event, private_citation);
+                // Claude Code bypasses bounded delivery, which owns labels.
+                return self.try_send_prepared(
+                    sequence,
+                    serialized_event,
+                    private_citation,
+                    EventLabels::UNKNOWN,
+                );
             }
             crate::env::Framework::Pi => super::bounded_event_delivery::Framework::Pi,
             crate::env::Framework::Codex => super::bounded_event_delivery::Framework::Codex,
@@ -73,10 +81,13 @@ impl EventDeliverySender {
             .payload_envelope
             .singleton_bytes(0, private_citation.as_ref().map_or(0, Bytes::len));
         let budget = EVENT_DELIVERY_MAX_REQUEST_BYTES.saturating_sub(envelope_bytes);
-        let prepared =
-            super::bounded_event_delivery::prepare_for_delivery(event, budget, framework)?;
-        self.try_send_prepared(sequence, prepared.serialized, private_citation)?;
-        if let Some(reduction) = prepared.reduction {
+        let super::bounded_event_delivery::PreparedEvent {
+            serialized,
+            labels,
+            reduction,
+        } = super::bounded_event_delivery::prepare_for_delivery(event, budget, framework)?;
+        self.try_send_prepared(sequence, serialized, private_citation, labels)?;
+        if let Some(reduction) = reduction {
             let framework = match framework {
                 super::bounded_event_delivery::Framework::Pi => "Pi",
                 super::bounded_event_delivery::Framework::Codex => "Codex",
@@ -86,8 +97,8 @@ impl EventDeliverySender {
                 "{} event reduced for delivery: seq={} event_type={} item_type={} original_event_bytes={} delivered_event_bytes={} original_request_bytes={} delivered_request_bytes={} fields={} fallback={}",
                 framework,
                 sequence,
-                reduction.event_type,
-                reduction.item_type,
+                labels.event_type,
+                labels.item_type,
                 reduction.original_bytes,
                 reduction.delivered_bytes,
                 envelope_bytes.saturating_add(reduction.original_bytes),
@@ -104,6 +115,7 @@ impl EventDeliverySender {
         sequence: u32,
         serialized_event: Vec<u8>,
         private_citation: Option<Bytes>,
+        labels: EventLabels,
     ) -> Result<(), AgentError> {
         let event = Bytes::from(serialized_event.into_boxed_slice());
         let conservative_bytes = self
@@ -130,6 +142,7 @@ impl EventDeliverySender {
             event,
             private_citation,
             conservative_bytes,
+            labels,
             byte_budget,
         };
 
@@ -531,6 +544,7 @@ async fn run_event_sender(
             sequences,
             payload,
             conservative_bytes,
+            labels,
             byte_budgets,
         } = EventBatch::new(batch, &payload_envelope);
         let event_count = sequences.len();
@@ -550,7 +564,9 @@ async fn run_event_sender(
         let succeeded = send_result.is_ok();
         log_info!(
             LOG_TAG,
-            "Event delivery request: first_sequence={first_sequence} last_sequence={last_sequence} events={event_count} conservative_bytes={conservative_bytes} result={} queued_events_remaining={}",
+            "Event delivery request: first_sequence={first_sequence} last_sequence={last_sequence} events={event_count} conservative_bytes={conservative_bytes} event_type={} item_type={} result={} queued_events_remaining={}",
+            labels.event_type,
+            labels.item_type,
             if succeeded { "success" } else { "failure" },
             pressure.pending_events() + usize::from(carried_event.is_some())
         );
@@ -613,6 +629,8 @@ struct EventBatch {
     sequences: Vec<u32>,
     payload: Bytes,
     conservative_bytes: usize,
+    /// Labels of the batch's largest event, which its bytes are dominated by.
+    labels: EventLabels,
     byte_budgets: Vec<OwnedSemaphorePermit>,
 }
 
@@ -623,6 +641,8 @@ impl EventBatch {
         let mut private_citations = Vec::new();
         let mut conservative_bytes = 0usize;
         let mut byte_budgets = Vec::with_capacity(events.len());
+        let mut labels = EventLabels::UNKNOWN;
+        let mut largest_event_bytes = 0usize;
 
         for event in events {
             sequences.push(event.sequence);
@@ -631,6 +651,10 @@ impl EventBatch {
                 private_citations.push(citation);
             }
             conservative_bytes += event.conservative_bytes;
+            if event.conservative_bytes > largest_event_bytes {
+                largest_event_bytes = event.conservative_bytes;
+                labels = event.labels;
+            }
             byte_budgets.push(event.byte_budget);
         }
 
@@ -638,6 +662,7 @@ impl EventBatch {
             sequences,
             payload: payload_envelope.payload(&event_bytes, &private_citations),
             conservative_bytes,
+            labels,
             byte_budgets,
         }
     }
