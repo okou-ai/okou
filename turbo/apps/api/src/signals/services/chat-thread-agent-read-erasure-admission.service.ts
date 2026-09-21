@@ -4,7 +4,7 @@ import {
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";

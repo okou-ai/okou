@@ -12,7 +12,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
