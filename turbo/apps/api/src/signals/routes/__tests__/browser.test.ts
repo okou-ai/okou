@@ -107,6 +107,8 @@ describe("Browser user-action route", () => {
     acceptBrowserUseCdpSessions([providerId]);
     let currentLoaderId = "native-input-loader";
     let controlWritable = true;
+    let controlConnected = true;
+    let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
     let verificationMatches = true;
     let failNextProviderRead = false;
@@ -168,9 +170,15 @@ describe("Browser user-action route", () => {
             ? command.params.functionDeclaration
             : "";
         if (declaration.includes("expected")) {
-          return { result: { value: verificationMatches } };
+          return {
+            result: { value: verificationMatches && controlConnected },
+          };
         }
         if (declaration.includes("nextValue")) {
+          if (disconnectAfterNextWrite) {
+            disconnectAfterNextWrite = false;
+            controlConnected = false;
+          }
           return { result: {} };
         }
         return {
@@ -178,7 +186,7 @@ describe("Browser user-action route", () => {
             value: {
               tagName: "INPUT",
               inputType: "password",
-              connected: true,
+              connected: controlConnected,
               mainDocument: true,
               writable: controlWritable,
             },
@@ -618,6 +626,52 @@ describe("Browser user-action route", () => {
     });
     expect(uncertainRetry).toMatchObject({ status: 409 });
     expect(browserInputWrites()).toHaveLength(writesBeforeUncertain + 1);
+
+    const rerenderedCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after rerendered input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const writesBeforeRerender = browserInputWrites().length;
+    disconnectAfterNextWrite = true;
+    const rerendered = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: rerenderedCandidate.body.action.requestToken },
+        body: { values: [{ key: "code", value: "001234" }] },
+      }),
+      [200],
+    );
+    controlConnected = true;
+    expect(rerendered.body.state).toBe("uncertain");
+    expect(browserInputWrites()).toHaveLength(writesBeforeRerender + 1);
+    const verification = context.mocks.browserUseCdp.command.mock.calls.find(
+      ([command]) => {
+        return (
+          command.method === "Runtime.callFunctionOn" &&
+          typeof command.params.functionDeclaration === "string" &&
+          command.params.functionDeclaration.includes("expected") &&
+          command.params.functionDeclaration.includes("this.isConnected")
+        );
+      },
+    );
+    expect(verification?.[0].params.functionDeclaration).toContain(
+      "this.ownerDocument === document",
+    );
 
     const stuckCandidate = await accept(
       userActionClient().create({

@@ -1138,7 +1138,7 @@ async function writeBrowserUseApplyFields(
           params: {
             objectId: field.objectId,
             functionDeclaration:
-              "function (expected) { return this.value === expected; }",
+              "function (expected) { return this.isConnected && this.ownerDocument === document && this.value === expected; }",
             arguments: [{ value: field.value }],
             returnByValue: true,
           },
