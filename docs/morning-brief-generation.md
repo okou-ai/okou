@@ -324,6 +324,38 @@ permalinks.
 Every object rejects unknown keys rather than stripping them: an answer carrying
 fields this pipeline never asked for is not the requested shape.
 
+### The contract is sent, not only described
+
+The composed request carries the union as `response_format` with a real JSON
+schema, so the provider constrains decoding instead of the prompt merely asking
+for it. The schema also stays inside the message as documentation; what changed
+is that it is no longer the only thing enforcing the shape. The provider schema
+describes **structure only** — the two branches, their required fields, their
+`decision` and `reason` vocabularies, and the same refusal of unknown keys.
+Lengths, counts, the citation vocabulary and the no-link rule stay with the
+validator, so no content limit has two homes.
+
+A prompt line is a request. Two of the first three production briefs were lost
+because the answer inside was fine and the framing around it was not.
+
+### Framing is not content
+
+A Markdown code fence that opens the first line and closes the last is removed
+before parsing. That is the only tolerance, and it is deliberately asymmetric:
+a fence costs an owner a whole morning, and removing one cannot turn an invalid
+answer into a valid one. A preamble before the fence, prose after it, two
+objects inside it, or a fence around anything that is not a single JSON object
+are all still `invalid_json` or `invalid_shape`. There is still no repair
+request, no second model and no lenient parse.
+
+### What a rejected answer leaves behind
+
+The answer itself is never retained, which is why a lost brief used to need a
+trace and a database to explain. A rejected generation records three structural
+facts — the `finish_reason`, the content's length and whether it opened with a
+code fence — and nothing else. Those answer "fence or preamble?" immediately; a
+length and a boolean reproduce nothing.
+
 Failures are failures, never skips, and are never repaired by a second request:
 a truncated finish reason, a tool call, malformed JSON, a shape violation, a
 citation this request never supplied, an empty deliver and an oversized result

@@ -1927,3 +1927,107 @@ describe("preserved provider facts", () => {
     expect(normalized.provenance.limitations).toContain("thread_read_failed");
   });
 });
+
+describe("provider-enforced response contract", () => {
+  /** The `response_format` the transport actually serializes. */
+  function responseFormat(): {
+    readonly type: string;
+    readonly json_schema: {
+      readonly name: string;
+      readonly strict: boolean;
+      readonly schema: {
+        readonly type: string;
+        readonly anyOf: readonly {
+          readonly type: string;
+          readonly properties: Record<string, { readonly enum?: string[] }>;
+          readonly required: readonly string[];
+          readonly additionalProperties: boolean;
+        }[];
+      };
+    };
+  } {
+    const packed = packMorningBriefRequest({
+      collections: [collection("slack", [item("slack", "m1")])],
+      language: planMorningBriefLanguage({
+        instructions: { state: "no-storage", versionId: null },
+        memberLocale: "en-US",
+      }),
+      instructions: null,
+      omittedByNormalizedCap: {},
+    });
+    const body = JSON.parse(packed.providerRequest.body) as {
+      response_format: ReturnType<typeof responseFormat>;
+    };
+    return body.response_format;
+  }
+
+  it("asks the provider to enforce the deliver or skip union", () => {
+    const format = responseFormat();
+
+    expect(format.type).toBe("json_schema");
+    expect(format.json_schema.strict).toBeTruthy();
+    // A union of exactly the two shapes the validator accepts. The prompt line
+    // asking for one JSON object is no longer the only thing enforcing it.
+    const branches = format.json_schema.schema.anyOf;
+    expect(branches).toHaveLength(2);
+    expect(
+      branches.map((branch) => {
+        return branch.properties.decision?.enum;
+      }),
+    ).toStrictEqual([["deliver"], ["skip"]]);
+    expect(branches[0]?.required).toStrictEqual([
+      "decision",
+      "language",
+      "title",
+      "sections",
+    ]);
+    expect(branches[1]?.required).toStrictEqual([
+      "decision",
+      "language",
+      "reason",
+    ]);
+    expect(branches[1]?.properties.reason?.enum).toStrictEqual([
+      "nothing_actionable",
+    ]);
+    // Unknown keys are refused by the provider schema exactly as the validator
+    // refuses them, so neither side quietly accepts a field nobody asked for.
+    expect(
+      branches.every((branch) => {
+        return branch.additionalProperties === false;
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps the contract in the request when evidence is reduced to fit", () => {
+    const language = planMorningBriefLanguage({
+      instructions: { state: "no-storage", versionId: null },
+      memberLocale: "en-US",
+    });
+    const items = Array.from({ length: 200 }, (_, index) => {
+      return item("gmail", `m${index.toString()}`, {
+        body: "e".repeat(900),
+        priority: index,
+      });
+    });
+
+    const packed = packMorningBriefRequest({
+      collections: [collection("gmail", items)],
+      language,
+      instructions: null,
+      omittedByNormalizedCap: {},
+    });
+
+    // The contract's bytes are inside the measured envelope, so the allocator
+    // spends what is left on evidence. Evidence is what gives way to the
+    // ceiling; the contract never is.
+    expect(packed.allocation.omittedItems).toBeGreaterThan(0);
+    expect(packed.totalBytes).toBeLessThanOrEqual(
+      MORNING_BRIEF_REQUEST_MAX_BYTES,
+    );
+    expect(packed.providerRequest.bodyBytes).toBe(packed.totalBytes);
+    expect(
+      (JSON.parse(packed.providerRequest.body) as { response_format?: unknown })
+        .response_format,
+    ).toBeDefined();
+  });
+});
