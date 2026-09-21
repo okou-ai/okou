@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.92.7"
+version = "0.93.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3414,7 +3414,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "des",
  "flate2",
@@ -3522,7 +3522,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.207.1"
+version = "0.207.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
