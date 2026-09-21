@@ -1544,7 +1544,16 @@ enum StagedSessionRestorePreparation {
     /// No materialized history exists for this run.
     Missing,
     /// Exact bytes were written to the isolated staging path.
-    Ready(StagedSessionRestore),
+    Ready(Box<StagedSessionRestore>),
+}
+
+struct StagedSessionRestoreInput<'a> {
+    sandbox: &'a dyn Sandbox,
+    context: &'a ExecutionContext,
+    config: &'a ExecutorConfig,
+    cancel: &'a CancellationToken,
+    storage_apply_start: oneshot::Receiver<()>,
+    staging_path: &'a str,
 }
 
 async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) {
@@ -1650,15 +1659,18 @@ fn record_staged_workspace_restore_outcome(
 }
 
 async fn prepare_staged_session_restore(
-    sandbox: &dyn Sandbox,
-    context: &ExecutionContext,
-    config: &ExecutorConfig,
-    cancel: &CancellationToken,
+    input: StagedSessionRestoreInput<'_>,
     plan: SessionHistoryRestorePlan,
-    storage_apply_start: oneshot::Receiver<()>,
-    staging_path: &str,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<StagedSessionRestorePreparation> {
+    let StagedSessionRestoreInput {
+        sandbox,
+        context,
+        config,
+        cancel,
+        storage_apply_start,
+        staging_path,
+    } = input;
     if storage_apply_start.await.is_err() {
         return Ok(StagedSessionRestorePreparation::Serial(plan));
     }
@@ -1743,7 +1755,9 @@ async fn prepare_staged_session_restore(
                 )
                 .await
                 {
-                    Ok(staged) => return Ok(StagedSessionRestorePreparation::Ready(staged)),
+                    Ok(staged) => {
+                        return Ok(StagedSessionRestorePreparation::Ready(Box::new(staged)));
+                    }
                     Err(error) => {
                         if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
                             return Err(error);
@@ -1916,7 +1930,7 @@ async fn prepare_staged_session_restore(
         telemetry,
     )
     .await
-    .map(StagedSessionRestorePreparation::Ready)
+    .map(|staged| StagedSessionRestorePreparation::Ready(Box::new(staged)))
 }
 
 async fn populate_storage_plan(
@@ -2312,13 +2326,15 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             result
                         },
                         prepare_staged_session_restore(
-                            sandbox,
-                            context,
-                            config,
-                            &staged_cancel,
+                            StagedSessionRestoreInput {
+                                sandbox,
+                                context,
+                                config,
+                                cancel: &staged_cancel,
+                                storage_apply_start: storage_apply_started,
+                                staging_path: &staging_path,
+                            },
                             session_history_restore_plan,
-                            storage_apply_started,
-                            &staging_path,
                             &mut history_telemetry,
                         )
                     )

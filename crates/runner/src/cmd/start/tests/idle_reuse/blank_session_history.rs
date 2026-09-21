@@ -21,6 +21,10 @@ use crate::types::{
 };
 
 const WAIT: Duration = Duration::from_secs(5);
+// Full-workspace coverage instrumentation can delay decoding and validation
+// between the remote response and the mock Guest write. The write is still
+// deterministically gated; only this CPU-heavy transition needs extra headroom.
+const INSTRUMENTED_WRITE_WAIT: Duration = Duration::from_secs(30);
 const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";
 
 pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> ExecutionContext {
@@ -189,7 +193,10 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             .next_request("blank history before storage finishes")
             .await;
         release_history.send(()).unwrap();
-        write_gate.wait_entered(1, WAIT).await.unwrap();
+        write_gate
+            .wait_entered(1, INSTRUMENTED_WRITE_WAIT)
+            .await
+            .unwrap();
         let writes = overrides.write_file_calls();
         assert_eq!(writes.len(), 1);
         let restored = if framework == "codex" {
