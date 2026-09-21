@@ -107,17 +107,24 @@ function browserInputVerifications() {
 }
 
 function browserUserActionNodeId(selector: unknown): number {
-  return selector === "#username" ? 12 : 11;
+  if (selector === "#username") {
+    return 12;
+  }
+  return selector === "#code" ? 13 : 11;
 }
 
 function browserUserActionBackendNodeId(nodeId: unknown): number {
-  return nodeId === 12 ? 43 : 42;
+  if (nodeId === 12) {
+    return 43;
+  }
+  return nodeId === 13 ? 44 : 42;
 }
 
 function browserUserActionObjectId(backendNodeId: unknown): string {
-  return backendNodeId === 43
-    ? "native-username-object"
-    : "native-password-object";
+  if (backendNodeId === 43) {
+    return "native-username-object";
+  }
+  return backendNodeId === 44 ? "native-code-object" : "native-password-object";
 }
 
 aroundEach(async (runTest) => {
@@ -248,7 +255,11 @@ describe("Browser user-action route", () => {
               return {
                 tagName: "INPUT",
                 inputType:
-                  objectId === "native-username-object" ? "email" : "password",
+                  objectId === "native-username-object"
+                    ? "email"
+                    : objectId === "native-code-object"
+                      ? "tel"
+                      : "password",
                 connected: controlConnected,
                 mainDocument: true,
                 writable: controlWritable,
@@ -749,7 +760,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
@@ -782,7 +793,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
@@ -814,7 +825,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
@@ -853,7 +864,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
@@ -899,7 +910,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
@@ -939,7 +950,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
@@ -989,7 +1000,7 @@ describe("Browser user-action route", () => {
               label: "Code",
               fieldKind: "one_time_code",
               required: true,
-              selector: "#password",
+              selector: "#code",
             },
           ],
         },
