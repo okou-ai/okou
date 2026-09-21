@@ -198,6 +198,11 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
             "authority_failure",
         ),
         (
+            json!({"method":"vnc_password","password":"ninebytes"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
             json!({"method":"username_password","username":"x".repeat(256),"password":"secret"}),
             json!({"type":"x509_plain","trust":{"mode":"system"}}),
             "invalid_credential",
@@ -206,6 +211,16 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
             json!({"method":"username_password","username":"operator\0name","password":"secret"}),
             json!({"type":"x509_plain","trust":{"mode":"system"}}),
             "invalid_credential",
+        ),
+        (
+            json!({"method":"username_password","username":"operator","password":"secret\0value"}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"username_password","username":"operator","password":"x".repeat(1024)}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "authority_failure",
         ),
     ] {
         let mut h = Harness::new().await;
