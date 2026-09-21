@@ -212,7 +212,10 @@ export type OkouRunModel = keyof typeof OKOU_RUN_MODEL_TO_UNDERLYING;
 export function isOkouRunModel(
   model: string | null | undefined,
 ): model is OkouRunModel {
-  return typeof model === "string" && model in OKOU_RUN_MODEL_TO_UNDERLYING;
+  return (
+    typeof model === "string" &&
+    Object.hasOwn(OKOU_RUN_MODEL_TO_UNDERLYING, model)
+  );
 }
 
 export function getOkouUnderlyingRunModel(

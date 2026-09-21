@@ -791,6 +791,12 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("okou-1-0-max")).toBe(true);
   });
 
+  it("recognizes only own Okou model IDs", () => {
+    expect(isOkouRunModel("okou-1-0")).toBeTruthy();
+    expect(isOkouRunModel("toString")).toBeFalsy();
+    expect(isOkouRunModel("__proto__")).toBeFalsy();
+  });
+
   it.each([
     ["deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash"],
     ["deepseek-v4-flash", "deepseek/deepseek-v4-flash"],
