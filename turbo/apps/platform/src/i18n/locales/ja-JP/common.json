@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "自分のファイルをインポート",
-      "importFileHint": "ファイルのデザインを再利用",
+      "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -4136,7 +4135,6 @@
     "sourcesFirst": {
       "common": {
         "back": "戻る",
-        "cancel": "キャンセル",
         "continue": "次へ",
         "finish": "セットアップを完了",
         "notNow": "後で",
@@ -4208,17 +4206,21 @@
         "title": "どんな仕事をしていますか？"
       },
       "skills": {
-        "confirm": "インポートして次へ",
-        "copy": "SKILL.md をインポートすると Okou のワークフローになり、/ ですぐ実行できます。",
-        "import": "ファイルを選ぶ",
+        "copied": "コピーしました",
+        "copy": "このプロンプトを自分の Codex または Claude Code のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
+        "copyError": "プロンプトをコピーできませんでした。",
+        "copyPrompt": "プロンプトをコピー",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
-        "importedTitle": "ワークフローができました",
-        "panelCopy": "Codex、Claude Code、あるいは SKILL.md を書けるエージェントから。",
-        "panelTitle": "SKILL.md をここにドロップ",
-        "previewCopy": "Okou のワークフローとしてインポートします。共有するまでは自分だけが使えます。",
-        "previewTitle": "スキルを確認",
-        "replace": "別のファイルを選ぶ",
-        "title": "すでに書いたスキルを持ち込む。"
+        "importedLabel": "インポートしたスキル",
+        "importedTitle": "スキルが Okou に入りました",
+        "preparing": "インポートセッションを開いています…",
+        "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
+        "promptLabel": "スキルインポート用プロンプト",
+        "promptTitle": "Codex または Claude Code で実行してください",
+        "startError": "インポートセッションを開けませんでした。",
+        "title": "すでに書いたスキルを持ち込む。",
+        "tryAgain": "もう一度試す",
+        "waiting": "インポートされたスキルは、届き次第ここに表示されます。"
       },
       "slack": {
         "add": "Slack に追加",
@@ -6894,14 +6896,20 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
+    "clearSearch": "検索をクリア",
     "custom": "カスタム",
     "detail": {
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
     },
     "empty": {
-      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
+      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
+      "document": "ドキュメントはまだありません",
+      "illustration": "画像はまだありません",
+      "presentation": "プレゼンテーションはまだありません",
+      "title": "自分だけのテンプレートに"
     },
+    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",

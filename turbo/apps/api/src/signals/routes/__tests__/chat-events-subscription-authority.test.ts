@@ -580,9 +580,9 @@ describe("CHAT-02: run-level model overrides", () => {
           ).toMatchObject({ modelProviders: [] });
         }
         f.sdk.release();
-        await waitForRunStatus(f.actor, f.run.runId, "completed");
         await f.sdk.disposed;
         await flushWaitUntilForTest();
+        await waitForRunStatus(f.actor, f.run.runId, "completed");
         expect(f.sdk.disposeCount()).toBe(1);
         expect(f.requests).toHaveLength(1);
         expect(f.requests[0]).toMatchObject({

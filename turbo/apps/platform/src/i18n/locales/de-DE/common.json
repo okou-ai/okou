@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
-      "importFile": "Eigene Datei importieren",
-      "importFileHint": "Design Ihrer Datei wiederverwenden",
+      "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
@@ -4148,7 +4147,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Zurück",
-        "cancel": "Abbrechen",
         "continue": "Weiter",
         "finish": "Einrichtung abschließen",
         "notNow": "Jetzt nicht",
@@ -4220,17 +4218,21 @@
         "title": "Welche Arbeit machst du?"
       },
       "skills": {
-        "confirm": "Importieren und weiter",
-        "copy": "Importiere eine SKILL.md und sie wird ein Workflow in Okou, startklar über /.",
-        "import": "Datei auswählen",
+        "copied": "Kopiert",
+        "copy": "Füge diesen Prompt in deine eigene Codex- oder Claude-Code-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
+        "copyError": "Der Prompt konnte nicht kopiert werden.",
+        "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
-        "importedTitle": "Dein Workflow ist fertig",
-        "panelCopy": "Aus Codex, Claude Code oder jedem Agenten, der eine schreibt.",
-        "panelTitle": "SKILL.md hier ablegen",
-        "previewCopy": "Wird als Okou-Workflow importiert. Bis du ihn teilst, kannst nur du ihn nutzen.",
-        "previewTitle": "Skill prüfen",
-        "replace": "Andere Datei auswählen",
-        "title": "Bring die Skills mit, die du schon geschrieben hast."
+        "importedLabel": "Importierte Skills",
+        "importedTitle": "Deine Skills sind in Okou",
+        "preparing": "Deine Import-Sitzung wird geöffnet…",
+        "promptCopy": "Er liest die Skills auf deinem Rechner und schreibt sie nach Okou.",
+        "promptLabel": "Prompt für den Skill-Import",
+        "promptTitle": "Führe das in Codex oder Claude Code aus",
+        "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
+        "title": "Bring die Skills mit, die du schon geschrieben hast.",
+        "tryAgain": "Erneut versuchen",
+        "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
       "slack": {
         "add": "Zu Slack hinzufügen",
@@ -6912,14 +6914,20 @@
       "preview": "{{title}} in der Vorschau anzeigen",
       "rename": "Vorlage umbenennen"
     },
+    "clearSearch": "Suche löschen",
     "custom": "Eigene",
     "detail": {
       "back": "Eigene Vorlagen",
       "page": "Seite {{number}}"
     },
     "empty": {
-      "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
+      "description": "Importiere ein Dokument, eine Präsentation oder ein Bild, um das Design wiederzuverwenden.",
+      "document": "Noch keine Dokumente",
+      "illustration": "Noch keine Bilder",
+      "presentation": "Noch keine Präsentationen",
+      "title": "Mach es zu deiner Vorlage"
     },
+    "importHint": "Importiere ein Dokument, eine Präsentation oder ein Bild.",
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",

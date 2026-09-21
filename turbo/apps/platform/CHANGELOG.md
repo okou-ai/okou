@@ -11,6 +11,32 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.935.0](https://github.com/okou-ai/okou/compare/app-v0.934.0...app-v0.935.0) (2026-09-21)
+
+
+### Features
+
+* expose and verify x509plain vnc access ([#35792](https://github.com/okou-ai/okou/issues/35792)) ([e5dfe16](https://github.com/okou-ai/okou/commit/e5dfe16de48753642c81558877bba57cb1f90dce))
+* **onboarding:** wire the chat-channel step to real slack and teams installs ([#35809](https://github.com/okou-ai/okou/issues/35809)) ([e6e4723](https://github.com/okou-ai/okou/commit/e6e47239e64da9ffc948c43359a0601408f8d789))
+
+
+### Bug Fixes
+
+* **app:** give the artifact share menu the app's own menu row ([#35837](https://github.com/okou-ai/okou/issues/35837)) ([9e7fe98](https://github.com/okou-ai/okou/commit/9e7fe98a2cba69eaadb691472913b7b06adcc15a))
+* **app:** withdraw the color theme nobody chose ([#35830](https://github.com/okou-ai/okou/issues/35830)) ([ebfc60a](https://github.com/okou-ai/okou/commit/ebfc60a9ff22ae2d94e034512dee21c13c015cb5))
+* **platform:** drop the source filename from a custom template's column ([#35842](https://github.com/okou-ai/okou/issues/35842)) ([3938412](https://github.com/okou-ai/okou/commit/393841246e297f11bde46a1497181e8a3ce66759))
+* **platform:** preserve workspace gradients during chat loading ([#35831](https://github.com/okou-ai/okou/issues/35831)) ([f58eceb](https://github.com/okou-ai/okou/commit/f58ecebbcf5497c7b6c718cd2819088e88841fae))
+* **platform:** rework paid tool copy and the composer notice tray ([#35715](https://github.com/okou-ai/okou/issues/35715)) ([ddff5f1](https://github.com/okou-ai/okou/commit/ddff5f11ec2437826f90a553d3254d9282109122))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+    * @okouai/core bumped to 8.693.0
+    * @okouai/ui bumped to 1.11.3
+
 ## [0.934.0](https://github.com/okou-ai/okou/compare/app-v0.933.0...app-v0.934.0) (2026-09-21)
 
 

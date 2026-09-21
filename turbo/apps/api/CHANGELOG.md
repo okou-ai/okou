@@ -8,6 +8,25 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.650.0](https://github.com/okou-ai/okou/compare/api-v1.649.0...api-v1.650.0) (2026-09-21)
+
+
+### Features
+
+* **core:** admit every user export to the durable handler ([#35828](https://github.com/okou-ai/okou/issues/35828)) ([9967f71](https://github.com/okou-ai/okou/commit/9967f7191fdae596ba3d049052a345fe9ffe4b6a))
+* enable native web search fallback for byok runs ([#35827](https://github.com/okou-ai/okou/issues/35827)) ([02a6cc4](https://github.com/okou-ai/okou/commit/02a6cc450c2f93ecd143c13982b06f83ec23d124))
+* expose and verify x509plain vnc access ([#35792](https://github.com/okou-ai/okou/issues/35792)) ([e5dfe16](https://github.com/okou-ai/okou/commit/e5dfe16de48753642c81558877bba57cb1f90dce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+    * @okouai/core bumped to 8.693.0
+    * @okouai/db bumped to 1.282.2
+    * @okouai/pi-agent-runtime bumped to 1.34.5
+
 ## [1.649.0](https://github.com/okou-ai/okou/compare/api-v1.648.0...api-v1.649.0) (2026-09-21)
 
 

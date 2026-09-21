@@ -45,6 +45,7 @@ import {
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { conflict, insufficientCredits } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -233,6 +234,42 @@ function policiesByModel(
       return [row.model, row];
     }),
   );
+}
+
+async function loadModelsAllowedForNewOrgPolicy(
+  db: Db,
+  lockRows = false,
+): Promise<ReadonlySet<SupportedRunModel>> {
+  const query = db
+    .select({
+      model: runModelCatalog.model,
+      allowNewOrgPolicy: runModelCatalog.allowNewOrgPolicy,
+    })
+    .from(runModelCatalog)
+    .where(inArray(runModelCatalog.model, [...ACTIVE_RUN_MODELS]));
+  const rows = lockRows ? await query.for("share") : await query;
+  const allowed = new Set<SupportedRunModel>();
+  for (const row of rows) {
+    const model = parseSupportedModel(row.model);
+    if (model && row.allowNewOrgPolicy) {
+      allowed.add(model);
+    }
+  }
+  return allowed;
+}
+
+function modelsAvailableToAdd(
+  rows: readonly OrgModelPolicyRow[],
+  allowed: ReadonlySet<SupportedRunModel>,
+): SupportedRunModel[] {
+  const configured = new Set(
+    rows.map((row) => {
+      return row.model;
+    }),
+  );
+  return ACTIVE_RUN_MODELS.filter((model) => {
+    return allowed.has(model) && !configured.has(model);
+  });
 }
 
 function routeIdentityUnchanged(
@@ -792,16 +829,22 @@ function planRestrictedWrite(params: {
   return params.policy.isDefault && params.existing?.isDefault !== true;
 }
 
+interface UpdatePolicyValidationContext {
+  readonly capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >;
+  readonly existingRows: readonly OrgModelPolicyRow[];
+  readonly modelsAllowedForNewPolicy: ReadonlySet<SupportedRunModel>;
+}
+
 async function validateUpdatePolicies(
   db: Db,
   orgId: string,
   policies: UpdateOrgModelPolicy[],
-  capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >,
-  existingRows: readonly OrgModelPolicyRow[],
+  context: UpdatePolicyValidationContext,
 ): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
+  const { capabilities, existingRows, modelsAllowedForNewPolicy } = context;
   if (policies.length === 0) {
     return bad("Request must include at least one model");
   }
@@ -814,8 +857,12 @@ async function validateUpdatePolicies(
     if (getRunModelAccess(policy.model) === "retired") {
       return bad(RETIRED_RUN_MODEL_MESSAGE);
     }
-    if (!parseSupportedModel(policy.model)) {
+    const model = parseSupportedModel(policy.model);
+    if (!model) {
       return bad(`Unknown model "${policy.model}"`);
+    }
+    if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
+      return bad(`Model "${model}" is not available to add`);
     }
     const providerType = parseProviderType(policy.defaultProviderType);
     if (!providerType) {
@@ -1023,6 +1070,7 @@ async function listOrgModelPolicies(
       return parseSupportedModel(row.model);
     }),
   );
+  const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(db);
   const member = await loadMemberModelRouteContext(db, orgId, userId);
   const featureSwitchContext = await loadUserFeatureSwitchContext(
     db,
@@ -1113,6 +1161,10 @@ async function listOrgModelPolicies(
     policies,
     revision: policyRevision(persistedRows),
     writePreconditionRequired: member.priorityEnabled,
+    modelsAvailableToAdd: modelsAvailableToAdd(
+      persistedRows,
+      modelsAllowedForNewPolicy,
+    ),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -1280,12 +1332,19 @@ export const updateOrgModelPolicies$ = command(
         existing,
       );
       const capabilities = await orgModelCapabilities(tx, params.orgId);
+      const modelsAllowedForNewPolicy = await loadModelsAllowedForNewOrgPolicy(
+        tx,
+        true,
+      );
       const validation = await validateUpdatePolicies(
         tx,
         params.orgId,
         policies,
-        capabilities,
-        existing,
+        {
+          capabilities,
+          existingRows: existing,
+          modelsAllowedForNewPolicy,
+        },
       );
       signal.throwIfAborted();
       if (!validation.ok) {
