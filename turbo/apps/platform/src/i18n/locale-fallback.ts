@@ -32,8 +32,32 @@ function readOkouLocaleCookie(cookieHeader: string): SupportedLocale | null {
   return null;
 }
 
+// Chinese is the one supported language carried by two locales, and they are
+// separated by script rather than by region. Matching on the primary subtag
+// alone would hand every zh-TW and zh-HK reader the Simplified bundle, so the
+// script is read first and the region only decides when no script is declared.
+const TRADITIONAL_CHINESE_REGIONS = ["tw", "hk", "mo"];
+
+function chineseLocaleForSubtags(subtags: readonly string[]): SupportedLocale {
+  if (subtags.includes("hant")) {
+    return "zh-Hant";
+  }
+  if (subtags.includes("hans")) {
+    return "zh-Hans";
+  }
+  return subtags.some((subtag) => {
+    return TRADITIONAL_CHINESE_REGIONS.includes(subtag);
+  })
+    ? "zh-Hant"
+    : "zh-Hans";
+}
+
 function localeForBrowserLanguage(language: string): SupportedLocale | null {
-  const primaryLanguage = language.trim().toLowerCase().split("-")[0];
+  const subtags = language.trim().toLowerCase().split("-");
+  const primaryLanguage = subtags[0];
+  if (primaryLanguage === "zh") {
+    return chineseLocaleForSubtags(subtags.slice(1));
+  }
   return (
     SUPPORTED_LOCALES.find((locale) => {
       return locale.toLowerCase().split("-")[0] === primaryLanguage;

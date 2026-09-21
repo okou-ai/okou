@@ -6556,6 +6556,8 @@
         "description": "Choisissez votre langue préférée pour l'interface {{brandName}}",
         "label": "Langue",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

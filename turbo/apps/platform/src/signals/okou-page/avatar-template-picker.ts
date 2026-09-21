@@ -88,6 +88,8 @@ const PREFERRED_VOICE_LANGUAGE_BY_LOCALE = {
   "ja-JP": "japanese",
   "ko-KR": "korean",
   "pt-BR": "portuguese",
+  "zh-Hans": "chinese",
+  "zh-Hant": "chinese",
 } as const satisfies Record<SupportedLocale, string>;
 
 const PREFERRED_VOICE_USE_CASE_BY_AVATAR_STYLE = {
