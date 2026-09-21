@@ -702,8 +702,9 @@ primitive. It moves one stable portal container to `#root` in fullscreen and
 back into its inline slot on exit, escaping the workspace stacking context.
 The fullscreen surface participates in the isolated app root at `z-40`, above
 workspace and sidebar content and below body-level Base UI dialogs and menus.
-This also keeps it below the planned `z-50` primitives when root isolation is
-removed. Business components do not own this portal or its stacking utilities.
+That ordering depends on the fullscreen host staying inside the app root's
+stacking context. Business components do not own this portal or its stacking
+utilities.
 
 Both modes render through the same portal container rather than switching
 between a portal and an in-place React subtree. This preserves React state.
@@ -745,10 +746,15 @@ A row's background already paints behind its children; a button does not need
 `relative z-10` to sit above it. Event propagation is handled by event handlers,
 not by raising the button's paint order.
 
-- Shared floating primitives follow shadcn's flat `z-50` convention. Their
-  portals and stacking utilities stay inside `@okouai/ui`; callers do not
-  override them. Peer surfaces at the same stack level in the same stacking
-  context follow DOM order, so preserve the primitive's portal structure.
+- Shared floating primitives own their portals inside `@okouai/ui`. Base UI
+  appends top-level portals after the isolated app root and nests descendant
+  portals under their owner. Preserve that structure so floating surfaces paint
+  above app content, each popup paints above its backdrop, and a nested surface
+  stays above its parent. Callers must not override this order with z-index.
+  The wrappers currently rely on this structure rather than a shared `z-50`.
+  Shadcn's `z-50` is a convention, not a browser requirement or proof of correct
+  stacking; changing it requires a demonstrated ordering failure and a browser
+  regression test.
 - The shell owns app-wide non-portal layers such as drawers, scrims and
   fullscreen panels. Keep a small fixed set of literal Tailwind z-index
   utilities in shell-owned files, below the shared floating layer in the
@@ -766,13 +772,19 @@ project's ownership convention, not a limitation of CSS custom properties:
 Tailwind can express a variable-backed z-index, but neither a variable nor a
 larger literal lets a descendant escape its ancestor's stacking context.
 
+Keep the app root's stacking boundary in both display modes. `position: fixed`
+already establishes it in a browser tab. Standalone mode changes the root to
+`position: absolute` for iOS editing, where `isolation: isolate` preserves that
+boundary. Removing isolation because it is redundant in a browser tab would
+let app layers compete with body-level portals in standalone mode.
+
 Audit the context, not a numeric threshold. A positioned `z-0` creates a
 stacking context just as `isolate` does; transforms and opacity below 1 can
 also create one. Review those boundaries before adding isolation to a layout
 wrapper, especially when descendants need to cover other app regions.
 
 The artifact bug recorded in
-[#35387](https://github.com/vm0-ai/okou/issues/35387) illustrates the failure:
+[#35387](https://github.com/okou-ai/okou/issues/35387) illustrates the failure:
 `WorkspaceInset` had `relative z-0`, trapping the artifact detail's
 `fixed z-[100]` inside that context. The sidebar header's `relative z-10`
 buttons participated outside it and painted above the fullscreen surface.
@@ -780,12 +792,18 @@ Lowering 100 below 50 or removing only `#root`'s isolation cannot repair that
 boundary. The artifact catalog's portal to `#root` escaped it, so removing that
 portal before correcting the host would expose the same bug on that path.
 
-The primitive `z-50` restoration, root-isolation removal, shell-host migration
-and z-index lint are tracked in #35387. Existing z-index declarations are
-migration debt to audit under these ownership rules, including zero, negative
-values and values below 50; passing today's lint does not establish correct
-stacking. Regression coverage must verify that fullscreen content paints above
-sidebar actions and that toggling fullscreen preserves the panel's DOM state.
+The remaining layer-ownership audit and lint work are tracked in #35387.
+Existing z-index declarations are migration debt to audit under these ownership
+rules, including zero, negative values and values below 50; passing today's
+lint does not establish correct stacking.
+
+[Browser regression tests](../e2e/playwright/tests/floating-layers.spec.ts)
+check actual pointer hit targets over sidebar actions in fullscreen, nested
+dialog interaction and dismissal, and a select above its settings dialog.
+Class names and computed z-index values alone cannot verify these relationships.
+Fullscreen state preservation also needs the shared primitive's state and
+scroll regression coverage. Standalone behavior still needs installed-PWA
+acceptance; desktop browser coverage does not establish iOS keyboard behavior.
 
 ### Horizontal hairline rules
 
