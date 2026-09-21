@@ -1769,13 +1769,10 @@ export function OrgModelPoliciesSection() {
   const visiblePolicies = policies.filter((policy) => {
     return ACTIVE_RUN_MODELS.includes(policy.model);
   });
-  const configuredModels = new Set(
-    policies.map((policy) => {
-      return policy.model;
-    }),
-  );
-  const addableModels = ACTIVE_RUN_MODELS.filter((model) => {
-    return isAddableBuiltInModel(model) && !configuredModels.has(model);
+  // A new App can briefly reach an API from before this projection existed.
+  // Fail closed during that rollback window; make the field required afterward.
+  const addableModels = (data.modelsAvailableToAdd ?? []).filter((model) => {
+    return isAddableBuiltInModel(model);
   });
 
   const submit = (next: UpdateOrgModelPolicy[]) => {

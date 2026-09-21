@@ -12,6 +12,35 @@ import { createDeferredPromise } from "../signals/utils";
 import { db } from "../lib/db";
 
 /**
+ * The API version before the global addition gate could persist any active
+ * model. Stage that historical state to prove a later catalog disablement does
+ * not alter or freeze the organization's existing policy.
+ */
+export async function stagePreAddabilityModelPolicyFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly model: SupportedRunModel;
+}): Promise<void> {
+  const inserted = await db()
+    .insert(orgModelPolicies)
+    .values({
+      orgId: args.orgId,
+      model: args.model,
+      isDefault: false,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      modelProviderSurfaceId: null,
+      createdByUserId: args.userId,
+      updatedByUserId: args.userId,
+    })
+    .returning({ id: orgModelPolicies.id });
+  if (inserted.length !== 1) {
+    throw new Error("Expected one pre-addability model policy to be inserted");
+  }
+}
+
+/**
  * Simulate a persisted discriminator written by a later release. The current
  * production API intentionally cannot construct this canonical row because
  * its write fence still rejects `built-in`; compatibility reads still require

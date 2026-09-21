@@ -1651,6 +1651,10 @@ export const orgModelPoliciesResponseSchema = z.object({
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
+  // API-first rollout compatibility: a new App can briefly reach an API from
+  // before this catalog projection existed. Missing data fails closed in the
+  // Add model dialog. Make required after those API builds leave rollback.
+  modelsAvailableToAdd: z.array(supportedRunModelSchema).optional(),
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });
