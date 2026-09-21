@@ -8,7 +8,7 @@ import {
 } from "jose";
 import { z } from "zod";
 
-import { safeJsonParse, settle } from "../utils";
+import { safeJsonParse, safeSync, settle } from "../utils";
 import {
   mcpOAuthSafeFetch,
   validateMcpOAuthPublicUrl,
@@ -301,18 +301,14 @@ export async function discoverStaticCustomOAuthUserInfo(
   if (!idToken) {
     return null;
   }
-  const issuerResult = await settle(
-    Promise.resolve().then(
-      () => untrustedIssuerClaimSchema.parse(decodeJwt(idToken)).iss,
-    ),
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!issuerResult.ok) {
+  const issuerResult = safeSync(() => {
+    return untrustedIssuerClaimSchema.parse(decodeJwt(idToken)).iss;
+  });
+  if ("error" in issuerResult) {
     return null;
   }
   const publicIssuer = await settle(
-    validateMcpOAuthPublicUrl(issuerResult.value, signal),
+    validateMcpOAuthPublicUrl(issuerResult.ok, signal),
     signal,
   );
   signal.throwIfAborted();
@@ -324,7 +320,7 @@ export async function discoverStaticCustomOAuthUserInfo(
   return await discoverMcpAutomaticOAuthUserInfo(
     {
       context: {
-        issuer: issuerResult.value,
+        issuer: issuerResult.ok,
         authorizationEndpoint: args.authorizationEndpoint,
         tokenEndpoint: args.tokenEndpoint,
         clientId: args.clientId,
