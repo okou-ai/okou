@@ -13,7 +13,10 @@ import { i18n } from "../i18n/index.ts";
 import { apiClient$ } from "./api-client.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
-import { tapError } from "./utils.ts";
+import { logger } from "./log.ts";
+import { settle } from "./utils.ts";
+
+const log = logger("okou-attachment-download");
 
 type AttachmentDownload = {
   readonly filename: string;
@@ -21,10 +24,16 @@ type AttachmentDownload = {
 };
 
 /**
- * List the publication an artifact reference points at. A reference that does
- * not resolve to hosted content, or a publication this viewer may not clone,
- * leaves the artifact on the single-resource download path, which reports its
- * own failure.
+ * List the publication an artifact reference points at.
+ *
+ * `403` and `404` are the documented misses for this viewer: a reference that
+ * does not name hosted content, and a publication whose files this viewer may
+ * not clone even though it may open the artifact. Both leave the artifact on
+ * the single-resource download path. The same `404` covers an API deployed
+ * before the additive `files` route (#35220); see the PR's `Fallbacks` section.
+ * Every other status is a failed required operation and propagates, because
+ * delivering the entry document alone would silently misrepresent the
+ * publication.
  */
 const hostedPublication$ = command(
   async (
@@ -36,19 +45,18 @@ const hostedPublication$ = command(
     if (!reference) {
       return null;
     }
-    const response = await tapError(
-      accept(
-        get(apiClient$)(artifactDownloadsContract).files({
-          params: { reference: `${reference.hash}${reference.extension}` },
-          fetchOptions: { signal },
-        }),
-        [200, 403, 404],
-        signal,
-        { showErrorToast: false },
-      ),
+    const response = await accept(
+      get(apiClient$)(artifactDownloadsContract).files({
+        params: { reference: `${reference.hash}${reference.extension}` },
+        fetchOptions: { signal },
+      }),
+      [200, 403, 404],
+      signal,
+      // This path owns one `downloadFailed` toast for every way it can fail.
+      { showErrorToast: false },
     );
     signal.throwIfAborted();
-    return response?.status === 200 ? response.body : null;
+    return response.status === 200 ? response.body : null;
   },
 );
 
@@ -88,6 +96,13 @@ async function writePublicationArchive(
  * the stylesheets, scripts, images and sibling pages it references behind. A
  * publication of more than one file downloads as a zip of all of them; a
  * self-contained page stays the page itself.
+ *
+ * Returns false only when this artifact is not a publication to archive, which
+ * hands it to the single-resource download. Once the archive is owed, every
+ * way it can fail — an unreadable member, a listing this viewer should have
+ * been able to read, a network or CORS failure — reports `downloadFailed`
+ * rather than quietly delivering the entry document this change exists to stop
+ * delivering.
  */
 const downloadHostedPublication$ = command(
   async (
@@ -98,13 +113,26 @@ const downloadHostedPublication$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const site = await set(hostedPublication$, args.attachment, signal);
-    if (!site || site.files.length < 2) {
+    const attempt = await settle(
+      (async (): Promise<boolean | null> => {
+        const site = await set(hostedPublication$, args.attachment, signal);
+        if (!site || site.files.length < 2) {
+          return null;
+        }
+        return await writePublicationArchive(site, args.resourceUrl, signal);
+      })(),
+      signal,
+    );
+    if (attempt.ok && attempt.value === null) {
       return false;
     }
-    if (!(await writePublicationArchive(site, args.resourceUrl, signal))) {
-      // This publication is known to have members that did not arrive, and its
-      // entry document would misrepresent it, so report the failure instead.
+    if (!attempt.ok) {
+      log.warn(
+        "downloadHostedPublication: publication unavailable",
+        attempt.error,
+      );
+    }
+    if (!attempt.ok || !attempt.value) {
       toast.error(
         i18n.t(($) => {
           return $.artifacts.toasts.downloadFailed;

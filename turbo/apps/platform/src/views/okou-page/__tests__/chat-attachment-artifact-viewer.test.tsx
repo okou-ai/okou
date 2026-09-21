@@ -1062,6 +1062,57 @@ test("a multi-file hosted publication downloads as a zip of every member", async
   expect(screen.queryByText("Download failed")).toBeNull();
 });
 
+test("a publication whose member cannot be reached reports the failure", async () => {
+  mockHostedPublication([
+    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
+    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
+  ]);
+  const downloads = context.mocks.browser.blobDownload();
+  // A member the browser never reaches: the delivery host does not get to
+  // describe this failure, so nothing but the archive can report it.
+  context.mocks.http.get(
+    `${PUBLICATION_HOST.slice(0, -1)}/assets/site.css`,
+    () => {
+      return HttpResponse.error();
+    },
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Launch site"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+
+  await expect(
+    screen.findByText("Download failed"),
+  ).resolves.toBeInTheDocument();
+  expect(downloads.downloads).toStrictEqual([]);
+});
+
+test("a publication that cannot be listed reports the failure instead of its entry page", async () => {
+  mockHostedPublication([
+    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
+    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
+  ]);
+  const downloads = context.mocks.browser.blobDownload();
+  context.mocks.api(artifactDownloadsContract.files, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL", message: "Listing unavailable" },
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Launch site"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+
+  await expect(
+    screen.findByText("Download failed"),
+  ).resolves.toBeInTheDocument();
+  expect(downloads.downloads).toStrictEqual([]);
+});
+
 test("a self-contained hosted page downloads as the page itself", async () => {
   mockHostedPublication([
     hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),

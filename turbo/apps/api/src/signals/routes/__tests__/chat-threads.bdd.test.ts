@@ -4138,6 +4138,106 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     },
   );
 
+  // The reported defect: a public deck is neither owner-private nor a
+  // `hosted-site`, so the old condition uploaded its entry document alone.
+  it("exports a public presentation deck to Google Drive as an owned bundle", async () => {
+    const { actor, agentId } = await entitledChatActor(
+      "Public deck Drive owner",
+    );
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "Create a public HTML deck",
+    });
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/hosted-upload?sig=test",
+    );
+    const index =
+      '<!doctype html><link rel="stylesheet" href="/assets/deck.css"><h1>Deck</h1>';
+    const css = "h1 { color: teal }";
+    const bearer = okouCapabilityHeaders(actor, run.runId, [
+      "host:write",
+    ]).authorization;
+    const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
+      site: `public-deck-${randomUUID().slice(0, 8)}`,
+      artifactKind: "presentation-html",
+      spaFallback: false,
+      files: [
+        hostedTextFile("/index.html", index),
+        hostedTextFile("/assets/deck.css", css),
+      ],
+    });
+    for (const [path, body] of [
+      ["/index.html", index],
+      ["/assets/deck.css", css],
+    ] as const) {
+      objectStore.addObject({
+        bucket: "test-hosted-sites",
+        key: `sites/brands/okou/publications/${prepared.deploymentId}${path}`,
+        size: Buffer.byteLength(body),
+        body: Buffer.from(body),
+      });
+    }
+    await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
+    // A public publication lists its canonical artifact URL and keeps the
+    // brand host as `aliasUrl`; only an owner-private one lists the alias.
+    const { artifactUrl } = prepared;
+    if (!artifactUrl) {
+      throw new Error("Expected a canonical artifact URL");
+    }
+    const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
+    const artifact = artifacts.runs
+      .flatMap((item) => {
+        return item.files;
+      })
+      .find((file) => {
+        return file.url === artifactUrl;
+      });
+    if (!artifact) {
+      throw new Error("Expected a public hosted artifact");
+    }
+    mockGoogleDriveConnectorOAuth();
+    const start = await connectorsApi.startOauth(
+      actor,
+      "google-drive",
+      "oauth",
+    );
+    await connectorsApi.completeOauthCallback("google-drive", {
+      code: "drive-ok",
+      state: stateFromAuthorizationUrl(start.authorizationUrl),
+    });
+    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "public-deck-drive-file",
+      name: "deck.zip",
+    });
+    await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: artifact.id },
+      [200],
+    );
+
+    const multipart = Buffer.from(upload.bodies[0]!);
+    expect(multipart.toString("utf8")).toContain("application/zip");
+    const zip = new AdmZip(
+      multipart.subarray(
+        multipart.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04])),
+      ),
+    );
+    expect(
+      zip
+        .getEntries()
+        .map((entry) => {
+          return entry.entryName;
+        })
+        .sort(),
+    ).toStrictEqual(["assets/deck.css", "index.html"]);
+    expect(zip.readAsText("index.html")).toBe(index);
+    expect(zip.readAsText("assets/deck.css")).toBe(css);
+  });
+
   it("exports a self-contained hosted page to Google Drive as that page", async () => {
     const { actor, agentId } = await entitledChatActor(
       "Single page Drive owner",
