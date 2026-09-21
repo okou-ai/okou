@@ -46,7 +46,9 @@ After storage succeeds, Runner publishes the staged file to the canonical
 framework path. Same-device publication is one rename. If the staging and
 destination directories are on different filesystems, publication copies to a
 unique sibling of the destination and then renames that sibling into place; this
-is correct but may be slower. A normally completed helper can report a bounded
+is correct but may be slower. An existing regular destination's mode is retained;
+an ownership mismatch is proven non-publication and uses the serial path. A
+normally completed helper can report a bounded
 `not_published` result, in which case Runner performs the existing serial restore.
 A timeout, cancellation, transport failure or malformed result leaves publication
 ambiguous, so Runner fails closed and does not retry the write.

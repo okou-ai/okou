@@ -75,6 +75,8 @@ pub enum StagedFileNotPublishedReason {
     InvalidDestinationParent,
     /// The destination resolved to an unsupported entry type.
     InvalidDestination,
+    /// Existing destination metadata could not be preserved safely.
+    MetadataPreparationFailed,
     /// A same-device rename failed before publication.
     RenameFailed,
     /// A cross-device copy failed before publication.

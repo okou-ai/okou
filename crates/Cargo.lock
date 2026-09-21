@@ -1809,6 +1809,7 @@ dependencies = [
  "sandbox",
  "serde_json",
  "shell-quote",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

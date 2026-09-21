@@ -1531,6 +1531,7 @@ struct StagedSessionRestore {
     plan: FreshSessionRestorePlan,
     transfer_source: HistoryTransferSource,
     transfer: crate::telemetry::HistoryTransferMeasurements,
+    staging_elapsed: Duration,
     workspace_completion: Option<(
         WorkspaceSessionHistoryTimings,
         WorkspaceSessionHistoryTelemetry,
@@ -1605,6 +1606,7 @@ async fn write_staged_session(
         plan,
         transfer_source: source,
         transfer,
+        staging_elapsed: elapsed,
         workspace_completion,
     })
 }
@@ -2331,22 +2333,27 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     let cancelled_before_storage_apply = cancel.is_cancelled()
                         && matches!(&storage_error, RunnerError::Cancelled)
                         && !storage_apply_admitted.load(Ordering::Acquire);
-                    match staged_result {
+                    let should_discard_staging = match staged_result {
                         Ok(StagedSessionRestorePreparation::Serial(plan)) => {
                             plan.cancel_and_drain().await;
+                            false
                         }
                         Ok(StagedSessionRestorePreparation::Ready(staged)) => {
-                            let elapsed = staged_restore_started.elapsed();
+                            let elapsed = staged.staging_elapsed;
                             record_staged_history_transfer_outcome(
                                 telemetry, context, &staged, elapsed, false,
                             );
                             record_staged_workspace_restore_outcome(
                                 telemetry, &staged, elapsed, false,
                             );
+                            true
                         }
-                        Ok(StagedSessionRestorePreparation::Missing) | Err(_) => {}
+                        Ok(StagedSessionRestorePreparation::Missing) => false,
+                        Err(_) => true,
+                    };
+                    if should_discard_staging {
+                        discard_staged_session_history(sandbox, &staging_path).await;
                     }
-                    discard_staged_session_history(sandbox, &staging_path).await;
                     if let Some(prepared) = prepared_storage.as_mut() {
                         prepared.delivery.cancel_and_drain(telemetry).await;
                     }
@@ -2397,19 +2404,23 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 }
             };
             if cancel.is_cancelled() {
-                discard_staged_session_history(sandbox, &staging_path).await;
-                match staged {
+                let should_discard_staging = match staged {
                     StagedSessionRestorePreparation::Serial(plan) => {
                         plan.cancel_and_drain().await;
+                        false
                     }
                     StagedSessionRestorePreparation::Ready(staged) => {
-                        let elapsed = staged_restore_started.elapsed();
+                        let elapsed = staged.staging_elapsed;
                         record_staged_history_transfer_outcome(
                             telemetry, context, &staged, elapsed, false,
                         );
                         record_staged_workspace_restore_outcome(telemetry, &staged, elapsed, false);
+                        true
                     }
-                    StagedSessionRestorePreparation::Missing => {}
+                    StagedSessionRestorePreparation::Missing => false,
+                };
+                if should_discard_staging {
+                    discard_staged_session_history(sandbox, &staging_path).await;
                 }
                 model_catalog_prefetch.finish(telemetry).await;
                 info!(
@@ -2466,103 +2477,118 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         publication.as_ref().err().map(|_| "ambiguous publication"),
                         publication_outcome,
                     );
-                    let diagnostics =
-                        match publication {
-                            Ok(StagedFileFinalizeOutcome::Published { .. }) => staged
+                    let (diagnostics, fallback_elapsed, published_from_stage) = match publication {
+                        Ok(StagedFileFinalizeOutcome::Published { .. }) => (
+                            staged
                                 .plan
                                 .complete(context, &staged.session, staged.transfer.clone()),
-                            Ok(StagedFileFinalizeOutcome::NotPublished { .. }) => {
-                                telemetry.record_with_outcome(
-                                    "session_history_workspace_staged_restore_fallback",
-                                    Duration::ZERO,
-                                    true,
-                                    None,
-                                    Some("not_published"),
-                                );
-                                let started = Instant::now();
-                                let result = staged
-                                    .plan
-                                    .write_final(sandbox, context, &staged.session)
-                                    .await;
-                                let elapsed = started.elapsed();
-                                telemetry.record_history_transfer(
-                                    elapsed,
-                                    staged.transfer_source,
-                                    CliFramework::from(effective_cli_framework(
-                                        &context.cli_agent_type,
-                                    ))
-                                    .as_cli_agent_type(),
-                                    result
-                                        .as_ref()
-                                        .ok()
-                                        .map(|diagnostics| diagnostics.transfer.clone()),
-                                );
-                                discard_staged_session_history(sandbox, &staging_path).await;
-                                match result {
-                                    Ok(diagnostics) => diagnostics,
-                                    Err(error) => {
-                                        record_staged_workspace_restore_outcome(
-                                            telemetry,
-                                            &staged,
-                                            staged_restore_started.elapsed(),
-                                            false,
-                                        );
-                                        return Err(error);
-                                    }
+                            Duration::ZERO,
+                            true,
+                        ),
+                        Ok(StagedFileFinalizeOutcome::NotPublished { .. }) => {
+                            telemetry.record_with_outcome(
+                                "session_history_workspace_staged_restore_fallback",
+                                Duration::ZERO,
+                                true,
+                                None,
+                                Some("not_published"),
+                            );
+                            let started = Instant::now();
+                            let result = staged
+                                .plan
+                                .write_final(sandbox, context, &staged.session)
+                                .await;
+                            let elapsed = started.elapsed();
+                            telemetry.record_history_transfer(
+                                elapsed,
+                                staged.transfer_source,
+                                CliFramework::from(effective_cli_framework(
+                                    &context.cli_agent_type,
+                                ))
+                                .as_cli_agent_type(),
+                                result
+                                    .as_ref()
+                                    .ok()
+                                    .map(|diagnostics| diagnostics.transfer.clone()),
+                            );
+                            discard_staged_session_history(sandbox, &staging_path).await;
+                            match result {
+                                Ok(diagnostics) => (diagnostics, elapsed, false),
+                                Err(error) => {
+                                    let restore_elapsed = staged
+                                        .staging_elapsed
+                                        .saturating_add(publication_elapsed)
+                                        .saturating_add(elapsed);
+                                    record_staged_workspace_restore_outcome(
+                                        telemetry,
+                                        &staged,
+                                        restore_elapsed,
+                                        false,
+                                    );
+                                    return Err(error);
                                 }
                             }
-                            Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {
-                                record_staged_history_transfer_outcome(
-                                    telemetry,
-                                    context,
-                                    &staged,
-                                    staged_restore_started.elapsed(),
-                                    false,
-                                );
-                                record_staged_workspace_restore_outcome(
-                                    telemetry,
-                                    &staged,
-                                    staged_restore_started.elapsed(),
-                                    false,
-                                );
-                                return Err(RunnerError::Internal(
-                                    "publish request unexpectedly discarded staged history".into(),
-                                ));
-                            }
-                            Err(error) => {
-                                record_staged_history_transfer_outcome(
-                                    telemetry,
-                                    context,
-                                    &staged,
-                                    staged_restore_started.elapsed(),
-                                    false,
-                                );
-                                record_staged_workspace_restore_outcome(
-                                    telemetry,
-                                    &staged,
-                                    staged_restore_started.elapsed(),
-                                    false,
-                                );
-                                return Err(RunnerError::Sandbox(error));
-                            }
-                        };
+                        }
+                        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {
+                            let restore_elapsed =
+                                staged.staging_elapsed.saturating_add(publication_elapsed);
+                            record_staged_history_transfer_outcome(
+                                telemetry,
+                                context,
+                                &staged,
+                                restore_elapsed,
+                                false,
+                            );
+                            record_staged_workspace_restore_outcome(
+                                telemetry,
+                                &staged,
+                                restore_elapsed,
+                                false,
+                            );
+                            return Err(RunnerError::Internal(
+                                "publish request unexpectedly discarded staged history".into(),
+                            ));
+                        }
+                        Err(error) => {
+                            let restore_elapsed =
+                                staged.staging_elapsed.saturating_add(publication_elapsed);
+                            record_staged_history_transfer_outcome(
+                                telemetry,
+                                context,
+                                &staged,
+                                restore_elapsed,
+                                false,
+                            );
+                            record_staged_workspace_restore_outcome(
+                                telemetry,
+                                &staged,
+                                restore_elapsed,
+                                false,
+                            );
+                            return Err(RunnerError::Sandbox(error));
+                        }
+                    };
                     let total_elapsed = staged_restore_started.elapsed();
-                    if matches!(publication_outcome, Some("same_device" | "cross_device")) {
+                    let restore_elapsed = staged
+                        .staging_elapsed
+                        .saturating_add(publication_elapsed)
+                        .saturating_add(fallback_elapsed);
+                    if published_from_stage {
                         record_staged_history_transfer_outcome(
                             telemetry,
                             context,
                             &staged,
-                            total_elapsed,
+                            restore_elapsed,
                             true,
                         );
                     }
                     record_staged_workspace_restore_outcome(
                         telemetry,
                         &staged,
-                        total_elapsed,
+                        restore_elapsed,
                         true,
                     );
-                    telemetry.record("session_restore", total_elapsed, true, None);
+                    telemetry.record("session_restore", restore_elapsed, true, None);
                     telemetry.record_with_outcome(
                         "session_history_workspace_staged_restore",
                         total_elapsed,
