@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   IssuerMismatchError,
   type OAuthClientMetadata,
@@ -12,6 +13,7 @@ import {
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
+import { AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
@@ -1041,10 +1043,19 @@ async function credentialDestinationMatches(
     contract.connectorSlug,
     contract.authMethodId,
   );
+  const currentCatalogApi = snapshot.serverFirewalls
+    .getRuntimeFirewall(contract.connectorSlug)
+    ?.apis.find((api) => {
+      return api.base === expectedEndpoint;
+    });
   signal.throwIfAborted();
-  // The contract hash covers the endpoint and auth method. Built-in MCP
-  // firewall auth is synthesized per Run and is not catalog-owned metadata.
-  return current?.contractHash === contract.contractHash;
+  return (
+    current?.contractHash === contract.contractHash &&
+    isDeepStrictEqual(
+      currentCatalogApi?.auth,
+      AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+    )
+  );
 }
 
 async function resolveLockedAutomatic(

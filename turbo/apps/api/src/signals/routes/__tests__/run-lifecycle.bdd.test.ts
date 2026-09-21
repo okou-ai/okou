@@ -489,6 +489,17 @@ function inlineFirewallApis(
   return entry.firewall.apis;
 }
 
+function builtinFirewallEntry(
+  entries: readonly ExecutionFirewallEntry[] | undefined,
+  name: string,
+): Extract<ExecutionFirewallEntry, { readonly kind: "builtin" }> {
+  const entry = findFirewallEntry(entries, name);
+  if (!entry || entry.kind !== "builtin") {
+    throw new Error(`Expected builtin firewall entry: ${name}`);
+  }
+  return entry;
+}
+
 type AvailableCustomConnectorRuntime = Extract<
   ConnectorRuntimeSyncResult,
   { readonly state: "available"; readonly target: { readonly kind: "custom" } }
@@ -10788,7 +10799,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {
       const catalog = await installAutomaticMcpCatalog({
-        firewallAuth: resolution === "oauth" ? "none" : "oauth",
+        firewallAuth: resolution,
       });
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",
@@ -10811,7 +10822,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           methodId: catalog.methodId,
           storageVersion: 2,
           isolateSource: false,
-          firewallAuth: "oauth",
+          firewallAuth: resolution,
         });
       }
       const run = await api.createRun(actor, {
@@ -10823,36 +10834,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(connectionId);
-      const firewall = findFirewallEntry(claim.firewalls, catalog.slug);
+      const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
       expect(firewall).toMatchObject({
-        kind: "inline",
+        kind: "builtin",
+        name: catalog.slug,
         sourceId: connectionId,
-        firewall: {
-          name: catalog.slug,
-          apis: [
-            {
-              id: `${catalog.slug}:0`,
-              base: catalog.endpoint,
-              auth:
-                resolution === "oauth"
-                  ? {
-                      headers: {
-                        Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-                      },
-                    }
-                  : {},
-              permissions: [],
-            },
-          ],
-        },
       });
-      if (!firewall || firewall.kind !== "inline") {
-        throw new Error("Expected the built-in MCP inline firewall");
-      }
-      const runtimeApi = firewall.firewall.apis[0];
-      if (!runtimeApi) {
-        throw new Error("Expected the built-in MCP runtime API");
-      }
       expect(JSON.stringify(claim)).not.toContain(
         "automatic-initial-access-token",
       );
@@ -10889,7 +10876,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }
       const authBody = {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: runtimeApi.auth.headers ?? {},
+        authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
@@ -10899,15 +10886,19 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           routingVariables: {},
         },
       };
+      const resolved = await fw.requestFirewallAuth(
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        authBody,
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        headers:
+          resolution === "oauth"
+            ? { Authorization: "Bearer automatic-initial-access-token" }
+            : {},
+      });
+
       if (resolution === "oauth") {
-        const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          authBody,
-          [200],
-        );
-        expect(resolved.body).toMatchObject({
-          headers: { Authorization: "Bearer automatic-initial-access-token" },
-        });
         mockAutomaticMcpOAuthProvider(context, {
           registration: "none",
           authentication: "none",
@@ -10943,7 +10934,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         );
         expect(check.body).toMatchObject({
           outcome: "resolved",
-          connector: { credentialResolution: "none" },
+          connector: { credentialResolution: "network-boundary" },
         });
       }
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -10955,7 +10946,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     },
   );
 
-  it("ignores a legacy no-auth firewall when Automatic discovery resolves OAuth", async () => {
+  it("keeps a no-auth catalog firewall when Automatic discovery resolves OAuth", async () => {
     const catalog = await installAutomaticMcpCatalog({
       firewallAuth: "none",
     });
@@ -10982,31 +10973,11 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
-    const firewall = findFirewallEntry(claim.firewalls, catalog.slug);
-    expect(firewall).toMatchObject({
-      kind: "inline",
+    expect(builtinFirewallEntry(claim.firewalls, catalog.slug)).toStrictEqual({
+      kind: "builtin",
+      name: catalog.slug,
       sourceId: connectionId,
-      firewall: {
-        name: catalog.slug,
-        apis: [
-          {
-            base: catalog.endpoint,
-            auth: {
-              headers: {
-                Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-              },
-            },
-          },
-        ],
-      },
     });
-    if (!firewall || firewall.kind !== "inline") {
-      throw new Error("Expected the built-in MCP inline firewall");
-    }
-    const runtimeApi = firewall.firewall.apis[0];
-    if (!runtimeApi) {
-      throw new Error("Expected the built-in MCP runtime API");
-    }
     expect(catalog.firewallAuthHeaders).toStrictEqual({});
 
     const checkClient = setupApp({ context, routes: connectorCheckRoutes })(
@@ -11028,13 +10999,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(check.body).toMatchObject({
       outcome: "resolved",
-      connector: { credentialResolution: "network-boundary" },
+      connector: { credentialResolution: "none" },
     });
-    const staleNoAuth = await fw.requestFirewallAuth(
+    const staleOAuth = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
       {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: {},
+        authHeaders: {
+          Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+        },
         forceRefresh: true,
         matchedFirewall: {
           name: catalog.slug,
@@ -11047,7 +11020,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
       [424],
     );
-    expect(staleNoAuth.body).toMatchObject({
+    expect(staleOAuth.body).toMatchObject({
       error: { code: "CONNECTOR_NOT_CONFIGURED" },
     });
     expect(provider.tokenBodies).toHaveLength(1);
@@ -11055,7 +11028,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { authorization: `Bearer ${claim.sandboxToken}` },
       {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: runtimeApi.auth.headers ?? {},
+        authHeaders: catalog.firewallAuthHeaders,
+        forceRefresh: true,
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
@@ -11067,9 +11041,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
       [200],
     );
-    expect(resolved.body).toMatchObject({
-      headers: { Authorization: "Bearer automatic-initial-access-token" },
-    });
+    expect(resolved.body).toMatchObject({ headers: {} });
     expect(provider.tokenBodies).toHaveLength(1);
     const [runtime] = await api.syncConnectorRuntime(run.runId, {
       targets: [target],
@@ -11086,7 +11058,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it.each(["none", "manual"] as const)(
-    "keeps the Run auth snapshot when reconnecting builtin Automatic to %s",
+    "keeps catalog auth when reconnecting builtin Automatic to %s",
     async (authMode) => {
       const catalog = await installAutomaticMcpCatalog({
         slug: "manual-mcp",
@@ -11114,31 +11086,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
-      const firewall = findFirewallEntry(claim.firewalls, catalog.slug);
-      expect(firewall).toMatchObject({
-        kind: "inline",
-        sourceId: connectionId,
-        firewall: {
+      expect(builtinFirewallEntry(claim.firewalls, catalog.slug)).toMatchObject(
+        {
+          kind: "builtin",
           name: catalog.slug,
-          apis: [
-            {
-              base: catalog.endpoint,
-              auth: {
-                headers: {
-                  Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-                },
-              },
-            },
-          ],
+          sourceId: connectionId,
         },
-      });
-      if (!firewall || firewall.kind !== "inline") {
-        throw new Error("Expected the built-in MCP inline firewall");
-      }
-      const runtimeApi = firewall.firewall.apis[0];
-      if (!runtimeApi) {
-        throw new Error("Expected the built-in MCP runtime API");
-      }
+      );
       if (authMode === "none") {
         const client = setupApp({ context, routes: builtinConnectorsRoutes })(
           builtinConnectorNoAuthGrantContract,
@@ -11198,10 +11152,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       expect(check.body).toMatchObject({
         outcome: "resolved",
         connector: {
-          credentialResolution:
-            authMode === "none" ? "none" : "network-boundary",
+          credentialResolution: "network-boundary",
         },
       });
+      const authHeaders =
+        authMode === "none"
+          ? catalog.firewallAuthHeaders
+          : {
+              Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
+            };
       const auth = await fw.requestFirewallAuth(
         {
           authorization: `Bearer ${claim.sandboxToken}`,
@@ -11209,21 +11168,23 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         {
           encryptedSecrets:
             claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-          authHeaders: runtimeApi.auth.headers ?? {},
+          authHeaders,
           matchedFirewall: {
             name: catalog.slug,
             apiId: `${catalog.slug}:0`,
-            base: catalog.endpoint,
+            base: endpoint,
             connectorSlug: catalog.slug,
             sourceId: connectionId,
             routingVariables: {},
           },
         },
-        [424],
+        authMode === "none" ? [424] : [200],
       );
-      expect(auth.body).toMatchObject({
-        error: { code: "CONNECTOR_NOT_CONFIGURED" },
-      });
+      expect(auth.body).toMatchObject(
+        authMode === "none"
+          ? { error: { code: "CONNECTOR_NOT_CONFIGURED" } }
+          : { headers: { Authorization: "Bearer reconnected-manual-token" } },
+      );
       await api.requestCancelRun(actor, run.runId, [200]);
       await connectors.deleteBuiltinConnectorAccount(
         actor,
@@ -11268,14 +11229,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-    if (!runtimeApi) {
-      throw new Error("Expected the built-in MCP runtime API");
-    }
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: runtimeApi.auth.headers ?? {},
+      authHeaders: catalog.firewallAuthHeaders,
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
@@ -11438,10 +11395,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
-      const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-      if (!runtimeApi) {
-        throw new Error("Expected the built-in MCP runtime API");
-      }
       expect(target.sourceId).toBe(refreshConnectionId);
       const held = await holdConnectorAccountFixture(
         {
@@ -11460,7 +11413,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
               forceRefresh: true,
               encryptedSecrets:
                 claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-              authHeaders: runtimeApi.auth.headers ?? {},
+              authHeaders: catalog.firewallAuthHeaders,
               matchedFirewall: {
                 name: catalog.slug,
                 apiId: `${catalog.slug}:0`,
@@ -11594,13 +11547,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-    if (!runtimeApi) {
-      throw new Error("Expected the built-in MCP runtime API");
-    }
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: runtimeApi.auth.headers ?? {},
+      authHeaders: catalog.firewallAuthHeaders,
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
