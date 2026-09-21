@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "@okouai/api-contracts/contracts/billing";
 import type StripeSDK from "stripe";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -24,6 +27,7 @@ import {
 } from "../test-usage-pack-subscription-state";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { billingStatusRoutes } from "../billing-status";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 
 const context = testContext();
 const routeMocks = createRouteMocks(context);
@@ -129,6 +133,16 @@ function period(offsetDays: number): {
 } {
   const start = Math.floor(now() / 1000) + offsetDays * 86_400;
   return { start, end: start + 30 * 86_400 };
+}
+
+const GRANT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Member grants outlive the period they were bought for, so the next cycle's
+ * invoice has time to finalize and pay before the balance disappears.
+ */
+function grantExpiresAt(periodEnd: number): string {
+  return new Date(periodEnd * 1000 + GRANT_GRACE_MS).toISOString();
 }
 
 function stripeSubscription(
@@ -297,6 +311,20 @@ async function readBillingStatus(fixture: UsagePackLifecycleFixture) {
   const response = await accept(
     setupApp({ context, routes: billingStatusRoutes })(
       billingStatusContract,
+    ).get({ headers: { authorization: "Bearer clerk-session" } }),
+    [200],
+  );
+  return response.body;
+}
+
+async function readUsagePackCredits(
+  fixture: UsagePackLifecycleFixture,
+  userId: string,
+) {
+  routeMocks.clerk.session(userId, fixture.orgId, "org:member");
+  const response = await accept(
+    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+      billingUsagePackCreditsContract,
     ).get({ headers: { authorization: "Bearer clerk-session" } }),
     [200],
   );
@@ -490,13 +518,13 @@ describe("usage pack subscription Stripe lifecycle", () => {
             userId,
             grantType: "bonus",
             originalAmount: 400,
-            expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+            expiresAt: grantExpiresAt(paidPeriod.end),
           },
           {
             userId,
             grantType: "purchased",
             originalAmount: 20_000,
-            expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+            expiresAt: grantExpiresAt(paidPeriod.end),
           },
         ]);
         const allocationRows = (await readUsagePackState(fixture)).allocations;
@@ -536,9 +564,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
       const renewalGrantRows = await grantRows(fixture);
       expect(
         renewalGrantRows.filter((grant) => {
-          return (
-            grant.expiresAt === new Date(paidPeriod.end * 1000).toISOString()
-          );
+          return grant.expiresAt === grantExpiresAt(paidPeriod.end);
         }),
       ).toHaveLength(2);
       expect(
@@ -576,15 +602,61 @@ describe("usage pack subscription Stripe lifecycle", () => {
         userId,
         grantType: "bonus",
         originalAmount: 866,
-        expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+        expiresAt: grantExpiresAt(paidPeriod.end),
       },
       {
         userId,
         grantType: "purchased",
         originalAmount: 16_670,
-        expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+        expiresAt: grantExpiresAt(paidPeriod.end),
       },
     ]);
+  });
+
+  it("keeps member credits spendable while the renewal invoice is unpaid", async () => {
+    const userId = `user_${randomUUID()}`;
+    const fixture = await seedUsagePackLifecycle([
+      { userId, usagePackUsd: 20 },
+    ]);
+    const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
+    const paidPeriod = period(0);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      stripeSubscription(fixture, paidPeriod, quantities),
+    );
+    onTestFinished(() => {
+      clearMockNow();
+    });
+
+    await postStripeEvent(
+      stripeEvent(
+        "invoice.paid",
+        paidInvoice(fixture, {
+          invoiceId: `in_${randomUUID()}`,
+          paidPeriod,
+          quantities,
+        }),
+      ),
+      200,
+    );
+
+    // Stripe rolls the subscription period at the boundary but finalizes and
+    // pays the cycle invoice afterwards, so the next period's grants do not
+    // exist yet. The member keeps spending what was already paid for.
+    mockNow(new Date(paidPeriod.end * 1000 + 60_000));
+    await expect(readUsagePackCredits(fixture, userId)).resolves.toMatchObject({
+      totalCredits: 20_400,
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+      hasUsagePack: true,
+    });
+
+    mockNow(new Date(paidPeriod.end * 1000 + GRANT_GRACE_MS + 60_000));
+    await expect(readUsagePackCredits(fixture, userId)).resolves.toMatchObject({
+      totalCredits: 0,
+      purchasedCredits: 0,
+      bonusCredits: 0,
+      creditGrants: [],
+    });
   });
 
   it("grants fully discounted renewal credits without a refundable amount", async () => {

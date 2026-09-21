@@ -56,7 +56,10 @@ import {
   type UsagePackAllocationAdditionChargePreview,
   type UsagePackAllocationAdditionPreview,
 } from "./usage-pack-allocation-change.service";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
+import {
+  createUsagePackCreditGrant,
+  usagePackGrantExpiresAt,
+} from "./usage-pack-credit.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
 import {
@@ -2037,7 +2040,7 @@ async function activateAcceptedPurchase(
         grantType: "purchased",
         idempotencyKey: `usage-pack-invitation:${current.id}:purchased`,
         amount: current.purchasedCredits,
-        expiresAt: current.currentPeriodEnd,
+        expiresAt: usagePackGrantExpiresAt(current.currentPeriodEnd),
         ...(current.amountPaidCents > 0 && current.stripePaymentIntentId
           ? {
               refundSource: {
@@ -2056,7 +2059,7 @@ async function activateAcceptedPurchase(
         grantType: "bonus",
         idempotencyKey: `usage-pack-invitation:${current.id}:bonus`,
         amount: current.bonusCredits,
-        expiresAt: current.currentPeriodEnd,
+        expiresAt: usagePackGrantExpiresAt(current.currentPeriodEnd),
       });
     }
     const at = nowDate();

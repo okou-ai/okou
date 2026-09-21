@@ -13,6 +13,27 @@ import {
   type UsagePackCreditRefundSource,
 } from "./usage-pack-credit-refund.service";
 
+/**
+ * Stripe advances a subscription period at the billing boundary but finalizes
+ * and pays the cycle invoice afterwards, and `invoice.paid` is the only entry
+ * point that issues the next period's grants. An expiry pinned to the period
+ * end therefore strands paid members between the two, from minutes on a prompt
+ * renewal to days while a failed payment is retried. Matches the payment
+ * failure grace already used by usage allowance, paid concurrency, and plan
+ * downgrade.
+ */
+const USAGE_PACK_GRANT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Expiry for a member grant bought for a billing period ending at `periodEnd`.
+ *
+ * Settlement spends purchased grants by ascending expiry, so a carried-over
+ * grant is consumed before the grant that replaces it.
+ */
+export function usagePackGrantExpiresAt(periodEnd: Date): Date {
+  return new Date(periodEnd.getTime() + USAGE_PACK_GRANT_GRACE_MS);
+}
+
 interface UsagePackCreditGrantArgs {
   readonly orgId: string;
   readonly userId: string;

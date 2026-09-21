@@ -47,7 +47,10 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { settle } from "../utils";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
+import {
+  createUsagePackCreditGrant,
+  usagePackGrantExpiresAt,
+} from "./usage-pack-credit.service";
 import { prepareUsagePackMemberCreditRefunds } from "./usage-pack-credit-refund.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
@@ -3183,7 +3186,9 @@ async function commitUsagePackUpgradeInvoice(
         grantType: "purchased",
         idempotencyKey: `usage-pack-change:${change.id}:${args.invoice.id}:purchased`,
         amount: args.purchasedCredits,
-        expiresAt: new Date(args.prorationPeriod.end * 1000),
+        expiresAt: usagePackGrantExpiresAt(
+          new Date(args.prorationPeriod.end * 1000),
+        ),
         refundSource: {
           type: "invoice",
           invoiceId: args.invoice.id,
@@ -3201,7 +3206,9 @@ async function commitUsagePackUpgradeInvoice(
         grantType: "bonus",
         idempotencyKey: `usage-pack-change:${change.id}:${args.invoice.id}:bonus`,
         amount: args.bonusCredits,
-        expiresAt: new Date(args.prorationPeriod.end * 1000),
+        expiresAt: usagePackGrantExpiresAt(
+          new Date(args.prorationPeriod.end * 1000),
+        ),
       });
     }
     const completedAt = nowDate();
@@ -3403,7 +3410,7 @@ async function fulfillPreparedSubscriptionChange(
         grantType: "purchased",
         idempotencyKey: `usage-pack-subscription-change:${root.id}:${change.id}:${args.invoice.id}:purchased`,
         amount: prepared.purchasedCredits,
-        expiresAt: new Date(args.periodEnd * 1000),
+        expiresAt: usagePackGrantExpiresAt(new Date(args.periodEnd * 1000)),
         refundSource: {
           type: "invoice",
           invoiceId: args.invoice.id,
@@ -3419,7 +3426,7 @@ async function fulfillPreparedSubscriptionChange(
         grantType: "bonus",
         idempotencyKey: `usage-pack-subscription-change:${root.id}:${change.id}:${args.invoice.id}:bonus`,
         amount: prepared.bonusCredits,
-        expiresAt: new Date(args.periodEnd * 1000),
+        expiresAt: usagePackGrantExpiresAt(new Date(args.periodEnd * 1000)),
       });
     }
     const completedAt = nowDate();

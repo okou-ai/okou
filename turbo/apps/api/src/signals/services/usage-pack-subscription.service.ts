@@ -54,7 +54,10 @@ import {
   reconcileUsagePackAllocationChangeSubscription,
   reconcileUsagePackAllocationChangeSubscriptionDeleted,
 } from "./usage-pack-allocation-change.service";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
+import {
+  createUsagePackCreditGrant,
+  usagePackGrantExpiresAt,
+} from "./usage-pack-credit.service";
 import {
   handleUsagePackSubscriptionChangeInvoicePaid,
   reconcileUsagePackSubscriptionChanges,
@@ -2950,7 +2953,7 @@ async function createUsagePackMemberGrants(
           "purchased",
         ),
         amount: allocation.purchasedCredits,
-        expiresAt: args.fulfillment.periodEnd,
+        expiresAt: usagePackGrantExpiresAt(args.fulfillment.periodEnd),
         refundSource: {
           type: "invoice",
           invoiceId: args.invoice.id,
@@ -2970,7 +2973,7 @@ async function createUsagePackMemberGrants(
           "bonus",
         ),
         amount: allocation.bonusCredits,
-        expiresAt: args.fulfillment.periodEnd,
+        expiresAt: usagePackGrantExpiresAt(args.fulfillment.periodEnd),
       });
     }
   }
