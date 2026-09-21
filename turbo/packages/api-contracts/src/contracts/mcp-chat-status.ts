@@ -1,12 +1,7 @@
 import { z } from "zod";
 
 import { mcpGetChatMessagesOutputSchema } from "./mcp-chat-messages";
-
-const inputReferenceSchema = z.strictObject({
-  threadId: z.uuid().toLowerCase(),
-  eventId: z.uuid().toLowerCase(),
-  seqId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-});
+import { mcpChatInputRefSchema } from "./mcp-chat-references";
 
 const activeLifecycleOutputSchema = z.enum(["pending", "partial"]);
 const terminalRunOutcomes = [
@@ -55,28 +50,19 @@ export const mcpChatLifecycleSchema = z.union([
   }),
 ]);
 
-export const mcpGetChatStatusInputSchema = z
-  .strictObject({
-    threadId: z.uuid().toLowerCase(),
-    inputRef: inputReferenceSchema.optional(),
-    waitMs: z.number().int().nonnegative().max(60_000).optional(),
-  })
-  .superRefine((input, context) => {
-    if (input.inputRef && input.inputRef.threadId !== input.threadId) {
-      context.addIssue({
-        code: "custom",
-        path: ["inputRef", "threadId"],
-        message: "inputRef must belong to threadId",
-      });
-    }
-    if (input.waitMs !== undefined && input.waitMs > 0 && !input.inputRef) {
-      context.addIssue({
-        code: "custom",
-        path: ["inputRef"],
-        message: "A positive waitMs requires the exact original inputRef",
-      });
-    }
-  });
+const mcpGetExactChatStatusInputSchema = z.strictObject({
+  inputRef: mcpChatInputRefSchema,
+  waitMs: z.number().int().nonnegative().max(60_000).optional(),
+});
+
+const mcpGetLatestChatStatusInputSchema = z.strictObject({
+  threadId: z.uuid().toLowerCase(),
+});
+
+export const mcpGetChatStatusInputSchema = z.union([
+  mcpGetExactChatStatusInputSchema,
+  mcpGetLatestChatStatusInputSchema,
+]);
 
 const mcpGetChatStatusOutputObjectSchema = z.strictObject({
   threadId: z.uuid(),

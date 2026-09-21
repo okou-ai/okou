@@ -119,7 +119,7 @@ The thread and canonical input event commit in one transaction. Only after that
 commit does the shared scheduler attempt to start, queue, or steer execution.
 The response therefore reports the durable `input` receipt and its current
 `disposition`; it does not claim delivery or run success. Its `nextAction`
-points to `get_chat_status` with the complete stable `inputRef`. Use that handoff
+points to `get_chat_status` with only the complete stable `inputRef`. Use that handoff
 and then `get_chat_messages` to observe output.
 
 Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
@@ -444,6 +444,7 @@ or reserve it for delivery to an active run. The response returns:
 | `disposition`              | Current bounded observation: `queued`, `reserved`, `associated`, `rejected`, `revoked`, or `unavailable`. |
 | `runId`                    | Known associated/reserving run, or null.                                                                  |
 | `url`                      | Authenticated conversation URL.                                                                           |
+| `nextAction`               | Ready-to-use `get_chat_status` call containing the complete `inputRef`.                                   |
 
 Acceptance means an input was persisted. It does not guarantee model admission,
 delivery, compliance, completion, or a new run. `reserved` does not prove the
@@ -494,13 +495,14 @@ unchanged.
 
 ### Input, execution and output status
 
-Call `get_chat_status` with `threadId` and the complete original `inputRef`
-returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
-match. With no input reference, the service observes the latest authorized run
-by creation time, with run ID as a deterministic tie breaker. With an input
-reference, it observes only that input's associated or reserved run. A queued,
-revoked, missing or inaccessible association never falls back to another run
-in the conversation.
+Call `get_chat_status` with the complete original `inputRef` returned by send
+(`threadId`, `eventId`, `seqId`) to observe only that input's associated or
+reserved run. Execute the send or combined-creation `nextAction.arguments`
+unchanged; do not repeat the thread identity outside the reference. To observe
+the latest authorized run instead, call status with exactly `threadId`. Latest
+selection uses creation time with run ID as a deterministic tie breaker. A
+queued, revoked, missing or inaccessible exact-input association never falls
+back to another run in the conversation.
 
 The result exposes lifecycle as its complete public status model. Internal
 input, delivery, run, cancellation-recovery and output observations are used to
@@ -527,7 +529,7 @@ missing or inaccessible input is unavailable, rejected and revoked
 inputs are settled with no output, and queued or reserved inputs remain queued
 without inheriting output from a shared run. With no selected run, the phase is
 idle and output is none; this means no work was selected by that observation,
-not that the conversation has no queued input when `inputRef` was omitted.
+not that the conversation has no queued input in latest-thread mode.
 
 For a selected run, queued and pending run states map to the queued phase, and
 running maps to the running phase. A terminal run with pending or partial output
@@ -568,7 +570,8 @@ non-null retry delay: continue tracking that original input instead of
 submitting it again.
 
 Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
-single immediate observation above. A positive value is a client preference up
+exact-input observation immediate; latest-thread `{threadId}` status is always
+immediate. A positive value is a client preference up
 to 60 seconds and is currently clamped to an 8-second server dwell after the
 initial observation. Each fresh observation keeps its independent 15-second
 history budget, so total request time also includes the initial and final
@@ -618,8 +621,9 @@ output → `get_chat_messages`, then repeat with an active steer, queued revoke
 and cancellation recovery. Also verify that a missing reference does not show
 an unrelated latest run. ChatGPT acceptance remains deferred.
 
-`revoke_queued_message` takes `threadId` and the original `inputId` (the
-`inputRef.eventId`). It returns those identifiers, a nullable `runId`, and
+`revoke_queued_message` takes the complete original `inputRef` unchanged. It
+validates `threadId`, `eventId`, and `seqId` under the canonical queue lock
+before mutation and returns that reference, a nullable `runId`, and
 `outcome`: `revoked`, `already_revoked`, `not_revocable`, or `unavailable`.
 Withdrawal uses the canonical queue lock and appends a revocation event; it
 does not delete history or cancel a run. Only a pending, unreserved input can be

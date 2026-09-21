@@ -5,6 +5,7 @@ import type {
   McpGetChatStatusInput,
   McpGetChatStatusOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-status";
+import type { McpChatInputRef } from "@okouai/api-contracts/contracts/mcp-chat-references";
 import { trace } from "@opentelemetry/api";
 import {
   runStatusSchema,
@@ -51,7 +52,7 @@ interface Principal {
 }
 
 interface InputStatus {
-  readonly ref: NonNullable<McpGetChatStatusInput["inputRef"]>;
+  readonly ref: McpChatInputRef;
   readonly state:
     | "queued"
     | "reserved"
@@ -226,7 +227,7 @@ function deriveMcpChatLifecycle(
 }
 
 function resolveInput(
-  inputRef: NonNullable<McpGetChatStatusInput["inputRef"]>,
+  inputRef: McpChatInputRef,
   rows: readonly ChatEventRow[],
   budget: HistoryBudget,
 ): InputStatus {
@@ -442,6 +443,14 @@ interface StatusSelection {
   readonly associationUnavailable: boolean;
 }
 
+function statusThreadId(args: McpGetChatStatusInput): string {
+  return "inputRef" in args ? args.inputRef.threadId : args.threadId;
+}
+
+function statusInputRef(args: McpGetChatStatusInput): McpChatInputRef | null {
+  return "inputRef" in args ? args.inputRef : null;
+}
+
 async function readStatusSelection(
   tx: Tx,
   rows: readonly ChatEventRow[],
@@ -449,15 +458,16 @@ async function readStatusSelection(
   principal: Principal,
   args: McpGetChatStatusInput,
 ): Promise<StatusSelection> {
-  let input = args.inputRef
+  const inputRef = statusInputRef(args);
+  let input = inputRef
     ? await observeDelivery(
         tx,
         principal,
-        resolveInput(args.inputRef, rows, budget),
+        resolveInput(inputRef, rows, budget),
         budget,
       )
     : null;
-  const run = await readRun(tx, principal, args.threadId, input, budget);
+  const run = await readRun(tx, principal, statusThreadId(args), input, budget);
   const associationUnavailable =
     input !== null && input.runId !== null && run === null;
   if (input && associationUnavailable) {
@@ -482,13 +492,14 @@ function readReadyMessagePage(
   },
 ): McpGetChatStatusOutput["messagePage"] {
   const { principal, args, selection, output } = context;
+  const threadId = statusThreadId(args);
   if (output.state !== "ready" || !selection.run) {
     return null;
   }
   const page = readMcpChatMessagePage(
     messages,
     principal,
-    { threadId: args.threadId, runId: selection.run.id, limit: 20 },
+    { threadId, runId: selection.run.id, limit: 20 },
     budget.check,
   );
   if (page.kind !== "ok") {
@@ -510,6 +521,7 @@ async function projectMcpChatStatus(
   },
 ): Promise<StatusProjection> {
   const { principal, args, includeMessagePage } = context;
+  const threadId = statusThreadId(args);
   const selection = await readStatusSelection(
     tx,
     rows,
@@ -549,14 +561,14 @@ async function projectMcpChatStatus(
   };
   return {
     data: {
-      threadId: args.threadId,
+      threadId,
       observedAt: nowDate().toISOString(),
       lifecycle: deriveMcpChatLifecycle(observation),
       messages: selection.run
         ? {
             tool: "get_chat_messages",
             arguments: {
-              threadId: args.threadId,
+              threadId,
               runId: selection.run.id,
               limit: 20,
             },
@@ -583,7 +595,7 @@ function observeMcpChatStatus(
       readMcpChatHistoryProjection(
         runtime,
         principal,
-        args.threadId,
+        statusThreadId(args),
         signal,
         (tx, rows, budget) => {
           return projectMcpChatStatus(tx, rows, budget, {
@@ -859,7 +871,7 @@ export function getMcpChatStatus(
   signal: AbortSignal,
 ): Computed<Promise<McpChatStatusResult>> {
   return computed(async (get): Promise<McpChatStatusResult> => {
-    const requestedMs = args.waitMs ?? 0;
+    const requestedMs = "waitMs" in args ? (args.waitMs ?? 0) : 0;
     const operation: WaitOperation = {
       requestedMs,
       effectiveMs: Math.min(requestedMs, MCP_CHAT_STATUS_MAX_WAIT_MS),

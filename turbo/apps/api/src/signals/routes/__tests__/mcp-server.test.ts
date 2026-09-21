@@ -21,6 +21,7 @@ import {
   mcpGetChatMessagesInputSchema,
   mcpGetChatMessagesOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import type { McpChatInputRef } from "@okouai/api-contracts/contracts/mcp-chat-references";
 import {
   mcpSearchChatMessagesInputSchema,
   mcpSearchChatMessagesOutputSchema,
@@ -495,6 +496,23 @@ function catalogArrayOverhead(toolCount: number): number {
   return toolCount === 0 ? 2 : toolCount + 1;
 }
 
+describe("MCP schema interoperability", () => {
+  it("compiles exact-input and latest-thread status with the SDK AJV validator", () => {
+    const validate = new AjvJsonSchemaValidator().getValidator(
+      z.toJSONSchema(mcpGetChatStatusInputSchema) as JsonSchemaType,
+    );
+    const threadId = randomUUID();
+
+    expect(
+      validate({
+        inputRef: { threadId, eventId: randomUUID(), seqId: 1 },
+        waitMs: 1000,
+      }),
+    ).toMatchObject({ valid: true });
+    expect(validate({ threadId })).toMatchObject({ valid: true });
+  });
+});
+
 function measureCompactSuccess(result: unknown): {
   readonly baselineBytes: number;
   readonly compactBytes: number;
@@ -779,10 +797,9 @@ async function sendMessage(token: string, args: Record<string, unknown>) {
   return mcpSendChatMessageOutputSchema.parse(result.structuredContent);
 }
 
-async function revokeMessage(token: string, threadId: string, inputId: string) {
+async function revokeMessage(token: string, inputRef: McpChatInputRef) {
   const result = await callTool(token, "revoke_queued_message", {
-    threadId,
-    inputId,
+    inputRef,
   });
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpRevokeQueuedMessageOutputSchema.parse(result.structuredContent);
@@ -1334,7 +1351,6 @@ describe("MCP chat discovery and creation", () => {
       nextAction: {
         tool: "get_chat_status",
         arguments: {
-          threadId: args.requestId,
           inputRef: expect.objectContaining({ threadId: args.requestId }),
         },
       },
@@ -2213,7 +2229,6 @@ describe("MCP chat status", () => {
     const before = await f.chat.readThread(f.actor, thread.id);
     const status = await getStatus(f.auth.token(), {
       threadId: thread.id,
-      waitMs: 0,
     });
     expect(status).toMatchObject({
       threadId: thread.id,
@@ -2252,7 +2267,7 @@ describe("MCP chat status", () => {
     onTestFinished(async () => {
       await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
     });
-    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const args = { inputRef: sent.inputRef };
     const pending = await getStatus(token, args);
     expect(pending).toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
@@ -2366,9 +2381,7 @@ describe("MCP chat status", () => {
       if (!inputRef) {
         throw new Error("Expected a visible replacement reference");
       }
-      await expect(
-        getStatus(token, { threadId: thread.id, inputRef }),
-      ).resolves.toMatchObject({
+      await expect(getStatus(token, { inputRef })).resolves.toMatchObject({
         lifecycle: {
           phase: "unavailable",
           outcome: null,
@@ -2379,7 +2392,6 @@ describe("MCP chat status", () => {
     }
     await expect(
       getStatus(token, {
-        threadId: thread.id.toUpperCase(),
         inputRef: {
           ...sent.inputRef,
           threadId: thread.id.toUpperCase(),
@@ -2451,7 +2463,6 @@ describe("MCP chat status", () => {
     );
 
     const status = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 5000,
     });
@@ -2522,7 +2533,6 @@ describe("MCP chat status", () => {
     );
 
     const deadline = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 5000,
     });
@@ -2566,7 +2576,6 @@ describe("MCP chat status", () => {
     });
     await flushWaitUntilForTest();
     const late = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 5000,
     });
@@ -2619,7 +2628,6 @@ describe("MCP chat status", () => {
       return Promise.resolve();
     });
     const args = {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 8000,
     };
@@ -2719,7 +2727,6 @@ describe("MCP chat status", () => {
               requestBody("tools/call", true, {
                 name: "get_chat_status",
                 arguments: {
-                  threadId: thread.id,
                   inputRef: sent.inputRef,
                   waitMs: 8000,
                 },
@@ -2738,7 +2745,6 @@ describe("MCP chat status", () => {
     await pending;
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const after = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 8000,
     });
@@ -2854,7 +2860,6 @@ describe("MCP chat status", () => {
     );
     await flushWaitUntilForTest();
     const status = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 8000,
     });
@@ -2917,7 +2922,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Start a new run when the previous one completes",
     });
-    const args = { threadId: active.threadId, inputRef: submitted.inputRef };
+    const args = { inputRef: submitted.inputRef };
     await expect(getStatus(token, args)).resolves.toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
       messages: null,
@@ -3028,7 +3033,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Retain my original input reference",
     });
-    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const args = { inputRef: sent.inputRef };
     const before = await getStatus(token, args);
     // Infrastructure exception: public sends cannot backdate acceptance past
     // the database-clock retention cutoff. Archive, retention and all status
@@ -3059,7 +3064,7 @@ describe("MCP chat status", () => {
     expect(failure.content[0]?.text).toContain("could not be read completely");
   });
 
-  it("rejects cross-thread references and unsupported status controls", async () => {
+  it("rejects malformed canonical status selectors without mutation", async () => {
     const f = await threadFixture();
     const thread = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
@@ -3067,16 +3072,17 @@ describe("MCP chat status", () => {
     const token = f.auth.token();
     const before = await f.chat.readThread(f.actor, thread.id);
     for (const args of [
-      { threadId: thread.id, waitMs: 30_000 },
-      { threadId: thread.id, runId: randomUUID() },
       {
-        threadId: thread.id,
-        inputRef: { threadId: randomUUID(), eventId: randomUUID(), seqId: 1 },
+        inputRef: {
+          threadId: "not-a-uuid",
+          eventId: randomUUID(),
+          seqId: 1,
+        },
       },
       {
-        threadId: thread.id,
         inputRef: { threadId: thread.id, eventId: randomUUID(), seqId: 0 },
       },
+      { threadId: "not-a-uuid" },
     ]) {
       expect(
         (await callTool(token, "get_chat_status", args)).isError,
@@ -3153,7 +3159,6 @@ describe("MCP chat mutations", () => {
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text, eventType: "input.rejected", runId: null }]);
     const status = await getStatus(token, {
-      threadId: thread.id,
       inputRef: result.inputRef,
     });
     expect(status).toMatchObject({
@@ -3689,20 +3694,18 @@ describe("MCP chat mutations", () => {
       expect(failure.isError).toBeTruthy();
       expect(JSON.stringify(failure)).not.toContain("PRIVATE_MCP_RECEIPT");
       const hiddenStatus = await callTool(foreignToken, "get_chat_status", {
-        threadId: thread.id,
         inputRef: submitted.inputRef,
       });
       const missingThreadId = randomUUID();
       await expect(
         callTool(foreignToken, "get_chat_status", {
-          threadId: missingThreadId,
           inputRef: { ...submitted.inputRef, threadId: missingThreadId },
         }),
       ).resolves.toStrictEqual(hiddenStatus);
       expect(hiddenStatus.isError).toBeTruthy();
       structuredToolError(hiddenStatus);
       await expect(
-        revokeMessage(foreignToken, thread.id, args.requestId),
+        revokeMessage(foreignToken, submitted.inputRef),
       ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
     }
     await f.chat.deleteThread(f.actor, thread.id);
@@ -3712,7 +3715,6 @@ describe("MCP chat mutations", () => {
     expect(
       (
         await callTool(token, "get_chat_status", {
-          threadId: thread.id,
           inputRef: submitted.inputRef,
         })
       ).isError,
@@ -3751,7 +3753,13 @@ describe("MCP chat mutations", () => {
     {
       name: "revoke_queued_message",
       scope: "okou:run:cancel",
-      args: { threadId: randomUUID(), inputId: randomUUID() },
+      args: {
+        inputRef: {
+          threadId: randomUUID(),
+          eventId: randomUUID(),
+          seqId: 1,
+        },
+      },
     },
     {
       name: "cancel_run",
@@ -3859,7 +3867,7 @@ describe("MCP chat mutations", () => {
       const sent = await sendMessage(token, args);
       expect(sent).toMatchObject({ disposition: "queued", runId: null });
       await expect(
-        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+        getStatus(token, { inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
         lifecycle: { phase: "queued", outcome: null, output: "pending" },
         messages: null,
@@ -3867,20 +3875,20 @@ describe("MCP chat mutations", () => {
       const revoked = await revokeMessage(
         token,
         letterCase === "uppercase"
-          ? args.threadId.toUpperCase()
-          : args.threadId,
-        letterCase === "uppercase"
-          ? args.requestId.toUpperCase()
-          : args.requestId,
+          ? {
+              ...sent.inputRef,
+              threadId: sent.inputRef.threadId.toUpperCase(),
+              eventId: sent.inputRef.eventId.toUpperCase(),
+            }
+          : sent.inputRef,
       );
       expect(revoked).toMatchObject({
-        threadId: args.threadId,
-        inputId: args.requestId,
+        inputRef: sent.inputRef,
         outcome: "revoked",
       });
-      await expect(
-        revokeMessage(token, args.threadId, args.requestId),
-      ).resolves.toMatchObject({ outcome: "already_revoked" });
+      await expect(revokeMessage(token, sent.inputRef)).resolves.toMatchObject({
+        outcome: "already_revoked",
+      });
       await expect(sendMessage(token, args)).resolves.toMatchObject({
         inputRef: sent.inputRef,
         replayed: true,
@@ -3888,7 +3896,7 @@ describe("MCP chat mutations", () => {
         runId: null,
       });
       await expect(
-        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+        getStatus(token, { inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
         lifecycle: { phase: "settled", outcome: "revoked", output: "none" },
         messages: null,
@@ -3916,7 +3924,16 @@ describe("MCP chat mutations", () => {
       ).toHaveLength(1);
       const before = await f.chat.listThreadEvents(f.actor, args.threadId);
       await expect(
-        revokeMessage(token, args.threadId, randomUUID()),
+        revokeMessage(token, {
+          ...sent.inputRef,
+          eventId: randomUUID(),
+        }),
+      ).resolves.toMatchObject({ outcome: "unavailable" });
+      await expect(
+        revokeMessage(token, {
+          ...sent.inputRef,
+          seqId: sent.inputRef.seqId + 1,
+        }),
       ).resolves.toMatchObject({ outcome: "unavailable" });
       await expect(
         f.chat.listThreadEvents(f.actor, args.threadId),
@@ -4030,7 +4047,7 @@ describe("MCP chat mutations", () => {
       throw new Error("Expected the runner to reserve MCP input");
     }
     expect(reserved.eventIds).toStrictEqual([args.requestId]);
-    const recall = await revokeMessage(token, args.threadId, args.requestId);
+    const recall = await revokeMessage(token, sent.inputRef);
     expect(recall).toMatchObject({
       outcome: "not_revocable",
       reason: "reserved_or_associated",
@@ -4042,7 +4059,7 @@ describe("MCP chat mutations", () => {
       runId: active.runId,
     });
     await expect(
-      getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+      getStatus(token, { inputRef: sent.inputRef }),
     ).resolves.toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
       messages: {
@@ -4067,7 +4084,6 @@ describe("MCP chat mutations", () => {
       runId: active.runId,
     });
     const delivered = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: sent.inputRef,
     });
     expect(delivered).toMatchObject({
@@ -4080,9 +4096,7 @@ describe("MCP chat mutations", () => {
         },
       },
     });
-    await expect(
-      revokeMessage(token, args.threadId, args.requestId),
-    ).resolves.toMatchObject({
+    await expect(revokeMessage(token, sent.inputRef)).resolves.toMatchObject({
       outcome: "not_revocable",
       reason: "reserved_or_associated",
       runId: active.runId,
@@ -4117,11 +4131,9 @@ describe("MCP chat mutations", () => {
       [200],
     );
     const steered = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: sent.inputRef,
     });
     const launched = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: initial.inputRef,
     });
     expect(launched.lifecycle).toStrictEqual({
@@ -4159,7 +4171,6 @@ describe("MCP chat mutations", () => {
     );
     expect(retained.body.deleted).toBe(1);
     const archived = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: sent.inputRef,
     });
     expect(archived.lifecycle).toStrictEqual(steered.lifecycle);
@@ -6787,10 +6798,7 @@ describe("external MCP entry", () => {
       });
       const status = await sdk.callTool({
         name: "get_chat_status",
-        arguments: {
-          threadId: sent.threadId,
-          inputRef: receipt.inputRef,
-        },
+        arguments: receipt.nextAction.arguments,
       });
       expect(status).toMatchObject({
         structuredContent: {

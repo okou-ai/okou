@@ -47,6 +47,7 @@ export const revokeQueuedMcpMessage$ = command(
   ): Promise<McpChatMutationResult<McpRevokeQueuedMessageOutput>> => {
     signal.throwIfAborted();
     const { principal, input } = args;
+    const { threadId, eventId, seqId } = input.inputRef;
     const db = set(writeDb$);
     const result = await db.transaction(
       async (tx): Promise<McpRevokeQueuedMessageOutput> => {
@@ -57,15 +58,14 @@ export const revokeQueuedMcpMessage$ = command(
           .from(chatThreads)
           .where(
             and(
-              eq(chatThreads.id, input.threadId),
+              eq(chatThreads.id, threadId),
               eq(chatThreads.userId, principal.userId),
               chatThreadOrganizationCondition(tx, principal.orgId),
             ),
           )
           .for("update");
         const reference = {
-          threadId: input.threadId,
-          inputId: input.inputId,
+          inputRef: input.inputRef,
         };
         if (!thread) {
           return { ...reference, outcome: "unavailable", runId: null };
@@ -74,19 +74,21 @@ export const revokeQueuedMcpMessage$ = command(
         const [target] = await tx
           .select({
             eventType: chatEvents.eventType,
+            seqId: chatEvents.seqId,
             runId: chatEvents.runId,
             revokesEventId: chatEvents.revokesEventId,
           })
           .from(chatEvents)
           .where(
             and(
-              eq(chatEvents.id, input.inputId),
-              eq(chatEvents.chatThreadId, input.threadId),
+              eq(chatEvents.id, eventId),
+              eq(chatEvents.chatThreadId, threadId),
             ),
           )
           .limit(1);
         if (
           !target ||
+          target.seqId !== seqId ||
           (target.eventType !== "input.prompt" &&
             target.eventType !== "input.automation")
         ) {
@@ -101,8 +103,8 @@ export const revokeQueuedMcpMessage$ = command(
           .from(chatEvents)
           .where(
             and(
-              eq(chatEvents.revokesEventId, input.inputId),
-              eq(chatEvents.chatThreadId, input.threadId),
+              eq(chatEvents.revokesEventId, eventId),
+              eq(chatEvents.chatThreadId, threadId),
             ),
           )
           .limit(1);
@@ -120,8 +122,8 @@ export const revokeQueuedMcpMessage$ = command(
         }
 
         const pending = await loadPendingChatQueueEvent(tx, {
-          chatThreadId: input.threadId,
-          eventId: input.inputId,
+          chatThreadId: threadId,
+          eventId,
         });
         if (!pending || target.revokesEventId !== null) {
           const [reservation] = await tx
@@ -133,8 +135,8 @@ export const revokeQueuedMcpMessage$ = command(
             )
             .where(
               and(
-                eq(activeInputDeliveryItems.sourceEventId, input.inputId),
-                eq(activeInputDeliveries.chatThreadId, input.threadId),
+                eq(activeInputDeliveryItems.sourceEventId, eventId),
+                eq(activeInputDeliveries.chatThreadId, threadId),
                 eq(activeInputDeliveries.status, "open"),
                 isNull(activeInputDeliveryItems.disposition),
               ),
@@ -148,8 +150,8 @@ export const revokeQueuedMcpMessage$ = command(
           };
         }
 
-        const revoked = await revokeChatEvent(tx, input.inputId, {
-          chatThreadId: input.threadId,
+        const revoked = await revokeChatEvent(tx, eventId, {
+          chatThreadId: threadId,
           eventType: "control.revoke",
           runId: null,
         });
@@ -163,7 +165,7 @@ export const revokeQueuedMcpMessage$ = command(
     if (result.outcome === "revoked" || result.outcome === "already_revoked") {
       await publishChatThreadMessageCreatedSafely({
         ...principal,
-        threadId: input.threadId,
+        threadId,
       });
       signal.throwIfAborted();
     }

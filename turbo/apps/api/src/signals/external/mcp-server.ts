@@ -845,7 +845,7 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per message. Within 24 hours, retry only the identical threadId and text; retryUntil is the deadline. Sends are not generally idempotent after expiry, so inspect history. inputRef identifies the original input even if visible history replaces it. disposition is not proof of delivery or success; runId may be null. Pass threadId/inputRef to get_chat_status and follow its handoff.",
+          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message. Within 24 hours, retry only the identical threadId and exact text; retryUntil is the deadline. Sends are not generally idempotent after expiry, so inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Execute nextAction unchanged to observe this input with get_chat_status, then follow its message handoff.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
@@ -881,7 +881,7 @@ function registerMutationTools(
       "revoke_queued_message",
       {
         description:
-          "Withdraw an unclaimed queued input using threadId and send_chat_message inputRef.eventId. Repeating a revocation is safe. Reserved or associated input is not revocable here, and not_revocable does not prove delivery. This never cancels a run; use cancel_run with the reported runId when appropriate.",
+          "Withdraw an unclaimed queued input using the complete send_chat_message inputRef. Repeating a revocation is safe. Reserved or associated input is not revocable here, and not_revocable does not prove delivery. This never cancels a run; use cancel_run with the reported runId when appropriate.",
         inputSchema: mcpRevokeQueuedMessageInputSchema,
         outputSchema: mcpRevokeQueuedMessageOutputSchema,
         annotations: {
@@ -902,7 +902,7 @@ function registerMutationTools(
           {
             summarize(data) {
               const run = data.runId ? `; run ${data.runId}` : "";
-              return `Queued input ${data.inputId}: ${data.outcome}${run}.`;
+              return `Queued input ${data.inputRef.eventId}: ${data.outcome}${run}.`;
             },
           },
         );
@@ -1039,9 +1039,9 @@ function registerSearchAndStatusTools(
     "get_chat_status",
     {
       description:
-        "Observe derived lifecycle {phase,outcome,output}. Pass threadId and complete " +
-        "send_chat_message inputRef, or omit inputRef for the latest run. Positive waitMs requires " +
-        "inputRef, clamps to 8 seconds and 5 observations, and returns ready, deadline, or status; " +
+        "Observe derived lifecycle {phase,outcome,output}. Pass the complete send_chat_message " +
+        "inputRef to observe that input, or pass only threadId for the latest run. waitMs is " +
+        "available only with inputRef, clamps to 8 seconds and 5 observations, and returns ready, deadline, or status; " +
         "deadline or capacity is current state, not a run outcome. Missing associations never select " +
         "another run. queued proves neither delivery, provenance, nor model compliance. Private " +
         "observations may map several inputs to one run and output. Terminal runs may remain " +
