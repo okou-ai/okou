@@ -74,6 +74,22 @@ const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
  */
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
+/**
+ * One `onboarding-start` per application start, beside the draft it belongs
+ * to: Back/Forward, a guard redirect and re-entering the flow all run a step
+ * setup again, and Marketing counts runs of the flow rather than step views.
+ */
+const internalStartEventSent$ = state(false);
+
+/** Claims this run's single `onboarding-start`; true only for the first caller. */
+export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
+  if (get(internalStartEventSent$)) {
+    return false;
+  }
+  set(internalStartEventSent$, true);
+  return true;
+});
+
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
   readonly searchOpen: boolean;
