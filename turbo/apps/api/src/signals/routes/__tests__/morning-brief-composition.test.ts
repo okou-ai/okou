@@ -633,33 +633,45 @@ function pacedGithub(perRequestMs: number, updatedAt: Date): PacedTraffic {
   server.use(
     http.get(
       GITHUB_USER_URL,
-      paced(() => ({ id: 424_242, login: "owner" })),
+      paced(() => {
+        return { id: 424_242, login: "owner" };
+      }),
     ),
     http.get(
       GITHUB_NOTIFICATIONS_URL,
-      paced(() => [1, 2, 3, 4, 5].map(pullNotification)),
+      paced(() => {
+        return [1, 2, 3, 4, 5].map(pullNotification);
+      }),
     ),
     http.get(
       GITHUB_SEARCH_URL,
-      paced(() => ({ total_count: 0, incomplete_results: false, items: [] })),
+      paced(() => {
+        return { total_count: 0, incomplete_results: false, items: [] };
+      }),
     ),
     http.get(
       GITHUB_PULL_URL,
-      paced((query) => ({
-        number: Number(query.get("number") ?? "1"),
-        state: "open",
-        draft: false,
-        updated_at: updatedAt.toISOString(),
-        head: { sha: "a".repeat(40) },
-      })),
+      paced((query) => {
+        return {
+          number: Number(query.get("number") ?? "1"),
+          state: "open",
+          draft: false,
+          updated_at: updatedAt.toISOString(),
+          head: { sha: "a".repeat(40) },
+        };
+      }),
     ),
     http.get(
       GITHUB_CHECK_RUNS_URL,
-      paced(() => ({ total_count: 0, check_runs: [] })),
+      paced(() => {
+        return { total_count: 0, check_runs: [] };
+      }),
     ),
     http.get(
       GITHUB_STATUS_URL,
-      paced(() => ({ state: "success", total_count: 0, statuses: [] })),
+      paced(() => {
+        return { state: "success", total_count: 0, statuses: [] };
+      }),
     ),
   );
   return traffic;
@@ -668,11 +680,13 @@ function pacedGithub(perRequestMs: number, updatedAt: Date): PacedTraffic {
 /** Double Slack the same way, across enough channels to outlast a budget. */
 function pacedSlack(perRequestMs: number, at: number): PacedTraffic {
   const traffic: PacedTraffic = { paths: [], statuses: [] };
-  const channels = Array.from({ length: 14 }, (_, index) => ({
-    id: `C${String(index + 1)}`,
-    name: `channel-${String(index + 1)}`,
-    is_private: false,
-  }));
+  const channels = Array.from({ length: 14 }, (_, index) => {
+    return {
+      id: `C${String(index + 1)}`,
+      name: `channel-${String(index + 1)}`,
+      is_private: false,
+    };
+  });
   const paced = (body: () => PacedBody) => {
     return async ({ request }: { request: Request }) => {
       const url = new URL(request.url);
@@ -685,30 +699,36 @@ function pacedSlack(perRequestMs: number, at: number): PacedTraffic {
   server.use(
     http.get(
       SLACK_CONVERSATIONS_URL,
-      paced(() => ({
-        ok: true,
-        channels,
-        response_metadata: { next_cursor: "" },
-      })),
+      paced(() => {
+        return {
+          ok: true,
+          channels,
+          response_metadata: { next_cursor: "" },
+        };
+      }),
     ),
     http.get(
       SLACK_HISTORY_URL,
-      paced(() => ({
-        ok: true,
-        has_more: false,
-        messages: [
-          {
-            type: "message",
-            ts: `${String(Math.floor((at - 2 * 60 * 60 * 1000) / 1000))}.000100`,
-            user: "U2",
-            text: "Shipping the migration today",
-          },
-        ],
-      })),
+      paced(() => {
+        return {
+          ok: true,
+          has_more: false,
+          messages: [
+            {
+              type: "message",
+              ts: `${String(Math.floor((at - 2 * 60 * 60 * 1000) / 1000))}.000100`,
+              user: "U2",
+              text: "Shipping the migration today",
+            },
+          ],
+        };
+      }),
     ),
     http.get(
       SLACK_REPLIES_URL,
-      paced(() => ({ ok: true, messages: [] })),
+      paced(() => {
+        return { ok: true, messages: [] };
+      }),
     ),
   );
   return traffic;
