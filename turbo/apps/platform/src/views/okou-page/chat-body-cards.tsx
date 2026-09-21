@@ -43,7 +43,15 @@ import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-contracts";
-import { Button, Skeleton, cn } from "@okouai/ui";
+import {
+  Button,
+  Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -57,6 +65,7 @@ import {
   ArrowUpRight,
   Coins,
   Image,
+  Info,
   Loader2,
   Monitor,
   Play,
@@ -71,7 +80,6 @@ import {
 } from "../../signals/okou-page/attachment-chips.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
-import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
@@ -1300,21 +1308,39 @@ function PermissionActionCardContent({
                 },
               )}
             </div>
-            <ChatCardDetails compact title={connectorLabel}>
-              <p>
-                {t(
-                  ($) => {
-                    return $.chat.permissions.actionDescription;
-                  },
-                  {
-                    action: actionLabel,
-                    permissionName,
-                  },
-                )}
-              </p>
-              <PermissionActionInlineStatus status={status} />
-              {expiryText && <p>{expiryText}</p>}
-            </ChatCardDetails>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size="icon-2xs"
+                    className="shrink-0"
+                    aria-label={t(($) => {
+                      return $.chat.cards.viewDetails;
+                    })}
+                  >
+                    <Info size={16} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="space-y-1 break-words">
+                  <p className="font-medium">{connectorLabel}</p>
+                  <p>
+                    {t(
+                      ($) => {
+                        return $.chat.permissions.actionDescription;
+                      },
+                      {
+                        action: actionLabel,
+                        permissionName,
+                      },
+                    )}
+                  </p>
+                  <PermissionActionInlineStatus status={status} />
+                  {expiryText && <p>{expiryText}</p>}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
           <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {t(
