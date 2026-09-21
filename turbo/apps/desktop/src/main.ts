@@ -1189,6 +1189,12 @@ if (!hasSingleInstanceLock) {
       return;
     }
 
+    // The quit is going ahead, so the auth window teardown that follows is the
+    // app closing rather than a session restore failure. It runs ahead of the
+    // Computer Use stop, whose early return on error would skip it during
+    // exactly the slow shutdown this reporting noise comes from.
+    authSession?.abortForQuit();
+
     if (computerUseQuitPreparationComplete) {
       return;
     }
