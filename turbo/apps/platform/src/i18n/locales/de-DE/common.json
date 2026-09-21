@@ -602,13 +602,13 @@
       "loadFailed": "Berechtigungen konnten nicht geladen werden",
       "loadingPermissions": "Berechtigungen werden geladen",
       "onlyMe": "Nur ich",
-      "onlyMeDescription": "Nur du kannst dieses Artefakt ansehen",
+      "onlyMeOption": "Nur ich",
       "organization": "Organisation",
-      "organizationDescription": "Alle in {{organization}} mit dem Link",
-      "organizationDescriptionUnnamed": "Alle in Ihrer Organisation mit dem Link",
+      "organizationOption": "Alle in {{organization}}",
+      "organizationOptionUnnamed": "Alle in Ihrer Organisation",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
-      "publicDescription": "Alle mit dem Link können es ansehen",
+      "publicOption": "Alle mit dem Link",
       "retry": "Erneut versuchen"
     },
     "sidebar": {

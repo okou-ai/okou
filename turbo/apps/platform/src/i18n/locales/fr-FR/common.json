@@ -620,13 +620,13 @@
       "loadFailed": "Impossible de charger les autorisations",
       "loadingPermissions": "Chargement des autorisations",
       "onlyMe": "Moi uniquement",
-      "onlyMeDescription": "Vous seul pouvez voir cet artefact",
+      "onlyMeOption": "Moi uniquement",
       "organization": "Organisation",
-      "organizationDescription": "Toute personne de {{organization}} disposant du lien",
-      "organizationDescriptionUnnamed": "Toute personne de votre organisation disposant du lien",
+      "organizationOption": "Toute personne de {{organization}}",
+      "organizationOptionUnnamed": "Toute personne de votre organisation",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
-      "publicDescription": "Toute personne disposant du lien peut le voir",
+      "publicOption": "Toute personne disposant du lien",
       "retry": "Réessayer"
     },
     "sidebar": {

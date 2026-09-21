@@ -602,13 +602,13 @@
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",
       "onlyMe": "Only me",
-      "onlyMeDescription": "Only you can view this artifact",
+      "onlyMeOption": "Only me",
       "organization": "Organization",
-      "organizationDescription": "Anyone in {{organization}} with the link",
-      "organizationDescriptionUnnamed": "Anyone in your organization with the link",
+      "organizationOption": "Anyone at {{organization}}",
+      "organizationOptionUnnamed": "Anyone in your organization",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
-      "publicDescription": "Anyone with the link can view",
+      "publicOption": "Anyone with the link",
       "retry": "Retry"
     },
     "sidebar": {

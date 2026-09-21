@@ -620,13 +620,13 @@
       "loadFailed": "No se pudieron cargar los permisos",
       "loadingPermissions": "Cargando permisos",
       "onlyMe": "Solo yo",
-      "onlyMeDescription": "Solo tú puedes ver este artefacto",
+      "onlyMeOption": "Solo yo",
       "organization": "Organización",
-      "organizationDescription": "Cualquier persona de {{organization}} con el enlace",
-      "organizationDescriptionUnnamed": "Cualquier persona de tu organización con el enlace",
+      "organizationOption": "Cualquier persona de {{organization}}",
+      "organizationOptionUnnamed": "Cualquier persona de tu organización",
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
-      "publicDescription": "Cualquier persona con el enlace puede verlo",
+      "publicOption": "Cualquier persona con el enlace",
       "retry": "Reintentar"
     },
     "sidebar": {

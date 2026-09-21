@@ -601,13 +601,13 @@
       "loadFailed": "Gagal memuat izin",
       "loadingPermissions": "Memuat izin",
       "onlyMe": "Hanya saya",
-      "onlyMeDescription": "Hanya Anda yang dapat melihat artefak ini",
+      "onlyMeOption": "Hanya saya",
       "organization": "Organisasi",
-      "organizationDescription": "Siapa pun di {{organization}} yang memiliki tautan",
-      "organizationDescriptionUnnamed": "Siapa pun di organisasi Anda yang memiliki tautan",
+      "organizationOption": "Siapa pun di {{organization}}",
+      "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
-      "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",
+      "publicOption": "Siapa pun yang memiliki tautan",
       "retry": "Coba lagi"
     },
     "sidebar": {
