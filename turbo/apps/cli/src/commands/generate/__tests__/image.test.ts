@@ -478,6 +478,39 @@ describe("okou generate image command", () => {
     });
   });
 
+  it("escapes the artifact label in the Markdown presentation fields", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const url = "https://app.okou.ai/artifacts/abcxyz1234.png#detail";
+    const filename = String.raw`Launch [v2]\image.png`;
+    const label = String.raw`Launch \[v2\]\\image.png`;
+    server.use(
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json({ ...IMAGE_RESULT, filename, url });
+      }),
+    );
+
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--raw-prompt",
+      "A product image",
+      "--json",
+    ]);
+
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
+      {
+        filename,
+        url,
+        inlineMarkdownLink: `[${label}](<${url}>)`,
+        previewMarkdownBlock: `![${label}](<${url}>)`,
+        artifactPresentationContext: expect.stringContaining(
+          "own Markdown paragraph",
+        ),
+      },
+    );
+  });
+
   it.each([
     ["provider listing", ["image", "--json"]],
     ["connector guidance", ["image", "--provider", "replicate", "--json"]],
