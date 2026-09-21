@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync } from "node:crypto";
+import { SignJWT } from "jose";
 
 import type {
   BuiltinConnectorExternalCodeSessionCompleteResponse,
@@ -325,6 +326,15 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
+  readonly identity?: {
+    readonly subject: string;
+    readonly tokenUsername?: string;
+    readonly tokenEmail?: string;
+    readonly userInfoUsername?: string;
+    readonly userInfoEmail?: string;
+    readonly userInfoSubject?: string;
+    readonly invalidIdToken?: boolean;
+  };
 }
 
 interface AutomaticMcpOAuthProviderRecorder {
@@ -343,6 +353,75 @@ const automaticDcrRequestSchema = z.object({
   scope: z.string().optional(),
 });
 
+const automaticOAuthIdentityKeyPair = Object.freeze(
+  generateKeyPairSync("rsa", { modulusLength: 2048 }),
+);
+const automaticOAuthIdentityKeyId = "automatic-oauth-test-key";
+const automaticOAuthIdentityPublicJwk = Object.freeze({
+  ...automaticOAuthIdentityKeyPair.publicKey.export({ format: "jwk" }),
+  alg: "RS256",
+  kid: automaticOAuthIdentityKeyId,
+  use: "sig",
+});
+
+async function automaticOAuthIdToken(
+  options: AutomaticMcpOAuthProviderOptions,
+  issuer: string,
+  refresh: boolean,
+): Promise<string | undefined> {
+  const identity = options.identity;
+  if (refresh || !identity) {
+    return undefined;
+  }
+  if (identity.invalidIdToken) {
+    return "invalid-id-token";
+  }
+  const timestamp = Math.floor(now() / 1000);
+  return await new SignJWT({
+    ...(identity.tokenUsername
+      ? { preferred_username: identity.tokenUsername }
+      : {}),
+    ...(identity.tokenEmail ? { email: identity.tokenEmail } : {}),
+  })
+    .setProtectedHeader({ alg: "RS256", kid: automaticOAuthIdentityKeyId })
+    .setIssuer(issuer)
+    .setAudience(
+      options.registration === "dcr"
+        ? "automatic-dcr-client"
+        : "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
+    )
+    .setSubject(identity.subject)
+    .setIssuedAt(timestamp)
+    .setExpirationTime(timestamp + 300)
+    .sign(automaticOAuthIdentityKeyPair.privateKey);
+}
+
+function automaticOAuthTokenResponse(args: {
+  readonly options: AutomaticMcpOAuthProviderOptions;
+  readonly refresh: boolean;
+  readonly authorizationCodeAttempts: number;
+  readonly idToken: string | undefined;
+}) {
+  return {
+    access_token: args.refresh
+      ? "automatic-refreshed-access-token"
+      : (args.options.initialAccessToken ?? "automatic-initial-access-token"),
+    ...(!args.refresh && !args.options.omitRefreshToken
+      ? {
+          refresh_token:
+            args.options.initialRefreshToken ?? "automatic-refresh-token",
+        }
+      : {}),
+    token_type: "Bearer",
+    ...(args.idToken ? { id_token: args.idToken } : {}),
+    expires_in: args.refresh ? 3600 : (args.options.initialExpiresIn ?? 0),
+    scope:
+      args.options.authorizationCodeScopes?.[
+        args.authorizationCodeAttempts - 1
+      ] ?? "read write",
+  };
+}
+
 export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
@@ -355,6 +434,8 @@ export function mockAutomaticMcpOAuthProvider(
   const authorizationUrl = `${issuer}/authorize`;
   const tokenUrl = `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
+  const jwksUrl = `${issuer}/jwks.json`;
+  const userInfoUrl = `${issuer}/userinfo`;
   const resourceMetadata = {
     resource: options.resource ?? endpoint,
     scopes_supported: [...(options.metadataScopes ?? ["metadata-fallback"])],
@@ -378,6 +459,14 @@ export function mockAutomaticMcpOAuthProvider(
     authorization_response_iss_parameter_supported:
       options.issuerParameterSupported ?? true,
     client_id_metadata_document_supported: options.registration === "cimd",
+    ...(options.identity
+      ? {
+          jwks_uri: jwksUrl,
+          userinfo_endpoint: userInfoUrl,
+          subject_types_supported: ["public"],
+          id_token_signing_alg_values_supported: ["RS256"],
+        }
+      : {}),
     ...(options.registration === "dcr"
       ? { registration_endpoint: registrationUrl }
       : {}),
@@ -520,6 +609,25 @@ export function mockAutomaticMcpOAuthProvider(
         id_token_signing_alg_values_supported: ["RS256"],
       });
     }),
+    http.get(jwksUrl, () => {
+      return HttpResponse.json({ keys: [automaticOAuthIdentityPublicJwk] });
+    }),
+    http.get(userInfoUrl, () => {
+      const identity = options.identity;
+      if (!identity) {
+        return HttpResponse.json(
+          { error: "identity_unavailable" },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json({
+        sub: identity.userInfoSubject ?? identity.subject,
+        ...(identity.userInfoUsername
+          ? { preferred_username: identity.userInfoUsername }
+          : {}),
+        ...(identity.userInfoEmail ? { email: identity.userInfoEmail } : {}),
+      });
+    }),
     http.post(registrationUrl, async ({ request }) => {
       const body = automaticDcrRequestSchema.parse(await request.json());
       registrationBodies.push(body);
@@ -587,22 +695,15 @@ export function mockAutomaticMcpOAuthProvider(
           },
         );
       }
-      return HttpResponse.json({
-        access_token: refresh
-          ? "automatic-refreshed-access-token"
-          : (options.initialAccessToken ?? "automatic-initial-access-token"),
-        ...(!refresh && !options.omitRefreshToken
-          ? {
-              refresh_token:
-                options.initialRefreshToken ?? "automatic-refresh-token",
-            }
-          : {}),
-        token_type: "Bearer",
-        expires_in: refresh ? 3600 : (options.initialExpiresIn ?? 0),
-        scope:
-          options.authorizationCodeScopes?.[authorizationCodeAttempts - 1] ??
-          "read write",
-      });
+      const idToken = await automaticOAuthIdToken(options, issuer, refresh);
+      return HttpResponse.json(
+        automaticOAuthTokenResponse({
+          options,
+          refresh,
+          authorizationCodeAttempts,
+          idToken,
+        }),
+      );
     }),
   );
   return {

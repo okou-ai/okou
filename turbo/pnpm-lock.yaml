@@ -205,6 +205,9 @@ importers:
       ignore:
         specifier: ^7.0.5
         version: 7.0.5
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       markdown-it:
         specifier: 14.2.0
         version: 14.2.0

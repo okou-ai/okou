@@ -90,6 +90,7 @@ import {
   isAutomaticOAuthInvalidClient,
   isAutomaticOAuthInvalidGrant,
 } from "./mcp-automatic-oauth.service";
+import type { McpAutomaticOAuthUserInfo } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
@@ -208,6 +209,7 @@ export interface CustomConnectorOAuthTokenResult {
   readonly idToken: string | null;
   readonly expiresAt: Date | null;
   readonly scopes: readonly string[] | null;
+  readonly userInfo?: McpAutomaticOAuthUserInfo | null;
 }
 
 interface OAuthClientCredentials {
@@ -874,6 +876,7 @@ async function persistAutomaticNoAuthConnection(
           kind: "custom",
           customConnectorId: connector.id,
           oauthScopes: null,
+          identity: { kind: "local" },
         },
         resolution: resolution.mutation,
         writeCredentials: async ({ db: credentialDb, connectorId }) => {
@@ -1476,6 +1479,14 @@ export async function storeCustomConnectorOAuth2Connection(
           kind: "custom",
           customConnectorId: args.connectorId,
           oauthScopes: args.token.scopes,
+          identity: args.token.userInfo
+            ? {
+                kind: "external",
+                externalId: args.token.userInfo.id,
+                externalUsername: args.token.userInfo.username,
+                externalEmail: args.token.userInfo.email,
+              }
+            : { kind: "local" },
         },
         resolution: resolution.mutation,
         insertConnectionId: args.insertConnectionId,
