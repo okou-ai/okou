@@ -531,7 +531,7 @@ export function mockAutomaticMcpOAuthProvider(
     authorization_response_iss_parameter_supported:
       options.issuerParameterSupported ?? true,
     client_id_metadata_document_supported: options.registration === "cimd",
-    ...(options.identity
+    ...(options.identity || options.refreshIdentity
       ? {
           jwks_uri: jwksUrl,
           userinfo_endpoint: userInfoUrl,
