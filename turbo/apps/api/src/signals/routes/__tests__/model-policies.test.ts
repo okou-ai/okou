@@ -320,6 +320,19 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(response.body.policies[0]?.runtimeProviderType).toBe("deepseek");
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+    });
+    const openRouterOnly = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(openRouterOnly.body.policies[0]?.runtimeProviderType).toBe(
+      "openrouter-codex",
+    );
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.DeepSeekOpenRouterRouting]: false,
+    });
     // Operator-managed key availability/cooldowns have no user mutation API.
     // Scope the infrastructure state to this request without changing shared rows.
     const fallback =

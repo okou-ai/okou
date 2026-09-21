@@ -171,6 +171,36 @@ describe("isFeatureEnabled", () => {
       }),
     ).toBe(false);
   });
+
+  it("enables DeepSeek OpenRouter routing for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DeepSeekOpenRouterRouting, context),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DeepSeekOpenRouterRouting, {
+          ...context,
+          overrides: {
+            [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+          },
+        }),
+      ).toBe(true);
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(
+        FeatureSwitchKey.DeepSeekOpenRouterRouting,
+        staffContext,
+      ),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.DeepSeekOpenRouterRouting, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.DeepSeekOpenRouterRouting]: false },
+      }),
+    ).toBe(false);
+  });
+
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
     expect(isFeatureEnabled(FeatureSwitchKey.AvatarNeckSweater, {})).toBe(true);

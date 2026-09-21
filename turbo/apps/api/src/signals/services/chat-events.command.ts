@@ -1062,6 +1062,7 @@ function emptyModelFirstThreadPin(): ThreadModelPin {
 async function withBuiltInModelRuntimeRoute(
   db: Db,
   configuration: ResolvedRunConfiguration,
+  featureSwitchContext: FeatureSwitchContext,
 ): Promise<ResolvedRunConfiguration | NormalSendFailure> {
   if (
     configuration.providerAdmission.error ||
@@ -1080,6 +1081,7 @@ async function withBuiltInModelRuntimeRoute(
   const builtInModelRuntimeRoute = await resolveBuiltInModelRuntimeRoute(
     db,
     selectedModel,
+    featureSwitchContext,
   );
   return builtInModelRuntimeRoute
     ? { ...configuration, builtInModelRuntimeRoute }
@@ -1161,16 +1163,20 @@ async function resolveExplicitRunConfiguration(params: {
   if (codexServiceTierError) {
     return codexServiceTierError;
   }
-  return await withBuiltInModelRuntimeRoute(params.db, {
-    modelPin,
-    providerAdmission,
-    reasoningEffort: effort.reasoningEffort,
-    modelSettings: effort.modelSettings,
-    codexServiceTier: codexServiceTierForRun({
-      body: params.body,
+  return await withBuiltInModelRuntimeRoute(
+    params.db,
+    {
       modelPin,
-    }),
-  });
+      providerAdmission,
+      reasoningEffort: effort.reasoningEffort,
+      modelSettings: effort.modelSettings,
+      codexServiceTier: codexServiceTierForRun({
+        body: params.body,
+        modelPin,
+      }),
+    },
+    params.featureSwitchContext,
+  );
 }
 
 async function resolveNormalSendFeatureSwitches(
@@ -1910,6 +1916,7 @@ async function resolveThread(params: {
         reasoningEffort: persisted.reasoningEffort,
         modelSettings: persisted.modelSettings,
       },
+      params.featureSwitches.featureSwitchContext,
     );
     if ("status" in resolvedRunConfiguration) {
       return resolvedRunConfiguration;

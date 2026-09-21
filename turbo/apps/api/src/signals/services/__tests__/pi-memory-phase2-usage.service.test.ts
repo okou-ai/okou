@@ -28,7 +28,10 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
-import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import {
+  seedBuiltInModelCandidateKeys,
+  seedBuiltInModelKey,
+} from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
@@ -72,6 +75,7 @@ async function dispatchMaintenance(
   type?: Phase2ProviderType,
   credentialScope: "org" | "member" = "org",
   represented?: "valid" | "invalid",
+  featureSwitches?: Readonly<Record<string, boolean>>,
 ) {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
   // PiMemory is off for everyone by default; the dispatcher only runs for
@@ -79,7 +83,10 @@ async function dispatchMaintenance(
   await updateFeatureSwitchesForUser(
     context,
     { orgId: scope.orgId, userId: scope.userId },
-    { [FeatureSwitchKey.PiMemory]: true },
+    {
+      [FeatureSwitchKey.PiMemory]: true,
+      ...featureSwitches,
+    },
   );
   onTestFinished(async () => {
     await deleteFeatureSwitchesForUser(context, {
@@ -88,10 +95,14 @@ async function dispatchMaintenance(
     });
   });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  await seedBuiltInModelKey(
-    context,
-    type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-  );
+  if (type) {
+    await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BYOK_MODEL);
+  } else {
+    await seedBuiltInModelCandidateKeys(
+      context,
+      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+    );
+  }
   // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
   configureNativeCliArtifact();
   const provider = type
@@ -190,9 +201,15 @@ async function launchMaintenance(
   type?: Phase2ProviderType,
   credentialScope: "org" | "member" = "org",
   represented?: "valid" | "invalid",
+  featureSwitches?: Readonly<Record<string, boolean>>,
 ) {
   const { scope, run, runId, binding, provider, baseFiles } =
-    await dispatchMaintenance(type, credentialScope, represented);
+    await dispatchMaintenance(
+      type,
+      credentialScope,
+      represented,
+      featureSwitches,
+    );
   // One proxy flush aggregates two provider responses.
   const events = [
     { category: "tokens.input", quantity: 6 },
@@ -708,6 +725,25 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   await run.proxy();
   await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
   await expect(run.ledger()).resolves.toHaveLength(4);
+});
+
+test("uses the Phase 2 owner's DeepSeek OpenRouter routing switch", async () => {
+  const run = await launchMaintenance(undefined, "org", undefined, {
+    [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+    [FeatureSwitchKey.OpenRouterUsRouting]: false,
+  });
+  const actual = await executePhase2Runtime(context, run.runId);
+  expect(actual.requests).toHaveLength(3);
+  for (const request of actual.requests) {
+    expect(request.url).toBe("https://openrouter.ai/api/v1/responses");
+    expect(request.headers.get("authorization")).toMatch(
+      /^Bearer built-in-key-runtime-fixture-/,
+    );
+    expect(request.body).toMatchObject({
+      model: "deepseek/deepseek-v4.1-flash",
+      reasoning: { effort: "high" },
+    });
+  }
 });
 
 test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(

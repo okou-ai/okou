@@ -5,6 +5,11 @@ import {
   type BuiltInModelRouteProviderType,
   type BuiltInModelRouteTarget,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { and, eq, gt } from "drizzle-orm";
@@ -102,6 +107,28 @@ function routeFromTarget(
   };
 }
 
+function eligibleBuiltInModelRouteCandidates(
+  selectedModel: string,
+  featureSwitchContext?: FeatureSwitchContext,
+): readonly BuiltInModelRouteTarget[] {
+  const candidates = getBuiltInModelRouteCandidates(selectedModel);
+  const requireOpenRouter =
+    featureSwitchContext !== undefined &&
+    isFeatureEnabled(
+      FeatureSwitchKey.DeepSeekOpenRouterRouting,
+      featureSwitchContext,
+    ) &&
+    candidates.some((candidate) => {
+      return candidate.providerType === "deepseek";
+    });
+  if (!requireOpenRouter) {
+    return candidates;
+  }
+  return candidates.filter((candidate) => {
+    return candidate.providerType === "openrouter-codex";
+  });
+}
+
 export function isBuiltInModelRuntimeRoutePermitted(
   route: BuiltInModelRuntimeRoute,
 ): boolean {
@@ -118,9 +145,13 @@ export function isBuiltInModelRuntimeRoutePermitted(
 export async function resolveBuiltInModelRuntimeRoute(
   db: Db,
   selectedModel: string,
+  featureSwitchContext?: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const timestamp = nowDate();
-  for (const target of getBuiltInModelRouteCandidates(selectedModel)) {
+  for (const target of eligibleBuiltInModelRouteCandidates(
+    selectedModel,
+    featureSwitchContext,
+  )) {
     if (runtimeRouteUnavailableForTest(target)) {
       continue;
     }

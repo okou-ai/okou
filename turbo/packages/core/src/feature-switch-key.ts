@@ -62,6 +62,7 @@ export enum FeatureSwitchKey {
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
+  DeepSeekOpenRouterRouting = "deepSeekOpenRouterRouting",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",

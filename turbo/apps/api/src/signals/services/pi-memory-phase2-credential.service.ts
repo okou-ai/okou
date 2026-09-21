@@ -418,11 +418,17 @@ export async function resolvePiMemoryPhase2Credential(
   const quota: PiMemoryQuotaSource = subscription?.quota ?? {
     providerClass: pin.modelProvider === "built-in" ? "builtin" : "api_key",
   };
+  const featureSwitchContext =
+    pin.modelProvider === "built-in"
+      ? await loadUserFeatureSwitchContext(db, claim.orgId, claim.userId)
+      : undefined;
+  signal.throwIfAborted();
   const route =
     pin.modelProvider === "built-in"
       ? await resolveBuiltInModelRuntimeRoute(
           db,
           PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+          featureSwitchContext,
         )
       : undefined;
   signal.throwIfAborted();
