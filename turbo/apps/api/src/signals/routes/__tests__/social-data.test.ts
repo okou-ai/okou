@@ -1109,6 +1109,141 @@ describe("Social data jobs", () => {
     expect(observed.runRequests).toBe(1);
   });
 
+  it("normalizes WeChat search rows into plain text and secure links", async () => {
+    const actor = await seedActor();
+    const observed = tikhubPlanSource({
+      endpoint: "/api/v1/wechat_search/v2/fetch_search",
+      location: "body",
+      properties: {
+        keyword: { type: "string" },
+        business_type: { type: "string" },
+        raw: { type: "boolean" },
+      },
+      required: ["keyword"],
+      output: {
+        keyword: "product launch",
+        items: [
+          {
+            docID: "6635276584364799119",
+            title: 'A <em class="highlight">product launch</em> retrospective',
+            desc: 'What the <em class="highlight">launch</em> week measured',
+            doc_url:
+              "http://mp.weixin.qq.com/s?__biz=MzA3NjM5MjIwOQ==&mid=2652281110&idx=1&sn=b58291a2183c423afa62d28107ba2958",
+            date: 1_741_148_719,
+            source: { title: "Example Daily" },
+            thumbUrl: "https://mmbiz.qpic.cn/mmbiz_jpg/example/640",
+          },
+        ],
+      },
+    });
+    const request = {
+      platform: "wechat",
+      operation: "search",
+      query: "product launch",
+      type: "article",
+      limit: 5,
+    } as const satisfies SocialDataRequest;
+
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: { ...request, requestId: randomUUID() },
+      }),
+      [202],
+    );
+    const finished = await readJob(actor, created.body.jobId);
+
+    expect(observed.runInput).toStrictEqual({
+      provider: "tikhub",
+      endpoint: "/api/v1/wechat_search/v2/fetch_search",
+      input: {
+        body: {
+          keyword: "product launch",
+          business_type: "article",
+          raw: false,
+        },
+      },
+    });
+    expect(finished.body).toMatchObject({
+      status: "completed",
+      data: {
+        items: [
+          {
+            id: "6635276584364799119",
+            title: "A product launch retrospective",
+            text: "What the launch week measured",
+            url: "https://mp.weixin.qq.com/s?__biz=MzA3NjM5MjIwOQ==&mid=2652281110&idx=1&sn=b58291a2183c423afa62d28107ba2958",
+            displayName: "Example Daily",
+            publishedAt: "2025-03-05T04:25:19.000Z",
+            mediaUrls: ["https://mmbiz.qpic.cn/mmbiz_jpg/example/640"],
+          },
+        ],
+      },
+    });
+  });
+
+  it("inspects one WeChat Official Account article", async () => {
+    const actor = await seedActor();
+    const observed = tikhubPlanSource({
+      endpoint: "/api/v1/wechat_mp/v2/fetch_article_detail_h5",
+      location: "body",
+      properties: { url: { type: "string" }, raw: { type: "boolean" } },
+      required: ["url"],
+      output: {
+        url: "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
+        content: {
+          title: "Launch day results",
+          nick_name: "Example Daily",
+          user_name: "gh_114e76fd6e5d",
+          desc: "What changed this week",
+          content_text: "The full article text.",
+          create_timestamp: 1_741_148_529,
+          cdn_url: "https://mmbiz.qpic.cn/mmbiz_jpg/example/0",
+          sn: "24a33e0bf7a46cd28911be93eff3b531",
+        },
+      },
+    });
+    const request = {
+      platform: "wechat",
+      operation: "inspect",
+      url: "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
+      limit: 1,
+    } as const satisfies SocialDataRequest;
+
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: { ...request, requestId: randomUUID() },
+      }),
+      [202],
+    );
+    const finished = await readJob(actor, created.body.jobId);
+
+    expect(observed.runInput).toStrictEqual({
+      provider: "tikhub",
+      endpoint: "/api/v1/wechat_mp/v2/fetch_article_detail_h5",
+      input: { body: { url: request.url, raw: false } },
+    });
+    expect(finished.body).toMatchObject({
+      status: "completed",
+      data: {
+        items: [
+          {
+            id: "24a33e0bf7a46cd28911be93eff3b531",
+            url: request.url,
+            title: "Launch day results",
+            description: "What changed this week",
+            text: "The full article text.",
+            username: "gh_114e76fd6e5d",
+            displayName: "Example Daily",
+            publishedAt: "2025-03-05T04:22:09.000Z",
+            mediaUrls: ["https://mmbiz.qpic.cn/mmbiz_jpg/example/0"],
+          },
+        ],
+      },
+    });
+  });
+
   it("rejects unsupported new-platform targets before execution", async () => {
     const actor = await seedActor();
     const observed = source();
