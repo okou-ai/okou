@@ -9535,13 +9535,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("bounds admitted MCP awareness across frameworks and continuation", async () => {
+  async function setupBoundedMcpAwareness() {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-
     const admittedSlugs = Array.from(
       { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
       (_, index) => {
@@ -9563,7 +9562,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ]);
       admittedConnectorIds.push(connector.id);
     }
-
     const incompleteSlug = "_mcp-awareness-incomplete";
     const incomplete = await connectors.createCustomConnector(
       actor,
@@ -9589,27 +9587,33 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       ...admittedConnectorIds,
       incomplete.id,
     ]);
-
-    const claudeRun = await api.createRun(actor, {
+    return {
+      api,
+      fw,
+      webhooks,
+      actor,
       agentId,
-      prompt: "inspect bounded MCP awareness",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claudeClaim = await api.claimRunnerJob(claudeRun.runId);
-    expect(claudeClaim.cliAgentType).toBe("claude-code");
-    expect(claudeClaim.appendSystemPrompt).toContain("# Agent Tools");
-    const claudeMcpPrompt = mcpConnectorPromptSection(
-      claudeClaim.appendSystemPrompt ?? "",
-    );
-    if (!claudeMcpPrompt) {
-      throw new Error("Expected Claude Code to receive MCP awareness");
+      runnerGroup,
+      admittedSlugs,
+      incompleteSlug,
+      ungrantedSlug,
+    };
+  }
+
+  function expectBoundedMcpAwareness(
+    prompt: string | null | undefined,
+    fixture: Awaited<ReturnType<typeof setupBoundedMcpAwareness>>,
+  ) {
+    expect(prompt).toContain("# Agent Tools");
+    const section = mcpConnectorPromptSection(prompt ?? "");
+    if (!section) {
+      throw new Error("Expected MCP awareness");
     }
-    const expectedListedSlugs = [...admittedSlugs]
+    const expectedListedSlugs = [...fixture.admittedSlugs]
       .sort()
       .slice(0, MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT);
     expect(
-      claudeMcpPrompt.split("\n").filter((line) => {
+      section.split("\n").filter((line) => {
         return line.startsWith("- `");
       }),
     ).toStrictEqual(
@@ -9617,80 +9621,127 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         return `- \`${slug}\``;
       }),
     );
-    expect(claudeMcpPrompt).not.toContain(
-      admittedSlugs[MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT],
+    expect(section).not.toContain(
+      fixture.admittedSlugs[MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT],
     );
-    expect(claudeMcpPrompt).toContain(
+    expect(section).toContain(
       "1 additional admitted MCP connector was omitted from this prompt",
     );
-    expect(claudeMcpPrompt).not.toContain(incompleteSlug);
-    expect(claudeMcpPrompt).not.toContain(ungrantedSlug);
-    expect(claudeMcpPrompt).not.toContain("Remote display");
-    expect(claudeMcpPrompt).not.toContain("example.test");
-    expect(claudeMcpPrompt).not.toContain("credential-");
+    expect(section).not.toContain(fixture.incompleteSlug);
+    expect(section).not.toContain(fixture.ungrantedSlug);
+    expect(section).not.toContain("Remote display");
+    expect(section).not.toContain("example.test");
+    expect(section).not.toContain("credential-");
+    return section;
+  }
 
-    const history = `bounded MCP awareness history ${claudeRun.runId}`;
+  it("bounds admitted MCP awareness for an initial Claude run", async () => {
+    const fixture = await setupBoundedMcpAwareness();
+    const run = await fixture.api.createRun(fixture.actor, {
+      agentId: fixture.agentId,
+      prompt: "inspect bounded MCP awareness",
+      modelProvider: "anthropic-api-key",
+    });
+    await fixture.api.heartbeatRunner(fixture.runnerGroup);
+    const claim = await fixture.api.claimRunnerJob(run.runId);
+    expect(claim.cliAgentType).toBe("claude-code");
+    expectBoundedMcpAwareness(claim.appendSystemPrompt, fixture);
+    await fixture.api.requestCancelRun(fixture.actor, run.runId, [200]);
+  });
+
+  it("preserves bounded MCP awareness across continuation", async () => {
+    const fixture = await setupBoundedMcpAwareness();
+    const first = await fixture.api.createRun(fixture.actor, {
+      agentId: fixture.agentId,
+      prompt: "inspect bounded MCP awareness",
+      modelProvider: "anthropic-api-key",
+    });
+    await fixture.api.heartbeatRunner(fixture.runnerGroup);
+    const firstClaim = await fixture.api.claimRunnerJob(first.runId);
+    const initialPrompt = expectBoundedMcpAwareness(
+      firstClaim.appendSystemPrompt,
+      fixture,
+    );
+    const history = `bounded MCP awareness history ${first.runId}`;
     const historyHash = createHash("sha256").update(history).digest("hex");
     mockSessionHistoryBlob(historyHash, history);
-    await webhooks.requestAgentComplete(
+    await fixture.webhooks.requestAgentComplete(
       {
-        runId: claudeRun.runId,
+        runId: first.runId,
         exitCode: 0,
         lastEventSequence: 0,
         checkpoint: {
           cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-mcp-awareness-${claudeRun.runId}`,
+          cliAgentSessionId: `bdd-mcp-awareness-${first.runId}`,
           cliAgentSessionHistoryHash: historyHash,
         },
       },
-      { authorization: `Bearer ${claudeClaim.sandboxToken}` },
+      { authorization: `Bearer ${firstClaim.sandboxToken}` },
       [200],
     );
-
-    const resumedRun = await api.createRun(actor, {
-      agentId,
-      sessionId: claudeRun.sessionId,
+    const resumed = await fixture.api.createRun(fixture.actor, {
+      agentId: fixture.agentId,
+      sessionId: first.sessionId,
       prompt: "continue with bounded MCP awareness",
       modelProvider: "anthropic-api-key",
     });
-    const resumedClaim = await api.claimRunnerJob(resumedRun.runId);
+    const resumedClaim = await fixture.api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.appendSystemPrompt).toContain("# Agent Tools");
     expect(
       mcpConnectorPromptSection(resumedClaim.appendSystemPrompt ?? ""),
-    ).toBe(claudeMcpPrompt);
-    await api.requestCancelRun(actor, resumedRun.runId, [200]);
+    ).toBe(initialPrompt);
+    await fixture.api.requestCancelRun(fixture.actor, resumed.runId, [200]);
+  });
 
-    await fw.seedOrgCodexProvider(actor, {
+  it("keeps bounded MCP awareness identical across Claude and Codex", async () => {
+    const fixture = await setupBoundedMcpAwareness();
+    const claude = await fixture.api.createRun(fixture.actor, {
+      agentId: fixture.agentId,
+      prompt: "inspect bounded MCP awareness",
+      modelProvider: "anthropic-api-key",
+    });
+    await fixture.api.heartbeatRunner(fixture.runnerGroup);
+    const claudeClaim = await fixture.api.claimRunnerJob(claude.runId);
+    const claudePrompt = expectBoundedMcpAwareness(
+      claudeClaim.appendSystemPrompt,
+      fixture,
+    );
+    await fixture.api.requestCancelRun(fixture.actor, claude.runId, [200]);
+    await fixture.fw.seedOrgCodexProvider(fixture.actor, {
       accessToken: "mcp-awareness-codex-access",
       refreshToken: "mcp-awareness-codex-refresh",
       accountId: "mcp-awareness-codex-account",
       idToken: "mcp-awareness-codex-id",
       expiresIn: 3600,
     });
-    const codexRun = await api.createRun(actor, {
-      agentId,
+    const codex = await fixture.api.createRun(fixture.actor, {
+      agentId: fixture.agentId,
       prompt: "inspect MCP awareness with Codex",
       modelProvider: "codex-oauth-token",
     });
-    const codexClaim = await api.claimRunnerJob(codexRun.runId);
+    const codexClaim = await fixture.api.claimRunnerJob(codex.runId);
     expect(codexClaim.cliAgentType).toBe("codex");
     expect(mcpConnectorPromptSection(codexClaim.appendSystemPrompt ?? "")).toBe(
-      claudeMcpPrompt,
+      claudePrompt,
     );
-    await api.requestCancelRun(actor, codexRun.runId, [200]);
+    await fixture.api.requestCancelRun(fixture.actor, codex.runId, [200]);
+  });
 
-    const genericDirectRun = await api.createDirectRun(
-      actor,
+  it("omits MCP awareness from generic direct runs", async () => {
+    const fixture = await setupBoundedMcpAwareness();
+    const direct = await fixture.api.createDirectRun(
+      fixture.actor,
       agentBackedDirectRunBody({
-        agentId,
+        agentId: fixture.agentId,
         prompt: "do not advertise MCP without a server-issued Okou run token",
       }),
     );
-    const genericDirectClaim = await api.claimRunnerJob(genericDirectRun.runId);
+    await fixture.api.heartbeatRunner(fixture.runnerGroup);
+    const claim = await fixture.api.claimRunnerJob(direct.runId);
     expect(
-      mcpConnectorPromptSection(genericDirectClaim.appendSystemPrompt ?? ""),
+      mcpConnectorPromptSection(claim.appendSystemPrompt ?? ""),
     ).toBeUndefined();
-    await api.requestCancelRun(actor, genericDirectRun.runId, [200]);
+    await fixture.api.requestCancelRun(fixture.actor, direct.runId, [200]);
   });
 
   it("reads a seeded canonical connector through runtime auth", async () => {
