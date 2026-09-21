@@ -268,22 +268,26 @@ async fn a_real_pty_is_explicit_and_refusal_never_sends_the_program() {
 
 #[tokio::test]
 async fn quiet_command_survives_the_one_shot_deadline_and_peer_rekey() {
-    let mut h = Harness::new(Reply::Process).await;
+    let mut h = Harness::new(Reply::DelayedExit {
+        command: b"quiet",
+        stdout: b"done",
+        delay: Duration::from_secs(61),
+    })
+    .await;
     let _resolve = h.resolve(h.credential(true)).await;
     let first = h
         .request(json!({"sshConnectionId":CONNECTION,"command":"true"}))
         .await;
     assert_eq!(super::terminal(&first)["type"], "finished");
     let began = Instant::now();
-    let id = start(
-        &h,
-        json!({"type":"exec","command":"sleep 61; printf done"}),
-        false,
-    )
-    .await;
+    let id = start(&h, json!({"type":"exec","command":"quiet"}), false).await;
     state(&h, &id, "running").await;
-    // This real duration is the contract under test, not a synchronization delay.
-    tokio::time::sleep(Duration::from_secs(61)).await;
+    // Russh's rekey limit uses std::time::Instant, so cross that short real boundary
+    // before advancing the runner's Tokio-clock deadline past a minute.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    tokio::time::resume();
     assert_eq!(state(&h, &id, "finished").await["state"]["exit"]["code"], 0);
     assert!(began.elapsed() > Duration::from_secs(60));
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);

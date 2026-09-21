@@ -49,6 +49,11 @@ pub(super) enum Reply {
     Disconnect,
     Hold,
     Process,
+    DelayedExit {
+        command: &'static [u8],
+        stdout: &'static [u8],
+        delay: Duration,
+    },
     Sftp(&'static str),
     BlockedInput,
 }
@@ -330,7 +335,7 @@ impl Harness {
             },
             auth_rejection_time: Duration::ZERO,
             auth_rejection_time_initial: Some(Duration::ZERO),
-            limits: if matches!(reply, Reply::Process) {
+            limits: if matches!(reply, Reply::Process | Reply::DelayedExit { .. }) {
                 // Traffic after a quiet period forces another key exchange,
                 // including after the initial setup deadline in the long-task test.
                 russh::Limits {
@@ -355,7 +360,7 @@ impl Harness {
                     accepted = listener.accept() => {
                         let Ok((socket, _)) = accepted else { break; };
                         let config = Arc::clone(&config);
-                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, pty: false, opened: false };
+                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, delayed: None, pty: false, opened: false };
                         sessions.spawn(async move { if let Ok(session) = server::run_stream(config, socket, handler).await { let _ = session.await; } });
                     }
                     _ = sessions.join_next(), if !sessions.is_empty() => (),
@@ -614,12 +619,16 @@ struct Peer {
     reply: Reply,
     output: Option<Outgoing>,
     process: Option<process::Process>,
+    delayed: Option<JoinHandle<()>>,
     pty: bool,
     opened: bool,
 }
 
 impl Drop for Peer {
     fn drop(&mut self) {
+        if let Some(delayed) = self.delayed.take() {
+            delayed.abort();
+        }
         self.observed.closed.fetch_add(1, Ordering::SeqCst);
     }
 }
@@ -720,6 +729,9 @@ impl server::Handler for Peer {
         self.opened = true;
         // A reused transport starts a distinct channel with no inherited process or PTY state.
         self.process = None;
+        if let Some(delayed) = self.delayed.take() {
+            delayed.abort();
+        }
         self.output = None;
         self.pty = false;
         reply.accept().await;
@@ -738,6 +750,38 @@ impl server::Handler for Peer {
             .push(command.to_vec());
         match &self.reply {
             Reply::Process => {
+                session.channel_success(channel)?;
+                self.process = Some(process::Process::start(
+                    Some(command),
+                    self.pty,
+                    channel,
+                    session.handle(),
+                ));
+            }
+            Reply::DelayedExit {
+                command: delayed_command,
+                stdout,
+                delay,
+            } if command == *delayed_command => {
+                session.channel_success(channel)?;
+                let handle = session.handle();
+                let stdout = stdout.to_vec();
+                let delay = *delay;
+                self.delayed = Some(tokio::spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    if handle.data(channel, stdout).await.is_err() {
+                        return;
+                    }
+                    if handle.exit_status_request(channel, 0).await.is_err() {
+                        return;
+                    }
+                    if handle.eof(channel).await.is_err() {
+                        return;
+                    }
+                    let _ = handle.close(channel).await;
+                }));
+            }
+            Reply::DelayedExit { .. } => {
                 session.channel_success(channel)?;
                 self.process = Some(process::Process::start(
                     Some(command),
