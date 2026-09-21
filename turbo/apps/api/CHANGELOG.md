@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.648.0](https://github.com/okou-ai/okou/compare/api-v1.647.0...api-v1.648.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+
+
+### Bug Fixes
+
+* **api:** make mcp chat timestamps explicit ([#35738](https://github.com/okou-ai/okou/issues/35738)) ([d7e7529](https://github.com/okou-ai/okou/commit/d7e7529cb90dec882e9ede6b50e55906c2ab7f86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.483.0
+    * @okouai/core bumped to 8.691.0
+    * @okouai/db bumped to 1.282.0
+    * @okouai/pi-agent-runtime bumped to 1.34.3
+
 ## [1.647.0](https://github.com/okou-ai/okou/compare/api-v1.646.1...api-v1.647.0) (2026-09-21)
 
 
