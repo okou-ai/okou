@@ -79,7 +79,7 @@ import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { connectorCatalogRoutes } from "../connector-catalog";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectorsApi = createConnectorBddApi(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const storagesApi = createStoragesBddApi(context);
@@ -3353,6 +3353,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
+      identity: {
+        subject: "custom-automatic-user-123",
+        tokenUsername: "custom-token-user",
+        tokenEmail: "custom-token-user@example.test",
+        userInfoUsername: "custom-userinfo-user",
+        userInfoEmail: "custom-userinfo-user@example.test",
+      },
     });
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
@@ -3421,10 +3428,63 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       connector.id,
     );
     expect(accounts).toHaveLength(1);
-    expect(accounts[0]?.oauthScopes).toStrictEqual(["read", "write"]);
+    expect(accounts[0]).toMatchObject({
+      externalId: "custom-automatic-user-123",
+      externalUsername: "custom-userinfo-user",
+      externalEmail: "custom-userinfo-user@example.test",
+      oauthScopes: ["read", "write"],
+    });
 
     await connectorsApi.deleteCustomConnector(admin, connector.id);
     await bdd.deleteAgent(admin, agent.agentId);
+  });
+
+  it("keeps an Automatic MCP OAuth account unnamed for an invalid ID token", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "untrusted-custom-user",
+        tokenUsername: "untrusted-custom-name",
+        tokenEmail: "untrusted-custom@example.test",
+        invalidIdToken: true,
+      },
+    });
+    const bdd = createBddApi(context);
+    const admin = bdd.user({ orgRole: "org:admin" });
+    const connector = await connectorsApi.createCustomConnector(admin, {
+      kind: "mcp",
+      displayName: "BDD Automatic Invalid Identity",
+      endpoint: provider.endpoint,
+      transport: "streamable-http",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "automatic",
+    });
+    const authorizationUrl = await connectorsApi.startCustomConnectorOAuth2(
+      admin,
+      connector.id,
+    );
+    await connectorsApi.completeCustomConnectorOAuth2Callback({
+      code: "automatic-invalid-identity-code",
+      state: stateFromAuthorizationUrl(authorizationUrl),
+      iss: provider.issuer,
+    });
+    await expect(
+      connectorsApi.listCustomConnectorAccounts(admin, connector.id),
+    ).resolves.toMatchObject([
+      {
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: ["read", "write"],
+      },
+    ]);
+
+    await connectorsApi.deleteCustomConnector(admin, connector.id);
   });
 
   it("resolves Automatic MCP auth and reconnects the exact account across none and OAuth", async () => {
@@ -3503,7 +3563,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await expect(
       connectorsApi.listCustomConnectorAccounts(admin, connector.id),
     ).resolves.toMatchObject([
-      { id: connectionId, authMethod: "oauth", connectionStatus: "connected" },
+      {
+        id: connectionId,
+        authMethod: "oauth",
+        connectionStatus: "connected",
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+      },
     ]);
     await expect(
       readAutomaticOAuthBindingState(context, connectionId),

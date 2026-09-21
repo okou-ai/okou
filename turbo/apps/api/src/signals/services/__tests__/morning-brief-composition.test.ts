@@ -10,6 +10,8 @@ import {
   MORNING_BRIEF_FINAL_CHECK_RESERVE_MS,
   MORNING_BRIEF_MAX_CONCURRENT_SOURCES,
   MORNING_BRIEF_NEW_READ_CUTOFF_MS,
+  MORNING_BRIEF_SOURCE_READ_RESERVE_MS,
+  morningBriefSourceReadCutoff,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
   MORNING_BRIEF_SOURCE_BUDGETS,
 } from "../morning-brief-collection-plan";
@@ -1040,6 +1042,22 @@ describe("declared bounds", () => {
     expect(MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES).toBe(1024 * 1024);
   });
 
+  it("leaves every source budget time to finish rather than to read", () => {
+    expect(MORNING_BRIEF_SOURCE_READ_RESERVE_MS).toBe(3000);
+    // A full budget keeps the fixed reserve for the release proof, the release
+    // fence and the projection that turns a read into a bundle.
+    expect(morningBriefSourceReadCutoff(20_000, 0)).toBe(17_000);
+    // A short budget buys a short read, never no read at all. Subtracting the
+    // fixed reserve from a one-second budget would move the cutoff to the
+    // moment the source was asked, and a source that is out of time before its
+    // first read reports a morning it never looked at.
+    expect(morningBriefSourceReadCutoff(1000, 0)).toBe(750);
+    expect(morningBriefSourceReadCutoff(4, 0)).toBe(3);
+    // An exhausted budget has nothing left to divide.
+    expect(morningBriefSourceReadCutoff(1000, 1000)).toBe(1000);
+    expect(morningBriefSourceReadCutoff(1000, 2000)).toBe(1000);
+  });
+
   it("keeps each source's own ceiling rather than one shared number", () => {
     expect(MORNING_BRIEF_SOURCE_BUDGETS).toStrictEqual({
       gmail: { deadlineMs: 20_000, maxRequests: 44 },
@@ -1309,7 +1327,7 @@ describe("five-source normalization", () => {
       outcome: "complete",
       items: [
         {
-          repository: "vm0-ai/okou",
+          repository: "okou-ai/okou",
           number: 12,
           kind: "issue",
           title: "Stale issue",
@@ -1318,7 +1336,7 @@ describe("five-source normalization", () => {
           reasons: [{ branch: "assigned" }],
         },
         {
-          repository: "vm0-ai/okou",
+          repository: "okou-ai/okou",
           number: 12,
           kind: "pull-request",
           title: "Fresh notification",
@@ -1663,7 +1681,7 @@ describe("preserved provider facts", () => {
       outcome: "complete" as const,
       items: [
         {
-          repository: "vm0-ai/okou",
+          repository: "okou-ai/okou",
           number: 7,
           kind: "pull-request" as const,
           title: "Ship the composition",

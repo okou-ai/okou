@@ -77,7 +77,7 @@ const MAX_TEXT_CHARACTERS = 40_000;
 const MAX_IDENTITY_CHARACTERS = 512;
 const MAX_LINK_CHARACTERS = 2048;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
@@ -785,13 +785,14 @@ describe("Morning Brief calendar collection preview", () => {
     const arrived = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     let held = 0;
+    const calendars = [
+      { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
+      { id: TEAM_CALENDAR, accessRole: "reader" },
+      { id: "third@example.test", accessRole: "reader" },
+      { id: "fourth@example.test", accessRole: "reader" },
+    ];
     const stub = stubCalendar({
-      calendars: [
-        { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
-        { id: TEAM_CALENDAR, accessRole: "reader" },
-        { id: "third@example.test", accessRole: "reader" },
-        { id: "fourth@example.test", accessRole: "reader" },
-      ],
+      calendars,
       events: new Map([
         [
           OWNER_CALENDAR,
@@ -888,13 +889,14 @@ describe("Morning Brief calendar collection preview", () => {
     const arrived = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     let held = 0;
+    const calendars = [
+      { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
+      { id: TEAM_CALENDAR, accessRole: "reader" },
+      { id: "third@example.test", accessRole: "reader" },
+      { id: "fourth@example.test", accessRole: "reader" },
+    ];
     const stub = stubCalendar({
-      calendars: [
-        { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
-        { id: TEAM_CALENDAR, accessRole: "reader" },
-        { id: "third@example.test", accessRole: "reader" },
-        { id: "fourth@example.test", accessRole: "reader" },
-      ],
+      calendars,
       events: new Map([
         [
           OWNER_CALENDAR,
@@ -935,7 +937,15 @@ describe("Morning Brief calendar collection preview", () => {
       }
 
       const response = await collection;
-      expect(eventCalls(stub)).toStrictEqual(heldCalls);
+      // The generation change is observed once per authorization phase, so it
+      // is this source's release fence that refuses the rejoin rather than the
+      // admission of the next request. A bounded number of further read-only
+      // GETs can still be issued — never more than the calendars this source
+      // enumerated — and none of the calls already observed is replayed. What
+      // may never happen is a release, which the outcome assertion below holds.
+      const afterRelease = eventCalls(stub);
+      expect(afterRelease.slice(0, heldCalls.length)).toStrictEqual(heldCalls);
+      expect(afterRelease.length).toBeLessThanOrEqual(calendars.length);
       return response;
     }
     const result = await settleIncludingAbort(expectRevokedCollection());

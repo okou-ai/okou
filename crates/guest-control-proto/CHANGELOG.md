@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.21.25](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.24...guest-control-proto-v0.21.25) (2026-09-21)
+
+## [0.21.24](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.23...guest-control-proto-v0.21.24) (2026-09-21)
+
+## [0.21.23](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.22...guest-control-proto-v0.21.23) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+## [0.21.22](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.21...guest-control-proto-v0.21.22) (2026-09-20)
+
 ## [0.21.21](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.21.20...guest-control-proto-v0.21.21) (2026-09-20)
 
 ## [0.21.20](https://github.com/vm0-ai/okou/compare/guest-control-proto-v0.21.19...guest-control-proto-v0.21.20) (2026-09-19)

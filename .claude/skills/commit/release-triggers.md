@@ -15,7 +15,7 @@ refactor as a fix merely to obtain a release.
 The behavior below was checked against action
 [`3971df4`](https://github.com/okou-ai/release-please-action/blob/3971df459631cdcf704dcbf86231cb26b790a7c8/package-lock.json),
 whose lockfile resolves release-please to
-[`4356ee0`](https://github.com/vm0-ai/release-please/tree/4356ee011768b5e6f8bb0f06b44135dea76cb8a5).
+[`4356ee0`](https://github.com/okou-ai/release-please/tree/4356ee011768b5e6f8bb0f06b44135dea76cb8a5).
 Recheck these sources when the action, configuration, or dependencies change.
 
 ## Current Direct Release Behavior
@@ -34,11 +34,11 @@ Release-please also has a visible `deps` section, but `deps` is not an allowed
 manual commit type in the current commitlint configuration.
 
 This is a two-part decision. The
-[default version strategy](https://github.com/vm0-ai/release-please/blob/4356ee011768b5e6f8bb0f06b44135dea76cb8a5/src/versioning-strategies/default.ts)
+[default version strategy](https://github.com/okou-ai/release-please/blob/4356ee011768b5e6f8bb0f06b44135dea76cb8a5/src/versioning-strategies/default.ts)
 selects major for breaking changes, minor for features, and patch otherwise.
-The [base strategy](https://github.com/vm0-ai/release-please/blob/4356ee011768b5e6f8bb0f06b44135dea76cb8a5/src/strategies/base.ts)
+The [base strategy](https://github.com/okou-ai/release-please/blob/4356ee011768b5e6f8bb0f06b44135dea76cb8a5/src/strategies/base.ts)
 skips a direct release with empty changelog notes; the
-[changelog writer](https://github.com/vm0-ai/release-please/blob/4356ee011768b5e6f8bb0f06b44135dea76cb8a5/src/changelog-notes/default.ts)
+[changelog writer](https://github.com/okou-ai/release-please/blob/4356ee011768b5e6f8bb0f06b44135dea76cb8a5/src/changelog-notes/default.ts)
 uses the configured visible sections. Therefore documentation and refactoring
 changes are not categorically release-free.
 

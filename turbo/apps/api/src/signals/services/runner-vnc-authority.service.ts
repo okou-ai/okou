@@ -32,7 +32,8 @@ export async function currentRunnerVncAuthority(
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
       caBundle: vncConnections.caBundle,
-      authMethod: vncCredentials.authMethod,
+      authMethod: vncConnections.authMethod,
+      username: vncCredentials.username,
       encryptedPassword: vncCredentials.encryptedPassword,
     })
     .from(agentRuns)
@@ -99,9 +100,6 @@ export async function currentRunnerVncAuthority(
   signal.throwIfAborted();
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
-  }
-  if (row.authMethod !== "vnc_password" || row.securityType !== "x509_vnc") {
-    throw new Error("VNC configuration has an unsupported stored profile");
   }
   return row;
 }

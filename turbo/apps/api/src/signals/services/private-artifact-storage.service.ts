@@ -131,6 +131,9 @@ export const allocatePrivateArtifactLocation$ = command(
       readonly id: string;
       readonly filename: string;
       readonly publicBrand: PublicBrand;
+      // Declared by the uploader. Only an artifact output belongs in the
+      // catalog; ordinary attachments and processing inputs omit it.
+      readonly purpose?: "artifact";
     },
     signal: AbortSignal,
   ) => {
@@ -146,6 +149,7 @@ export const allocatePrivateArtifactLocation$ = command(
       bucket,
       publicBrand,
       artifactReference,
+      ...(args.purpose ? { purpose: args.purpose } : {}),
     };
     return {
       id,
@@ -195,13 +199,19 @@ export const allocatePrivateArtifact$ = command(
       readonly size: number;
       readonly publicBrand: PublicBrand;
       readonly id?: string;
+      readonly purpose?: "artifact";
     },
     signal: AbortSignal,
   ) => {
     const id = args.id ?? randomUUID();
     const location = await set(
       allocatePrivateArtifactLocation$,
-      { id, filename: args.filename, publicBrand: args.publicBrand },
+      {
+        id,
+        filename: args.filename,
+        publicBrand: args.publicBrand,
+        ...(args.purpose ? { purpose: args.purpose } : {}),
+      },
       signal,
     );
     const { bucket, key } = location;

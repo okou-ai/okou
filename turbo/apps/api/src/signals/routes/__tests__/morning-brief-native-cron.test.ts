@@ -727,6 +727,10 @@ describe("native Morning Brief cron", () => {
     scriptSlack();
     const { calls } = scriptProviders();
     await tickUntilNative(f);
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
     const receiptCommit = await holdNativeDeliveryReceiptCommit(
       f,
       context.signal,
@@ -734,7 +738,9 @@ describe("native Morning Brief cron", () => {
     await makeNativeOccurrenceDue(f);
 
     // S6 has passed its final result-retention check and holds the schedule row,
-    // but its delivery receipt is not committed yet.
+    // but its delivery receipt is not committed yet. Interrupt the returning
+    // worker's settlement so it cannot race recovery for the schedule lock after
+    // S6 commits; recovery remains the sole owner of the close under test.
     const delivering = tick(f);
     const deliveryPid = await receiptCommit.waitForBlocked();
     expect(calls.generation).toHaveLength(1);
@@ -757,6 +763,7 @@ describe("native Morning Brief cron", () => {
       accept(delivering, [200]),
       accept(recovering, [200]),
     ]);
+    await interrupt();
 
     expect(delivered.body.claimed).toBe(1);
     expect(recovered.body.deliveriesRecovered).toBe(1);

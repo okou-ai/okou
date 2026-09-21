@@ -1,7 +1,6 @@
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
-import { delay } from "signal-timers";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -21,7 +20,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 
@@ -325,23 +324,31 @@ describe("builtin Automatic firewall credential destinations", () => {
       mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
     });
     const catalog = await installAutomaticMcpCatalog();
+    const firstRefreshAborted = createDeferredPromise<void>(context.signal);
+    const firstRefreshSettled = createDeferredPromise<void>(context.signal);
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,
       refreshResponse: async (attempt, signal) => {
         if (attempt === 1) {
-          const delayed = await settleIncludingAbort(delay(300, { signal }));
-          if (!delayed.ok) {
-            if (signal.aborted) {
-              return HttpResponse.error();
+          const markFirstRefreshAborted = () => {
+            if (!firstRefreshAborted.settled()) {
+              firstRefreshAborted.resolve();
             }
-            throw delayed.error;
+          };
+          if (signal.aborted) {
+            markFirstRefreshAborted();
+          } else {
+            signal.addEventListener("abort", markFirstRefreshAborted, {
+              once: true,
+            });
           }
-          return HttpResponse.json({
-            access_token: "too-late-automatic-token",
-            token_type: "Bearer",
-            expires_in: 3600,
-          });
+          await firstRefreshAborted.promise;
+          firstRefreshSettled.resolve();
+          if (signal.aborted) {
+            return HttpResponse.error();
+          }
+          throw new Error("Expected the pending refresh request to abort");
         }
         if (attempt === 2) {
           return HttpResponse.json(
@@ -466,6 +473,7 @@ describe("builtin Automatic firewall credential destinations", () => {
           failureReason: "upstream_provider",
           connectors: [catalog.slug],
         });
+        await firstRefreshSettled.promise;
         const account = await accept(
           accounts.connection({
             headers,

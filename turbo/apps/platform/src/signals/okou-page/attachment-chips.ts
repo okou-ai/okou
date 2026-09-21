@@ -306,6 +306,17 @@ export const openImageLightbox$ = command(
 );
 
 /**
+ * The app shell's destination for an expanded Mermaid diagram. The diagram is
+ * rendered in the reader's browser, so it has no stable link to share.
+ */
+export const openDiagramLightbox$ = command(
+  ({ set }, file: File, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    set(openImageLightbox$, { file, shareAvailable: false });
+  },
+);
+
+/**
  * Swap the previewed image without re-opening the dialog. Unlike
  * `openImageLightbox$`, this preserves the current fullscreen state so
  * keyboard/arrow navigation between images does not collapse fullscreen.
@@ -360,7 +371,7 @@ export const openDocumentLightbox$ = command(
           preview,
           ...preview,
           text$,
-          markdownTree$: createMarkdownPreviewTree(text$),
+          markdownTree$: createMarkdownPreviewTree(text$, openDiagramLightbox$),
         });
         return;
       }

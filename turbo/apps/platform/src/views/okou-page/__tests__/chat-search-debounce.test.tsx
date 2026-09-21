@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { click, fill, startPage } from "../../../__tests__/page-helper.ts";
@@ -14,6 +15,8 @@ const context = testContext();
 const SEARCH_LABEL = "Search workspace...";
 const SEARCH_BUTTON_LABEL = "Search workspace";
 const THREAD_TITLE = "Workspace notes";
+const ARTIFACT_ID = "a0000000-0000-4000-a000-000000000037";
+const ARTIFACT_TITLE = "Quarterly plan";
 
 async function openSearch() {
   const searchButton = await screen.findByLabelText(SEARCH_BUTTON_LABEL, {
@@ -47,6 +50,27 @@ function installMessageSearch(threadId: string): string[] {
           matchedRanges: [{ start: 0, end: query.keyword.length }],
         },
       ],
+    });
+  });
+  return keywords;
+}
+
+function installArtifactSearch(): string[] {
+  const keywords: string[] = [];
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    keywords.push(query.keyword ?? "");
+    return respond(200, {
+      artifacts: [
+        {
+          id: ARTIFACT_ID,
+          kind: "file",
+          title: ARTIFACT_TITLE,
+          thumbnail: null,
+          createdAt: "2026-08-01T01:00:00.000Z",
+          updatedAt: "2026-08-01T01:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
     });
   });
   return keywords;
@@ -123,4 +147,34 @@ test("Clearing or closing search discards a pending message search", async () =>
     within(reopened.dialog).findByText("budget"),
   ).resolves.toBeInTheDocument();
   expect(keywords).not.toContain("dismissed");
+});
+
+test("Search artifacts only after the latest input settles", async () => {
+  const thread = chatListThread(1, THREAD_TITLE);
+  const remoteChatList = context.mocks.deferred<void>();
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 39,
+    threads: [thread],
+    chatListRemoteGate: remoteChatList.promise,
+  });
+  installMessageSearch(thread.id);
+  const keywords = installArtifactSearch();
+  await startPage({
+    context,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    ...workspace.pageOptions,
+  });
+  const chatThreads = await screen.findByLabelText("Chat threads");
+  await within(chatThreads).findByText(THREAD_TITLE);
+  const { dialog, search } = await openSearch();
+
+  for (const value of ["q", "qu", "qua", "quar", "quart"]) {
+    fireEvent.change(search, { target: { value } });
+    expect(search).toHaveValue(value);
+  }
+
+  await expect(
+    within(dialog).findByText(ARTIFACT_TITLE),
+  ).resolves.toBeInTheDocument();
+  expect(keywords).toStrictEqual(["quart"]);
 });

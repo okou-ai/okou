@@ -25,8 +25,9 @@ import { z } from "zod";
 
 import { executeRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
+import { isLockNotAvailable } from "../lib/pg-errors";
 import { writeDb$, type Db } from "../signals/external/db";
-import { createDeferredPromise } from "../signals/utils";
+import { createDeferredPromise, settle } from "../signals/utils";
 import {
   clearStableAgentPromptBuildHookForTest,
   clearStableContextCacheIdentityBuildHookForTest,
@@ -499,6 +500,7 @@ export async function readAgentInstructionsStorageFixture(agentId: string) {
   }
   const [storage] = await db
     .select({
+      storageId: storages.id,
       storageName: storages.name,
       versionId: storages.headVersionId,
       archiveSize: storageVersions.archiveSize,
@@ -517,6 +519,7 @@ export async function readAgentInstructionsStorageFixture(agentId: string) {
     throw new Error("Expected Agent instructions Storage fixture");
   }
   return {
+    storageId: storage.storageId,
     storageName: storage.storageName,
     versionId: storage.versionId,
     archiveSize: storage.archiveSize,
@@ -536,6 +539,30 @@ export async function removePiStableContextHeadFixture(
     throw new Error("Expected ready stable-context head fixture");
   }
   return removed.artifactDigest;
+}
+
+export async function assertStableContextStorageWriteLockUnavailableFixture(
+  tx: Tx,
+  storageId: string,
+): Promise<void> {
+  await tx.execute(sql`SAVEPOINT stable_context_storage_lock_probe`);
+  const probe = await settle(
+    tx
+      .select({ id: storages.id })
+      .from(storages)
+      .where(eq(storages.id, storageId))
+      .for("update", { noWait: true }),
+  );
+  await tx.execute(
+    sql`ROLLBACK TO SAVEPOINT stable_context_storage_lock_probe`,
+  );
+  await tx.execute(sql`RELEASE SAVEPOINT stable_context_storage_lock_probe`);
+  if (probe.ok) {
+    throw new Error("Expected stable-context Storage write lock contention");
+  }
+  if (!isLockNotAvailable(probe.error)) {
+    throw probe.error;
+  }
 }
 
 export async function stableContextBackendBlockedByFixture(args: {

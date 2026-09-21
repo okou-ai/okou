@@ -16,7 +16,6 @@ beforeEach(() => {
   vi.stubEnv("OKOU_TOKEN", "");
   vi.stubEnv("OKOU_AGENT_ID", "");
   vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
-  vi.stubEnv("OKOU_CURRENT_INTEGRATION", "");
   vi.stubEnv("VERCEL_AUTOMATION_BYPASS_SECRET", undefined);
 
   vi.stubEnv("SENTRY_DSN", "");

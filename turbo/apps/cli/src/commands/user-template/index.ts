@@ -17,6 +17,8 @@ interface PublishOptions {
   readonly kind: UserTemplateKind;
   readonly source: string;
   readonly pages?: string;
+  readonly cover?: string;
+  readonly pageCount?: string;
   readonly package: string;
 }
 
@@ -29,6 +31,51 @@ function requirePages(options: PublishOptions): string {
     );
   }
   return options.pages;
+}
+
+/**
+ * A page count the endpoint will accept, or nothing.
+ *
+ * Refused here rather than forwarded because a flag that reached the wire as
+ * `NaN` would come back as a schema error about a field the user did not name.
+ */
+function publishedPageCount(options: PublishOptions): number | undefined {
+  if (options.pageCount === undefined) {
+    return undefined;
+  }
+  const pageCount = Number(options.pageCount);
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new ApiRequestError(
+      "--page-count must be a whole number of pages, 1 or greater",
+      "INVALID_PAGE_COUNT",
+      400,
+    );
+  }
+  return pageCount;
+}
+
+/**
+ * The two document-only flags, refused on a kind that has no use for them.
+ *
+ * Silently ignoring them is what would let a deck be published with a cover
+ * the catalog never shows, and leave the user believing it had one.
+ */
+function requireDocumentKind(options: PublishOptions): void {
+  const misplaced = (["cover", "page-count"] as const).filter((flag) => {
+    return (flag === "cover" ? options.cover : options.pageCount) !== undefined;
+  });
+  if (misplaced.length > 0 && options.kind !== "document") {
+    const named = misplaced
+      .map((flag) => {
+        return `--${flag}`;
+      })
+      .join(" and ");
+    throw new ApiRequestError(
+      `${named} ${misplaced.length === 1 ? "is" : "are"} only for a document template`,
+      "UNSUPPORTED_KIND",
+      400,
+    );
+  }
 }
 
 /**
@@ -56,7 +103,13 @@ function publishArguments(options: PublishOptions): PublishUserTemplateArgs {
       };
     }
     case "document": {
-      return { ...common, kind: "document" };
+      const pageCount = publishedPageCount(options);
+      return {
+        ...common,
+        kind: "document",
+        ...(options.cover === undefined ? {} : { coverPath: options.cover }),
+        ...(pageCount === undefined ? {} : { pageCount }),
+      };
     }
     case "illustration": {
       return { ...common, kind: "illustration" };
@@ -83,6 +136,14 @@ const publishCommand = new Command()
     "--pages <dir>",
     "Directory of rendered page PNGs, in filename order. Presentations only",
   )
+  .option(
+    "--cover <path>",
+    "PNG of the source's first page, shown in the catalog. Documents only",
+  )
+  .option(
+    "--page-count <n>",
+    "How many pages the source file has. Documents only",
+  )
   .requiredOption(
     "--package <dir>",
     "Directory holding SKILL.md and whatever else its guidance names",
@@ -90,12 +151,15 @@ const publishCommand = new Command()
   .addHelpText(
     "after",
     `
-This is the publish step, not page rendering. First follow the authoritative reverse-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document and an illustration have none. publish uploads the original file, any page PNGs, and the guidance package, then commits them together.
+This is the publish step, not page rendering. First follow the authoritative reverse-template guide. A presentation also needs ordered page images rendered with okou presentation screenshot and passed as --pages; a document has one --cover and --page-count instead, and an illustration has neither. publish uploads the original file, any page PNGs, the cover, and the guidance package, then commits them together.
+
+A document published without --cover still appears under Custom; the catalog names it by its file rather than showing its first page.
 
 A published template appears under Custom in the template picker, private to you until you share it with your organization.`,
   )
   .action(
     withErrorHandler(async (options: PublishOptions) => {
+      requireDocumentKind(options);
       const template = await publishUserTemplate(publishArguments(options));
       console.log(
         template.pageCount === null

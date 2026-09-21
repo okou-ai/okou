@@ -944,3 +944,50 @@ test("Enter confirms a note and one drag is a single undo step", async () => {
     expect(screen.getByTestId("annotation-mark-1")).toHaveStyle({ left: "8%" });
   });
 });
+
+/**
+ * The attach closes the session before it awaits the annotated copy, so the
+ * shortcut cannot hand it the editor's own lifetime: an owner that the close
+ * aborts would cancel the upload halfway and leave the draft carrying marks
+ * with no copy to render them into.
+ */
+test("Cmd+Enter attaches the marks and the annotated copy still uploads", async () => {
+  const user = userEvent.setup();
+  const image = draftAttachment("chord-attach.png");
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+  context.mocks.http.get(image.url, () => {
+    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
+      headers: { "Content-Type": "image/png" },
+    });
+  });
+  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
+  context.mocks.browser.canvasRendering();
+  context.mocks.upload.success({
+    id: "a0000000-0000-4000-a000-000000000095",
+    filename: "chord-attach.annotated.png",
+    contentType: "image/png",
+    size: 11,
+    url: "https://files.example.test/chord-attach.annotated.png",
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  const surface = await openAnnotationEditor("chord-attach.png");
+  drawBox(surface);
+  await user.keyboard("{Control>}{Enter}{/Control}");
+
+  await waitFor(() => {
+    expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
+    expect(
+      screen.getByTestId("composer-attachment-mark-count"),
+    ).toHaveTextContent("1");
+    expect(screen.getByLabelText("Send")).toBeEnabled();
+  });
+  expect(
+    screen.queryByLabelText("Failed to upload chord-attach.png. Try again."),
+  ).toBeNull();
+});

@@ -13,7 +13,7 @@ import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 async function setupAnalyticsFirewall() {

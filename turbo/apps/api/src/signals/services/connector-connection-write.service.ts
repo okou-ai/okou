@@ -44,14 +44,22 @@ type ConnectorConnectionTarget =
             readonly externalId: string;
             readonly externalUsername: string | null;
             readonly externalEmail: string | null;
-            readonly oauthRequestedScopes: readonly string[];
-            readonly oauthGrantedScopes: readonly string[];
+            readonly oauthRequestedScopes: readonly string[] | null;
+            readonly oauthGrantedScopes: readonly string[] | null;
           };
     }
   | {
       readonly kind: "custom";
       readonly customConnectorId: string;
       readonly oauthScopes: readonly string[] | null;
+      readonly identity:
+        | { readonly kind: "local" }
+        | {
+            readonly kind: "external";
+            readonly externalId: string;
+            readonly externalUsername: string | null;
+            readonly externalEmail: string | null;
+          };
     };
 
 interface ConnectorCredentialWriteContext {
@@ -301,9 +309,18 @@ export async function writeConnectorConnectionMetadata(
   const identityValues =
     args.target.kind === "custom"
       ? {
-          externalId: null,
-          externalUsername: null,
-          externalEmail: null,
+          externalId:
+            args.target.identity.kind === "external"
+              ? args.target.identity.externalId
+              : null,
+          externalUsername:
+            args.target.identity.kind === "external"
+              ? args.target.identity.externalUsername
+              : null,
+          externalEmail:
+            args.target.identity.kind === "external"
+              ? args.target.identity.externalEmail
+              : null,
           oauthScopes:
             args.target.oauthScopes === null
               ? null
@@ -315,12 +332,14 @@ export async function writeConnectorConnectionMetadata(
             externalId: args.target.identity.externalId,
             externalUsername: args.target.identity.externalUsername,
             externalEmail: args.target.identity.externalEmail,
-            oauthScopes: JSON.stringify(
-              args.target.identity.oauthRequestedScopes,
-            ),
-            oauthGrantedScopes: JSON.stringify(
-              args.target.identity.oauthGrantedScopes,
-            ),
+            oauthScopes:
+              args.target.identity.oauthRequestedScopes === null
+                ? null
+                : JSON.stringify(args.target.identity.oauthRequestedScopes),
+            oauthGrantedScopes:
+              args.target.identity.oauthGrantedScopes === null
+                ? null
+                : JSON.stringify(args.target.identity.oauthGrantedScopes),
           }
         : {
             externalId: null,

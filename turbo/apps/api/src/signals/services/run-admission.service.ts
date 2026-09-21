@@ -1,6 +1,7 @@
 import {
   isBuiltInModelProviderType,
   getRunModelAccess,
+  getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -254,8 +255,9 @@ export function checkOrgPlanRunAdmission(params: {
   readonly selectedModel: string | null | undefined;
 }): RunAdmissionFailure | undefined {
   const { capabilities } = params;
-  const modelAccess = getRunModelAccess(
+  const modelAccess = getRunModelRouteAccess(
     params.selectedModel,
+    params.modelProviderType,
     capabilities?.restrictedBuiltInModels,
   );
   if (modelAccess === "retired") {

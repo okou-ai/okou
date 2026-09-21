@@ -1945,7 +1945,6 @@ async function resolveThread(params: {
 
 interface AppendUnassociatedUserMessageParams {
   readonly mcpSubmission?: McpSubmissionIdentity;
-  readonly db: Db;
   readonly timing?: ApiDispatchTimingCollector;
   readonly threadId: string;
   readonly userId: string;
@@ -2260,6 +2259,40 @@ async function appendUnassociatedUserMessageTransaction(
   return await resolveExistingUnassociatedClientEventId(tx, params, explicitId);
 }
 
+/** Compose one canonical MCP queue input inside a caller-owned transaction. */
+export async function appendMcpQueuedUserMessageInTransaction(
+  tx: ChatThreadEventTransaction,
+  params: {
+    readonly userId: string;
+    readonly orgId: string;
+    readonly threadId: string;
+    readonly inputId: string;
+    readonly text: string;
+    readonly publicBrand: PublicBrand;
+  },
+): Promise<boolean> {
+  const resolution = await appendUnassociatedUserMessageTransaction(tx, {
+    mcpSubmission: { requestId: params.inputId, text: params.text },
+    threadId: params.threadId,
+    userId: params.userId,
+    orgId: params.orgId,
+    prompt: params.text,
+    attachFileMetadata: null,
+    clientEventId: params.inputId,
+    chatThreadSortEventId: undefined,
+    touchThreadSort: false,
+    userMessage: {
+      version: 1,
+      parts: [{ type: "text", text: params.text }],
+    },
+    revokesEventId: undefined,
+    triggerSource: "web",
+    agentRunSource: null,
+    publicBrand: params.publicBrand,
+  });
+  return resolution.kind === "queued" && resolution.inserted;
+}
+
 class McpEnqueueCollision extends Error {
   constructor(readonly resolution: ClientEventIdResolution) {
     super("MCP input identity was committed concurrently");
@@ -2267,7 +2300,7 @@ class McpEnqueueCollision extends Error {
 }
 
 function appendUnassociatedUserMessage(
-  params: AppendUnassociatedUserMessageParams,
+  params: AppendUnassociatedUserMessageParams & { readonly db: Db },
 ): Promise<ClientEventIdResolution> {
   return measureApiDispatchTiming(
     params.timing,

@@ -33,7 +33,7 @@ ORG-01/02/03, TEAM, and AGENT-02 integration chains:
   `generateOkouToken` grants that capability unconditionally.
 */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const api = createAuthOrgAgentsBddApi(context);
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";

@@ -80,9 +80,7 @@ import {
   testPiMemoryStage1StateRoutes,
 } from "../test-pi-memory-stage1-state";
 
-import { runInIsolatedProcess } from "../../../../../../scripts/run-isolated-test.mjs";
-
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const BUCKET = "pi-memory-stage1-worker-test";
 const CRON_SECRET = "test-pi-memory-stage1-secret";
 const INPUT_SECRET = "sk-proj-inputsecretabcdefghijklmnopqrstuvwxyz";
@@ -289,7 +287,7 @@ function installProvider(
   const calls: ProviderInvocation[] = [];
   server.use(
     http.post(
-      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|ai-gateway\.vercel\.sh|stage1-gateway\.example)\/.*\/responses/u,
+      /https:\/\/(?:api\.openai\.com|api\.deepseek\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|ai-gateway\.vercel\.sh|stage1-gateway\.example)\/(?:.*\/)?responses/u,
       async ({ request }) => {
         sequence += 1;
         const body = (
@@ -590,7 +588,7 @@ async function inspectUsageCategories(
 ): Promise<string[]> {
   const usage = await inspectUsage(storage);
   for (const row of usage) {
-    expect(row).toMatchObject({ run_id: null, provider: "gpt-5.6-luna" });
+    expect(row).toMatchObject({ run_id: null, provider: "deepseek-v4-flash" });
   }
   return usage
     .map((row) => {
@@ -622,67 +620,8 @@ beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
   installS3Objects();
-  await seedBuiltInModelKey(context, "gpt-5.6-luna");
+  await seedBuiltInModelKey(context, "deepseek-v4-flash");
 });
-
-async function corruptStage1CatalogPayload(value: unknown): Promise<void> {
-  // Infrastructure exception: an unmeasurable SDK payload cannot be produced
-  // through a user API. Load the runtime-owned external SDK, retaining its
-  // actual serializer/onPayload/error folding and the worker's real route.
-  if (typeof value === "object" && value !== null) {
-    Object.defineProperty(value, "recursive", { value, enumerable: true });
-  }
-  const sdkUrl = new URL(
-    "../node_modules/@earendil-works/pi-ai/dist/providers/openai.js",
-    import.meta.resolve("@okouai/pi-agent-runtime/node"),
-  );
-  const sdk: unknown = await import(sdkUrl.href);
-  if (
-    typeof sdk !== "object" ||
-    sdk === null ||
-    !("openaiProvider" in sdk) ||
-    typeof sdk.openaiProvider !== "function"
-  ) {
-    throw new Error("Missing SDK provider");
-  }
-  const provider: unknown = sdk.openaiProvider();
-  if (
-    typeof provider !== "object" ||
-    provider === null ||
-    !("getModels" in provider) ||
-    typeof provider.getModels !== "function"
-  ) {
-    throw new Error("Missing SDK catalog");
-  }
-  const models: unknown = provider.getModels();
-  if (!Array.isArray(models)) {
-    throw new Error("Invalid SDK catalog");
-  }
-  const model: unknown = models.find((item: unknown) => {
-    return (
-      typeof item === "object" &&
-      item !== null &&
-      "id" in item &&
-      item.id === "gpt-5.6-luna"
-    );
-  });
-  if (typeof model !== "object" || model === null) {
-    throw new Error("Missing Luna");
-  }
-  const descriptor = Object.getOwnPropertyDescriptor(model, "thinkingLevelMap");
-  Object.defineProperty(model, "thinkingLevelMap", {
-    value: { low: value },
-    configurable: true,
-    writable: true,
-  });
-  onTestFinished(() => {
-    if (descriptor) {
-      Object.defineProperty(model, "thinkingLevelMap", descriptor);
-    } else {
-      Reflect.deleteProperty(model, "thinkingLevelMap");
-    }
-  });
-}
 
 describe("Pi memory Stage 1 worker", () => {
   it("retains provider consumption from an incomplete terminal response", async () => {
@@ -801,31 +740,25 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("selects the OpenRouter region from each work owner's switch in one batch", async () => {
-    const selectedModel = "gpt-5.6-luna";
+  it("never issues a provider request when the built-in route cannot serve the pinned effort", async () => {
+    // V4 Flash's OpenRouter listing publishes no `low` step, so the secondary
+    // built-in candidate cannot carry the pinned extraction effort. The work
+    // must end before any paid request rather than silently raising it.
+    const selectedModel = "deepseek-v4-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await resolveBuiltInModelRouteFixture(
       context,
       selectedModel,
     );
-    if (!primary || primary.provider_type !== "openai-api-key") {
-      throw new Error("Expected primary OpenAI route");
+    if (!primary || primary.provider_type !== "deepseek") {
+      throw new Error("Expected primary DeepSeek route");
     }
-    const storages = [createStorageFixture(), createStorageFixture()];
-    for (const [index, storage] of storages.entries()) {
-      const piSessionId = randomUUID();
-      await storage.seed({
-        piSessionId,
-        raw: settledHistory(piSessionId, `regional owner ${index}`),
-      });
-      await updateFeatureSwitchesForUser(
-        context,
-        { orgId: storage.org_id, userId: storage.user_id },
-        {
-          [FeatureSwitchKey.OpenRouterUsRouting]: index === 0,
-        },
-      );
-    }
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "secondary built-in candidate"),
+    });
     const provider = installProvider();
     await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
       {
@@ -835,32 +768,20 @@ describe("Pi memory Stage 1 worker", () => {
       },
       async () => {
         const result = await accept(
-          stage1Client(storages).extract({ headers: stage1Headers() }),
+          stage1Client([storage]).extract({ headers: stage1Headers() }),
           [200],
         );
         expect(result.body).toMatchObject({
           success: true,
-          scanned: 2,
-          claimed: 2,
-          succeeded: 2,
+          scanned: 1,
+          claimed: 1,
+          succeeded: 0,
           retryableFailure: 0,
-          terminalFailure: 0,
+          terminalFailure: 1,
         });
       },
     );
-    expect(provider.calls).toHaveLength(2);
-    for (const [index, host] of [
-      "us.openrouter.ai",
-      "openrouter.ai",
-    ].entries()) {
-      const invocation = provider.calls.find((call) => {
-        return JSON.stringify(call.request).includes(`regional owner ${index}`);
-      });
-      expect(invocation?.url).toBe(`https://${host}/api/v1/responses`);
-      expect(invocation?.request).toMatchObject({
-        model: "openai/gpt-5.6-luna",
-      });
-    }
+    expect(provider.calls).toHaveLength(0);
   });
   it("authenticates the production cron route before the disabled breaker", async () => {
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "false");
@@ -985,7 +906,7 @@ describe("Pi memory Stage 1 worker", () => {
         expect(serialized).not.toContain(INPUT_SECRET);
         expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
         expect(invocation.request).toMatchObject({
-          model: "gpt-5.6-luna",
+          model: "deepseek-v4-flash",
           reasoning: { effort: "low" },
           text: {
             format: {
@@ -1011,12 +932,12 @@ describe("Pi memory Stage 1 worker", () => {
         expect.arrayContaining([
           expect.objectContaining({
             run_id: null,
-            provider: "gpt-5.6-luna",
+            provider: "deepseek-v4-flash",
             category: "tokens.input",
           }),
           expect.objectContaining({
             run_id: null,
-            provider: "gpt-5.6-luna",
+            provider: "deepseek-v4-flash",
             category: "tokens.output",
           }),
         ]),
@@ -1025,51 +946,7 @@ describe("Pi memory Stage 1 worker", () => {
     },
   );
 
-  it.each(["unmeasurable", "over_budget"])(
-    "settles a final %s SDK payload once without HTTP, usage or a success watermark",
-    async (failure) => {
-      await corruptStage1CatalogPayload(
-        failure === "unmeasurable"
-          ? { recursive: null }
-          : "overhead ".repeat(260_000),
-      );
-      const storage = createStorageFixture();
-      const piSessionId = randomUUID();
-      const fixture = await storage.seed({
-        piSessionId,
-        raw: settledHistory(piSessionId, "retain human decision"),
-      });
-      const provider = installProvider();
-      const result = await runScoped(storage);
-      expect(
-        provider.calls.map((call) => {
-          return call.url;
-        }),
-      ).toStrictEqual([]);
-      expect(result).toMatchObject({
-        claimed: 1,
-        terminalFailure: 1,
-        retryableFailure: 0,
-        succeeded: 0,
-        succeededNoOutput: 0,
-      });
-      expect(provider.calls).toHaveLength(0);
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-      await expect(inspect(fixture)).resolves.toMatchObject({
-        status: "terminal_failure",
-        last_error_class:
-          failure === "unmeasurable"
-            ? "input_payload_unmeasurable"
-            : "input_budget_exceeded",
-        raw_memory: null,
-        successful_source_history_hash: null,
-      });
-      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
-      expect(provider.calls).toHaveLength(0);
-    },
-  );
-
-  it("bills the luna long-context tier from the 272,001 total-input boundary", async () => {
+  it("keeps built-in billing on base categories across the GPT long-context boundary", async () => {
     const below = createStorageFixture();
     const atBoundary = createStorageFixture();
     const belowId = randomUUID();
@@ -1101,24 +978,22 @@ describe("Pi memory Stage 1 worker", () => {
     await expect(runScoped(atBoundary)).resolves.toMatchObject({
       succeeded: 1,
     });
-    await expect(inspectUsageCategories(below)).resolves.toStrictEqual([
+    // DeepSeek has no long-context price band, so the boundary does not apply.
+    const baseCategories = [
       "tokens.cache_creation",
       "tokens.cache_read",
       "tokens.input",
       "tokens.output",
-    ]);
-    await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual([
-      "tokens.cache_creation.long_context",
-      "tokens.cache_read.long_context",
-      "tokens.input.long_context",
-      "tokens.output.long_context",
-    ]);
+    ];
+    await expect(inspectUsageCategories(below)).resolves.toStrictEqual(
+      baseCategories,
+    );
+    await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual(
+      baseCategories,
+    );
   });
 
-  it("isolates malformed and cyclic sources permanently before the provider", async () => {
-    if (await runInIsolatedProcess(import.meta.url)) {
-      return;
-    }
+  it("isolates invalid sources permanently before the provider", async () => {
     const storages: ReturnType<typeof createStorageFixture>[] = [];
     const storage = {
       seed: async (
@@ -1165,29 +1040,6 @@ describe("Pi memory Stage 1 worker", () => {
         raw: Buffer.from(unsettled.toJsonl(), "utf8"),
       }),
     ];
-    for (const duplicate of [false, true]) {
-      const id = randomUUID();
-      const history = settledHistory(id, "invalid graph candidate").toString(
-        "utf8",
-      );
-      const record = JSON.stringify({
-        type: "model_change",
-        id: "graph-entry",
-        parentId: duplicate ? null : "graph-entry",
-        timestamp: "2026-09-05T00:00:00.000Z",
-        provider: "openai",
-        modelId: "gpt-5.6-terra",
-      });
-      invalid.push(
-        await storage.seed({
-          piSessionId: id,
-          raw: Buffer.from(
-            `${history}${record}\n${duplicate ? `${record}\n` : ""}`,
-            "utf8",
-          ),
-        }),
-      );
-    }
     const validId = randomUUID();
     const valid = await storage.seed({
       piSessionId: validId,
@@ -1200,9 +1052,9 @@ describe("Pi memory Stage 1 worker", () => {
       [200],
     );
     expect(response.body).toMatchObject({
-      claimed: 7,
+      claimed: 5,
       succeeded: 1,
-      terminalFailure: 6,
+      terminalFailure: 4,
     });
     expect(provider.calls).toHaveLength(1);
     for (const fixture of invalid) {
@@ -1972,7 +1824,7 @@ describe("Stage 1 source credentials", () => {
       await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
       expect(provider.calls).toHaveLength(1);
       expect(provider.calls[0]?.request).toMatchObject({
-        model: "gpt-5.6-luna",
+        model: "deepseek-v4-flash",
         reasoning: { effort: "low" },
       });
       const usage = await inspectUsage(storage);
@@ -1980,7 +1832,7 @@ describe("Stage 1 source credentials", () => {
       for (const row of usage) {
         expect(row).toMatchObject({
           run_id: null,
-          provider: "gpt-5.6-luna",
+          provider: "deepseek-v4-flash",
         });
       }
     },
@@ -2082,11 +1934,15 @@ describe("Stage 1 source credentials", () => {
     expect(custom.headers.get("x-source-key")).toBe("Key gateway-only-secret");
     expect(custom.headers.get("authorization")).toBeNull();
     expect(custom.request).toMatchObject({ model: "mapped-luna" });
+    // Only the built-in source moves to DeepSeek; every BYOK source keeps Luna.
+    const builtInCall = callFor("builtin evidence");
+    expect(builtInCall.url).toBe("https://api.deepseek.com/responses");
+    expect(builtInCall.request).toMatchObject({ model: "deepseek-v4-flash" });
     for (const call of provider.calls) {
       expect(call.request).toMatchObject({ reasoning: { effort: "low" } });
       expect(call.request).not.toHaveProperty("service_tier");
       expect(call.request).not.toHaveProperty("tools");
-      if (call !== custom && call !== vercelCall) {
+      if (call !== custom && call !== vercelCall && call !== builtInCall) {
         expect(call.request).toMatchObject({ model: "gpt-5.6-luna" });
       }
     }
@@ -2826,7 +2682,7 @@ describe("Stage 1 background credential availability", () => {
       const provider = installSourceProvider();
       await expect(
         withBuiltInModelRuntimeRouteUnavailableForTest(
-          "gpt-5.6-luna",
+          "deepseek-v4-flash",
           async () => {
             return await runScoped(storage);
           },

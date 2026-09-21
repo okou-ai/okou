@@ -274,17 +274,19 @@ stale content again. The limits worth stating:
   transaction settings, so the absence check is not vacuous.
 - A separate case starts the per-thread transaction with one second remaining,
   still strictly below either individual statement cap. A
-  driver-boundary barrier observes its exact Agent query and the installed
-  `2s` lock, `5s` statement and `1s` transaction settings before dispatch,
-  without polling inside the server deadline window. The controlled application
-  clock then advances to the same boundary, the query is dispatched behind a
-  lock, and the test never releases that lock. PostgreSQL's `transaction_timeout`
-  alone ends the transaction; the checked-out client owns the resulting
-  connection event, the route awaits cleanup, and the wrapper retains the
-  callback's `25P04` when Drizzle's later rollback observes the already-
-  terminated connection. A following healthy request proves the pool remains
-  usable. This is the real server-side cancellation proof, distinct from merely
-  discarding a late result.
+  UUID-owner-scoped driver barrier pauses the exact candidate SELECT only after
+  it has returned rows, then advances both attempt clocks while that transaction
+  is still owned. A second driver barrier observes the following exact Agent
+  query and the installed `2s` lock, `5s` statement and `1s` transaction settings
+  before dispatch, without polling inside the server deadline window. The
+  controlled application clock advances to the same boundary, the query is
+  dispatched behind a lock, and the test never releases that lock. PostgreSQL's
+  `transaction_timeout` alone ends the transaction; the checked-out client owns
+  the resulting connection event, the route awaits cleanup, and the wrapper
+  retains the callback's `25P04` when Drizzle's later rollback observes the
+  already-terminated connection. A following healthy request proves the pool
+  remains usable. This is the real server-side cancellation proof, distinct
+  from merely discarding a late result.
 - Final authority coverage holds the last external membership response, then
   blocks the subsequent canonical ownership query in PostgreSQL. Releasing it
   at exact whole-attempt equality withholds every item and identifier, and a

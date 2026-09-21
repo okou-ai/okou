@@ -1124,8 +1124,8 @@ describe("Computer Use command creation account-erasure admission", () => {
                 rowCount: 3,
               });
               const statements = barrier.statements();
-              expect(statements).toHaveLength(7);
-              const hostSelection = statements[6];
+              expect(statements).toHaveLength(5);
+              const hostSelection = statements[4];
               expect(hostSelection).toContain('from "computer_use_hosts"');
               expect(hostSelection).toContain(
                 '"computer_use_hosts"."org_id" =',
@@ -1156,7 +1156,7 @@ describe("Computer Use command creation account-erasure admission", () => {
   );
 
   it(
-    "commits a created path in nine statements and a closed path before protected host projection in seven",
+    "commits a created path in seven statements and a closed path before protected host projection in five",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const openActor = orgScoped(bdd.user());
@@ -1179,8 +1179,11 @@ describe("Computer Use command creation account-erasure admission", () => {
                 statementTimeout: "5s",
                 rowCount: null,
               });
-              expect(barrier.statements()).toHaveLength(9);
-              expect(barrier.statements()[7]).toContain(
+              // The created path commits in seven statements where it used
+              // to take nine: one deadline statement and one subject-lock
+              // statement replaced two of each.
+              expect(barrier.statements()).toHaveLength(7);
+              expect(barrier.statements()[5]).toContain(
                 'insert into "computer_use_commands"',
               );
               barrier.release();
@@ -1208,7 +1211,7 @@ describe("Computer Use command creation account-erasure admission", () => {
                 requestCreate("read", closedActor, [403]),
               );
               await waitForBarrierEntry(barrier.entered, creating);
-              expect(barrier.statements()).toHaveLength(7);
+              expect(barrier.statements()).toHaveLength(5);
               expect(barrier.statements().join(" ")).not.toContain(
                 "computer_use_hosts",
               );

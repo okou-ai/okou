@@ -42,10 +42,6 @@ interface ResolvedStripeSubscriptionSnapshot {
   readonly sourceMetadata: OrgPlanEntitlementSourceMetadata;
 }
 
-function statusForTier(tier: OrgTier): string {
-  return tier === "pro-suspend" ? "suspended" : "active";
-}
-
 async function resolveStripeSubscriptionSnapshot(
   tx: WriteTx,
   args: Pick<
@@ -101,7 +97,7 @@ function orgPlanEntitlementValues(
     planKey: args.tier,
     planRank: limits.planRank,
     source: args.source,
-    status: args.status ?? statusForTier(args.tier),
+    status: args.status ?? "active",
     baseConcurrencyLimit: limits.baseConcurrencyLimit,
     canBuyConcurrency: limits.canBuyConcurrency,
     canBuyCredits: limits.canBuyCredits,

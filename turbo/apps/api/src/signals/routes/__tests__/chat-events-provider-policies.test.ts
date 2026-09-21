@@ -63,7 +63,7 @@ import {
 } from "./helpers/chat-events-fixture";
 import { piResponsesTextSse, piResponsesToolSse } from "./helpers/pi-responses";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const {
   api,
   chat,
@@ -603,33 +603,31 @@ describe("CHAT-02: model-first provider policies", () => {
       supportByok: true,
       restrictedBuiltInModels: true,
     });
-    const restricted = await chat.requestSendEvent(
+    const restrictedByok = await chat.requestSendEvent(
       actor,
       {
         agentId,
         threadId: initial.threadId,
-        prompt: "fall back from a restricted persisted model",
+        prompt: "keep BYOK when built-in models are restricted",
       },
       [201],
     );
-    if (restricted.status !== 201) {
-      throw new Error("Expected restricted-model send to return 201");
+    if (restrictedByok.status !== 201) {
+      throw new Error("Expected restricted-plan BYOK send to return 201");
     }
-    if (!restricted.body.runId) {
-      throw new Error(
-        "Expected restricted-model policy fallback to create a run",
-      );
+    if (!restrictedByok.body.runId) {
+      throw new Error("Expected restricted-plan BYOK policy to create a run");
     }
     const restrictedPolicies = await misc.listModelPolicies(actor);
     expect(restrictedPolicies.policies).toContainEqual(
       expect.objectContaining({
-        model: LIMITED_FREE1_DEFAULT_RUN_MODEL,
+        model: "claude-sonnet-5",
         isDefault: true,
-        defaultProviderType: "built-in",
-        modelProviderId: null,
+        defaultProviderType: "anthropic-api-key",
+        modelProviderId: providerId,
       }),
     );
-    await cancelChatRun(actor, restricted.body.runId);
+    await cancelChatRun(actor, restrictedByok.body.runId);
   }, 90_000);
 
   it("reloads external plan capabilities at final admission", async () => {

@@ -613,13 +613,14 @@ try {
   // VNC is optional only when its entire table predates the recovery snapshot.
   // Current snapshots require its exact primary key and password ciphertext.
   await db.query(
-    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, encrypted_password text NOT NULL)",
+    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, auth_method text NOT NULL, username text, encrypted_password text NOT NULL)",
   );
   const vncId = randomUUID();
-  await db.query("INSERT INTO vnc_credentials VALUES ($1, $2)", [
-    vncId,
-    sshTarget,
-  ]);
+  const usernameVncId = randomUUID();
+  await db.query(
+    "INSERT INTO vnc_credentials VALUES ($1, 'vnc_password', NULL, $3), ($2, 'username_password', 'operator', $3)",
+    [vncId, usernameVncId, sshTarget],
+  );
   try {
     const before: unknown[] = (await db.query("SELECT * FROM vnc_credentials"))
       .rows;
@@ -628,7 +629,7 @@ try {
       "--recovery-schema",
     ]);
     assert.equal(vncRecovery.databaseVerifiedOnTarget, true);
-    assert.equal(object(vncRecovery.totals).verified, 1);
+    assert.equal(object(vncRecovery.totals).verified, 2);
     assert.equal(object(vncRecovery.totals).updated, 0);
     assert.deepEqual(
       (await db.query("SELECT * FROM vnc_credentials")).rows,
@@ -643,7 +644,7 @@ try {
       "--recovery-schema",
     ]);
     assert.equal(sourceVnc.databaseVerifiedOnTarget, false);
-    assert.equal(object(sourceVnc.totals).source, 1);
+    assert.equal(object(sourceVnc.totals).source, 2);
     assert.equal(object(sourceVnc.totals).updated, 0);
     await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
       sshTarget,

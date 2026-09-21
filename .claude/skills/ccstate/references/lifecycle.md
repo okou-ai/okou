@@ -190,12 +190,12 @@ await waitLoopUntil(pollAuthorization, interval, signal);
 signal.throwIfAborted();
 ```
 
-`setDaemon(operation, signal)` in `signals/utils.ts` implements daemon
-detachment. Non-periodic background processes, such as realtime initialization
-and Desktop sign-in, use it directly with their real owner signal. Feature
-commands must not add `detach` or wrap these starters in another one. Ordinary
-finite commands still return or await their work. React DOM callbacks and real
-application entry points use `detach` when their caller cannot await a promise.
+Non-periodic background processes, such as realtime initialization and Desktop
+sign-in, call `detach(operation(signal), Reason.Daemon, description)` with their
+real owner signal. Feature commands must not wrap those starters in another
+`detach`. Ordinary finite commands still return or await their work. React DOM
+callbacks and real application entry points use `detach` when their caller
+cannot await a promise.
 
 ### `detach()` tracks promises for cleanup
 

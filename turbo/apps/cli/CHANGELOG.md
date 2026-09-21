@@ -1,5 +1,120 @@
 # Changelog
 
+## [9.349.1](https://github.com/okou-ai/okou/compare/cli-v9.349.0...cli-v9.349.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** stop adding private artifact delivery prompts to generation output ([#35720](https://github.com/okou-ai/okou/issues/35720)) ([b0b9997](https://github.com/okou-ai/okou/commit/b0b99976690882c00e27b411fb701eed774002c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.482.0
+    * @okouai/core bumped to 8.689.2
+    * @okouai/pi-agent-runtime bumped to 1.34.0
+
+## [9.349.0](https://github.com/okou-ai/okou/compare/cli-v9.348.8...cli-v9.349.0) (2026-09-21)
+
+
+### Features
+
+* **templates:** show a document template's first page in the catalog ([#35723](https://github.com/okou-ai/okou/issues/35723)) ([0d07c92](https://github.com/okou-ai/okou/commit/0d07c92b8719a472b61be04574ba87a9527cf5ba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.481.0
+    * @okouai/core bumped to 8.689.1
+    * @okouai/pi-agent-runtime bumped to 1.33.33
+
+## [9.348.8](https://github.com/okou-ai/okou/compare/cli-v9.348.7...cli-v9.348.8) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** repair presentation convert layout, tables, and hosted decks ([#35713](https://github.com/okou-ai/okou/issues/35713)) ([0e8ed9e](https://github.com/okou-ai/okou/commit/0e8ed9ee764b480d8c5dee1d45e272a7f97987ba))
+
+## [9.348.7](https://github.com/okou-ai/okou/compare/cli-v9.348.6...cli-v9.348.7) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.689.0
+
+## [9.348.6](https://github.com/okou-ai/okou/compare/cli-v9.348.5...cli-v9.348.6) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** limit callback prompts to keep action urls concise ([#35681](https://github.com/okou-ai/okou/issues/35681)) ([2ea078e](https://github.com/okou-ai/okou/commit/2ea078e04b5941c484045e6ec9021ed7829cde4a))
+
+## [9.348.5](https://github.com/okou-ai/okou/compare/cli-v9.348.4...cli-v9.348.5) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.480.0
+    * @okouai/connectors bumped to 3.14.3
+    * @okouai/core bumped to 8.688.3
+    * @okouai/pi-agent-runtime bumped to 1.33.32
+
+## [9.348.4](https://github.com/okou-ai/okou/compare/cli-v9.348.3...cli-v9.348.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.479.0
+    * @okouai/core bumped to 8.688.2
+    * @okouai/pi-agent-runtime bumped to 1.33.31
+
+## [9.348.3](https://github.com/okou-ai/okou/compare/cli-v9.348.2...cli-v9.348.3) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.3
+    * @okouai/core bumped to 8.688.1
+    * @okouai/pi-agent-runtime bumped to 1.33.30
+
+## [9.348.2](https://github.com/okou-ai/okou/compare/cli-v9.348.1...cli-v9.348.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* align cloudflare access naming ([#35632](https://github.com/okou-ai/okou/issues/35632)) ([708ac2e](https://github.com/okou-ai/okou/commit/708ac2e7cec6250eef99bdae13ce272ea2fff6e9))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.2
+    * @okouai/core bumped to 8.688.0
+    * @okouai/pi-agent-runtime bumped to 1.33.29
+
 ## [9.348.1](https://github.com/okou-ai/okou/compare/cli-v9.348.0...cli-v9.348.1) (2026-09-20)
 
 

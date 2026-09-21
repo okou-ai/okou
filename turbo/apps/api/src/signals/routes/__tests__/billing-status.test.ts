@@ -131,7 +131,8 @@ describe("GET /api/billing/status", () => {
 
     expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("active");
-    expect(response.body.supportByok).toBeFalsy();
+    expect(response.body.concurrencyLimit).toBe(2);
+    expect(response.body.supportByok).toBeTruthy();
     expect(response.body.restrictedBuiltInModels).toBeTruthy();
     expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(100_000);
@@ -437,7 +438,7 @@ describe("GET /api/billing/status", () => {
       [200],
     );
 
-    expect(response.body.concurrencyLimit).toBe(2);
+    expect(response.body.concurrencyLimit).toBe(3);
     expect(Number.isFinite(response.body.concurrencyLimit)).toBeTruthy();
   });
 
@@ -1276,7 +1277,7 @@ describe("GET /api/billing/status", () => {
       [200],
     );
 
-    expect(response.body.tier).toBe("pro-suspend");
+    expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("suspended");
     expect(response.body.credits).toBe(0);
     expect(response.body.hasSubscription).toBeFalsy();

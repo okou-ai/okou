@@ -18,6 +18,8 @@ import { diagnoseConnectorCheck } from "../../lib/api/domains/connectors";
 import { getOkouToken } from "../../lib/okou-env";
 import { resolveConnectorAgentId } from "./agent-context";
 import {
+  CALLBACK_PROMPT_GUIDANCE,
+  CALLBACK_PROMPT_MAX_LENGTH,
   connectorActionCallbackAvailable,
   finalizeActionUrl,
   printCallbackTurnInstruction,
@@ -286,17 +288,17 @@ async function outputPermissionRequestMessage(
 
 const callbackPromptOption = new Option(
   "--callback-prompt <prompt>",
-  "Start the next web chat round with this prompt after the permission is granted",
+  `Start the next web chat round with this prompt after the permission is granted (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
 );
 const callbackPromptAvailable = connectorActionCallbackAvailable();
 if (!callbackPromptAvailable) {
   callbackPromptOption.hideHelp();
 }
 const callbackPromptExample = callbackPromptAvailable
-  ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/vm0-ai/vm0 --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
+  ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/okou-ai/okou --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
   : "";
 const callbackPromptNotes = callbackPromptAvailable
-  ? "  - Use --callback-prompt only when this turn needs exactly one connector or permission action\n  - Callback prompts are included in the URL; keep them concise and do not include secrets\n"
+  ? `  - Use --callback-prompt only when this turn needs exactly one connector or permission action\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
   : "";
 
 export const permissionRequestCommand = new Command()
@@ -336,7 +338,7 @@ export const permissionRequestCommand = new Command()
     "after",
     `
 Examples:
-  okou connector permission-request github --permission contents:read --url https://api.github.com/repos/vm0-ai/vm0 --method GET
+  okou connector permission-request github --permission contents:read --url https://api.github.com/repos/okou-ai/okou --method GET
 ${callbackPromptExample}  okou connector permission-request gmail --permission messages.write --url https://gmail.googleapis.com/gmail/v1/users/me/messages --method POST --agent <agent-id>
   okou connector permission-request cloudflare --permission __unknown__ --url https://api.cloudflare.com/client/v4/example --method POST
   okou connector permission-request computer-use --permission computer-use:write

@@ -51,7 +51,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { runnersRoutes } from "../runners";
 import { runnerCancellationRoutes } from "../runner-cancellation";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const webhooks = createWebhookCallbackApi(context);
 const BUCKET = "test-user-storage-bucket";
 const FIXED_NOW_MS = Date.parse("2000-01-01T00:10:00.000Z");

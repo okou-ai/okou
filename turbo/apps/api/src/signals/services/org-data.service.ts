@@ -309,7 +309,7 @@ export const orgDetail$ = command(
     return {
       id: args.orgId,
       name: identity.name,
-      tier: meta[0]?.tier ?? "pro-suspend",
+      tier: meta[0]?.tier ?? "limited-free-1",
       role,
       createdBy: identity.createdBy ?? undefined,
     };

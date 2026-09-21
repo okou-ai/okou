@@ -36,6 +36,10 @@ import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import { resolveTestOrgId$, testUserId$ } from "../services/cli-auth.service";
+import {
+  acquireBuiltInModelKeyFixture,
+  releaseBuiltInModelKeyFixture,
+} from "../services/built-in-model-key-fixture";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import {
   normalizeRunMetadata,
@@ -810,26 +814,20 @@ async function seedTelegramPostModelKeys(
   seed: TelegramPostFixtureSeed,
   signal: AbortSignal,
 ): Promise<void> {
-  await db
-    .insert(builtInModelKeys)
-    .values([
-      {
-        vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
-        apiKey: `built-in-key-default-${seed.composeId}`,
-        label: seed.composeId,
-      },
-      {
-        vendor: "anthropic",
-        apiKey: `built-in-key-anthropic-${seed.composeId}`,
-        label: seed.composeId,
-      },
-      {
-        vendor: "moonshot",
-        apiKey: `built-in-key-moonshot-${seed.composeId}`,
-        label: seed.composeId,
-      },
-    ])
-    .onConflictDoNothing({ target: builtInModelKeys.vendor });
+  await acquireBuiltInModelKeyFixture(db, seed.composeId, [
+    {
+      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      apiKey: `built-in-key-default-${seed.composeId}`,
+    },
+    {
+      vendor: "anthropic",
+      apiKey: `built-in-key-anthropic-${seed.composeId}`,
+    },
+    {
+      vendor: "moonshot",
+      apiKey: `built-in-key-moonshot-${seed.composeId}`,
+    },
+  ]);
   signal.throwIfAborted();
 }
 
@@ -1006,9 +1004,7 @@ async function deleteTelegramPostFixtureForAction(
       ),
     );
   signal.throwIfAborted();
-  await db
-    .delete(builtInModelKeys)
-    .where(eq(builtInModelKeys.label, composeId));
+  await releaseBuiltInModelKeyFixture(db, composeId);
   signal.throwIfAborted();
   await db
     .delete(telegramMessages)

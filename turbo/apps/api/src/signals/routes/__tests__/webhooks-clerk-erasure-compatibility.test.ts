@@ -15,8 +15,9 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import {
+  assertStableContextStorageWriteLockUnavailableFixture,
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
   deleteExpiredOwnedPiStableContextArtifactFixture,
@@ -37,6 +38,7 @@ import {
   holdWorkflowDeleteBeforeErasureAdmissionFixture,
   holdWorkflowUpdateAfterMetadataMutationFixture,
   observeClerkAgentLifecycleBeforeAgentLockFixture,
+  observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture,
   holdWorkflowUpdateBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
@@ -49,7 +51,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -694,7 +696,7 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
   );
 });
 
-test("completes signed Agent-owner erasure behind scoped artifact GC", async () => {
+test("completes signed Agent-owner erasure after proving scoped artifact GC conflict", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -730,46 +732,50 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
     ready: true,
   });
   const artifactDigest = await removePiStableContextHeadFixture(headId);
-  const gcEntered = createDeferredPromise<number>(context.signal);
+  const gcEntered = createDeferredPromise<void>(context.signal);
   const releaseGc = createDeferredPromise<void>(context.signal);
-  const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
-    artifactDigest,
-    cutoff: new Date("2099-01-01T00:00:00.000Z"),
-    afterCandidatesLocked: async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      gcEntered.resolve(Number(result.rows[0]?.pid));
-      await releaseGc.promise;
-    },
-  });
-  const gcPid = await gcEntered.promise;
-  const cleanupEntered = createDeferredPromise<number>(context.signal);
-  observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
-    if (agentId !== agent.body.agentId) {
-      return;
-    }
-    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
-    cleanupEntered.resolve(Number(result.rows[0]?.pid));
-  });
-  await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure", {
-    flush: false,
-  });
-  const cleanupPid = await cleanupEntered.promise;
-  await expect
-    .poll(
-      async () => {
-        return await stableContextBackendBlockedByFixture({
-          blockedPid: cleanupPid,
-          blockerPid: gcPid,
-        });
+  const gc = onRejection(
+    deleteExpiredOwnedPiStableContextArtifactFixture({
+      artifactDigest,
+      cutoff: new Date("2099-01-01T00:00:00.000Z"),
+      afterCandidatesLocked: async () => {
+        gcEntered.resolve();
+        await releaseGc.promise;
       },
-      { interval: 5, timeout: 500 },
-    )
-    .toBe(true);
-  releaseGc.resolve();
-  await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
-  await flushWaitUntilForTest();
+    }),
+    (error) => {
+      if (!gcEntered.settled()) {
+        gcEntered.reject(error);
+      }
+    },
+  );
+  const erasure = onRejection(
+    (async () => {
+      await gcEntered.promise;
+      observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture(
+        async (tx) => {
+          // Prove this exact cleanup transaction conflicts with GC's retained
+          // Storage lock without spending its 100 ms production lock deadline
+          // on JavaScript scheduling. The savepoint contains the expected
+          // NOWAIT refusal before the real lock acquisition proceeds.
+          await assertStableContextStorageWriteLockUnavailableFixture(
+            tx,
+            instructions.storageId,
+          );
+          releaseGc.resolve();
+          await gc;
+        },
+      );
+      await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure");
+    })(),
+    () => {
+      if (!releaseGc.settled()) {
+        releaseGc.resolve();
+      }
+    },
+  );
+  const [deleted] = await joinAll([gc, erasure]);
+  expect(deleted).toStrictEqual([{ digest: artifactDigest }]);
   await expect(
     countUserStableContextGenerationsFixture({
       agentId: agent.body.agentId,

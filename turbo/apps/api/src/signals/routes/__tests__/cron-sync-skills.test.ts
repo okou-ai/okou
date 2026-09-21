@@ -368,7 +368,7 @@ function useCronSyncSkillsFixture(): CronSyncSkillsFixture {
 
 function setupGitRefsHandler(commitSha: string): void {
   server.use(
-    http.get("https://github.com/vm0-ai/vm0-skills.git/info/refs", () => {
+    http.get("https://github.com/okou-ai/vm0-skills.git/info/refs", () => {
       return new HttpResponse(createGitRefsResponse(commitSha));
     }),
   );
@@ -378,7 +378,7 @@ function setupMswHandlers(commitSha: string, tarball: Buffer): void {
   setupGitRefsHandler(commitSha);
   server.use(
     http.get(
-      "https://codeload.github.com/vm0-ai/vm0-skills/tar.gz/refs/heads/main",
+      "https://codeload.github.com/okou-ai/vm0-skills/tar.gz/refs/heads/main",
       () => {
         return new HttpResponse(tarball);
       },
@@ -433,7 +433,7 @@ function setupS3ListObjects(keys: readonly string[]): void {
 }
 
 function testSkillUrl(name: string): string {
-  return `https://github.com/vm0-ai/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${name}`;
+  return `https://github.com/${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${name}`;
 }
 
 async function findSkillByUrl(url: string): Promise<{
@@ -516,7 +516,7 @@ describe("GET /api/cron/sync-skills", () => {
     );
     expect(alphaSkill).toMatchObject({
       name: fixture.alphaSkill.name,
-      fullPath: `vm0-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
+      fullPath: `okou-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
       commitSha,
       fileCount: 2,
       frontmatter: {
@@ -530,7 +530,7 @@ describe("GET /api/cron/sync-skills", () => {
 
     const alphaStorage = await findSystemStorageByName(
       getSkillStorageName(
-        `vm0-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
+        `okou-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
       ),
     );
     if (!alphaStorage) {

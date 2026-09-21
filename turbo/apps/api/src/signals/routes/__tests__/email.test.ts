@@ -265,29 +265,11 @@ describe("POST /api/email/inbound", () => {
     });
   });
 
-  it("sends data-export email to eligible recipients", async () => {
+  it("sends branded transactional data-export email to eligible recipients", async () => {
     const controlActor = bdd.user();
 
     const locator = await email.enqueueDataExportEmail(controlActor);
     const item = await email.findEmailOutboxItem(locator);
-    expect(item).toMatchObject({
-      from_address: "Okou <okou@okou.io>",
-      public_brand: "okou",
-      headers: {
-        "List-Unsubscribe": expect.stringContaining(
-          "<https://api.okou.ai/api/email/unsubscribe?token=",
-        ),
-        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-      },
-      template: {
-        template: "data-export-ready",
-        props: {
-          unsubscribeUrl: expect.stringContaining(
-            "https://app.okou.ai/email/unsubscribe?token=",
-          ),
-        },
-      },
-    });
     const drained = await email.drainEmailOutboxItems([item.id]);
 
     expect(drained).toBe(1);
@@ -302,25 +284,13 @@ describe("POST /api/email/inbound", () => {
     }
     expect(sent).toMatchObject({
       from: "Okou <okou@okou.io>",
-      html: expect.stringContaining("https://app.okou.ai/email/unsubscribe"),
+      subject: "Your data export is ready",
+      html: expect.stringContaining("Download data"),
+      text: expect.stringContaining(
+        "Your requested data export has been completed and is ready to download.",
+      ),
     });
-    if (
-      typeof sent !== "object" ||
-      sent === null ||
-      !("headers" in sent) ||
-      typeof sent.headers !== "object" ||
-      sent.headers === null
-    ) {
-      throw new Error("Expected a one-click unsubscribe header");
-    }
-    const oneClickHeader = Reflect.get(sent.headers, "List-Unsubscribe");
-    if (typeof oneClickHeader !== "string") {
-      throw new Error("Expected a one-click unsubscribe header");
-    }
-    const oneClickUrl = new URL(oneClickHeader.slice(1, -1));
-    expect(oneClickUrl.origin).toBe("https://api.okou.ai");
-    expect(oneClickUrl.pathname).toBe("/api/email/unsubscribe");
-    expect(oneClickUrl.searchParams.get("token")).toBeTruthy();
+    expect(sent).not.toHaveProperty("headers.List-Unsubscribe");
   });
 
   it("keeps bounced recipients out of transactional sends", async () => {
@@ -357,9 +327,10 @@ describe("POST /api/email/inbound", () => {
     });
 
     const locator = await email.enqueueDataExportEmail(complainedActor);
-    const items = await email.findEmailOutboxItems(locator);
+    const item = await email.findEmailOutboxItem(locator);
+    const drained = await email.drainEmailOutboxItems([item.id]);
 
-    expect(items).toHaveLength(0);
+    expect(drained).toBe(1);
     expect(resendMocks.send).toHaveBeenCalledTimes(0);
   });
 

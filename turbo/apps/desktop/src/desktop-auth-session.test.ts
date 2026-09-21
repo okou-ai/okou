@@ -695,6 +695,123 @@ describe("Okou App session authority", () => {
   });
 });
 
+describe("App quit", () => {
+  it("stops reporting a hidden restore torn down by the quit", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    // `before-quit` fires more than once during the quit sequence.
+    session.abortForQuit();
+    session.abortForQuit();
+    failWindow(new Error("Desktop auth window closed"));
+
+    expect(await pending).toBeNull();
+    expect(refreshes.map((event) => event.phase)).toEqual(["started"]);
+    expect(windows[0]?.signal.aborted).toBe(true);
+  });
+
+  it("still reports the same teardown failure while the session is live", async () => {
+    const { session, replies, refreshes } = createSession();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    failWindow(new Error("Desktop auth window closed"));
+
+    // The identical failure reports when no quit ended the lifetime, so the
+    // suppression is scoped to the quit and is not a message filter.
+    expect(await pending).toBeNull();
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "failed",
+      classification: "unavailable",
+    });
+  });
+
+  it("still reports a restore that exhausts its deadline", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    // Node drives `AbortSignal.timeout` from an internal timer that no timer
+    // control can advance, so substituting the deadline signal is the only way
+    // to reach the elapsed state without waiting it out.
+    const deadline = new AbortController();
+    const deadlines: number[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    timeout.mockImplementation((milliseconds) => {
+      deadlines.push(milliseconds);
+      return deadline.signal;
+    });
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    timeout.mockRestore();
+    expect(deadlines).toEqual([30_000]);
+    windows[0]?.signal.addEventListener(
+      "abort",
+      () => failWindow(new Error("Desktop auth operation cancelled")),
+      { once: true },
+    );
+    deadline.abort(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+
+    // A deadline is genuine unavailability: it never ends the lifetime, so it
+    // must keep reporting even though the attempt's signal is aborted.
+    expect(await pending).toBeNull();
+    expect(windows[0]?.signal.aborted).toBe(true);
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "failed",
+      classification: "unavailable",
+    });
+  });
+
+  it("keeps the restored session that sign-out would discard", async () => {
+    identityHandlers();
+    const { session, replies, changes } = createSession();
+    replies.push(Promise.resolve("restored"));
+    expect(await session.getAuthState()).toMatchObject({
+      status: "signed_in",
+      user: { userId: "Bearer restored" },
+    });
+    session.queuePendingCallback({ code: "pending", handoffId: null });
+    const notified = changes.length;
+
+    session.abortForQuit();
+    session.abortForQuit();
+
+    expect(session.getCachedToken()).toBe("restored");
+    expect(session.canRestoreSession()).toBe(true);
+    // Restoration was never paused, so there is nothing to re-arm.
+    expect(session.requestRestoreRetry()).toBe(false);
+    expect(changes).toHaveLength(notified);
+    expect(session.takePendingCallback()).toEqual({
+      code: "pending",
+      handoffId: null,
+    });
+
+    session.signOut();
+    expect(session.getCachedToken()).toBeNull();
+    expect(session.canRestoreSession()).toBe(false);
+    expect(changes.length).toBeGreaterThan(notified);
+  });
+});
+
 describe("Desktop callback lifetime", () => {
   it("clears pending callbacks on sign-out", () => {
     const { session } = createSession();

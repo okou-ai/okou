@@ -22,9 +22,13 @@ export const vncConnections = pgTable(
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(5900),
     credentialId: uuid("credential_id").notNull(),
+    authMethod: varchar("auth_method", {
+      length: 32,
+      enum: ["vnc_password", "username_password"],
+    }).notNull(),
     securityType: varchar("security_type", {
       length: 32,
-      enum: ["x509_vnc"],
+      enum: ["x509_vnc", "x509_plain"],
     }).notNull(),
     trustMode: varchar("trust_mode", {
       length: 16,
@@ -46,6 +50,21 @@ export const vncConnections = pgTable(
           vncCredentials.userId,
         ],
       }).onDelete("restrict"),
+      foreignKey({
+        name: "vnc_connections_credential_profile_fk",
+        columns: [
+          table.credentialId,
+          table.orgId,
+          table.userId,
+          table.authMethod,
+        ],
+        foreignColumns: [
+          vncCredentials.id,
+          vncCredentials.orgId,
+          vncCredentials.userId,
+          vncCredentials.authMethod,
+        ],
+      }).onDelete("restrict"),
       index("idx_vnc_connections_credential").on(table.credentialId, table.id),
       index("idx_vnc_connections_owner_created").on(
         table.orgId,
@@ -65,8 +84,8 @@ export const vncConnections = pgTable(
       check("chk_vnc_connections_port", sql`${table.port} BETWEEN 1 AND 65535`),
       check("chk_vnc_connections_generation", sql`${table.generation} > 0`),
       check(
-        "chk_vnc_connections_security_type",
-        sql`${table.securityType} = 'x509_vnc'`,
+        "chk_vnc_connections_profile",
+        sql`(${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain')`,
       ),
       check(
         "chk_vnc_connections_trust",

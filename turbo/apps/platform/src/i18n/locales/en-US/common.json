@@ -1200,9 +1200,6 @@
       "namedPlan": "{{plan}} plan",
       "noActivePlan": "No active plan",
       "noActiveSubscription": "No active subscription",
-      "noPlan": {
-        "name": "No plan"
-      },
       "perMonth": "/month",
       "pricePerMonth": "{{price}}/month",
       "pro": {
@@ -1424,6 +1421,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} added",
+        "checkedIn": "Checked in",
         "checkin": {
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
@@ -1433,11 +1432,12 @@
         "connector": {
           "action": "Connect",
           "description": "Gmail, Notion, and 100+ more",
-          "name": "Connect a connector",
+          "name": "Connect a tool",
           "unit": "per connector"
         },
+        "earned": "{{amount}} earned",
+        "howRewardsWork": "How rewards work",
         "inReview": "In review",
-        "inReviewDescription": "Submitted, waiting on review",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} credits",
@@ -1493,16 +1493,13 @@
           "name": "Invite your team",
           "unit": "per member"
         },
-        "pendingInvitations": "Pending invitations: {{amount}}",
-        "personalBalanceNote": "Rewards expire 7 days after they are granted. Slack rewards go to the organization; other rewards go to your personal balance.",
-        "progressLabel": "Get started progress",
-        "rejectedDescription": "This post is not eligible. Submit another public post mentioning Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Rewarded connectors: {{amount}}",
+        "notEligible": "Not eligible",
+        "pendingState": "{{amount}} pending",
+        "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
         "share": {
           "action": "Share",
           "description": "Post it, then paste the link",
-          "name": "Share {{assistantName}} on X"
+          "name": "Share on X"
         },
         "shareDialog": {
           "description": "Submit a public post for review. One successful reward per person.",
@@ -1515,11 +1512,12 @@
         "slack": {
           "action": "Add",
           "description": "Where your team already works",
-          "name": "Add {{assistantName}} to Slack"
+          "name": "Add to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Try a task, earn credits.",
+        "streak": "{{amount}}-day streak",
         "title": "Get started",
+        "toGo": "{{amount}} to go",
         "workflow": {
           "action": "Build",
           "description": "Turn a repeat task into a reusable skill",
@@ -5829,7 +5827,6 @@
       "custom": "Custom",
       "free": "Free",
       "limitedFree": "Limited free",
-      "noPlan": "No plan",
       "pro": "Pro",
       "team": "Team"
     },
@@ -6900,8 +6897,6 @@
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}",
-      "source_one": "{{count}} page · from {{filename}}",
-      "source_other": "{{count}} pages · from {{filename}}",
       "sourceFile": "From {{filename}}"
     },
     "empty": {
@@ -7270,7 +7265,7 @@
         "refs": "Refs",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "Repositories",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "Repositories {{values}}",
         "repository": "Repository",
         "repositoryPlaceholder": "owner/name",

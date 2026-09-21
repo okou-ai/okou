@@ -13,6 +13,7 @@ import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import {
+  isVncProfileCompatible,
   vncFailure,
   type VncResult,
   type VncTransaction,
@@ -26,6 +27,7 @@ import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
 const metadata = Object.freeze({
   id: vncCredentials.id,
   name: vncCredentials.name,
+  username: vncCredentials.username,
   authMethod: vncCredentials.authMethod,
   revision: vncCredentials.revision,
   createdAt: vncCredentials.createdAt,
@@ -65,12 +67,24 @@ function response(
   row: Metadata,
   hosts: VncCredentialResponse["hosts"],
 ): VncCredentialResponse {
-  return {
-    ...row,
+  const common = {
+    id: row.id,
+    name: row.name,
+    revision: row.revision,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     hosts,
   };
+  if (row.authMethod === "username_password") {
+    if (row.username === null) {
+      throw new Error("VNC username/password credential is missing a username");
+    }
+    return { ...common, authMethod: row.authMethod, username: row.username };
+  }
+  if (row.username !== null) {
+    throw new Error("VNC password credential has an unexpected username");
+  }
+  return { ...common, authMethod: row.authMethod };
 }
 
 export async function listVncCredentials(
@@ -122,6 +136,10 @@ async function encryptAuthentication(
 ) {
   return {
     authMethod: authentication.method,
+    username:
+      authentication.method === "username_password"
+        ? authentication.username
+        : null,
     encryptedPassword: await encryptStoredSecretValue(
       authentication.password,
       featureContext,
@@ -254,6 +272,7 @@ export async function updateVncCredential(args: {
         id: vncConnections.id,
         displayName: vncConnections.displayName,
         generation: vncConnections.generation,
+        securityType: vncConnections.securityType,
       })
       .from(vncConnections)
       .where(referencingConnections(owner, args.credentialId))
@@ -269,6 +288,14 @@ export async function updateVncCredential(args: {
     }
     if (current.revision !== args.body.expectedRevision) {
       return vncFailure("credentialConflict");
+    }
+    if (
+      encrypted !== undefined &&
+      hosts.some((host) => {
+        return !isVncProfileCompatible(encrypted.authMethod, host.securityType);
+      })
+    ) {
+      return vncFailure("profileMismatch");
     }
     if (
       current.revision === 2_147_483_647 ||

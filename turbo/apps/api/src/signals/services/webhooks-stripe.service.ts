@@ -88,10 +88,7 @@ import {
 
 const L = logger("WebhookStripe");
 
-type BillingDowngradeCheckoutTargetTier =
-  | "limited-free-1"
-  | "pro-suspend"
-  | "pro";
+type BillingDowngradeCheckoutTargetTier = "limited-free-1" | "pro";
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 
 type WriteTx = Tx;
@@ -494,9 +491,6 @@ function monthlyCreditsForTier(tier: OrgTier): number {
       return 0;
     }
     case "limited-free-1": {
-      return 0;
-    }
-    case "pro-suspend": {
       return 0;
     }
     case "custom": {
@@ -2288,12 +2282,12 @@ function billingPurchaseCheckoutMetadata(
 function billingDowngradeTargetTier(
   value: string | undefined,
 ): BillingDowngradeCheckoutTargetTier | null {
-  if (
-    value === "pro" ||
-    value === "limited-free-1" ||
-    value === "pro-suspend"
-  ) {
+  if (value === "pro") {
     return value;
+  }
+  if (value === "limited-free-1" || value === "pro-suspend") {
+    // Checkout sessions created by a previous App can complete after rollout.
+    return "limited-free-1";
   }
   return null;
 }

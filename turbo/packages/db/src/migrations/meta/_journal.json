@@ -694,6 +694,83 @@
       "when": 1789900303239,
       "tag": "1176_retire_gemini_2_5_flash_image_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 1177,
+      "version": "7",
+      "when": 1789902350454,
+      "tag": "1177_retire_pro_suspend_tier",
+      "breakpoints": true
+    },
+    {
+      "idx": 1178,
+      "version": "7",
+      "when": 1789904435124,
+      "tag": "1178_chat_search_gin_statistics",
+      "breakpoints": true
+    },
+    {
+      "idx": 1179,
+      "version": "7",
+      "when": 1789905501563,
+      "tag": "1179_retire_slack_ingress_failed_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 1180,
+      "version": "7",
+      "when": 1789907911881,
+      "tag": "1180_retire_durable_pi_inference",
+      "breakpoints": true
+    },
+    {
+      "idx": 1181,
+      "version": "7",
+      "when": 1789909941824,
+      "tag": "1181_morning_brief_occurrence_collection_facts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1182,
+      "version": "7",
+      "when": 1789913150443,
+      "tag": "1182_wet_felicia_hardy",
+      "breakpoints": true
+    },
+    {
+      "idx": 1183,
+      "version": "7",
+      "when": 1789913171753,
+      "tag": "1183_wild_natasha_romanoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 1184,
+      "version": "7",
+      "when": 1789913187998,
+      "tag": "1184_lovely_christian_walker",
+      "breakpoints": true
+    },
+    {
+      "idx": 1185,
+      "version": "7",
+      "when": 1789918687593,
+      "tag": "1185_attachments_are_not_catalog_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1186,
+      "version": "7",
+      "when": 1789961234792,
+      "tag": "1186_move_imported_deck_to_user_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1187,
+      "version": "7",
+      "when": 1789963624893,
+      "tag": "1187_expand_free_concurrency_byok",
+      "breakpoints": true
     }
   ]
 }

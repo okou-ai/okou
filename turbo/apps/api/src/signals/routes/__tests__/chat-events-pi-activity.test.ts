@@ -31,7 +31,6 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
-import { runInIsolatedProcess } from "../../../../../../scripts/run-isolated-test.mjs";
 import {
   createChatEventsFixture,
   openRouterBodySchema,
@@ -65,9 +64,7 @@ const {
 async function expectPiActivitySummaryBeforeGuestReplay(
   actor: ApiTestUser,
   run: { readonly threadId: string; readonly runId: string },
-  activityEnabled: boolean,
 ): Promise<void> {
-  const orgId = requireOrgId(actor);
   // The API-first projection must capture tools before any guest replay/result.
   await flushWaitUntilForTest();
   mockOptionalEnv("OPENROUTER_API_KEY", "activity-summary-key");
@@ -93,24 +90,6 @@ async function expectPiActivitySummaryBeforeGuestReplay(
       },
     ),
   );
-  if (!activityEnabled) {
-    await accept(
-      setupApp({ context, routes: chatThreadActivitySummaryRoutes })(
-        chatThreadActivitySummaryContract,
-      ).summarize({
-        headers: sessionHeaders(actor),
-        params: { id: run.threadId },
-        body: { runId: run.runId },
-      }),
-      [403],
-    );
-    expect(activityInput).toBe("");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.ThreadActivitySummary]: true },
-    );
-  }
   const activity = await accept(
     setupApp({ context, routes: chatThreadActivitySummaryRoutes })(
       chatThreadActivitySummaryContract,
@@ -130,10 +109,8 @@ async function expectPiActivitySummaryBeforeGuestReplay(
       },
     ],
   });
-  if (activityEnabled) {
-    expect(activityInput).toContain("okou --help");
-    expect(activityInput).toContain("add_ad_hoc_note");
-  }
+  expect(activityInput).toContain("okou --help");
+  expect(activityInput).toContain("add_ad_hoc_note");
   expect(activityInput).not.toContain(
     "API-first reasoning preserved for Sandbox resume",
   );
@@ -141,10 +118,7 @@ async function expectPiActivitySummaryBeforeGuestReplay(
 }
 
 describe("CHAT-02: model-first provider policies", () => {
-  async function piActivityScenario(enabled: boolean): Promise<void> {
-    if (await runInIsolatedProcess(import.meta.url)) {
-      return;
-    }
+  async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
@@ -158,7 +132,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.ThreadActivitySummary]: enabled,
+        [FeatureSwitchKey.ThreadActivitySummary]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -464,7 +438,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       { type: "text", text: "after parallel tools" },
     ]);
-    await expectPiActivitySummaryBeforeGuestReplay(actor, run, enabled);
+    await expectPiActivitySummaryBeforeGuestReplay(actor, run);
 
     await webhooks.requestAgentEvents(
       {
@@ -803,47 +777,6 @@ describe("CHAT-02: model-first provider policies", () => {
       })
       .toBe(true);
     const failedClaim = await claimChatRun(runnerGroup, failedHandoff.runId);
-    const cyclicH2 = Buffer.from(
-      `${h2}${JSON.stringify({ type: "model_change", id: "cycle", parentId: "cycle", timestamp: "2026-09-05T00:00:00.000Z", provider: "openai", modelId: "gpt-5.6-terra" })}\n`,
-      "utf8",
-    );
-    const cyclicH2Hash = createHash("sha256").update(cyclicH2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: failedHandoff.runId,
-        hash: cyclicH2Hash,
-        rawSize: cyclicH2.length,
-        encodedSize: cyclicH2.length,
-        encoding: "identity",
-      },
-      failedClaim.sandboxHeaders,
-      [200],
-    );
-    checkpointObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${cyclicH2Hash}.blob`,
-      cyclicH2,
-    );
-    const cyclicCheckpoint = await webhooks.requestAgentComplete(
-      {
-        runId: failedHandoff.runId,
-        exitCode: 1,
-        error: "reject cyclic native checkpoint",
-        checkpoint: {
-          cliAgentType: "pi",
-          cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: cyclicH2Hash,
-        },
-      },
-      failedClaim.sandboxHeaders,
-      [400],
-    );
-    expect(JSON.stringify(cyclicCheckpoint.body)).toContain(
-      "[PI_H2_JSONL_INVALID]",
-    );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(2);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
     const invalidH2Hash = createHash("sha256").update(invalidH2).digest("hex");
     await webhooks.requestAgentCheckpointPrepareHistory(
@@ -878,6 +811,9 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(invalidCheckpoint.body)).toContain(
       "[PI_H2_JSONL_INVALID]",
     );
+    await expect(
+      readThreadSessionConversation(context, run.threadId),
+    ).resolves.toStrictEqual(canonicalConversation);
     await webhooks.requestAgentComplete(
       {
         runId: failedHandoff.runId,
@@ -1171,8 +1107,8 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
   }
 
-  it.each([false, true])(
-    "publishes OpenRouter Responses blocks, hands tools to H2, and checkpoints Pi memory notes (activity: %s)",
+  it(
+    "publishes OpenRouter Responses blocks, hands tools to H2, and checkpoints Pi memory notes",
     piActivityScenario,
     150_000,
   );

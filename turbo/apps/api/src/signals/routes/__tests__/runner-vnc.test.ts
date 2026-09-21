@@ -21,6 +21,7 @@ import {
   vncRunnerHeaders,
   vncSecurity,
   vncSessionHeaders,
+  vncX509VncProfiles,
   type VncRuntimeFixture,
 } from "./helpers/vnc-runtime";
 
@@ -64,7 +65,7 @@ describe("private Runner VNC authority", () => {
         body: {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
-          supportedProfiles: [...vncProfiles],
+          supportedProfiles: [...vncX509VncProfiles],
         },
       }),
       [200],
@@ -222,6 +223,18 @@ describe("private Runner VNC authority", () => {
         ...base,
         supportedProfiles: [{ authMethod: "none", securityType: "x509_vnc" }],
       },
+      {
+        ...base,
+        supportedProfiles: [
+          { authMethod: "vnc_password", securityType: "x509_plain" },
+        ],
+      },
+      {
+        ...base,
+        supportedProfiles: [
+          { authMethod: "username_password", securityType: "x509_vnc" },
+        ],
+      },
       { ...base, host: "attacker.example.com" },
       { ...base, userId: f.userId },
       {
@@ -261,6 +274,65 @@ describe("private Runner VNC authority", () => {
       expect(result.status).toBe(400);
     }
     expect(kms.decryptCalls).toBe(0);
+  });
+
+  it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {
+    const f = await api.fixture();
+    const kms = useSecretKmsProbe();
+    const plain = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Plain desktop",
+          host: "plain.example.com",
+          credential: {
+            create: {
+              name: "Plain credential",
+              authentication: {
+                method: "username_password",
+                username: "operator",
+                password: " private secret ",
+              },
+            },
+          },
+          security: {
+            type: "x509_plain",
+            trust: { mode: "system" },
+          },
+        },
+      }),
+      [201],
+    );
+    await expect(
+      api.resolve(f, {
+        connectionId: plain.body.id,
+        supportedProfiles: [...vncX509VncProfiles],
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    expect(kms.decryptCalls).toBe(0);
+    await expect(
+      api.resolve(f, { connectionId: plain.body.id }),
+    ).resolves.toStrictEqual({
+      outcome: "resolved",
+      host: "plain.example.com",
+      port: 5900,
+      generation: 1,
+      authentication: {
+        method: "username_password",
+        username: "operator",
+        password: " private secret ",
+      },
+      security: { type: "x509_plain", trust: { mode: "system" } },
+    });
+    expect(kms.decryptCalls).toBe(1);
+    expect(
+      (
+        await check(f, plain.body.generation, {
+          connectionId: plain.body.id,
+        })
+      ).body,
+    ).toStrictEqual({ outcome: "valid" });
   });
 
   it("rejects inactive and unclaimed Runs without requiring chat provenance", async () => {

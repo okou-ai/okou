@@ -43,7 +43,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...connectorAccountRoutes,

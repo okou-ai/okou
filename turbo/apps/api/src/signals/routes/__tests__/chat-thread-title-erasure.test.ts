@@ -469,11 +469,14 @@ describe("account erasure fences generated chat titles", () => {
       const closed = await withChatThreadContentBarrierFixture(
         {
           chatThreadId: gated.threadId,
-          stopAt: "admission",
+          stopAt: "identity",
+          admission: "read",
           work: async (barrier) => {
             await gated.send(gated.prompt);
             const draining = flushWaitUntilForTest();
-            // Paused between the resolved identity and B1's first statement.
+            // The gate folds admission into its identity statement, so the
+            // point before that statement is the last one at which a closure
+            // can commit and still be the first thing admission observes.
             await barrier.entered;
             // Committed while the gate is paused, so admission is the first
             // thing that observes it.

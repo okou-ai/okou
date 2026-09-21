@@ -32,7 +32,7 @@ interface Principal {
   readonly orgRole: ApiOrgRole;
 }
 
-async function inputDisposition(
+export async function mcpInputDisposition(
   db: Db,
   threadId: string,
   inputId: string,
@@ -191,7 +191,7 @@ export const sendMcpChatMessage$ = command(
       }
     }
     const receipt = resolved.receipt;
-    const disposition = await inputDisposition(
+    const disposition = await mcpInputDisposition(
       db,
       input.threadId,
       input.requestId,

@@ -141,7 +141,7 @@ def test_response_log_includes_firewall_auth_metadata(tmp_path, real_flow, mitm_
             metadata_keys.FIREWALL_PERMISSION: "read",
             metadata_keys.FIREWALL_RULE_MATCH: "GET /items",
             metadata_keys.FIREWALL_BILLABLE: True,
-            metadata_keys.FIREWALL_PARAMS: {"owner": "vm0-ai", "repo": "vm0"},
+            metadata_keys.FIREWALL_PARAMS: {"owner": "okou-ai", "repo": "okou"},
             metadata_keys.AUTH_RESOLVED_SECRETS: ["GITHUB_TOKEN"],
             metadata_keys.AUTH_REFRESHED_CONNECTORS: ["github"],
             metadata_keys.AUTH_REFRESHED_SECRETS: ["GITHUB_TOKEN"],
@@ -166,7 +166,7 @@ def test_response_log_includes_firewall_auth_metadata(tmp_path, real_flow, mitm_
     assert entry["firewall_permission"] == "read"
     assert entry["firewall_rule_match"] == "GET /items"
     assert entry["firewall_billable"] is True
-    assert entry["firewall_params"] == {"owner": "vm0-ai", "repo": "vm0"}
+    assert entry["firewall_params"] == {"owner": "okou-ai", "repo": "okou"}
     assert entry["auth_resolved_secrets"] == ["GITHUB_TOKEN"]
     assert entry["auth_refreshed_connectors"] == ["github"]
     assert entry["auth_refreshed_secrets"] == ["GITHUB_TOKEN"]

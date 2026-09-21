@@ -1200,9 +1200,6 @@
       "namedPlan": "{{plan}} Plan",
       "noActivePlan": "Kein aktiver Plan",
       "noActiveSubscription": "Kein aktives Abonnement",
-      "noPlan": {
-        "name": "Kein Plan"
-      },
       "perMonth": "/Monat",
       "pricePerMonth": "{{price}}/Monat",
       "pro": {
@@ -1424,6 +1421,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} hinzugefügt",
+        "checkedIn": "Eingecheckt",
         "checkin": {
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
@@ -1433,11 +1432,12 @@
         "connector": {
           "action": "Verbinden",
           "description": "Gmail, Notion und 100+ weitere",
-          "name": "Connector verbinden",
+          "name": "Tool verbinden",
           "unit": "pro Connector"
         },
+        "earned": "{{amount}} erhalten",
+        "howRewardsWork": "So funktionieren Prämien",
         "inReview": "In Prüfung",
-        "inReviewDescription": "Eingereicht, wartet auf Prüfung",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} Credits",
@@ -1493,16 +1493,13 @@
           "name": "Team einladen",
           "unit": "pro Mitglied"
         },
-        "pendingInvitations": "Ausstehende Einladungen: {{amount}}",
-        "personalBalanceNote": "Prämien verfallen 7 Tage nach der Gutschrift. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
-        "progressLabel": "Fortschritt beim Einstieg",
-        "rejectedDescription": "Dieser Beitrag ist nicht berechtigt. Reiche einen anderen öffentlichen Beitrag mit Erwähnung von Okou ein.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Belohnte Connectors: {{amount}}",
+        "notEligible": "Nicht berechtigt",
+        "pendingState": "{{amount}} ausstehend",
+        "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "share": {
           "action": "Teilen",
           "description": "Poste es und füge den Link hier ein",
-          "name": "{{assistantName}} auf X teilen"
+          "name": "Auf X teilen"
         },
         "shareDialog": {
           "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
@@ -1515,11 +1512,12 @@
         "slack": {
           "action": "Hinzufügen",
           "description": "Da, wo dein Team schon arbeitet",
-          "name": "{{assistantName}} zu Slack hinzufügen"
+          "name": "Zu Slack hinzufügen"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Aufgabe ausprobieren und Credits verdienen.",
+        "streak": "{{amount}} Tage in Folge",
         "title": "Einstieg",
+        "toGo": "Noch {{amount}}",
         "workflow": {
           "action": "Bauen",
           "description": "Mach aus einer Routineaufgabe eine wiederverwendbare Fähigkeit",
@@ -5837,7 +5835,6 @@
       "custom": "Benutzerdefiniert",
       "free": "Frei",
       "limitedFree": "Begrenzt kostenlos",
-      "noPlan": "Kein Plan",
       "pro": "Pro",
       "team": "Team"
     },
@@ -6908,8 +6905,6 @@
     "detail": {
       "back": "Eigene Vorlagen",
       "page": "Seite {{number}}",
-      "source_one": "{{count}} Seite · aus {{filename}}",
-      "source_other": "{{count}} Seiten · aus {{filename}}",
       "sourceFile": "Aus {{filename}}"
     },
     "empty": {
@@ -7278,7 +7273,7 @@
         "refs": "Refs",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "Repositories",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "Repositorys {{values}}",
         "repository": "Repository",
         "repositoryPlaceholder": "owner/name",

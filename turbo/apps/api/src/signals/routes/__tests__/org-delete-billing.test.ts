@@ -40,7 +40,7 @@ import {
   type BillingWebhookFixture,
 } from "./helpers/stripe-billing-webhook";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 

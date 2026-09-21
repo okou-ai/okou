@@ -59,7 +59,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...workflowsRoutes,
 ]);
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
@@ -672,6 +672,9 @@ describe("okou workflow automation scheduler", () => {
       await connectOwner(scenario.actor, "agent-author");
       const blockers: string[] = [];
       if (queuedLaunch) {
+        // Two blockers keep the scheduler launch queued, independent of the
+        // plan's own concurrency limit.
+        mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
         for (let index = 0; index < 2; index += 1) {
           const started = await chatFilesApi.requestSendEvent(
             scenario.actor,

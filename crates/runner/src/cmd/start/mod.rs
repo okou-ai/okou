@@ -977,6 +977,7 @@ async fn run_start_with_home(
         log_paths,
         network_log_manager,
         network_log_drain,
+        network_log_upload_health: crate::network_logs::NetworkLogUploadHealthTracker::new(),
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
         guest_rpc,

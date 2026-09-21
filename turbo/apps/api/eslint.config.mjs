@@ -678,7 +678,6 @@ export default [
       // retention and language-precedence boundaries have no HTTP ingress.
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
       "src/signals/services/__tests__/connector-catalog-rejection-authority.test.ts",
-      "src/signals/services/__tests__/connector-authorization-provider-state.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.

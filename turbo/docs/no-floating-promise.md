@@ -191,9 +191,9 @@ onDownload={() => {
 
 ### Signals — command that kicks off external async work
 
-Inside `signals/` you cannot use `detach()` (`ccstate/no-detach-in-signals`).
-Instead, make the command `async`, accept a signal, and let the view caller
-do the detach:
+Prefer making the command `async`, accepting a signal, and letting the caller
+await it. Reach for `detach()` only where the work genuinely outlives the call
+and its owner is the signal you pass in:
 
 ```ts
 // ❌ command fires and returns — promise is untracked, `subscribing$` state

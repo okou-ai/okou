@@ -1223,9 +1223,6 @@
       "namedPlan": "Plan {{plan}}",
       "noActivePlan": "No hay plan activo",
       "noActiveSubscription": "Sin suscripción activa",
-      "noPlan": {
-        "name": "Sin plan"
-      },
       "perMonth": "/mes",
       "pricePerMonth": "{{price}}/mes",
       "pro": {
@@ -1448,6 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} añadidos",
+        "checkedIn": "Visita registrada",
         "checkin": {
           "action": "Registrar visita",
           "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
@@ -1457,11 +1456,12 @@
         "connector": {
           "action": "Conectar",
           "description": "Gmail, Notion y más de 100",
-          "name": "Conectar un conector",
+          "name": "Conecta una herramienta",
           "unit": "por conector"
         },
+        "earned": "{{amount}} conseguidos",
+        "howRewardsWork": "Cómo funcionan las recompensas",
         "inReview": "En revisión",
-        "inReviewDescription": "Enviado, pendiente de revisión",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} créditos",
@@ -1517,16 +1517,13 @@
           "name": "Invita a tu equipo",
           "unit": "por miembro"
         },
-        "pendingInvitations": "Invitaciones pendientes: {{amount}}",
-        "personalBalanceNote": "Las recompensas caducan 7 días después de recibirlas. Las de Slack van a la organización; las demás, a tu saldo personal.",
-        "progressLabel": "Progreso de los primeros pasos",
-        "rejectedDescription": "Esta publicación no cumple los requisitos. Envía otra publicación pública que mencione a Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Conectores recompensados: {{amount}}",
+        "notEligible": "No elegible",
+        "pendingState": "{{amount}} pendientes",
+        "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "share": {
           "action": "Compartir",
           "description": "Publícalo y pega el enlace",
-          "name": "Comparte {{assistantName}} en X"
+          "name": "Compartir en X"
         },
         "shareDialog": {
           "description": "Envía una publicación pública para revisión. Una recompensa aprobada por persona.",
@@ -1539,11 +1536,12 @@
         "slack": {
           "action": "Añadir",
           "description": "Donde tu equipo ya trabaja",
-          "name": "Añadir {{assistantName}} a Slack"
+          "name": "Añadir a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Prueba una tarea y gana créditos.",
+        "streak": "Racha de {{amount}} días",
         "title": "Primeros pasos",
+        "toGo": "Faltan {{amount}}",
         "workflow": {
           "action": "Crear",
           "description": "Convierte una tarea repetida en una habilidad reutilizable",
@@ -5895,7 +5893,6 @@
       "custom": "Personalizado",
       "free": "Gratis",
       "limitedFree": "Gratis limitado",
-      "noPlan": "Sin plan",
       "pro": "Pro",
       "team": "Equipo"
     },
@@ -6976,9 +6973,6 @@
     "detail": {
       "back": "Plantillas personalizadas",
       "page": "Página {{number}}",
-      "source_one": "{{count}} página · de {{filename}}",
-      "source_many": "{{count}} páginas · de {{filename}}",
-      "source_other": "{{count}} páginas · de {{filename}}",
       "sourceFile": "De {{filename}}"
     },
     "empty": {
@@ -7355,7 +7349,7 @@
         "refs": "Referencias",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "Repositorios",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "Repositorios {{values}}",
         "repository": "Repositorio",
         "repositoryPlaceholder": "owner/name",

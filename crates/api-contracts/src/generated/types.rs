@@ -1957,14 +1957,36 @@ pub mod runners {
             pub heartbeat_generation: i64,
         }
 
+        /// Authentication method advertised by this Runner.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ResolveRequestSupportedProfileAuthMethod {
+            /// Classic VNC password authentication.
+            #[serde(rename = "vnc_password")]
+            VncPassword,
+            /// Plain username/password authentication.
+            #[serde(rename = "username_password")]
+            UsernamePassword,
+        }
+
+        /// Security profile advertised by this Runner.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ResolveRequestSupportedProfileSecurityType {
+            /// VeNCrypt X509Vnc.
+            #[serde(rename = "x509_vnc")]
+            X509Vnc,
+            /// VeNCrypt X509Plain.
+            #[serde(rename = "x509_plain")]
+            X509Plain,
+        }
+
         /// One supported authentication and security pair, never a cross-product.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct ResolveRequestSupportedProfile {
             /// Supported authentication method.
-            pub auth_method: String,
+            pub auth_method: ResolveRequestSupportedProfileAuthMethod,
             /// Supported security policy.
-            pub security_type: String,
+            pub security_type: ResolveRequestSupportedProfileSecurityType,
         }
 
         /// Resolve one saved VNC policy supported by this Runner.
@@ -1983,8 +2005,15 @@ pub mod runners {
         pub enum ResolveResponseResolvedAuthentication {
             /// Classic VNC password challenge response.
             VncPassword {
-                /// Bounded zeroizing classic VNC password, preserving spaces.
-                password: crate::SecretText<8>,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Username/password authentication inside verified TLS.
+            UsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
             },
         }
 
@@ -1995,6 +2024,8 @@ pub mod runners {
                 enum Kind {
                     #[serde(rename = "vnc_password")]
                     VncPassword,
+                    #[serde(rename = "username_password")]
+                    UsernamePassword,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2003,6 +2034,8 @@ pub mod runners {
                     Outcome,
                     #[serde(rename = "password")]
                     Password,
+                    #[serde(rename = "username")]
+                    Username,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2018,7 +2051,8 @@ pub mod runners {
                         mut map: M,
                     ) -> Result<Self::Value, M::Error> {
                         let mut outcome = None::<Kind>;
-                        let mut password = None::<crate::SecretText<8>>;
+                        let mut password = None::<crate::SecretUtf8Text<1023>>;
+                        let mut username = None::<String>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2037,11 +2071,25 @@ pub mod runners {
                                     }
                                     password = Some(map.next_value()?);
                                 }
+                                Field::Username => {
+                                    if username.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    username = Some(map.next_value()?);
+                                }
                             }
                         }
-                        match (outcome, password) {
-                            (Some(Kind::VncPassword), Some(password)) => {
+                        match (outcome, password, username) {
+                            (Some(Kind::VncPassword), Some(password), None) => {
                                 Ok(ResolveResponseResolvedAuthentication::VncPassword { password })
+                            }
+                            (Some(Kind::UsernamePassword), Some(password), Some(username)) => {
+                                Ok(ResolveResponseResolvedAuthentication::UsernamePassword {
+                                    username,
+                                    password,
+                                })
                             }
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
@@ -2139,6 +2187,11 @@ pub mod runners {
                 /// Required verified TLS trust policy.
                 trust: ResolveResponseResolvedSecurityX509VncTrust,
             },
+            /// VeNCrypt X509Plain with verified TLS.
+            X509Plain {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedSecurityX509VncTrust,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurity {
@@ -2148,6 +2201,8 @@ pub mod runners {
                 enum Kind {
                     #[serde(rename = "x509_vnc")]
                     X509Vnc,
+                    #[serde(rename = "x509_plain")]
+                    X509Plain,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2195,6 +2250,9 @@ pub mod runners {
                         match (outcome, trust) {
                             (Some(Kind::X509Vnc), Some(trust)) => {
                                 Ok(ResolveResponseResolvedSecurity::X509Vnc { trust })
+                            }
+                            (Some(Kind::X509Plain), Some(trust)) => {
+                                Ok(ResolveResponseResolvedSecurity::X509Plain { trust })
                             }
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }

@@ -17,6 +17,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   createBddApi,
   expectApiError,
@@ -803,8 +804,22 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     }
     await seedOrgMetadata({
       orgId: admin.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: admin.orgId,
+      status: "suspended",
+      canBuyConcurrency: false,
+      canBuyCredits: false,
+      autoRechargeAllowed: false,
+      supportByok: false,
+      restrictedBuiltInModels: true,
+      videoGenerationAllowed: false,
+      workflowWebhookAutomationAllowed: false,
+      audioLifetimeLimit: 0,
+      audioDailyRateLimit: 0,
+      audioDailyDurationSeconds: 0,
     });
 
     const quota = await api.readVoiceQuota(admin);

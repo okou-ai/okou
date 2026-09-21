@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.48.115](https://github.com/okou-ai/okou/compare/desktop-v0.48.114...desktop-v0.48.115) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.0
+
+## [0.48.114](https://github.com/okou-ai/okou/compare/desktop-v0.48.113...desktop-v0.48.114) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.481.0
+
+## [0.48.113](https://github.com/okou-ai/okou/compare/desktop-v0.48.112...desktop-v0.48.113) (2026-09-21)
+
+
+### Bug Fixes
+
+* **desktop:** abort the auth session lifetime on app quit ([#35719](https://github.com/okou-ai/okou/issues/35719)) ([84331a2](https://github.com/okou-ai/okou/commit/84331a2eff0e42be50a893a0bc3ba63e2d0921a3)), closes [#35717](https://github.com/okou-ai/okou/issues/35717)
+
+## [0.48.112](https://github.com/okou-ai/okou/compare/desktop-v0.48.111...desktop-v0.48.112) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.480.0
+
+## [0.48.111](https://github.com/okou-ai/okou/compare/desktop-v0.48.110...desktop-v0.48.111) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.479.0
+
+## [0.48.110](https://github.com/okou-ai/okou/compare/desktop-v0.48.109...desktop-v0.48.110) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+
+## [0.48.109](https://github.com/okou-ai/okou/compare/desktop-v0.48.108...desktop-v0.48.109) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+
 ## [0.48.108](https://github.com/okou-ai/okou/compare/desktop-v0.48.107...desktop-v0.48.108) (2026-09-20)
 
 

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { stubTestTimezone } from "../../../__tests__/env-stub";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { xResourceAdmissionDbFixture } from "../../../test-fixtures/db-fixture";
 import {
   holdProductionXResourceAdmissionForTest,
   holdXResourceAdmissionForTest,
@@ -18,7 +19,9 @@ import {
 import { settleIncludingAbort } from "../../utils";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
-const context = testContext();
+const context = testContext({
+  dbFixtures: [xResourceAdmissionDbFixture],
+});
 
 function resourceId(): string {
   // UUID-owned decimal identifiers fit the production resource-ID contract.

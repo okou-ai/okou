@@ -15,6 +15,7 @@ import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
 import {
   deleteOrgPlanEntitlementFixture,
@@ -66,7 +67,10 @@ import {
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
 
-const context = testContext();
+const context = testContext({
+  connectorCatalog: true,
+  dbFixtures: [usageEventCompactionDbFixture],
+});
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -729,10 +733,10 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       planRank: 0,
       source: "org_metadata_bootstrap",
       status: "active",
-      baseConcurrencyLimit: 1,
+      baseConcurrencyLimit: 2,
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
-      supportByok: false,
+      supportByok: true,
       restrictedBuiltInModels: true,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: false,
@@ -927,7 +931,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     api.configureGithubWebhookSecret();
     const user = { id: 42, login: "bdd-user", type: "User" };
     const bot = { id: 43, login: "zero[bot]", type: "Bot" };
-    const repository = { full_name: "vm0-ai/vm0" };
+    const repository = { full_name: "okou-ai/okou" };
     const installation = { id: 12_345 };
     const issue = {
       number: 123,
@@ -942,7 +946,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       pull_request: {
         number: 123,
         title: "BDD pull request",
-        html_url: "https://github.com/vm0-ai/vm0/pull/123",
+        html_url: "https://github.com/okou-ai/okou/pull/123",
         draft: false,
         merged: false,
         user,
@@ -1031,7 +1035,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "suspend",
       installation: {
         id: 67_890,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -1046,7 +1050,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "created",
       installation: {
         id: 67_891,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -1061,7 +1065,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "deleted",
       installation: {
         id: 67_892,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -4254,9 +4258,14 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       prompt: "team upgrade run three",
       modelProvider: "anthropic-api-key",
     });
-    expect(third.status).toBe("queued");
+    const fourth = await runs.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "team upgrade run four",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(fourth.status).toBe("queued");
     const queuedBefore = await runs.readRunQueue(actor);
-    expect(queuedBefore.body.concurrency.active).toBe(2);
+    expect(queuedBefore.body.concurrency.active).toBe(3);
     expect(queuedBefore.body.queue).toHaveLength(1);
 
     const suffix = randomUUID().slice(0, 8);
@@ -4354,7 +4363,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const drained = await runs.readRunQueue(actor);
     expect(drained.body.concurrency.tier).toBe("team");
     expect(drained.body.queue).toHaveLength(0);
-    expect(drained.body.concurrency.active).toBe(3);
+    expect(drained.body.concurrency.active).toBe(4);
 
     // Redelivering the processed team invoice re-runs lingering-pro cleanup.
     const cancelCallsBefore =
@@ -4507,10 +4516,10 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       planRank: 0,
       source: "stripe_subscription",
       status: "active",
-      baseConcurrencyLimit: 1,
+      baseConcurrencyLimit: 2,
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
-      supportByok: false,
+      supportByok: true,
       restrictedBuiltInModels: true,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: false,
@@ -4528,6 +4537,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     await runs.requestCancelRun(actor, first.runId, [200]);
     await runs.requestCancelRun(actor, second.runId, [200]);
     await runs.requestCancelRun(actor, third.runId, [200]);
+    await runs.requestCancelRun(actor, fourth.runId, [200]);
     const settled = await runs.readRunQueue(actor);
     expect(settled.body.concurrency.active).toBe(0);
   });
@@ -4788,6 +4798,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       prompt: "concurrency add-on run two",
       modelProvider: "anthropic-api-key",
     });
+    await runs.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "concurrency add-on run three",
+      modelProvider: "anthropic-api-key",
+    });
     const queued = await runs.createRun(actor, {
       agentId: agent.agentId,
       prompt: "concurrency add-on queued run",
@@ -4795,8 +4810,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
     expect(queued.status).toBe("queued");
     const before = await runs.readRunQueue(actor);
-    expect(before.body.concurrency.limit).toBe(2);
-    expect(before.body.concurrency.active).toBe(2);
+    expect(before.body.concurrency.limit).toBe(3);
+    expect(before.body.concurrency.active).toBe(3);
     expect(before.body.queue).toHaveLength(1);
 
     const suffix = randomUUID().slice(0, 8);
@@ -4879,8 +4894,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     ]);
 
     const after = await runs.readRunQueue(actor);
-    expect(after.body.concurrency.limit).toBe(4);
-    expect(after.body.concurrency.active).toBe(3);
+    expect(after.body.concurrency.limit).toBe(5);
+    expect(after.body.concurrency.active).toBe(4);
     expect(after.body.queue).toHaveLength(0);
 
     const admitted = await runs.createRun(actor, {
@@ -4890,7 +4905,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
     expect(admitted.status).toBe("pending");
     const afterAdmitted = await runs.readRunQueue(actor);
-    expect(afterAdmitted.body.concurrency.active).toBe(4);
+    expect(afterAdmitted.body.concurrency.active).toBe(5);
     expect(afterAdmitted.body.queue).toHaveLength(0);
 
     // Replaying the same invoice event must not grant additional slots.
@@ -4903,7 +4918,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       expect.objectContaining({ id: subscriptionId, quantity: 2 }),
     ]);
     const afterReplay = await runs.readRunQueue(actor);
-    expect(afterReplay.body.concurrency.limit).toBe(4);
+    expect(afterReplay.body.concurrency.limit).toBe(5);
 
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       concurrencySubscription({
@@ -4943,7 +4958,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       currentPeriodEnd: isoOf(periodEnd),
     });
     const afterPastDue = await runs.readRunQueue(actor);
-    expect(afterPastDue.body.concurrency.limit).toBe(4);
+    expect(afterPastDue.body.concurrency.limit).toBe(5);
 
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       concurrencySubscription({
@@ -5020,7 +5035,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     billingStatus = await billing.readBillingStatus(actor);
     expect(billingStatus.concurrencySubscriptions).toStrictEqual([]);
     const afterItemRemoved = await runs.readRunQueue(actor);
-    expect(afterItemRemoved.body.concurrency.limit).toBe(2);
+    expect(afterItemRemoved.body.concurrency.limit).toBe(3);
 
     await api.postStripeEvent(
       stripeEvent({
@@ -5038,7 +5053,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(billingStatus.tier).toBe("pro");
     expect(billingStatus.hasSubscription).toBeTruthy();
     const afterDeleted = await runs.readRunQueue(actor);
-    expect(afterDeleted.body.concurrency.limit).toBe(2);
+    expect(afterDeleted.body.concurrency.limit).toBe(3);
   });
 
   it("keeps Stripe quantity across prorations and stale concurrent events", async () => {
@@ -5893,8 +5908,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(restored.cancelAtPeriodEnd).toBeFalsy();
     expect(restored.scheduledChange).toBeNull();
 
-    // A downgrade-purpose setup checkout (string setup intent refreshed via
-    // session retrieve) schedules the cancellation again.
+    // A setup Checkout Session created by the previous App can still finish
+    // after rollout. Its retired target is normalized before cancellation.
     context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
       id: `cs_bdd_downgrade_${suffix}`,
       setup_intent: { payment_method: "pm_bdd_downgrade" },
@@ -5936,7 +5951,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
             purpose: "billing_downgrade",
             orgId,
             subscriptionId: granted.subscriptionId,
-            targetTier: "limited-free-1",
+            targetTier: "pro-suspend",
           },
         },
       }),
@@ -5952,7 +5967,12 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const downgraded = await billing.readBillingStatus(actor);
     expect(downgraded.cancelAtPeriodEnd).toBeTruthy();
-    expect(downgraded.scheduledChange?.type).toBe("cancel");
+    expect(downgraded.scheduledChange).toStrictEqual(
+      expect.objectContaining({
+        type: "cancel",
+        targetTier: "limited-free-1",
+      }),
+    );
 
     // A schedule-managed cancellation syncs the final schedule end.
     const scheduleId = `sched_bdd_${suffix}`;
@@ -6653,7 +6673,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
       })
-      .toStrictEqual(["pro-suspend", null, false]);
+      .toStrictEqual(["limited-free-1", null, false]);
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6756,7 +6776,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
       })
-      .toStrictEqual(["pro-suspend", null, false]);
+      .toStrictEqual(["limited-free-1", null, false]);
   });
 
   describe("verified user.deleted cleanup", () => {

@@ -432,9 +432,19 @@ test("Delay the spinner beside a user message the server has not confirmed", asy
     screen.findByText("Draft the launch checklist"),
   ).resolves.toBeInTheDocument();
   expect(optimisticUserMessageSpinners()).toHaveLength(0);
-  await waitFor(() => {
-    expect(optimisticUserMessageSpinners()).toHaveLength(1);
+  const spinnerAppeared = context.mocks.deferred<void>();
+  const observer = new MutationObserver(() => {
+    if (optimisticUserMessageSpinners().length === 1) {
+      spinnerAppeared.resolve();
+    }
   });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    await spinnerAppeared.promise;
+  } finally {
+    observer.disconnect();
+  }
+  expect(optimisticUserMessageSpinners()).toHaveLength(1);
 
   runAccepted.resolve(undefined);
   await waitFor(() => {

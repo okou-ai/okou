@@ -55,11 +55,11 @@ class AuditSetupTests(unittest.TestCase):
             self.stubs[service] = stub
         self.env = {
             "RUNNER_TEMP": str(self.root),
-            "GITHUB_REPOSITORY": "vm0-ai/okou",
+            "GITHUB_REPOSITORY": "okou-ai/okou",
             "GITHUB_REPOSITORY_ID": "1096175506",
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
-            "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
             "GITHUB_RUN_ID": "1234",
             "ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.actions.githubusercontent.com/example",
             "ACTIONS_ID_TOKEN_REQUEST_TOKEN": SECRET,

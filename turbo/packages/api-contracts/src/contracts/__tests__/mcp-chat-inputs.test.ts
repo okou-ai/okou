@@ -30,7 +30,13 @@ describe("MCP chat input schemas", () => {
           maxLength: 255,
           pattern: "\\S",
         },
+        message: {
+          type: "string",
+          maxLength: 32_000,
+          pattern: "\\S",
+        },
       },
+      required: ["requestId"],
     });
     expect(z.toJSONSchema(mcpUpdateChatThreadInputSchema)).toMatchObject({
       properties: {
@@ -82,7 +88,7 @@ describe("MCP chat input schemas", () => {
 
     const create = z.toJSONSchema(mcpCreateChatThreadInputSchema);
     const update = z.toJSONSchema(mcpUpdateChatThreadInputSchema);
-    expect(JSON.stringify(create.properties?.model)).not.toContain('"enum"');
+    expect(JSON.stringify(create)).not.toContain('"enum"');
     expect(JSON.stringify(update.properties?.patch)).not.toContain('"enum"');
   });
 
@@ -109,6 +115,21 @@ describe("MCP chat input schemas", () => {
         title: "  Preserved title  ",
       }).title,
     ).toBe("  Preserved title  ");
+    expect(
+      mcpCreateChatThreadInputSchema.parse({ requestId: id }),
+    ).toStrictEqual({ requestId: id });
+    expect(
+      mcpCreateChatThreadInputSchema.safeParse({
+        requestId: id,
+        message: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      mcpCreateChatThreadInputSchema.parse({
+        requestId: id,
+        message: "Use every default",
+      }),
+    ).toStrictEqual({ requestId: id, message: "Use every default" });
 
     expect(
       mcpListChatThreadsInputSchema.safeParse({ title: " \n\t " }).success,

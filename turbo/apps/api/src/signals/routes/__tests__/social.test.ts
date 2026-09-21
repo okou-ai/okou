@@ -1207,50 +1207,45 @@ describe("managed SocialKit route", () => {
     ]);
   });
 
-  it("forwards representative GET operations with only managed auth", async () => {
-    const actor = createBddApi(context).user();
-    const cases = [
-      ["/youtube/transcript", "url"],
-      ["/tiktok/search", "query"],
-      ["/instagram/comments", "url"],
-      ["/facebook/stats", "url"],
-      ["/twitter/profile", "url"],
-      ["/linkedin/company", "url"],
-    ] as const;
-    const observed: {
-      path: string;
-      queryName: string;
-      queryValue: string;
-      accessKey: string | null;
-    }[] = [];
-    configureProvider();
-    await fundActor(actor);
-    const pricing = await setupConfiguredPricing();
-    for (const [path] of cases) {
+  it.each([
+    { path: "/youtube/transcript", queryName: "url" },
+    { path: "/tiktok/search", queryName: "query" },
+    { path: "/instagram/comments", queryName: "url" },
+    { path: "/facebook/stats", queryName: "url" },
+    { path: "/twitter/profile", queryName: "url" },
+    { path: "/linkedin/company", queryName: "url" },
+  ] as const)(
+    "forwards $path with only managed auth",
+    async ({ path, queryName }) => {
+      const actor = createBddApi(context).user();
+      let observed:
+        | {
+            path: string;
+            queryName: string;
+            queryValue: string;
+            accessKey: string | null;
+          }
+        | undefined;
+      configureProvider();
+      await fundActor(actor);
+      const pricing = await setupConfiguredPricing();
       server.use(
-        providerHandler("GET", path, () => {
-          return HttpResponse.json(providerResponse(validProviderData(path)));
+        http.get(/^https:\/\/api\.socialkit\.dev\//u, ({ request }) => {
+          const url = new URL(request.url);
+          const query = [...url.searchParams.entries()];
+          observed = {
+            path: url.pathname,
+            queryName: query[0]?.[0] ?? "",
+            queryValue: query[0]?.[1] ?? "",
+            accessKey: request.headers.get("x-access-key"),
+          };
+          return HttpResponse.json(
+            providerResponse(validProviderData(url.pathname)),
+          );
         }),
       );
-    }
-    server.use(
-      http.get(/^https:\/\/api\.socialkit\.dev\//u, ({ request }) => {
-        const url = new URL(request.url);
-        const query = [...url.searchParams.entries()];
-        observed.push({
-          path: url.pathname,
-          queryName: query[0]?.[0] ?? "",
-          queryValue: query[0]?.[1] ?? "",
-          accessKey: request.headers.get("x-access-key"),
-        });
-        return HttpResponse.json(
-          providerResponse(validProviderData(url.pathname)),
-        );
-      }),
-    );
-    const beforeCredits = await credits(actor);
+      const beforeCredits = await credits(actor);
 
-    for (const [path, queryName] of cases) {
       const response = await accept(
         client(pricing.resolution)(socialContract).request({
           headers: authenticate(actor),
@@ -1272,25 +1267,20 @@ describe("managed SocialKit route", () => {
         creditsCharged: SOCIALKIT_REQUEST_CREDITS,
         result: validProviderData(path),
       });
-    }
-
-    expect(observed).toStrictEqual(
-      cases.map(([path, queryName]) => {
-        return {
-          path,
-          queryName,
-          queryValue:
-            queryName === "url"
-              ? "https://example.com/public-content"
-              : "public content",
-          accessKey: "test-socialkit-key",
-        };
-      }),
-    );
-    expect(beforeCredits - (await credits(actor))).toBe(
-      cases.length * SOCIALKIT_REQUEST_CREDITS,
-    );
-  });
+      expect(observed).toStrictEqual({
+        path,
+        queryName,
+        queryValue:
+          queryName === "url"
+            ? "https://example.com/public-content"
+            : "public content",
+        accessKey: "test-socialkit-key",
+      });
+      expect(beforeCredits - (await credits(actor))).toBe(
+        SOCIALKIT_REQUEST_CREDITS,
+      );
+    },
+  );
 
   it("rejects invalid Instagram searches before provider work or billing", async () => {
     const actor = createBddApi(context).user();

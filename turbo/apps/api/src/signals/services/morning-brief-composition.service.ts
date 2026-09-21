@@ -28,6 +28,10 @@
  */
 
 import type { MorningBriefChatCollection } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
+import type {
+  MorningBriefOccurrenceCollectionFacts,
+  MorningBriefOccurrenceSourceFact,
+} from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 import type { MorningBriefSourceFailure } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 import { MORNING_BRIEF_COLLECTION_VERSION } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { command } from "ccstate";
@@ -48,6 +52,7 @@ import {
   allocateMorningBriefRequest,
   morningBriefCompositionDeadline,
   morningBriefSourceBudget,
+  morningBriefSourceReadCutoff,
   morningBriefSourceWaves,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
   type MorningBriefCompositionDeadline,
@@ -98,11 +103,7 @@ import {
   boundMorningBriefDescriptors,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import {
-  morningBriefRetainedCheckExpired,
-  revalidateMorningBriefRetainedSources,
-  startMorningBriefRetainedCheckDeadline,
-} from "./morning-brief-source-revalidation.service";
+import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-revalidation.service";
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
@@ -245,6 +246,7 @@ export type MorningBriefCompositionOutcome =
       readonly reason:
         | "language-context-unavailable"
         | "retained-authority-unbounded"
+        | "retained-authority-unresolved"
         | "no-item-fits"
         | "deadline-exceeded"
         | "all-sources-failed"
@@ -257,8 +259,98 @@ export type MorningBriefCompositionOutcome =
       readonly kind: "denied";
       readonly reason: string;
     }
-  /** The owner's authority moved while this attempt was reading. */
-  | { readonly kind: "authority-changed" };
+  /**
+   * The owner's authority moved while this attempt was reading.
+   *
+   * The fence that refused names itself, because "the owner is gone", "one
+   * source's grant was withdrawn and nothing survived" and "the Agent's
+   * instructions changed" settle the same way but are three different
+   * operational facts. A settled occurrence records this reason, so a future
+   * incident does not need a trace archaeology session to tell them apart.
+   */
+  | {
+      readonly kind: "authority-changed";
+      readonly reason: MorningBriefAuthorityChange;
+      readonly sources: readonly MorningBriefSourceReport[];
+    };
+
+/** Which fence withdrew a composed attempt's authority. */
+export type MorningBriefAuthorityChange =
+  /** The shared authorizer no longer admits this owner at all. */
+  | "owner-lost"
+  /** Every supplied source's grant was withdrawn, leaving no request. */
+  | "sources-revoked"
+  /** The Agent's instruction context moved between the read and the plan. */
+  | "instructions-changed";
+
+/** Keep one recorded reason a label rather than an unbounded string. */
+const MORNING_BRIEF_RECORDED_REASON_MAX = 200;
+
+function boundedReason(reason: string): string {
+  return reason.length <= MORNING_BRIEF_RECORDED_REASON_MAX
+    ? reason
+    : reason.slice(0, MORNING_BRIEF_RECORDED_REASON_MAX);
+}
+
+function occurrenceSourceFacts(
+  sources: readonly MorningBriefSourceReport[],
+): readonly MorningBriefOccurrenceSourceFact[] {
+  return sources.map((entry) => {
+    return {
+      source: entry.source,
+      coverage: entry.coverage,
+      items: entry.items,
+      includedInRequest: entry.includedInRequest,
+      droppedBySource: entry.omitted.bySource.known,
+      droppedByNormalizedCap: entry.omitted.byNormalizedCap,
+      droppedByRequest: entry.omitted.byRequest,
+    };
+  });
+}
+
+/**
+ * The durable settlement account one composition produced.
+ *
+ * It exists because a brief that delivered nothing and a brief that had
+ * nothing to say were indistinguishable from outside: #35656 needed a trace to
+ * establish that five sources had in fact answered. The projection is counts
+ * and labels only — no subject, body, sender, channel or container.
+ */
+export function morningBriefCollectionFacts(
+  outcome: MorningBriefCompositionOutcome,
+): MorningBriefOccurrenceCollectionFacts {
+  if (outcome.kind === "denied") {
+    // Admission refused before any source ran, so there is nothing to account.
+    return {
+      outcome: "denied",
+      reason: boundedReason(outcome.reason),
+      sources: [],
+    };
+  }
+  if (outcome.kind === "incomplete") {
+    return {
+      outcome: "incomplete",
+      reason: boundedReason(
+        outcome.detail === ""
+          ? outcome.reason
+          : `${outcome.reason}: ${outcome.detail}`,
+      ),
+      sources: occurrenceSourceFacts(outcome.sources),
+    };
+  }
+  if (outcome.kind === "authority-changed") {
+    return {
+      outcome: "authority-changed",
+      reason: outcome.reason,
+      sources: occurrenceSourceFacts(outcome.sources),
+    };
+  }
+  return {
+    outcome: outcome.kind,
+    reason: null,
+    sources: occurrenceSourceFacts(outcome.result.sources),
+  };
+}
 
 function sourceDeadlineForComposition(
   deadline: MorningBriefCompositionDeadline,
@@ -414,7 +506,9 @@ export const composeMorningBrief$ = command(
       return { ...planned, sources: reduced.reports };
     }
     if (planned.kind !== "planned") {
-      return planned;
+      // The source facts survive the refusal: a settled occurrence has to be
+      // able to show that five sources answered and still delivered nothing.
+      return { ...planned, sources: reduced.reports };
     }
     return finishPlannedComposition(planned, descriptors, reduced, base);
   },
@@ -933,7 +1027,12 @@ async function readMorningBriefSource(
       return null;
     }
     return await readSlackSource(
-      { scope, capturedAt, slack: args.slack, budgetMs },
+      {
+        scope,
+        capturedAt,
+        slack: args.slack,
+        deadlineAt: sourceDeadline.at,
+      },
       sourceSignal,
     );
   };
@@ -973,7 +1072,10 @@ const planMorningBriefRequest$ = command(
         readonly revoked: ReadonlySet<MorningBriefSourceKind>;
       }
     | Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }>
-    | { readonly kind: "authority-changed" }
+    | {
+        readonly kind: "authority-changed";
+        readonly reason: MorningBriefAuthorityChange;
+      }
   > => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
@@ -1043,13 +1145,11 @@ const planMorningBriefRequest$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (proved.kind === "incomplete") {
-      return proved;
+    const resolved = retainedAuthorityResult(proved);
+    if (resolved.kind !== "proved") {
+      return resolved;
     }
-    if (proved.kind !== "proved") {
-      return { kind: "authority-changed" };
-    }
-    const { collections, revoked, replanned } = proved;
+    const { collections, revoked, replanned } = resolved;
 
     // The Agent's instruction context is part of the request, so a change to it
     // between the read and the reservation is a changed request, not a detail —
@@ -1069,7 +1169,7 @@ const planMorningBriefRequest$ = command(
       return afterInstructions;
     }
     if (!unchanged) {
-      return { kind: "authority-changed" };
+      return { kind: "authority-changed", reason: "instructions-changed" };
     }
     const beforeCommit = expired("request admission");
     if (beforeCommit) {
@@ -1091,8 +1191,42 @@ const planMorningBriefRequest$ = command(
   },
 );
 
+/**
+ * Classify what the retained proof decided, keeping the two refusals apart.
+ *
+ * An exhausted or unavailable check is an incomplete attempt, not an authority
+ * change: they settle differently, and collapsing them is what left a real
+ * production incident with no way to say which had happened.
+ */
+function retainedAuthorityResult(proved: RetainedAuthorityOutcome):
+  | Extract<RetainedAuthorityOutcome, { kind: "proved" }>
+  | Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }>
+  | {
+      readonly kind: "authority-changed";
+      readonly reason: MorningBriefAuthorityChange;
+    } {
+  if (proved.kind === "proved" || proved.kind === "incomplete") {
+    return proved;
+  }
+  if (proved.kind === "unresolved") {
+    return incomplete("retained-authority-unresolved", proved.reason, []);
+  }
+  return { kind: "authority-changed", reason: proved.reason };
+}
+
 type RetainedAuthorityOutcome =
-  | { readonly kind: "withdrawn" }
+  | {
+      readonly kind: "withdrawn";
+      readonly reason: Extract<
+        MorningBriefAuthorityChange,
+        "owner-lost" | "sources-revoked"
+      >;
+    }
+  /** The check itself never answered; that is not an authority statement. */
+  | {
+      readonly kind: "unresolved";
+      readonly reason: string;
+    }
   | MorningBriefDeadlineExceeded
   | {
       readonly kind: "proved";
@@ -1100,21 +1234,6 @@ type RetainedAuthorityOutcome =
       readonly revoked: ReadonlySet<MorningBriefSourceKind>;
       readonly replanned: MorningBriefAllocated;
     };
-
-/** Outer expiry owns the public result when both retained clocks meet. */
-function retainedAuthorityExpired(
-  outerDeadlineAt: Date,
-  retainedDeadlineAt: number,
-  retainedSignal: AbortSignal,
-): MorningBriefDeadlineExceeded | { readonly kind: "withdrawn" } | null {
-  const outer = morningBriefExpired(outerDeadlineAt, "final authority check");
-  if (outer) {
-    return outer;
-  }
-  return morningBriefRetainedCheckExpired(retainedDeadlineAt, retainedSignal)
-    ? { kind: "withdrawn" }
-    : null;
-}
 
 /**
  * Re-ask the authorizers about every supplied source, then plan what survives.
@@ -1143,23 +1262,20 @@ async function proveRetainedAuthority(
   },
   signal: AbortSignal,
 ): Promise<RetainedAuthorityOutcome> {
-  const outerDeadlineAt = new Date(input.deadline.at);
-  const before = morningBriefExpired(outerDeadlineAt, "final authority check");
+  // The attempt's own absolute deadline is the only clock here. The plan
+  // already held `MORNING_BRIEF_FINAL_CHECK_RESERVE_MS` back for this step, so
+  // a second ceiling starting when the step starts can only ever be shorter
+  // than what the attempt already owns — and every source that answered adds
+  // work to this check, so the healthier the morning the likelier it was to be
+  // discarded with most of its own phase unspent.
+  const deadline = input.deadline;
+  const outerDeadlineAt = new Date(deadline.at);
+  const expired = (): MorningBriefDeadlineExceeded | null => {
+    return morningBriefExpired(outerDeadlineAt, "final authority check");
+  };
+  const before = expired();
   if (before) {
     return before;
-  }
-  const reservation = input.deadline;
-  const deadline = startMorningBriefRetainedCheckDeadline(
-    { at: reservation.at, ioAt: reservation.ioAt },
-    reservation.signal,
-  );
-  const initialExpiry = retainedAuthorityExpired(
-    outerDeadlineAt,
-    deadline.at,
-    deadline.signal,
-  );
-  if (initialExpiry) {
-    return initialExpiry;
   }
   const descriptors = new Map(
     input.descriptors.map((descriptor) => {
@@ -1176,11 +1292,7 @@ async function proveRetainedAuthority(
   // removes at least one source, so at most five sources make this finite; all
   // passes spend the one retained deadline and the outer composition deadline.
   for (let pass = 0; pass <= input.descriptors.length; pass += 1) {
-    const beforePass = retainedAuthorityExpired(
-      outerDeadlineAt,
-      deadline.at,
-      deadline.signal,
-    );
+    const beforePass = expired();
     if (beforePass) {
       return beforePass;
     }
@@ -1215,16 +1327,17 @@ async function proveRetainedAuthority(
         signal,
       );
       signal.throwIfAborted();
-      const afterRevalidation = retainedAuthorityExpired(
-        outerDeadlineAt,
-        deadline.at,
-        deadline.signal,
-      );
+      const afterRevalidation = expired();
       if (afterRevalidation) {
         return afterRevalidation;
       }
+      if (revalidation.kind === "unresolved") {
+        // Nobody answered. That is an exhausted or unavailable check, never a
+        // statement that this owner's authority moved.
+        return { kind: "unresolved", reason: revalidation.reason };
+      }
       if (revalidation.kind === "owner-lost") {
-        return { kind: "withdrawn" };
+        return { kind: "withdrawn", reason: "owner-lost" };
       }
       for (const refused of revalidation.revoked) {
         revoked.add(refused.source);
@@ -1232,11 +1345,7 @@ async function proveRetainedAuthority(
       }
     }
     if (!removed) {
-      const beforeRelease = retainedAuthorityExpired(
-        outerDeadlineAt,
-        deadline.at,
-        deadline.signal,
-      );
+      const beforeRelease = expired();
       return (
         beforeRelease ?? { kind: "proved", collections, revoked, replanned }
       );
@@ -1248,10 +1357,10 @@ async function proveRetainedAuthority(
       omittedByNormalizedCap: input.omittedByNormalizedCap,
     });
     if (replanned.allocation.items.length === 0) {
-      return { kind: "withdrawn" };
+      return { kind: "withdrawn", reason: "sources-revoked" };
     }
   }
-  return { kind: "withdrawn" };
+  return { kind: "withdrawn", reason: "sources-revoked" };
 }
 
 /** Aggregate the complete composition's truthful source coverage. */
@@ -1611,6 +1720,11 @@ async function readGithubSource(
       owner: { orgId: args.scope.orgId, userId: args.scope.userId },
       anchor: args.scope.anchor,
       authority: args.authority,
+      // The composition allocated this source's absolute deadline before the
+      // read started. Letting the collector start its own instead put its
+      // graceful budget checks behind the signal that cancels it, so GitHub
+      // could only ever end as a rejected job with nothing released.
+      deadline: args.deadline,
     },
     signal,
   );
@@ -1710,7 +1824,8 @@ async function readGmailSource(
 async function readSlackSource(
   args: Pick<SourceReadArgs, "scope" | "capturedAt"> & {
     readonly slack: SlackBinding;
-    readonly budgetMs: number;
+    /** The exact instant this source's cancellation signal fires. */
+    readonly deadlineAt: number;
   },
   signal: AbortSignal,
 ): Promise<CollectedSource> {
@@ -1744,7 +1859,14 @@ async function readSlackSource(
       clock: () => {
         return nowDate().getTime();
       },
-      deadline: nowDate().getTime() + args.budgetMs,
+      deadline: args.deadlineAt,
+      // Reading stops before the signal that cancels this source fires, so an
+      // attempt that runs out of time still proves and releases the channels
+      // it read instead of being aborted into a failure with zero items.
+      readDeadline: morningBriefSourceReadCutoff(
+        args.deadlineAt,
+        nowDate().getTime(),
+      ),
     },
     signal,
   );

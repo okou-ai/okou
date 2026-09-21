@@ -4,26 +4,54 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import type {
+  JsonSchemaType,
+  StandardSchemaWithJSON,
+} from "@modelcontextprotocol/server";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
+  mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
+  mcpListChatThreadsInputSchema,
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
-import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
-import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
-import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import {
+  mcpGetChatMessagesInputSchema,
+  mcpGetChatMessagesOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import {
+  mcpSearchChatMessagesInputSchema,
+  mcpSearchChatMessagesOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-search";
+import {
+  mcpGetChatStatusInputSchema,
+  mcpGetChatStatusOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-status";
+import {
+  mcpListAgentsInputSchema,
   mcpListAgentsOutputSchema,
+  mcpListModelsInputSchema,
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
+import {
+  mcpCreateChatThreadInputSchema,
+  mcpCreateChatThreadOutputSchema,
+  mcpCreateChatWithMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
+  mcpUpdateChatThreadInputSchema,
+  mcpUpdateChatThreadOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
+  mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
+  mcpRevokeQueuedMessageInputSchema,
   mcpRevokeQueuedMessageOutputSchema,
+  mcpCancelRunInputSchema,
   mcpCancelRunOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
@@ -35,6 +63,7 @@ import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
@@ -42,7 +71,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -57,7 +91,9 @@ import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
 } from "../../../test-fixtures/account-erasure-subject";
+import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
@@ -70,6 +106,7 @@ import {
   updateChatSearchSourceThreadFixture,
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -94,6 +131,437 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
+const fullCatalogToolNames = [
+  "get_chat_messages",
+  "search_chat_messages",
+  "get_chat_status",
+  "list_agents",
+  "list_models",
+  "list_chat_threads",
+  "get_chat_thread",
+  "create_chat_thread",
+  "update_chat_thread",
+  "send_chat_message",
+  "revoke_queued_message",
+  "cancel_run",
+] as const;
+
+type FullCatalogToolName = (typeof fullCatalogToolNames)[number];
+type CatalogSchemaContract = {
+  readonly input: StandardSchemaWithJSON;
+  readonly output: StandardSchemaWithJSON;
+};
+type CatalogBudget = {
+  readonly description: number;
+  readonly inputSchema: number;
+  readonly outputSchema: number;
+  readonly annotations: number;
+  readonly total: number;
+};
+
+function standardSchema(schema: z.ZodType): StandardSchemaWithJSON {
+  return schema as unknown as StandardSchemaWithJSON;
+}
+
+const catalogContracts = {
+  get_chat_messages: {
+    input: standardSchema(mcpGetChatMessagesInputSchema),
+    output: standardSchema(mcpGetChatMessagesOutputSchema),
+  },
+  search_chat_messages: {
+    input: standardSchema(mcpSearchChatMessagesInputSchema),
+    output: standardSchema(mcpSearchChatMessagesOutputSchema),
+  },
+  get_chat_status: {
+    input: standardSchema(mcpGetChatStatusInputSchema),
+    output: standardSchema(mcpGetChatStatusOutputSchema),
+  },
+  list_agents: {
+    input: standardSchema(mcpListAgentsInputSchema),
+    output: standardSchema(mcpListAgentsOutputSchema),
+  },
+  list_models: {
+    input: standardSchema(mcpListModelsInputSchema),
+    output: standardSchema(mcpListModelsOutputSchema),
+  },
+  list_chat_threads: {
+    input: standardSchema(mcpListChatThreadsInputSchema),
+    output: standardSchema(mcpListChatThreadsOutputSchema),
+  },
+  get_chat_thread: {
+    input: standardSchema(mcpGetChatThreadInputSchema),
+    output: standardSchema(mcpGetChatThreadOutputSchema),
+  },
+  create_chat_thread: {
+    input: standardSchema(mcpCreateChatThreadInputSchema),
+    output: standardSchema(mcpCreateChatThreadOutputSchema),
+  },
+  update_chat_thread: {
+    input: standardSchema(mcpUpdateChatThreadInputSchema),
+    output: standardSchema(mcpUpdateChatThreadOutputSchema),
+  },
+  send_chat_message: {
+    input: standardSchema(mcpSendChatMessageInputSchema),
+    output: standardSchema(mcpSendChatMessageOutputSchema),
+  },
+  revoke_queued_message: {
+    input: standardSchema(mcpRevokeQueuedMessageInputSchema),
+    output: standardSchema(mcpRevokeQueuedMessageOutputSchema),
+  },
+  cancel_run: {
+    input: standardSchema(mcpCancelRunInputSchema),
+    output: standardSchema(mcpCancelRunOutputSchema),
+  },
+} satisfies Record<FullCatalogToolName, CatalogSchemaContract>;
+
+const fullCatalogBudgets = {
+  get_chat_messages: {
+    description: 520,
+    inputSchema: 749,
+    outputSchema: 1851,
+    annotations: 89,
+    total: 3298,
+  },
+  search_chat_messages: {
+    description: 561,
+    inputSchema: 1102,
+    outputSchema: 1989,
+    annotations: 89,
+    total: 3833,
+  },
+  get_chat_status: {
+    description: 1064,
+    inputSchema: 722,
+    outputSchema: 5309,
+    annotations: 89,
+    total: 7271,
+  },
+  list_agents: {
+    description: 321,
+    inputSchema: 241,
+    outputSchema: 832,
+    annotations: 89,
+    total: 1566,
+  },
+  list_models: {
+    description: 368,
+    inputSchema: 119,
+    outputSchema: 1026,
+    annotations: 89,
+    total: 1685,
+  },
+  list_chat_threads: {
+    description: 421,
+    inputSchema: 1060,
+    outputSchema: 2202,
+    annotations: 89,
+    total: 3861,
+  },
+  get_chat_thread: {
+    description: 321,
+    inputSchema: 366,
+    outputSchema: 2108,
+    annotations: 89,
+    total: 2971,
+  },
+  create_chat_thread: {
+    description: 701,
+    inputSchema: 649,
+    outputSchema: 2934,
+    annotations: 90,
+    total: 4464,
+  },
+  update_chat_thread: {
+    description: 484,
+    inputSchema: 723,
+    outputSchema: 1653,
+    annotations: 91,
+    total: 3041,
+  },
+  send_chat_message: {
+    description: 488,
+    inputSchema: 521,
+    outputSchema: 1358,
+    annotations: 90,
+    total: 2546,
+  },
+  revoke_queued_message: {
+    description: 301,
+    inputSchema: 451,
+    outputSchema: 698,
+    annotations: 89,
+    total: 1632,
+  },
+  cancel_run: {
+    description: 274,
+    inputSchema: 360,
+    outputSchema: 473,
+    annotations: 88,
+    total: 1277,
+  },
+} satisfies Record<FullCatalogToolName, CatalogBudget>;
+
+const representativeSchemaValues: readonly unknown[] = [
+  null,
+  [],
+  {},
+  { unexpected: true },
+  { limit: 1 },
+  { threadId: "00000000-0000-4000-8000-000000000000" },
+  { query: "chat" },
+  { runId: "00000000-0000-4000-8000-000000000000" },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    inputId: "00000000-0000-4000-8000-000000000000",
+  },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    text: "Continue",
+    requestId: "00000000-0000-4000-8000-000000000000",
+  },
+  { agents: [], nextCursor: null },
+  {
+    models: [],
+    defaultModel: { model: null, source: null },
+    admission: "checked_on_send",
+  },
+  {
+    threads: [],
+    nextCursor: null,
+    unreadCoverage: "retained_terminal_events_and_native_deliveries",
+  },
+  { messages: [], olderCursor: null, newerCursor: null },
+  { matches: [], nextCursor: null, scanLimited: false },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    inputId: "00000000-0000-4000-8000-000000000000",
+    outcome: "not_revocable",
+    runId: null,
+    reason: "not_queued",
+  },
+  {
+    runId: "00000000-0000-4000-8000-000000000000",
+    status: "cancelled",
+    alreadyCancelled: false,
+  },
+];
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProvablyObjectShapedRoot(schema: Record<string, unknown>): boolean {
+  if (
+    "properties" in schema ||
+    "patternProperties" in schema ||
+    "additionalProperties" in schema ||
+    "required" in schema
+  ) {
+    return true;
+  }
+  for (const keyword of ["oneOf", "anyOf", "allOf"] as const) {
+    const members = schema[keyword];
+    if (
+      Array.isArray(members) &&
+      members.length > 0 &&
+      members.every((member) => {
+        return (
+          isJsonObject(member) &&
+          (member.type === "object" || isProvablyObjectShapedRoot(member))
+        );
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function canonicalJsonSchema(
+  schema: StandardSchemaWithJSON,
+  io: "input" | "output",
+): Record<string, unknown> {
+  const converted = schema["~standard"].jsonSchema[io]({
+    target: "draft-2020-12",
+  });
+  if (io === "input") {
+    if (converted.type !== undefined && converted.type !== "object") {
+      throw new Error("MCP input schema root must be an object");
+    }
+    return { type: "object", ...converted };
+  }
+  return converted.type === undefined && isProvablyObjectShapedRoot(converted)
+    ? { type: "object", ...converted }
+    : converted;
+}
+
+function jsonPointerValue(root: unknown, reference: string): unknown {
+  if (!reference.startsWith("#/")) {
+    throw new Error(`Expected a local JSON Pointer, received ${reference}`);
+  }
+  let value = root;
+  for (const encodedSegment of reference.slice(2).split("/")) {
+    const segment = encodedSegment.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (Array.isArray(value)) {
+      const index = Number(segment);
+      if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
+        throw new Error(`Unresolved JSON Pointer ${reference}`);
+      }
+      value = value.at(index);
+      continue;
+    }
+    if (!isJsonObject(value)) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    const entry = Object.entries(value).find(([key]) => {
+      return key === segment;
+    });
+    if (!entry) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    value = entry[1];
+  }
+  return value;
+}
+
+function resolveLocalJsonSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  function resolve(
+    value: unknown,
+    activeReferences: ReadonlySet<string>,
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => {
+        return resolve(item, activeReferences);
+      });
+    }
+    if (!isJsonObject(value)) {
+      return value;
+    }
+    if (typeof value.$ref === "string") {
+      if (
+        Object.keys(value).some((key) => {
+          return key !== "$ref";
+        })
+      ) {
+        throw new Error(`Unsupported sibling next to $ref ${value.$ref}`);
+      }
+      if (activeReferences.has(value.$ref)) {
+        throw new Error(`Cyclic local JSON Pointer ${value.$ref}`);
+      }
+      return resolve(
+        jsonPointerValue(schema, value.$ref),
+        new Set(activeReferences).add(value.$ref),
+      );
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => {
+          return key !== "$defs";
+        })
+        .map(([key, child]) => {
+          return [key, resolve(child, activeReferences)];
+        }),
+    );
+  }
+
+  const resolved = resolve(schema, new Set());
+  if (!isJsonObject(resolved)) {
+    throw new Error("Resolved JSON Schema root must be an object");
+  }
+  return resolved;
+}
+
+function measureCatalogTool(tool: {
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+  readonly outputSchema: Record<string, unknown>;
+  readonly annotations: Record<string, unknown>;
+}): CatalogBudget {
+  return {
+    description: jsonBytes(tool.description),
+    inputSchema: jsonBytes(tool.inputSchema),
+    outputSchema: jsonBytes(tool.outputSchema),
+    annotations: jsonBytes(tool.annotations),
+    total: jsonBytes(tool),
+  };
+}
+
+function catalogArrayOverhead(toolCount: number): number {
+  return toolCount === 0 ? 2 : toolCount + 1;
+}
+
+function measureCompactSuccess(result: unknown): {
+  readonly baselineBytes: number;
+  readonly compactBytes: number;
+} {
+  const parsed = z
+    .looseObject({
+      isError: z.boolean().optional(),
+      content: z.array(z.object({ type: z.literal("text"), text: z.string() })),
+      structuredContent: z.unknown(),
+    })
+    .parse(result);
+  expect(parsed.isError).not.toBeTruthy();
+  expect(parsed.content).toHaveLength(1);
+  const summary = parsed.content[0]?.text;
+  if (!summary) {
+    throw new Error("Expected a nonempty MCP tool summary");
+  }
+  expect(Buffer.byteLength(summary, "utf8")).toBeLessThanOrEqual(512);
+  expect(summary).not.toBe(JSON.stringify(parsed.structuredContent));
+  const baselineResult = {
+    ...parsed,
+    content: [
+      { type: "text" as const, text: JSON.stringify(parsed.structuredContent) },
+    ],
+  };
+  const measurement = {
+    baselineBytes: jsonBytes(baselineResult),
+    compactBytes: jsonBytes(parsed),
+  };
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    measurement.baselineBytes,
+  );
+  return measurement;
+}
+
+function expectSubstantialCompactSuccess(result: unknown): void {
+  const measurement = measureCompactSuccess(result);
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    Math.floor(measurement.baselineBytes * 0.6),
+  );
+}
+
+const mcpCreationNamespace = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
+
+function mcpCreationEventId(input: {
+  readonly requestId: string;
+  readonly agentId?: string;
+  readonly title?: string;
+  readonly model?: string;
+  readonly message?: string;
+}): string {
+  const optionalIdentity = (value: string | undefined) => {
+    return value === undefined ? ["omitted"] : ["present", value];
+  };
+  return uuidv5(
+    JSON.stringify([
+      "create_chat_thread",
+      input.requestId,
+      optionalIdentity(input.agentId),
+      optionalIdentity(input.title),
+      optionalIdentity(input.model),
+      "message" in input ? ["present", input.message] : ["omitted"],
+    ]),
+    mcpCreationNamespace,
+  );
+}
 
 function client() {
   return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
@@ -230,7 +698,7 @@ async function callTool(
     }),
     [200],
   );
-  return z
+  const result = z
     .object({
       result: z.object({
         isError: z.boolean().optional(),
@@ -241,6 +709,10 @@ async function callTool(
       }),
     })
     .parse(rpc(response.body)).result;
+  if (!result.isError && result.structuredContent !== undefined) {
+    measureCompactSuccess(result);
+  }
+  return result;
 }
 
 function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
@@ -403,9 +875,17 @@ async function chatRunFixture() {
   return { auth, actor, chat, agent, runs };
 }
 
-async function creationFixture() {
+async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
   const f = await threadFixture();
   const runs = createRunsApi(context);
+  const defaultAgentId = options.withDefaultAgent
+    ? await f.bdd.bootstrapLimitedFreeOnboarding(f.actor, {
+        displayName: "MCP default Agent",
+      })
+    : null;
+  if (defaultAgentId) {
+    await runs.grantProEntitlement(f.actor);
+  }
   const { providerId } = await runs.ensureOrgModelProvider(f.actor);
   await runs.updateOrgModelPolicies(
     f.actor,
@@ -419,7 +899,7 @@ async function creationFixture() {
       };
     }),
   );
-  return { ...f, runs, providerId };
+  return { ...f, runs, providerId, defaultAgentId };
 }
 
 describe("MCP chat discovery and creation", () => {
@@ -515,6 +995,25 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
+  it("substantially reduces a 20-thread list result", async () => {
+    const f = await threadFixture();
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) => {
+        return f.chat.createThread(f.actor, {
+          agentId: f.agent.agentId,
+          title: `Payload measurement ${index}`,
+        });
+      }),
+    );
+    const result = await callTool(f.auth.token(), "list_chat_threads", {
+      limit: 20,
+    });
+    expectSubstantialCompactSuccess(result);
+    expect(
+      mcpListChatThreadsOutputSchema.parse(result.structuredContent).threads,
+    ).toHaveLength(20);
+  });
+
   it("does not initialize missing model policies through a discovery read", async () => {
     const auth = await fixture();
     const first = await callTool(auth.token(), "list_models");
@@ -526,7 +1025,7 @@ describe("MCP chat discovery and creation", () => {
   });
 
   it.each([false, true])(
-    "reports pending model setup after a plan downgrade with personal priority %s",
+    "keeps a member subscription route selectable after a plan downgrade with personal priority %s",
     async (personalSubscriptionPriority) => {
       const f = await threadFixture();
       const runs = createRunsApi(context);
@@ -565,25 +1064,8 @@ describe("MCP chat discovery and creation", () => {
         [200],
       );
 
-      const pending = await callTool(token, "list_models");
-      expect(pending.isError).toBeTruthy();
-      structuredToolError(pending);
-      expect(pending.content).toContainEqual({
-        type: "text",
-        text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
-      });
-      await expect(callTool(token, "list_models")).resolves.toStrictEqual(
-        pending,
-      );
-
-      createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
-      const settings = await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+      // Every runnable plan supports BYOK, so the member subscription route
+      // survives the downgrade and the policies need no synchronization.
       const models = await listModels(token);
       expect(models.defaultModel).toStrictEqual({
         model: "gpt-5.6-luna",
@@ -604,6 +1086,59 @@ describe("MCP chat discovery and creation", () => {
       ).toStrictEqual([]);
     },
   );
+
+  it("reports pending model setup when a restricted plan keeps a Pro-only built-in default", async () => {
+    const f = await threadFixture();
+    const runs = createRunsApi(context);
+    await runs.grantProEntitlement(f.actor);
+    await runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const token = f.auth.token({ scope: defaultScopes });
+    const billing = await runs.readBillingStatus(f.actor);
+    if (!f.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    // "limited-free-1" is the only plan that still restricts Built-in models,
+    // and it is assigned by the org-creation bootstrap rather than any product
+    // API, so seed the tier directly while keeping the balance.
+    await seedOrgMetadata({
+      orgId: f.actor.orgId,
+      tier: "limited-free-1",
+      credits: billing.credits,
+    });
+
+    const pending = await callTool(token, "list_models");
+    expect(pending.isError).toBeTruthy();
+    structuredToolError(pending);
+    expect(pending.content).toContainEqual({
+      type: "text",
+      text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+    });
+    await expect(callTool(token, "list_models")).resolves.toStrictEqual(
+      pending,
+    );
+
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    const settings = await accept(
+      setupApp({ context, routes: modelPoliciesRoutes })(
+        modelPoliciesMainContract,
+      ).list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    const models = await listModels(token);
+    expect(models.defaultModel).toStrictEqual({
+      model: "gpt-5.6-luna",
+      source: "org_default",
+    });
+  });
 
   it("distinguishes configured models, missing member credentials and the member default", async () => {
     const f = await creationFixture();
@@ -687,14 +1222,19 @@ describe("MCP chat discovery and creation", () => {
     const f = await creationFixture();
     const requestId = randomUUID();
     const token = f.auth.token({ scope: defaultScopes });
-    const created = await createThread(
+    const createdResult = await callTool(
       f.auth.token({ scope: `${requiredScopes} okou:chat:manage` }),
+      "create_chat_thread",
       {
         requestId: requestId.toUpperCase(),
         agentId: f.agent.agentId.toUpperCase(),
         title: "Review the quarterly plan",
         model: "claude-sonnet-4-6",
       },
+    );
+    expectSubstantialCompactSuccess(createdResult);
+    const created = mcpCreateChatThreadOutputSchema.parse(
+      createdResult.structuredContent,
     );
     expect(created).toMatchObject({
       threadId: requestId,
@@ -720,9 +1260,8 @@ describe("MCP chat discovery and creation", () => {
     await expect(
       getStatus(token, { threadId: requestId }),
     ).resolves.toMatchObject({
-      input: null,
-      run: null,
-      output: { state: "unavailable" },
+      lifecycle: { phase: "idle", outcome: null, output: "none" },
+      messages: null,
     });
     expect(
       (await getMessages(token, { threadId: requestId })).messages,
@@ -733,6 +1272,351 @@ describe("MCP chat discovery and creation", () => {
       text: "This first message contains its own context.",
     });
     expect(sent.inputRef.threadId).toBe(requestId);
+  });
+
+  it("creates an untitled empty conversation using Agent and model defaults", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = { requestId: randomUUID() };
+
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      nextAction: {
+        tool: "send_chat_message",
+        arguments: { threadId: args.requestId },
+      },
+    });
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      replayed: true,
+    });
+  });
+
+  it("re-resolves a concurrently accepted default Agent without reversing the subject lock order", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    if (!f.defaultAgentId) {
+      throw new Error("Expected the default Agent fixture");
+    }
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = { requestId: randomUUID() };
+    const replacement = await f.bdd.createAgent(f.actor, {
+      displayName: "Replacement MCP default Agent",
+      visibility: "private",
+    });
+    const lock = await holdAgentRowLockFixture({
+      agentId: f.defaultAgentId,
+      signal: context.signal,
+    });
+    const first = createThread(token, args);
+    onTestFinished(async () => {
+      lock.release();
+      await lock.done;
+      await first;
+    });
+    await expect
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
+      .toBeGreaterThan(0);
+    await setOrgDefaultAgentFixture({
+      orgId: f.auth.orgId,
+      agentId: replacement.agentId,
+    });
+
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      agentId: replacement.agentId,
+      replayed: false,
+    });
+    lock.release();
+    await lock.done;
+    await expect(first).resolves.toMatchObject({
+      agentId: replacement.agentId,
+      replayed: true,
+    });
+  });
+
+  it("atomically creates a conversation with its first message and resolves defaults", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      message: "  Preserve this exact first message. 中文 😀  ",
+    };
+    const created = await createThread(token, args);
+    expect(created).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      input: {
+        inputRef: { threadId: args.requestId, eventId: expect.any(String) },
+        disposition: "associated",
+        runId: expect.any(String),
+      },
+      nextAction: {
+        tool: "get_chat_status",
+        arguments: {
+          threadId: args.requestId,
+          inputRef: expect.objectContaining({ threadId: args.requestId }),
+        },
+      },
+    });
+    const combined = mcpCreateChatWithMessageOutputSchema.parse(created);
+    expect(combined.nextAction.arguments.inputRef).toStrictEqual(
+      combined.input.inputRef,
+    );
+    expect(
+      Date.parse(combined.input.retryUntil) -
+        Date.parse(combined.input.acceptedAt),
+    ).toBe(24 * 60 * 60 * 1000);
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toMatchObject([{ text: args.message }]);
+
+    await f.runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+      {
+        model: "claude-sonnet-4-6",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+    ]);
+
+    const replay = await createThread(token, args);
+    expect(replay).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: true,
+      input: {
+        inputRef: combined.input.inputRef,
+        disposition: "associated",
+        runId: combined.input.runId,
+      },
+    });
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toHaveLength(1);
+  });
+
+  it("finishes combined creation after its HTTP caller disconnects and recovers one input", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Recover combined creation",
+      model: "claude-sonnet-5",
+      message: "Keep this input after response loss",
+    };
+    // Infrastructure exception: hold the selected Agent after MCP mutation
+    // admission so the HTTP response can disconnect while waitUntil retains
+    // ownership of the real creation transaction.
+    const lock = await holdAgentRowLockFixture({
+      agentId: f.agent.agentId,
+      signal: context.signal,
+    });
+    const controller = new AbortController();
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(
+                token,
+                "tools/call",
+                true,
+                "create_chat_thread",
+              ),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "create_chat_thread",
+                arguments: args,
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+    onTestFinished(async () => {
+      controller.abort();
+      lock.release();
+      await lock.done;
+      await pending;
+    });
+    await expect
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
+      .toBeGreaterThan(0);
+    controller.abort();
+    lock.release();
+    await lock.done;
+    await pending;
+    await flushWaitUntilForTest();
+
+    const recovered = await createThread(token, args);
+    expect(recovered).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.agent.agentId,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: true,
+      input: { inputRef: { threadId: args.requestId } },
+    });
+    const messages = (await getMessages(token, { threadId: args.requestId }))
+      .messages;
+    expect(messages).toMatchObject([{ text: args.message }]);
+    expect(messages).toHaveLength(1);
+  });
+
+  it("deduplicates simultaneous combined creation and conflicts on changed intent or mode", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "One combined operation",
+      model: "claude-sonnet-5",
+      message: "Create and submit exactly once",
+    };
+    const results = await Promise.all([
+      createThread(token, args),
+      createThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    const inputs = results.map((result) => {
+      if (!("input" in result)) {
+        throw new Error("Expected combined creation responses");
+      }
+      expect(result.input).toMatchObject({
+        disposition: "rejected",
+        runId: null,
+      });
+      return result.input;
+    });
+    expect(inputs[0]?.inputRef).toStrictEqual(inputs[1]?.inputRef);
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toHaveLength(1);
+
+    const secondAgent = await f.bdd.createAgent(f.actor, {
+      displayName: "Another combined creation Agent",
+      visibility: "private",
+    });
+    for (const conflicting of [
+      { ...args, title: "Changed title" },
+      { ...args, title: undefined },
+      { ...args, message: "Changed message" },
+      { ...args, agentId: secondAgent.agentId },
+      { ...args, agentId: undefined },
+      { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: undefined },
+      {
+        requestId: args.requestId,
+        agentId: args.agentId,
+        title: args.title,
+        model: args.model,
+      },
+    ]) {
+      expect(
+        structuredToolError(
+          await callTool(token, "create_chat_thread", conflicting),
+        ),
+      ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    }
+
+    const emptyRequestId = randomUUID();
+    const empty = {
+      requestId: emptyRequestId,
+      agentId: f.agent.agentId,
+      title: "Empty mode stays empty",
+      model: "claude-sonnet-5",
+    };
+    await createThread(token, empty);
+    expect(
+      structuredToolError(
+        await callTool(token, "create_chat_thread", {
+          ...empty,
+          message: "Changing to combined mode must conflict",
+        }),
+      ),
+    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+  });
+
+  it("requires send scope only for the message branch", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({
+      scope: `${requiredScopes} okou:chat:manage`,
+    });
+    const empty = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Manage-only empty conversation",
+      model: "claude-sonnet-5",
+    });
+    expect(empty.nextAction.tool).toBe("send_chat_message");
+
+    const combinedId = randomUUID();
+    expect(
+      structuredToolError(
+        await callTool(token, "create_chat_thread", {
+          requestId: combinedId,
+          title: "Must not be created",
+          message: "Send scope is required",
+        }),
+      ),
+    ).toMatchObject({ code: "insufficient_scope", retryable: false });
+    expect(
+      (await listThreads(f.auth.token({ scope: defaultScopes }))).threads.map(
+        (thread) => {
+          return thread.threadId;
+        },
+      ),
+    ).not.toContain(combinedId);
   });
 
   it("deduplicates simultaneous creation and replays current mutable settings without overwriting them", async () => {
@@ -783,7 +1667,10 @@ describe("MCP chat discovery and creation", () => {
     ).resolves.toStrictEqual(before);
     for (const conflicting of [
       { ...args, title: "Different intent" },
+      { ...args, title: undefined },
+      { ...args, agentId: undefined },
       { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: undefined },
     ]) {
       const result = await callTool(token, "create_chat_thread", conflicting);
       expect(structuredToolError(result)).toMatchObject({
@@ -976,8 +1863,19 @@ describe("MCP chat discovery and creation", () => {
       title: "Unchanged metadata",
       model: "claude-sonnet-5",
     });
-    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
-      .body;
+    const eventsResponse = await f.chat.requestThreadEvents(f.actor, {}, [200]);
+    if (eventsResponse.status !== 200) {
+      throw new Error("Expected chat thread events to load");
+    }
+    const eventsBefore = eventsResponse.body;
+    const createdEventId = eventsBefore.events.find((event) => {
+      return (
+        event.kind === "created" && event.chatThreadId === created.threadId
+      );
+    })?.id;
+    if (!createdEventId) {
+      throw new Error("Expected the MCP creation event");
+    }
     for (const patch of [
       {},
       { title: " " },
@@ -1013,7 +1911,7 @@ describe("MCP chat discovery and creation", () => {
     expect(
       (
         await callTool(token, "update_chat_thread", {
-          requestId: created.threadId,
+          requestId: createdEventId,
           threadId: created.threadId,
           patch: { title: "Event collision must roll back" },
         })
@@ -1063,60 +1961,66 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
-  it("expires creation retries after 24 hours and does not recreate deleted conversations", async () => {
-    const f = await creationFixture();
-    const args = {
-      requestId: randomUUID(),
-      agentId: f.agent.agentId,
-      title: "Retry window",
-      model: "claude-sonnet-5",
-    };
-    const created = await createThread(
-      f.auth.token({ scope: defaultScopes }),
-      args,
-    );
-    const token = f.auth.token({
-      scope: defaultScopes,
-      exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
-    });
-    await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
-      await expect(createThread(token, args)).resolves.toMatchObject({
-        replayed: true,
+  it.each([
+    { kind: "empty", message: undefined },
+    { kind: "combined", message: "Retain one expiring initial input" },
+  ] as const)(
+    "expires $kind creation retries after 24 hours and does not recreate deleted conversations",
+    async ({ message }) => {
+      const f = await creationFixture();
+      const args = {
+        requestId: randomUUID(),
+        agentId: f.agent.agentId,
+        title: "Retry window",
+        model: "claude-sonnet-5",
+        ...(message === undefined ? {} : { message }),
+      };
+      const created = await createThread(
+        f.auth.token({ scope: defaultScopes }),
+        args,
+      );
+      const token = f.auth.token({
+        scope: defaultScopes,
+        exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
       });
-    });
-    await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
-      const expired = await callTool(token, "create_chat_thread", args);
-      expect(expired.isError).toBeTruthy();
-      structuredToolError(expired);
-    });
-    await f.chat.deleteThread(f.actor, created.threadId);
-    expect(
-      (await callTool(token, "create_chat_thread", args)).isError,
-    ).toBeTruthy();
-    expect((await listThreads(token)).threads).toStrictEqual([]);
-  });
+      await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
+        await expect(createThread(token, args)).resolves.toMatchObject({
+          replayed: true,
+        });
+      });
+      await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
+        const expired = await callTool(token, "create_chat_thread", args);
+        expect(expired.isError).toBeTruthy();
+        structuredToolError(expired);
+      });
+      await f.chat.deleteThread(f.actor, created.threadId);
+      expect(
+        (await callTool(token, "create_chat_thread", args)).isError,
+      ).toBeTruthy();
+      expect((await listThreads(token)).threads).toStrictEqual([]);
+    },
+  );
 
   it("rejects an unrelated created-event collision and an existing thread without matching creation evidence", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
-    const collidingEventId = randomUUID();
-    const first = await f.chat.createThread(f.actor, {
-      agentId: f.agent.agentId,
-      title: "Other event owner",
-      model: "claude-sonnet-5",
-      eventId: collidingEventId,
-    });
     const args = {
-      requestId: collidingEventId,
+      requestId: randomUUID(),
       agentId: f.agent.agentId,
       title: "MCP creation intent",
       model: "claude-sonnet-5",
     };
+    const first = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Other event owner",
+      model: "claude-sonnet-5",
+      eventId: mcpCreationEventId(args),
+    });
     expect(
       (await callTool(token, "create_chat_thread", args)).isError,
     ).toBeTruthy();
     expect(
-      (await callTool(token, "get_chat_thread", { threadId: collidingEventId }))
+      (await callTool(token, "get_chat_thread", { threadId: args.requestId }))
         .isError,
     ).toBeTruthy();
     const existingId = randomUUID();
@@ -1275,7 +2179,7 @@ describe("MCP chat discovery and creation", () => {
     },
   );
 
-  it("requires explicit creation choices and rejects unrelated execution controls", async () => {
+  it("validates optional creation choices and rejects unrelated execution controls", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
@@ -1288,10 +2192,19 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "  " },
       { ...args, title: "x".repeat(201) },
       { ...args, model: " \n\t " },
-      { ...args, model: undefined },
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },
+      {
+        requestId: randomUUID(),
+        title: "Blank initial input",
+        message: "  ",
+      },
+      {
+        requestId: randomUUID(),
+        title: "Oversized initial input",
+        message: "x".repeat(32_001),
+      },
     ]) {
       const result = await callTool(token, "create_chat_thread", invalid);
       expect(structuredToolError(result)).toMatchObject({
@@ -1335,19 +2248,16 @@ describe("MCP chat status", () => {
       agentId: f.agent.agentId,
     });
     const before = await f.chat.readThread(f.actor, thread.id);
-    const status = await getStatus(f.auth.token(), { threadId: thread.id });
+    const status = await getStatus(f.auth.token(), {
+      threadId: thread.id,
+      waitMs: 0,
+    });
     expect(status).toMatchObject({
       threadId: thread.id,
-      input: null,
-      run: null,
-      runSelection: "latest",
-      output: {
-        state: "unavailable",
-        messageRefs: [],
-        hasMore: false,
-        reason: "no_associated_run",
-      },
+      lifecycle: { phase: "idle", outcome: null, output: "none" },
       messages: null,
+      wait: null,
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(Number.isNaN(Date.parse(status.observedAt))).toBeFalsy();
@@ -1382,29 +2292,17 @@ describe("MCP chat status", () => {
     const args = { threadId: thread.id, inputRef: sent.inputRef };
     const pending = await getStatus(token, args);
     expect(pending).toMatchObject({
-      input: {
-        ref: sent.inputRef,
-        state: "associated",
-        // Immediate admission does not retain a launch receipt. Association
-        // proves the run identity, not how the runtime consumed the input.
-        deliveryMode: "unknown",
-        runId,
-      },
-      run: { id: runId, status: "pending", completedAt: null },
-      runSelection: "input",
-      output: { state: "pending", messageRefs: [], reason: null },
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
       messages: {
         tool: "get_chat_messages",
         arguments: { threadId: thread.id, runId, limit: 20 },
       },
     });
     expect(pending.retryAfterMs).toBeGreaterThan(0);
-    expect(pending.input?.visibleMessageRef).not.toStrictEqual(sent.inputRef);
     expect(JSON.stringify(pending)).not.toContain("PRIVATE_STATUS_PROMPT");
     const claimed = await f.claimChatRun(actor.runnerGroup, runId);
     await expect(getStatus(token, args)).resolves.toMatchObject({
-      run: { id: runId, status: "running", completedAt: null },
-      output: { state: "pending" },
+      lifecycle: { phase: "running", outcome: null, output: "pending" },
     });
     await f.webhooks.requestAgentEvents(
       {
@@ -1426,45 +2324,80 @@ describe("MCP chat status", () => {
     );
     const partial = await getStatus(token, args);
     expect(partial).toMatchObject({
-      run: { status: "running" },
-      output: { state: "partial", hasMore: false, reason: null },
+      lifecycle: { phase: "running", outcome: null, output: "partial" },
     });
-    expect(partial.output.messageRefs).toHaveLength(1);
     await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
       lastEventSequence: 0,
     });
     await flushWaitUntilForTest();
-    const ready = await getStatus(token, args);
+    const readyResult = await callTool(token, "get_chat_status", args);
+    expectSubstantialCompactSuccess(readyResult);
+    const ready = mcpGetChatStatusOutputSchema.parse(
+      readyResult.structuredContent,
+    );
     expect(ready).toMatchObject({
-      run: { id: runId, status: "completed", completedAt: expect.any(String) },
-      output: { state: "ready", messageRefs: partial.output.messageRefs },
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "ready",
+      },
       retryAfterMs: null,
     });
     if (!ready.messages) {
       throw new Error("Expected a message retrieval handoff");
     }
-    const messages = await getMessages(token, ready.messages.arguments);
+    const messagesResult = await callTool(
+      token,
+      "get_chat_messages",
+      ready.messages.arguments,
+    );
+    expectSubstantialCompactSuccess(messagesResult);
+    const messages = mcpGetChatMessagesOutputSchema.parse(
+      messagesResult.structuredContent,
+    );
     expect(
-      messages.messages
-        .filter((message) => {
-          return message.role === "assistant";
-        })
-        .map((message) => {
-          return message.ref;
+      new Set(
+        messages.messages.map((message) => {
+          return message.role;
         }),
-    ).toStrictEqual(ready.output.messageRefs);
+      ),
+    ).toStrictEqual(new Set(["user", "assistant"]));
+    expect(
+      messages.messages.filter((message) => {
+        return message.role === "assistant";
+      }),
+    ).toMatchObject([{ text: "A readable intermediate result." }]);
+    const waited = await getStatus(token, { ...args, waitMs: 60_000 });
+    expect(waited.wait).toStrictEqual({
+      requestedMs: 60_000,
+      effectiveMs: 8000,
+      elapsedMs: expect.any(Number),
+      observations: 1,
+      outcome: "ready",
+      returnReason: "output_ready",
+    });
+    expect(waited.messagePage).toStrictEqual(messages);
     await expect(
       getStatus(token, { threadId: thread.id }),
     ).resolves.toMatchObject({
-      input: null,
-      runSelection: "latest",
-      run: { id: runId, status: "completed" },
-      output: { state: "ready" },
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "ready",
+      },
+      messages: {
+        arguments: { threadId: thread.id, runId, limit: 20 },
+      },
+      wait: null,
+      messagePage: null,
     });
+    const visibleInputRef = messages.messages.find((message) => {
+      return message.role === "user";
+    })?.ref;
     const invalidRefs = [
       { ...sent.inputRef, eventId: randomUUID() },
       { ...sent.inputRef, seqId: sent.inputRef.seqId + 1 },
-      pending.input?.visibleMessageRef,
+      visibleInputRef,
     ];
     for (const inputRef of invalidRefs) {
       if (!inputRef) {
@@ -1473,9 +2406,11 @@ describe("MCP chat status", () => {
       await expect(
         getStatus(token, { threadId: thread.id, inputRef }),
       ).resolves.toMatchObject({
-        input: { state: "unavailable", runId: null },
-        run: null,
-        runSelection: "input",
+        lifecycle: {
+          phase: "unavailable",
+          outcome: null,
+          output: "unavailable",
+        },
         messages: null,
       });
     }
@@ -1490,8 +2425,363 @@ describe("MCP chat status", () => {
       }),
     ).resolves.toMatchObject({
       threadId: thread.id,
-      input: { ref: sent.inputRef, runId },
-      run: { id: runId, status: "completed" },
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "ready",
+      },
+      messages: {
+        arguments: { threadId: thread.id, runId, limit: 20 },
+      },
+    });
+  });
+
+  it("rereads after a bounded delay and returns ready content from the fresh snapshot", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Wait for the canonical result",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              content: [{ type: "text", text: "Bounded wait result" }],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    context.mocks.signalTimers.delay.mockImplementationOnce(
+      async (_ms, options) => {
+        options?.signal?.throwIfAborted();
+        await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+          lastEventSequence: 0,
+        });
+        await flushWaitUntilForTest();
+      },
+    );
+
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+
+    expect(status).toMatchObject({
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "ready",
+      },
+      wait: {
+        requestedMs: 5000,
+        effectiveMs: 5000,
+        observations: 2,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage: {
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            text: "Bounded wait result",
+          }),
+        ]),
+      },
+      retryAfterMs: null,
+    });
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
+  });
+
+  it("returns a fresh deadline status and exposes output that arrives later", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Finish after the bounded wait",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    let monotonicMs = 1000;
+    mockMonotonicNow(monotonicMs);
+    onTestFinished(() => {
+      clearMockMonotonicNow();
+    });
+    context.mocks.signalTimers.delay.mockImplementation(
+      (milliseconds, options) => {
+        options?.signal?.throwIfAborted();
+        monotonicMs += milliseconds;
+        mockMonotonicNow(monotonicMs);
+        return Promise.resolve();
+      },
+    );
+
+    const deadline = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+
+    expect(deadline).toMatchObject({
+      lifecycle: { phase: "running", outcome: null, output: "pending" },
+      wait: {
+        requestedMs: 5000,
+        effectiveMs: 5000,
+        elapsedMs: 5000,
+        observations: 4,
+        outcome: "deadline",
+        returnReason: "application_deadline",
+      },
+      messagePage: null,
+      retryAfterMs: 2000,
+    });
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([milliseconds]) => {
+        return milliseconds;
+      }),
+    ).toStrictEqual([2000, 2000, 1000]);
+
+    clearMockMonotonicNow();
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: { content: [{ type: "text", text: "Late result" }] },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    const late = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+    expect(late.wait).toMatchObject({
+      observations: 1,
+      outcome: "ready",
+      returnReason: "output_ready",
+    });
+    expect(late.messagePage?.messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", text: "Late result" }),
+    );
+  });
+
+  it("returns current status when principal wait capacity is full and reuses released slots", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Keep bounded waiters pending",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let heldWaiters = 0;
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      options?.signal?.throwIfAborted();
+      if (heldWaiters < 2) {
+        heldWaiters += 1;
+        if (heldWaiters === 2) {
+          entered.resolve();
+        }
+        return release.promise;
+      }
+      return Promise.resolve();
+    });
+    const args = {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    };
+
+    const first = getStatus(token, args);
+    const second = getStatus(token, args);
+    await entered.promise;
+    const exhausted = await getStatus(token, args);
+    expect(exhausted.wait).toMatchObject({
+      observations: 1,
+      outcome: "status",
+      returnReason: "waiter_limit",
+    });
+    expect(exhausted.lifecycle.output).toBe("pending");
+
+    release.resolve();
+    await expect(Promise.all([first, second])).resolves.toStrictEqual([
+      expect.objectContaining({
+        wait: expect.objectContaining({
+          outcome: "status",
+          returnReason: "observation_limit",
+        }),
+      }),
+      expect.objectContaining({
+        wait: expect.objectContaining({
+          outcome: "status",
+          returnReason: "observation_limit",
+        }),
+      }),
+    ]);
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      wait: {
+        outcome: "status",
+        returnReason: "observation_limit",
+      },
+    });
+  });
+
+  it("cancels only a disconnected waiter and releases its admission slot", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Keep running after the waiter disconnects",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    const controller = new AbortController();
+    onTestFinished(async () => {
+      controller.abort();
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const delayStarted = createDeferredPromise<void>(context.signal);
+    const delayAborted = createDeferredPromise<void>(context.signal);
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      const waitSignal = options?.signal;
+      if (!waitSignal) {
+        throw new Error("Expected the waiter delay to own a signal");
+      }
+      const held = createDeferredPromise<void>(waitSignal);
+      waitSignal.addEventListener(
+        "abort",
+        () => {
+          delayAborted.resolve();
+        },
+        { once: true },
+      );
+      delayStarted.resolve();
+      return held.promise;
+    });
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(token, "tools/call", true, "get_chat_status"),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "get_chat_status",
+                arguments: {
+                  threadId: thread.id,
+                  inputRef: sent.inputRef,
+                  waitMs: 8000,
+                },
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+
+    await delayStarted.promise;
+    controller.abort(new DOMException("Caller disconnected", "AbortError"));
+    await delayAborted.promise;
+    await pending;
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+    const after = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
+    expect(after.wait?.returnReason).toBe("observation_limit");
+    await expect(f.api.readRun(actor.actor, runId)).resolves.toMatchObject({
+      status: expect.not.stringMatching(/cancel/u),
     });
   });
 
@@ -1526,12 +2816,11 @@ describe("MCP chat status", () => {
     await flushWaitUntilForTest();
     const recovering = await getStatus(token, { threadId: sent.threadId });
     expect(recovering).toMatchObject({
-      run: {
-        id: sent.runId,
-        status: "cancelled",
-        cancellationRecovery: "pending",
+      lifecycle: {
+        phase: "finalizing",
+        outcome: "cancelled",
+        output: "partial",
       },
-      output: { state: "partial" },
     });
     expect(recovering.retryAfterMs).toBeGreaterThan(0);
     await f.webhooks.requestAgentEvents(
@@ -1556,15 +2845,23 @@ describe("MCP chat status", () => {
     await flushWaitUntilForTest();
     const recovered = await getStatus(token, { threadId: sent.threadId });
     expect(recovered).toMatchObject({
-      run: {
-        id: sent.runId,
-        status: "cancelled",
-        cancellationRecovery: "complete",
+      lifecycle: {
+        phase: "settled",
+        outcome: "cancelled",
+        output: "ready",
       },
-      output: { state: "ready" },
       retryAfterMs: null,
     });
-    expect(recovered.output.messageRefs).toHaveLength(2);
+    if (!recovered.messages) {
+      throw new Error("Expected recovered output retrieval instructions");
+    }
+    expect(
+      (await getMessages(token, recovered.messages.arguments)).messages.filter(
+        (message) => {
+          return message.role === "assistant";
+        },
+      ),
+    ).toHaveLength(2);
   });
 
   it("reports failed runs without inventing assistant messages from terminal errors", async () => {
@@ -1574,10 +2871,18 @@ describe("MCP chat status", () => {
       userId: auth.userId,
       orgId: auth.orgId,
     });
-    const sent = await f.sendChatRun(actor.actor, {
+    const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
-      prompt: "Fail before producing output",
     });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Fail before producing output",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
     const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
     await f.failChatRun(
       sent.runId,
@@ -1585,13 +2890,48 @@ describe("MCP chat status", () => {
       "PRIVATE_RAW_ERROR",
     );
     await flushWaitUntilForTest();
-    const status = await getStatus(auth.token(), { threadId: sent.threadId });
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
     expect(status).toMatchObject({
-      run: { id: sent.runId, status: "failed" },
-      output: { state: "unavailable", reason: "no_output", messageRefs: [] },
+      lifecycle: { phase: "settled", outcome: "failed", output: "none" },
+      wait: {
+        observations: 1,
+        outcome: "status",
+        returnReason: "non_retryable_state",
+      },
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(JSON.stringify(status)).not.toContain("PRIVATE_RAW_ERROR");
+  });
+
+  it("reports completed runs with confirmed no output", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Complete without assistant output",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    await f.completeChatRunOk(sent.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    await expect(
+      getStatus(auth.token(), { threadId: sent.threadId }),
+    ).resolves.toMatchObject({
+      lifecycle: {
+        phase: "settled",
+        outcome: "completed",
+        output: "none",
+      },
+      retryAfterMs: null,
+    });
   });
 
   it("identifies a queued launch and preserves its association after original-input retention", async () => {
@@ -1616,29 +2956,25 @@ describe("MCP chat status", () => {
     });
     const args = { threadId: active.threadId, inputRef: submitted.inputRef };
     await expect(getStatus(token, args)).resolves.toMatchObject({
-      input: { state: "queued", runId: null, deliveryMode: "unknown" },
-      run: null,
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      messages: null,
     });
     await f.completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
     const launched = await getStatus(token, args);
-    const nextRunId = launched.run?.id;
-    if (!nextRunId) {
+    if (!launched.messages) {
       throw new Error("Expected the queued input to start its own run");
     }
+    const nextRunId = launched.messages.arguments.runId;
     onTestFinished(async () => {
       await f.api.requestCancelRun(actor.actor, nextRunId, [200, 400, 404]);
     });
     expect(nextRunId).not.toBe(active.runId);
     expect(launched).toMatchObject({
-      input: {
-        ref: submitted.inputRef,
-        state: "associated",
-        deliveryMode: "launch",
-        runId: nextRunId,
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      messages: {
+        arguments: { threadId: active.threadId, runId: nextRunId, limit: 20 },
       },
-      run: { id: nextRunId, status: "pending" },
-      output: { state: "pending" },
     });
     // Infrastructure exception: the retention cutoff uses the database clock;
     // public requests cannot backdate this original submission by 31 days.
@@ -1655,9 +2991,8 @@ describe("MCP chat status", () => {
     );
     expect(retained.body.deleted).toBe(1);
     const archived = await getStatus(token, args);
-    expect(archived.input).toStrictEqual(launched.input);
-    expect(archived.run).toStrictEqual(launched.run);
-    expect(archived.output).toStrictEqual(launched.output);
+    expect(archived.lifecycle).toStrictEqual(launched.lifecycle);
+    expect(archived.messages).toStrictEqual(launched.messages);
   });
 
   it.each(["completed", "timeout"] as const)(
@@ -1686,8 +3021,7 @@ describe("MCP chat status", () => {
       await expect(
         getStatus(token, { threadId: sent.threadId }),
       ).resolves.toMatchObject({
-        run: { id: sent.runId, status },
-        output: { state: "pending", messageRefs: [] },
+        lifecycle: { phase: "finalizing", outcome: status, output: "pending" },
         retryAfterMs: expect.any(Number),
       });
       await f.webhooks.requestAgentEvents(
@@ -1707,15 +3041,13 @@ describe("MCP chat status", () => {
         [200],
       );
       const observed = await getStatus(token, { threadId: sent.threadId });
-      expect(observed.run?.status).toBe(status);
       // Timeout fencing discards late output; an ordinary completed run can
       // materialize it, but neither case invents the missing terminal marker.
-      expect(observed.output.state).toBe(
-        status === "completed" ? "partial" : "pending",
-      );
-      expect(observed.output.messageRefs).toHaveLength(
-        status === "completed" ? 1 : 0,
-      );
+      expect(observed.lifecycle).toStrictEqual({
+        phase: "finalizing",
+        outcome: status,
+        output: status === "completed" ? "partial" : "pending",
+      });
       expect(observed.retryAfterMs).toBeGreaterThan(0);
     },
   );
@@ -1755,8 +3087,9 @@ describe("MCP chat status", () => {
     );
     expect(retained.body.deleted).toBe(1);
     const after = await getStatus(token, args);
-    expect(after.input).toStrictEqual(before.input);
-    expect(after.output).toStrictEqual(before.output);
+    expect(after.lifecycle).toStrictEqual(before.lifecycle);
+    expect(after.messages).toStrictEqual(before.messages);
+    expect(after.retryAfterMs).toBe(before.retryAfterMs);
     await deleteFakeChatEventObject(archive.key);
     const failure = await callTool(token, "get_chat_status", args);
     expect(failure.isError).toBeTruthy();
@@ -1861,21 +3194,10 @@ describe("MCP chat mutations", () => {
       inputRef: result.inputRef,
     });
     expect(status).toMatchObject({
-      input: {
-        ref: result.inputRef,
-        state: "rejected",
-        deliveryMode: "unknown",
-        runId: null,
-      },
-      run: null,
-      runSelection: "input",
-      output: { state: "unavailable", reason: "no_associated_run" },
+      lifecycle: { phase: "settled", outcome: "rejected", output: "none" },
       messages: null,
       retryAfterMs: null,
     });
-    expect(status.input?.visibleMessageRef).toStrictEqual(
-      (await getMessages(token, { threadId: thread.id })).messages[0]?.ref,
-    );
     const replay = await sendMessage(token, {
       threadId: thread.id,
       text,
@@ -2576,10 +3898,8 @@ describe("MCP chat mutations", () => {
       await expect(
         getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
-        input: { state: "queued", runId: null },
-        run: null,
-        runSelection: "input",
-        output: { state: "unavailable", reason: "no_associated_run" },
+        lifecycle: { phase: "queued", outcome: null, output: "pending" },
+        messages: null,
       });
       const revoked = await revokeMessage(
         token,
@@ -2607,14 +3927,8 @@ describe("MCP chat mutations", () => {
       await expect(
         getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
-        input: {
-          ref: sent.inputRef,
-          state: "revoked",
-          runId: null,
-          visibleMessageRef: null,
-        },
-        run: null,
-        output: { state: "unavailable", reason: "no_associated_run" },
+        lifecycle: { phase: "settled", outcome: "revoked", output: "none" },
+        messages: null,
         retryAfterMs: null,
       });
       expect(
@@ -2767,14 +4081,14 @@ describe("MCP chat mutations", () => {
     await expect(
       getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
     ).resolves.toMatchObject({
-      input: {
-        ref: sent.inputRef,
-        state: "reserved",
-        deliveryMode: "unknown",
-        runId: active.runId,
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      messages: {
+        arguments: {
+          threadId: active.threadId,
+          runId: active.runId,
+          limit: 20,
+        },
       },
-      run: { id: active.runId, status: "running" },
-      output: { state: "pending", messageRefs: [] },
     });
     await expect(
       f.api.recordRunnerActiveInputDelivery(
@@ -2794,17 +4108,15 @@ describe("MCP chat mutations", () => {
       inputRef: sent.inputRef,
     });
     expect(delivered).toMatchObject({
-      input: {
-        ref: sent.inputRef,
-        state: "delivered",
-        deliveryMode: "steer",
-        runId: active.runId,
+      lifecycle: { phase: "running", outcome: null, output: "pending" },
+      messages: {
+        arguments: {
+          threadId: active.threadId,
+          runId: active.runId,
+          limit: 20,
+        },
       },
-      run: { id: active.runId, status: "running" },
-      runSelection: "input",
-      output: { state: "pending", messageRefs: [] },
     });
-    expect(delivered.input?.visibleMessageRef).not.toStrictEqual(sent.inputRef);
     await expect(
       revokeMessage(token, args.threadId, args.requestId),
     ).resolves.toMatchObject({
@@ -2849,19 +4161,23 @@ describe("MCP chat mutations", () => {
       threadId: args.threadId,
       inputRef: initial.inputRef,
     });
-    expect(launched.run).toStrictEqual(steered.run);
-    expect(launched.output).toStrictEqual(steered.output);
-    expect(steered.output).toMatchObject({ state: "partial", hasMore: true });
-    expect(steered.output.messageRefs).toHaveLength(20);
+    expect(launched.lifecycle).toStrictEqual({
+      phase: "running",
+      outcome: null,
+      output: "partial",
+    });
+    expect(steered.lifecycle).toStrictEqual(launched.lifecycle);
+    expect(steered.messages).toStrictEqual(launched.messages);
     if (!steered.messages) {
       throw new Error("Expected shared output retrieval instructions");
     }
     const page = await getMessages(token, steered.messages.arguments);
+    expect(page.messages).toHaveLength(20);
     expect(
-      page.messages.map((message) => {
-        return message.ref;
+      page.messages.every((message) => {
+        return message.role === "assistant";
       }),
-    ).toStrictEqual(steered.output.messageRefs);
+    ).toBeTruthy();
     expect(page.olderCursor).not.toBeNull();
     installFakeChatEventR2(context, []);
     // Infrastructure exception: public sends cannot backdate acceptance past
@@ -2883,13 +4199,8 @@ describe("MCP chat mutations", () => {
       threadId: args.threadId,
       inputRef: sent.inputRef,
     });
-    expect(archived.input).toStrictEqual({
-      ...steered.input,
-      state: "associated",
-      deliveryMode: "unknown",
-    });
-    expect(archived.run).toStrictEqual(steered.run);
-    expect(archived.output).toStrictEqual(steered.output);
+    expect(archived.lifecycle).toStrictEqual(steered.lifecycle);
+    expect(archived.messages).toStrictEqual(steered.messages);
   });
 
   it.each(["lowercase", "uppercase"] as const)(
@@ -4264,7 +5575,7 @@ describe("MCP message search", () => {
     ]);
   });
 
-  it("applies role, source time, Agent and thread filters before limiting and excludes private context", async () => {
+  async function setupMessageSearchFilters() {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
     const actor = await f.entitledChatActor({
@@ -4366,25 +5677,45 @@ describe("MCP message search", () => {
     }
     const token = auth.token();
     const args = { query, limit: 1 };
+    return { actor, args, baseTime, other, query, sent, token };
+  }
+
+  it("applies the result limit after ordering message search matches", async () => {
+    const { args, other, token } = await setupMessageSearchFilters();
     expect((await searchMessages(token, args)).matches[0]?.ref.threadId).toBe(
       other.threadId,
     );
-    for (const filters of [
-      { agentId: actor.agentId },
-      { threadId: sent.threadId },
-    ]) {
+  });
+
+  it.each(["agent", "thread"] as const)(
+    "applies the $filter filter before limiting message search matches",
+    async (filter) => {
+      const { actor, args, query, sent, token } =
+        await setupMessageSearchFilters();
+      const filters =
+        filter === "agent"
+          ? { agentId: actor.agentId }
+          : { threadId: sent.threadId };
       expect(
         (await searchMessages(token, { ...args, ...filters })).matches[0]
           ?.excerpt.text,
       ).toBe(`${query} queued after`);
-    }
-    const since = new Date(baseTime + 1000).toISOString();
-    const before = new Date(baseTime + 2000).toISOString();
-    for (const filters of [
-      { role: "assistant" },
-      { before },
-      { since, before },
-    ]) {
+    },
+  );
+
+  it.each(["role", "before", "bounded"] as const)(
+    "applies the $filter source filter before limiting message search matches",
+    async (filter) => {
+      const { args, baseTime, query, sent, token } =
+        await setupMessageSearchFilters();
+      const since = new Date(baseTime + 1000).toISOString();
+      const before = new Date(baseTime + 2000).toISOString();
+      const filters =
+        filter === "role"
+          ? ({ role: "assistant" } as const)
+          : filter === "before"
+            ? { before }
+            : { since, before };
       const page = await searchMessages(token, { ...args, ...filters });
       expect(page.matches).toMatchObject([
         {
@@ -4393,7 +5724,13 @@ describe("MCP message search", () => {
           excerpt: { text: `${query} assistant answer` },
         },
       ]);
-    }
+    },
+  );
+
+  it("applies an inclusive source-time lower bound before limiting", async () => {
+    const { args, baseTime, query, sent, token } =
+      await setupMessageSearchFilters();
+    const before = new Date(baseTime + 2000).toISOString();
     expect(
       (
         await searchMessages(token, {
@@ -4403,12 +5740,24 @@ describe("MCP message search", () => {
         })
       ).matches[0]?.excerpt.text,
     ).toBe(`${query} queued after`);
+  });
+
+  it("filters message search by user role", async () => {
+    const { query, token } = await setupMessageSearchFilters();
     expect(
       (await searchMessages(token, { query, role: "user" })).matches,
     ).toHaveLength(3);
+  });
+
+  it("excludes private message context from search", async () => {
+    const { token } = await setupMessageSearchFilters();
     expect(
       (await searchMessages(token, { query: "mcpprivateneedle" })).matches,
     ).toStrictEqual([]);
+  });
+
+  it("returns no message-search matches for an unrelated thread", async () => {
+    const { args, token } = await setupMessageSearchFilters();
     expect(
       (await searchMessages(token, { ...args, threadId: randomUUID() }))
         .matches,
@@ -5052,7 +6401,23 @@ describe("external MCP entry", () => {
         }),
         [200],
       );
-      expect(rpc(listed.body)).toMatchObject({
+      const listedPayload = rpc(listed.body);
+      const listedTools = z
+        .object({
+          result: z.object({
+            tools: z.array(
+              z.looseObject({
+                name: z.string(),
+                description: z.string(),
+                inputSchema: z.record(z.string(), z.unknown()),
+                outputSchema: z.record(z.string(), z.unknown()),
+                annotations: z.record(z.string(), z.unknown()),
+              }),
+            ),
+          }),
+        })
+        .parse(listedPayload).result.tools;
+      expect(listedPayload).toMatchObject({
         result: {
           tools: [
             { name: "get_chat_messages", annotations: { readOnlyHint: true } },
@@ -5096,9 +6461,17 @@ describe("external MCP entry", () => {
                           maxLength: 255,
                           pattern: "\\S",
                         },
+                        message: {
+                          maxLength: 32_000,
+                          pattern: "\\S",
+                        },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: {
+                      readOnlyHint: false,
+                      idempotentHint: false,
+                      openWorldHint: true,
+                    },
                   },
                   {
                     name: "update_chat_thread",
@@ -5122,7 +6495,7 @@ describe("external MCP entry", () => {
                         },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: { readOnlyHint: false, idempotentHint: false },
                   },
                   {
                     name: "send_chat_message",
@@ -5131,7 +6504,7 @@ describe("external MCP entry", () => {
                         text: { maxLength: 32_000, pattern: "\\S" },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: { readOnlyHint: false, idempotentHint: false },
                   },
                   {
                     name: "revoke_queued_message",
@@ -5154,6 +6527,152 @@ describe("external MCP entry", () => {
           ],
         },
       });
+      const schemaValidator = new AjvJsonSchemaValidator();
+      for (const tool of listedTools) {
+        expect(() => {
+          schemaValidator.getValidator(tool.inputSchema as JsonSchemaType);
+          schemaValidator.getValidator(tool.outputSchema as JsonSchemaType);
+        }).not.toThrow();
+      }
+      if (scopes === defaultScopes) {
+        const listedNames = listedTools.map((tool) => {
+          return tool.name;
+        });
+        expect(listedNames).toStrictEqual(fullCatalogToolNames);
+        expect(Object.keys(catalogContracts)).toStrictEqual(
+          fullCatalogToolNames,
+        );
+        expect(Object.keys(fullCatalogBudgets)).toStrictEqual(
+          fullCatalogToolNames,
+        );
+
+        for (const tool of listedTools) {
+          if (!(tool.name in fullCatalogBudgets)) {
+            throw new Error(`Missing catalog budget for ${tool.name}`);
+          }
+          const toolName = tool.name as FullCatalogToolName;
+          const measured = measureCatalogTool(tool);
+          const budget = fullCatalogBudgets[toolName];
+          for (const component of [
+            "description",
+            "inputSchema",
+            "outputSchema",
+            "annotations",
+            "total",
+          ] as const) {
+            expect(
+              measured[component],
+              `${toolName}.${component} exceeds its reviewed budget`,
+            ).toBeLessThanOrEqual(budget[component]);
+          }
+
+          const contract = catalogContracts[toolName];
+          for (const [schemaName, advertised, canonical] of [
+            [
+              "inputSchema",
+              tool.inputSchema,
+              canonicalJsonSchema(contract.input, "input"),
+            ],
+            [
+              "outputSchema",
+              tool.outputSchema,
+              canonicalJsonSchema(contract.output, "output"),
+            ],
+          ] as const) {
+            expect(
+              jsonBytes(advertised),
+              `${toolName}.${schemaName} compaction must be byte-nonincreasing`,
+            ).toBeLessThanOrEqual(jsonBytes(canonical));
+            expect(
+              resolveLocalJsonSchema(advertised),
+              `${toolName}.${schemaName} must preserve the canonical contract`,
+            ).toStrictEqual(resolveLocalJsonSchema(canonical));
+            const advertisedValidator = schemaValidator.getValidator(
+              advertised as JsonSchemaType,
+            );
+            const canonicalValidator = schemaValidator.getValidator(
+              canonical as JsonSchemaType,
+            );
+            for (const value of representativeSchemaValues) {
+              expect(
+                advertisedValidator(value).valid,
+                `${toolName}.${schemaName} must validate representative values equivalently`,
+              ).toBe(canonicalValidator(value).valid);
+            }
+          }
+        }
+        const catalogBudget =
+          catalogArrayOverhead(listedTools.length) +
+          listedTools.reduce((total, tool) => {
+            return (
+              total + fullCatalogBudgets[tool.name as FullCatalogToolName].total
+            );
+          }, 0);
+        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(catalogBudget);
+        expect(JSON.stringify(listedTools)).toContain('"$ref":"#/$defs/');
+        const safetyTerms = {
+          get_chat_messages: [
+            /nextContentCursor/iu,
+            /UTF-16/iu,
+            /does not mark read/iu,
+            /8 MiB/iu,
+          ],
+          search_chat_messages: [
+            /scanLimited/iu,
+            /do not prove absence/iu,
+            /does not mark read/iu,
+            /32 MiB/iu,
+          ],
+          get_chat_status: [
+            /waitMs/iu,
+            /current state, not a run outcome/iu,
+            /messagePage/iu,
+            /Disconnect cancels only the waiter/iu,
+            /retryAfterMs/iu,
+            /ready means current materialized output/iu,
+            /neither marks read nor changes or cancels/iu,
+          ],
+          list_agents: [/24 hours/iu, /visibility/iu],
+          list_models: [/admission/iu, /does not repair/iu, /model settings/iu],
+          list_chat_threads: [/does not mark read/iu, /not run completion/iu],
+          get_chat_thread: [
+            /neither reads messages nor marks read/iu,
+            /not prove/iu,
+          ],
+          create_chat_thread: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /admission/iu,
+          ],
+          update_chat_thread: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /active run/iu,
+          ],
+          send_chat_message: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /not proof/iu,
+            /get_chat_status/iu,
+          ],
+          revoke_queued_message: [/never cancels a run/iu, /not_revocable/iu],
+          cancel_run: [/neither revokes/iu, /prior effects/iu],
+        } as const;
+        expect(Object.keys(safetyTerms)).toStrictEqual(fullCatalogToolNames);
+        for (const tool of listedTools) {
+          const terms = safetyTerms[tool.name as keyof typeof safetyTerms];
+          expect(terms, `Unexpected tool ${tool.name}`).toBeDefined();
+          for (const term of terms ?? []) {
+            expect(tool.description).toMatch(term);
+          }
+        }
+      }
       const result = await accept(
         client().request({
           extraHeaders: protocolHeaders(token, "tools/call", modern),
@@ -5221,20 +6740,26 @@ describe("external MCP entry", () => {
         tools.tools.map((tool) => {
           return tool.name;
         }),
-      ).toStrictEqual([
-        "get_chat_messages",
-        "search_chat_messages",
-        "get_chat_status",
-        "list_agents",
-        "list_models",
-        "list_chat_threads",
-        "get_chat_thread",
-        "create_chat_thread",
-        "update_chat_thread",
-        "send_chat_message",
-        "revoke_queued_message",
-        "cancel_run",
-      ]);
+      ).toStrictEqual(fullCatalogToolNames);
+      const advertisedOutputValidators = new Map(
+        tools.tools.map((tool) => {
+          const validator = new AjvJsonSchemaValidator().getValidator(
+            tool.outputSchema as JsonSchemaType,
+          );
+          return [tool.name, validator] as const;
+        }),
+      );
+      const canonicalOutputValidators = new Map(
+        fullCatalogToolNames.map((toolName) => {
+          const validator = new AjvJsonSchemaValidator().getValidator(
+            canonicalJsonSchema(
+              catalogContracts[toolName].output,
+              "output",
+            ) as JsonSchemaType,
+          );
+          return [toolName, validator] as const;
+        }),
+      );
       const result = await sdk.callTool({
         name: "list_chat_threads",
         arguments: {},
@@ -5243,6 +6768,9 @@ describe("external MCP entry", () => {
         structuredContent: { threads: [], nextCursor: null },
       });
       const sent = await f.send("sdksearchneedle context handoff");
+      for (let index = 1; index < 5; index++) {
+        await f.send(`sdksearchneedle context handoff ${index}`, sent.threadId);
+      }
       await projectSearchMessages([sent.threadId]);
       const searched = await sdk.callTool({
         name: "search_chat_messages",
@@ -5268,7 +6796,10 @@ describe("external MCP entry", () => {
       expect(around).toMatchObject({
         structuredContent: {
           messages: [
-            { ref: match.ref, text: "sdksearchneedle context handoff" },
+            {
+              ref: match.ref,
+              text: expect.stringContaining("sdksearchneedle"),
+            },
           ],
         },
       });
@@ -5291,6 +6822,64 @@ describe("external MCP entry", () => {
         disposition: "rejected",
         runId: null,
       });
+      const status = await sdk.callTool({
+        name: "get_chat_status",
+        arguments: {
+          threadId: sent.threadId,
+          inputRef: receipt.inputRef,
+        },
+      });
+      expect(status).toMatchObject({
+        structuredContent: {
+          threadId: sent.threadId,
+          lifecycle: {
+            phase: "settled",
+            outcome: "rejected",
+            output: "none",
+          },
+          messages: null,
+          retryAfterMs: null,
+        },
+      });
+      const representativeResults = [
+        ["list_chat_threads", result],
+        ["search_chat_messages", searched],
+        ["get_chat_messages", around],
+        ["send_chat_message", submitted],
+        ["get_chat_status", status],
+      ] as const;
+      const measurements = representativeResults.map(
+        ([toolName, toolResult]) => {
+          const validateOutput = advertisedOutputValidators.get(toolName);
+          if (!validateOutput) {
+            throw new Error(`Missing output validator for ${toolName}`);
+          }
+          const validateCanonicalOutput =
+            canonicalOutputValidators.get(toolName);
+          if (!validateCanonicalOutput) {
+            throw new Error(
+              `Missing canonical output validator for ${toolName}`,
+            );
+          }
+          const advertisedValidation = validateOutput(
+            toolResult.structuredContent,
+          );
+          const canonicalValidation = validateCanonicalOutput(
+            toolResult.structuredContent,
+          );
+          expect(advertisedValidation).toMatchObject({ valid: true });
+          expect(canonicalValidation).toMatchObject({ valid: true });
+          expect(advertisedValidation.valid).toBe(canonicalValidation.valid);
+          return measureCompactSuccess(toolResult);
+        },
+      );
+      const baselineBytes = measurements.reduce((total, measurement) => {
+        return total + measurement.baselineBytes;
+      }, 0);
+      const compactBytes = measurements.reduce((total, measurement) => {
+        return total + measurement.compactBytes;
+      }, 0);
+      expect(compactBytes).toBeLessThanOrEqual(Math.floor(baselineBytes * 0.6));
       const missing = await sdk.callTool({
         name: "get_chat_thread",
         arguments: { threadId: randomUUID() },

@@ -127,7 +127,7 @@ const errorTestContract = c.router({
 });
 
 describe("createApp", () => {
-  const context = testContext();
+  const context = testContext({ connectorCatalog: true });
 
   it.each([
     [

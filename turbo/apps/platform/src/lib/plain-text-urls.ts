@@ -11,6 +11,35 @@ const ASCII_ALPHANUMERIC = /[A-Za-z0-9]/u;
 const CJK_LETTER =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
+const HTTP_SCHEMES = ["https://", "http://"] as const;
+
+/**
+ * Where the URL starts once the scheme anchorme skipped over is put back.
+ *
+ * anchorme only reads `https://` as a scheme at a word boundary. `1.https://x`
+ * therefore reports the bare host `x` instead, which the protocol filter then
+ * drops. Recover the scheme when the text right before the token is exactly
+ * that scheme, and the character before it cannot continue a word — so an
+ * ordinal such as `1.https://x` links while `ahttps://x` and `3https://x`
+ * stay text, matching anchorme's own reason for refusing them.
+ */
+function recoveredStart(text: string, start: number): number | undefined {
+  for (const scheme of HTTP_SCHEMES) {
+    const schemeStart = start - scheme.length;
+    if (
+      schemeStart < 0 ||
+      text.slice(schemeStart, start).toLowerCase() !== scheme
+    ) {
+      continue;
+    }
+    const previous = schemeStart > 0 ? text[schemeStart - 1] : undefined;
+    return previous !== undefined && ASCII_ALPHANUMERIC.test(previous)
+      ? undefined
+      : schemeStart;
+  }
+  return undefined;
+}
+
 /**
  * Drops a sentence that was typed straight onto the end of a pasted link.
  *
@@ -61,21 +90,24 @@ export function splitPlainTextUrls(text: string): readonly PlainTextSegment[] {
   const segments: PlainTextSegment[] = [];
   let offset = 0;
   for (const token of anchorme.list(text)) {
-    if (token.isURL !== true || token.confirmedByProtocol !== true) {
+    if (token.isURL !== true) {
       continue;
     }
-    if (!HTTP_PROTOCOL.test(token.protocol ?? "")) {
+    const start =
+      token.confirmedByProtocol === true
+        ? HTTP_PROTOCOL.test(token.protocol ?? "")
+          ? token.start
+          : undefined
+        : recoveredStart(text, token.start);
+    if (start === undefined || start < offset) {
       continue;
     }
-    if (token.start < offset) {
-      continue;
-    }
-    const url = withoutProseTail(text.slice(token.start, token.end));
-    if (token.start > offset) {
-      segments.push({ type: "text", value: text.slice(offset, token.start) });
+    const url = withoutProseTail(text.slice(start, token.end));
+    if (start > offset) {
+      segments.push({ type: "text", value: text.slice(offset, start) });
     }
     segments.push({ type: "url", value: url });
-    offset = token.start + url.length;
+    offset = start + url.length;
   }
   if (offset < text.length) {
     segments.push({ type: "text", value: text.slice(offset) });

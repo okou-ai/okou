@@ -81,7 +81,6 @@ describe("okou host publish command", () => {
   ])(
     "uploads a $label bundle and returns complete artifact URLs in text and JSON",
     async ({ privateArtifact, publicSlug }) => {
-      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
       const aliasUrl = `https://${publicSlug}.sites.example.com`;
       const artifactUrl = privateArtifact
         ? artifactReferencePath(
@@ -186,7 +185,6 @@ describe("okou host publish command", () => {
       expect(uploadedRobots).toBe(true);
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(stdout).not.toContain("upload-file");
       expect(stdout).toContain("✓ Hosted site deployed");
       expect(stdout).toContain(`Site: ${publicSlug}`);
       expect(stdout).toContain(`Artifact: ${expectedArtifactUrl}`);
@@ -218,7 +216,6 @@ describe("okou host publish command", () => {
       ]);
 
       const jsonOutput = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(jsonOutput).not.toContain("upload-file");
       const parsed = JSON.parse(jsonOutput) as Record<string, unknown>;
       expect(parsed).toMatchObject({
         publicSlug,

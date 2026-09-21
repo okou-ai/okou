@@ -3718,7 +3718,10 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   const pageSignal = useGet(pageSignal$);
   const standalonePwa = isStandalonePwa();
 
+  const measureLocator = useSet(thread.locator.measure$);
+
   const handleScroll = (event: ReactUIEvent<HTMLDivElement>) => {
+    measureLocator(pageSignal);
     if (
       event.currentTarget.scrollTop > CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX
     ) {
@@ -4197,10 +4200,7 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0"
-      style={{
-        paddingBottom: "max(0.5rem, var(--okou-composer-safe-bottom))",
-      }}
+      className="relative shrink-0 pb-safe-or-2"
     >
       {/* `overflow-y-auto` clips at this element's padding box. The composer's
           focus veil is offset down and blurred well past the gap the footer
@@ -5991,6 +5991,7 @@ function MessageAttachment({
             url: a.url,
             filename: a.filename,
             preview: a.signals,
+            shareAvailable: false,
           });
         }}
         posterClassName="h-full w-full"
@@ -6012,6 +6013,7 @@ function MessageAttachment({
         url={a.url}
         kind={a.kind}
         preview={a.signals}
+        shareAvailable={false}
         text$={a.signals.text$}
       />
     );
@@ -6023,6 +6025,7 @@ function MessageAttachment({
         url={a.url}
         contentType={a.contentType}
         preview={a.signals}
+        shareAvailable={false}
       />
     );
   }
@@ -6032,6 +6035,7 @@ function MessageAttachment({
       url={a.url}
       contentType={a.contentType}
       preview={a.signals}
+      shareAvailable={false}
     />
   );
 }
@@ -6549,6 +6553,7 @@ function UserMessageFileReference({
             url: signals.url,
             filename: part.filenameSnapshot,
             preview: signals,
+            shareAvailable: false,
           });
         }}
         posterClassName="h-full w-full"
@@ -6569,6 +6574,7 @@ function UserMessageFileReference({
         url={signals.url}
         kind={signals.kind}
         preview={signals}
+        shareAvailable={false}
       />
     );
   } else if (signals.kind === "audio") {
@@ -6578,6 +6584,7 @@ function UserMessageFileReference({
         url={signals.url}
         contentType={part.contentType}
         preview={signals}
+        shareAvailable={false}
       />
     );
   } else {
@@ -6586,6 +6593,7 @@ function UserMessageFileReference({
         contentType={part.contentType}
         filename={part.filenameSnapshot}
         preview={signals}
+        shareAvailable={false}
         url={signals.url}
       />
     );
@@ -7193,6 +7201,9 @@ function PagedUserMessage({
       url: attachment.url,
       filename: attachment.filename,
       preview: attachment.signals,
+      // The user's own attachment, not a published artifact: previewing it
+      // offers no sharing controls.
+      shareAvailable: false,
     });
   };
   const copyEvent = useSet(thread.copyEvent$);

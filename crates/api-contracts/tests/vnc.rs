@@ -1,6 +1,8 @@
 use api_contracts::generated::types::runners::vnc::{
-    CheckRequest, CheckRequestRunnerIdentity, CheckResponse, ResolveResponse,
-    ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
+    CheckRequest, CheckRequestRunnerIdentity, CheckResponse, ResolveRequest,
+    ResolveRequestRunnerIdentity, ResolveRequestSupportedProfile,
+    ResolveRequestSupportedProfileAuthMethod, ResolveRequestSupportedProfileSecurityType,
+    ResolveResponse, ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
     ResolveResponseResolvedSecurityX509VncTrust,
 };
 use serde_json::{Value, json};
@@ -26,10 +28,14 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     else {
         panic!("expected current authority");
     };
-    let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication;
+    let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication else {
+        panic!("expected classic VNC password");
+    };
     assert_eq!(password.expose(), " pass  ");
     assert_eq!(generation, 5);
-    let ResolveResponseResolvedSecurity::X509Vnc { trust } = security;
+    let ResolveResponseResolvedSecurity::X509Vnc { trust } = security else {
+        panic!("expected X509Vnc security");
+    };
     assert!(matches!(
         trust,
         ResolveResponseResolvedSecurityX509VncTrust::System
@@ -41,11 +47,46 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     let ResolveResponse::Resolved { security, .. } = response else {
         panic!("expected custom trust");
     };
-    let ResolveResponseResolvedSecurity::X509Vnc { trust } = security;
+    let ResolveResponseResolvedSecurity::X509Vnc { trust } = security else {
+        panic!("expected X509Vnc security");
+    };
     let ResolveResponseResolvedSecurityX509VncTrust::CustomCa { ca_bundle } = trust else {
         panic!("expected custom CA");
     };
     assert_eq!(ca_bundle, "owner-ca-bundle");
+
+    let plain: ResolveResponse = serde_json::from_value(json!({
+        "outcome": "resolved", "host": "plain.example.com", "port": 5900,
+        "generation": 6,
+        "authentication": {
+            "method": "username_password",
+            "username": " operator界 ",
+            "password": " päss 界 "
+        },
+        "security": {"type": "x509_plain", "trust": {"mode": "system"}}
+    }))
+    .unwrap();
+    let ResolveResponse::Resolved {
+        authentication,
+        security,
+        ..
+    } = plain
+    else {
+        panic!("expected current Plain authority");
+    };
+    let ResolveResponseResolvedAuthentication::UsernamePassword { username, password } =
+        authentication
+    else {
+        panic!("expected Plain credentials");
+    };
+    assert_eq!(username, " operator界 ");
+    assert_eq!(password.expose(), " päss 界 ");
+    assert!(matches!(
+        security,
+        ResolveResponseResolvedSecurity::X509Plain {
+            trust: ResolveResponseResolvedSecurityX509VncTrust::System
+        }
+    ));
 }
 
 #[test]
@@ -77,11 +118,19 @@ fn private_handoff_rejects_unknown_tags_and_mixed_variant_fields() {
                 .is_ok()
         );
     }
+    for authentication in [
+        json!({"method":"vnc_password","username":"operator","password":"secret"}),
+        json!({"method":"username_password","password":"secret"}),
+    ] {
+        let mut invalid = resolved();
+        invalid["authentication"] = authentication;
+        assert!(serde_json::from_value::<ResolveResponse>(invalid).is_err());
+    }
 }
 
 #[test]
 fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
-    for password in ["", "secret-canary-over-eight-bytes"] {
+    for password in ["".to_owned(), format!("secret-canary{}", "界".repeat(342))] {
         let mut invalid = resolved();
         invalid["authentication"]["password"] = json!(password);
         let error = serde_json::from_str::<ResolveResponse>(&invalid.to_string())
@@ -104,6 +153,34 @@ fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
         "\"password\":\"first\",\"password\":\"second\"",
     );
     assert!(serde_json::from_str::<ResolveResponse>(&duplicate_password).is_err());
+}
+
+#[test]
+fn resolve_request_advertises_only_the_two_exact_supported_pairs() {
+    let request = ResolveRequest {
+        connection_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+        runner_identity: ResolveRequestRunnerIdentity {
+            runner_id: "00000000-0000-4000-8000-000000000002".to_owned(),
+            heartbeat_generation: 5_000_000_000,
+        },
+        supported_profiles: vec![
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+            },
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+            },
+        ],
+    };
+    assert_eq!(
+        serde_json::to_value(request).unwrap()["supportedProfiles"],
+        json!([
+            {"authMethod":"vnc_password","securityType":"x509_vnc"},
+            {"authMethod":"username_password","securityType":"x509_plain"}
+        ])
+    );
 }
 
 #[test]

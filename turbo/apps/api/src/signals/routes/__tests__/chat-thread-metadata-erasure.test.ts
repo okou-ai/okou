@@ -7,7 +7,9 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
 import {
+  classifyErasureFenceStatement,
   closeErasureSubjectFixture,
+  erasureFenceStatementKinds,
   removeErasureSubjectsFixture,
   transferAgentOrganizationFixture,
   transferAgentOwnerFixture,
@@ -35,7 +37,6 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const computerUse = createComputerUseBddApi(context);
 const runs = createRunsApi(context);
-const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 const CASE_TIMEOUT_MS = 30_000;
 
 interface MetadataFixture {
@@ -313,33 +314,12 @@ async function captureSqlPath(
   }, context.signal);
 }
 
-function classifySql(statement: string): string {
-  if (statement.startsWith("begin")) {
-    return "BEGIN READ COMMITTED";
-  }
-  if (statement === "commit") {
-    return "COMMIT";
-  }
-  if (statement === "rollback") {
-    return "ROLLBACK";
-  }
-  if (statement.includes("set_config('lock_timeout'")) {
-    return "LOCK TIMEOUT";
-  }
-  if (statement.includes("set_config('statement_timeout'")) {
-    return "STATEMENT TIMEOUT";
-  }
+/** Only what this route owns. The route's identity statement carries the
+ * folded closure predicate, so it must be recognized before the shared fence
+ * classifier, which would otherwise see that subquery and call it a lookup. */
+function classifyMetadataSql(statement: string): string | null {
   if (statement.includes('from "chat_threads" left join "agents"')) {
     return "CANONICAL IDENTITY BY THREAD PK";
-  }
-  if (statement.includes("erasure_isolation_probe")) {
-    return "B1 ISOLATION + FIRST SHARED LOCK";
-  }
-  if (statement.includes("pg_advisory_xact_lock_shared")) {
-    return "B1 SHARED LOCK";
-  }
-  if (statement.includes('from "account_erasure_jobs"')) {
-    return "B1 CLOSED LOOKUP";
   }
   if (
     statement.includes('from "agents"') &&
@@ -359,7 +339,15 @@ function classifySql(statement: string): string {
   ) {
     return "FIXED METADATA PROJECTION BY THREAD PK";
   }
-  return statement;
+  return null;
+}
+
+function classifySql(statement: string): string {
+  return (
+    classifyMetadataSql(statement) ??
+    classifyErasureFenceStatement(statement) ??
+    statement
+  );
 }
 
 function sqlShape(
@@ -589,13 +577,13 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     CASE_TIMEOUT_MS,
   );
 
-  it("makes closure wait for an admitted metadata read and then denies later reads", async () => {
+  it("lets closure commit while a metadata read is in flight, then denies later reads", async () => {
     const fixture = await createMetadataFixture();
-    const unrelated = await createMetadataFixture();
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
+        admission: "read",
         work: async (barrier) => {
           return await withOperationOwnership(
             barrier.release,
@@ -608,28 +596,21 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
                 ),
               );
               await waitForBarrierEntry(barrier.entered, reading);
+              // The read holds no advisory lock, so closure is not blocked by
+              // it. Making closure wait for a statement that creates nothing
+              // bought no resurrection safety, and this read was admitted
+              // before the decision existed, so serving it stays correct.
               const closing = startClosure(owner, {
                 subjectKind: "user",
                 subjectId: fixture.actor.userId,
               });
-              await expect
-                .poll(barrier.blockedWaiterCount, BLOCKED)
-                .toBeGreaterThanOrEqual(1);
-              const unrelatedReading = owner.start(
-                chat.requestReadThreadMetadata(
-                  unrelated.actor,
-                  unrelated.threadId,
-                  [200],
-                ),
-              );
-              expect(valueOf(await unrelatedReading.settled)).toMatchObject({
-                status: 200,
-              });
+              const closed = valueOf(await closing.settled);
+              await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
               barrier.release();
               expect(valueOf(await reading.settled)).toMatchObject({
                 status: 200,
               });
-              return valueOf(await closing.settled);
+              return closed;
             },
           );
         },
@@ -640,9 +621,8 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     await expectMetadata404(fixture);
   });
 
-  it("makes metadata wait for a closure-first commit, lets unrelated reads progress, then denies", async () => {
+  it("serves a metadata read that starts before a closure commits, then denies after it", async () => {
     const fixture = await createMetadataFixture();
-    const unrelated = await createMetadataFixture();
     await withErasureSubjectClosureCommitBarrierFixture(async (barrier) => {
       await withOperationOwnership(barrier.release, async (owner) => {
         const closing = startClosure(owner, {
@@ -650,39 +630,33 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
           subjectId: fixture.actor.userId,
         });
         await waitForBarrierEntry(barrier.entered, closing);
+        // Without the shared advisory lock the read never waits on the
+        // uncommitted closure, and under READ COMMITTED it cannot observe an
+        // uncommitted decision either, so it is served.
         const reading = owner.start(
           chat.requestReadThreadMetadata(
             fixture.actor,
             fixture.threadId,
-            [404],
-          ),
-        );
-        await expect
-          .poll(barrier.blockedWaiterCount, BLOCKED)
-          .toBeGreaterThanOrEqual(1);
-        const unrelatedReading = owner.start(
-          chat.requestReadThreadMetadata(
-            unrelated.actor,
-            unrelated.threadId,
             [200],
           ),
         );
-        expect(valueOf(await unrelatedReading.settled)).toMatchObject({
-          status: 200,
-        });
+        expect(valueOf(await reading.settled)).toMatchObject({ status: 200 });
+        await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
         barrier.release();
         valueOf(await closing.settled);
-        expect(valueOf(await reading.settled)).toMatchObject({ status: 404 });
       });
     }, context.signal);
+
+    await expectMetadata404(fixture);
   });
 
-  it("serializes concurrent same-thread metadata GETs without an upgrade cycle", async () => {
+  it("runs concurrent same-thread metadata GETs without serializing them", async () => {
     const fixture = await createMetadataFixture();
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
+        admission: "read",
         work: async (barrier) => {
           await withOperationOwnership(barrier.release, async (owner) => {
             const first = owner.start(
@@ -693,6 +667,10 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
               ),
             );
             await waitForBarrierEntry(barrier.entered, first);
+            // #35311 had to take the thread row FOR UPDATE here to break a KEY
+            // SHARE -> UPDATE upgrade cycle between two of these GETs. Neither
+            // reader locks the row now, so the second one completes while the
+            // first is still paused inside its own transaction.
             const second = owner.start(
               chat.requestReadThreadMetadata(
                 fixture.actor,
@@ -700,12 +678,10 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
                 [200],
               ),
             );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+            const secondResult = valueOf(await second.settled);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
             barrier.release();
             const firstResult = valueOf(await first.settled);
-            const secondResult = valueOf(await second.settled);
             expect(firstResult.body).toStrictEqual(secondResult.body);
           });
         },
@@ -714,57 +690,41 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     );
   });
 
-  it.each(["metadata-first", "writer-first"] as const)(
-    "completes a same-thread metadata GET and rename in $0 order without deadlock",
-    async (order) => {
+  it(
+    "completes a same-thread metadata GET while a rename holds the thread row",
+    async () => {
       const fixture = await createMetadataFixture();
       await withChatThreadContentBarrierFixture(
         {
           chatThreadId: fixture.threadId,
           stopAt: "commit",
+          admission: "write",
           work: async (barrier) => {
             await withOperationOwnership(barrier.release, async (owner) => {
-              const first = owner.start(
-                order === "metadata-first"
-                  ? chat
-                      .requestReadThreadMetadata(
-                        fixture.actor,
-                        fixture.threadId,
-                        [200],
-                      )
-                      .then(() => {
-                        return undefined;
-                      })
-                  : chat.renameThread(
-                      fixture.actor,
-                      fixture.threadId,
-                      "Writer won",
-                    ),
+              const renaming = owner.start(
+                chat.renameThread(
+                  fixture.actor,
+                  fixture.threadId,
+                  "Writer won",
+                ),
               );
-              await waitForBarrierEntry(barrier.entered, first);
-              const second = owner.start(
-                order === "metadata-first"
-                  ? chat.renameThread(
-                      fixture.actor,
-                      fixture.threadId,
-                      "Writer won",
-                    )
-                  : chat
-                      .requestReadThreadMetadata(
-                        fixture.actor,
-                        fixture.threadId,
-                        [200],
-                      )
-                      .then(() => {
-                        return undefined;
-                      }),
+              await waitForBarrierEntry(barrier.entered, renaming);
+              // The rename retains `agents` KEY SHARE and the thread row
+              // through COMMIT. The reader takes neither, so it is served the
+              // pre-rename state instead of waiting behind the writer.
+              const reading = owner.start(
+                chat.requestReadThreadMetadata(
+                  fixture.actor,
+                  fixture.threadId,
+                  [200],
+                ),
               );
-              await expect
-                .poll(barrier.blockedWaiterCount, BLOCKED)
-                .toBeGreaterThanOrEqual(1);
+              expect(valueOf(await reading.settled)).toMatchObject({
+                status: 200,
+              });
+              await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
               barrier.release();
-              valueOf(await first.settled);
-              valueOf(await second.settled);
+              valueOf(await renaming.settled);
             });
           },
         },
@@ -784,6 +744,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       {
         chatThreadId: fixture.threadId,
         stopAt: "admission",
+        admission: "read",
         work: async (barrier) => {
           await withOperationOwnership(barrier.release, async (owner) => {
             const reading = owner.start(
@@ -823,6 +784,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       {
         chatThreadId: fixture.threadId,
         stopAt: "admission",
+        admission: "read",
         work: async (barrier) => {
           await withOperationOwnership(barrier.release, async (owner) => {
             const reading = owner.start(
@@ -863,7 +825,8 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       await withChatThreadContentBarrierFixture(
         {
           chatThreadId: fixture.threadId,
-          stopAt: "agent-lock",
+          stopAt: "admission",
+          admission: "read",
           work: async (barrier) => {
             await withOperationOwnership(barrier.release, async (owner) => {
               const reading = owner.start(
@@ -897,7 +860,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     },
   );
 
-  it("retains Agent identity against owner transfer until the read commits", async () => {
+  it("does not block an Agent owner transfer while the read is in flight", async () => {
     const fixture = await createMetadataFixture();
     const nextOwner = `user_${randomUUID()}`;
 
@@ -905,6 +868,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
+        admission: "read",
         work: async (barrier) => {
           await withOperationOwnership(barrier.release, async (owner) => {
             const reading = owner.start(
@@ -915,18 +879,20 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
               ),
             );
             await waitForBarrierEntry(barrier.entered, reading);
+            // The read no longer retains `agents` KEY SHARE, so a transfer is
+            // not held behind it. The read is already past its own
+            // revalidation here, which is its linearization point, so it
+            // still reports the identity it was admitted for.
             const transferring = owner.start(
               transferAgentOwnerFixture({
                 agentId: fixture.agentId,
                 owner: nextOwner,
               }),
             );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+            valueOf(await transferring.settled);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
             barrier.release();
             valueOf(await reading.settled);
-            valueOf(await transferring.settled);
           });
         },
       },
@@ -938,31 +904,36 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     ).resolves.toMatchObject({ status: 200 });
   });
 
-  it("retains the thread against production deletion until commit, then returns missing", async () => {
+  it("does not block thread deletion, and returns missing once it commits", async () => {
     const fixture = await createMetadataFixture();
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
-        stopAt: "commit",
+        stopAt: "admission",
+        admission: "read",
         work: async (barrier) => {
           await withOperationOwnership(barrier.release, async (owner) => {
             const reading = owner.start(
               chat.requestReadThreadMetadata(
                 fixture.actor,
                 fixture.threadId,
-                [200],
+                [404],
               ),
             );
             await waitForBarrierEntry(barrier.entered, reading);
+            // Deletion takes the thread row FOR UPDATE. The paused read holds
+            // no lock, so the delete commits immediately; the read's own
+            // revalidation then finds the thread gone and reports missing
+            // rather than projecting a deleted thread.
             const deleting = owner.start(
               chat.deleteThread(fixture.actor, fixture.threadId),
             );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-            barrier.release();
-            valueOf(await reading.settled);
             valueOf(await deleting.settled);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
+            barrier.release();
+            expect(valueOf(await reading.settled)).toMatchObject({
+              status: 404,
+            });
           });
         },
       },
@@ -988,6 +959,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         {
           chatThreadId: fixture.threadId,
           stopAt: "metadata-read",
+          admission: "read",
           work: async (barrier) => {
             await withOperationOwnership(barrier.release, async (owner) => {
               owner.abortOnExit(controller);
@@ -1034,7 +1006,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     CASE_TIMEOUT_MS,
   );
 
-  it("propagates holder setup and scoped thread-lock failures without fabricating 404", async () => {
+  it("propagates holder setup failures and is not blocked by a held thread row", async () => {
     const fixture = await createMetadataFixture();
     await expect(
       holdChatThreadRowLockFixture({
@@ -1052,20 +1024,13 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     });
     await withOperationOwnership(holder.release, async (owner) => {
       const holding = owner.start(holder.done);
+      // This route used to wait for the thread row and surface the bounded
+      // `lock_timeout` as a 500. It takes no row lock now, so a held row is
+      // simply not its problem: it neither waits nor fabricates a 404.
       const reading = owner.start(
-        chat.requestReadThreadMetadata(
-          fixture.actor,
-          fixture.threadId,
-          [200, 404],
-        ),
+        chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
       );
-      await reading.acceptFailureAfter((error) => {
-        expect(error).toStrictEqual(
-          expect.objectContaining({
-            message: expect.stringMatching(/Unknown response status 500/),
-          }),
-        );
-      });
+      expect(valueOf(await reading.settled)).toMatchObject({ status: 200 });
       holder.release();
       valueOf(await holding.settled);
     });
@@ -1092,6 +1057,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
             {
               chatThreadId: fixture.threadId,
               stopAt: "commit",
+              admission: "read",
               work: async (barrier) => {
                 await withOperationOwnership(barrier.release, async (owner) => {
                   earlyRead = owner.start(
@@ -1106,9 +1072,10 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
                     subjectKind: "user",
                     subjectId: fixture.actor.userId,
                   });
-                  await expect
-                    .poll(barrier.blockedWaiterCount, BLOCKED)
-                    .toBeGreaterThanOrEqual(1);
+                  // Closure is not held behind the lock-free read, so joining
+                  // its settlement is what proves both operations are in
+                  // flight before the deliberate exit.
+                  valueOf(await earlyClosure.settled);
                   throw new Error("deliberate read-first callback exit");
                 });
               },
@@ -1125,16 +1092,16 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
                 subjectId: fixture.actor.userId,
               });
               await waitForBarrierEntry(barrier.entered, earlyClosure);
+              // The read neither waits for the uncommitted closure nor can
+              // observe it under READ COMMITTED, so it settles on its own.
               earlyRead = owner.start(
                 chat.requestReadThreadMetadata(
                   fixture.actor,
                   fixture.threadId,
-                  [404],
+                  [200],
                 ),
               );
-              await expect
-                .poll(barrier.blockedWaiterCount, BLOCKED)
-                .toBeGreaterThanOrEqual(1);
+              valueOf(await earlyRead.settled);
               throw new Error("deliberate closure-first callback exit");
             });
           }, context.signal),
@@ -1144,9 +1111,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       if (!earlyRead || !earlyClosure) {
         throw new Error("Expected both early-exit operations to start");
       }
-      expect(valueOf(await earlyRead.settled)).toMatchObject({
-        status: order === "read-first" ? 200 : 404,
-      });
+      expect(valueOf(await earlyRead.settled)).toMatchObject({ status: 200 });
       const closed = valueOf(await earlyClosure.settled);
       await removeErasureSubjectsFixture([closed.jobId]);
 
@@ -1170,6 +1135,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         {
           chatThreadId: fixture.threadId,
           stopAt: "commit",
+          admission: "read",
           work: async (barrier) => {
             await withOperationOwnership(barrier.release, async (owner) => {
               pending = owner.start(
@@ -1217,6 +1183,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       {
         chatThreadId: fixture.threadId,
         stopAt: "metadata-read",
+        admission: "read",
         work: async (barrier) => {
           await withOperationOwnership(barrier.release, async (owner) => {
             const failedBeforeEntry = owner.start(
@@ -1284,6 +1251,7 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         {
           chatThreadId: fixture.threadId,
           stopAt: "metadata-read",
+          admission: "read",
           work: () => {
             return Promise.reject(new Error("setup must not enter work"));
           },
@@ -1310,27 +1278,24 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     expect(open.response.status).toBe(200);
     expect(missing.response.status).toBe(404);
     expect(closed.response.status).toBe(404);
+    // Admission is folded into the identity statement this route already
+    // issues, so the open path costs six statements where it cost twelve, and
+    // an open, missing or closed subject is decided without one advisory lock
+    // or one extra round trip.
     expect(sqlShape(open.attempts)).toStrictEqual([
       [
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
-        "CANONICAL IDENTITY BY THREAD PK",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
-        "AGENT KEY SHARE",
-        "THREAD UPDATE",
+        ...erasureFenceStatementKinds("folded"),
         "CANONICAL IDENTITY BY THREAD PK",
         "FIXED METADATA PROJECTION BY THREAD PK",
+        "CANONICAL IDENTITY BY THREAD PK",
         "COMMIT",
       ],
     ]);
     expect(sqlShape(missing.attempts)).toStrictEqual([
       [
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
+        ...erasureFenceStatementKinds("folded"),
         "CANONICAL IDENTITY BY THREAD PK",
         "COMMIT",
       ],
@@ -1338,19 +1303,23 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     expect(sqlShape(closed.attempts)).toStrictEqual([
       [
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
+        ...erasureFenceStatementKinds("folded"),
         "CANONICAL IDENTITY BY THREAD PK",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
         "COMMIT",
       ],
     ]);
+    expect(
+      open.attempts
+        .flat()
+        .concat(closed.attempts.flat())
+        .some((statement) => {
+          return statement.includes("pg_advisory_xact_lock");
+        }),
+    ).toBeFalsy();
 
     const openSql = open.attempts.flat().join("\n");
     expect(openSql).toContain('where "chat_threads"."id" =');
-    expect(openSql).toContain('where "agents"."id" =');
+    expect(openSql).toContain('on "chat_threads"."agent_id" = "agents"."id"');
     expect(openSql).toContain('from "account_erasure_jobs"');
     expect(openSql).not.toContain("select *");
     // LIMIT 1/cardinality and primary-key predicates bound returned rows and
@@ -1395,21 +1364,15 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     expect(sqlShape(retry.attempts)).toStrictEqual([
       [
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
+        ...erasureFenceStatementKinds("folded"),
         "CANONICAL IDENTITY BY THREAD PK",
-        "B1 ISOLATION + FIRST SHARED LOCK",
-        "B1 SHARED LOCK",
-        "B1 CLOSED LOOKUP",
-        "AGENT KEY SHARE",
-        "THREAD UPDATE",
+        "FIXED METADATA PROJECTION BY THREAD PK",
         "CANONICAL IDENTITY BY THREAD PK",
         "ROLLBACK",
       ],
       [
         "BEGIN READ COMMITTED",
-        "LOCK TIMEOUT",
-        "STATEMENT TIMEOUT",
+        ...erasureFenceStatementKinds("folded"),
         "CANONICAL IDENTITY BY THREAD PK",
         "COMMIT",
       ],

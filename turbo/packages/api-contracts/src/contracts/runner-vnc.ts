@@ -21,17 +21,23 @@ const commonRequestSchema = z
   })
   .strict();
 
+const supportedProfileSchema = z
+  .object({
+    authMethod: z.enum(["vnc_password", "username_password"]),
+    securityType: z.enum(["x509_vnc", "x509_plain"]),
+  })
+  .strict()
+  .refine((profile) => {
+    return (
+      (profile.authMethod === "vnc_password" &&
+        profile.securityType === "x509_vnc") ||
+      (profile.authMethod === "username_password" &&
+        profile.securityType === "x509_plain")
+    );
+  }, "VNC Runner profiles require an exact authentication/security pair");
+
 const resolveRequestSchema = commonRequestSchema.extend({
-  supportedProfiles: z
-    .array(
-      z
-        .object({
-          authMethod: z.literal("vnc_password"),
-          securityType: z.literal("x509_vnc"),
-        })
-        .strict(),
-    )
-    .max(16),
+  supportedProfiles: z.array(supportedProfileSchema).max(16),
 });
 const unavailableSchema = z
   .object({ outcome: z.literal("unavailable") })

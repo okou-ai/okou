@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mockEnv } from "../../../lib/env";
 
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -11,6 +12,7 @@ import {
   seedOrgMetadata,
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   createBddApi,
   expectApiError,
@@ -30,7 +32,7 @@ import {
 } from "./helpers/stripe-billing-webhook";
 import { webhooksAgentFirewallAuthRoutes } from "../webhooks-agent-firewall-auth";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 
 function usageProvider(): string {
   return `usage-allowance-${randomUUID()}`;
@@ -613,7 +615,8 @@ describe("Usage Allowance", () => {
       agentId,
       "admitted before suspension",
     );
-    await seedOrgMetadata({ orgId, tier: "pro-suspend", credits: 1 });
+    await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
+    await upsertOrgPlanEntitlementFixture({ orgId, status: "suspended" });
     const client = setupApp({
       context,
       routes: webhooksAgentFirewallAuthRoutes,
@@ -637,6 +640,9 @@ describe("Usage Allowance", () => {
   });
 
   it("fails an unfunded built-in queue promotion and continues to BYOK", async () => {
+    // Two active runs keep the third queued, independent of the plan's own
+    // concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, agentId } = await builtInAllowanceActor({ credits: 1 });
     const api = createRunsApi(context);
     const first = await createBuiltInRun(actor, agentId, "active built-in one");

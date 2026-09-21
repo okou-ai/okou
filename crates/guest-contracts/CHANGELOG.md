@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.15.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.0...guest-contracts-v0.15.1) (2026-09-21)
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.24...guest-contracts-v0.15.0) (2026-09-21)
+
+
+### Features
+
+* **runner:** report which guard rejected oom containment ([#35745](https://github.com/okou-ai/okou/issues/35745)) ([764e859](https://github.com/okou-ai/okou/commit/764e8598cf83dc1750a3a1b9fc6dbac35be2e362)), closes [#35725](https://github.com/okou-ai/okou/issues/35725)
+
+## [0.14.24](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.23...guest-contracts-v0.14.24) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+## [0.14.23](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.22...guest-contracts-v0.14.23) (2026-09-20)
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Performance Improvements
+
+* **runner:** observe storage history overlap eligibility ([#35567](https://github.com/okou-ai/okou/issues/35567)) ([14a43e3](https://github.com/okou-ai/okou/commit/14a43e3202e1f74771be2e88821982983c200e9f))
+
 ## [0.14.22](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.21...guest-contracts-v0.14.22) (2026-09-20)
 
 

@@ -249,10 +249,18 @@ function groupEventsForRunWorkDisplay(
   workAnchorEventIds: ReadonlySet<string>,
 ): ChatEventGroup[] {
   const groups: ChatEventGroup[] = [];
+  let lastGroupHoldsAnchor = false;
   for (const event of events) {
     const role = chatEventCompatibilityRole(event.eventType);
-    const forceStandalone = workAnchorEventIds.has(event.id);
+    const isAnchor = workAnchorEventIds.has(event.id);
     const last = groups[groups.length - 1];
+    // A group built around a work anchor renders that anchor, the work folded
+    // behind it and its run's status tail. An event with no run identity
+    // belongs to no run, so folding it in after the anchor would leave it with
+    // nowhere to render. Runless output is a turn of its own: it opens its own
+    // group, and keeps this run's work history and run identity off itself.
+    const forceStandalone =
+      isAnchor || (event.runId === undefined && lastGroupHoldsAnchor);
 
     if (!forceStandalone && last && last.role === role) {
       last.events.push(event);
@@ -264,6 +272,7 @@ function groupEventsForRunWorkDisplay(
       role,
       events: [event],
     });
+    lastGroupHoldsAnchor = isAnchor;
   }
   return groups;
 }
@@ -801,37 +810,4 @@ export function buildRunWorkFolding(
       }),
     ),
   };
-}
-
-/** Match the event ordering inside each outer page row after fold expansion. */
-export function applyRunWorkExpansion(
-  groups: readonly ChatEventGroup[],
-  folding: RunWorkFolding | null,
-  expandedKeys: ReadonlySet<string>,
-): ChatEventGroup[] {
-  const visibleGroups = folding?.visibleGroups ?? groups;
-  return visibleGroups.map((group) => {
-    const section = runWorkSectionForGroup(folding, group);
-    if (section === null || !expandedKeys.has(section.key)) {
-      return group;
-    }
-    const anchorIndex = group.events.findIndex((event) => {
-      return event.id === section.anchorEventId;
-    });
-    const anchorEndIndex =
-      anchorIndex === -1 ? group.events.length : anchorIndex + 1;
-    return {
-      ...group,
-      events: [
-        ...section.hiddenGroups.flatMap((hiddenGroup) => {
-          return hiddenGroup.events;
-        }),
-        ...group.events.slice(0, anchorEndIndex),
-        ...section.hiddenGroupsAfterAnchor.flatMap((hiddenGroup) => {
-          return hiddenGroup.events;
-        }),
-        ...group.events.slice(anchorEndIndex),
-      ],
-    };
-  });
 }

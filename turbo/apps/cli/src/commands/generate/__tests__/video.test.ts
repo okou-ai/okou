@@ -88,8 +88,7 @@ function stubBillingStatus(
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
       scheduledChange: null,
-      hasSubscription:
-        tier !== "free" && tier !== "limited-free-1" && tier !== "pro-suspend",
+      hasSubscription: tier !== "free" && tier !== "limited-free-1",
       autoRecharge: {
         enabled: false,
         threshold: null,
@@ -161,7 +160,6 @@ describe("okou generate video command", () => {
 
   it("publishes a generated video while returning its stable App URL", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
     const artifact = serveGenerationVisibility("video.mp4", "public");
     server.use(
       http.post(`${VIDEO_URL}/private`, async ({ request }) => {
@@ -170,7 +168,6 @@ describe("okou generate video command", () => {
         });
         return HttpResponse.json({
           ...VIDEO_RESULT,
-          privateArtifacts: true,
           id: GENERATION_ARTIFACT_ID,
           url: artifact.reference,
         });
@@ -192,7 +189,6 @@ describe("okou generate video command", () => {
       ownerUrl: artifact.ownerUrl,
       visibility: "public",
       previewMarkdownBlock: `![${VIDEO_RESULT.filename}](<${artifact.url}>)`,
-      artifactPresentationContext: expect.not.stringContaining("upload-file"),
     });
     expect(output).not.toContain(artifact.sharingUrl);
   });
@@ -507,7 +503,7 @@ describe("okou generate video command", () => {
     );
     expect(stdout).toContain('"videoTemplates": [');
     expect(stdout).toContain('"id": "video-template:epic-grandeur"');
-    expect(stdout).toContain("vm0-ai/vm0-skills");
+    expect(stdout).toContain("okou-ai/vm0-skills");
     expect(stdout).not.toContain("nexu-io/open-design");
     expect(stdout).not.toContain("skill:presentation-deck-tools");
     expect(stdout).not.toContain("image-style:");

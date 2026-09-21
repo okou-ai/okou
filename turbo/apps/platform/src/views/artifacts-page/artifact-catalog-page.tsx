@@ -1,4 +1,4 @@
-import type { UIEvent as ReactUIEvent } from "react";
+import type { ReactNode, UIEvent as ReactUIEvent } from "react";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   AlertTriangle,
@@ -56,24 +56,31 @@ const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "file",
 ];
 
-function ArtifactKindIcon({ kind }: { readonly kind: ArtifactCatalogKind }) {
+function artifactKindIcon(kind: ArtifactCatalogKind, size: number): ReactNode {
+  return kind === "presentation" ? (
+    <Presentation size={size} />
+  ) : kind === "hosted-site" ? (
+    <Globe size={size} />
+  ) : kind === "image" ? (
+    <Image size={size} />
+  ) : kind === "video" ? (
+    <Video size={size} />
+  ) : kind === "avatar" ? (
+    <User size={size} />
+  ) : kind === "shared-thread" ? (
+    <MessagesSquare size={size} />
+  ) : (
+    <File size={size} />
+  );
+}
+
+/**
+ * The accessible name of whichever element carries a card's kind mark. Exactly
+ * one element carries it: the corner badge, or the fallback cover when that
+ * cover is the kind's own icon.
+ */
+function useArtifactKindIconLabel(kind: ArtifactCatalogKind): string {
   const { t } = useTranslation();
-  const icon =
-    kind === "presentation" ? (
-      <Presentation size={16} />
-    ) : kind === "hosted-site" ? (
-      <Globe size={16} />
-    ) : kind === "image" ? (
-      <Image size={16} />
-    ) : kind === "video" ? (
-      <Video size={16} />
-    ) : kind === "avatar" ? (
-      <User size={16} />
-    ) : kind === "shared-thread" ? (
-      <MessagesSquare size={16} />
-    ) : (
-      <File size={16} />
-    );
   const kindLabel =
     kind === "presentation"
       ? t(($) => {
@@ -103,27 +110,41 @@ function ArtifactKindIcon({ kind }: { readonly kind: ArtifactCatalogKind }) {
                     return $.artifacts.kinds.file;
                   });
 
+  return t(
+    ($) => {
+      return $.artifacts.catalog.kindIcon;
+    },
+    { kind: kindLabel },
+  );
+}
+
+function ArtifactKindIcon({ kind }: { readonly kind: ArtifactCatalogKind }) {
+  const label = useArtifactKindIconLabel(kind);
   return (
     <span
-      aria-label={t(
-        ($) => {
-          return $.artifacts.catalog.kindIcon;
-        },
-        { kind: kindLabel },
-      )}
+      role="img"
+      aria-label={label}
       data-testid={`artifact-catalog-kind-icon-${kind}`}
       className="pointer-events-none absolute left-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white shadow-sm ring-1 ring-white/15"
     >
-      {icon}
+      {artifactKindIcon(kind, 16)}
     </span>
   );
 }
 
+/**
+ * The cover a card falls back to when it has no thumbnail to show. A file
+ * shows its format, which the generic corner badge does not carry. Every other
+ * kind has no such sub-type, so it shows the kind's own mark instead and the
+ * card drops the badge rather than stamping the same icon twice.
+ */
 function ArtifactCatalogFallbackPreview({
   artifact,
 }: {
   readonly artifact: CatalogArtifact;
 }) {
+  const kindIconLabel = useArtifactKindIconLabel(artifact.kind);
+  const showsFileFormat = artifact.kind === "file";
   return (
     <div
       className={cn(
@@ -133,11 +154,24 @@ function ArtifactCatalogFallbackPreview({
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.45),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
       <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent" />
-      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-foreground/10 bg-background/90 shadow-sm transition-transform duration-200 group-hover:scale-105">
-        <FilePreviewIcon
-          filename={artifact.title}
-          testId="artifact-catalog-file-preview-icon"
-        />
+      <div
+        role={showsFileFormat ? undefined : "img"}
+        aria-label={showsFileFormat ? undefined : kindIconLabel}
+        data-testid={
+          showsFileFormat
+            ? undefined
+            : `artifact-catalog-kind-cover-${artifact.kind}`
+        }
+        className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-foreground/10 bg-background/90 text-muted-foreground shadow-sm transition-transform duration-200 group-hover:scale-105"
+      >
+        {showsFileFormat ? (
+          <FilePreviewIcon
+            filename={artifact.title}
+            testId="artifact-catalog-file-preview-icon"
+          />
+        ) : (
+          artifactKindIcon(artifact.kind, 30)
+        )}
       </div>
     </div>
   );
@@ -182,13 +216,18 @@ function ArtifactCatalogCard({
     artifact.videoSourceUrl && !thumbnailPending ? (
       <ArtifactCatalogVideoPreview artifact={artifact} />
     ) : null;
-  const fallbackPreview =
-    sourceVideo ??
-    (artifact.kind === "file" ? (
-      <ArtifactCatalogFallbackPreview artifact={artifact} />
-    ) : (
-      <div className="flex h-full w-full items-center justify-center bg-muted/30" />
-    ));
+  const fallbackPreview = sourceVideo ?? (
+    <ArtifactCatalogFallbackPreview artifact={artifact} />
+  );
+  // A broken thumbnail hands the cover back to the fallback, so the badge
+  // follows the same state the image component renders from.
+  const thumbnailFailed = useGet(artifact.thumbnailLoad.status$) === "error";
+  // The cover carries the kind's own icon for every kind but `file`, so the
+  // corner badge would show the same mark twice on the same card.
+  const kindCoverShown =
+    artifact.kind !== "file" &&
+    sourceVideo === null &&
+    (thumbnailUrl === null || thumbnailFailed);
   return (
     <article
       ref={scrollIntoView ? scrollArtifactCardIntoViewRef : undefined}
@@ -224,17 +263,13 @@ function ArtifactCatalogCard({
             src={thumbnailUrl}
             load={artifact.thumbnailLoad}
             className="h-full w-full object-cover"
-            fallback={
-              sourceVideo ?? (
-                <ArtifactCatalogFallbackPreview artifact={artifact} />
-              )
-            }
+            fallback={fallbackPreview}
             testId="artifact-catalog-thumbnail"
           />
         ) : (
           fallbackPreview
         )}
-        <ArtifactKindIcon kind={artifact.kind} />
+        {kindCoverShown ? null : <ArtifactKindIcon kind={artifact.kind} />}
       </div>
       <div className="flex min-w-0 shrink-0 items-center border-t border-border p-3">
         <h2
@@ -610,7 +645,7 @@ export function ArtifactCatalogPage({
 
       <main
         onScroll={handleScroll}
-        className="flex-1 overflow-auto px-4 pb-[max(2rem,var(--sab))] pt-1 sm:px-6 [scrollbar-gutter:stable]"
+        className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
       >
         <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
           {catalog.state === "loading" ? (

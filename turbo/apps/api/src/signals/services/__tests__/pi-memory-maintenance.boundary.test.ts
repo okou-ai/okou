@@ -51,6 +51,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import {
   advancePiMemoryPhase2InputRevision,
   notifyPiMemoryPhase2ExternalHeadChange,
@@ -76,7 +77,7 @@ import {
 // in-flight claims, historical leases, or Phase 2 cron state, and must not
 // expose these private rows. Real routes still own Runner claim authentication,
 // generic publication, usage ingestion, and completion.
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const guestEnvironment = guestBoundaryEnvironment();
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -489,7 +490,9 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       await db().delete(agentRuns).where(eq(agentRuns.id, cleanup.runId));
     }
   });
-  await seedBuiltInModelKey(context, "gpt-5.6-terra");
+  await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
+  // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+  configureNativeCliArtifact();
   context.mocks.s3.getSignedUrl.mockResolvedValue(
     "https://objects.example.test/private-first-turn",
   );
@@ -820,8 +823,8 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
   );
   expect(execution.connectorRuntimeTargets).toStrictEqual([]);
   expect(execution.piModelConfig).toMatchObject({
-    provider: "openai",
-    model: "gpt-5.6-terra",
+    provider: "deepseek",
+    model: "deepseek-flash",
   });
   expect(maintenance).toMatchObject({
     memoryStorageId: scope.memoryStorageId,

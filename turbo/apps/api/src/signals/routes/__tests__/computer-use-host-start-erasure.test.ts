@@ -7,7 +7,9 @@ import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import {
+  classifyErasureFenceStatement,
   closeErasureSubjectFixture,
+  erasureFenceStatementKinds,
   erasureSubjectJobExistsFixture,
   removeErasureSubjectsFixture,
   withErasureSubjectClosureCommitBarrierFixture,
@@ -306,31 +308,14 @@ function hostById(
 
 function classifyStartStatements(statements: readonly string[]): string[] {
   return statements.map((statement) => {
-    if (statement.startsWith("begin")) {
-      return "begin-read-committed";
-    }
-    if (statement.includes("set_config('lock_timeout'")) {
-      return "lock-timeout";
-    }
-    if (statement.includes("set_config('statement_timeout'")) {
-      return "statement-timeout";
-    }
-    if (statement.includes("erasure_isolation_probe")) {
-      return "first-b1-lock";
-    }
-    if (statement.includes("pg_advisory_xact_lock_shared")) {
-      return "second-b1-lock";
-    }
-    if (statement.includes('from "account_erasure_jobs"')) {
-      return "closure-lookup";
+    const fence = classifyErasureFenceStatement(statement);
+    if (fence) {
+      return fence;
     }
     if (statement.startsWith('insert into "computer_use_hosts"')) {
       return statement.includes("on conflict")
         ? "installation-upsert"
         : "legacy-insert";
-    }
-    if (statement === "commit") {
-      return "commit";
     }
     return `unexpected:${statement}`;
   });
@@ -748,16 +733,12 @@ describe("Computer Use host START account-erasure admission", () => {
               expect(
                 classifyStartStatements(barrier.statements()),
               ).toStrictEqual([
-                "begin-read-committed",
-                "lock-timeout",
-                "statement-timeout",
-                "first-b1-lock",
-                "second-b1-lock",
-                "closure-lookup",
+                "BEGIN READ COMMITTED",
+                ...erasureFenceStatementKinds("write"),
                 mode === "installation"
                   ? "installation-upsert"
                   : "legacy-insert",
-                "commit",
+                "COMMIT",
               ]);
               expect(
                 countPublishedTo(context.mocks, {
@@ -878,13 +859,9 @@ describe("Computer Use host START account-erasure admission", () => {
               expect(
                 classifyStartStatements(barrier.statements()),
               ).toStrictEqual([
-                "begin-read-committed",
-                "lock-timeout",
-                "statement-timeout",
-                "first-b1-lock",
-                "second-b1-lock",
-                "closure-lookup",
-                "commit",
+                "BEGIN READ COMMITTED",
+                ...erasureFenceStatementKinds("write"),
+                "COMMIT",
               ]);
               barrier.release();
               expectClosedResponse(valueOf(await denied.settled).body);

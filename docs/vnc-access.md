@@ -4,7 +4,8 @@ VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
-Runner sockets and operations remain #34780; UI and CLI remain #34782/#34781.
+The Runner executes both X509Vnc and X509Plain. The owner-facing X509Plain
+exposure and full-path product acceptance remain #35621.
 
 ## Owner API
 
@@ -21,18 +22,21 @@ response. Metadata responses use `Cache-Control: no-store`.
 | `/api/vnc/connections/:connectionId` | PATCH and DELETE with `expectedGeneration`      |
 | `/api/vnc/connections/summary`       | GET `{ configuredCount }`                       |
 
-A credential contains a display name and typed `authentication`. The currently
-supported variant is `{ method: "vnc_password", password }`, with a password of
-**1–8 printable ASCII bytes**. This limit belongs to classic VNC password
-authentication, not every future credential method. Spaces are preserved and
-overlength or non-ASCII input is rejected rather than truncated. Metadata exposes
-`authMethod`, never the authentication payload. Credentials can be shared by
-multiple saved connections belonging to the same user and organization.
+A credential contains a display name and typed `authentication`. Classic
+`{ method: "vnc_password", password }` accepts **1–8 printable ASCII bytes**.
+`{ method: "username_password", username, password }` accepts a username of
+**1–255 UTF-8 bytes** and a password of **1–1023 UTF-8 bytes**. Embedded NUL is
+rejected and password spaces are preserved. Metadata exposes `authMethod` and
+exposes `username` only for `username_password`; it never exposes a password or
+ciphertext. Credentials can be shared by multiple saved connections belonging
+to the same user and organization.
 
 Hosts contain a canonical DNS name or IP address, a port (default 5900), a
-credential selection and explicit `security`. The currently supported profile is
-`{ type: "x509_vnc", trust }`; its trust is either `{ mode: "system" }` or
-`{ mode: "custom_ca", caBundle: "..." }`.
+credential selection and explicit `security`. Owner configuration accepts
+`{ type: "x509_vnc", trust }` and `{ type: "x509_plain", trust }`; trust is
+either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
+The exact stored pairs are `vnc_password` / `x509_vnc` and
+`username_password` / `x509_plain`.
 A custom bundle is at most 64 KiB and contains at most eight public CA
 certificates. Private keys, non-CA certificates, malformed material and insecure
 trust modes are rejected. Saving configuration does not dial or verify the host.
@@ -51,9 +55,12 @@ the current owner returns 204 without changing metadata or secrets.
 A UUID occupied by another owner returns an opaque conflict.
 Deletion physically removes the row, so a subsequent create with that UUID is a
 new resource starting at version 1. Clients should use a new UUID for each new
-resource and stop retrying its creation after deletion. Updates and deletes reject stale versions;
-the caller must refresh metadata before deciding whether to resubmit. Credential
-authentication changes advance every referencing connection's generation. Referenced credentials cannot be deleted
+resource and stop retrying its creation after deletion. Updates and deletes
+reject stale versions; the caller must refresh metadata before deciding whether
+to resubmit. Credential authentication changes within the same method advance
+every referencing connection's generation. A referenced credential cannot
+change methods; change a connection's profile by atomically selecting a
+compatible credential and security type. Referenced credentials cannot be deleted
 until their hosts are rebound or deleted. Deleting a host retains its reusable
 credential.
 
@@ -104,9 +111,10 @@ Deploy the existing VNC APIs before this app UI. An unavailable/disabled API
 shows an unavailable state; network and server failures remain retryable load
 errors. The UI does not change the default-off switch or existing data.
 Real Agent/server interoperability, two-client admission, mixed versions and
-retained-data rollback are tracked separately in
-[#35299](https://github.com/vm0-ai/okou/issues/35299); merging the UI is not
-production activation evidence.
+retained-data rollback for the base profile were verified in
+[#35299](https://github.com/vm0-ai/okou/issues/35299). X509Plain full-path
+verification remains #35621; merging its UI is not production activation
+evidence.
 
 ## Secret inventory
 
@@ -114,8 +122,9 @@ The only VNC encrypted field is
 `vnc_credentials.encrypted_password`. It uses the existing stored-secret KMS
 envelope. Passwords and ciphertext never appear in owner responses; current API
 configuration paths do not decrypt them. The private Runner resolve endpoint
-decrypts only after current authorization and profile validation. Public CA certificates are stored as public trust
-configuration. The active KMS recovery verifier includes this field and accepts
+decrypts only after current authorization and profile validation. Usernames and
+public CA certificates are stored as public configuration. The active KMS
+recovery verifier includes this field and accepts
 retained snapshots that predate the VNC table. If the table exists, its exact
 primary key and password column are required and every ciphertext is checked
 without modification. The original rotation manifest and backfill remain
@@ -150,18 +159,31 @@ database locks.
 
 Credential methods describe the supplied authentication material; connection
 security profiles describe the owner's selected wire authentication and server
-trust policy. Only `vnc_password` with `x509_vnc` is accepted today. Unknown methods,
-profiles and unsupported trust shapes are rejected, with no implicit default to
-the current profile. Adding a runtime method must not silently broaden an
-existing connection's saved policy.
+trust policy. Owner persistence accepts exactly `vnc_password` with `x509_vnc`
+and `username_password` with `x509_plain`. The connection stores the selected
+authentication method explicitly; a same-row check and composite credential
+foreign key enforce both pair and reference compatibility. Unknown methods,
+profiles and unsupported trust shapes are rejected, with no implicit default.
 
-Future username/password, credentialless, client-certificate and tunnel profiles
-must add their own validated variants and matching runtime support together.
-Their credential requirements and length limits must not inherit classic VNC's
-eight-byte limit. Binding or changing a credential must remain compatible with
-every referencing connection; authentication changes invalidate those connection
-generations. There are no placeholder fields or accepted-but-unimplemented
-profiles in this slice.
+Credentialless, client-certificate and tunnel profiles must add their own
+validated variants and matching runtime support. Their credential requirements
+and length limits must not inherit classic VNC's eight-byte limit. Binding or
+changing a credential must remain compatible with every referencing connection;
+authentication changes invalidate those connection generations.
+Persisted discriminator meanings are immutable: a later profile extends the
+allowed values and adds its concrete typed fields or references, but cannot
+reinterpret an existing value or require clearing saved VNC state. Every schema
+extension must exercise its migration against populated credentials, connections
+and grants. A protocol with different credential bounds gets a new method value
+even when its UI also looks like username/password; it does not broaden
+`username_password`.
+
+Run host inventory remains limited to X509Vnc until #35621. The private resolve
+path can execute X509Plain for an already-authorized connection ID when the
+requesting Runner advertises that exact pair. An older Runner advertises only
+X509Vnc, so resolve reports a saved X509Plain connection as unsupported and
+fails closed before KMS. #35621 owns inventory/UI exposure and full-path
+acceptance.
 
 The authentication roadmap is tracked in
 [#35041](https://github.com/vm0-ai/okou/issues/35041), with separate work for
@@ -170,31 +192,33 @@ SASL and vendor-specific compatibility research. Each implementation must record
 the exact server versions tested and distinguish client authentication, server
 identity verification and full-session encryption.
 
-The present Rust engine independently supports only RFB 3.8 / VeNCrypt 0.2 /
-X509Vnc. Its TLS-owned authenticated stream must be generalized as part of any
-future non-TLS or RSA-AES implementation. SSH authentication belongs to an outer
-transport and does not become a VNC password method. Shared/exclusive mode is a
-per-session Agent choice, independent of authentication. The VNC server decides
-how to admit clients; shared sessions can interact with the same desktop.
+The Rust protocol engine and private Runner contract support the policy-selected
+X509Vnc and X509Plain authentication flows. SSH authentication belongs to an
+outer transport and does not become a VNC password method. Shared/exclusive mode
+is a per-session Agent choice, independent of authentication. The VNC server
+decides how to admit clients; shared sessions can interact with the same desktop.
 
 ## Deployment and rollback
 
-The generated migration is additive: deploy it before the API code. Old API
-binaries continue to work with the expanded schema and ignore the new tables.
-The Runner authority slice adds only the Agent grant table; connection identity
-continues to use the saved ID and generation, matching SSH. Public metadata stays unchanged.
-There is no credential rewrite or destructive reset. Existing SSH data and behavior are
-unchanged. The configuration API stays unavailable until the feature is
-explicitly enabled; merging this change does not enable it.
+The feature is disabled and has never been activated, but its persisted state is
+still retained. Three generated migrations expand credentials first, add the
+connection authentication method with a temporary `vnc_password` default, then
+remove that default. Existing constraints prove every pre-change credential and
+connection is the exact `vnc_password` / `x509_vnc` pair, so the temporary default
+is a bounded backfill rather than a policy inference. The final schema requires
+all new writes to select a method explicitly. No VNC credentials, connections or
+Agent grants are deleted or rewritten.
 
-Before enabling the feature, every serving API version must include VNC-aware
-configuration and grant deletion cleanup. Once any VNC configuration or grant exists, that cleanup support is an
-API rollback floor: disabling the feature does not erase saved credentials.
-Rollback may disable `vncAccess`, but must retain VNC-aware cleanup and the additive
-schema. Rolling back below this floor requires a separately verified drain and
-erasure of all VNC configuration first.
-Do not drop the tables as an application rollback. Runtime activation requires
-the verified Runner enforcement in #34780.
+The configuration API remains unavailable until the feature is explicitly
+enabled; merging this change does not enable it, authorize an out-of-band
+migration, or activate UI or Runner support.
+
+Before enabling the feature, every serving API must include the new owner reader,
+VNC-aware cleanup and the runtime/UI slices required for the selected activation.
+After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
+disabling the feature does not erase saved credentials. Any later rollback below
+that floor requires a separately verified disablement, drain and VNC erasure.
+Owner-facing X509Plain activation and full-path acceptance require #35621.
 
 ## Verification
 
@@ -203,6 +227,10 @@ rejoined owner access, secret-free output, validation, zero-to-one Agent grants,
 concurrent first-host creation, live-resource retries, recreation after deletion,
 optimistic concurrency, rotation, inline rollback and scoped cleanup through
 production HTTP boundaries.
-The dedicated migration test validates database ownership and version/trust
-constraints on a disposable schema. Broader API tests and required checks run
-in the PR pipeline.
+The dedicated migration test seeds populated pre-change credentials,
+connections, grants and unrelated owner data, applies all three additive
+migrations, and verifies row identity, ciphertext, versions, trust configuration
+and grants are unchanged. It also verifies the exact backfill, absence of a final
+column default, both exact pairs, ownership, credential compatibility, version
+and trust constraints on a disposable schema. Broader API tests and required
+checks run in the PR pipeline.

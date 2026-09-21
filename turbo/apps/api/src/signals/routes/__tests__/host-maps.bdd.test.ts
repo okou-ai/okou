@@ -597,8 +597,12 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     const suspendedComplete = await api.requestCompleteHostedSite(
       actor,

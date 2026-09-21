@@ -71,6 +71,7 @@ import {
   type UploadCompleteResponse,
   type UploadPrepareResponse,
 } from "@okouai/api-contracts/contracts/uploads";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
@@ -100,6 +101,7 @@ import { modelPoliciesRoutes } from "../../model-policies";
 import { uploadsCompleteRoutes } from "../../uploads-complete";
 import { uploadsPrepareRoutes } from "../../uploads-prepare";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
+import { webFileUrlRoutes } from "../../web-file-url";
 import type { ApiTestUser } from "./api-bdd";
 import {
   projectChatEventRows,
@@ -251,6 +253,7 @@ const chatFilesRoutes = [
   ...hostRoutes,
   ...modelPoliciesRoutes,
   ...userModelPreferenceRoutes,
+  ...webFileUrlRoutes,
 ] as const;
 
 function chatFilesApp(context: TestContext, signal?: AbortSignal) {
@@ -412,6 +415,10 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function artifactCatalogClient() {
     return chatFilesApp(context)(artifactCatalogContract);
+  }
+
+  function webFilesClient() {
+    return chatFilesApp(context)(webFilesContract);
   }
 
   function threadMarkReadClient() {
@@ -1462,6 +1469,28 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
+    /**
+     * The addresses the App resolves for a stored web file. This is the only
+     * production readback for an attachment, which is not a catalog artifact.
+     */
+    async resolveWebFileUrl(
+      actor: ApiTestUser,
+      fileId: string,
+    ): Promise<{
+      readonly url: string;
+      readonly expiresAt: string;
+      readonly publicUrl: string | null;
+    }> {
+      const response = await accept(
+        webFilesClient().fileUrl({
+          headers: authenticate(context, actor),
+          query: { file_id: fileId },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
     async getArtifactCatalogEntry(
       actor: ApiTestUser,
       artifactId: string,
@@ -1693,6 +1722,8 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly filename: string;
         readonly contentType: string;
         readonly size: number;
+        /** Declares an artifact output; attachments omit it. */
+        readonly purpose?: "artifact";
       },
     ): Promise<UploadPrepareResponse> {
       const response = await accept(

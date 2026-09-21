@@ -451,8 +451,7 @@ async function planConcurrencyEnd(
   if (
     org?.pendingScheduleId !== schedule.id ||
     (org.pendingTargetTier !== "pro" &&
-      org.pendingTargetTier !== "limited-free-1" &&
-      org.pendingTargetTier !== "pro-suspend") ||
+      org.pendingTargetTier !== "limited-free-1") ||
     org.pendingChangeAt === null
   ) {
     return null;

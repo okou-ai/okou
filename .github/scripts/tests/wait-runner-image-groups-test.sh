@@ -58,7 +58,7 @@ JSON
 fi
 
 if [ "$1" = "run" ] && [ "$2" = "view" ]; then
-  echo "https://github.com/vm0-ai/vm0/actions/runs/42"
+  echo "https://github.com/okou-ai/okou/actions/runs/42"
   exit 0
 fi
 
@@ -185,7 +185,7 @@ run_wait_groups() {
     JOB_REF="job-ref" \
     LOOKUP_SHA="head-sha" \
     PROFILE="debug" \
-    REPO="vm0-ai/vm0" \
+    REPO="okou-ai/okou" \
     MANIFEST_DIR="$MANIFEST_DIR" \
     OUTPUT_DIR="$TEST_DIR/output-dir" \
     GITHUB_OUTPUT="$output_file" \

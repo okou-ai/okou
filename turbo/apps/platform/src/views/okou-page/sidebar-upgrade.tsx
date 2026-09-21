@@ -15,7 +15,7 @@ import { refreshSidebarChatThreadLayoutOnRef$ } from "../../signals/chat-page/si
 function nextTierInfo(
   tier: string,
 ): { tier: "pro" | "team"; img: string } | null {
-  if (tier === "free" || tier === "limited-free-1" || tier === "pro-suspend") {
+  if (tier === "free" || tier === "limited-free-1") {
     return { tier: "pro", img: planProImg };
   }
   if (tier === "pro") {

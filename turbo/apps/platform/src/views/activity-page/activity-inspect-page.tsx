@@ -344,7 +344,7 @@ function InspectLogContent({ data }: { data: InspectLogData }) {
     <div className="h-full flex flex-col min-h-0 overflow-hidden">
       <div className="flex-1 flex flex-col min-h-0 overflow-auto">
         <InspectBreadcrumb title={displayName} />
-        <div className="mx-auto w-full max-w-[900px] px-4 sm:px-6 pt-4 pb-[max(2rem,var(--sab))]">
+        <div className="mx-auto w-full max-w-[900px] px-4 sm:px-6 pt-4 pb-safe-or-8">
           <ActivityHeaderCard
             displayName={displayName}
             status={status}

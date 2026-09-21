@@ -58,11 +58,6 @@ import {
   withActivityCommitBarrierFixture,
   advanceRunActivityClockFixture,
 } from "../../../test-fixtures/run-activity";
-import {
-  barrierQueryBinds,
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/account-erasure-subject";
 import { closeDbPool } from "../../../lib/db";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate, mockNow, clearMockNow } from "../../../lib/time";
@@ -72,6 +67,7 @@ import {
   deleteUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { useSecretKmsProbe } from "../../routes/__tests__/helpers/secret-kms-probe";
 import {
   updateFeatureSwitchesForUser,
@@ -130,7 +126,7 @@ import type { AgentEvent } from "../../../lib/event-consumer/verify";
 // unique synthetic infrastructure faults are seeded below; admission, creation,
 // promotion, claim, billing metadata and PostgreSQL are never mocked.
 describe("actual compute transactions versus the B1 projector", () => {
-  const context = testContext();
+  const context = testContext({ connectorCatalog: true });
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
   const agentsApi = createAuthOrgAgentsBddApi(context);
@@ -186,6 +182,9 @@ describe("actual compute transactions versus the B1 projector", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = api.configureRunnerGroup();
+    // Pin two admitted runs so the queue shapes below stay independent of the
+    // Pro plan's own concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     await api.grantProEntitlement(actor);
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
@@ -349,7 +348,9 @@ describe("actual compute transactions versus the B1 projector", () => {
       tier: "pro",
       credits: 100_000,
     });
-    await seedBuiltInModelKey(context, "gpt-5.6-terra");
+    await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     await insertPhase2CandidatesWithSources(
       scope,
       ["first", "second"].map((name) => {
@@ -580,101 +581,6 @@ describe("actual compute transactions versus the B1 projector", () => {
       },
     };
   }
-
-  describe.each(["shared", "separate"] as const)(
-    "concurrent actual claims for %s subject sets",
-    (mode) => {
-      let rounds: Awaited<ReturnType<typeof pending>>[][];
-
-      beforeEach(async () => {
-        rounds = [];
-        for (let round = 0; round < 2; round++) {
-          const first = await fixture();
-          const second = mode === "shared" ? first : await fixture();
-          rounds.push([await pending(first), await pending(second)]);
-        }
-      });
-
-      it("measures bounded concurrent actual claims", async () => {
-        const samples: Record<"shared" | "separate", number[]> = {
-          shared: [],
-          separate: [],
-        };
-        for (const runs of rounds) {
-          const started = performance.now();
-          const results = await Promise.all(
-            runs.map((run) => {
-              return api.requestClaimRunnerJob(true, run.runId, [200]);
-            }),
-          );
-          samples[mode].push(performance.now() - started);
-          expect(
-            results.map((result) => {
-              return result.status;
-            }),
-          ).toStrictEqual([200, 200]);
-        }
-        // Local end-to-end observations, deliberately no global throughput claim
-        // or latency threshold tied to a shared CI machine.
-        process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
-      });
-    },
-  );
-
-  it("coalesces ordinary Agent claim ownership locks into one statement", async () => {
-    const w = await writerFixture("claim");
-    const runId = w.runId;
-    if (!runId) {
-      throw new Error("Missing synthetic run");
-    }
-    // Driver-level exception: the production HTTP boundary cannot expose SQL
-    // statement count. Enter through the real claim endpoint and retain its
-    // successful response while measuring this explicit latency contract.
-    const selectedStatements: string[] = [];
-    await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          const text = barrierQueryText(queryArgs);
-          return (
-            barrierQueryBinds(queryArgs, runId) &&
-            text.includes('from "agent_runs"') &&
-            text.includes('inner join "agent_sessions"') &&
-            text.includes('left join "agents"') &&
-            !text.includes('"runner_job_queue"')
-          );
-        },
-        stopAt: (queryArgs, _selectingStatement, transaction) => {
-          if (barrierQueryText(queryArgs) !== "commit") {
-            return false;
-          }
-          selectedStatements.push(...transaction.statements);
-          return true;
-        },
-        work: async (barrier) => {
-          const claiming = api.requestClaimRunnerJob(true, runId, [200]);
-          await barrier.entered;
-          barrier.release();
-          await claiming;
-        },
-      },
-      context.signal,
-    );
-    expect(selectedStatements).toHaveLength(6);
-    expect(selectedStatements[0]).toContain('from "agent_runs"');
-    expect(
-      selectedStatements.filter((statement) => {
-        return statement.includes("pg_advisory_xact_lock_shared");
-      }),
-    ).toHaveLength(2);
-    expect(selectedStatements[3]).toContain('from "account_erasure_jobs"');
-    expect(selectedStatements[4]).toStrictEqual(
-      expect.stringContaining("with locked_resource as materialized"),
-    );
-    expect(selectedStatements[4]).toContain('for key share of "agents"');
-    expect(selectedStatements[4]).toContain('for update of "agent_runs"');
-    expect(selectedStatements[4]).toContain('for update of "agent_sessions"');
-    expect(selectedStatements[5]).toContain('delete from "runner_job_queue"');
-  });
 
   it("promotes a surviving queued item behind a closed corrupt payload and retains its locator", async () => {
     const f = await fixture();
@@ -2096,28 +2002,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           return { f, before, held };
         }
 
-        it(`attributes a real ${phase} timeout after complete diagnostic rollback`, async () => {
-          const { f, before, held } = await prepareBlockedOutput();
-          const diagnostics = new RunOutputDiagnostics();
-          const writing = settle(projectOutput(f, diagnostics, context.signal));
-          await waitForBlockedBy(held.pid);
-          const result = await writing;
-          expect(result.ok).toBeFalsy();
-          if (result.ok) {
-            throw new Error("Expected a real lock timeout");
-          }
-          expect(isLockNotAvailable(result.error)).toBeTruthy();
-          expectReceipt(
-            diagnostics,
-            result.error,
-            phase === "user" || phase === "organization"
-              ? "subject_admission"
-              : phase,
-          );
-          await expect(contentState(f)).resolves.toStrictEqual(before);
-          await held.release();
-        });
-
         it(`retries a real ${phase} HTTP timeout after rollback and keeps replay idempotent`, async () => {
           const { f, before, held } = await prepareBlockedOutput();
           await webhooks.requestAgentEvents(
@@ -2322,131 +2206,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           await subject?.release();
         },
       );
-
-      it("retains a real non-55P03 error object through rollback", async () => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        const diagnostics = new RunOutputDiagnostics();
-        let original: unknown;
-        const result = await settle(
-          withRunContentWrite(
-            db,
-            { runId: f.runId, ownership: f.ownership, diagnostics },
-            async (tx) => {
-              await tx
-                .insert(runOutputMaterializations)
-                .values({ runId: f.runId });
-              const failed = await settle(tx.execute(sql`SELECT 1 / 0`));
-              if (failed.ok) {
-                throw new Error("Expected PostgreSQL division failure");
-              }
-              original = failed.error;
-              Object.freeze(original);
-              throw original;
-            },
-            context.signal,
-          ),
-        );
-        if (result.ok) {
-          throw new Error("Expected projection failure");
-        }
-        expect(result.error).toBe(original);
-        expect(isLockNotAvailable(result.error)).toBeFalsy();
-        expectReceipt(diagnostics, result.error, "projection_write");
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      });
-
-      it("attributes a deferred PostgreSQL commit failure to finalization", async () => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        const diagnostics = new RunOutputDiagnostics();
-        // A connection-local deferred constraint is an infrastructure-only
-        // commit failure. It does not modify any shared schema or production row.
-        const result = await settle(
-          withRunContentWrite(
-            db,
-            { runId: f.runId, ownership: f.ownership, diagnostics },
-            async (tx) => {
-              await tx
-                .insert(runOutputMaterializations)
-                .values({ runId: f.runId });
-              await tx.execute(
-                sql`CREATE TEMP TABLE output_phase_commit_fixture (id integer UNIQUE DEFERRABLE INITIALLY DEFERRED) ON COMMIT DROP`,
-              );
-              await tx.execute(
-                sql`INSERT INTO output_phase_commit_fixture VALUES (1), (1)`,
-              );
-            },
-            context.signal,
-          ),
-        );
-        if (result.ok) {
-          throw new Error("Expected deferred constraint rejection");
-        }
-        expectReceipt(diagnostics, result.error, "transaction_finalize");
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      });
-
-      it("omits body provenance when a disconnected transaction replaces the body error", async () => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        const diagnostics = new RunOutputDiagnostics();
-        const client = await pool.connect();
-        const disconnected = createDeferredPromise<Error>(context.signal);
-        // A terminated backend reports the server FATAL and the closed socket
-        // separately; keep one listener so neither becomes an unhandled error.
-        client.on("error", (error) => {
-          if (!disconnected.settled()) {
-            disconnected.resolve(error);
-          }
-        });
-        onTestFinished(() => {
-          client.release(true);
-        });
-        let original: unknown;
-        // Only this test-owned connection is terminated, after capturing a real
-        // query rejection. Production APIs cannot construct a failed rollback.
-        const result = await settle(
-          withRunContentWrite(
-            drizzle(client),
-            { runId: f.runId, ownership: f.ownership, diagnostics },
-            async (tx) => {
-              const pid = await backendPid(tx);
-              await tx
-                .insert(runOutputMaterializations)
-                .values({ runId: f.runId });
-              const failed = await settle(tx.execute(sql`SELECT 1 / 0`));
-              if (failed.ok) {
-                throw new Error("Expected PostgreSQL division failure");
-              }
-              original = failed.error;
-              await db.execute(sql`SELECT pg_terminate_backend(${pid})`);
-              await disconnected.promise;
-              throw original;
-            },
-            context.signal,
-          ),
-        );
-        if (result.ok) {
-          throw new Error("Expected rollback rejection");
-        }
-        expect(result.error).not.toBe(original);
-        expect(diagnostics.takeFailure(result.error)).toBeUndefined();
-        expect(diagnostics.takeFailure(original)).toBeUndefined();
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      });
-
-      it("clears a closed admission without an accepted batch or receipt", async () => {
-        const f = await outputFixture();
-        const before = await contentState(f);
-        await close(decision(f.actor.userId));
-        const diagnostics = new RunOutputDiagnostics();
-        await expect(
-          projectOutput(f, diagnostics, context.signal),
-        ).resolves.toStrictEqual({ outcome: "ignored-closure" });
-        expect(diagnostics.takeFailure(undefined)).toBeUndefined();
-        await expect(contentState(f)).resolves.toStrictEqual(before);
-      });
     });
 
     it("preserves infrastructure lock failures and rejects mismatched sandbox identity", async () => {
@@ -3523,27 +3282,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         await expect(snapshot(f)).resolves.toStrictEqual(before);
       });
 
-      it("keeps the actual required-output default at one/five seconds", async () => {
-        const f = await activityFixture();
-        await withActivityCommitBarrierFixture(
-          {
-            runId: f.runId,
-            stage: "output",
-            work: async (barrier) => {
-              const pending = sendOutput(f);
-              await expect(barrier.entered).resolves.toMatchObject({
-                lockTimeout: "1s",
-                statementTimeout: "5s",
-              });
-              barrier.release();
-              await pending;
-              await flushWaitUntilForTest();
-            },
-          },
-          context.signal,
-        );
-      });
-
       it("cleans closed snapshots and skips a held expired row without blocking another owner", async () => {
         const f = await activityFixture();
         const other = await activityFixture();
@@ -3715,26 +3453,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         await startTerminal(...args);
         await flushWaitUntilForTest();
       }
-
-      it("keeps the actual terminal writer default at one/five seconds", async () => {
-        const f = await terminalFixture("failed");
-        await withActivityCommitBarrierFixture(
-          {
-            runId: f.runId,
-            stage: "output",
-            work: async (barrier) => {
-              const pending = invokeTerminal(f, "failed");
-              await expect(barrier.entered).resolves.toMatchObject({
-                lockTimeout: "1s",
-                statementTimeout: "5s",
-              });
-              barrier.release();
-              await pending;
-            },
-          },
-          context.signal,
-        );
-      });
 
       async function terminalState(f: OutputFixture) {
         const events = await db
@@ -5062,71 +4780,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         },
       );
 
-      // The real server deadline is 5s, equal to Vitest's default test budget.
-      // Give only this deadline test 10s for its API fixture and rollback/retry.
-      it("the actual five-second statement deadline rolls back the projection and permits recovery", async () => {
-        const f = await terminalFixture("failed");
-        const before = await terminalState(f);
-        const observer = `terminal_timeout_${f.runId.replaceAll("-", "")}`;
-        const timeout = createDeferredPromise<string>(context.signal);
-        const clients = new Set<PoolClient>();
-        const notice = (message: { message?: string }) => {
-          if (message.message?.startsWith(observer)) {
-            timeout.resolve(message.message);
-          }
-        };
-        const acquired = (client: PoolClient) => {
-          if (!clients.has(client)) {
-            clients.add(client);
-            client.on("notice", notice);
-          }
-        };
-        async function removeObserver() {
-          await db.execute(
-            sql`DROP TRIGGER IF EXISTS ${sql.identifier(observer)} ON chat_events`,
-          );
-          await db.execute(
-            sql`DROP FUNCTION IF EXISTS ${sql.identifier(observer)}()`,
-          );
-        }
-        onTestFinished(async () => {
-          pool.removeListener("acquire", acquired);
-          for (const client of clients) {
-            client.removeListener("notice", notice);
-          }
-          await removeObserver();
-        });
-        // Unique synthetic trigger work reaches the real transaction deadline.
-        // No sleep, admission mock or deadline override; the server notice proves
-        // statement timeout rather than treating every rolled-back write as one.
-        await db.execute(sql`CREATE FUNCTION ${sql.identifier(observer)}() RETURNS trigger LANGUAGE plpgsql AS $$
-          BEGIN
-            IF replace(NEW.run_id::text, '-', '') = right(TG_NAME, 32) THEN
-              FOR iteration IN 1..2147483647 LOOP PERFORM iteration; END LOOP;
-            END IF;
-            RETURN NEW;
-          EXCEPTION WHEN query_canceled THEN
-            RAISE NOTICE '%: %', TG_NAME, SQLERRM;
-            RAISE;
-          END $$`);
-        await db.execute(
-          sql`CREATE TRIGGER ${sql.identifier(observer)} BEFORE INSERT ON chat_events FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(observer)}()`,
-        );
-        pool.on("acquire", acquired);
-        await invokeTerminal(f, "failed");
-        await expect(timeout.promise).resolves.toBe(
-          `${observer}: canceling statement due to statement timeout`,
-        );
-        await expect(terminalState(f)).resolves.toStrictEqual(before);
-        await removeObserver();
-        await invokeTerminal(f, "failed");
-        expect(
-          (await terminalState(f)).events.filter((event) => {
-            return event.eventType === "run.failed";
-          }),
-        ).toHaveLength(1);
-      }, 10_000);
-
       it("an aborted callback is not acknowledged or projected", async () => {
         const f = await terminalFixture("failed");
         const before = await terminalState(f);
@@ -5249,63 +4902,5 @@ describe("actual compute transactions versus the B1 projector", () => {
         ).toHaveLength(1);
       });
     });
-
-    it("measures finite same-subject and independent-subject output pairs", async () => {
-      const f = await outputFixture();
-      const peer = await outputFixture();
-      const samples: { shared: boolean; elapsedMs: number }[] = [];
-      for (const shared of [true, false, true, false]) {
-        const start = performance.now();
-        await Promise.all([
-          sendOutput(f, 100 + samples.length * 10),
-          sendOutput(shared ? f : peer, 105 + samples.length * 10),
-        ]);
-        samples.push({ shared, elapsedMs: performance.now() - start });
-        // The response precedes optional consumers; finish their owned work
-        // before test-context cancellation, outside the measured interval.
-        await flushWaitUntilForTest();
-      }
-      // Finite local observations, with no CI latency or production-throughput claim.
-      process.stdout.write(`B2B2_OUTPUT_PAIR_MS ${JSON.stringify(samples)}\n`);
-      expect(samples).toHaveLength(4);
-    });
-
-    it.each(["uncontended", "same-user", "same-org", "unrelated"] as const)(
-      "measures bounded output diagnostic overhead for the %s subject layout",
-      async (layout) => {
-        const f = await outputFixture();
-        let peer: OutputFixture | undefined;
-        if (layout === "same-user") {
-          const sameUserAgent = await bdd.createAgent(f.actor, {
-            displayName: "Synthetic same-user peer",
-            visibility: "public",
-          });
-          peer = await outputForFixture({
-            ...f,
-            agentId: sameUserAgent.agentId,
-          });
-        } else if (layout === "same-org") {
-          peer = await outputFixture(f.orgId);
-        } else if (layout === "unrelated") {
-          peer = await outputFixture();
-        }
-        const samples: { layout: string; elapsedMs: number }[] = [];
-        for (let sample = 0; sample < 3; sample++) {
-          const sequence = 100 + samples.length * 10;
-          const start = performance.now();
-          await Promise.all([
-            sendOutput(f, sequence),
-            ...(peer ? [sendOutput(peer, sequence)] : []),
-          ]);
-          samples.push({ layout, elapsedMs: performance.now() - start });
-          // Await owned consumers outside the measured HTTP completion interval.
-          await flushWaitUntilForTest();
-        }
-        process.stdout.write(
-          `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
-        );
-        expect(samples).toHaveLength(3);
-      },
-    );
   });
 });

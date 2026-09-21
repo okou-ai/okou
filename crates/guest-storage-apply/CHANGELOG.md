@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.10](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.9...guest-storage-apply-v0.24.10) (2026-09-21)
+
+## [0.24.9](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.8...guest-storage-apply-v0.24.9) (2026-09-21)
+
+## [0.24.8](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.7...guest-storage-apply-v0.24.8) (2026-09-20)
+
+## [0.24.7](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.6...guest-storage-apply-v0.24.7) (2026-09-20)
+
+
+### Performance Improvements
+
+* **runner:** observe storage history overlap eligibility ([#35567](https://github.com/okou-ai/okou/issues/35567)) ([14a43e3](https://github.com/okou-ai/okou/commit/14a43e3202e1f74771be2e88821982983c200e9f))
+
 ## [0.24.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.5...guest-storage-apply-v0.24.6) (2026-09-20)
 
 ## [0.24.5](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.24.4...guest-storage-apply-v0.24.5) (2026-09-19)

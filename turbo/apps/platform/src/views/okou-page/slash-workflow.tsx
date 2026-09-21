@@ -28,33 +28,6 @@ export function slashWorkflowOptionId(workflowId: string): string {
   return `slash-workflow-option-${workflowId}`;
 }
 
-const COMPOSER_SUGGESTION_COLLISION_GAP = 12;
-
-export function composerSuggestionCollisionPadding():
-  | number
-  | { top: number; right: number; bottom: number; left: number } {
-  // Base UI portals the menu to body. Read the shared root edges and the
-  // component-owned bottom inset so it stays inside the visible boundary.
-  const root = document.getElementById("root");
-  if (!root) {
-    return COMPOSER_SUGGESTION_COLLISION_GAP;
-  }
-  const styles = window.getComputedStyle(root);
-  const documentStyles = window.getComputedStyle(document.documentElement);
-  const inset = (value: string): number => {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-  return {
-    top: COMPOSER_SUGGESTION_COLLISION_GAP + inset(styles.paddingTop),
-    right: COMPOSER_SUGGESTION_COLLISION_GAP + inset(styles.paddingRight),
-    bottom:
-      COMPOSER_SUGGESTION_COLLISION_GAP +
-      inset(documentStyles.getPropertyValue("--sab")),
-    left: COMPOSER_SUGGESTION_COLLISION_GAP + inset(styles.paddingLeft),
-  };
-}
-
 export function scrollSlashWorkflowIntoView(
   workflow: Pick<ComposerSlashWorkflow, "id"> | undefined,
 ): void {
@@ -197,7 +170,6 @@ export function SlashWorkflowMenu({
       side="top"
       align="start"
       sideOffset={8}
-      collisionPadding={composerSuggestionCollisionPadding()}
       updatePositionStrategy="always"
       // Keep focus in the TipTap editor: the menu's keyboard navigation is
       // handled there, so the popover must never steal focus when it opens.
@@ -207,7 +179,12 @@ export function SlashWorkflowMenu({
       className={cn(
         "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
         panel
-          ? "h-[min(380px,var(--available-height))] w-auto"
+          ? // The index alone, at a width it never leaves. Its detail pane is a
+            // flyout anchored to this box rather than a column inside it, so
+            // opening one cannot resize the box Base UI pins — a content-width
+            // popover re-pinned itself against the viewport edge and slid the
+            // whole index out from under the pointer that opened the row.
+            "h-[min(380px,var(--available-height))] w-[260px]"
           : "h-[min(16rem,var(--available-height))] w-[300px] md:h-[min(20rem,var(--available-height))]",
       )}
       data-testid="slash-workflow-menu"

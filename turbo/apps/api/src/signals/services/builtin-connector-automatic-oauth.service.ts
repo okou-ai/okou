@@ -361,7 +361,16 @@ async function persistConnection(
       target: {
         kind: "builtin",
         connectorSlug: args.contract.connectorSlug,
-        identity: { kind: "local" },
+        identity: args.token?.userInfo
+          ? {
+              kind: "external",
+              externalId: args.token.userInfo.id,
+              externalUsername: args.token.userInfo.username,
+              externalEmail: args.token.userInfo.email,
+              oauthRequestedScopes: null,
+              oauthGrantedScopes: args.token.scopes,
+            }
+          : { kind: "local" },
       },
       resolution: args.resolution,
       writeCredentials: async ({ db, connectorId }, writeSignal) => {

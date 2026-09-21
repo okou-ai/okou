@@ -25,7 +25,7 @@ assert_not_contains() {
   fi
 }
 
-if [[ "$(grep -Fc 'bash .github/scripts/download-verified.sh' "$security_workflow")" != "3" ]]; then
+if [[ "$(grep -Fc 'bash .github/scripts/download-verified.sh' "$security_workflow")" != "4" ]]; then
   echo "Expected all security tool installers to use download-verified.sh" >&2
   exit 1
 fi

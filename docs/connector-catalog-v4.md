@@ -86,6 +86,30 @@ same account again. Lease expiry does not interrupt an in-flight request or
 stream. No-auth requests have no account authorization lease. Credentialed HTTP
 and custom connector cache behavior is unchanged.
 
+## Runtime change reconciliation
+
+Accepted changes to a connector's runtime-bearing `mcp`, `authMethods` or
+`firewall` fields wake affected builtin HTTP and MCP Runs so the Runner resolves
+the current endpoint, credentials and firewall policy. Removal and later
+restoration use the same wakeup path.
+
+After the current accepted catalog loads successfully, an exact catalog-owned
+builtin connector target that the catalog no longer contains resolves as
+terminal `absent`. The Runner removes only that connector's managed policy and
+credential injection, preserves the Run, sibling targets and target
+registration, and schedules no retry. A later restoration wakeup can therefore
+resolve the same target as `available` again. Catalog load, transport, parsing
+and validation failures are not absence. A catalog-present target whose account,
+credential or policy cannot currently resolve remains retryable `unresolved`
+and retains its last-known-good runtime state. Local `model-provider:*`
+firewalls are not connector runtime targets and remain outside this catalog
+absence classification.
+
+Removing a connector from the catalog removes that owner from request matching,
+without selecting another connector's credentials at the same destination.
+Ordinary outbound traffic remains subject to the normal outbound policy; catalog
+removal does not install a route tombstone for the former provider endpoint.
+
 ## Automatic authentication
 
 Builtin Automatic authentication uses the catalog's exact method ID and endpoint.
@@ -116,10 +140,6 @@ resolves that proxy-only token outside the sandbox for the exact selected accoun
 If a no-auth account is paired with an OAuth firewall, resolving the firewall's
 required secret fails closed. If an OAuth account is paired with a no-auth firewall,
 the proxy sends no credential and the upstream rejects the unauthenticated request.
-Accepted catalog changes wake affected builtin MCP Runs so the runner resolves the
-current endpoint and firewall policy.
-Removing a connector from the catalog removes that owner from request matching,
-without selecting another connector's credentials at the same destination.
 OAuth auth requests carry the matched catalog endpoint. The API checks it against
 the accepted catalog and account binding before returning credentials, including
 after waiting for account locks. A stale or missing destination is rejected without
@@ -132,6 +152,17 @@ callbacks, discovery during Runs, credential resolution or refresh. Other
 Automatic MCP connectors do not inherit this switch.
 
 ## Rollback and remaining integration
+
+Terminal builtin absence has an explicit reader-first deployment boundary. First
+deploy the Runner consumer from [#35542](https://github.com/okou-ai/okou/pull/35542)
+to every serving Runner group. The API producer in
+[#35598](https://github.com/okou-ai/okou/pull/35598) must remain undeployed until
+incompatible Runner processes and their active sandboxes have drained. Per the
+maintainer decision on 2026-09-20, rollback to Runner artifacts without that
+reader is outside this rollout's supported compatibility boundary; recovery
+after activation must use a reader-capable Runner. This ordering replaces
+capability headers, Runner version checks and response downgrades; a merged
+Runner PR or elapsed time alone is not deployment evidence.
 
 Live Plaud acceptance and same-service replacement remain work under
 [#34157](https://github.com/vm0-ai/okou/issues/34157).

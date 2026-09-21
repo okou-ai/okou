@@ -27,7 +27,7 @@ import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 
 const STEAM_ID = "76561198000000000";

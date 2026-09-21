@@ -84,7 +84,7 @@ export function OnboardingStepLayout({
   const { t } = useTranslation();
 
   return (
-    <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-(--sab) text-foreground">
+    <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground">
       <SettingsDialogMount />
       {/* The app's own rail: the workspace at the top, the account at the
           bottom, both as the marks the sidebar nav already uses. */}

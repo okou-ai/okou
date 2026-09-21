@@ -1415,6 +1415,9 @@ const allocateSocialKitArtifact$ = command(
           orgId: args.job.orgId,
           contentType: args.contentType,
           size: 0,
+          // A download job produces an artifact output, including when it runs
+          // without a run, so its ownership record declares that purpose.
+          purpose: "artifact",
         },
         signal,
       );

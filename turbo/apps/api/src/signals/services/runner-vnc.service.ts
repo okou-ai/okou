@@ -12,6 +12,7 @@ import { decryptStoredSecretValue } from "./crypto.utils";
 import { settle } from "../utils";
 import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
 import { currentRunnerVncAuthority } from "./runner-vnc-authority.service";
+import { isVncProfileCompatible } from "./vnc-configuration.utils";
 
 export async function checkRunnerVnc(
   db: Db,
@@ -22,6 +23,9 @@ export async function checkRunnerVnc(
   const row = await currentRunnerVncAuthority(db, input, signal);
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
+  }
+  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
+    throw new Error("VNC connection has an invalid stored profile");
   }
   return {
     outcome:
@@ -40,6 +44,9 @@ export async function resolveRunnerVnc(
   const row = await currentRunnerVncAuthority(db, input, signal);
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
+  }
+  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
+    throw new Error("VNC connection has an invalid stored profile");
   }
   if (
     !input.supportedProfiles.some((profile) => {
@@ -78,10 +85,15 @@ export async function resolveRunnerVnc(
     throw new Error("VNC credential decryption failed");
   }
   signal.throwIfAborted();
-  const authentication = vncAuthenticationSchema.safeParse({
-    method: row.authMethod,
-    password: decrypted.value,
-  });
+  const authentication = vncAuthenticationSchema.safeParse(
+    row.authMethod === "username_password"
+      ? {
+          method: row.authMethod,
+          username: row.username,
+          password: decrypted.value,
+        }
+      : { method: row.authMethod, password: decrypted.value },
+  );
   if (!authentication.success) {
     throw new Error(
       "VNC credential has an invalid stored authentication shape",

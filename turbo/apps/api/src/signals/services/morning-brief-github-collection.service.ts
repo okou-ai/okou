@@ -14,6 +14,7 @@ import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { safeUrlParse } from "../utils";
 import type { ClerkClient } from "../external/clerk";
+import { morningBriefSourceReadCutoff } from "./morning-brief-collection-plan";
 import {
   admitMorningBriefCollection,
   freezeMorningBriefSourceSelection,
@@ -21,6 +22,7 @@ import {
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
   type MorningBriefSourceAuthorityLedger,
+  type MorningBriefSourceDeadline,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
   type MorningBriefResponseMetadata,
@@ -751,6 +753,17 @@ interface MorningBriefGithubCollectionArgs {
   readonly anchor: Date;
   readonly collectedAt: Date;
   readonly clock: () => number;
+  /**
+   * The instant this collector stops starting provider reads.
+   *
+   * It sits strictly inside the deadline that cancels the source, so running
+   * out of time is something this collector *decides* rather than something
+   * that happens to it. Reading right up to the cancellation instant means the
+   * abort always wins the race, and an aborted source hands back nothing at
+   * all — every pull request, check run and status it already read is dropped
+   * on the floor and the source is reported as a failure with zero items.
+   */
+  readonly readCutoffAt: number;
 }
 
 class GithubPrioritiesCollector {
@@ -850,8 +863,23 @@ class GithubPrioritiesCollector {
     }
   }
 
+  /**
+   * Whether this collector may still start work.
+   *
+   * The clock is consulted as well as the signal. `AbortSignal` only reports
+   * `aborted` once its callback has run, and the source's cancellation fires at
+   * the same instant a clock-blind collector would still be starting its next
+   * read — so the signal is what this used to notice, always one read too late
+   * to stop gracefully. Comparing the cutoff instead ends the collection while
+   * the signal is still live, which is the difference between a partial bundle
+   * and a rejected source job that discards everything it read.
+   */
   private outOfTime(): boolean {
-    return this.signal.aborted || this.revoked;
+    return (
+      this.signal.aborted ||
+      this.revoked ||
+      this.args.clock() >= this.args.readCutoffAt
+    );
   }
 
   /** The exact login of the selected token. Nothing else identifies it. */
@@ -1480,6 +1508,14 @@ class GithubPrioritiesCollector {
         );
       }
     } else {
+      // A branch nobody had time to start is not a branch with nothing to do.
+      // The outcome is already partial either way, because a skipped branch is
+      // not a healthy one — but the bundle's own gap set is what becomes
+      // `omittedBySource.unknownRemaining`, and leaving it empty states that
+      // nothing was left unread by a source that never read at all.
+      if (this.login !== null) {
+        this.limits.add("deadline");
+      }
       this.notifications.skip();
       this.assigned.skip();
       this.reviewRequested.skip();
@@ -1618,6 +1654,17 @@ export async function executeMorningBriefGithubCollection(
      * freezes every source before any of them reads and supplies it here.
      */
     readonly authority: MorningBriefSourceAuthorityLedger | null;
+    /**
+     * The absolute deadline a multi-source composition already allocated.
+     *
+     * Starting a fresh budget here instead is how this source ended up being
+     * cancelled rather than stopped: the caller's signal fires at the instant
+     * *it* allocated, while every graceful budget check inside the read is
+     * measured against a later one this function started for itself, so the
+     * abort always arrives first and the whole bundle is lost. Null is the
+     * single-source preview, which owns no allocation and starts its own.
+     */
+    readonly deadline?: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefGithubExecution> {
@@ -1631,9 +1678,9 @@ export async function executeMorningBriefGithubCollection(
   // admission that reads canonical state and this member's live membership, so
   // a slow preflight shortens the collection rather than earning a fresh
   // budget.
-  const deadline = startMorningBriefSourceDeadline(
-    MORNING_BRIEF_GITHUB_BUDGET.deadlineMs,
-  );
+  const deadline =
+    args.deadline ??
+    startMorningBriefSourceDeadline(MORNING_BRIEF_GITHUB_BUDGET.deadlineMs);
   const admitted = await admitMorningBriefCollection(
     {
       db: args.db,
@@ -1689,6 +1736,10 @@ export async function executeMorningBriefGithubCollection(
           clock: () => {
             return nowDate().getTime();
           },
+          readCutoffAt: morningBriefSourceReadCutoff(
+            deadline.at,
+            nowDate().getTime(),
+          ),
         },
         signal,
       );

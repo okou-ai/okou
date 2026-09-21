@@ -81,7 +81,7 @@ import {
  * app-internal dispatch does not depend on an HTTP self-call.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
@@ -3822,7 +3822,7 @@ describe("CHAT-02: drain-time admission failure", () => {
 
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({

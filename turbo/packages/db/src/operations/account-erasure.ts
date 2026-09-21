@@ -223,6 +223,23 @@ function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+/** One statement acquires every sorted subject key, so admission costs one
+ * round trip whatever a caller's subject count is.
+ *
+ * The `CASE` still guards the locks themselves: an unsupported snapshot cannot
+ * wait for admission, so nothing may be locked before the isolation level is
+ * known. Three properties keep the folded form equivalent to the previous
+ * statement-per-subject loop.
+ *
+ * - `unnest` emits the already sorted array in order and the lock is a lateral
+ *   function scan on its right, so keys are still locked in one global order
+ *   and two overlapping subject sets cannot deadlock against each other.
+ * - The aggregate forces the executor to drain the whole join. A bare scalar
+ *   subquery with `LIMIT 1` would be free to stop after the first row and
+ *   leave the remaining keys unlocked.
+ * - A `CROSS JOIN LATERAL` to a volatile function is never removed or reordered
+ *   ahead of its lateral input, so no key can be skipped by planning.
+ */
 async function acquireErasureSubjectLocks(
   tx: Tx,
   subjects: readonly ErasureSubject[],
@@ -232,30 +249,63 @@ async function acquireErasureSubjectLocks(
     subjects.length > 0 && subjects.length <= MAX_SINKS,
     "subject_limit",
   );
-  const keys = [...new Set(subjects.map(subjectKey))].sort();
-  for (const [index, key] of keys.entries()) {
-    const lockKey = `account-erasure:${key}`;
-    const lock =
-      mode === "shared"
-        ? sql`pg_advisory_xact_lock_shared(hashtextextended(${lockKey}, 0))`
-        : sql`pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
-    if (index === 0) {
-      // CASE must guard the lock itself: unsupported snapshots cannot wait for
-      // admission. The scalar subquery runs the lock before returning isolation.
-      const [isolation] = await tx
-        .select({
-          value: sql`CASE
-            WHEN current_setting('transaction_isolation') = 'read committed'
-            THEN (SELECT current_setting('transaction_isolation') FROM ${lock})
-            ELSE current_setting('transaction_isolation')
-          END`.mapWith(jobs.subjectId),
-        })
-        .from(sql`(VALUES (1)) AS erasure_isolation_probe`);
-      invariant(isolation?.value === "read committed", "unsupported_isolation");
-    } else {
-      await tx.execute(sql`SELECT ${lock}`);
-    }
-  }
+  const keys = [...new Set(subjects.map(subjectKey))].sort().map((key) => {
+    return `account-erasure:${key}`;
+  });
+  const lock =
+    mode === "shared"
+      ? sql`pg_advisory_xact_lock_shared(hashtextextended(erasure_subject_key, 0))`
+      : sql`pg_advisory_xact_lock(hashtextextended(erasure_subject_key, 0))`;
+  const [isolation] = await tx
+    .select({
+      value: sql`CASE
+        WHEN current_setting('transaction_isolation') = 'read committed'
+        THEN (
+          SELECT max(current_setting('transaction_isolation'))
+          FROM unnest(${sql.param(keys)}::text[]) AS erasure_subject_keys(erasure_subject_key)
+          CROSS JOIN LATERAL ${lock} AS erasure_subject_lock
+        )
+        ELSE current_setting('transaction_isolation')
+      END`.mapWith(jobs.subjectId),
+    })
+    .from(sql`(VALUES (1)) AS erasure_isolation_probe`);
+  invariant(isolation?.value === "read committed", "unsupported_isolation");
+}
+
+/** The single `account_erasure_jobs` lookup every admission ends with.
+ *
+ * It must stay its own statement on the write path. Under READ COMMITTED a
+ * statement's snapshot is taken when the statement starts, which is before the
+ * advisory lock above is granted, so a closure that committed while that lock
+ * was waiting would be invisible to a folded lookup. Starting a new statement
+ * after the locks are held is what makes that closure visible.
+ */
+async function assertErasureSubjectNotClosed(
+  tx: Tx,
+  subjects: readonly ErasureSubject[],
+): Promise<void> {
+  const [closed] = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(or(...subjects.map(subjectCondition)))
+    .limit(1);
+  invariant(!closed, "subject_closed");
+}
+
+/** Both fence deadlines in one statement. They are transaction-local, so a
+ * caller that previously issued two `set_config` calls keeps exactly the same
+ * budgets for exactly the same scope at half the round trips.
+ */
+export async function setErasureFenceDeadlines(
+  tx: Tx,
+  deadlines: {
+    readonly lockTimeout: string;
+    readonly statementTimeout: string;
+  },
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT set_config('lock_timeout', ${deadlines.lockTimeout}, true), set_config('statement_timeout', ${deadlines.statementTimeout}, true)`,
+  );
 }
 
 /** Lock order: sorted subject advisory locks, job, then work rows by id.
@@ -281,12 +331,35 @@ export async function assertErasureSubjectWritable(
   await acquireErasureSubjectLocks(tx, subjects, "shared");
   // Start a new READ COMMITTED statement after every lock has been acquired.
   // A closure committed while a lock was waiting must be visible here.
-  const [closed] = await tx
-    .select({ id: jobs.id })
-    .from(jobs)
-    .where(or(...subjects.map(subjectCondition)))
-    .limit(1);
-  invariant(!closed, "subject_closed");
+  await assertErasureSubjectNotClosed(tx, subjects);
+}
+
+/** Read admission. A read creates nothing, so making closure wait for an
+ * in-flight read buys no resurrection safety, and the only property a read
+ * needs is that it does not serve a subject that is already closed. This
+ * therefore takes **no advisory lock at all**: it is the closure lookup on its
+ * own, in one statement, raising the same `account_erasure:subject_closed` a
+ * writer's admission raises.
+ *
+ * The consequence is explicit and intended. Without the shared lock a closure
+ * can commit the instant after this returns, so this carries no authority and
+ * must never gate a write; {@link assertErasureSubjectWritable} remains the
+ * only admission a writer may use. A caller whose own query can carry
+ * {@link erasureSubjectOpenCondition} should compose that instead and pay no
+ * round trip at all.
+ */
+export async function assertErasureSubjectReadable(
+  tx: Tx,
+  subjects: readonly ErasureSubject[],
+): Promise<void> {
+  invariant(
+    subjects.length > 0 && subjects.length <= MAX_SINKS,
+    "subject_limit",
+  );
+  for (const subject of subjects) {
+    subjectKey(subject);
+  }
+  await assertErasureSubjectNotClosed(tx, subjects);
 }
 
 /** Indexed candidate filter for a batched ordinary writer whose selection runs

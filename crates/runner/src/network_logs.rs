@@ -1,13 +1,15 @@
+use std::collections::VecDeque;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use api_contracts::generated::routes;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::time::{Instant, timeout_at};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
-use crate::error::ApiRequestContext;
+use crate::error::{ApiFailureKind, ApiRequestContext, ApiTransportCause, RunnerError};
 use crate::http::HttpClient;
 use crate::ids::RunId;
 
@@ -41,6 +43,9 @@ const NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 const NETWORK_LOG_UPLOAD_MAX_BATCHES: usize = 64;
 // Allow cumulative batch latency without extending HttpClient's per-request timeout.
 const NETWORK_LOG_UPLOAD_MAX_DURATION: Duration = Duration::from_secs(30);
+const NETWORK_LOG_UPLOAD_HEALTH_WINDOW: Duration = Duration::from_secs(5 * 60);
+const NETWORK_LOG_UPLOAD_HEALTH_MIN_FAILURES: usize = 3;
+const NETWORK_LOG_UPLOAD_HEALTH_FAILURE_PERCENT: usize = 20;
 
 #[derive(Default)]
 struct UploadRejectionDetails {
@@ -66,7 +71,16 @@ enum UploadOutcome {
     Missing,
     Complete,
     Truncated(UploadTruncationReason),
-    Failed,
+    Failed(UploadFailure),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UploadFailure {
+    Other,
+    Transport {
+        failure_kind: ApiFailureKind,
+        failure_cause: ApiTransportCause,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -92,7 +106,188 @@ impl UploadTruncationReason {
 enum BatchUploadOutcome {
     Continue,
     BatchLimit,
-    Failed,
+    Failed(UploadFailure),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NetworkLogUploadSessionOutcome {
+    Excluded,
+    Success,
+    TransportFailure {
+        failure_kind: ApiFailureKind,
+        failure_cause: ApiTransportCause,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum EligibleNetworkLogUploadOutcome {
+    Success,
+    TransportFailure {
+        failure_kind: ApiFailureKind,
+        failure_cause: ApiTransportCause,
+    },
+}
+
+struct TimedNetworkLogUploadOutcome {
+    observed_at: Instant,
+    outcome: EligibleNetworkLogUploadOutcome,
+}
+
+#[derive(Default)]
+struct NetworkLogUploadHealthState {
+    outcomes: VecDeque<TimedNetworkLogUploadOutcome>,
+    successful_sessions: usize,
+    transport_failures: usize,
+    degradation_emitted: bool,
+}
+
+struct NetworkLogUploadDegradation {
+    eligible_sessions: usize,
+    successful_sessions: usize,
+    transport_failures: usize,
+    failure_rate_basis_points: u128,
+    latest_failure_kind: ApiFailureKind,
+    latest_failure_cause: ApiTransportCause,
+}
+
+impl NetworkLogUploadHealthState {
+    fn is_degraded(&self) -> bool {
+        self.transport_failures >= NETWORK_LOG_UPLOAD_HEALTH_MIN_FAILURES
+            && (self.transport_failures as u128) * 100
+                >= (self.outcomes.len() as u128)
+                    * (NETWORK_LOG_UPLOAD_HEALTH_FAILURE_PERCENT as u128)
+    }
+
+    fn observe(
+        &mut self,
+        now: Instant,
+        outcome: EligibleNetworkLogUploadOutcome,
+    ) -> Option<NetworkLogUploadDegradation> {
+        while self.outcomes.front().is_some_and(|entry| {
+            now.saturating_duration_since(entry.observed_at) > NETWORK_LOG_UPLOAD_HEALTH_WINDOW
+        }) {
+            let Some(expired) = self.outcomes.pop_front() else {
+                break;
+            };
+            match expired.outcome {
+                EligibleNetworkLogUploadOutcome::Success => {
+                    self.successful_sessions -= 1;
+                }
+                EligibleNetworkLogUploadOutcome::TransportFailure { .. } => {
+                    self.transport_failures -= 1;
+                }
+            }
+        }
+        if !self.is_degraded() {
+            self.degradation_emitted = false;
+        }
+
+        self.outcomes.push_back(TimedNetworkLogUploadOutcome {
+            observed_at: now,
+            outcome,
+        });
+        match outcome {
+            EligibleNetworkLogUploadOutcome::Success => {
+                self.successful_sessions += 1;
+            }
+            EligibleNetworkLogUploadOutcome::TransportFailure { .. } => {
+                self.transport_failures += 1;
+            }
+        }
+
+        let eligible_sessions = self.outcomes.len();
+        if !self.is_degraded() {
+            self.degradation_emitted = false;
+            return None;
+        }
+        if self.degradation_emitted {
+            return None;
+        }
+        let (latest_failure_kind, latest_failure_cause) =
+            self.outcomes
+                .iter()
+                .rev()
+                .find_map(|entry| match entry.outcome {
+                    EligibleNetworkLogUploadOutcome::Success => None,
+                    EligibleNetworkLogUploadOutcome::TransportFailure {
+                        failure_kind,
+                        failure_cause,
+                    } => Some((failure_kind, failure_cause)),
+                })?;
+        self.degradation_emitted = true;
+        let failure_rate_basis_points =
+            (self.transport_failures as u128) * 10_000 / (eligible_sessions as u128);
+        Some(NetworkLogUploadDegradation {
+            eligible_sessions,
+            successful_sessions: self.successful_sessions,
+            transport_failures: self.transport_failures,
+            failure_rate_basis_points,
+            latest_failure_kind,
+            latest_failure_cause,
+        })
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct NetworkLogUploadHealthTracker {
+    state: Arc<Mutex<NetworkLogUploadHealthState>>,
+}
+
+impl NetworkLogUploadHealthTracker {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn observe(&self, outcome: NetworkLogUploadSessionOutcome) {
+        let Some(outcome) = eligible_upload_outcome(outcome) else {
+            return;
+        };
+        let degradation = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .observe(Instant::now(), outcome);
+        if let Some(degradation) = degradation {
+            error!(
+                window_seconds = NETWORK_LOG_UPLOAD_HEALTH_WINDOW.as_secs(),
+                eligible_sessions = degradation.eligible_sessions,
+                successful_sessions = degradation.successful_sessions,
+                transport_failures = degradation.transport_failures,
+                failure_rate_basis_points = degradation.failure_rate_basis_points,
+                failure_kind = degradation.latest_failure_kind.as_str(),
+                failure_cause = degradation.latest_failure_cause.as_str(),
+                "network log uploads degraded"
+            );
+        }
+    }
+
+    #[cfg(test)]
+    fn record_at(
+        &self,
+        now: Instant,
+        outcome: EligibleNetworkLogUploadOutcome,
+    ) -> Option<NetworkLogUploadDegradation> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .observe(now, outcome)
+    }
+}
+
+fn eligible_upload_outcome(
+    outcome: NetworkLogUploadSessionOutcome,
+) -> Option<EligibleNetworkLogUploadOutcome> {
+    match outcome {
+        NetworkLogUploadSessionOutcome::Excluded => None,
+        NetworkLogUploadSessionOutcome::Success => Some(EligibleNetworkLogUploadOutcome::Success),
+        NetworkLogUploadSessionOutcome::TransportFailure {
+            failure_kind,
+            failure_cause,
+        } => Some(EligibleNetworkLogUploadOutcome::TransportFailure {
+            failure_kind,
+            failure_cause,
+        }),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -146,17 +341,18 @@ struct NetworkLogUploadProgress {
     observed_dropped_entries: usize,
     observed_dropped_estimated_bytes: usize,
     partial_source_line: bool,
+    malformed_input: bool,
 }
 
 /// Upload network logs from the per-run JSONL file.
 /// Reads the file at `path`, POSTs bounded batches to telemetry endpoint,
-/// and keeps the local file for debugging/log GC. Best-effort — failures only warn.
+/// and keeps the local file for debugging/log GC. Delivery remains best-effort.
 pub async fn upload_network_logs(
     http: &HttpClient,
     run_id: RunId,
     sandbox_token: &str,
     path: &Path,
-) {
+) -> NetworkLogUploadSessionOutcome {
     let deadline = Instant::now() + NETWORK_LOG_UPLOAD_MAX_DURATION;
     let mut uploader = NetworkLogBatchUploader::new(http, run_id, sandbox_token);
     let outcome = match timeout_at(
@@ -171,12 +367,12 @@ pub async fn upload_network_logs(
 
     let truncation_reason = match outcome {
         UploadOutcome::Truncated(reason) => Some(reason),
-        UploadOutcome::Complete | UploadOutcome::Failed
+        UploadOutcome::Complete | UploadOutcome::Failed(_)
             if uploader.progress.oversized_entries > 0 =>
         {
             Some(UploadTruncationReason::OversizedEntry)
         }
-        UploadOutcome::Missing | UploadOutcome::Complete | UploadOutcome::Failed => None,
+        UploadOutcome::Missing | UploadOutcome::Complete | UploadOutcome::Failed(_) => None,
     };
     if let Some(reason) = truncation_reason {
         uploader.warn_truncated(reason);
@@ -194,6 +390,28 @@ pub async fn upload_network_logs(
             "uploaded network logs"
         );
     }
+
+    match outcome {
+        UploadOutcome::Complete
+            if uploader.progress.attempted_batches > 0
+                && uploader.progress.attempted_batches == uploader.progress.successful_batches
+                && uploader.progress.oversized_entries == 0
+                && !uploader.progress.malformed_input =>
+        {
+            NetworkLogUploadSessionOutcome::Success
+        }
+        UploadOutcome::Failed(UploadFailure::Transport {
+            failure_kind,
+            failure_cause,
+        }) => NetworkLogUploadSessionOutcome::TransportFailure {
+            failure_kind,
+            failure_cause,
+        },
+        UploadOutcome::Missing
+        | UploadOutcome::Complete
+        | UploadOutcome::Truncated(_)
+        | UploadOutcome::Failed(UploadFailure::Other) => NetworkLogUploadSessionOutcome::Excluded,
+    }
 }
 
 async fn upload_network_logs_inner(
@@ -206,7 +424,7 @@ async fn upload_network_logs_inner(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return UploadOutcome::Missing,
         Err(e) => {
             warn!(run_id = %uploader.run_id, error = %e, "failed to read network logs");
-            return UploadOutcome::Failed;
+            return UploadOutcome::Failed(UploadFailure::Other);
         }
     };
 
@@ -214,7 +432,7 @@ async fn upload_network_logs_inner(
         Ok(metadata) => metadata.len(),
         Err(e) => {
             warn!(run_id = %uploader.run_id, error = %e, "failed to read network logs");
-            return UploadOutcome::Failed;
+            return UploadOutcome::Failed(UploadFailure::Other);
         }
     };
     uploader.progress.source_file_bytes = Some(source_file_bytes);
@@ -235,7 +453,7 @@ async fn upload_network_logs_inner(
             Ok(bytes_read) => bytes_read,
             Err(e) => {
                 warn!(run_id = %uploader.run_id, error = %e, "failed to read network logs");
-                return UploadOutcome::Failed;
+                return UploadOutcome::Failed(UploadFailure::Other);
             }
         };
         uploader.progress.source_bytes_examined = uploader
@@ -258,6 +476,7 @@ async fn upload_network_logs_inner(
         let line = match std::str::from_utf8(&line) {
             Ok(line) => line.trim(),
             Err(e) => {
+                uploader.progress.malformed_input = true;
                 warn!(run_id = %uploader.run_id, error = %e, "malformed network log line");
                 if reached_capped_source_end {
                     source_limit_reached = true;
@@ -277,6 +496,7 @@ async fn upload_network_logs_inner(
         let log = match serde_json::from_str(line) {
             Ok(log) => log,
             Err(e) => {
+                uploader.progress.malformed_input = true;
                 warn!(run_id = %uploader.run_id, error = %e, "malformed network log line");
                 if reached_capped_source_end {
                     source_limit_reached = true;
@@ -296,7 +516,7 @@ async fn upload_network_logs_inner(
             BatchUploadOutcome::BatchLimit => {
                 return UploadOutcome::Truncated(UploadTruncationReason::BatchCount);
             }
-            BatchUploadOutcome::Failed => return UploadOutcome::Failed,
+            BatchUploadOutcome::Failed(failure) => return UploadOutcome::Failed(failure),
         }
 
         if reached_capped_source_end {
@@ -325,7 +545,7 @@ async fn upload_network_logs_inner(
             uploader.discard_pending_batch();
             UploadOutcome::Truncated(UploadTruncationReason::BatchCount)
         }
-        BatchUploadOutcome::Failed => UploadOutcome::Failed,
+        BatchUploadOutcome::Failed(failure) => UploadOutcome::Failed(failure),
     }
 }
 
@@ -543,7 +763,7 @@ impl<'a> NetworkLogBatchUploader<'a> {
                     error = %e,
                     "network logs upload failed"
                 );
-                return BatchUploadOutcome::Failed;
+                return BatchUploadOutcome::Failed(UploadFailure::Other);
             }
         };
         let request_context = request.context().clone();
@@ -618,21 +838,43 @@ impl<'a> NetworkLogBatchUploader<'a> {
                     "network logs upload rejected"
                 );
                 self.active_request = None;
-                BatchUploadOutcome::Failed
+                BatchUploadOutcome::Failed(UploadFailure::Other)
             }
             Err(e) => {
-                warn!(
-                    run_id = %self.run_id,
-                    batch_index,
-                    client_request_id = request_context.client_request_id.as_str(),
-                    client_session_id = request_context.client_session_id.as_str(),
-                    client_version = request_context.client_version.as_str(),
-                    request_state = BatchRequestState::TransportFailure.as_str(),
-                    error = %e,
-                    "network logs upload failed"
-                );
+                let failure = match &e {
+                    RunnerError::ApiTransport(error) => {
+                        info!(
+                            run_id = %self.run_id,
+                            batch_index,
+                            client_request_id = request_context.client_request_id.as_str(),
+                            client_session_id = request_context.client_session_id.as_str(),
+                            client_version = request_context.client_version.as_str(),
+                            request_state = BatchRequestState::TransportFailure.as_str(),
+                            failure_kind = error.failure_kind.as_str(),
+                            failure_cause = error.failure_cause.as_str(),
+                            error = %e,
+                            "network logs upload failed"
+                        );
+                        UploadFailure::Transport {
+                            failure_kind: error.failure_kind,
+                            failure_cause: error.failure_cause,
+                        }
+                    }
+                    _ => {
+                        warn!(
+                            run_id = %self.run_id,
+                            batch_index,
+                            client_request_id = request_context.client_request_id.as_str(),
+                            client_session_id = request_context.client_session_id.as_str(),
+                            client_version = request_context.client_version.as_str(),
+                            error = %e,
+                            "network logs upload failed"
+                        );
+                        UploadFailure::Other
+                    }
+                };
                 self.active_request = None;
-                BatchUploadOutcome::Failed
+                BatchUploadOutcome::Failed(failure)
             }
         }
     }
@@ -723,6 +965,252 @@ mod tests {
     use super::*;
 
     const SANDBOX_TOKEN: &str = "sandbox-token";
+
+    fn eligible_success() -> EligibleNetworkLogUploadOutcome {
+        EligibleNetworkLogUploadOutcome::Success
+    }
+
+    fn eligible_transport_failure() -> EligibleNetworkLogUploadOutcome {
+        EligibleNetworkLogUploadOutcome::TransportFailure {
+            failure_kind: ApiFailureKind::Timeout,
+            failure_cause: ApiTransportCause::Timeout,
+        }
+    }
+
+    fn session_transport_failure() -> NetworkLogUploadSessionOutcome {
+        NetworkLogUploadSessionOutcome::TransportFailure {
+            failure_kind: ApiFailureKind::Timeout,
+            failure_cause: ApiTransportCause::Timeout,
+        }
+    }
+
+    #[test]
+    fn upload_health_requires_both_failure_count_and_rate() {
+        let now = Instant::now();
+
+        let excluded = NetworkLogUploadHealthTracker::new();
+        excluded.observe(NetworkLogUploadSessionOutcome::Excluded);
+        assert!(
+            excluded
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .outcomes
+                .is_empty()
+        );
+
+        let too_few = NetworkLogUploadHealthTracker::new();
+        assert!(
+            too_few
+                .record_at(now, eligible_transport_failure())
+                .is_none()
+        );
+        assert!(
+            too_few
+                .record_at(now, eligible_transport_failure())
+                .is_none()
+        );
+
+        let below_rate = NetworkLogUploadHealthTracker::new();
+        for _ in 0..13 {
+            assert!(below_rate.record_at(now, eligible_success()).is_none());
+        }
+        for _ in 0..3 {
+            assert!(
+                below_rate
+                    .record_at(now, eligible_transport_failure())
+                    .is_none()
+            );
+        }
+
+        let exact_rate = NetworkLogUploadHealthTracker::new();
+        for _ in 0..12 {
+            assert!(exact_rate.record_at(now, eligible_success()).is_none());
+        }
+        for _ in 0..2 {
+            assert!(
+                exact_rate
+                    .record_at(now, eligible_transport_failure())
+                    .is_none()
+            );
+        }
+        let degradation = exact_rate
+            .record_at(now, eligible_transport_failure())
+            .expect("three failures among fifteen sessions reaches 20 percent");
+        assert_eq!(degradation.eligible_sessions, 15);
+        assert_eq!(degradation.successful_sessions, 12);
+        assert_eq!(degradation.transport_failures, 3);
+        assert_eq!(degradation.failure_rate_basis_points, 2_000);
+    }
+
+    #[test]
+    fn upload_health_latches_resets_silently_and_allows_a_later_incident() {
+        let tracker = NetworkLogUploadHealthTracker::new();
+        let now = Instant::now();
+        for _ in 0..12 {
+            assert!(tracker.record_at(now, eligible_success()).is_none());
+        }
+        for _ in 0..2 {
+            assert!(
+                tracker
+                    .record_at(now, eligible_transport_failure())
+                    .is_none()
+            );
+        }
+        assert!(
+            tracker
+                .record_at(now, eligible_transport_failure())
+                .is_some()
+        );
+        assert!(
+            tracker
+                .record_at(now, eligible_transport_failure())
+                .is_none()
+        );
+
+        for _ in 0..5 {
+            assert!(tracker.record_at(now, eligible_success()).is_none());
+        }
+        assert!(
+            tracker
+                .record_at(now, eligible_transport_failure())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn upload_health_keeps_the_exact_window_boundary_then_expires() {
+        let tracker = NetworkLogUploadHealthTracker::new();
+        let started_at = Instant::now();
+        for _ in 0..12 {
+            assert!(tracker.record_at(started_at, eligible_success()).is_none());
+        }
+        for _ in 0..2 {
+            assert!(
+                tracker
+                    .record_at(started_at, eligible_transport_failure())
+                    .is_none()
+            );
+        }
+        assert!(
+            tracker
+                .record_at(started_at, eligible_transport_failure())
+                .is_some()
+        );
+
+        let boundary = started_at + NETWORK_LOG_UPLOAD_HEALTH_WINDOW;
+        assert!(
+            tracker
+                .record_at(boundary, eligible_transport_failure())
+                .is_none()
+        );
+        assert_eq!(
+            tracker
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .outcomes
+                .len(),
+            16
+        );
+
+        let after_boundary = boundary + Duration::from_nanos(1);
+        assert!(
+            tracker
+                .record_at(after_boundary, eligible_success())
+                .is_none()
+        );
+        let state = tracker
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(state.outcomes.len(), 2);
+        assert_eq!(state.successful_sessions, 1);
+        assert_eq!(state.transport_failures, 1);
+        assert!(!state.degradation_emitted);
+    }
+
+    #[test]
+    fn upload_health_reopens_incident_when_expiry_and_failure_share_observation() {
+        let tracker = NetworkLogUploadHealthTracker::new();
+        let started_at = Instant::now();
+        assert!(
+            tracker
+                .record_at(started_at, eligible_transport_failure())
+                .is_none()
+        );
+        assert!(
+            tracker
+                .record_at(
+                    started_at + Duration::from_nanos(1),
+                    eligible_transport_failure(),
+                )
+                .is_none()
+        );
+        assert!(
+            tracker
+                .record_at(
+                    started_at + Duration::from_nanos(2),
+                    eligible_transport_failure(),
+                )
+                .is_some()
+        );
+
+        let degradation = tracker
+            .record_at(
+                started_at + NETWORK_LOG_UPLOAD_HEALTH_WINDOW + Duration::from_nanos(1),
+                eligible_transport_failure(),
+            )
+            .expect("expiry below the threshold resets before the new failure recrosses it");
+        assert_eq!(degradation.eligible_sessions, 3);
+        assert_eq!(degradation.transport_failures, 3);
+    }
+
+    #[tokio::test]
+    async fn upload_health_emits_one_error_for_a_concurrent_threshold_crossing() {
+        let tracker = NetworkLogUploadHealthTracker::new();
+        for _ in 0..12 {
+            tracker.observe(NetworkLogUploadSessionOutcome::Success);
+        }
+        for _ in 0..2 {
+            tracker.observe(session_transport_failure());
+        }
+
+        let ((first, second), events) = capture_async_log_events(async {
+            let first_tracker = tracker.clone();
+            let first = tokio::spawn(async move {
+                first_tracker.observe(session_transport_failure());
+            });
+            let second_tracker = tracker.clone();
+            let second = tokio::spawn(async move {
+                second_tracker.observe(session_transport_failure());
+            });
+            tokio::join!(first, second)
+        })
+        .await;
+        first.unwrap();
+        second.unwrap();
+
+        let degraded: Vec<_> = events
+            .iter()
+            .filter(|event| {
+                event
+                    .fields
+                    .get("message")
+                    .is_some_and(|message| message == "network log uploads degraded")
+            })
+            .collect();
+        assert_eq!(degraded.len(), 1, "events={events:#?}");
+        let degraded = degraded[0];
+        assert_eq!(degraded.level, tracing::Level::ERROR);
+        assert_event_field(degraded, "window_seconds", "300");
+        assert_event_field(degraded, "eligible_sessions", "15");
+        assert_event_field(degraded, "successful_sessions", "12");
+        assert_event_field(degraded, "transport_failures", "3");
+        assert_event_field(degraded, "failure_rate_basis_points", "2000");
+        assert_event_field(degraded, "failure_kind", "timeout");
+        assert_event_field(degraded, "failure_cause", "timeout");
+    }
 
     fn http_for_server(server: &MockServer) -> HttpClient {
         HttpClient::new(HttpClientConfig {
@@ -940,7 +1428,7 @@ mod tests {
 
     #[test]
     fn network_log_preserves_all_fields() {
-        let json = r#"{"timestamp":"2026-02-15T10:00:00","action":"ALLOW","host":"api.github.com","port":443,"method":"GET","url":"https://api.github.com/repos/vm0-ai/vm0","status":200,"latency_ms":150,"request_size":0,"response_size":1024,"firewall_base":"https://api.github.com","firewall_name":"github","firewall_permission":"metadata:read","firewall_rule_match":"GET /repos/{owner}/{repo}"}"#;
+        let json = r#"{"timestamp":"2026-02-15T10:00:00","action":"ALLOW","host":"api.github.com","port":443,"method":"GET","url":"https://api.github.com/repos/okou-ai/okou","status":200,"latency_ms":150,"request_size":0,"response_size":1024,"firewall_base":"https://api.github.com","firewall_name":"github","firewall_permission":"metadata:read","firewall_rule_match":"GET /repos/{owner}/{repo}"}"#;
         let log: NetworkLog = serde_json::from_str(json).unwrap();
         let v = &log.0;
         assert_eq!(v["method"], "GET");
@@ -1049,11 +1537,12 @@ mod tests {
             .await;
 
         let http = http_for_server(&server);
-        let (_, events) =
+        let (outcome, events) =
             capture_async_log_events(upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path))
                 .await;
 
         upload.assert_calls_async(1).await;
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Success);
         let started = captured_batch_event(&events, "uploading network log batch", 1);
         let uploaded = captured_batch_event(&events, "network log batch uploaded", 1);
         assert_batch_request_event(uploaded, 1, "confirmed_success");
@@ -1399,11 +1888,12 @@ mod tests {
             .await;
 
         let http = http_for_server(&server);
-        let (_, events) =
+        let (outcome, events) =
             capture_async_log_events(upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path))
                 .await;
 
         upload.assert_calls_async(1).await;
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Excluded);
         let event = captured_event(&events, "network log upload truncated");
         assert_event_field(event, "reason", "oversized_entry");
         assert_event_field(event, "attempted_batches", "1");
@@ -1543,9 +2033,10 @@ mod tests {
             .await;
 
         let http = http_for_server(&server);
-        upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path).await;
+        let outcome = upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path).await;
 
         upload.assert_calls_async(1).await;
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Excluded);
     }
 
     #[tokio::test]
@@ -1682,11 +2173,12 @@ mod tests {
             .await;
 
         let http = http_for_server(&server);
-        upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path).await;
+        let outcome = upload_network_logs(&http, run_id, SANDBOX_TOKEN, &path).await;
 
         first_upload.assert_calls_async(1).await;
         second_upload.assert_calls_async(1).await;
         third_upload.assert_calls_async(0).await;
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Excluded);
         assert!(path.exists());
     }
 
@@ -1703,13 +2195,17 @@ mod tests {
         let run_id = RunId::nil();
         let dir = tempfile::tempdir().unwrap();
 
-        upload_network_logs(&http, run_id, SANDBOX_TOKEN, &network_log_file(&dir)).await;
+        let missing =
+            upload_network_logs(&http, run_id, SANDBOX_TOKEN, &network_log_file(&dir)).await;
+        assert_eq!(missing, NetworkLogUploadSessionOutcome::Excluded);
 
         let empty = dir.path().join("empty.jsonl");
         tokio::fs::write(&empty, " \n\t\n").await.unwrap();
-        upload_network_logs(&http, run_id, SANDBOX_TOKEN, &empty).await;
+        let empty = upload_network_logs(&http, run_id, SANDBOX_TOKEN, &empty).await;
+        assert_eq!(empty, NetworkLogUploadSessionOutcome::Excluded);
 
-        upload_network_logs(&http, run_id, SANDBOX_TOKEN, dir.path()).await;
+        let unreadable = upload_network_logs(&http, run_id, SANDBOX_TOKEN, dir.path()).await;
+        assert_eq!(unreadable, NetworkLogUploadSessionOutcome::Excluded);
 
         upload.assert_calls_async(0).await;
     }
@@ -1738,7 +2234,7 @@ mod tests {
             .await;
 
         let http = http_for_server(&server);
-        let (_, events) = capture_async_log_events(upload_network_logs(
+        let (outcome, events) = capture_async_log_events(upload_network_logs(
             &http,
             RunId::nil(),
             SANDBOX_TOKEN,
@@ -1747,6 +2243,7 @@ mod tests {
         .await;
 
         upload.assert_calls_async(1).await;
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Excluded);
         let started = captured_batch_event(&events, "uploading network log batch", 1);
         let event = captured_batch_event(&events, "network logs upload rejected", 1);
         assert_batch_request_event(event, 1, "confirmed_rejection");
@@ -1842,8 +2339,9 @@ mod tests {
         let final_request_id = final_request_id_receiver.await.unwrap();
         tokio::time::advance(Duration::from_secs(6)).await;
 
-        let (_, events) = upload.await;
+        let (outcome, events) = upload.await;
         assert_eq!(started_at.elapsed(), Duration::from_secs(30));
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Excluded);
         clock_guard.abort();
         let _ = clock_guard.await;
         server_task.abort();
@@ -1911,7 +2409,7 @@ mod tests {
             })
         };
 
-        let (_, events) = await_with_frozen_time(async {
+        let (outcome, events) = await_with_frozen_time(async {
             let upload = capture_async_log_events(upload_network_logs(
                 &http,
                 RunId::nil(),
@@ -1935,6 +2433,7 @@ mod tests {
         .await;
         server_task.await.unwrap();
 
+        assert_eq!(outcome, NetworkLogUploadSessionOutcome::Success);
         let uploaded = captured_event(&events, "uploaded network logs");
         assert_event_field(uploaded, "batches", "3");
         assert_event_field(uploaded, "count", "3");
@@ -1971,7 +2470,7 @@ mod tests {
             })
         };
 
-        let (_, events) = await_with_frozen_time(async {
+        let (outcome, events) = await_with_frozen_time(async {
             let upload = capture_async_log_events(upload_network_logs(
                 &http,
                 RunId::nil(),
@@ -1999,8 +2498,17 @@ mod tests {
         );
 
         let failed = captured_batch_event(&events, "network logs upload failed", 1);
-        assert_eq!(failed.level, tracing::Level::WARN);
+        assert_eq!(
+            outcome,
+            NetworkLogUploadSessionOutcome::TransportFailure {
+                failure_kind: ApiFailureKind::Timeout,
+                failure_cause: ApiTransportCause::Timeout,
+            }
+        );
+        assert_eq!(failed.level, tracing::Level::INFO);
         assert_batch_request_event(failed, 1, "transport_failure");
+        assert_event_field(failed, "failure_kind", "timeout");
+        assert_event_field(failed, "failure_cause", "timeout");
         assert!(event_field(failed, "error").contains("timeout"));
         assert!(!has_captured_event(&events, "network log upload truncated"));
         assert!(!has_captured_event(&events, "uploaded network logs"));
@@ -2040,7 +2548,7 @@ mod tests {
             client_session_id: "runner-session-test".to_string(),
         })
         .unwrap();
-        let (_, events) = capture_async_log_events(upload_network_logs(
+        let (outcome, events) = capture_async_log_events(upload_network_logs(
             &http,
             RunId::nil(),
             SANDBOX_TOKEN,
@@ -2053,7 +2561,17 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
         let started = captured_batch_event(&events, "uploading network log batch", 1);
         let failed = captured_batch_event(&events, "network logs upload failed", 1);
+        let (failure_kind, failure_cause) = match outcome {
+            NetworkLogUploadSessionOutcome::TransportFailure {
+                failure_kind,
+                failure_cause,
+            } => (failure_kind, failure_cause),
+            outcome => panic!("expected transport failure, got {outcome:?}"),
+        };
+        assert_eq!(failed.level, tracing::Level::INFO);
         assert_batch_request_event(failed, 1, "transport_failure");
+        assert_event_field(failed, "failure_kind", failure_kind.as_str());
+        assert_event_field(failed, "failure_cause", failure_cause.as_str());
         assert_same_request_correlation(started, failed);
         assert!(path.exists());
     }

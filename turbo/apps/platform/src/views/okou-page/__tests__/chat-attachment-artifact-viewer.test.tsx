@@ -1,10 +1,14 @@
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadArtifactsContract,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { strFromU8, unzipSync } from "fflate";
@@ -14,6 +18,7 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   ATTACHMENT_RUN_ID,
   ATTACHMENT_THREAD_ID,
@@ -29,6 +34,8 @@ import {
   mockSplitAttachmentChats,
   privateAttachmentUrl,
   publicArtifactUrl,
+  queryNamedButton,
+  queryNamedLink,
   type AttachmentChatEvent,
 } from "./chat-attachment-test-helpers.ts";
 
@@ -675,6 +682,101 @@ test("Image navigation remains inside its split-view chat", async () => {
   });
 });
 
+test("A user's attachment preview withholds the sharing an agent artifact offers", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const firstAttachment = "share-gate-attachment-first";
+  const secondAttachment = "share-gate-attachment-second";
+  const agentImageUrl = publicArtifactUrl("agent-chart.png");
+  mockAttachmentChat(context, {
+    chatEvents: [
+      userImageMessage("share-gate-user-message", [
+        {
+          type: "file",
+          fileId: firstAttachment,
+          filenameSnapshot: "brief.png",
+          contentType: "image/png",
+        },
+        {
+          type: "file",
+          fileId: secondAttachment,
+          filenameSnapshot: "sketch.png",
+          contentType: "image/png",
+        },
+        { type: "text", text: "Reference images" },
+      ]),
+      assistantMessage(`![agent-chart.png](${agentImageUrl})`),
+    ],
+    artifacts: [
+      artifactFile("brief.png", {
+        id: firstAttachment,
+        contentType: "image/png",
+        url: privateAttachmentUrl(firstAttachment),
+      }),
+      artifactFile("sketch.png", {
+        id: secondAttachment,
+        contentType: "image/png",
+        url: privateAttachmentUrl(secondAttachment),
+      }),
+      artifactFile("agent-chart.png", {
+        id: "share-gate-agent-image",
+        contentType: "image/png",
+        url: agentImageUrl,
+      }),
+    ],
+  });
+  mockPrivateUrlSequence(context, {
+    [firstAttachment]: ["https://private-files.example/brief.png"],
+    [secondAttachment]: ["https://private-files.example/sketch.png"],
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  click(await findNamedLink("Preview brief.png"));
+  const briefDialog = await screen.findByRole("dialog", {
+    name: "brief.png preview",
+  });
+  // The resolved private address proves the token the share action reads has
+  // already settled, so a missing control is a decision, not a pending state.
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "src",
+      "https://private-files.example/brief.png",
+    );
+  });
+  expect(getNamedButton("Download options", briefDialog)).toBeInTheDocument();
+  expect(queryNamedLink("Share", briefDialog)).toBeNull();
+  expect(queryNamedButton("Share", briefDialog)).toBeNull();
+
+  click(await findNamedButton("Next image artifact", briefDialog));
+  const sketchDialog = await screen.findByRole("dialog", {
+    name: "sketch.png preview",
+  });
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "src",
+      "https://private-files.example/sketch.png",
+    );
+  });
+  expect(queryNamedLink("Share", sketchDialog)).toBeNull();
+  expect(queryNamedButton("Share", sketchDialog)).toBeNull();
+
+  await closeFocusedPreview();
+
+  const agentImage = await screen.findByAltText("agent-chart.png");
+  const agentPreview = agentImage.closest<HTMLElement>("a, button");
+  if (!agentPreview) {
+    throw new Error("Expected the agent image to open a preview");
+  }
+  click(agentPreview);
+  const agentDialog = await screen.findByRole("dialog", {
+    name: "agent-chart.png preview",
+  });
+  click(await findNamedLink("Share", agentDialog));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([agentImageUrl]);
+  });
+});
+
 test.each(["link", "card"])(
   "Private HTML %s previews reuse their URL across reopening and split view",
   async (presentation) => {
@@ -951,6 +1053,91 @@ test.each([
     });
   },
 );
+test("A private site card keeps its screenshot credentials when the artifact list reloads", async () => {
+  const deploymentId = "00000000-0000-4000-8000-000000000023";
+  const screenshotId = "00000000-0000-4000-8000-000000000024";
+  const site = artifactReferencePath(deploymentId, "index.html");
+  const screenshot = artifactReferencePath(screenshotId, "preview.webp");
+  const screenshotUrl = `${R2_ORIGIN}/private/screenshot.bin?X-Amz-Signature=owner`;
+  const rotatedScreenshotUrl = `${R2_ORIGIN}/private/screenshot.bin?X-Amz-Signature=rotated`;
+  const previewUrl = `https://pv-${"c".repeat(48)}.sites.vm7.io/`;
+  const files = [
+    artifactFile("private-report.html", {
+      id: "private-screenshot-reload",
+      contentType: "text/html",
+      url: site,
+      artifactKind: "hosted-site",
+      previewImageUrl: screenshot,
+    }),
+  ];
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
+    );
+  });
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`![Private report](${site})`)],
+    artifacts: files,
+  });
+  // Opening the artifacts panel reloads this list, which is what used to
+  // rebuild the card's screenshot graph.
+  let artifactListRequests = 0;
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    artifactListRequests += 1;
+    return respond(200, {
+      runs: [{ runId: ATTACHMENT_RUN_ID, files }],
+    });
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [], nextCursor: null });
+  });
+  let screenshotAuthorizations = 0;
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      const isScreenshot =
+        params.reference === screenshot.slice("/artifacts/".length);
+      if (isScreenshot) {
+        screenshotAuthorizations += 1;
+      }
+      return respond(200, {
+        url: isScreenshot
+          ? screenshotAuthorizations > 1
+            ? rotatedScreenshotUrl
+            : screenshotUrl
+          : previewUrl,
+        filename: isScreenshot ? "preview.webp" : "index.html",
+        contentType: isScreenshot ? "image/webp" : "text/html",
+        target: isScreenshot
+          ? { kind: "file", id: screenshotId }
+          : { kind: "html", id: deploymentId },
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+    },
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const card = await screen.findByTestId("attachment-preview-html");
+  const thumbnail = await within(card).findByTestId(
+    "attachment-preview-thumbnail",
+  );
+  expect(thumbnail).toHaveAttribute(
+    "src",
+    `${THUMBNAIL_PREFIX}${screenshotUrl}`,
+  );
+  const requestsBeforeReload = artifactListRequests;
+
+  click(await screen.findByLabelText("Open artifacts"));
+  await screen.findByTestId("thread-sidebar-artifacts");
+  await waitFor(() => {
+    expect(artifactListRequests).toBeGreaterThan(requestsBeforeReload);
+  });
+
+  expect(screenshotAuthorizations).toBe(1);
+  expect(
+    within(card).getByTestId("attachment-preview-thumbnail"),
+  ).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${screenshotUrl}`);
+});
 
 const PUBLICATION_DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000021";
 const PUBLICATION_SITE_ID = "00000000-0000-4000-8000-000000000022";

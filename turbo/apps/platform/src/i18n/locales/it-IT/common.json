@@ -1223,9 +1223,6 @@
       "namedPlan": "Piano {{plan}}",
       "noActivePlan": "Nessun piano attivo",
       "noActiveSubscription": "Nessun abbonamento attivo",
-      "noPlan": {
-        "name": "Nessun piano"
-      },
       "perMonth": "/mese",
       "pricePerMonth": "{{price}}/mese",
       "pro": {
@@ -1448,6 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} aggiunti",
+        "checkedIn": "Check-in fatto",
         "checkin": {
           "action": "Fai check-in",
           "description": "Fai check-in una volta al giorno. Si reimposta alle 00:00 UTC.",
@@ -1457,11 +1456,12 @@
         "connector": {
           "action": "Collega",
           "description": "Gmail, Notion e altri 100+",
-          "name": "Collega un connettore",
+          "name": "Collega uno strumento",
           "unit": "per connettore"
         },
+        "earned": "{{amount}} ottenuti",
+        "howRewardsWork": "Come funzionano i premi",
         "inReview": "In revisione",
-        "inReviewDescription": "Inviato, in attesa di revisione",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} crediti",
@@ -1517,16 +1517,13 @@
           "name": "Invita il tuo team",
           "unit": "per membro"
         },
-        "pendingInvitations": "Inviti in sospeso: {{amount}}",
-        "personalBalanceNote": "I premi scadono 7 giorni dopo l’assegnazione. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
-        "progressLabel": "Avanzamento dei primi passi",
-        "rejectedDescription": "Questo post non è idoneo. Invia un altro post pubblico che menzioni Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Connettori premiati: {{amount}}",
+        "notEligible": "Non idoneo",
+        "pendingState": "{{amount}} in sospeso",
+        "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "share": {
           "action": "Condividi",
           "description": "Pubblica, poi incolla il link",
-          "name": "Condividi {{assistantName}} su X"
+          "name": "Condividi su X"
         },
         "shareDialog": {
           "description": "Invia un post pubblico per la verifica. Un premio approvato per persona.",
@@ -1539,11 +1536,12 @@
         "slack": {
           "action": "Aggiungi",
           "description": "Dove il tuo team lavora già",
-          "name": "Aggiungi {{assistantName}} a Slack"
+          "name": "Aggiungi a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Prova un’attività e guadagna crediti.",
+        "streak": "{{amount}} giorni di fila",
         "title": "Inizia",
+        "toGo": "Mancano {{amount}}",
         "workflow": {
           "action": "Crea",
           "description": "Trasforma un'attività ricorrente in una competenza riutilizzabile",
@@ -5895,7 +5893,6 @@
       "custom": "Personalizzato",
       "free": "Gratuito",
       "limitedFree": "Gratuito limitato",
-      "noPlan": "Nessun piano",
       "pro": "Pro",
       "team": "Team"
     },
@@ -6976,9 +6973,6 @@
     "detail": {
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}",
-      "source_one": "{{count}} pagina · da {{filename}}",
-      "source_many": "{{count}} pagine · da {{filename}}",
-      "source_other": "{{count}} pagine · da {{filename}}",
       "sourceFile": "Da {{filename}}"
     },
     "empty": {
@@ -7355,7 +7349,7 @@
         "refs": "Rif",
         "refsPlaceholder": "principale, v1.0.0",
         "repositories": "Repository",
-        "repositoriesPlaceholder": "vm0-ai/vm0, proprietario/un altro repository",
+        "repositoriesPlaceholder": "okou-ai/okou, proprietario/un altro repository",
         "repositoriesSummary": "Repository {{values}}",
         "repository": "Repository",
         "repositoryPlaceholder": "owner/name",

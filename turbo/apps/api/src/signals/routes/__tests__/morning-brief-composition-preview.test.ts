@@ -37,7 +37,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
  * handler, its production gate, authentication and ownership checks.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectorApi = createConnectorBddApi(context);
 
@@ -55,7 +55,7 @@ const ANCHOR = new Date(ANCHOR_MS).toISOString();
 const MID_WINDOW = new Date(ANCHOR_MS - 60 * 60 * 1000).toISOString();
 
 const LOGIN = "brief-owner";
-const REPO = "vm0-ai/okou";
+const REPO = "okou-ai/okou";
 const HEAD_A = "a".repeat(40);
 const HEAD_B = "b".repeat(40);
 

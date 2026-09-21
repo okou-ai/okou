@@ -467,29 +467,17 @@ function isRequestLocator(
   );
 }
 
-function isAgentIdentityLock(queryArgs: unknown[]): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes('from "agents"') &&
-    text.includes("for key share")
-  );
-}
-
-function isReadIdentityThreadLock(
-  queryArgs: unknown[],
-  chatThreadId: string,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes('select "id" from "chat_threads"') &&
-    text.includes("for update") &&
-    barrierQueryBinds(queryArgs, chatThreadId)
-  );
-}
-
-function isReadThreadPin(
+/**
+ * The projection's own thread recheck.
+ *
+ * This route is on the lock-free read path: the shared helper takes neither
+ * `agents` KEY SHARE nor a thread row lock, and #35311's `FOR UPDATE` is gone
+ * with the upgrade cycle it existed to break. The recheck is therefore an
+ * ordinary read, and it is the single point between admission and the request
+ * pin at which a test can move canonical identity and still have this
+ * transaction observe it.
+ */
+function isReadThreadRecheck(
   queryArgs: unknown[],
   kind: AuthorizationReadKind,
   chatThreadId: string,
@@ -501,7 +489,7 @@ function isReadThreadPin(
     text.startsWith("select") &&
     text.includes('from "chat_threads"') &&
     text.includes(projectionColumn) &&
-    text.includes("for update") &&
+    !text.includes(" for ") &&
     barrierQueryBinds(queryArgs, chatThreadId)
   );
 }
@@ -540,14 +528,12 @@ function tookReadRequestPin(
 }
 
 type AuthorizationReadStop =
-  | "before-agent-lock"
-  | "before-identity-thread-lock"
-  | "before-thread-pin"
+  | "before-thread-read"
   | "commit"
   | "hosts"
   | "locator"
   | "request-pin"
-  | "thread-pin";
+  | "thread-read";
 
 async function withAuthorizationReadBarrierFixture<T>(
   args: {
@@ -570,17 +556,11 @@ async function withAuthorizationReadBarrierFixture<T>(
         if (args.stopAt === "locator") {
           return selectingStatement;
         }
-        if (args.stopAt === "before-agent-lock") {
-          return isAgentIdentityLock(queryArgs);
-        }
-        if (args.stopAt === "before-identity-thread-lock") {
-          return isReadIdentityThreadLock(queryArgs, args.chatThreadId);
-        }
         if (
-          args.stopAt === "before-thread-pin" ||
-          args.stopAt === "thread-pin"
+          args.stopAt === "before-thread-read" ||
+          args.stopAt === "thread-read"
         ) {
-          return isReadThreadPin(queryArgs, args.kind, args.chatThreadId);
+          return isReadThreadRecheck(queryArgs, args.kind, args.chatThreadId);
         }
         if (args.stopAt === "request-pin") {
           return isReadRequestPin(queryArgs, args.kind);
@@ -595,7 +575,7 @@ async function withAuthorizationReadBarrierFixture<T>(
       },
       pauseAfter:
         args.stopAt === "locator" ||
-        args.stopAt === "thread-pin" ||
+        args.stopAt === "thread-read" ||
         args.stopAt === "request-pin" ||
         args.stopAt === "hosts",
       work: args.work,

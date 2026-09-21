@@ -79,4 +79,53 @@ describe("Sheet", () => {
       "data-ending-style:opacity-0",
     );
   });
+
+  // The sheet is portalled and fixed, so the shell's padding never reaches it.
+  // Before this, a right sheet's bottom row sat under the home indicator in a
+  // standalone PWA. Only the edges it meets take an inset: the free edge sits
+  // mid-screen, where an inset is a gap rather than a clearance.
+  describe.each([
+    { free: "pl", inset: ["pt", "pr", "pb"], side: "right" },
+    { free: "pr", inset: ["pt", "pb", "pl"], side: "left" },
+    { free: "pb", inset: ["pt", "pr", "pl"], side: "top" },
+    { free: "pt", inset: ["pr", "pb", "pl"], side: "bottom" },
+  ] as const)("a $side sheet", ({ free, inset, side }) => {
+    function renderSheet() {
+      render(
+        <Sheet open>
+          <SheetContent side={side}>
+            <SheetTitle>Details</SheetTitle>
+          </SheetContent>
+        </Sheet>,
+      );
+      return screen.getByRole("dialog", { name: "Details" });
+    }
+
+    it("clears the insets on the edges it meets", () => {
+      expect(renderSheet()).toHaveClass(
+        ...inset.map((edge) => {
+          return `${edge}-safe-offset-6`;
+        }),
+      );
+    });
+
+    it(`keeps a plain gutter on the ${free} edge`, () => {
+      const sheet = renderSheet();
+
+      expect(sheet).toHaveClass("p-6");
+      expect(sheet.className).not.toContain(`${free}-safe`);
+    });
+
+    // Offsets on an absolutely positioned child resolve against the padding
+    // box, so the popup's own insets leave this control where it was.
+    it("clears the same edges for the close control", () => {
+      renderSheet();
+      const close = screen.getByRole("button", { name: "Close" });
+
+      expect(close).toHaveClass(
+        side === "bottom" ? "top-4" : "top-safe-offset-4",
+        side === "left" ? "right-4" : "right-safe-offset-4",
+      );
+    });
+  });
 });

@@ -376,12 +376,7 @@ function printAvatarVideoResult(
   },
   json: boolean,
 ): void {
-  const presentation = createArtifactPresentation(
-    result.filename,
-    result.url,
-    undefined,
-    result,
-  );
+  const presentation = createArtifactPresentation(result.filename, result.url);
   if (json) {
     console.log(JSON.stringify({ ...result, ...presentation.json }));
     return;

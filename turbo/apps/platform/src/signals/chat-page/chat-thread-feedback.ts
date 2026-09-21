@@ -326,17 +326,6 @@ function readFeedbackSelection(): CapturedFeedbackSelection | null {
   };
 }
 
-function shouldDismissSelectionForInteractionTarget(
-  target: EventTarget | null,
-): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  return (
-    isEditableTarget(target) || target.closest(CHAT_COMPOSER_SELECTOR) !== null
-  );
-}
-
 function isSelectionInteractionTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
@@ -670,10 +659,13 @@ function createListenersRef({
           selectionInteractionInProgress = isSelectionInteractionTarget(
             event.target,
           );
-          if (
-            get(selection$) !== null &&
-            shouldDismissSelectionForInteractionTarget(event.target)
-          ) {
+          // A press outside the toolbar dismisses it, and pointerdown is the
+          // event that can say so: it opens a gesture, while the toolbar is
+          // only ever mounted by one that has ended. A press that lands on a
+          // control which keeps the native selection alive — anything that
+          // calls `preventDefault` on mousedown — is dismissed here rather
+          // than waiting for a selection change that never arrives.
+          if (get(selection$) !== null && !selectionInteractionInProgress) {
             set(close$);
           }
         },

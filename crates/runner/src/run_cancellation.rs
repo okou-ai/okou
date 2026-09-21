@@ -44,14 +44,14 @@
 //! [`RunCancellationHandle::try_transfer_guard`] while holding that lock and,
 //! when the attempt fails, release the other lock before awaiting the gate.
 //! The idle-pool publication path in
-//! [`sandbox_finalization`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L809-L829)
+//! [`sandbox_finalization`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L809-L829)
 //! follows this ordering. The broader lifecycle is exercised by
-//! [`signals`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/cmd/start/signals.rs#L213-L247),
-//! [`provider cancellation`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/provider/api_ably_supervisor.rs#L850-L884),
-//! [`job discovery`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/cmd/start/job_discovery.rs#L976-L1004),
-//! [`sandbox finalization`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L697-L732),
+//! [`signals`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/signals.rs#L213-L247),
+//! [`provider cancellation`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/provider/api_ably_supervisor.rs#L850-L884),
+//! [`job discovery`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/job_discovery.rs#L976-L1004),
+//! [`sandbox finalization`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L697-L732),
 //! and the focused
-//! [`cancellation tests`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/run_cancellation.rs#L395-L494).
+//! [`cancellation tests`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/run_cancellation.rs#L395-L494).
 //! The job-discovery-specific ownership lifecycle is described in
 //! [issue #30953](https://github.com/vm0-ai/vm0/issues/30953).
 
