@@ -184,15 +184,18 @@ export type SkillImportSkillsContract = typeof skillImportSkillsContract;
  * remains, which the upload route reports as an invalid request.
  */
 export function normalizeSkillImportName(name: string): string | null {
-  const slug = name
+  // One pass collapses every run of non-slug characters into a single hyphen,
+  // so the truncated result can only ever carry one leading and one trailing
+  // hyphen. Those are removed by index rather than by a `-+` pattern, which
+  // backtracks on a long run of hyphens.
+  const collapsed = name
     .trim()
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/-{2,}/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
+    .slice(0, 64);
+  const start = collapsed.startsWith("-") ? 1 : 0;
+  const end = collapsed.endsWith("-") ? collapsed.length - 1 : collapsed.length;
+  const slug = collapsed.slice(start, Math.max(start, end));
 
   return workflowNameSchema.safeParse(slug).success ? slug : null;
 }
