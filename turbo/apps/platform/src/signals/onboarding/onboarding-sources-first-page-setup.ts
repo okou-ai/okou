@@ -27,6 +27,7 @@ import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
+import { settle } from "../utils.ts";
 import {
   promptHandoffParams,
   setupOnboardingMakePage$,
@@ -225,11 +226,15 @@ const watchOnboardingAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const switches = await get(featureSwitches$);
     signal.throwIfAborted();
-    if (!(switches[FeatureSwitchKey.AgentPhoneEntry] ?? false)) {
+    if (!switches[FeatureSwitchKey.AgentPhoneEntry]) {
       return;
     }
     set(setAgentPhoneConnectDialogOpen$, false);
-    await set(watchAgentPhoneConnection$, signal);
+    // The watcher only keeps the tile current, and the tile reads the link
+    // status itself: it offers no connect while that read has no answer. So a
+    // failed read costs live updates and stops here, rather than failing a
+    // step that is about Slack.
+    await settle(set(watchAgentPhoneConnection$, signal), signal);
   },
 );
 

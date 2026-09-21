@@ -47,8 +47,11 @@ const WAITING_FOR_SKILLS = "Imported skills appear here as they arrive.";
 /** The token the mocked session hands out, which only the prompt carries. */
 const SESSION_TOKEN = "vm0_skillimport_mock-session-token";
 const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
+const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const SKILL_DISPLAY_NAME = "Weekly report";
 const SKILL_NAME = "weekly-report";
+/** A skill on another agent, which this step is not importing into. */
+const OTHER_AGENT_SKILL = "Someone else's skill";
 
 /** One connected source, which every step after the source step requires. */
 function mockConnectedSource(): void {
@@ -93,14 +96,19 @@ function mockConnectedSource(): void {
   });
 }
 
-function importedSkill(): WorkflowSummary {
+function workflow(entry: {
+  readonly id: string;
+  readonly agentId: string;
+  readonly name: string;
+  readonly displayName: string;
+}): WorkflowSummary {
   return {
-    id: "d0000000-0000-4000-a000-000000000011",
-    agentId: DEFAULT_AGENT_ID,
+    id: entry.id,
+    agentId: entry.agentId,
     agentName: null,
     agentDisplayName: null,
-    name: SKILL_NAME,
-    displayName: SKILL_DISPLAY_NAME,
+    name: entry.name,
+    displayName: entry.displayName,
     description: "What last week looked like",
     visibility: "private",
     ownerUserId: "test-user-123",
@@ -111,27 +119,48 @@ function importedSkill(): WorkflowSummary {
   };
 }
 
+function importedSkill(): WorkflowSummary {
+  return workflow({
+    id: "d0000000-0000-4000-a000-000000000011",
+    agentId: DEFAULT_AGENT_ID,
+    name: SKILL_NAME,
+    displayName: SKILL_DISPLAY_NAME,
+  });
+}
+
+/** A private workflow on an agent this run never imports into. */
+function otherAgentSkill(): WorkflowSummary {
+  return workflow({
+    id: "d0000000-0000-4000-a000-000000000012",
+    agentId: OTHER_AGENT_ID,
+    name: "someone-elses-skill",
+    displayName: OTHER_AGENT_SKILL,
+  });
+}
+
 /**
- * The agent's workflow list, as the step polls it: the test decides what the
- * user's own Codex or Claude Code session has written so far.
+ * The workflow list the step polls, scoped by agent the way the route is: the
+ * test decides what the user's own Codex or Claude Code session has written.
  */
 function mockAgentWorkflows(): {
   readonly write: (workflows: readonly WorkflowSummary[]) => void;
-  readonly requestedAgentIds: string[];
 } {
   let workflows: readonly WorkflowSummary[] = [];
-  const requestedAgentIds: string[] = [];
   context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    if (query.agentId !== undefined) {
-      requestedAgentIds.push(query.agentId);
-    }
-    return respond(200, [...workflows]);
+    const agentId = query.agentId;
+    return respond(
+      200,
+      agentId === undefined
+        ? [...workflows]
+        : workflows.filter((candidate) => {
+            return candidate.agentId === agentId;
+          }),
+    );
   });
   return {
     write: (next) => {
       workflows = next;
     },
-    requestedAgentIds,
   };
 }
 
@@ -209,7 +238,7 @@ test("The step hands over the prompt its session produced, and copies it whole",
 
   await openSkillsStep();
 
-  const prompt = await screen.findByLabelText(PROMPT_LABEL);
+  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt).toHaveTextContent(PROMPT_OPENING);
   // The prompt is what carries the session, so the token is in it and the
   // upload route it posts to is named.
@@ -244,7 +273,7 @@ test("A skill the import writes appears without the step being asked again", asy
     screen.findByText(WAITING_FOR_SKILLS),
   ).resolves.toBeInTheDocument();
 
-  agentWorkflows.write([importedSkill()]);
+  agentWorkflows.write([importedSkill(), otherAgentSkill()]);
 
   await expect(
     screen.findByText(SKILL_DISPLAY_NAME),
@@ -253,11 +282,8 @@ test("A skill the import writes appears without the step being asked again", asy
     screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE }),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText(WAITING_FOR_SKILLS)).not.toBeInTheDocument();
-  // The list is read against the org's default agent, not every workflow the
-  // user can see.
-  expect(new Set(agentWorkflows.requestedAgentIds)).toStrictEqual(
-    new Set([DEFAULT_AGENT_ID]),
-  );
+  // The list is the org's default agent, not every workflow the user can see.
+  expect(screen.queryByText(OTHER_AGENT_SKILL)).not.toBeInTheDocument();
   expect(posthog.events).toStrictEqual(
     expect.arrayContaining([
       onboardingEvent("SkillImported", {
@@ -276,6 +302,46 @@ test("A skill the import writes appears without the step being asked again", asy
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
+});
+
+test("Coming back to the step keeps the prompt it already gave and what arrived", async () => {
+  const agentWorkflows = mockAgentWorkflows();
+  let issued = 0;
+  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
+    issued += 1;
+    return respond(200, {
+      uploadUrl: "https://api.okou.test/api/skill-import/skills",
+      // A second session would carry a token the pasted prompt does not have.
+      token: `${SESSION_TOKEN}-${String(issued)}`,
+      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
+      limits: SKILL_IMPORT_LIMITS,
+    });
+  });
+
+  await openSkillsStep();
+
+  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
+  expect(prompt.textContent).toContain(`${SESSION_TOKEN}-1`);
+
+  agentWorkflows.write([importedSkill()]);
+  await expect(
+    screen.findByText(SKILL_DISPLAY_NAME),
+  ).resolves.toBeInTheDocument();
+
+  click(getButtonByName("Back"));
+  await expect(
+    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE }),
+  ).resolves.toBeInTheDocument();
+  // The same session the person may already have pasted, and the skill it
+  // wrote: the way back does not restart the import.
+  const returned = await screen.findByRole("region", { name: PROMPT_LABEL });
+  expect(returned.textContent).toContain(`${SESSION_TOKEN}-1`);
+  expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
 });
 
 test("The step can be left with nothing imported", async () => {
@@ -327,6 +393,6 @@ test("A session that cannot be opened leaves the step passable and offers it aga
 
   click(getButtonByName("Try again"));
 
-  const prompt = await screen.findByLabelText(PROMPT_LABEL);
+  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt).toHaveTextContent(PROMPT_OPENING);
 });

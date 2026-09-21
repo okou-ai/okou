@@ -57,6 +57,9 @@ function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
 
   return (
     <pre
+      // A named, focusable scroll container: the prompt is long, so it is
+      // read and selected where it stands rather than in a dialog.
+      role="region"
       tabIndex={0}
       aria-label={t(($) => {
         return $.onboarding.sourcesFirst.skills.promptLabel;
@@ -664,7 +667,7 @@ function OtherChatChannels({
 }) {
   const { t } = useTranslation();
   const agentPhoneEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.AgentPhoneEntry] ?? false;
+    useGet(featureSwitch$)[FeatureSwitchKey.AgentPhoneEntry];
 
   return (
     <div>
