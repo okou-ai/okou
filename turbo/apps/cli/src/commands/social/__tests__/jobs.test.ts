@@ -134,6 +134,130 @@ describe("saved Social data jobs", () => {
     });
   });
 
+  it("routes a Xiaohongshu note URL to a saved job", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(`${api}/quote`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({
+          platform: "xiaohongshu",
+          operation: "comments",
+          estimatedCredits: 19,
+          maxCredits: 19,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "comments",
+      "https://www.xiaohongshu.com/explore/6a402c900000000006021700",
+      "--limit",
+      "20",
+      "--dry-run",
+      "--json",
+    ]);
+    expect(requests).toEqual([
+      {
+        operation: "comments",
+        platform: "xiaohongshu",
+        url: "https://www.xiaohongshu.com/explore/6a402c900000000006021700",
+        limit: 20,
+      },
+    ]);
+    expect(JSON.parse(stdout())).toMatchObject({
+      kind: "quote",
+      quantity: 1,
+    });
+  });
+
+  it("routes an xhslink share link to a saved job without rewriting it", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(`${api}/quote`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({
+          platform: "xiaohongshu",
+          operation: "posts",
+          estimatedCredits: 19,
+          maxCredits: 19,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "posts",
+      "https://xhslink.com/m/3ZSCJZAMz0a",
+      "--dry-run",
+      "--json",
+    ]);
+    expect(requests).toEqual([
+      {
+        operation: "posts",
+        platform: "xiaohongshu",
+        url: "https://xhslink.com/m/3ZSCJZAMz0a",
+        limit: 10,
+      },
+    ]);
+  });
+
+  it("searches Xiaohongshu by name only through saved jobs", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(`${api}/quote`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({
+          platform: "xiaohongshu",
+          operation: "search",
+          estimatedCredits: 19,
+          maxCredits: 19,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "\u5496\u5561\u5e97\u63a2\u5e97",
+      "--platform",
+      "xiaohongshu",
+      "--dry-run",
+      "--json",
+    ]);
+    expect(requests).toEqual([
+      {
+        operation: "search",
+        platform: "xiaohongshu",
+        query: "\u5496\u5561\u5e97\u63a2\u5e97",
+        limit: 10,
+      },
+    ]);
+  });
+
+  it("rejects a Xiaohongshu search that does not ask for a saved job", async () => {
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "search",
+        "\u5496\u5561\u5e97\u63a2\u5e97",
+        "--platform",
+        "xiaohongshu",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(`${stdout()}${errors.mock.calls.flat().join("\n")}`).toContain(
+      "saved data job",
+    );
+  });
+
   it("submits an async job with the caller's idempotency key and hard credit cap", async () => {
     const requests: unknown[] = [];
     server.use(

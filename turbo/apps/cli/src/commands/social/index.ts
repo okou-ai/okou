@@ -65,8 +65,10 @@ import {
   commentsIntent,
   downloadPlatform,
   inspectIntent,
+  parseSearchPlatform,
   parseSocialPlatform,
   parseSocialTarget,
+  type SocialCommandPlatform,
   postsIntent,
   searchIntent,
   summarizeIntent,
@@ -99,7 +101,7 @@ interface PostsOptions extends CollectionOptions {
 interface SearchOptions extends CollectionOptions {
   readonly date?: string;
   readonly hashtag?: boolean;
-  readonly platform: SocialPlatform;
+  readonly platform: SocialCommandPlatform;
   readonly sort?: string;
   readonly type?: string;
 }
@@ -1639,8 +1641,8 @@ const searchCommand = new Command()
   .argument("<query>", "Search query or hashtag")
   .requiredOption(
     "--platform <platform>",
-    "instagram, tiktok, or youtube; saved jobs also support x and facebook",
-    parseSocialPlatform,
+    "instagram, tiktok, or youtube; saved jobs also support x, facebook, and xiaohongshu",
+    parseSearchPlatform,
   )
   .option("--hashtag", "Treat an Instagram or TikTok query as a hashtag")
   .option("--sort <sort>", "Platform-supported sort order")
@@ -1666,9 +1668,15 @@ const searchCommand = new Command()
           await printSocialJob("search", query, options);
           return;
         }
+        const platform = options.platform;
+        if (platform === "xiaohongshu") {
+          throw new InvalidArgumentError(
+            "Xiaohongshu search runs as a saved data job; add --dry-run, --max-credits, --async, or --request-id",
+          );
+        }
         await printCollectionIntent(
           searchIntent(query, {
-            platform: options.platform,
+            platform,
             limit: options.limit,
             hashtag: options.hashtag,
             sort: options.sort,

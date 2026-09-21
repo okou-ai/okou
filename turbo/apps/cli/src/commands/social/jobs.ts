@@ -10,7 +10,7 @@ import {
   type SocialDataOperation,
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
-import type { SocialPlatform } from "@okouai/api-contracts/contracts/social-discovery";
+import type { SocialCommandPlatform } from "./intents";
 import { Command, InvalidArgumentError } from "commander";
 
 import {
@@ -21,7 +21,7 @@ import {
   quoteSocialData,
   SocialDataRecoveryError,
 } from "../../lib/api/domains/social-data";
-import { parseSocialTarget } from "./intents";
+import { parseSocialTarget, parseXiaohongshuTarget } from "./intents";
 import { withSocialOutput, type SocialExportOptions } from "./output";
 
 export interface SocialJobOptions extends SocialExportOptions {
@@ -30,7 +30,7 @@ export interface SocialJobOptions extends SocialExportOptions {
   readonly async?: boolean;
   readonly requestId?: string;
   readonly checkpoint?: string;
-  readonly platform?: SocialPlatform;
+  readonly platform?: SocialCommandPlatform;
   readonly limit?: number;
   readonly kind?: string;
   readonly sort?: string;
@@ -129,20 +129,31 @@ function dataRequest(
   input: string,
   options: SocialJobOptions,
 ): SocialDataRequest {
-  const target = operation === "search" ? undefined : parseSocialTarget(input);
-  const platform = target?.platform ?? options.platform;
+  const xiaohongshu =
+    operation === "search" ? undefined : parseXiaohongshuTarget(input);
+  const target =
+    operation === "search" || xiaohongshu
+      ? undefined
+      : parseSocialTarget(input);
+  const platform = xiaohongshu
+    ? "xiaohongshu"
+    : (target?.platform ?? options.platform);
   const parsedPlatform = socialDataPlatformSchema.safeParse(
     platform === "twitter" ? "x" : platform,
   );
   if (!parsedPlatform.success) {
     throw new InvalidArgumentError(
-      "Saved Social data jobs support x, instagram, tiktok, youtube, and facebook",
+      "Saved Social data jobs support x, instagram, tiktok, youtube, facebook, and xiaohongshu",
     );
   }
   const parsed = socialDataRequestSchema.safeParse({
     operation,
     platform: parsedPlatform.data,
-    ...(target ? { url: target.canonicalUrl } : { query: input }),
+    ...(xiaohongshu
+      ? { url: xiaohongshu }
+      : target
+        ? { url: target.canonicalUrl }
+        : { query: input }),
     limit:
       options.limit ??
       (operation === "inspect" || operation === "transcript" ? 1 : 10),

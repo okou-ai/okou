@@ -78,7 +78,7 @@ function client(actor: SocialActor) {
 }
 
 async function pricing(unitPrice = 7): Promise<UsagePricingFixture> {
-  const configured = ["youtube", "x"].map((platform) => {
+  const configured = ["youtube", "x", "instagram"].map((platform) => {
     return {
       kind: "social",
       provider: `monid/${platform}`,
@@ -319,6 +319,158 @@ describe("Social data jobs", () => {
     });
     expect(observed.runRequests).toBe(0);
     await expect(credits(actor)).resolves.toBe(before);
+  });
+
+  function tikhubSource() {
+    const endpoint = "/api/v1/instagram/v1/fetch_user_info_by_username";
+    const observed = { runRequests: 0 };
+    function media(shortcode: string, views: number, likes: number) {
+      return {
+        node: {
+          id: `media-${shortcode}`,
+          shortcode,
+          taken_at_timestamp: 1789075224,
+          is_video: true,
+          video_view_count: views,
+          edge_liked_by: { count: likes },
+          edge_media_to_comment: { count: 7 },
+          edge_media_to_caption: { edges: [{ node: { text: "Launch day" } }] },
+          owner: { username: "example" },
+        },
+      };
+    }
+    server.use(
+      http.post(`${SOURCE_BASE}/inspect`, () => {
+        return HttpResponse.json({
+          provider: "tikhub",
+          endpoint,
+          input: {
+            queryParams: {
+              type: "object",
+              properties: { username: { type: "string" } },
+              required: ["username"],
+            },
+          },
+          price: {
+            type: "PER_CALL",
+            amount: { value: 0.0015, currency: "USD" },
+          },
+        });
+      }),
+      http.post(`${SOURCE_BASE}/run`, () => {
+        observed.runRequests += 1;
+        return HttpResponse.json({
+          runId: `source-${randomUUID()}`,
+          provider: "tikhub",
+          endpoint,
+          status: "COMPLETED",
+          providerResponse: { httpStatus: 200 },
+          billing: {
+            actualCost: {
+              value: 1500,
+              unit: "MICRO_DOLLAR",
+              currency: "USD",
+            },
+          },
+          billedUnits: 1,
+          output: {
+            data: {
+              user: {
+                id: "528817151",
+                username: "example",
+                full_name: "Example",
+                edge_owner_to_timeline_media: {
+                  count: 2,
+                  edges: [
+                    media("AAA", 744337, 26815),
+                    media("BBB", 872987, 56698),
+                  ],
+                },
+              },
+            },
+          },
+        });
+      }),
+    );
+    return observed;
+  }
+
+  const INSTAGRAM_POSTS = {
+    platform: "instagram",
+    operation: "posts",
+    url: "https://www.instagram.com/example/",
+    limit: 2,
+  } as const satisfies SocialDataRequest;
+
+  it("quotes a per-call source as one request rather than per result", async () => {
+    const actor = await seedActor();
+    const observed = tikhubSource();
+
+    const quote = await accept(
+      client(actor)(socialDataContract).quote({
+        headers: authenticate(actor),
+        body: INSTAGRAM_POSTS,
+      }),
+      [200],
+    );
+
+    expect(quote.body).toMatchObject({
+      platform: "instagram",
+      operation: "posts",
+      quantity: 1,
+      unit: "request",
+    });
+    expect(observed.runRequests).toBe(0);
+  });
+
+  it("returns per-call source rows with their public engagement counts", async () => {
+    const actor = await seedActor();
+    tikhubSource();
+
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: { ...INSTAGRAM_POSTS, requestId: randomUUID() },
+      }),
+      [202],
+    );
+    const finished = await readJob(actor, created.body.jobId);
+
+    expect(finished.body).toMatchObject({
+      platform: "instagram",
+      status: "completed",
+      data: {
+        items: [
+          {
+            id: "media-AAA",
+            url: "https://www.instagram.com/p/AAA/",
+            text: "Launch day",
+            username: "example",
+            views: 744337,
+            likes: 26815,
+            comments: 7,
+          },
+          { id: "media-BBB", views: 872987, likes: 56698 },
+        ],
+      },
+      billing: { state: "settled" },
+    });
+  });
+
+  it("rejects an Instagram profile request beyond the bounded recent feed", async () => {
+    const actor = await seedActor();
+    const observed = tikhubSource();
+
+    const rejected = await accept(
+      client(actor)(socialDataContract).quote({
+        headers: authenticate(actor),
+        body: { ...INSTAGRAM_POSTS, limit: 50 },
+      }),
+      [422],
+    );
+
+    expect(rejected.body).toMatchObject({ code: "SOCIAL_DATA_UNSUPPORTED" });
+    expect(observed.runRequests).toBe(0);
   });
 
   it("settles a synchronous result once with one database connection across replay and repeated reads", async () => {
