@@ -6897,8 +6897,7 @@
     "custom": "커스텀",
     "detail": {
       "back": "커스텀 템플릿",
-      "page": "{{number}}페이지",
-      "sourceFile": "{{filename}}에서"
+      "page": "{{number}}페이지"
     },
     "empty": {
       "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
