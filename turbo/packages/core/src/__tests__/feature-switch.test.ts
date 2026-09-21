@@ -27,6 +27,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
     expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
+    expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
   });
 });
@@ -199,6 +200,36 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
       }),
     ).toBe(false);
+  });
+
+  it("enables Okou models for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, context)).toBe(
+        false,
+      );
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OkouModels, {
+          ...context,
+          overrides: { [FeatureSwitchKey.OkouModels]: true },
+        }),
+      ).toBe(true);
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, staffContext)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OkouModels, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.OkouModels]: false },
+      }),
+    ).toBe(false);
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description:
+        "Enable the Okou 1.0 built-in model family backed by platform OpenRouter presets.",
+      rolloutStage: "beta",
+    });
   });
 
   it("should return true for globally enabled switch", () => {

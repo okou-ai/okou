@@ -177,6 +177,9 @@ export interface DefaultOrgModelPolicySeed {
 }
 
 const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
+  "okou-1-0-max": "Okou 1.0 Max",
+  "okou-1-0-pro": "Okou 1.0 Pro",
+  "okou-1-0": "Okou 1.0",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5": "Claude Opus 5",
@@ -197,6 +200,28 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
 const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
+
+export const OKOU_RUN_MODEL_TO_UNDERLYING = {
+  "okou-1-0": "gpt-5.6-luna",
+  "okou-1-0-pro": "gpt-5.6-sol",
+  "okou-1-0-max": "gpt-5.6-sol",
+} as const satisfies Partial<Record<SupportedRunModel, SupportedRunModel>>;
+
+export type OkouRunModel = keyof typeof OKOU_RUN_MODEL_TO_UNDERLYING;
+
+export function isOkouRunModel(
+  model: string | null | undefined,
+): model is OkouRunModel {
+  return typeof model === "string" && model in OKOU_RUN_MODEL_TO_UNDERLYING;
+}
+
+export function getOkouUnderlyingRunModel(
+  model: string | null | undefined,
+): SupportedRunModel | undefined {
+  return isOkouRunModel(model)
+    ? OKOU_RUN_MODEL_TO_UNDERLYING[model]
+    : undefined;
+}
 
 export type ActiveRunModel = Exclude<
   SupportedRunModel,
@@ -373,6 +398,21 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
+  "okou-1-0-max": {
+    candidates: [
+      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-max" },
+    ],
+  },
+  "okou-1-0-pro": {
+    candidates: [
+      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-pro" },
+    ],
+  },
+  "okou-1-0": {
+    candidates: [
+      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0" },
+    ],
+  },
   "deepseek-v4.1-flash": {
     candidates: [
       { concreteType: "deepseek", apiModel: "deepseek-flash" },
@@ -510,6 +550,7 @@ const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
   BUILT_IN_MODEL_ALIAS_TO_MODEL;
 
 const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
+  "okou-1-0",
   "gpt-5.6-luna",
   "deepseek-v4.1-flash",
   "deepseek-v4-flash",
@@ -1019,6 +1060,9 @@ export function getModelProviderPresentationLabel(
 }
 
 const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
+  "okou-1-0-max": ["built-in"],
+  "okou-1-0-pro": ["built-in"],
+  "okou-1-0": ["built-in"],
   "claude-fable-5-1": [
     "built-in",
     "claude-code-oauth-token",
@@ -1373,17 +1417,19 @@ export function getModelProviderCodexCatalogForModel(
       logicalModel === "deepseek-v4-flash" ||
       logicalModel === "deepseek-v4-pro");
   const canonicalModel = normalizeRunModelId(logicalModel);
+  const catalogModel =
+    getOkouUnderlyingRunModel(canonicalModel) ?? canonicalModel;
   // The native V4 alias serves V4.1. Other providers keep the original
   // legacy catalog until their upstream mapping is verified.
   const overrideCatalog =
-    canonicalModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
+    catalogModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
       ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
-      : isActiveRunModel(canonicalModel)
-        ? CODEX_MODEL_CATALOG_OVERRIDES[canonicalModel]
+      : isActiveRunModel(catalogModel)
+        ? CODEX_MODEL_CATALOG_OVERRIDES[catalogModel]
         : undefined;
   const sourceCatalogs = overrideCatalog
     ? [overrideCatalog]
-    : getProvidersForModel(logicalModel).flatMap((type) => {
+    : getProvidersForModel(catalogModel).flatMap((type) => {
         const sourceCatalog =
           MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type]?.modelCatalog;
         return sourceCatalog ? [sourceCatalog] : [];
@@ -1398,7 +1444,7 @@ export function getModelProviderCodexCatalogForModel(
               model !== null &&
               !Array.isArray(model) &&
               "slug" in model &&
-              model.slug === canonicalModel
+              model.slug === catalogModel
             );
           },
         )

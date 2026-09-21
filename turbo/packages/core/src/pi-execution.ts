@@ -1,8 +1,10 @@
 import {
   getBuiltInModelRouteCandidates,
+  getOkouUnderlyingRunModel,
   getProviderRuntimeModel,
   isActiveRunModel,
   isBuiltInModelProviderType,
+  isOkouRunModel,
   isModelSupportedByProvider,
   modelProviderTypeSchema,
   type ActiveRunModel,
@@ -56,6 +58,9 @@ export type PiModelPolicy =
  * reader vocabulary in `pi-native-models.ts` stays frozen.
  */
 export const PI_MODEL_POLICY = {
+  "okou-1-0-max": { pi: true, route: "gpt-codex" },
+  "okou-1-0-pro": { pi: true, route: "gpt-codex" },
+  "okou-1-0": { pi: true, route: "gpt-codex" },
   "claude-fable-5-1": {
     pi: false,
     exception: "frontier-vendor-harness",
@@ -122,6 +127,13 @@ function piRouteClass(model: string | null | undefined): PiRouteClass | null {
   return policy.pi ? policy.route : null;
 }
 
+export function isPiOpenAiExecutionModel(
+  model: string | null | undefined,
+): boolean {
+  return isPiGptModel(model);
+}
+
+/** Admission and API-owned billing must expand together. */
 export function isPiGptModel(
   model: string | null | undefined,
 ): model is PiGptModel {
@@ -174,6 +186,20 @@ function isDeepSeekPiProviderType(
   return value === "deepseek" || value === "openrouter-codex";
 }
 
+function isOkouPiExecutionRoute(
+  model: ActiveRunModel,
+  builtIn: boolean,
+  runtimeProviderType: string | null | undefined,
+  codexServiceTier: "fast" | undefined,
+): boolean {
+  return (
+    isOkouRunModel(model) &&
+    builtIn &&
+    runtimeProviderType === "openrouter-codex" &&
+    codexServiceTier === undefined
+  );
+}
+
 /** Route rules, unchanged: model policy decides eligibility, this decides reach. */
 function isPiRouteAdmitted(args: {
   readonly model: ActiveRunModel;
@@ -193,6 +219,14 @@ function isPiRouteAdmitted(args: {
       custom ||
       (isDeepSeekPiProviderType(args.modelProviderType) &&
         isModelSupportedByProvider(args.model, args.modelProviderType))
+    );
+  }
+  if (isOkouRunModel(args.model)) {
+    return isOkouPiExecutionRoute(
+      args.model,
+      builtIn,
+      args.runtimeProviderType,
+      args.codexServiceTier,
     );
   }
   const direct =
@@ -244,12 +278,18 @@ function builtInRouteIdentities(
   // land on has to resolve.
   const targets = selected.length > 0 ? selected : candidates;
   const identities: PiRuntimeIdentity[] = [];
+  const okouUnderlyingModel = getOkouUnderlyingRunModel(model);
   for (const target of targets) {
     const provider = builtInCatalogProvider(target.providerType);
     if (provider === null) {
       return [];
     }
-    identities.push({ provider, model: target.upstreamModel });
+    identities.push({
+      provider,
+      model: okouUnderlyingModel
+        ? `openai/${okouUnderlyingModel}`
+        : target.upstreamModel,
+    });
   }
   return identities;
 }

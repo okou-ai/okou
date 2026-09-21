@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { availableRunModels } from "@okouai/core/run-model-availability";
 import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
@@ -61,6 +62,7 @@ import {
 } from "./integration-model-route.service";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
 import { integrationDmSessionKey } from "../../lib/integration-dm-session";
 import { formatTeamsFileForContext } from "./teams-prompt";
@@ -956,12 +958,16 @@ const teamsModelPickerState$ = command(
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
+    const db = set(writeDb$);
+    const [policies, preference, featureSwitchContext] = await Promise.all([
       set(listOrgModelPolicies$, { orgId, userId }, signal),
       get(userModelPreference({ orgId, userId })),
+      loadUserFeatureSwitchContext(db, orgId, userId),
     ]);
     signal.throwIfAborted();
+    const visibleModels = new Set(
+      availableRunModels(getBuiltInVisibleModels(), featureSwitchContext),
+    );
 
     return {
       enabled: true,

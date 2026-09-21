@@ -84,6 +84,7 @@ import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contra
 import {
   getDefaultModel,
   getModelProviderCodexCatalogForModel,
+  getOkouUnderlyingRunModel,
   getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getModelImageInputSupport,
@@ -142,6 +143,10 @@ import {
   isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
+import {
+  isRunModelAvailable,
+  RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE,
+} from "@okouai/core/run-model-availability";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import {
   DEFAULT_IMAGE_MODEL_ENV,
@@ -7199,7 +7204,9 @@ function modelUsageProviderForContext(
     return undefined;
   }
   const canonicalModel = normalizeRunModelId(modelProvider.selectedModel);
-  return isSupportedRunModel(canonicalModel) ? canonicalModel : undefined;
+  const billingModel =
+    getOkouUnderlyingRunModel(canonicalModel) ?? canonicalModel;
+  return isSupportedRunModel(billingModel) ? billingModel : undefined;
 }
 
 function sessionStorageMountsForPersistence(args: {
@@ -9545,6 +9552,14 @@ async function resolveRunModelProvider(
   },
   signal: AbortSignal,
 ): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
+  if (
+    !isRunModelAvailable(
+      args.selectedModelOverride,
+      options.featureSwitchContext,
+    )
+  ) {
+    return badRequestMessage(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
+  }
   const hasFrameworkKey = hasExplicitFrameworkApiKey(
     options.content,
     options.framework,
@@ -9572,6 +9587,16 @@ async function resolveRunModelProvider(
       })
     : null;
   signal.throwIfAborted();
+
+  if (
+    modelProvider &&
+    !isRunModelAvailable(
+      modelProvider.selectedModel,
+      options.featureSwitchContext,
+    )
+  ) {
+    return badRequestMessage(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
+  }
 
   if (!shouldResolveModelProvider || modelProvider) {
     return modelProvider;

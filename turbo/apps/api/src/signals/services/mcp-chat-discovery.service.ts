@@ -13,6 +13,7 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agentDisplayName } from "@okouai/core/public-brand";
+import { isRunModelAvailable } from "@okouai/core/run-model-availability";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -479,6 +480,9 @@ export async function listMcpModels(
         }),
       );
       for (const model of ACTIVE_RUN_MODELS) {
+        if (!isRunModelAvailable(model, featureSwitchContext)) {
+          continue;
+        }
         const policy = policiesByModel.get(model);
         if (!policy) {
           continue;

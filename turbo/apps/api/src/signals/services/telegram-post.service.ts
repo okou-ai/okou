@@ -7,6 +7,7 @@ import {
   agentDisplayName,
   PUBLIC_BRAND,
 } from "@okouai/core/public-brand";
+import { availableRunModels } from "@okouai/core/run-model-availability";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -74,6 +75,10 @@ import {
   encryptPersistentSecretValue,
 } from "./crypto.utils";
 import {
+  loadUserFeatureSwitchContext,
+  userFeatureSwitchContext,
+} from "./feature-switches.service";
+import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
@@ -115,7 +120,6 @@ import {
   updateUserModelPreference$,
   userModelPreference,
 } from "./user-data.service";
-import { userFeatureSwitchContext } from "./feature-switches.service";
 import type { ApiOrgRole, AuthTokenType } from "../../types/auth";
 
 const log = logger("api:telegram:post");
@@ -2221,16 +2225,20 @@ const handleModelCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
+    const db = set(writeDb$);
+    const [policies, preference, featureSwitchContext] = await Promise.all([
       set(
         listOrgModelPolicies$,
         { orgId: args.orgId, userId: args.userId },
         signal,
       ),
       get(userModelPreference({ orgId: args.orgId, userId: args.userId })),
+      loadUserFeatureSwitchContext(db, args.orgId, args.userId),
     ]);
     signal.throwIfAborted();
+    const visibleModels = new Set(
+      availableRunModels(getBuiltInVisibleModels(), featureSwitchContext),
+    );
     const options = policies.policies.flatMap((policy) => {
       if (
         !isSupportedRunModel(policy.model) ||

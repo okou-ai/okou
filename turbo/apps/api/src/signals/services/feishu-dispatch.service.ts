@@ -6,6 +6,7 @@ import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { availableRunModels } from "@okouai/core/run-model-availability";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
@@ -34,7 +35,7 @@ import {
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { tapError } from "../utils";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
@@ -42,6 +43,7 @@ import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-c
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   updateUserModelPreference$,
   userModelPreference,
@@ -720,12 +722,15 @@ const feishuModelPickerState$ = command(
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const visibleModels = new Set(getBuiltInVisibleModels());
-    const [policies, preference] = await Promise.all([
+    const [policies, preference, featureSwitchContext] = await Promise.all([
       set(listOrgModelPolicies$, { orgId, userId }, signal),
       get(userModelPreference({ orgId, userId })),
+      loadUserFeatureSwitchContext(get(db$), orgId, userId),
     ]);
     signal.throwIfAborted();
+    const visibleModels = new Set(
+      availableRunModels(getBuiltInVisibleModels(), featureSwitchContext),
+    );
     return {
       options: policies.policies
         .flatMap((policy) => {

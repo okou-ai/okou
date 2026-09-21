@@ -2,6 +2,7 @@ import {
   isPiExecutionRoute,
   isPiNativeModel,
   isPiGptModel,
+  isPiOpenAiExecutionModel,
   isPiDeepSeekModel,
 } from "@okouai/core/pi-execution";
 import {
@@ -16,10 +17,12 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   getModelProviderPiEndpoint,
+  getOkouUnderlyingRunModel,
   getBuiltInModelRouteCandidates,
   getProviderRuntimeModel,
   getSecretNameForType,
   isBuiltInModelProviderType,
+  isOkouRunModel,
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -107,7 +110,7 @@ export function gptApiKeyPiRoute(
 function piCatalogProvider(
   selectedModel: string | null | undefined,
 ): PiCatalogProvider | null {
-  if (isPiGptModel(selectedModel)) {
+  if (isPiOpenAiExecutionModel(selectedModel)) {
     return "openai";
   }
   return isPiDeepSeekModel(selectedModel) ? "deepseek" : null;
@@ -464,6 +467,7 @@ function resolveResponsesPiModelConfig(
   }
 
   const apiKeyEnv = "OPENAI_API_KEY";
+  const okouUnderlyingModel = getOkouUnderlyingRunModel(provider.selectedModel);
   const runtimeContract = piRuntimeContract({
     providerType: provider.type,
     selectedModel: provider.selectedModel,
@@ -475,12 +479,16 @@ function resolveResponsesPiModelConfig(
     model,
     apiKeyEnv,
     credentialSecretName,
+    ...(okouUnderlyingModel
+      ? { catalogModel: `openai/${okouUnderlyingModel}` }
+      : {}),
     ...runtimeContract,
   } as const;
   return isPiAgentModelSupported({
     provider: config.provider,
     baseUrl: config.baseUrl,
     model: config.model,
+    ...(config.catalogModel ? { catalogModel: config.catalogModel } : {}),
     apiKey: "sandbox-secret",
     dialect: "openai-responses",
     transport: "sse",
@@ -497,7 +505,12 @@ export function resolvePiSandboxModelConfig(
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
   const config = resolvePiRouteModelConfig(provider, codexServiceTier);
-  if (!config || reasoningEffort === null || reasoningEffort === undefined) {
+  if (
+    !config ||
+    isOkouRunModel(provider?.selectedModel) ||
+    reasoningEffort === null ||
+    reasoningEffort === undefined
+  ) {
     return config;
   }
   return {

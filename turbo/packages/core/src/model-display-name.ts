@@ -7,6 +7,10 @@ import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
  * Falls back to the raw model ID if no mapping is found.
  */
 const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
+  // Okou built-in aliases
+  "okou-1-0": "Okou 1.0",
+  "okou-1-0-pro": "Okou 1.0 Pro",
+  "okou-1-0-max": "Okou 1.0 Max",
   // Anthropic direct (claude-code-oauth-token, anthropic-api-key, built-in)
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",

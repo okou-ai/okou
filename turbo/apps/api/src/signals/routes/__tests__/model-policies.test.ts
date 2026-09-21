@@ -193,6 +193,82 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
+  it("gates Okou policy and preference writes while preserving stored rows", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const existing = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const model = "okou-1-0";
+    const unavailable = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(existing.body), makeBuiltInPolicy(model)],
+        },
+      }),
+      [400],
+    );
+    expect(unavailable.body.error.message).toBe(
+      "This model is not currently available for this workspace.",
+    );
+
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: true,
+    });
+    await seedBuiltInModelCandidateKeys(context, model);
+    const enabled = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(existing.body), makeBuiltInPolicy(model)],
+        },
+      }),
+      [200],
+    );
+    expect(
+      enabled.body.policies.find((policy) => {
+        return policy.model === model;
+      }),
+    ).toMatchObject({
+      runtimeProviderType: "openrouter-codex",
+      routeStatus: "valid",
+    });
+
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: false,
+    });
+    const preserved = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: toUpdate(enabled.body) },
+      }),
+      [200],
+    );
+    expect(
+      preserved.body.policies.some((policy) => {
+        return policy.model === model;
+      }),
+    ).toBeTruthy();
+
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const preference = await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: model, serviceTier: null },
+      }),
+      [400],
+    );
+    expect(preference.body.error.message).toBe(
+      "This model is not currently available for this workspace.",
+    );
+  });
+
   it("offers only catalog-enabled models and rejects a staged model addition", async () => {
     const fixture = seedFixture();
     useSession(fixture);

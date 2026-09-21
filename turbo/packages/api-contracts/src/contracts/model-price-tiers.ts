@@ -4,11 +4,14 @@
  * Keep this module lightweight so public UI surfaces can read price tier data
  * without importing the full model provider contract schema.
  */
-// Ordered by model family (claude → gpt → deepseek), and within each family
+// Ordered by model family (Okou → claude → gpt → deepseek), and within each family
 // from newest/highest capability to oldest/lowest. This order is load-bearing:
 // it drives the model dropdown and all model-related UI via sortRowsByCatalog.
 // Recognized wire and historical IDs. Use ACTIVE_RUN_MODELS for model selection.
 export const SUPPORTED_RUN_MODELS = [
+  "okou-1-0-max",
+  "okou-1-0-pro",
+  "okou-1-0",
   "claude-fable-5-1",
   "claude-fable-5",
   "claude-opus-5",
@@ -38,6 +41,9 @@ export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
 export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
   Record<SupportedRunModel, ModelPriceTier>
 >({
+  "okou-1-0-max": "$$$",
+  "okou-1-0-pro": "$$",
+  "okou-1-0": "$",
   "claude-fable-5-1": "$$$$",
   "claude-fable-5": "$$$$",
   "claude-opus-5": "$$$",

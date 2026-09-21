@@ -174,6 +174,47 @@ async function selectComposerModel(
   );
 }
 
+test.each([
+  { enabled: false, visibleCount: 0 },
+  { enabled: true, visibleCount: 3 },
+])(
+  "shows $visibleCount Okou models when the rollout switch is $enabled",
+  async ({ enabled, visibleCount }) => {
+    configureModelPolicies(
+      ["okou-1-0-max", "okou-1-0-pro", "okou-1-0", "gpt-5.6-luna"],
+      { defaultModel: "gpt-5.6-luna" },
+    );
+    installRunChat({ selectedModel: "gpt-5.6-luna" });
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: { [FeatureSwitchKey.OkouModels]: enabled },
+    });
+    await readyChat();
+
+    const user = userEvent.setup({ delay: null });
+    await user.click(await composerModelTrigger("GPT 5.6 Luna"));
+    const chatModels = await screen.findByRole("listbox", {
+      name: "Chat models",
+    });
+    const optionNames = within(chatModels)
+      .getAllByRole("option")
+      .map((option) => {
+        return option.textContent ?? "";
+      });
+    expect(
+      optionNames.filter((name) => {
+        return name.includes("Okou 1.0");
+      }),
+    ).toHaveLength(visibleCount);
+    expect(
+      optionNames.some((name) => {
+        return name.includes("GPT 5.6 Luna");
+      }),
+    ).toBeTruthy();
+  },
+);
+
 describe("a model or speed change during an active run", () => {
   beforeEach(async () => {
     configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);

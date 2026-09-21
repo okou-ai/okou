@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import {
+  isRunModelAvailable,
+  RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE,
+} from "@okouai/core/run-model-availability";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
@@ -836,6 +841,7 @@ interface UpdatePolicyValidationContext {
   >;
   readonly existingRows: readonly OrgModelPolicyRow[];
   readonly modelsAllowedForNewPolicy: ReadonlySet<SupportedRunModel>;
+  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 async function validateUpdatePolicies(
@@ -844,7 +850,12 @@ async function validateUpdatePolicies(
   policies: UpdateOrgModelPolicy[],
   context: UpdatePolicyValidationContext,
 ): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
-  const { capabilities, existingRows, modelsAllowedForNewPolicy } = context;
+  const {
+    capabilities,
+    existingRows,
+    modelsAllowedForNewPolicy,
+    featureSwitchContext,
+  } = context;
   if (policies.length === 0) {
     return bad("Request must include at least one model");
   }
@@ -861,8 +872,16 @@ async function validateUpdatePolicies(
     if (!model) {
       return bad(`Unknown model "${policy.model}"`);
     }
+    const existing = existingByModel.get(policy.model);
     if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
       return bad(`Model "${model}" is not available to add`);
+    }
+    if (
+      !isRunModelAvailable(policy.model, featureSwitchContext) &&
+      (!storedRouteUnchanged(policy, existing) ||
+        (policy.isDefault && existing?.isDefault !== true))
+    ) {
+      return bad(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
     }
     const providerType = parseProviderType(policy.defaultProviderType);
     if (!providerType) {
@@ -872,7 +891,7 @@ async function validateUpdatePolicies(
       planRestrictedWrite({
         policy,
         providerType,
-        existing: existingByModel.get(policy.model),
+        existing,
         capabilities,
       })
     ) {
@@ -1344,6 +1363,7 @@ export const updateOrgModelPolicies$ = command(
           capabilities,
           existingRows: existing,
           modelsAllowedForNewPolicy,
+          featureSwitchContext: context,
         },
       );
       signal.throwIfAborted();

@@ -32,6 +32,8 @@ import {
   getSecretNameForType,
   getModelProviderFirewall,
   getModelProviderCodexCatalogForModel,
+  getOkouUnderlyingRunModel,
+  isOkouRunModel,
   getSecretsForAuthMethod,
   isLimitedFree1RestrictedRunModel,
   isBuiltInModelProviderType,
@@ -108,6 +110,9 @@ describe("model-first canonical catalog", () => {
 
   it("exposes the curated flat model list only", () => {
     expect(SUPPORTED_RUN_MODELS).toEqual([
+      "okou-1-0-max",
+      "okou-1-0-pro",
+      "okou-1-0",
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-opus-5",
@@ -304,6 +309,9 @@ describe("model-first canonical catalog", () => {
 
   it("keeps historical models readable in the shared schema catalog", () => {
     expect(SUPPORTED_RUN_MODELS).toEqual([
+      "okou-1-0-max",
+      "okou-1-0-pro",
+      "okou-1-0",
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-opus-5",
@@ -703,6 +711,9 @@ describe("model-first canonical catalog", () => {
       "claude-opus-4-8",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "okou-1-0-max",
+      "okou-1-0-pro",
+      "okou-1-0",
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
@@ -721,7 +732,7 @@ describe("model-first canonical catalog", () => {
 
     for (const model of ACTIVE_RUN_MODELS) {
       const candidates = getBuiltInModelRouteCandidates(model);
-      expect(candidates).toHaveLength(2);
+      expect(candidates).toHaveLength(isOkouRunModel(model) ? 1 : 2);
       expect(candidates[0]?.providerType).toBe(
         getBuiltInConcreteProviderType(model),
       );
@@ -742,12 +753,42 @@ describe("model-first canonical catalog", () => {
             getModelProviderEnvBindings(candidate.providerType),
           ).toBeTruthy();
           expect(getModelProviderFirewall(candidate.providerType)).toBeTruthy();
-          expect(config.models).toContain(candidate.upstreamModel);
+          if (!isOkouRunModel(model)) {
+            expect(config.models).toContain(candidate.upstreamModel);
+          }
           return getFrameworkForType(candidate.providerType);
         }),
       );
       expect(frameworks.size).toBe(1);
     }
+  });
+
+  it.each([
+    ["okou-1-0", "@preset/okou-1-0", "gpt-5.6-luna", "$"],
+    ["okou-1-0-pro", "@preset/okou-1-0-pro", "gpt-5.6-sol", "$$"],
+    ["okou-1-0-max", "@preset/okou-1-0-max", "gpt-5.6-sol", "$$$"],
+  ] as const)(
+    "routes %s only through its built-in OpenRouter preset",
+    (model, preset, underlying, tier) => {
+      expect(getCanonicalModelDisplayName(model)).toMatch(/^Okou 1\.0/u);
+      expect(getBuiltInModelPriceTier(model)).toBe(tier);
+      expect(getProvidersForModel(model)).toEqual(["built-in"]);
+      expect(getOkouUnderlyingRunModel(model)).toBe(underlying);
+      expect(getBuiltInModelRouteCandidates(model)).toEqual([
+        {
+          selectedModel: model,
+          providerType: "openrouter-codex",
+          upstreamModel: preset,
+          vendor: "openrouter",
+        },
+      ]);
+    },
+  );
+
+  it("keeps only the base Okou model available to restricted cohorts", () => {
+    expect(isLimitedFree1RestrictedRunModel("okou-1-0")).toBe(false);
+    expect(isLimitedFree1RestrictedRunModel("okou-1-0-pro")).toBe(true);
+    expect(isLimitedFree1RestrictedRunModel("okou-1-0-max")).toBe(true);
   });
 
   it.each([
@@ -807,6 +848,9 @@ describe("model-first canonical catalog", () => {
   it("exposes price tiers for built-in reasoning models", () => {
     expect(BUILT_IN_MODEL_PRICE_TIER).toEqual(
       expect.objectContaining({
+        "okou-1-0-max": "$$$",
+        "okou-1-0-pro": "$$",
+        "okou-1-0": "$",
         "claude-fable-5-1": "$$$$",
         "claude-fable-5": "$$$$",
         "claude-opus-5": "$$$",
