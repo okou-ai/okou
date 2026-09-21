@@ -136,11 +136,7 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   }
   // The first category is selected when the panel opens.
   expect(pane).toHaveAttribute("data-category", "slides");
-  expect(
-    within(pane).getByText(
-      `${String(PRESENTATION_TEMPLATE_PICKER_ITEMS.length)} templates`,
-    ),
-  ).toBeInTheDocument();
+  expect(flyout()).toHaveAccessibleName("Presentation");
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -160,14 +156,13 @@ test("Make lists the three types it indexes; Video and Workflow are not among th
   expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
 });
 
-test("The pane carries the whole category, so its covers match the count it heads", async () => {
+test("The pane carries every template in the category", async () => {
   await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
   }
-  // The pane scrolls, so every template in the category is reachable — the
-  // header's count and the covers under it describe the same set.
+  // The pane scrolls, so every template in the category is reachable.
   expect(
     pane.querySelectorAll("[data-slot='slash-template-cover']"),
   ).toHaveLength(PRESENTATION_TEMPLATE_PICKER_ITEMS.length);
@@ -244,11 +239,10 @@ test("Hovering a website row previews the website catalog", async () => {
   if (!pane) {
     throw new Error("Expected the detail pane");
   }
+  expect(flyout()).toHaveAccessibleName("Website");
   expect(
-    within(pane).getByText(
-      `${String(WEBSITE_TEMPLATE_ITEMS.length)} templates`,
-    ),
-  ).toBeInTheDocument();
+    pane.querySelectorAll("[data-slot='slash-template-cover']"),
+  ).toHaveLength(WEBSITE_TEMPLATE_ITEMS.length);
 });
 
 test("Hovering a workflow closes the flyout", async () => {

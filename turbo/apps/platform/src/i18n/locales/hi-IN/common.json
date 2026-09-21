@@ -1761,8 +1761,6 @@
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
         "make": "बनाएँ",
-        "templateCount_one": "{{count}} टेम्पलेट",
-        "templateCount_other": "{{count}} टेम्पलेट",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
@@ -4603,9 +4601,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} जुड़ा नहीं है। आप दोबारा कोशिश कर सकते हैं या बाद में जोड़ सकते हैं।",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Okou क्रेडिट के बजाय आपके प्लान पर चलता है।"
+        "connect": "{{provider}} जोड़ें",
+        "connected": "जुड़ गया",
+        "connecting": "जोड़ा जा रहा है…",
+        "failedNote": "हम {{provider}} को जोड़ नहीं सके। दोबारा कोशिश करें या बाद में जोड़ें।",
+        "retry": "दोबारा कोशिश करें",
+        "rowCopy": "Okou क्रेडिट के बजाय आपके प्लान पर चलता है।",
+        "unconfirmedNote": "हम आपका {{provider}} कनेक्शन जाँच नहीं सके। दोबारा कोशिश करें या बाद में जोड़ें।"
       },
       "team": {
         "copy": "अभी किसी साथी को बुलाएँ, या बाद में workspace मेन्यू से।",

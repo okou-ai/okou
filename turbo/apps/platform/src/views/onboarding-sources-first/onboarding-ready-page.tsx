@@ -1,19 +1,24 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea } from "@okouai/ui";
+import {
+  ONBOARDING_INDUSTRY_IDS,
+  type OnboardingIndustry,
+} from "@okouai/core/onboarding-industry";
 import {
   captureSourceOnboardingPromptEdited$,
   captureSourceOnboardingStartClicked$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
+import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import { updateSourcesFirstDraft$ } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { searchParams$ } from "../../signals/route.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { useOnboardingNavigation } from "../onboarding/onboarding-navigation.ts";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
-import {
-  INDUSTRY_IDS,
-  type IndustryId,
-} from "./onboarding-sources-first-data.ts";
 import {
   pickStartingPromptSource,
   startingPromptFor,
@@ -26,8 +31,12 @@ const SUPPORT_EMAIL = "support@okou.ai";
 const CELEBRATION_URL =
   "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
 
-function fallbackIndustry(industry: IndustryId | null): IndustryId {
-  return industry ?? INDUSTRY_IDS[INDUSTRY_IDS.length - 1];
+function fallbackIndustry(
+  industry: OnboardingIndustry | null,
+): OnboardingIndustry {
+  return (
+    industry ?? ONBOARDING_INDUSTRY_IDS[ONBOARDING_INDUSTRY_IDS.length - 1]
+  );
 }
 
 /**
@@ -42,6 +51,9 @@ export function OnboardingReadyPage() {
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
+  const pageSignal = useGet(pageSignal$);
+  const searchParams = useGet(searchParams$);
+  const [completeLoadable, complete] = useLoadableSet(completeOnboarding$);
   const { runPrompt } = useOnboardingNavigation();
 
   const connected =
@@ -71,6 +83,24 @@ export function OnboardingReadyPage() {
       ? flow.draft.startingPromptDraft
       : prompt.text;
 
+  /**
+   * Finishing the flow is what marks onboarding complete, so the request goes
+   * out before the first prompt: otherwise `needsOnboarding` stays true and the
+   * bootstrap guard returns the user here on the next load. A member has no
+   * completion of their own to record — the route is admin-only by design — so
+   * their run goes straight to the prompt. When completion fails the rejected
+   * command keeps the user on this step, with the button ready to try again.
+   */
+  const completeAndRun = async (request: string): Promise<void> => {
+    if (flow.flow === "owner") {
+      await complete(
+        searchParams.get("redeemCode")?.trim() || null,
+        pageSignal,
+      );
+    }
+    runPrompt(request);
+  };
+
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
@@ -88,9 +118,10 @@ export function OnboardingReadyPage() {
         const request = text.trim();
         // The request's length, never the request itself.
         captureStartClicked(request.length);
-        runPrompt(request);
+        detach(completeAndRun(request), Reason.DomCallback);
       }}
       primaryDisabled={text.trim().length === 0}
+      primaryBusy={completeLoadable.state === "loading"}
       onBack={flow.goBack}
       footnote={
         <>

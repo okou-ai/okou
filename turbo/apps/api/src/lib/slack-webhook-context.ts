@@ -405,6 +405,7 @@ export function buildSlackSystemPrompt(args: {
   readonly channelId: string;
   readonly channelType: "channel" | "dm" | "group_dm";
   readonly threadTs: string;
+  readonly integrationNote: string;
   readonly executionContext: string;
 }): string {
   const typeLabel =
@@ -413,19 +414,22 @@ export function buildSlackSystemPrompt(args: {
       : args.channelType === "group_dm"
         ? "Group direct message"
         : "Channel";
-  return [
-    CONVERSATION_GUIDANCE,
-    "",
+  const currentIntegration = [
     "# Current Integration",
     "You are currently running inside: Slack",
     `Your bot user ID: ${args.botUserId}`,
     `Channel ID: ${args.channelId}`,
     `Channel type: ${typeLabel}`,
     `Thread ID: ${args.threadTs}`,
+  ].join("\n");
+  return [
+    CONVERSATION_GUIDANCE,
+    currentIntegration,
+    args.integrationNote,
     args.executionContext,
   ]
     .filter(Boolean)
-    .join("\n");
+    .join("\n\n");
 }
 
 function countBucket(count: number): string {

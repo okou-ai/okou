@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { IndustryId } from "../../views/onboarding-sources-first/onboarding-sources-first-data.ts";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
  * Source-first onboarding draft. The connector step drives the live connector
@@ -45,13 +45,16 @@ export interface SourcesFirstInvite {
 }
 
 export interface SourcesFirstDraft {
-  readonly industry: IndustryId | null;
+  readonly industry: OnboardingIndustry | null;
   /** One entry per address this run tried, with what the API answered. */
   readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
+  /**
+   * The plan the answer names. Whether it is connected is the account's
+   * answer, read from `/api/me/model-providers`, never held here.
+   */
   readonly provider: SubscriptionProvider | null;
-  readonly providerConnected: boolean;
   readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
   readonly slackWorkspace: string;
@@ -69,7 +72,6 @@ function emptyDraft(): SourcesFirstDraft {
     invites: [],
     experienced: null,
     provider: null,
-    providerConnected: false,
     importedWorkflowName: null,
     slackStatus: "disconnected",
     slackWorkspace: "",

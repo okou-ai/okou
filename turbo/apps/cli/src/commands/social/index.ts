@@ -65,9 +65,11 @@ import {
   commentsIntent,
   downloadPlatform,
   inspectIntent,
+  isJobOnlyPlatform,
   parseSearchPlatform,
   parseSocialPlatform,
   parseSocialTarget,
+  SOCIAL_JOB_ONLY_PLATFORMS,
   type SocialCommandPlatform,
   postsIntent,
   searchIntent,
@@ -1516,16 +1518,16 @@ const capabilitiesCommand = new Command()
   .description(
     "List offline capabilities, supported inputs, and collection limits",
   )
-  .argument("[platform]", "Optional platform filter", parseSocialPlatform)
+  .argument("[platform]", "Optional platform filter", parseSearchPlatform)
   .option("--json", "Print compact JSON")
-  .action((platform: SocialPlatform | undefined, options: OutputOptions) => {
-    printJson(
-      {
-        capabilities: socialCapabilities(platform),
-      },
-      options.json === true,
-    );
-  });
+  .action(
+    (platform: SocialCommandPlatform | undefined, options: OutputOptions) => {
+      printJson(
+        { capabilities: socialCapabilities(platform) },
+        options.json === true,
+      );
+    },
+  );
 
 const statusCommand = new Command()
   .name("status")
@@ -1641,13 +1643,16 @@ const searchCommand = new Command()
   .argument("<query>", "Search query or hashtag")
   .requiredOption(
     "--platform <platform>",
-    "instagram, tiktok, or youtube; saved jobs also support x, facebook, and xiaohongshu",
+    `instagram, tiktok, or youtube; saved jobs also support x, facebook, and ${SOCIAL_JOB_ONLY_PLATFORMS.join(", ")}`,
     parseSearchPlatform,
   )
   .option("--hashtag", "Treat an Instagram or TikTok query as a hashtag")
   .option("--sort <sort>", "Platform-supported sort order")
   .option("--date <date>", "Platform-supported publication window")
-  .option("--type <type>", "YouTube result type: video or shorts")
+  .option(
+    "--type <type>",
+    "YouTube result type: video or shorts; saved WeChat jobs: article, account, or video",
+  )
   .option(
     "--limit <count>",
     "Maximum total items to return",
@@ -1668,10 +1673,10 @@ const searchCommand = new Command()
           await printSocialJob("search", query, options);
           return;
         }
-        const platform = options.platform;
-        if (platform === "xiaohongshu") {
+        const { platform } = options;
+        if (isJobOnlyPlatform(platform)) {
           throw new InvalidArgumentError(
-            "Xiaohongshu search runs as a saved data job; add --dry-run, --max-credits, --async, or --request-id",
+            `${platform} search runs as a saved data job; add --dry-run, --max-credits, --async, or --request-id`,
           );
         }
         await printCollectionIntent(
@@ -2160,10 +2165,13 @@ Examples:
   Resume:      okou social download --resume <download-id> --json
   Quote:       okou social comments https://www.facebook.com/<post> --limit 100 --dry-run --json
   Saved job:   okou social posts https://www.instagram.com/<user>/ --limit 100 --async --json
+  WeChat job:  okou social inspect https://mp.weixin.qq.com/s/<id> --max-credits 50 --json
+  Threads job: okou social search "<handle>" --platform threads --limit 10 --max-credits 50 --json
   Read job:    okou social jobs get <job-id> --wait --json
 
 Notes:
   - URL commands detect LinkedIn, X, Facebook, Instagram, TikTok, and YouTube automatically
+  - Threads, WeChat Official Account, and Xiaohongshu URLs are recognized only with a saved data job control
   - Commands use reviewed managed capabilities without exposing provider operation names
   - capabilities is offline; status separately checks reported service health without credits
   - Capability details distinguish total limits, page limits, source constraints, and supported inputs

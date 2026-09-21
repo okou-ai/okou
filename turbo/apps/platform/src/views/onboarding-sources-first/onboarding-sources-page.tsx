@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   captureSourceOnboardingCatalogSearchOpened$,
   captureSourceOnboardingCatalogSearchResultSelected$,
@@ -34,7 +35,6 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
   FEATURED_SOURCE_SLUGS,
   INDUSTRY_SOURCE_SLUGS,
-  type IndustryId,
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
@@ -44,7 +44,7 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
  * beside them still reaches everything else.
  */
 function featuredSlugsFor(
-  industry: IndustryId | null,
+  industry: OnboardingIndustry | null,
 ): readonly ConnectorSlug[] {
   return industry === null
     ? FEATURED_SOURCE_SLUGS

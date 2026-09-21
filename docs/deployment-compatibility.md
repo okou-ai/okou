@@ -1845,7 +1845,7 @@ only reachable under the `GradientColorThemes` rollout switch.
 
 ### Unchosen Blue horizon palettes withdrawn (2026-09-21)
 
-Migration `1189_reset_unchosen_blue_horizon_color_theme` clears
+Migration `1190_reset_unchosen_blue_horizon_color_theme` clears
 `org_members_metadata.color_theme` for every member holding `blue-horizon`
 without a `gradientColorThemes` key in `user_feature_switches`. App bootstrap
 wrote those rows, not the member: between #30051 and #34556 the App's fallback

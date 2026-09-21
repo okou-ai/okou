@@ -1790,9 +1790,6 @@
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
         "make": "Crea",
-        "templateCount_one": "{{count}} modello",
-        "templateCount_many": "{{count}} modelli",
-        "templateCount_other": "{{count}} modelli",
         "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
@@ -4658,9 +4655,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} non è collegato. Puoi riprovare o collegarlo più tardi.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Gira sul tuo piano, non sui crediti Okou."
+        "connect": "Collega {{provider}}",
+        "connected": "Collegato",
+        "connecting": "Collegamento…",
+        "failedNote": "Non siamo riusciti a collegare {{provider}}. Puoi riprovare o collegarlo più tardi.",
+        "retry": "Riprova",
+        "rowCopy": "Gira sul tuo piano, non sui crediti Okou.",
+        "unconfirmedNote": "Non siamo riusciti a verificare il collegamento a {{provider}}. Puoi riprovare o collegarlo più tardi."
       },
       "team": {
         "copy": "Invita un collega adesso, o fallo più tardi dal menu del workspace.",

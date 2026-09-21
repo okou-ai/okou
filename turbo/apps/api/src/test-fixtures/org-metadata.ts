@@ -92,6 +92,27 @@ export async function setOrgDefaultAgentFixture(values: {
   }
 }
 
+/**
+ * Read back the field the source-first onboarding flow answered.
+ *
+ * Completion is the only writer and no product API returns the value, so a
+ * test asserting that the answer was persisted has to read the column.
+ */
+export async function readOnboardingIndustryFixture(
+  orgId: string,
+): Promise<string | null> {
+  const [row] = await createStore()
+    .set(writeDb$)
+    .select({ onboardingIndustry: orgMetadata.onboardingIndustry })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  if (!row) {
+    throw new Error(`No org metadata row for ${orgId}`);
+  }
+  return row.onboardingIndustry;
+}
+
 export async function setOnboardingPaymentPendingFixture(values: {
   readonly orgId: string;
   readonly onboardingPaymentPending: boolean;

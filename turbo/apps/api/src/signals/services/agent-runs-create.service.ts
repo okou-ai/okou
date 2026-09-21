@@ -84,6 +84,7 @@ import {
 import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import { buildAgentToolsPrompt } from "./agent-tools-prompt.service";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 // Emitted as the agent_run_origin observability dimension. The values name what
@@ -634,6 +635,7 @@ function createRunBody(args: {
   readonly permissionPolicies: FirewallPolicies | null | undefined;
   readonly triggerSource: TriggerSource | undefined;
   readonly appendSystemPrompt: string | undefined;
+  readonly standaloneIntegrationNote: string;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
@@ -653,7 +655,11 @@ function createRunBody(args: {
     settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
-    appendSystemPrompt: [baseAppendSystemPrompt, args.appendSystemPrompt]
+    appendSystemPrompt: [
+      baseAppendSystemPrompt,
+      args.appendSystemPrompt,
+      args.appendSystemPrompt ? "" : args.standaloneIntegrationNote,
+    ]
       .filter((part): part is string => {
         return Boolean(part);
       })
@@ -909,6 +915,23 @@ function emptyStablePrompt(): PiStableContextPromptProjection {
   };
 }
 
+/**
+ * A run launched straight through the runs API has no conversational surface,
+ * so nothing renders `# Current Integration` for the note to follow. Its
+ * delivery rules still apply, so they close the caller-supplied prompt
+ * instead. A run whose surface supplied an integration prompt already carries
+ * the note inside that block.
+ */
+function standaloneIntegrationNote(args: BuildCreateAgentRunArgsInput): string {
+  if (args.command.appendSystemPrompt) {
+    return "";
+  }
+  return resolveIntegrationNotePrompt({
+    triggerSource: args.command.triggerSource ?? "web",
+    featureSwitchContext: args.featureSwitchContext,
+  });
+}
+
 function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   readonly userInfo: UserInfo;
   readonly initialStablePrompt: PiStableContextPromptProjection;
@@ -1025,6 +1048,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       dynamicAppendSystemPrompt: [
         buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
         args.command.appendSystemPrompt,
+        standaloneIntegrationNote(args),
       ]
         .filter((part): part is string => {
           return Boolean(part);
@@ -1057,6 +1081,7 @@ function buildCreateAgentRunArgs(
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
+      standaloneIntegrationNote: standaloneIntegrationNote(args),
     }),
     apiStartTime: command.apiStartTime,
     piStableContext,

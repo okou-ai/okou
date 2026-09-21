@@ -127,7 +127,7 @@ export const updateColorThemePreference$ = command(
  * keeps it that way: the absent preference resolves to the default palette in
  * memory and nothing is written back. Recording the fallback instead is what
  * left members on a palette they never picked (migration
- * `1189_reset_unchosen_blue_horizon_color_theme`), and it would pin every new
+ * `1190_reset_unchosen_blue_horizon_color_theme`), and it would pin every new
  * member to whichever palette is the default on the day they first sign in.
  */
 export const syncColorThemePreference$ = command(

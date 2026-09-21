@@ -61,14 +61,20 @@ export interface WebChatSessionPromptContext {
   readonly computerUseHostDisplayName: string | null;
   readonly triggerSource: "web" | "agent";
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly integrationNote: string;
 }
 
-function buildWebChatPrompt(): string {
+function buildWebChatPrompt(integrationNote: string): string {
   return [
     CONVERSATION_GUIDANCE,
     "# Current Integration\nYou are currently running inside: Web",
     "You are communicating with the user through the web chat UI.",
-  ].join("\n\n");
+    integrationNote,
+  ]
+    .filter((part) => {
+      return part.length > 0;
+    })
+    .join("\n\n");
 }
 
 /**
@@ -147,7 +153,7 @@ export function buildWebChatAppendSystemPrompt(args: {
   readonly context: WebChatSessionPromptContext;
 }): string {
   return [
-    buildWebChatPrompt(),
+    buildWebChatPrompt(args.context.integrationNote),
     buildCurrentThreadContext(args.threadId),
     args.context.agentRunSource
       ? buildAgentRunSourceContext(
