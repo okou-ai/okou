@@ -1246,7 +1246,23 @@ export async function refreshMcpAutomaticOAuthToken(
       remoteFailure,
     );
   }
-  return automaticOAuthTokenResult(refreshed.value);
+  const result = automaticOAuthTokenResult(refreshed.value);
+  return {
+    ...result,
+    userInfo: await discoverMcpAutomaticOAuthUserInfo(
+      {
+        context: {
+          issuer: args.binding.issuer,
+          authorizationEndpoint: authority.authorizationEndpoint,
+          tokenEndpoint: args.binding.tokenEndpoint,
+          clientId: args.binding.clientId,
+        },
+        accessToken: result.accessToken,
+        idToken: refreshed.value.id_token,
+      },
+      signal,
+    ),
+  };
 }
 
 export function isAutomaticOAuthInvalidClient(error: unknown): boolean {

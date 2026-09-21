@@ -92,6 +92,7 @@ import {
 } from "./mcp-automatic-oauth.service";
 import {
   discoverStaticCustomOAuthUserInfo,
+  resolveRefreshedOAuthIdentity,
   type McpAutomaticOAuthUserInfo,
 } from "./mcp-oauth-identity.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
@@ -497,7 +498,20 @@ async function refreshCustomConnectorOAuth2Token(
     grant_type: "refresh_token",
     refresh_token: args.refreshToken,
   });
-  return await requestToken({ ...args, form }, signal);
+  const token = await requestToken({ ...args, form }, signal);
+  return {
+    ...token,
+    userInfo: await discoverStaticCustomOAuthUserInfo(
+      {
+        authorizationEndpoint: args.config.authorizationUrl,
+        tokenEndpoint: args.config.tokenUrl,
+        clientId: args.config.clientId,
+        accessToken: token.accessToken,
+        idToken: token.idToken,
+      },
+      signal,
+    ),
+  };
 }
 
 function createPkceVerifier(): string {
@@ -1350,11 +1364,22 @@ async function replaceConnectionTokens(args: {
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;
+  readonly storedIdentity: StoredConnection;
   readonly token: CustomConnectorOAuthTokenResult;
   readonly fallbackRefreshToken?: string;
   readonly fallbackEncryptedIdToken?: string;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<string> {
+}): Promise<
+  | { readonly kind: "replaced"; readonly encryptedAccessToken: string }
+  | { readonly kind: "identity-mismatch" }
+> {
+  const identity = resolveRefreshedOAuthIdentity(
+    args.storedIdentity,
+    args.token.userInfo,
+  );
+  if (identity.kind === "mismatch") {
+    return { kind: "identity-mismatch" };
+  }
   const encrypted = await encryptTokenValues(args);
   await args.db
     .update(connectors)
@@ -1365,6 +1390,13 @@ async function replaceConnectionTokens(args: {
       ...(args.token.scopes === null
         ? {}
         : { oauthScopes: JSON.stringify(args.token.scopes) }),
+      ...(identity.kind === "update"
+        ? {
+            externalId: identity.externalId,
+            externalUsername: identity.externalUsername,
+            externalEmail: identity.externalEmail,
+          }
+        : {}),
       updatedAt: nowDate(),
     })
     .where(
@@ -1383,7 +1415,7 @@ async function replaceConnectionTokens(args: {
       encrypted,
     }),
   );
-  return encrypted.accessToken;
+  return { kind: "replaced", encryptedAccessToken: encrypted.accessToken };
 }
 
 export async function lockCustomConnectorOAuth2CredentialContract(args: {
@@ -1548,6 +1580,9 @@ interface StoredConnection {
   readonly tokenExpiresAt: Date | null;
   readonly needsReconnect: boolean;
   readonly oauthScopes: string | null;
+  readonly externalId: string | null;
+  readonly externalUsername: string | null;
+  readonly externalEmail: string | null;
   readonly encryptedAccessToken: string | null;
   readonly encryptedRefreshToken: string | null;
   readonly encryptedIdToken: string | null;
@@ -1569,6 +1604,9 @@ async function loadConnection(args: {
       tokenExpiresAt: connectors.tokenExpiresAt,
       needsReconnect: connectors.needsReconnect,
       oauthScopes: connectors.oauthScopes,
+      externalId: connectors.externalId,
+      externalUsername: connectors.externalUsername,
+      externalEmail: connectors.externalEmail,
     })
     .from(connectors)
     .where(
@@ -1634,6 +1672,9 @@ async function loadConnection(args: {
     tokenExpiresAt: connection.tokenExpiresAt,
     needsReconnect: connection.needsReconnect,
     oauthScopes: connection.oauthScopes,
+    externalId: connection.externalId,
+    externalUsername: connection.externalUsername,
+    externalEmail: connection.externalEmail,
     encryptedAccessToken:
       tokenRows.find((row) => {
         return (
@@ -1707,6 +1748,46 @@ async function markCustomConnectorNeedsReconnect(
     .update(connectors)
     .set({ needsReconnect: true, reconnectReason, updatedAt: nowDate() })
     .where(eq(connectors.id, connectorId));
+}
+
+async function storeRefreshedConnectionTokens(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connection: StoredConnection;
+    readonly token: CustomConnectorOAuthTokenResult;
+    readonly fallbackRefreshToken: string;
+    readonly featureContext: FeatureSwitchContext;
+  },
+  signal: AbortSignal,
+): Promise<CustomConnectorOAuth2AccessTokenResolution> {
+  const replacement = await replaceConnectionTokens({
+    db: args.db,
+    connectionId: args.connection.id,
+    orgId: args.orgId,
+    userId: args.userId,
+    storedIdentity: args.connection,
+    token: args.token,
+    fallbackRefreshToken: args.fallbackRefreshToken,
+    fallbackEncryptedIdToken: args.connection.encryptedIdToken ?? undefined,
+    featureContext: args.featureContext,
+  });
+  if (replacement.kind === "identity-mismatch") {
+    await markCustomConnectorNeedsReconnect(
+      args.db,
+      args.connection.id,
+      "authorization_expired_or_revoked",
+    );
+    return { kind: "reconnect-required" };
+  }
+  signal.throwIfAborted();
+  return {
+    kind: "available",
+    encryptedAccessToken: replacement.encryptedAccessToken,
+    tokenExpiresAt: args.token.expiresAt,
+    status: "refreshed",
+  };
 }
 
 interface ResolveCustomConnectorOAuth2AccessTokenArgs {
@@ -1828,23 +1909,18 @@ async function resolveCustomConnectorOAuth2AccessToken(
       return { kind: "reconnect-required" };
     }
     signal.throwIfAborted();
-    const encryptedAccessToken = await replaceConnectionTokens({
-      db: tx,
-      connectionId: lockedConnection.id,
-      orgId: args.orgId,
-      userId: args.userId,
-      token: refreshResult.value,
-      fallbackRefreshToken: refreshToken,
-      fallbackEncryptedIdToken: lockedConnection.encryptedIdToken ?? undefined,
-      featureContext: args.featureContext,
-    });
-    signal.throwIfAborted();
-    return {
-      kind: "available",
-      encryptedAccessToken,
-      tokenExpiresAt: refreshResult.value.expiresAt,
-      status: "refreshed",
-    };
+    return await storeRefreshedConnectionTokens(
+      {
+        db: tx,
+        orgId: args.orgId,
+        userId: args.userId,
+        connection: lockedConnection,
+        token: refreshResult.value,
+        fallbackRefreshToken: refreshToken,
+        featureContext: args.featureContext,
+      },
+      signal,
+    );
   });
 }
 
@@ -1992,23 +2068,18 @@ async function refreshLockedAutomaticOAuthAccessToken(
       error: refreshResult.error,
     });
   }
-  const encryptedAccessToken = await replaceConnectionTokens({
-    db,
-    connectionId: lockedConnection.id,
-    orgId: args.orgId,
-    userId: args.userId,
-    token: refreshResult.value,
-    fallbackRefreshToken: refreshToken,
-    fallbackEncryptedIdToken: lockedConnection.encryptedIdToken ?? undefined,
-    featureContext: args.featureContext,
-  });
-  signal.throwIfAborted();
-  return {
-    kind: "available",
-    encryptedAccessToken,
-    tokenExpiresAt: refreshResult.value.expiresAt,
-    status: "refreshed",
-  };
+  return await storeRefreshedConnectionTokens(
+    {
+      db,
+      orgId: args.orgId,
+      userId: args.userId,
+      connection: lockedConnection,
+      token: refreshResult.value,
+      fallbackRefreshToken: refreshToken,
+      featureContext: args.featureContext,
+    },
+    signal,
+  );
 }
 
 async function resolveAutomaticCustomConnectorOAuth2AccessToken(

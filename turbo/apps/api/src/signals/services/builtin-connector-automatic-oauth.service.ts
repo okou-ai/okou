@@ -67,6 +67,7 @@ import {
   type McpAutomaticOAuthTokenResult,
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
+import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 
@@ -998,6 +999,17 @@ async function refreshLockedAutomatic(
       "Builtin MCP credential destination changed during refresh",
     );
   }
+  const identity = resolveRefreshedOAuthIdentity(
+    {
+      externalId: account.externalId,
+      externalUsername: account.externalUsername,
+      externalEmail: account.externalEmail,
+    },
+    refreshed.value.userInfo,
+  );
+  if (identity.kind === "mismatch") {
+    return await markReconnect(tx, account.id);
+  }
   await writeTokens(
     tx,
     {
@@ -1017,6 +1029,13 @@ async function refreshLockedAutomatic(
         refreshed.value.scopes === null
           ? account.oauthGrantedScopes
           : JSON.stringify(refreshed.value.scopes),
+      ...(identity.kind === "update"
+        ? {
+            externalId: identity.externalId,
+            externalUsername: identity.externalUsername,
+            externalEmail: identity.externalEmail,
+          }
+        : {}),
       updatedAt: sql`clock_timestamp()`,
     })
     .where(eq(connectors.id, account.id));

@@ -80,6 +80,40 @@ export interface McpAutomaticOAuthUserInfo {
   readonly email: string | null;
 }
 
+export interface StoredOAuthIdentity {
+  readonly externalId: string | null;
+  readonly externalUsername: string | null;
+  readonly externalEmail: string | null;
+}
+
+export type RefreshedOAuthIdentity =
+  | { readonly kind: "preserve" }
+  | { readonly kind: "mismatch" }
+  | {
+      readonly kind: "update";
+      readonly externalId: string;
+      readonly externalUsername: string | null;
+      readonly externalEmail: string | null;
+    };
+
+export function resolveRefreshedOAuthIdentity(
+  stored: StoredOAuthIdentity,
+  refreshed: McpAutomaticOAuthUserInfo | null | undefined,
+): RefreshedOAuthIdentity {
+  if (!refreshed) {
+    return { kind: "preserve" };
+  }
+  if (stored.externalId !== null && stored.externalId !== refreshed.id) {
+    return { kind: "mismatch" };
+  }
+  return {
+    kind: "update",
+    externalId: refreshed.id,
+    externalUsername: refreshed.username ?? stored.externalUsername,
+    externalEmail: refreshed.email ?? stored.externalEmail,
+  };
+}
+
 function supportedIdentitySigningAlgorithm(algorithm: string): boolean {
   return /^(?:RS|PS|ES)\d+$/u.test(algorithm) || algorithm === "EdDSA";
 }
