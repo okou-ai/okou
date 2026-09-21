@@ -3,8 +3,9 @@ import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
  * Source-first onboarding draft. The connector step drives the live connector
- * catalog and the invite step records what the invitation API answered;
- * everything else is held here until the onboarding state endpoints land.
+ * catalog, the invite step records what the invitation API answered, and the
+ * chat-channel step reads the org's own Slack and Teams installations; the
+ * remaining answers are held here until their endpoints land.
  *
  * One application start owns this draft, because a Store lives exactly that
  * long: switching Clerk session or organization replaces the document, so the
@@ -23,8 +24,6 @@ export type SourcesFirstStep =
   | "skills"
   | "slack"
   | "ready";
-
-export type SlackSetupStatus = "disconnected" | "installed" | "connected";
 
 export type SubscriptionProvider = "codex" | "claudeCode";
 
@@ -56,9 +55,11 @@ export interface SourcesFirstDraft {
    */
   readonly provider: SubscriptionProvider | null;
   readonly importedWorkflowName: string | null;
-  readonly slackStatus: SlackSetupStatus;
-  readonly slackWorkspace: string;
-  /** Channels picked beside Slack; each still waits for its own install. */
+  /**
+   * Channels picked beside Slack. Slack and Teams read their org's real
+   * installation instead, so only iMessage is still answered here, until it
+   * becomes the AgentPhone tile.
+   */
   readonly chatChannels: readonly ChatChannelId[];
   /** Edited copy of the matched starting prompt, kept across step changes. */
   readonly startingPromptDraft: string;
@@ -73,8 +74,6 @@ function emptyDraft(): SourcesFirstDraft {
     experienced: null,
     provider: null,
     importedWorkflowName: null,
-    slackStatus: "disconnected",
-    slackWorkspace: "",
     chatChannels: [],
     startingPromptDraft: "",
     startingPromptKey: "",
