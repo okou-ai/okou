@@ -139,19 +139,66 @@ const PREPARE = `((selector) => {
 
   // A scroll-snap deck keeps every slide but the active one hidden, and a
   // hidden slide exports as a blank page.
-  const reveal = (element) => {
-    if (getComputedStyle(element).display === "none") {
-      element.style.setProperty("display", "block", "important");
-    }
+  const hidden = (element) => getComputedStyle(element).display === "none";
+  const unhide = (element) => {
     element.style.setProperty("visibility", "visible", "important");
     element.style.setProperty("opacity", "1", "important");
     element.style.setProperty("clip-path", "none", "important");
     element.removeAttribute("hidden");
     element.removeAttribute("inert");
   };
+
+  // The rule that hides a slide is normally paired with the rule that lays the
+  // visible one out — ".slide{display:none}" against
+  // ".slide.active{display:flex;flex-direction:column}". Forcing "display:block"
+  // answers the first rule and discards the second, so every "flex:1" child
+  // stops stretching and the page collapses to the height of its own text,
+  // leaving the lower half of every slide but one empty.
+  //
+  // The visible slide is the specimen. Whatever class it carries that a hidden
+  // slide lacks is the deck's own switch, so wearing that class gives the hidden
+  // slide the layout the deck intended instead of one invented here.
+  const LAYOUT = [
+    "display",
+    "flex-direction",
+    "flex-wrap",
+    "align-items",
+    "align-content",
+    "justify-content",
+    "grid-auto-flow",
+    "grid-template-columns",
+    "grid-template-rows",
+  ];
+  const specimen = slides.find((slide) => !hidden(slide));
+  const activate = (slide) => {
+    if (!specimen || specimen === slide) return false;
+    const own = new Set(slide.classList);
+    for (const name of specimen.classList) {
+      if (own.has(name)) continue;
+      slide.classList.add(name);
+      if (!hidden(slide)) return true;
+      slide.classList.remove(name);
+    }
+    // No class carries the switch — a deck may toggle an attribute or an inline
+    // style instead — so copy the layout the visible slide resolved to.
+    const reference = getComputedStyle(specimen);
+    for (const property of LAYOUT) {
+      slide.style.setProperty(property, reference.getPropertyValue(property), "important");
+    }
+    return !hidden(slide);
+  };
+
   for (const slide of slides) {
-    reveal(slide);
-    for (const ancestor of ancestorsUntilBody(slide)) reveal(ancestor);
+    if (hidden(slide) && !activate(slide)) {
+      slide.style.setProperty("display", "block", "important");
+    }
+    unhide(slide);
+    for (const ancestor of ancestorsUntilBody(slide)) {
+      if (hidden(ancestor)) {
+        ancestor.style.setProperty("display", "block", "important");
+      }
+      unhide(ancestor);
+    }
   }
 
   // A slide that paints no background of its own inherits one from an ancestor
@@ -272,6 +319,39 @@ const PREPARE = `((selector) => {
   }
   return inserted;
 })`;
+
+/**
+ * Measures the tables the renderer is about to export, per slide, in document
+ * order.
+ *
+ * The renderer hands every table row a height of zero and the frame a one-inch
+ * placeholder, because pptxgenjs leaves row sizing to the viewer. A viewer
+ * treats that height as a minimum and grows each row around its own text, so a
+ * table that painted 570px tall is written as 120px and draws straight through
+ * whatever the deck placed beneath it. The painted heights are only knowable
+ * here, from the page that laid the table out.
+ *
+ * Runs after PREPARE, because a pinned line break inside a cell adds a line and
+ * changes the row it sits in.
+ */
+const MEASURE = `((selector) => {
+  const slides = Array.from(document.querySelectorAll(selector));
+  return JSON.stringify(slides.map((slide) =>
+    Array.from(slide.querySelectorAll("table")).map((table) => {
+      const box = table.getBoundingClientRect();
+      return {
+        width: box.width,
+        rows: Array.from(table.rows).map((row) => row.getBoundingClientRect().height),
+      };
+    })
+  ));
+})`;
+
+/** A table as the page painted it: outer width and each row's height, in CSS px. */
+interface TableBox {
+  readonly width: number;
+  readonly rows: readonly number[];
+}
 
 interface Options {
   readonly input: string;
@@ -469,13 +549,47 @@ interface Rendered {
 }
 
 /**
+ * Accepts the measurement only when every field survived the page round-trip,
+ * so a deck whose shape the script could not report is left as the renderer
+ * wrote it rather than resized against partial numbers.
+ */
+function readTableBoxes(value: unknown): readonly (readonly TableBox[])[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const slides: (readonly TableBox[])[] = [];
+  for (const entry of value) {
+    if (!Array.isArray(entry)) {
+      return [];
+    }
+    const boxes: TableBox[] = [];
+    for (const table of entry) {
+      const candidate = table as { width?: unknown; rows?: unknown };
+      if (
+        typeof candidate.width !== "number" ||
+        !Array.isArray(candidate.rows) ||
+        candidate.rows.some((height) => {
+          return typeof height !== "number";
+        })
+      ) {
+        return [];
+      }
+      boxes.push({ rows: candidate.rows as number[], width: candidate.width });
+    }
+    slides.push(boxes);
+  }
+  return slides;
+}
+
+/**
  * Settles the deck, normalises it, and renders it to a .pptx without ever
  * leaving the page — the geometry that exports is the geometry that painted.
  */
-function render(options: Options, bundle: string): Rendered {
+function render(options: Options): Rendered {
   // A hosted deck can sit behind a login or a bot check that only the thread's
   // managed browser clears, so the session is addressable rather than private.
   const borrowed = options.session !== undefined;
+  const deckUrl = sourceUrl(options.input);
   const page = browser(
     options.session ?? `okou-convert-${process.pid.toString()}`,
   );
@@ -491,7 +605,7 @@ function render(options: Options, bundle: string): Rendered {
       ]);
       page.quiet(["set", "media", "reduced-motion"]);
     }
-    page.call(["open", sourceUrl(options.input)]);
+    page.call(["open", deckUrl]);
     page.call(["eval", SETTLE]);
     awaitSlides(page);
 
@@ -530,11 +644,18 @@ function render(options: Options, bundle: string): Rendered {
       page.call(["eval", `${PREPARE}(${JSON.stringify(selector)})`]);
     }
 
-    // An owned session is a browser this process started here, so its failure
-    // to read the cached bundle is a broken cache and must surface. A borrowed
-    // session may be driving a remote browser with no view of this filesystem,
-    // which is why it is served the same published artifact over the network.
-    const source = borrowed ? RENDERER_CDN : `file://${bundle}`;
+    const tables = readTableBoxes(
+      page.evaluate(`${MEASURE}(${JSON.stringify(selector)})`),
+    );
+
+    // The renderer runs as a script in the deck's own page, so the page has to
+    // be allowed to load it. A file:// deck can read the cached bundle off this
+    // machine; an http(s) deck cannot — a browser refuses a file:// script from
+    // a network origin — and a borrowed session may be driving a browser with
+    // no view of this filesystem at all. Both take the published artifact over
+    // the network, which is the same bytes as the cache.
+    const local = !borrowed && deckUrl.startsWith("file://");
+    const source = local ? `file://${ensureRenderer()}` : RENDERER_CDN;
     page.call([
       "eval",
       `(async()=>{
@@ -580,7 +701,12 @@ function render(options: Options, bundle: string): Rendered {
     const { slides, length } = meta as { slides: number; length: number };
 
     return {
-      deck: postProcess(transfer(page, length), eastAsianFont, options.wrap),
+      deck: postProcess(
+        transfer(page, length),
+        eastAsianFont,
+        options.wrap,
+        tables,
+      ),
       eastAsianFont,
       selector,
       slides,
@@ -654,13 +780,7 @@ function normalizeForCompare(value: string): string {
 
 function deckText(deck: Buffer): { slides: number; text: string } {
   const entries = zipEntries(deck);
-  const slideNames = [...entries.keys()]
-    .filter((name) => {
-      return /^ppt\/slides\/slide\d+\.xml$/u.test(name);
-    })
-    .sort((left, right) => {
-      return left.localeCompare(right, "en", { numeric: true });
-    });
+  const slideNames = slideOrder(entries.keys());
   const parts: string[] = [];
   for (const name of slideNames) {
     const xml = entries.get(name)?.toString("utf8") ?? "";
@@ -766,17 +886,90 @@ function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
 }
 
 /**
+ * Restores one table's painted height.
+ *
+ * The scale comes from the frame's own width against the width the page
+ * measured, so the conversion stays correct whatever slide size was requested
+ * and needs no agreement with the renderer about EMU per pixel. A frame whose
+ * row count disagrees with the measurement is left alone: the two are then
+ * describing different tables, and guessing which is worse than the placeholder.
+ */
+function resizeFrame(frame: string, box: TableBox): string {
+  const rows = [...frame.matchAll(/<a:tr h="\d+"/gu)];
+  const extent = /<p:xfrm>[\s\S]*?<a:ext cx="(\d+)" cy="\d+"\/>/u.exec(frame);
+  if (extent === null || rows.length === 0 || rows.length !== box.rows.length) {
+    return frame;
+  }
+  const cx = Number(extent[1]);
+  if (!Number.isFinite(cx) || cx <= 0 || box.width <= 0) {
+    return frame;
+  }
+  const scale = cx / box.width;
+  const heights = box.rows.map((height) => {
+    return Math.max(0, Math.round(height * scale));
+  });
+  let index = 0;
+  const sized = frame.replace(/<a:tr h="\d+"/gu, () => {
+    const height = heights[index] ?? 0;
+    index += 1;
+    return `<a:tr h="${height.toString()}"`;
+  });
+  const total = heights.reduce((sum, height) => {
+    return sum + height;
+  }, 0);
+  return sized.replace(
+    /(<p:xfrm>[\s\S]*?<a:ext cx="\d+" cy=")\d+("\/>)/u,
+    `$1${total.toString()}$2`,
+  );
+}
+
+/** Applies the slide's measurements to its table frames, pairing them in order. */
+function resizeTables(xml: string, boxes: readonly TableBox[]): string {
+  const frames = [
+    ...xml.matchAll(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/gu),
+  ];
+  if (frames.length === 0 || frames.length !== boxes.length) {
+    return xml;
+  }
+  let patched = "";
+  let cursor = 0;
+  for (const [index, frame] of frames.entries()) {
+    const box = boxes[index];
+    const start = frame.index;
+    if (box === undefined || start === undefined) {
+      return xml;
+    }
+    patched += xml.slice(cursor, start) + resizeFrame(frame[0], box);
+    cursor = start + frame[0].length;
+  }
+  return patched + xml.slice(cursor);
+}
+
+/** Orders the slide parts the way the renderer wrote them, which is deck order. */
+function slideOrder(names: Iterable<string>): readonly string[] {
+  return [...names]
+    .filter((name) => {
+      return /^ppt\/slides\/slide\d+\.xml$/u.test(name);
+    })
+    .sort((left, right) => {
+      return left.localeCompare(right, "en", { numeric: true });
+    });
+}
+
+/**
  * Rewrites the parts of the deck the renderer gets to decide for itself.
  *
- * Both edits exist because a .pptx is a set of instructions, not a picture: a
+ * Every edit exists because a .pptx is a set of instructions, not a picture: a
  * viewer follows what the file says rather than what the browser showed.
  */
 function postProcess(
   deck: Buffer,
   eastAsianFont: string,
   wrap: boolean,
+  tables: readonly (readonly TableBox[])[],
 ): Buffer {
   const entries = zipEntries(deck);
+  const slides = slideOrder(entries.keys());
   let touched = false;
   for (const [name, content] of entries) {
     if (
@@ -788,6 +981,13 @@ function postProcess(
     }
     const xml = content.toString("utf8");
     let patched = xml;
+
+    // A table carries no usable height of its own, so it is restored from what
+    // the page painted before the renderer flattened it.
+    const boxes = tables[slides.indexOf(name)];
+    if (boxes !== undefined && boxes.length > 0) {
+      patched = resizeTables(patched, boxes);
+    }
 
     // spAutoFit tells the viewer to resize each shape around its own text,
     // which discards the geometry the browser measured and re-derives it from
@@ -871,8 +1071,7 @@ function requirePresentationConvertCapability(): void {
 
 async function convert(options: Options): Promise<void> {
   requirePresentationConvertCapability();
-  const bundle = ensureRenderer();
-  const rendered = render(options, bundle);
+  const rendered = render(options);
 
   const target =
     options.out ?? `${basename(options.input, extname(options.input))}.pptx`;
