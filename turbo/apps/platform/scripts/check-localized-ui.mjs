@@ -296,12 +296,35 @@ function getLocaleIndependentShellAllowedLiterals() {
   ];
 }
 
+function getSocialPlatformAllowedLiterals() {
+  return [
+    ["src/lib/credit-usage-display.ts\u0000X", "social platform brand name"],
+    [
+      "src/lib/credit-usage-display.ts\u0000Instagram",
+      "social platform brand name",
+    ],
+    [
+      "src/lib/credit-usage-display.ts\u0000TikTok",
+      "social platform brand name",
+    ],
+    [
+      "src/lib/credit-usage-display.ts\u0000YouTube",
+      "social platform brand name",
+    ],
+    [
+      "src/lib/credit-usage-display.ts\u0000Facebook",
+      "social platform brand name",
+    ],
+  ];
+}
+
 function getAllowedLiterals() {
   return new Map([
     ...getInternalAllowedLiterals(),
     ...getConnectorAllowedLiterals(),
     ...getFileAllowedLiterals(),
     ...getLocaleIndependentShellAllowedLiterals(),
+    ...getSocialPlatformAllowedLiterals(),
   ]);
 }
 
