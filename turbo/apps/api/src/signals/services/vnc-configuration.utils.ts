@@ -111,8 +111,7 @@ function canonicalizeVncIdentity(
   input: string,
   failure: "invalidHost" | "invalidServerName",
 ): VncResult<string> {
-  const trimmed = input.trim();
-  const value = trimmed.endsWith(".") ? trimmed.slice(0, -1) : trimmed;
+  const value = input.endsWith(".") ? input.slice(0, -1) : input;
   if (
     value.length === 0 ||
     value.length > VNC_HOST_MAX_LENGTH ||

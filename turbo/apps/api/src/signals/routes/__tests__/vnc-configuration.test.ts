@@ -627,6 +627,8 @@ describe("VNC owner configuration", () => {
       "user@vnc.example.com",
       "vnc.example.com/path",
       "bad host",
+      " vnc.example.com",
+      "vnc.example.com ",
       "localhost:5900",
       "-bad.example",
       "a".repeat(254),
@@ -646,6 +648,8 @@ describe("VNC owner configuration", () => {
       "desktop.example.com/path",
       "desktop.example.com%eth0",
       "bad server name",
+      " desktop.example.com",
+      "desktop.example.com ",
     ]) {
       const response = await rawRequest("/api/vnc/connections", {
         ...hostBody(),

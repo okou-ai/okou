@@ -15,7 +15,7 @@ const displayNameSchema = z
   .trim()
   .min(1)
   .max(VNC_DISPLAY_NAME_MAX_LENGTH);
-const hostSchema = z.string().trim().min(1).max(VNC_HOST_MAX_LENGTH);
+const hostSchema = z.string().min(1).max(VNC_HOST_MAX_LENGTH);
 const portSchema = z.int().min(1).max(65_535);
 const generationSchema = z.int().positive().max(2_147_483_647);
 const directTransportSchema = z.object({ type: z.literal("direct") }).strict();
