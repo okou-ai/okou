@@ -15,12 +15,23 @@ const scopedAdmission = singleton(() => {
   return new AsyncLocalStorage<string | undefined>();
 });
 
+const scopedAdmissionAttempt = singleton(() => {
+  return new AsyncLocalStorage<() => void>();
+});
+
 /** Preserve real contention within one test without blocking other tests. */
 export async function withXResourceAdmissionScopeForTest<T>(
   scope: string | undefined,
   work: () => Promise<T>,
 ): Promise<T> {
   return await scopedAdmission().run(scope, work);
+}
+
+export async function withXResourceAdmissionAttemptTrackingForTest<T>(
+  onAttempt: () => void,
+  work: () => Promise<T>,
+): Promise<T> {
+  return await scopedAdmissionAttempt().run(onAttempt, work);
 }
 
 /** Infrastructure-only clock control, scoped to one test request/operation. */
@@ -43,6 +54,7 @@ export async function lockXResourceAdmission(
   tx: Tx,
   mode: "shared" | "exclusive",
 ): Promise<void> {
+  scopedAdmissionAttempt.peek()?.getStore()?.();
   const scope = scopedAdmission.peek()?.getStore();
   const lockKey =
     scope === undefined
