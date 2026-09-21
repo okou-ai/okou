@@ -5,6 +5,11 @@ mod authority;
 mod cache;
 mod engine;
 mod files;
+#[allow(
+    dead_code,
+    reason = "the crate-private stream is consumed by the follow-up VNC composition in #35892"
+)]
+mod forwarding;
 mod io;
 mod keys;
 mod network;
@@ -37,7 +42,7 @@ const TERMINAL_RESERVE: Duration = Duration::from_secs(1);
 /// Only allow-listed business codes cross the guest/log boundary.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum FailureReason {
+pub(crate) enum FailureReason {
     Unavailable,
     AuthorityFailure,
     InvalidCredential,
@@ -325,20 +330,10 @@ impl SshRuntime {
             result
         }
         .await;
-        if result.as_ref().is_err_and(|failure| {
-            matches!(
-                failure,
-                FailureReason::Unavailable
-                    | FailureReason::AuthorityFailure
-                    | FailureReason::InvalidCredential
-                    | FailureReason::UnsupportedCredential
-                    | FailureReason::CredentialResourceLimit
-                    | FailureReason::HostKeyMismatch
-                    | FailureReason::UnsupportedHostKey
-                    | FailureReason::ConfigurationChanged
-                    | FailureReason::AuthenticationFailed
-            )
-        }) {
+        if result
+            .as_ref()
+            .is_err_and(|failure| invalidates_access(*failure))
+        {
             access.invalidate();
         }
         result
@@ -438,6 +433,21 @@ impl SshRuntime {
             .await?
             .map_err(|_| FailureReason::NetworkFailure)
     }
+}
+
+fn invalidates_access(failure: FailureReason) -> bool {
+    matches!(
+        failure,
+        FailureReason::Unavailable
+            | FailureReason::AuthorityFailure
+            | FailureReason::InvalidCredential
+            | FailureReason::UnsupportedCredential
+            | FailureReason::CredentialResourceLimit
+            | FailureReason::HostKeyMismatch
+            | FailureReason::UnsupportedHostKey
+            | FailureReason::ConfigurationChanged
+            | FailureReason::AuthenticationFailed
+    )
 }
 
 #[derive(Clone)]

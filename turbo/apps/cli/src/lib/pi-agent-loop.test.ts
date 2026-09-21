@@ -31,6 +31,7 @@ import {
 import {
   piSandboxAgentConfigFromEnv,
   recordPiMemoryToolSourceUse,
+  recordPiPreparationTiming,
   runPiSandboxAgentLoop,
   reportPiSandboxAgentLoopFailure,
   type PiSandboxAgentConfig,
@@ -45,6 +46,7 @@ const TSX_IMPORT = import.meta.resolve("tsx");
 const CONFIG: PiSandboxAgentConfig = {
   runId: RUN_ID,
   sessionId: SESSION_ID,
+  reportPreparationTiming: true,
   launchPayload: {
     schemaVersion: 1,
     appendSystemPrompt: "exact immutable Pi append prompt",
@@ -395,6 +397,7 @@ function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "DEEPSEEK_API_KEY",
     }),
+    OKOU_PI_PREPARATION_TIMING: "1",
     OPENAI_API_KEY: "test-api-key",
   };
 }
@@ -965,6 +968,56 @@ describe("sandbox Pi agent loop", () => {
       truncated: false,
       durationMs: 3,
     });
+  });
+
+  it("reports each sandbox preparation phase as a bounded stderr envelope", () => {
+    const writes: string[] = [];
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+    try {
+      recordPiPreparationTiming(RUN_ID, {
+        phase: "session_services",
+        startedAt: 1_700_000_000_000,
+        finishedAt: 1_700_000_000_042,
+        durationMs: 41.6,
+        outcome: "success",
+      });
+    } finally {
+      write.mockRestore();
+    }
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.endsWith("\n")).toBe(true);
+    // guest-agent parses this envelope into `pi_prepare_session_services`;
+    // wall-clock boundaries stay out of it because the guest owns the
+    // timestamp it records.
+    expect(JSON.parse(writes[0] ?? "{}") as unknown).toStrictEqual({
+      type: "pi_preparation_timing",
+      runId: RUN_ID,
+      phase: "session_services",
+      durationMs: 41.6,
+      outcome: "success",
+    });
+  });
+
+  it("stays silent about preparation phases until guest-agent opts the child in", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    delete env.OKOU_PI_PREPARATION_TIMING;
+
+    // An older guest-agent does not recognize the envelope and would surface it
+    // as user-visible failure output, so the child must not emit it.
+    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+      reportPreparationTiming: false,
+    });
+    const looseValue = piEnv({ OKOU_RUN_ID: RUN_ID });
+    looseValue.OKOU_PI_PREPARATION_TIMING = "true";
+    await expect(
+      piSandboxAgentConfigFromEnv(looseValue),
+    ).resolves.toMatchObject({ reportPreparationTiming: false });
   });
 
   it("resolves the Pi session, launch payload file, and model credential", async () => {

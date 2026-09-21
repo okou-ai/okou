@@ -601,13 +601,13 @@
       "loadFailed": "Gagal memuat izin",
       "loadingPermissions": "Memuat izin",
       "onlyMe": "Hanya saya",
-      "onlyMeDescription": "Hanya Anda yang dapat melihat artefak ini",
+      "onlyMeOption": "Hanya saya",
       "organization": "Organisasi",
-      "organizationDescription": "Siapa pun di {{organization}} yang memiliki tautan",
-      "organizationDescriptionUnnamed": "Siapa pun di organisasi Anda yang memiliki tautan",
+      "organizationOption": "Siapa pun di {{organization}}",
+      "organizationOptionUnnamed": "Siapa pun di organisasi Anda",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
-      "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",
+      "publicOption": "Siapa pun yang memiliki tautan",
       "retry": "Coba lagi"
     },
     "sidebar": {
@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
-      "importFile": "Impor file Anda sendiri",
-      "importFileHint": "Pakai lagi desain file Anda",
+      "importFile": "Impor template",
       "multiAccent": "Multi-aksen",
       "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
@@ -1494,6 +1493,10 @@
         },
         "notEligible": "Tidak memenuhi syarat",
         "pendingState": "{{amount}} tertunda",
+        "rejected": {
+          "alreadyRedeemed": "Postingan sudah dipakai",
+          "postMustMention": "Harus menyebut {{assistantName}}"
+        },
         "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "share": {
           "action": "Bagikan",
@@ -4136,7 +4139,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Kembali",
-        "cancel": "Batal",
         "continue": "Lanjutkan",
         "finish": "Selesaikan penyiapan",
         "notNow": "Nanti saja",
@@ -4208,24 +4210,32 @@
         "title": "Pekerjaan Anda seperti apa?"
       },
       "skills": {
-        "confirm": "Impor dan lanjutkan",
-        "copy": "Impor sebuah SKILL.md dan ia menjadi workflow di Okou, siap dijalankan dengan /.",
-        "import": "Pilih file",
+        "copied": "Tersalin",
+        "copy": "Tempel prompt ini di sesi Codex atau Claude Code Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copyError": "Prompt tidak dapat disalin.",
+        "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
-        "importedTitle": "Workflow Anda siap",
-        "panelCopy": "Dari Codex, Claude Code, atau agent mana pun yang menulisnya.",
-        "panelTitle": "Letakkan SKILL.md di sini",
-        "previewCopy": "Diimpor sebagai workflow Okou. Hanya Anda yang bisa memakainya sampai dibagikan.",
-        "previewTitle": "Tinjau skill Anda",
-        "replace": "Pilih file lain",
-        "title": "Bawa skill yang sudah Anda tulis."
+        "importedLabel": "Skill yang diimpor",
+        "importedTitle": "Skill Anda sudah ada di Okou",
+        "preparing": "Membuka sesi impor Anda…",
+        "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
+        "promptLabel": "Prompt impor skill",
+        "promptTitle": "Jalankan ini di Codex atau Claude Code",
+        "startError": "Sesi impor tidak dapat dibuka.",
+        "title": "Bawa skill yang sudah Anda tulis.",
+        "tryAgain": "Coba lagi",
+        "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
       "slack": {
         "add": "Tambahkan ke Slack",
+        "channelAdminRequired": "Minta admin workspace untuk menambahkan Okou ke {{channel}}.",
+        "channelUnavailable": "{{channel}} belum tersedia di workspace ini.",
+        "connectAction": "Hubungkan Slack",
         "connectedCopy": "Buka Slack dan sebut @Okou untuk memberinya tugas.",
         "connectedStatus": "Ditambahkan ke workspace Anda",
         "connectedTitle": "Slack terhubung",
         "copy": "Tambahkan sekali, lalu sebut @Okou di tempat pekerjaan sudah berjalan.",
+        "name": "Slack",
         "otherAdded": "Ditambahkan",
         "otherImessage": "iMessage",
         "othersLabel": "Tambahkan nanti, atau sekarang",
@@ -6281,11 +6291,11 @@
       }
     },
     "paidTools": {
-      "description": "Pilih alat bawaan berbayar yang dapat Anda gunakan.",
-      "disabledForCreation": "{{tool}} dinonaktifkan di pengaturan alat berbayar Anda.",
+      "description": "Pilih alat berbayar yang dapat digunakan Okou dalam tugas Anda. Setiap penggunaan memakai kredit.",
+      "disabledForCreation": "{{tool}} nonaktif untuk Anda",
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
-      "openSettings": "Buka pengaturan alat berbayar",
+      "openSettings": "Buka pengaturan",
       "retry": "Coba lagi",
       "saveError": "Perubahan Anda tidak tersimpan.",
       "saving": "Menyimpan…",
@@ -6488,6 +6498,8 @@
         "description": "Pilih bahasa pilihan Anda untuk antarmuka {{brandName}}",
         "label": "Bahasa",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6890,15 +6902,20 @@
       "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
+    "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
     "detail": {
       "back": "Templat kustom",
-      "page": "Halaman {{number}}",
-      "sourceFile": "Dari {{filename}}"
+      "page": "Halaman {{number}}"
     },
     "empty": {
-      "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
+      "description": "Impor dokumen, presentasi, atau gambar untuk menggunakan kembali desainnya.",
+      "document": "Belum ada dokumen",
+      "illustration": "Belum ada gambar",
+      "presentation": "Belum ada presentasi",
+      "title": "Buat sesuai gaya Anda"
     },
+    "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
@@ -6975,6 +6992,7 @@
     "configured": "Terkonfigurasi",
     "credential": {
       "add": "Tambah kredensial",
+      "authentication": "Metode autentikasi",
       "createNew": "Buat kredensial baru",
       "delete": "Hapus kredensial",
       "deleteHelp": "Hapus kredensial yang tidak digunakan ini? Tindakan ini tidak dapat dibatalkan.",
@@ -6988,13 +7006,20 @@
       "password": "Kata sandi VNC",
       "passwordHelp": "Kata sandi VNC klasik menggunakan 1–8 karakter ASCII yang dapat dicetak. Spasi dipertahankan.",
       "passwordHint": "Masukkan kata sandi VNC server",
-      "replace": "Ganti kata sandi",
-      "replaceHelp": "Biarkan opsi ini nonaktif untuk mempertahankan kata sandi tersimpan. Menggantinya memengaruhi setiap host yang menggunakan kredensial ini.",
+      "replace": "Ganti autentikasi",
+      "replaceHelp": "Biarkan opsi ini nonaktif untuk mempertahankan autentikasi tersimpan. Menggantinya memengaruhi setiap host yang menggunakan kredensial ini.",
       "select": "Pilih kredensial",
-      "sharedHelp_one": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi host ini.",
-      "sharedHelp_other": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi semuanya.",
+      "sharedHelp_one": "Digunakan oleh {{count}} host. Perubahan autentikasi memengaruhi host ini.",
+      "sharedHelp_other": "Digunakan oleh {{count}} host. Perubahan autentikasi memengaruhi semuanya.",
       "summary_other": "{{count}} kredensial dikonfigurasi",
-      "unused": "Tidak digunakan oleh host tersimpan mana pun."
+      "unused": "Tidak digunakan oleh host tersimpan mana pun.",
+      "username": "Nama pengguna",
+      "usernameHelp": "1–255 byte UTF-8. NUL tidak diizinkan.",
+      "usernameHint": "Masukkan nama pengguna server",
+      "usernamePassword": "Kata sandi",
+      "usernamePasswordHelp": "1–1023 byte UTF-8. NUL tidak diizinkan dan spasi dipertahankan.",
+      "usernamePasswordHint": "Masukkan kata sandi untuk nama pengguna ini",
+      "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
     "credentialsTab": "Kredensial",
     "delete": "Hapus host",
@@ -7039,10 +7064,13 @@
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
       "custom": "Otoritas sertifikat khusus",
-      "help": "Memerlukan server VNC yang mendukung VeNCrypt X509Vnc. Sertifikat server harus cocok dengan nama host atau alamat IP yang dikonfigurasi.",
-      "profile": "VNC terenkripsi (X509Vnc)",
+      "profileLabel": "Profil keamanan",
       "system": "Otoritas sertifikat sistem",
-      "title": "Kepercayaan sertifikat server"
+      "title": "Kepercayaan sertifikat server",
+      "x509Plain": "Nama pengguna dan kata sandi terenkripsi (X509Plain)",
+      "x509PlainHelp": "Memerlukan VeNCrypt X509Plain. TLS memverifikasi server sebelum mengirim nama pengguna dan kata sandi.",
+      "x509Vnc": "VNC terenkripsi (X509Vnc)",
+      "x509VncHelp": "Memerlukan VeNCrypt X509Vnc. TLS memverifikasi server sebelum mengirim kata sandi VNC."
     },
     "summary_one": "{{count}} host terkonfigurasi",
     "summary_other": "{{count}} host terkonfigurasi",

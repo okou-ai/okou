@@ -115,25 +115,6 @@ function PaidToolsContent({
   const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-        {workspace.state === "hasData" && workspace.data && (
-          <p>
-            {t(
-              ($) => {
-                return $.settings.paidTools.scope;
-              },
-              {
-                workspace: workspace.data.name,
-              },
-            )}
-          </p>
-        )}
-        <p>
-          {t(($) => {
-            return $.settings.paidTools.timing;
-          })}
-        </p>
-      </div>
       {loadable.state === "loading" ? (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -160,11 +141,34 @@ function PaidToolsContent({
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {settings.tools.map((tool) => {
-            return <PaidToolRow key={tool.toolId} tool={tool} />;
-          })}
-        </div>
+        <>
+          <div className="flex flex-col gap-3">
+            {settings.tools.map((tool) => {
+              return <PaidToolRow key={tool.toolId} tool={tool} />;
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {workspace.state === "hasData" && workspace.data && (
+              <>
+                <span>
+                  {t(
+                    ($) => {
+                      return $.settings.paidTools.scope;
+                    },
+                    {
+                      workspace: workspace.data.name,
+                    },
+                  )}
+                </span>{" "}
+              </>
+            )}
+            <span>
+              {t(($) => {
+                return $.settings.paidTools.timing;
+              })}
+            </span>
+          </p>
+        </>
       )}
     </div>
   );

@@ -480,6 +480,8 @@ async fn execute(
 
     let codex_startup =
         matches!(config.framework, env::Framework::Codex).then(cli::CodexStartupTiming::start);
+    let pi_startup =
+        matches!(config.framework, env::Framework::Pi).then(cli::PiStartupTiming::start);
 
     // Codex setup must complete before the CLI starts. On reused sandboxes,
     // continuing after a setup failure can inherit stale auth or runtime state
@@ -526,6 +528,7 @@ async fn execute(
         heartbeat_monitor,
         http.clone(),
         cli::CliExecutionControls::new(active_input, cli_cancellation, codex_startup.as_ref())
+            .with_pi_startup(pi_startup.as_ref())
             .with_workload_containment(runtime.workload_containment.as_ref())
             .with_session_metadata_store(session_metadata.clone()),
         config,
@@ -535,6 +538,9 @@ async fn execute(
     .await;
     if let Some(codex_startup) = codex_startup.as_ref() {
         codex_startup.record_failure();
+    }
+    if let Some(pi_startup) = pi_startup.as_ref() {
+        pi_startup.record_failure();
     }
     let (
         cli_exit_code,

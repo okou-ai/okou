@@ -198,7 +198,10 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
 
-type ActiveRunModel = Exclude<SupportedRunModel, "claude-fable-5" | "gpt-5.5">;
+export type ActiveRunModel = Exclude<
+  SupportedRunModel,
+  "claude-fable-5" | "gpt-5.5"
+>;
 
 // Historical IDs remain in the wire schemas and billing catalog. Availability
 // is a separate product decision, including for provider-prefixed aliases.
@@ -1651,6 +1654,11 @@ export const orgModelPoliciesResponseSchema = z.object({
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
+  // API-first rollout compatibility: a new App can briefly reach an API from
+  // before this catalog projection existed. Missing data fails closed in the
+  // Add model dialog. Make required after those API builds leave rollback;
+  // follow-up #35900.
+  modelsAvailableToAdd: z.array(supportedRunModelSchema).optional(),
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });

@@ -46,7 +46,7 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { now } from "../../lib/time.ts";
+import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -58,18 +58,6 @@ const slackIconImg = settingsIconAssetUrl("slack");
 const teamsIconImg = settingsIconAssetUrl("teams");
 const githubIconImg = settingsIconAssetUrl("github");
 const telegramIconImg = settingsIconAssetUrl("telegram");
-
-/** Append a cache-busting timestamp and forward ?prompt= so the OAuth flow can
- *  carry it through to the Slack DM greeting. */
-function openFreshOAuth(url: string) {
-  const fresh = new URL(url, window.location.origin);
-  const prompt = new URLSearchParams(window.location.search).get("prompt");
-  if (prompt) {
-    fresh.searchParams.set("prompt", prompt);
-  }
-  fresh.searchParams.set("_t", String(now()));
-  window.open(fresh.toString(), "_blank");
-}
 
 function ConnectedIndicator({
   testId,

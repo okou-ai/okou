@@ -1,5 +1,38 @@
 # Changelog
 
+## [8.694.0](https://github.com/okou-ai/okou/compare/core-v8.693.0...core-v8.694.0) (2026-09-21)
+
+
+### Features
+
+* **platform:** give the default agent avatar its own texture ([#35901](https://github.com/okou-ai/okou/issues/35901)) ([b503a49](https://github.com/okou-ai/okou/commit/b503a49b709681dae650d0ca46a08243da39c6a2))
+
+
+### Bug Fixes
+
+* keep deepseek openrouter routes global ([#35852](https://github.com/okou-ai/okou/issues/35852)) ([73d8915](https://github.com/okou-ai/okou/commit/73d891553ec6ba74f4a0786573dc45b01ab5e811))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.486.0
+
+## [8.693.0](https://github.com/okou-ai/okou/compare/core-v8.692.0...core-v8.693.0) (2026-09-21)
+
+
+### Features
+
+* **core:** admit every user export to the durable handler ([#35828](https://github.com/okou-ai/okou/issues/35828)) ([9967f71](https://github.com/okou-ai/okou/commit/9967f7191fdae596ba3d049052a345fe9ffe4b6a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+
 ## [8.692.0](https://github.com/okou-ai/okou/compare/core-v8.691.0...core-v8.692.0) (2026-09-21)
 
 

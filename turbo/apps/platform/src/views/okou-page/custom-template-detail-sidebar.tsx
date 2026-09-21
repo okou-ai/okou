@@ -300,8 +300,7 @@ export function CustomTemplateDetailSidebar({
   const deleteTemplate = useSet(deleteCustomTemplate$);
   return (
     // The imported deck panel's column, which this now shares: the name, what
-    // it was compiled from, what it means to share it, then the action, then
-    // the way to be rid of it.
+    // it means to share it, then the action, then the way to be rid of it.
     <aside className="flex w-full shrink-0 flex-col lg:sticky lg:top-0 lg:w-[320px]">
       <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
         {detail.canManage ? (
@@ -312,21 +311,12 @@ export function CustomTemplateDetailSidebar({
           </h3>
         )}
         {/*
-         * The file it came from, and only that. A page count told the reader
-         * how long the original was, which is a fact about that file rather
-         * than about what the template will produce from it: a template
-         * reversed from a two-page memo writes a ten-page report just as
-         * readily. It was also answerable for one kind and not the others, so
-         * the line changed shape depending on what had been imported.
+         * No line naming the file it was reversed from. The template is what
+         * the member uses from here on, and once it is named and renameable
+         * the original filename is a fact about an import that already
+         * happened — one the preview beside this column shows anyway, for the
+         * kinds whose source is what gets drawn.
          */}
-        <p className="mt-2 text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.templates.detail.sourceFile;
-            },
-            { filename: detail.sourceFilename },
-          )}
-        </p>
         <div className="my-5 border-t border-border" />
         {detail.canManage ? (
           <CustomTemplateVisibilityControl detail={detail} />

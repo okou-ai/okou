@@ -117,6 +117,51 @@ describe("v4 connector catalog reader", () => {
     }
   });
 
+  it("validates AWS firewall rules through the shared semantic parser", () => {
+    const artifact = publishedCatalog();
+    const connector = requiredConnector(artifact, "019sms");
+    if (connector.firewall.kind !== "generated") {
+      throw new Error("Expected generated firewall fixture");
+    }
+    const api = connector.firewall.config.apis[0];
+    const permission = api?.permissions?.[0];
+    if (api === undefined || permission === undefined) {
+      throw new Error("Expected firewall permission fixture");
+    }
+    api.auth = {
+      awsSigv4: {
+        accessKeyId: "${{ vars.SMS019_USERNAME }}",
+        secretAccessKey: "${{ secrets.SMS019_API_TOKEN }}",
+      },
+    };
+    permission.rules = ["POST / AWS sigv4=ec2 action=DescribeInstances"];
+    expect(decode(artifact)).toEqual(artifact);
+
+    delete api.auth.awsSigv4;
+    expect(() => {
+      decode(artifact);
+    }).toThrow(
+      expect.objectContaining({
+        code: "relationship-mismatch",
+        relationshipRule: "invalid-firewall-permission",
+      }),
+    );
+
+    api.auth.awsSigv4 = {
+      accessKeyId: "${{ vars.SMS019_USERNAME }}",
+      secretAccessKey: "${{ secrets.SMS019_API_TOKEN }}",
+    };
+    permission.rules = ["POST / AWS action=DescribeInstances"];
+    expect(() => {
+      decode(artifact);
+    }).toThrow(
+      expect.objectContaining({
+        code: "relationship-mismatch",
+        relationshipRule: "invalid-firewall-permission",
+      }),
+    );
+  });
+
   it("loads candidates only from the canonical v4 release path", async () => {
     const artifact = publishedCatalog();
     const rawBytes = Buffer.from(JSON.stringify(artifact));

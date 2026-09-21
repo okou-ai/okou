@@ -54,9 +54,9 @@ establish 127 distinct invalid catalogs or one unchanged candidate.
 
 PostHog's new static public OAuth client required
 [API #33490](https://github.com/vm0-ai/vm0/pull/33490).
-[The companion catalog](https://github.com/vm0-ai/vm0-connectors/pull/4302)
+[The companion catalog](https://github.com/okou-ai/okou-connectors/pull/4302)
 reached production first: its descendant's
-[publication](https://github.com/vm0-ai/vm0-connectors/actions/runs/34638489936)
+[publication](https://github.com/okou-ai/okou-connectors/actions/runs/34638489936)
 completed at 2026-09-11 19:42:13 UTC, shortly before the first WARN at
 19:42:48 UTC. The previous API 1.585.1 rejected public auth-code clients.
 The last WARN was at 21:48:44 UTC; the API 1.586.0

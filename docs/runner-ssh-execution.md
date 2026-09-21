@@ -204,6 +204,36 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin run
   ssh::tests::files::openssh_server_interoperability -- --ignored --exact
 ```
 
+## Internal direct-tcpip streams
+
+#35890 adds a crate-private direct-tcpip byte stream for Runner-owned consumers.
+It is not a guest RPC method, local listener, reverse tunnel, agent-forwarding
+surface or general SSH transport API. A caller supplies one fixed destination
+for the stream and cannot supply originator metadata. The Runner sends the fixed
+originator `127.0.0.1:0`.
+
+The stream reuses the exact current Run's SSH registration, saved-connection
+authority, credential cache, host-key trust, password/private-key authentication,
+Cloudflare Access carrier and physical pool. It never creates a second registration
+or SSH client. Two retained forwards are allowed per Run, independently of the
+eight short guest request slots, within the shared 24-transport physical ceiling.
+
+Forward targets must be canonical ASCII DNS names or canonical IPv4/unscoped IPv6
+literals with a nonzero port. URL, path, userinfo, bracketed, escaped, whitespace,
+legacy numeric and scoped IPv6 forms are rejected before authority resolution.
+The authenticated SSH server resolves the target, so private and loopback targets
+are intentionally supported; the Runner does not locally resolve the forwarded
+name or apply the public-destination rule used for its own outbound SSH socket.
+
+The returned stream exclusively owns its russh channel, pool lease, current
+authority access, caller/Run cancellation and forwarding permit. EOF, channel
+refusal, setup timeout, cancellation, invalidation, I/O failure, shutdown or drop
+retires the physical SSH transport. Forwarding transports are never returned to
+the idle pool, even after a clean upper-protocol close, because the consumed byte
+stream cannot prove that unrelated reuse is safe. The existing pool monitor
+physically closes active streams on exact authority invalidation, Run/caller
+cancellation or the two-hour transport lifetime.
+
 ## Idle connection reuse
 
 #33465 reuses healthy authenticated transports between independent exec/session

@@ -211,6 +211,8 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
       "it-IT",
       "fr-FR",
       "hi-IN",
+      "zh-Hans",
+      "zh-Hant",
     ] as const;
 
     for (const locale of supportedLocales) {
@@ -226,7 +228,7 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 
     const allLocales = await api.readPreferences(admin);
     expect(allLocales.body).toMatchObject({
-      locale: "hi-IN",
+      locale: "zh-Hant",
       supportedLocales,
     });
   });

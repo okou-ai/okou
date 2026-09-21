@@ -1,4 +1,7 @@
-import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
 import { readDisabledPaidTools } from "./paid-tools.service";
 import {
   resolveAgentRunStorage,
@@ -7826,7 +7829,10 @@ function runnerStoragePlan(
 
 async function withPaidToolPlatformEnvironment(
   db: Db,
-  owner: Pick<BuildRunnerJobPayloadInput, "orgId" | "userId">,
+  owner: Pick<
+    BuildRunnerJobPayloadInput,
+    "framework" | "modelProvider" | "orgId" | "piSandbox" | "userId"
+  >,
   platformEnvironment: Record<string, string> | undefined,
 ): Promise<Record<string, string>> {
   const disabledTools = await readDisabledPaidTools(
@@ -7834,10 +7840,39 @@ async function withPaidToolPlatformEnvironment(
     owner.orgId,
     owner.userId,
   );
-  return {
+  const environment: Record<string, string> = {
     ...platformEnvironment,
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
   };
+  if (shouldEnableFrameworkWebSearch(owner, disabledTools)) {
+    environment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR] = "true";
+  } else {
+    delete environment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR];
+  }
+  return environment;
+}
+
+function shouldEnableFrameworkWebSearch(
+  context: Pick<
+    BuildRunnerJobPayloadInput,
+    "framework" | "modelProvider" | "piSandbox"
+  >,
+  disabledTools: readonly string[],
+): boolean {
+  if (
+    context.piSandbox !== undefined ||
+    !disabledTools.includes("web-search") ||
+    (context.framework !== "claude-code" && context.framework !== "codex")
+  ) {
+    return false;
+  }
+
+  // A successful route without a stored provider uses the framework key
+  // declared in compose. Stored non-built-in providers are BYOK as well.
+  return (
+    context.modelProvider === null ||
+    !isBuiltInModelProviderType(context.modelProvider.type)
+  );
 }
 
 function buildRunnerJobPayload(

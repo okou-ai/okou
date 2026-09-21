@@ -1,5 +1,16 @@
 import { command } from "ccstate";
-import { and, asc, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agents } from "@okouai/db/schema/agent";
@@ -10,6 +21,7 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import {
@@ -19,15 +31,15 @@ import {
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import type { Db } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
 } from "./official-workflow-catalog-read.service";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { settle } from "../utils";
 
+const log = logger("service:user-export-source");
 const CHAT_PAGE_SIZE = 100;
 const CHAT_PAGE_ESTIMATED_BYTES = 2 * 1024 * 1024;
 const CHAT_ROW_MAX_PAYLOAD_BYTES = 32 * 1024 * 1024;
@@ -162,12 +174,11 @@ function snapshotEntries(threadId: string, head: SnapshotHead) {
     ...head,
     expectedSha256: digest,
   };
+  // The sidecar JSON this used to emit duplicated `metadata` verbatim, which the
+  // files manifest already carries for every entry. One object per snapshot.
   return {
     path,
-    entries: [
-      { path, sourceKey: head.objectKey, metadata },
-      jsonEntry(`${path}.json`, metadata),
-    ],
+    entries: [{ path, sourceKey: head.objectKey, metadata }],
   };
 }
 
@@ -229,6 +240,30 @@ async function collectThread(
       const upperSeqId = Math.max(lastEvent?.seqId ?? 0, head?.lastSeqId ?? 0);
       // Stage the immutable prefix before advancing the source cursor.
       const snapshot = head ? snapshotEntries(thread.id, head) : undefined;
+      const physicalCoverage = head?.lastSeqId ?? 0;
+      const entries = [
+        jsonEntry(`chat-threads/${thread.id}.json`, thread, {
+          sourceKind: "chat-thread",
+          threadId: thread.id,
+          upperSeqId,
+          snapshotPath: snapshot?.path ?? null,
+          physicalCoverage,
+        }),
+        ...(snapshot?.entries ?? []),
+      ];
+      // A snapshot that already covers the bound leaves no tail to page. Paging
+      // anyway costs a whole extra step per thread to read zero rows.
+      if (physicalCoverage >= upperSeqId) {
+        return step(
+          {
+            ...checkpoint,
+            phase: "threads",
+            cursor: thread.id,
+            thread: undefined,
+          },
+          entries,
+        );
+      }
       return step(
         {
           ...checkpoint,
@@ -236,20 +271,13 @@ async function collectThread(
           thread: {
             id: thread.id,
             upperSeqId,
-            afterSeqId: head?.lastSeqId ?? 0,
+            afterSeqId: physicalCoverage,
             snapshotKey: head?.objectKey ?? null,
             snapshotPath: snapshot?.path ?? null,
-            physicalCoverage: head?.lastSeqId ?? 0,
+            physicalCoverage,
           },
         },
-        [
-          jsonEntry(`chat-threads/${thread.id}.json`, thread, {
-            sourceKind: "chat-thread",
-            threadId: thread.id,
-            upperSeqId,
-          }),
-          ...(snapshot?.entries ?? []),
-        ],
+        entries,
       );
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
@@ -415,16 +443,8 @@ async function collectMessages(
         });
       }
       if (!page.hasMore || thread.afterSeqId >= upperSeqId) {
-        entries.push(
-          jsonEntry(`chat-messages/${current.id}/index.json`, {
-            chatEventSchemaVersion: CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-            threadId: current.id,
-            upperSeqId,
-            snapshotPath: thread.snapshotPath,
-            snapshotPhysicalCoverage: thread.physicalCoverage,
-            tailDirectory: "tail/",
-          }),
-        );
+        // No per-thread index file: the bound lives on the thread entry's
+        // manifest metadata and the snapshot entries carry their own coverage.
         return step(
           {
             ...checkpoint,
@@ -464,7 +484,9 @@ const collectAgent$ = command(
       .where(
         and(
           inArray(agents.orgId, checkpoint.orgIds),
-          visibleJoinedAgentCondition(args.userId),
+          // A subject data export carries the subject's own records. A public
+          // agent authored by a colleague is their content, not this user's.
+          eq(agents.owner, args.userId),
           lte(agents.createdAt, startedBefore(checkpoint)),
           checkpoint.cursor ? gt(agents.id, checkpoint.cursor) : undefined,
         ),
@@ -475,26 +497,50 @@ const collectAgent$ = command(
     if (!agent) {
       return nextPhase(checkpoint, "workflows");
     }
-    const instructions = await set(
-      readUserExportAgentInstructions$,
-      {
-        db: args.db,
-        bucket: args.bucket,
-        agentId: agent.id,
-        orgId: agent.orgId,
-        userId: args.userId,
-      },
+    // One unreadable instruction document must not strand the whole export.
+    // The committed checkpoint resumes before this agent, so a hard throw here
+    // reselects it on every retry until the job exhausts its failure budget.
+    const instructions = await settle(
+      set(
+        readUserExportAgentInstructions$,
+        {
+          db: args.db,
+          bucket: args.bucket,
+          agentId: agent.id,
+          orgId: agent.orgId,
+          userId: args.userId,
+        },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
+    const unreadable = instructions.ok
+      ? undefined
+      : instructions.error instanceof Error
+        ? instructions.error.message
+        : "Agent instructions could not be read";
+    if (unreadable) {
+      log.warn("Agent instructions are unreadable and were exported empty", {
+        agentId: agent.id,
+        orgId: agent.orgId,
+        error: unreadable,
+      });
+    }
     return step({ ...checkpoint, cursor: agent.id }, [
       jsonEntry(
         `agents/${agent.id}.json`,
         {
           ...agent,
-          instructions,
+          instructions: instructions.ok ? instructions.value : null,
+          instructionsUnavailableReason: unreadable ?? null,
         },
-        { sourceKind: "agent", agentId: agent.id, orgId: agent.orgId },
+        {
+          sourceKind: "agent",
+          agentId: agent.id,
+          orgId: agent.orgId,
+          instructionsUnavailable: Boolean(unreadable),
+        },
       ),
     ]);
   },
@@ -523,11 +569,16 @@ async function collectWorkflow(
       updatedAt: workflows.updatedAt,
     })
     .from(workflows)
-    .innerJoin(agents, eq(agents.id, workflows.agentId))
     .where(
       and(
         inArray(workflows.orgId, checkpoint.orgIds),
-        visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+        // Owned only, for the same reason as agents. The installation guard
+        // stays: a half-installed official workflow has no readable revision.
+        eq(workflows.ownerUserId, args.userId),
+        or(
+          isNull(workflows.officialDefinitionName),
+          eq(workflows.officialInstallationState, "installed"),
+        ),
         lte(workflows.createdAt, startedBefore(checkpoint)),
         checkpoint.cursor ? gt(workflows.id, checkpoint.cursor) : undefined,
       ),

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.34.4",
+  "version": "1.34.6",
   "private": true,
   "type": "module",
   "exports": {
@@ -40,6 +40,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@okouai/core": "workspace:*",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@types/node": "^24.3.0",

@@ -43,6 +43,8 @@ surface; the index does not replace their detailed rules.
 
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
+- [X509Plain VNC acceptance](./vnc-x509plain-acceptance.md): head-specific owner,
+  Agent, current-Runner, real-server and cleanup evidence.
 - [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
   private typed handoff, current authorization and native sharing modes.
 - [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest

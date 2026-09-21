@@ -43,16 +43,20 @@ mod jsonl_result;
 mod line_reader;
 mod pi_event_delivery;
 mod pi_memory_citation;
+mod pi_preparation_timing;
 mod pi_rpc;
 mod pi_session_output;
+mod pi_startup;
 mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
+mod record_labels;
 mod termination;
 
 pub use codex_setup::setup_codex_for_config;
 pub use codex_startup::CodexStartupTiming;
 pub use jsonl_result::{JsonlResultStatus, JsonlResultSummary};
+pub use pi_startup::PiStartupTiming;
 
 use crate::active_input::{ActiveInputController, ActiveInputWriter, ReplayUserEventAction};
 use crate::constants;
@@ -94,6 +98,7 @@ const LOG_TAG: &str = "sandbox:guest-agent";
 const AGENT_LOG_BUFFER_BYTES: usize = 8 * 1024;
 const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
+const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
 const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
@@ -386,7 +391,8 @@ impl<'a> CliRuntimeConfig<'a> {
         } else {
             None
         };
-        let disable_builtin_web_search = config.user_env.contains_key(OKOU_AGENT_ID_ENV_KEY);
+        let disable_builtin_web_search = config.user_env.contains_key(OKOU_AGENT_ID_ENV_KEY)
+            && user_env_value(&config.user_env, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY) != "true";
         let disallowed_tools = disallowed_tools_with_builtin_web_search_disabled(
             &config.disallowed_tools,
             disable_builtin_web_search,
@@ -605,11 +611,19 @@ fn write_claude_append_system_prompt_file(
     Ok(())
 }
 
-fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 4] {
+fn pi_child_env_values(runtime: &CliRuntimeConfig<'_>) -> [(String, String); 5] {
     [
         (
             guest_contracts::env::RUN_ID_ENV.to_string(),
             runtime.run_id.to_string(),
+        ),
+        // This guest recognizes the preparation-timing stderr envelope, so the
+        // child may report its phases. A child that does not see this stays
+        // silent against an older guest that would treat the envelope as
+        // user-visible failure output.
+        (
+            guest_contracts::env::PI_PREPARATION_TIMING_ENV.to_string(),
+            guest_contracts::env::PI_PREPARATION_TIMING_ENABLED.to_string(),
         ),
         (
             guest_contracts::env::PI_SESSION_ID_ENV.to_string(),
@@ -706,6 +720,17 @@ impl BestEffortAgentLog {
     }
 }
 
+/// Framework startup observations completed from the shared event stream.
+///
+/// Each framework completes at most one of these, at the record that proves
+/// its CLI reached turn readiness. Both are optional so a framework that has no
+/// startup observation, or a caller that does not own one, stays uninstrumented.
+#[derive(Clone, Copy, Default)]
+struct CliStartupTiming<'a> {
+    codex: Option<&'a CodexStartupTiming>,
+    pi: Option<&'a PiStartupTiming>,
+}
+
 struct CliEventIngestor<'a> {
     framework: env::Framework,
     seq: u32,
@@ -714,13 +739,13 @@ struct CliEventIngestor<'a> {
     first_event_seen: bool,
     session_metadata_capture: events::SessionMetadataCapture,
     failure_diagnostic: Option<CliFailureDiagnostic>,
-    codex_startup: Option<&'a CodexStartupTiming>,
+    startup: CliStartupTiming<'a>,
 }
 
 impl<'a> CliEventIngestor<'a> {
     fn new_with_session_metadata(
         runtime: &CliRuntimeConfig<'_>,
-        codex_startup: Option<&'a CodexStartupTiming>,
+        startup: CliStartupTiming<'a>,
         session_metadata: SessionMetadataStore,
         initial_sequence: u32,
     ) -> Self {
@@ -736,7 +761,7 @@ impl<'a> CliEventIngestor<'a> {
                 runtime.session_id_file.as_ref(),
             ),
             failure_diagnostic: None,
-            codex_startup,
+            startup,
         }
     }
 
@@ -757,9 +782,17 @@ impl<'a> CliEventIngestor<'a> {
         if !is_stream_event
             && matches!(framework, env::Framework::Codex)
             && event.get("type").and_then(serde_json::Value::as_str) == Some("turn.started")
-            && let Some(codex_startup) = self.codex_startup
+            && let Some(codex_startup) = self.startup.codex
         {
             codex_startup.record_success_at(Instant::now());
+        }
+        // Pi has no turn-start notification. Its first projected record is the
+        // `system/init` built from the host's `get_state` answer, which is the
+        // first proof that the sandbox-owned session runtime is serving.
+        if matches!(framework, env::Framework::Pi)
+            && let Some(pi_startup) = self.startup.pi
+        {
+            pi_startup.record_success_at(Instant::now());
         }
         agent_log.write_raw_line(raw_line).await;
 
@@ -852,6 +885,7 @@ impl<'a> CliEventPipeline<'a> {
         session_metadata: SessionMetadataStore,
         http: &HttpClient,
         initial_sequence: u32,
+        pi_startup: Option<&'a PiStartupTiming>,
     ) -> Result<Self, AgentError> {
         let delivery = EventDeliveryRuntime::start(
             http.clone(),
@@ -861,7 +895,10 @@ impl<'a> CliEventPipeline<'a> {
         )?;
         let ingestor = CliEventIngestor::new_with_session_metadata(
             runtime,
-            None,
+            CliStartupTiming {
+                pi: pi_startup,
+                ..CliStartupTiming::default()
+            },
             session_metadata,
             initial_sequence,
         );
@@ -922,6 +959,7 @@ pub struct CliExecutionControls<'a> {
     active_input: ActiveInputWriter,
     user_cancellation: CancellationToken,
     codex_startup: Option<&'a CodexStartupTiming>,
+    pi_startup: Option<&'a PiStartupTiming>,
     workload_containment: Option<&'a crate::workload_containment::WorkloadContainment>,
     session_metadata: SessionMetadataStore,
 }
@@ -938,9 +976,17 @@ impl<'a> CliExecutionControls<'a> {
             active_input,
             user_cancellation,
             codex_startup,
+            pi_startup: None,
             workload_containment: None,
             session_metadata: SessionMetadataStore::default(),
         }
+    }
+
+    /// Supply the run-scoped Pi startup observation completed from CLI output.
+    #[must_use]
+    pub fn with_pi_startup(mut self, pi_startup: Option<&'a PiStartupTiming>) -> Self {
+        self.pi_startup = pi_startup;
+        self
     }
     /// Supply the production workload placement capability for CLI children.
     #[must_use]
@@ -997,6 +1043,7 @@ async fn execute_cli_inner(
         active_input,
         user_cancellation,
         codex_startup: _,
+        pi_startup,
         workload_containment,
         session_metadata,
     } = controls;
@@ -1042,7 +1089,17 @@ async fn execute_cli_inner(
 
     let active_input_controller = active_input.controller();
     if matches!(runtime.framework, env::Framework::Pi) {
-        write_pi_launch_payload_file(runtime)?;
+        // Counterpart of `codex_model_catalog_prepare`: the guest-owned private
+        // runtime file the CLI child must read before it can start.
+        let payload_start = Instant::now();
+        let result = write_pi_launch_payload_file(runtime);
+        record_sandbox_op(
+            "pi_launch_payload_prepare",
+            payload_start.elapsed(),
+            result.is_ok(),
+            None,
+        );
+        result?;
     }
     let mut child_env_values = child_env::values_for_runtime(runtime);
     match runtime.framework {
@@ -1123,11 +1180,20 @@ async fn execute_cli_inner(
         .take()
         .ok_or_else(|| AgentError::Execution("no stderr".into()))?;
 
-    // Stderr collector
-    let mut stderr_handle =
-        tokio::spawn(async move { diagnostics::collect_stderr_result_tail(stderr).await });
-
     let pi_execution = matches!(runtime.framework, env::Framework::Pi);
+
+    // Stderr collector. Pi additionally carries session-preparation timings on
+    // stderr; those are recorded as they arrive so their timestamps match the
+    // phase, not the retained failure tail.
+    let stderr_observer = if pi_execution {
+        diagnostics::CliStderrLineObserver::PiPreparationTiming
+    } else {
+        diagnostics::CliStderrLineObserver::None
+    };
+    let mut stderr_handle = tokio::spawn(async move {
+        diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer).await
+    });
+
     let pi_rpc_execution = pi_execution && !maintenance_execution;
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
@@ -1253,6 +1319,7 @@ async fn execute_cli_inner(
             session_metadata.clone(),
             &http,
             0,
+            None,
         )?)
     };
 
@@ -1414,6 +1481,7 @@ async fn execute_cli_inner(
                                             session_metadata.clone(),
                                             &http,
                                             startup.sandbox_event_sequence_start,
+                                            pi_startup,
                                         ) {
                                             Ok(pipeline) => {
                                                 event_pipeline = Some(pipeline);
@@ -1764,11 +1832,18 @@ async fn execute_cli_inner(
                         active_input_controller.close_terminal();
                         let error = match error {
                             line_reader::BoundedLineError::Io(error) => AgentError::Io(error),
-                            line_reader::BoundedLineError::TooLong => AgentError::Execution(
-                                format!(
-                                    "CLI stdout line exceeded {ORDINARY_CLI_STDOUT_MAX_LINE_BYTES} bytes"
-                                ),
-                            ),
+                            line_reader::BoundedLineError::TooLong => {
+                                // The retained prefix is one record truncated
+                                // mid-serialisation, so its type is recovered
+                                // from a bounded leading window, never parsed.
+                                let labels = record_labels::prefix_labels(&stdout_partial_line);
+                                AgentError::Execution(format!(
+                                    "CLI stdout line exceeded {ORDINARY_CLI_STDOUT_MAX_LINE_BYTES} bytes: event_type={} item_type={} size_bucket={}",
+                                    labels.event_type,
+                                    labels.item_type,
+                                    record_labels::size_bucket(stdout_partial_line.len()),
+                                ))
+                            }
                             line_reader::BoundedLineError::InvalidUtf8 {
                                 valid_up_to,
                                 error_len,
@@ -2687,6 +2762,33 @@ mod tests {
                 .codex_startup_config_overrides()
                 .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
         );
+    }
+
+    #[test]
+    fn framework_web_search_requires_exact_positive_opt_in() {
+        for (value, expected_disabled) in [
+            ("true", false),
+            ("false", true),
+            ("TRUE", true),
+            ("1", true),
+            ("", true),
+        ] {
+            let config = guest_config_for_agent_context(HashMap::from([
+                (
+                    super::OKOU_AGENT_ID_ENV_KEY.to_string(),
+                    "agent-test".to_string(),
+                ),
+                (
+                    super::ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY.to_string(),
+                    value.to_string(),
+                ),
+            ]));
+            let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/okou-env-test");
+
+            let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
+
+            assert_eq!(runtime.disable_builtin_web_search, expected_disabled);
+        }
     }
 
     #[test]

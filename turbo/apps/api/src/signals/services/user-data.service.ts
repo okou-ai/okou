@@ -85,7 +85,9 @@ function parseUserLocale(value: unknown): UserLocale | null {
     value === "es-ES" ||
     value === "it-IT" ||
     value === "fr-FR" ||
-    value === "hi-IN"
+    value === "hi-IN" ||
+    value === "zh-Hans" ||
+    value === "zh-Hant"
   ) {
     return value;
   }

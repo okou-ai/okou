@@ -602,13 +602,13 @@
       "loadFailed": "Unable to load permissions",
       "loadingPermissions": "Loading permissions",
       "onlyMe": "Only me",
-      "onlyMeDescription": "Only you can view this artifact",
+      "onlyMeOption": "Only me",
       "organization": "Organization",
-      "organizationDescription": "Anyone in {{organization}} with the link",
-      "organizationDescriptionUnnamed": "Anyone in your organization with the link",
+      "organizationOption": "Anyone at {{organization}}",
+      "organizationOptionUnnamed": "Anyone in your organization",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
-      "publicDescription": "Anyone with the link can view",
+      "publicOption": "Anyone with the link",
       "retry": "Retry"
     },
     "sidebar": {
@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Import your own file",
-      "importFileHint": "Reuse your file's design",
+      "importFile": "Import template",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -1495,6 +1494,10 @@
         },
         "notEligible": "Not eligible",
         "pendingState": "{{amount}} pending",
+        "rejected": {
+          "alreadyRedeemed": "Post already used",
+          "postMustMention": "Must mention {{assistantName}}"
+        },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
         "share": {
           "action": "Share",
@@ -4140,7 +4143,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Back",
-        "cancel": "Cancel",
         "continue": "Continue",
         "finish": "Finish setup",
         "notNow": "Not now",
@@ -4212,24 +4214,32 @@
         "title": "What kind of work do you do?"
       },
       "skills": {
-        "confirm": "Import and continue",
-        "copy": "Import a SKILL.md and it becomes a workflow in Okou, ready to run with /.",
-        "import": "Choose a file",
+        "copied": "Copied",
+        "copy": "Paste this prompt into your own Codex or Claude Code session and it brings the skills on your machine into Okou.",
+        "copyError": "The prompt could not be copied.",
+        "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
-        "importedTitle": "Your workflow is ready",
-        "panelCopy": "From Codex, Claude Code, or any agent that writes one.",
-        "panelTitle": "Drop a SKILL.md here",
-        "previewCopy": "Imported as an Okou workflow. Only you can use it until you share it.",
-        "previewTitle": "Review your skill",
-        "replace": "Choose another file",
-        "title": "Bring the skills you already wrote."
+        "importedLabel": "Imported skills",
+        "importedTitle": "Your skills are in Okou",
+        "preparing": "Opening your import session…",
+        "promptCopy": "It reads the skills on your machine and writes them into Okou.",
+        "promptLabel": "Skill import prompt",
+        "promptTitle": "Run this in Codex or Claude Code",
+        "startError": "The import session could not be opened.",
+        "title": "Bring the skills you already wrote.",
+        "tryAgain": "Try again",
+        "waiting": "Imported skills appear here as they arrive."
       },
       "slack": {
         "add": "Add to Slack",
+        "channelAdminRequired": "Ask a workspace admin to add Okou to {{channel}}.",
+        "channelUnavailable": "{{channel}} isn’t available for this workspace yet.",
+        "connectAction": "Connect Slack",
         "connectedCopy": "Open Slack and mention @Okou to give it a task.",
         "connectedStatus": "Added to your workspace",
         "connectedTitle": "Slack is connected",
         "copy": "Add it once, then mention @Okou where the work already happens.",
+        "name": "Slack",
         "otherAdded": "Added",
         "otherImessage": "iMessage",
         "othersLabel": "Add these later, or now",
@@ -6286,16 +6296,16 @@
       }
     },
     "paidTools": {
-      "description": "Choose which paid built-in tools you can use.",
-      "disabledForCreation": "{{tool}} is disabled in your paid tool settings.",
+      "description": "Choose the paid tools Okou can use in your tasks. Each use costs credits.",
+      "disabledForCreation": "{{tool}} is off for you",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
-      "openSettings": "Open paid tool settings",
+      "openSettings": "Open settings",
       "retry": "Retry",
       "saveError": "Your change was not saved.",
       "saving": "Saving…",
       "scope": "These settings apply only to you in {{workspace}}.",
-      "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
+      "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
       "title": "Paid tools",
       "tools": {
         "avatar-video-generation": {
@@ -6493,6 +6503,8 @@
         "description": "Choose your preferred language for the {{brandName}} interface",
         "label": "Language",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6900,15 +6912,20 @@
       "preview": "Preview {{title}}",
       "rename": "Rename template"
     },
+    "clearSearch": "Clear search",
     "custom": "Custom",
     "detail": {
       "back": "Custom templates",
-      "page": "Page {{number}}",
-      "sourceFile": "From {{filename}}"
+      "page": "Page {{number}}"
     },
     "empty": {
-      "description": "Okou turns your file's design into a template you can reuse."
+      "description": "Import a document, presentation or image to reuse its design.",
+      "document": "No documents yet",
+      "illustration": "No images yet",
+      "presentation": "No presentations yet",
+      "title": "Make it yours"
     },
+    "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
@@ -6985,6 +7002,7 @@
     "configured": "Configured",
     "credential": {
       "add": "Add credential",
+      "authentication": "Authentication method",
       "createNew": "Create new credential",
       "delete": "Delete credential",
       "deleteHelp": "Delete this unused credential? This cannot be undone.",
@@ -6998,14 +7016,21 @@
       "password": "VNC password",
       "passwordHelp": "Classic VNC passwords use 1–8 printable ASCII characters. Spaces are preserved.",
       "passwordHint": "Enter the server's VNC password",
-      "replace": "Replace password",
-      "replaceHelp": "Leave this off to keep the saved password. Replacing it affects every host using this credential.",
+      "replace": "Replace authentication",
+      "replaceHelp": "Leave this off to keep the saved authentication. Replacing it affects every host using this credential.",
       "select": "Select a credential",
-      "sharedHelp_one": "Used by {{count}} host. Password changes affect this host.",
-      "sharedHelp_other": "Used by {{count}} hosts. Password changes affect all of them.",
+      "sharedHelp_one": "Used by {{count}} host. Authentication changes affect this host.",
+      "sharedHelp_other": "Used by {{count}} hosts. Authentication changes affect all of them.",
       "summary_one": "{{count}} credential configured",
       "summary_other": "{{count}} credentials configured",
-      "unused": "Not used by any saved host."
+      "unused": "Not used by any saved host.",
+      "username": "Username",
+      "usernameHelp": "1–255 UTF-8 bytes. NUL is not allowed.",
+      "usernameHint": "Enter the server username",
+      "usernamePassword": "Password",
+      "usernamePasswordHelp": "1–1023 UTF-8 bytes. NUL is not allowed and spaces are preserved.",
+      "usernamePasswordHint": "Enter the password for this username",
+      "usernamePasswordMethod": "Username and password"
     },
     "credentialsTab": "Credentials",
     "delete": "Delete host",
@@ -7050,10 +7075,13 @@
       "caHelp": "Up to 8 CA certificates, 64 KiB total. Do not paste a private key or a server certificate.",
       "caHint": "Paste the public CA certificates that issued the server certificate",
       "custom": "Custom certificate authorities",
-      "help": "Requires a VNC server that supports VeNCrypt X509Vnc. The server certificate must match the configured hostname or IP address.",
-      "profile": "Encrypted VNC (X509Vnc)",
+      "profileLabel": "Security profile",
       "system": "System certificate authorities",
-      "title": "Server certificate trust"
+      "title": "Server certificate trust",
+      "x509Plain": "Encrypted username and password (X509Plain)",
+      "x509PlainHelp": "Requires VeNCrypt X509Plain. TLS verifies the server before sending the username and password.",
+      "x509Vnc": "Encrypted VNC (X509Vnc)",
+      "x509VncHelp": "Requires VeNCrypt X509Vnc. TLS verifies the server before sending the VNC password."
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",

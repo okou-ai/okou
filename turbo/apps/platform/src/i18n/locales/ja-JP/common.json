@@ -601,13 +601,13 @@
       "loadFailed": "権限を読み込めませんでした",
       "loadingPermissions": "権限を読み込み中",
       "onlyMe": "自分のみ",
-      "onlyMeDescription": "このアーティファクトを表示できるのは自分だけです",
+      "onlyMeOption": "自分のみ",
       "organization": "組織",
-      "organizationDescription": "リンクを知っている {{organization}} のメンバー",
-      "organizationDescriptionUnnamed": "リンクを知っている組織内の全員",
+      "organizationOption": "{{organization}} のメンバー",
+      "organizationOptionUnnamed": "組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
-      "publicDescription": "リンクを知っている全員が表示できます",
+      "publicOption": "リンクを知っている全員",
       "retry": "再試行"
     },
     "sidebar": {
@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "自分のファイルをインポート",
-      "importFileHint": "ファイルのデザインを再利用",
+      "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -1494,6 +1493,10 @@
         },
         "notEligible": "対象外",
         "pendingState": "{{amount}} 件承諾待ち",
+        "rejected": {
+          "alreadyRedeemed": "投稿は使用済み",
+          "postMustMention": "{{assistantName}} に触れる必要あり"
+        },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "share": {
           "action": "シェア",
@@ -4136,7 +4139,6 @@
     "sourcesFirst": {
       "common": {
         "back": "戻る",
-        "cancel": "キャンセル",
         "continue": "次へ",
         "finish": "セットアップを完了",
         "notNow": "後で",
@@ -4208,24 +4210,32 @@
         "title": "どんな仕事をしていますか？"
       },
       "skills": {
-        "confirm": "インポートして次へ",
-        "copy": "SKILL.md をインポートすると Okou のワークフローになり、/ ですぐ実行できます。",
-        "import": "ファイルを選ぶ",
+        "copied": "コピーしました",
+        "copy": "このプロンプトを自分の Codex または Claude Code のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
+        "copyError": "プロンプトをコピーできませんでした。",
+        "copyPrompt": "プロンプトをコピー",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
-        "importedTitle": "ワークフローができました",
-        "panelCopy": "Codex、Claude Code、あるいは SKILL.md を書けるエージェントから。",
-        "panelTitle": "SKILL.md をここにドロップ",
-        "previewCopy": "Okou のワークフローとしてインポートします。共有するまでは自分だけが使えます。",
-        "previewTitle": "スキルを確認",
-        "replace": "別のファイルを選ぶ",
-        "title": "すでに書いたスキルを持ち込む。"
+        "importedLabel": "インポートしたスキル",
+        "importedTitle": "スキルが Okou に入りました",
+        "preparing": "インポートセッションを開いています…",
+        "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
+        "promptLabel": "スキルインポート用プロンプト",
+        "promptTitle": "Codex または Claude Code で実行してください",
+        "startError": "インポートセッションを開けませんでした。",
+        "title": "すでに書いたスキルを持ち込む。",
+        "tryAgain": "もう一度試す",
+        "waiting": "インポートされたスキルは、届き次第ここに表示されます。"
       },
       "slack": {
         "add": "Slack に追加",
+        "channelAdminRequired": "{{channel}} に Okou を追加するよう、ワークスペースの管理者に依頼してください。",
+        "channelUnavailable": "{{channel}} はこのワークスペースではまだ利用できません。",
+        "connectAction": "Slack に接続",
         "connectedCopy": "Slack で @Okou とメンションすれば仕事を任せられます。",
         "connectedStatus": "ワークスペースに追加済み",
         "connectedTitle": "Slack に接続しました",
         "copy": "一度追加すれば、仕事が動いている場所で @Okou と呼ぶだけです。",
+        "name": "Slack",
         "otherAdded": "追加済み",
         "otherImessage": "iMessage",
         "othersLabel": "後からでも、今でも追加できます",
@@ -6281,11 +6291,11 @@
       }
     },
     "paidTools": {
-      "description": "使用する有料の組み込みツールを選択します。",
-      "disabledForCreation": "有料ツールの設定で{{tool}}が無効になっています。",
+      "description": "Okou がタスクで使用できる有料ツールを選択します。使用するたびにクレジットを消費します。",
+      "disabledForCreation": "{{tool}}はあなたの設定でオフです",
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
-      "openSettings": "有料ツールの設定を開く",
+      "openSettings": "設定を開く",
       "retry": "再試行",
       "saveError": "変更を保存できませんでした。",
       "saving": "保存中…",
@@ -6488,6 +6498,8 @@
         "description": "{{brandName}}のインターフェースで使用する言語を選択します",
         "label": "言語",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6890,15 +6902,20 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
+    "clearSearch": "検索をクリア",
     "custom": "カスタム",
     "detail": {
       "back": "カスタムテンプレート",
-      "page": "{{number}} ページ目",
-      "sourceFile": "{{filename}} から"
+      "page": "{{number}} ページ目"
     },
     "empty": {
-      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
+      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
+      "document": "ドキュメントはまだありません",
+      "illustration": "画像はまだありません",
+      "presentation": "プレゼンテーションはまだありません",
+      "title": "自分だけのテンプレートに"
     },
+    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",
@@ -6975,6 +6992,7 @@
     "configured": "設定済み",
     "credential": {
       "add": "認証情報を追加",
+      "authentication": "認証方式",
       "createNew": "新しい認証情報を作成",
       "delete": "認証情報を削除",
       "deleteHelp": "未使用の認証情報を削除しますか？元に戻せません。",
@@ -6988,13 +7006,20 @@
       "password": "VNC パスワード",
       "passwordHelp": "従来の VNC パスワードは印字可能な ASCII 文字 1～8 文字です。空白は保持されます。",
       "passwordHint": "サーバーの VNC パスワードを入力",
-      "replace": "パスワードを置き換える",
-      "replaceHelp": "オフのままなら保存済みパスワードを保持します。置き換えると、この認証情報を使うすべてのホストに影響します。",
+      "replace": "認証情報を置き換える",
+      "replaceHelp": "オフのままなら保存済みの認証情報を保持します。置き換えると、この認証情報を使うすべてのホストに影響します。",
       "select": "認証情報を選択",
-      "sharedHelp_one": "{{count}} 台のホストで使用中です。パスワード変更はこのホストに影響します。",
-      "sharedHelp_other": "{{count}} 台のホストで使用中です。パスワード変更はすべてに影響します。",
+      "sharedHelp_one": "{{count}} 台のホストで使用中です。認証情報の変更はこのホストに影響します。",
+      "sharedHelp_other": "{{count}} 台のホストで使用中です。認証情報の変更はすべてに影響します。",
       "summary_other": "{{count}} 件の認証情報を設定済み",
-      "unused": "使用しているホストはありません。"
+      "unused": "使用しているホストはありません。",
+      "username": "ユーザー名",
+      "usernameHelp": "1～255 UTF-8 バイト。NUL は使用できません。",
+      "usernameHint": "サーバーのユーザー名を入力",
+      "usernamePassword": "パスワード",
+      "usernamePasswordHelp": "1～1023 UTF-8 バイト。NUL は使用できず、空白は保持されます。",
+      "usernamePasswordHint": "このユーザー名のパスワードを入力",
+      "usernamePasswordMethod": "ユーザー名とパスワード"
     },
     "credentialsTab": "認証情報",
     "delete": "ホストを削除",
@@ -7039,10 +7064,13 @@
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
       "custom": "カスタム認証局",
-      "help": "VeNCrypt X509Vnc 対応サーバーが必要です。証明書は設定したホスト名または IP アドレスと一致する必要があります。",
-      "profile": "暗号化 VNC（X509Vnc）",
+      "profileLabel": "セキュリティプロファイル",
       "system": "システムの認証局",
-      "title": "サーバー証明書の信頼"
+      "title": "サーバー証明書の信頼",
+      "x509Plain": "暗号化されたユーザー名とパスワード（X509Plain）",
+      "x509PlainHelp": "VeNCrypt X509Plain が必要です。TLS はユーザー名とパスワードを送信する前にサーバーを検証します。",
+      "x509Vnc": "暗号化 VNC（X509Vnc）",
+      "x509VncHelp": "VeNCrypt X509Vnc が必要です。TLS は VNC パスワードを送信する前にサーバーを検証します。"
     },
     "summary_one": "設定済みホスト {{count}} 台",
     "summary_other": "設定済みホスト {{count}} 台",

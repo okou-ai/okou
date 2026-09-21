@@ -1140,9 +1140,12 @@ paints `--background` instead assumes the canvas is a flat fill of that colour,
 which holds in the neutral themes and does not under a gradient palette, where
 the canvas is `--card` plus two corner gradients: the composer footer used to
 paint `--background` and ended in a visible band across the pane in every dark
-palette. A surface that genuinely has to cover the canvas — the transcript's
-loading overlay — takes `bg-workspace-canvas` so it covers with the canvas's own
-fill.
+palette. The transcript's loading placeholder stays transparent too: painting
+even the canvas's own fill over it erases its gradient. While initial events
+are pending, the transcript uses `invisible` to hide its content without
+unmounting the layout used for scroll restoration. Prepared content and load
+errors remain visible; the placeholder never re-creates a background on its
+smaller scroll-area box.
 
 Softening the transcript's bottom edge belongs to the transcript, for the same
 reason: a gradient painted over the pane can only fade toward one flat colour.

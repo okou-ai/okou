@@ -291,6 +291,43 @@ test("The picker opens on Custom once the switch is on", async () => {
   ).resolves.toBeInTheDocument();
 });
 
+test("Custom opens and reopens on documents even when an image is newest", async () => {
+  mockCustomTemplates([
+    illustrationTemplate({ updatedAt: "2026-01-04T00:00:00Z" }),
+    customTemplate({ updatedAt: "2026-01-03T00:00:00Z" }),
+    documentTemplate(),
+  ]);
+
+  const { user, dialog } = await openCustomPanel();
+  await within(dialog).findByText("Brand report");
+  const filters = within(dialog).getByRole("group", {
+    name: "Template categories",
+  });
+  expect(buttonByName("Document", filters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
+
+  click(buttonByName("Image", filters)!);
+  await within(dialog).findByText("Market day");
+  click(buttonByName("Close", dialog)!);
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  const reopened = await openTemplatePicker(user);
+  await within(reopened).findByText("Brand report");
+  const reopenedFilters = within(reopened).getByRole("group", {
+    name: "Template categories",
+  });
+  expect(buttonByName("Document", reopenedFilters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(reopened).queryByText("Market day")).not.toBeInTheDocument();
+});
+
 test("The picker keeps opening on Presentation while the switch is off", async () => {
   mockCustomTemplates([customTemplate()]);
 
@@ -412,12 +449,9 @@ test("A slow catalog refresh keeps browsing and search available", async () => {
     expect(within(dialog).queryByText(renewal.title)).not.toBeInTheDocument();
   });
   const scrollSurface = () => {
-    const surface = within(dialog)
-      .getByLabelText("Search templates")
-      .closest<HTMLElement>(".overflow-y-auto");
-    if (!surface) {
-      throw new Error("Custom template catalog scroll surface not found");
-    }
+    const surface = within(dialog).getByRole("region", {
+      name: "Custom templates",
+    });
     return surface;
   };
   fireEvent.scroll(scrollSurface(), { target: { scrollTop: 240 } });
@@ -571,7 +605,7 @@ test("Search matches the source file name, not only the title", async () => {
   expect(within(dialog).getByText("Renewal deck")).toBeInTheDocument();
 });
 
-test("A search that matches nothing reuses the picker's no-match panel", async () => {
+test("An unsuccessful search keeps its controls and can be cleared", async () => {
   mockCustomTemplates([customTemplate()]);
 
   const { dialog } = await openCustomPanel();
@@ -585,6 +619,106 @@ test("A search that matches nothing reuses the picker's no-match panel", async (
   await expect(
     within(dialog).findByText("No matches"),
   ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("group", { name: "Template categories" }),
+  ).toBeInTheDocument();
+  click(buttonByName("Clear search", dialog)!);
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Search templates")).toHaveValue("");
+});
+
+test("Kind filters combine with search without an All option", async () => {
+  mockCustomTemplates([
+    customTemplate(),
+    documentTemplate(),
+    illustrationTemplate(),
+  ]);
+
+  const { dialog } = await openCustomPanel();
+  const filters = await within(dialog).findByRole("group", {
+    name: "Template categories",
+  });
+
+  click(buttonByName("Document", filters)!);
+  await expect(
+    within(dialog).findByText("Brand report"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
+
+  click(buttonByName("Presentation", filters)!);
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
+
+  click(buttonByName("Image", filters)!);
+  await expect(
+    within(dialog).findByText("Market day"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+
+  const search = within(dialog).getByPlaceholderText("Search templates");
+  await fill(search, "brand-report.docx");
+  await expect(
+    within(dialog).findByText("No matches"),
+  ).resolves.toBeInTheDocument();
+  expect(buttonByName("Image", filters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  click(buttonByName("Document", filters)!);
+  await expect(
+    within(dialog).findByText("Brand report"),
+  ).resolves.toBeInTheDocument();
+  expect(search).toHaveValue("brand-report.docx");
+  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
+
+  await fill(search, "");
+  await expect(
+    within(dialog).findByText("Brand report"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+  expect(buttonByName("All", filters)).toBeUndefined();
+});
+
+test("An empty kind hides filters and Custom reopens the available catalog", async () => {
+  mockCustomTemplates([customTemplate()]);
+  const { dialog } = await openCustomPanel();
+  const filters = await within(dialog).findByRole("group", {
+    name: "Template categories",
+  });
+  click(buttonByName("Image", filters)!);
+  await expect(
+    within(dialog).findByText("No images yet"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText("Search templates"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("group", { name: "Template categories" }),
+  ).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", dialog).filter((button) => {
+      return button.textContent?.trim() === "Import template";
+    }),
+  ).toHaveLength(1);
+  click(tabByText("Custom"));
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+  const restoredFilters = within(dialog).getByRole("group", {
+    name: "Template categories",
+  });
+  expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
@@ -595,12 +729,10 @@ test("An empty catalog leads with the upload entry instead of showing no matches
 
   await expect(
     within(dialog).findByText(
-      "Okou turns your file's design into a template you can reuse.",
+      "Import a document, presentation or image to reuse its design.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).getByLabelText("Import your own file"),
-  ).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Import template")).toBeInTheDocument();
   expect(within(dialog).queryByText("No matches")).not.toBeInTheDocument();
 });
 
@@ -609,7 +741,7 @@ test("An empty catalog offers no search box, because there is nothing to narrow"
 
   const { dialog } = await openCustomPanel();
   click(tabByText("Custom"));
-  await within(dialog).findByLabelText("Import your own file");
+  await within(dialog).findByLabelText("Import template");
 
   expect(
     within(dialog).queryByPlaceholderText("Search templates"),
@@ -637,9 +769,6 @@ test("Opening a deck shows its pages and management controls", async () => {
   // step out of view rather than stay half-visible around a narrower panel.
   expect(dialog).toHaveAttribute("data-nested-dialog-open");
   expect(preview).not.toHaveAttribute("data-nested-dialog-open");
-  expect(
-    within(preview).getByText("From q3-board-final-v4.pptx"),
-  ).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   expect(
@@ -810,7 +939,6 @@ test("Opening a Word template hands the source file to the Office viewer", async
   // The dialog carries the management column a deck shows, so what a member
   // can do to a template does not depend on its kind.
   const preview = previewDialogAround(frame);
-  expect(within(preview).getByText("From brand-report.docx")).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by
@@ -891,7 +1019,6 @@ test("Opening an illustration template shows the source picture itself", async (
   // The same management column a document's dialog carries, and the catalog
   // still mounted behind it.
   const preview = previewDialogAround(picture);
-  expect(within(preview).getByText("From market-day.png")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   expect(within(dialog).getByText("Market day")).toBeInTheDocument();
 });
@@ -1067,9 +1194,11 @@ test("Confirmed edits finish before readback and survive an older catalog respon
 
   // This external update began before either local edit. Its response carries
   // the old title and visibility, even though PATCH will confirm newer values.
+  // The re-rendered page is what makes its arrival observable.
+  const refreshedPageUrl = "https://example.test/page-1-refreshed.png";
   const beforeEdits = {
     ...board,
-    sourceFilename: "q3-board-refreshed.pptx",
+    pageUrls: [refreshedPageUrl],
     updatedAt: "2026-01-02T00:00:01.000Z",
   };
   library.replace([
@@ -1117,7 +1246,12 @@ test("Confirmed edits finish before readback and survive an older catalog respon
   ).toBeInTheDocument();
 
   detailReadback.resolve();
-  await screen.findByText("From q3-board-refreshed.pptx");
+  await waitFor(() => {
+    expect(screen.getByAltText("Page 1")).toHaveAttribute(
+      "src",
+      refreshedPageUrl,
+    );
+  });
   expect(renameField()).toHaveValue("Board review FY26");
   expect(
     screen.getByText("Anyone in this organization can use it"),
@@ -1317,9 +1451,7 @@ test("Uploading moves to Custom once the switch is on", async () => {
 
   const { dialog } = await openCustomPanel();
 
-  // The Presentation tab is the built-in templates alone: the tile that starts
-  // an upload, and the decks a previous upload produced, belong to the catalog
-  // this member can now open.
+  // The built-in Presentation tab delegates importing to Custom.
   click(tabByText("Presentation"));
   await waitFor(() => {
     expect(
@@ -1329,9 +1461,7 @@ test("Uploading moves to Custom once the switch is on", async () => {
 
   click(tabByText("Custom"));
   await within(dialog).findByText("Q3 board review");
-  expect(
-    within(dialog).getByLabelText("Import your own file"),
-  ).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Import template")).toBeInTheDocument();
 });
 
 test("One entry takes every kind of source a template can be made from", async () => {
@@ -1340,16 +1470,15 @@ test("One entry takes every kind of source a template can be made from", async (
   const { dialog } = await openCustomPanel();
 
   click(tabByText("Custom"));
-  const entry = await within(dialog).findByLabelText("Import your own file");
-  // Every kind goes through this one input. A separate tile per kind would ask
-  // the user to classify their own file before the analysis has read it.
+  const entry = await within(dialog).findByLabelText("Import template");
+  // The active category never narrows the files accepted by the import action.
   expect(entry.getAttribute("accept")).toBe(
     ".pptx,.ppt,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.bmp",
   );
 });
 
-test("Every source is sent with one message that lets the guide sort it", async () => {
-  mockCustomTemplates([]);
+test("A document can be imported while browsing images", async () => {
+  mockCustomTemplates([illustrationTemplate()]);
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000011",
     filename: "brand-report.docx",
@@ -1363,7 +1492,7 @@ test("Every source is sent with one message that lets the guide sort it", async 
 
   click(tabByText("Custom"));
   await user.upload(
-    await within(dialog).findByLabelText("Import your own file"),
+    await within(dialog).findByLabelText("Import template"),
     new File(["docx"], "brand-report.docx", {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
@@ -1400,7 +1529,7 @@ test("A deck from the same entry is sent the same message", async () => {
 
   click(tabByText("Custom"));
   await user.upload(
-    await within(dialog).findByLabelText("Import your own file"),
+    await within(dialog).findByLabelText("Import template"),
     new File(["pptx"], "brand-system.pptx", {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }),
@@ -1435,7 +1564,7 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
 
   click(tabByText("Custom"));
   await user.upload(
-    await within(dialog).findByLabelText("Import your own file"),
+    await within(dialog).findByLabelText("Import template"),
     new File(["docx"], "brand-report.docx", {
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),

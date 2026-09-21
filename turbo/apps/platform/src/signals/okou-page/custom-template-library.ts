@@ -136,6 +136,15 @@ export const subscribeCustomTemplatesChanged$ = command(
 );
 
 const internalSearchQuery$ = state("");
+// Prefer documents on entry; an empty document category must not hide the
+// available catalog behind its empty state, which has no kind filters.
+const internalKindFilter$ = state<UserTemplateKind | null>(null);
+
+export const setCustomTemplateKindFilter$ = command(
+  ({ set }, kind: UserTemplateKind) => {
+    set(internalKindFilter$, kind);
+  },
+);
 
 export const customTemplateSearchQuery$ = computed((get) => {
   return get(internalSearchQuery$);
@@ -151,7 +160,7 @@ export const setCustomTemplateSearchQuery$ = command(
  * Title and source file name, matched case-insensitively on the already loaded
  * catalog. The file name is in scope because people remember what they called
  * the file long after they have renamed the template, and matching it also
- * makes the format searchable without a format filter existing.
+ * makes the source format searchable within a template kind.
  */
 function matchesCustomTemplateQuery(
   template: UserTemplateCatalogEntry,
@@ -167,18 +176,31 @@ function matchesCustomTemplateQuery(
   );
 }
 
-export const projectVisibleCustomTemplates$ = computed((get) => {
+export const projectCustomTemplatePicker$ = computed((get) => {
   const project = get(projectCustomTemplate$);
   const query = get(internalSearchQuery$);
-  return (
-    templates: readonly UserTemplateCatalogEntry[],
-  ): readonly UserTemplateCatalogEntry[] => {
-    return templates.flatMap((template) => {
+  const selectedKind = get(internalKindFilter$);
+  return (templates: readonly UserTemplateCatalogEntry[]) => {
+    const catalog = templates.flatMap((template) => {
       const projected = project(template);
-      return projected !== null && matchesCustomTemplateQuery(projected, query)
-        ? [projected]
-        : [];
+      return projected === null ? [] : [projected];
     });
+    const kind =
+      selectedKind ??
+      (catalog.some((template) => {
+        return template.kind === "document";
+      })
+        ? "document"
+        : (catalog[0]?.kind ?? "document"));
+    return {
+      kind,
+      isEmptyCatalog: catalog.length === 0,
+      templates: catalog.filter((template) => {
+        return (
+          template.kind === kind && matchesCustomTemplateQuery(template, query)
+        );
+      }),
+    };
   };
 });
 
@@ -305,6 +327,7 @@ export const deleteCustomTemplate$ = command(
 /** Opening the picker always starts from a clean list and no open template. */
 export const resetCustomTemplatePicker$ = command(({ set }) => {
   set(internalSearchQuery$, "");
+  set(internalKindFilter$, null);
   set(internalOpenTemplate$, null);
   set(reloadCustomTemplates$);
 });

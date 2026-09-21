@@ -1,35 +1,44 @@
-import type { ReactNode } from "react";
-import { useGet, useSet } from "ccstate-react";
+import type { ComponentProps, ReactNode } from "react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Check, FileText } from "lucide-react";
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  surfaceVariants,
-  cn,
-} from "@okouai/ui";
+import { Check, Copy, FileText, Loader2 } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   captureSourceOnboardingChannelClicked$,
   captureSourceOnboardingSlackInstallStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
-  sourcesFirstUi$,
-  updateSourcesFirstDraft$,
-  updateSourcesFirstUi$,
-  type ChatChannelId,
-} from "../../signals/onboarding/onboarding-sources-first-state.ts";
+  agentPhoneLinkStatus$,
+  createAgentPhoneLinkCode$,
+  setAgentPhoneConnectDialogOpen$,
+} from "../../signals/okou-page/agentphone.ts";
+import { AgentPhoneConnectDialog } from "../okou-page/agentphone-connect-dialog.tsx";
+import {
+  copySkillImportPrompt$,
+  enterSkillImport$,
+  sourcesFirstSkillImport$,
+  type SkillImportState,
+} from "../../signals/onboarding/onboarding-skill-import.ts";
+import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
+import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import {
   OnboardingIllustration,
   ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
+import { Link } from "../router/link.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
-const SKILL_FILE_ACCEPT = ".md,text/markdown";
 /* The scene's faces: Okou's own avatar, and a photo for each teammate. */
 const OKOU_AVATAR_URL = platformStaticAssetUrl(
   "views/onboarding/assets/okou-avatar-2df72642115f.webp",
@@ -42,80 +51,126 @@ const SLACK_SCENE_AVATARS = {
     "views/onboarding/assets/slack-scene-mia-379d5c026871.jpg",
   ),
 } as const;
-const SKILL_FILE_INPUT_ID = "onboarding-skill-file";
 
-/** Confirms the chosen SKILL.md before it becomes a personal workflow. */
-function SkillImportDialog() {
+/** The prompt itself: long, read in full, and selectable where it stands. */
+function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
   const { t } = useTranslation();
-  const ui = useGet(sourcesFirstUi$);
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const updateDraft = useSet(updateSourcesFirstDraft$);
 
   return (
-    <Dialog
-      open={ui.pendingSkillName !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          updateUi({ pendingSkillName: null });
-        }
-      }}
+    <pre
+      // A named, focusable scroll container: the prompt is long, so it is
+      // read and selected where it stands rather than in a dialog.
+      role="region"
+      tabIndex={0}
+      aria-label={t(($) => {
+        return $.onboarding.sourcesFirst.skills.promptLabel;
+      })}
+      className="max-h-[240px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-5 text-muted-foreground"
     >
-      <DialogContent maxWidth="sm" contentClassName="p-6">
-        <DialogTitle className="text-base font-semibold">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.previewTitle;
-          })}
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.previewCopy;
-          })}
-        </DialogDescription>
-        <p
-          className={cn(
-            surfaceVariants(),
-            "mt-4 truncate p-3 text-sm text-foreground",
-          )}
-        >
-          {ui.pendingSkillName}
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              updateUi({ pendingSkillName: null });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.common.cancel;
-            })}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => {
-              // Frontend pass: the SKILL.md upload becomes a personal workflow
-              // once the import endpoint is wired.
-              updateDraft({ importedWorkflowName: ui.pendingSkillName });
-              updateUi({ pendingSkillName: null });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.confirm;
-            })}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      {prompt}
+    </pre>
   );
 }
 
-/** The file the import produced, as the row a workflow list would show. */
-function ImportedSkillRow({ name }: { readonly name: string }) {
+/** The session is still opening: the step says so where the prompt will be. */
+function SkillImportPromptPending() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
+    <p
+      role="status"
+      className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground"
+    >
+      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+      {t(($) => {
+        return $.onboarding.sourcesFirst.skills.preparing;
+      })}
+    </p>
+  );
+}
+
+/**
+ * The session could not be opened. The step offers it again and stays out of
+ * the way otherwise: Continue and Skip never waited on it.
+ */
+function SkillImportPromptFailed() {
+  const { t } = useTranslation();
+  const retry = useSet(enterSkillImport$);
+  const pageSignal = useGet(pageSignal$);
+
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+      <p role="alert" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.startError;
+        })}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          detach(retry(pageSignal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.tryAgain;
+        })}
+      </Button>
+    </div>
+  );
+}
+
+/** Copies the prompt, and says whether the clipboard took it. */
+function SkillImportCopyButton({ copied }: { readonly copied: boolean }) {
+  const { t } = useTranslation();
+  const copyPrompt = useSet(copySkillImportPrompt$);
+  const pageSignal = useGet(pageSignal$);
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="shrink-0 gap-1.5"
+      onClick={() => {
+        detach(
+          (async () => {
+            if (await copyPrompt(pageSignal)) {
+              return;
+            }
+            toast.error(
+              t(($) => {
+                return $.onboarding.sourcesFirst.skills.copyError;
+              }),
+            );
+          })(),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      {copied ? (
+        <Check size={14} aria-hidden="true" />
+      ) : (
+        <Copy size={14} aria-hidden="true" />
+      )}
+      {copied
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.skills.copied;
+          })
+        : t(($) => {
+            return $.onboarding.sourcesFirst.skills.copyPrompt;
+          })}
+    </Button>
+  );
+}
+
+/** One skill the import wrote, as the row the workflow list would show. */
+function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
       <span
         className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground"
         aria-hidden="true"
@@ -124,7 +179,7 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">
-          {name}
+          {skill.displayName ?? skill.name}
         </span>
         <span className="block truncate text-xs text-muted-foreground">
           {t(($) => {
@@ -138,54 +193,73 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
 }
 
 /**
- * The drop target and the imported workflow read as one column on the step's
- * own sheet, so importing a file only changes what the column says.
+ * What the import has produced so far. The list is polled, so a skill appears
+ * here on its own; until one does, the step says what it is waiting for.
  */
-function SkillDropCard({ imported }: { readonly imported: string | null }) {
+function ImportedSkillList({
+  skills,
+}: {
+  readonly skills: readonly WorkflowSummary[];
+}) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col items-center justify-center gap-4 text-center">
-      {imported ? (
-        <>
-          <ImportedSkillRow name={imported} />
-          {/* A label opens the file picker without reaching for the DOM, so
-              the control is not the native button Base UI expects. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            nativeButton={false}
-            render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
-          >
+    <div>
+      <p className="text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.importedLabel;
+        })}
+      </p>
+      <div className="mt-2 flex flex-col gap-2">
+        {skills.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 px-4 py-3">
+            <OnboardingIllustration name="skill-import" alt="" />
+            <span className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.skills.waiting;
+              })}
+            </span>
+          </div>
+        ) : (
+          skills.map((skill) => {
+            return <ImportedSkillRow key={skill.id} skill={skill} />;
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SkillImportPanel({ state }: { readonly state: SkillImportState }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
             {t(($) => {
-              return $.onboarding.sourcesFirst.skills.replace;
+              return $.onboarding.sourcesFirst.skills.promptTitle;
             })}
-          </Button>
-        </>
+          </p>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.skills.promptCopy;
+            })}
+          </p>
+        </div>
+        {state.prompt === null ? null : (
+          <SkillImportCopyButton copied={state.copied} />
+        )}
+      </div>
+      {state.prompt === null ? (
+        state.status === "failed" ? (
+          <SkillImportPromptFailed />
+        ) : (
+          <SkillImportPromptPending />
+        )
       ) : (
-        <>
-          <OnboardingIllustration name="skill-import" alt="" size="poster" />
-          <span>
-            <span className="block text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.skills.panelTitle;
-              })}
-            </span>
-            <span className="mt-1 block text-sm text-muted-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.skills.panelCopy;
-              })}
-            </span>
-          </span>
-          <Button
-            nativeButton={false}
-            render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.import;
-            })}
-          </Button>
-        </>
+        <SkillImportPromptBody prompt={state.prompt} />
       )}
     </div>
   );
@@ -194,15 +268,14 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
 export function OnboardingSkillsPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("skills");
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const imported = flow.draft.importedWorkflowName;
+  const skillImport = useGet(sourcesFirstSkillImport$);
 
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={
-        imported
+        skillImport.imported.length > 0
           ? t(($) => {
               return $.onboarding.sourcesFirst.skills.importedTitle;
             })
@@ -216,29 +289,19 @@ export function OnboardingSkillsPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
+      // Nothing on this step is required: a run that imports no skill at all
+      // leaves it the same way as one that imports ten.
       onPrimary={flow.goNext}
-      primaryDisabled={imported === null}
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.skip;
       })}
       onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
-      <SkillDropCard imported={imported} />
-      <input
-        id={SKILL_FILE_INPUT_ID}
-        type="file"
-        accept={SKILL_FILE_ACCEPT}
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) {
-            updateUi({ pendingSkillName: file.name.replace(/\.md$/u, "") });
-          }
-        }}
-      />
-      <SkillImportDialog />
+      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
+        <SkillImportPanel state={skillImport} />
+        <ImportedSkillList skills={skillImport.imported} />
+      </div>
     </OnboardingStepLayout>
   );
 }
@@ -494,40 +557,315 @@ function SlackPreview() {
 }
 
 /**
- * The same mention works in Telegram, iMessage and Teams. They sit under
- * Slack's own button, each with its mark beside the name.
+ * What a chat channel offers right now. The install itself happens in the
+ * provider's own tab, so the step reads the org's installation rather than
+ * remembering the click that started it.
  */
-function OtherChatChannels({
-  picked,
-  onPick,
+type ChannelState =
+  | { readonly kind: "pending" }
+  | { readonly kind: "connected" }
+  | { readonly kind: "install"; readonly url: string }
+  | { readonly kind: "connect"; readonly url: string }
+  | { readonly kind: "adminRequired" }
+  | { readonly kind: "unavailable" };
+
+interface ChannelStatus {
+  readonly isConnected: boolean;
+  /** Undefined where the status leaves the workspace-wide install unstated. */
+  readonly isInstalled: boolean | undefined;
+  readonly isAdmin: boolean;
+  /** Where an admin adds the app to the whole workspace. */
+  readonly installUrl: string | null | undefined;
+  /** Where one person links their own account to an existing install. */
+  readonly connectUrl: string | null | undefined;
+}
+
+function channelState(status: ChannelStatus): ChannelState {
+  if (status.isConnected) {
+    return { kind: "connected" };
+  }
+  if (status.isInstalled) {
+    return status.connectUrl
+      ? { kind: "connect", url: status.connectUrl }
+      : { kind: "unavailable" };
+  }
+  if (!status.isAdmin) {
+    return { kind: "adminRequired" };
+  }
+  return status.installUrl
+    ? { kind: "install", url: status.installUrl }
+    : { kind: "unavailable" };
+}
+
+/**
+ * A status the step cannot read offers nothing, which the step says rather
+ * than leaving a button that does nothing.
+ */
+function loadedChannelState<Status>(
+  loadable: Loadable<Status>,
+  read: (status: Awaited<Status>) => ChannelStatus,
+): ChannelState {
+  if (loadable.state === "hasData") {
+    return channelState(read(loadable.data));
+  }
+  return loadable.state === "hasError"
+    ? { kind: "unavailable" }
+    : { kind: "pending" };
+}
+
+function channelActionUrl(state: ChannelState): string | null {
+  return state.kind === "install" || state.kind === "connect"
+    ? state.url
+    : null;
+}
+
+/**
+ * Why a channel has nothing to offer, named rather than left as a control that
+ * does nothing: someone else has to add it, or there is nothing here to add.
+ */
+function ChannelNote({
+  state,
+  channel,
 }: {
-  readonly picked: readonly ChatChannelId[];
-  readonly onPick: (channel: ChatChannelId) => void;
+  readonly state: ChannelState;
+  readonly channel: string;
 }) {
   const { t } = useTranslation();
-  const channels = [
-    {
-      id: "telegram",
-      mark: "telegram",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherTelegram;
-      }),
-    },
-    {
-      id: "imessage",
-      mark: "imessage",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherImessage;
-      }),
-    },
-    {
-      id: "teams",
-      mark: "teams",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherTeams;
-      }),
-    },
-  ] as const;
+
+  if (state.kind !== "adminRequired" && state.kind !== "unavailable") {
+    return null;
+  }
+
+  return (
+    <p className="text-xs leading-5 text-muted-foreground">
+      {state.kind === "adminRequired"
+        ? t(
+            ($) => {
+              return $.onboarding.sourcesFirst.slack.channelAdminRequired;
+            },
+            { channel },
+          )
+        : t(
+            ($) => {
+              return $.onboarding.sourcesFirst.slack.channelUnavailable;
+            },
+            { channel },
+          )}
+    </p>
+  );
+}
+
+/**
+ * Slack's own button: the one way the step is meant to be answered. It adds
+ * the app to the workspace, or links the account once the app is already in.
+ */
+function SlackChannelButton({ state }: { readonly state: ChannelState }) {
+  const { t } = useTranslation();
+  const captureInstallStarted = useSet(
+    captureSourceOnboardingSlackInstallStarted$,
+  );
+  const connected = state.kind === "connected";
+  const actionUrl = channelActionUrl(state);
+
+  return (
+    <Button
+      type="button"
+      variant={connected ? "outline" : "neutral"}
+      disabled={actionUrl === null}
+      className="w-full gap-2"
+      onClick={() => {
+        if (actionUrl) {
+          captureInstallStarted();
+          openFreshOAuth(actionUrl);
+        }
+      }}
+    >
+      {connected ? (
+        <Check size={16} aria-hidden="true" />
+      ) : (
+        <ProductMark name="slack" alt="" />
+      )}
+      {connected
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.slack.connectedStatus;
+          })
+        : state.kind === "connect"
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.slack.connectAction;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.slack.add;
+            })}
+    </Button>
+  );
+}
+
+const CHAT_CHANNEL_TILE_CLASS = "flex-1 gap-2";
+
+/** What a tile in the row under Slack reads: the channel, then its state. */
+function ChatChannelTileContent({
+  label,
+  mark,
+  added,
+}: {
+  readonly label: string;
+  readonly mark: ComponentProps<typeof ProductMark>["name"];
+  readonly added: boolean;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {/* The name stays whatever the state: a tile reading only "Added" no
+          longer says which channel was added. */}
+      {label}
+      {added ? (
+        <>
+          <span className="sr-only">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.slack.otherAdded;
+            })}
+          </span>
+          <Check size={16} aria-hidden="true" />
+        </>
+      ) : (
+        <ProductMark name={mark} alt="" size="mark" />
+      )}
+    </>
+  );
+}
+
+/** A tile that acts here: it toggles an answer, or opens an install. */
+function ChatChannelTile({
+  label,
+  mark,
+  added,
+  ...props
+}: {
+  readonly label: string;
+  readonly mark: ComponentProps<typeof ProductMark>["name"];
+  readonly added: boolean;
+} & Pick<
+  ComponentProps<typeof Button>,
+  "aria-pressed" | "disabled" | "onClick"
+>) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className={CHAT_CHANNEL_TILE_CLASS}
+      {...props}
+    >
+      <ChatChannelTileContent label={label} mark={mark} added={added} />
+    </Button>
+  );
+}
+
+/**
+ * iMessage is AgentPhone: the tile opens the same link this workspace uses
+ * everywhere else, and what it reports is the link's own status rather than
+ * anything this step remembers. It is behind the switch the Works entry uses,
+ * so it is absent where that entry is.
+ */
+function AgentPhoneChannelTile() {
+  const { t } = useTranslation();
+  const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
+  const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
+    createAgentPhoneLinkCode$,
+  );
+  const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
+  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
+  const pageSignal = useGet(pageSignal$);
+  const status =
+    statusLoadable.state === "hasData" ? statusLoadable.data : null;
+  const agentPhoneNumber = status?.agentPhoneNumber ?? null;
+  const linked = status?.linked ?? false;
+  const connectionCode =
+    connectionCodeLoadable.state === "hasData"
+      ? connectionCodeLoadable.data
+      : null;
+  const requestConnectionCode = () => {
+    detach(createConnectionCode(pageSignal), Reason.DomCallback);
+  };
+
+  return (
+    <>
+      <ChatChannelTile
+        label={t(($) => {
+          return $.onboarding.sourcesFirst.slack.otherImessage;
+        })}
+        mark="imessage"
+        added={linked}
+        aria-pressed={linked}
+        // Until the link status is read there is nothing to connect to, and a
+        // workspace without a number has no message to send.
+        disabled={agentPhoneNumber === null || linked}
+        onClick={() => {
+          captureChannelClicked("imessage", true);
+          requestConnectionCode();
+          setConnectOpen(true);
+        }}
+      />
+      <AgentPhoneConnectDialog
+        phoneNumber={agentPhoneNumber}
+        connectionCode={connectionCode}
+        connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
+        onRetry={requestConnectionCode}
+      />
+    </>
+  );
+}
+
+/**
+ * Telegram's setup asks for a bot token and which agent answers it, which is
+ * more than a tile can hold, so this one hands over to the settings page that
+ * already asks. It navigates in-app, so the answers given so far are still
+ * here when the browser comes back to the step.
+ */
+function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
+  const { t } = useTranslation();
+
+  return (
+    <Button asChild variant="outline" className={CHAT_CHANNEL_TILE_CLASS}>
+      <Link pathname={ROUTES.settingsTelegram} onClick={onOpen}>
+        <ChatChannelTileContent
+          label={t(($) => {
+            return $.onboarding.sourcesFirst.slack.otherTelegram;
+          })}
+          mark="telegram"
+          added={false}
+        />
+      </Link>
+    </Button>
+  );
+}
+
+/**
+ * The same mention works in Telegram, iMessage and Teams. They sit under
+ * Slack's own button, each with its mark beside the name, and Teams installs
+ * the way Slack does. None of them is answered here any more: each tile
+ * reports the install or link its own integration has.
+ */
+function OtherChatChannels() {
+  const { t } = useTranslation();
+  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
+  const agentPhoneEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.AgentPhoneEntry];
+  const teams = loadedChannelState(useLastLoadable(teamsOrgData$), (status) => {
+    return {
+      isConnected: status.isConnected,
+      isInstalled: status.isInstalled,
+      isAdmin: status.isAdmin,
+      // Teams' own OAuth adds the app while it connects the account, so the
+      // connect URL is also how an admin installs it.
+      installUrl: status.connectUrl ?? status.installUrl,
+      connectUrl: status.connectUrl,
+    };
+  });
+  const teamsName = t(($) => {
+    return $.onboarding.sourcesFirst.slack.otherTeams;
+  });
+  const teamsUrl = channelActionUrl(teams);
 
   return (
     <div>
@@ -537,51 +875,45 @@ function OtherChatChannels({
         })}
       </p>
       <div className="flex gap-2">
-        {channels.map((channel) => {
-          const added = picked.includes(channel.id);
-          return (
-            <Button
-              key={channel.id}
-              type="button"
-              variant="outline"
-              className="flex-1 gap-2"
-              aria-pressed={added}
-              onClick={() => {
-                onPick(channel.id);
-              }}
-            >
-              {/* The name stays whatever the state: a button reading only
-                  "Added" no longer says which channel was added. */}
-              {channel.label}
-              {added ? (
-                <>
-                  <span className="sr-only">
-                    {t(($) => {
-                      return $.onboarding.sourcesFirst.slack.otherAdded;
-                    })}
-                  </span>
-                  <Check size={16} aria-hidden="true" />
-                </>
-              ) : (
-                <ProductMark name={channel.mark} alt="" size="mark" />
-              )}
-            </Button>
-          );
-        })}
+        {/* A tile that leaves for an install is only ever a click to add it,
+            so the funnel reads that click as one. */}
+        <TelegramTile
+          onOpen={() => {
+            captureChannelClicked("telegram", true);
+          }}
+        />
+        {agentPhoneEnabled ? <AgentPhoneChannelTile /> : null}
+        <ChatChannelTile
+          label={teamsName}
+          mark="teams"
+          added={teams.kind === "connected"}
+          disabled={teamsUrl === null}
+          onClick={() => {
+            if (teamsUrl) {
+              captureChannelClicked("teams", true);
+              openFreshOAuth(teamsUrl);
+            }
+          }}
+        />
       </div>
+      <ChannelNote state={teams} channel={teamsName} />
     </div>
   );
 }
 
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
-  const updateDraft = useSet(updateSourcesFirstDraft$);
-  const captureInstallStarted = useSet(
-    captureSourceOnboardingSlackInstallStarted$,
-  );
-  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
   const flow = useSourcesFirstFlow("slack");
-  const connected = flow.draft.slackStatus === "connected";
+  const slack = loadedChannelState(useLastLoadable(slackOrgData$), (status) => {
+    return {
+      isConnected: status.isConnected,
+      isInstalled: status.isInstalled,
+      isAdmin: status.isAdmin,
+      installUrl: status.installUrl,
+      connectUrl: status.connectUrl,
+    };
+  });
+  const connected = slack.kind === "connected";
 
   return (
     <OnboardingStepLayout
@@ -631,47 +963,16 @@ export function OnboardingSlackPage() {
           </p>
         </div>
         <SlackPreview />
-        <Button
-          type="button"
-          variant={connected ? "outline" : "neutral"}
-          disabled={connected}
-          className="w-full gap-2"
-          onClick={() => {
-            captureInstallStarted();
-            // Frontend pass: the Slack install round trip replaces this once
-            // the integration step is wired.
-            updateDraft({ slackStatus: "connected" });
-          }}
-        >
-          {connected ? (
-            <Check size={16} aria-hidden="true" />
-          ) : (
-            <ProductMark name="slack" alt="" />
-          )}
-          {connected
-            ? t(($) => {
-                return $.onboarding.sourcesFirst.slack.connectedStatus;
-              })
-            : t(($) => {
-                return $.onboarding.sourcesFirst.slack.add;
-              })}
-        </Button>
-        <OtherChatChannels
-          picked={flow.draft.chatChannels}
-          onPick={(channel) => {
-            const added = !flow.draft.chatChannels.includes(channel);
-            captureChannelClicked(channel, added);
-            // Frontend pass, as with Slack above: each channel keeps its own
-            // install once those integrations are wired.
-            updateDraft({
-              chatChannels: added
-                ? [...flow.draft.chatChannels, channel]
-                : flow.draft.chatChannels.filter((picked) => {
-                    return picked !== channel;
-                  }),
-            });
-          }}
-        />
+        <div className="flex flex-col gap-2">
+          <SlackChannelButton state={slack} />
+          <ChannelNote
+            state={slack}
+            channel={t(($) => {
+              return $.onboarding.sourcesFirst.slack.name;
+            })}
+          />
+        </div>
+        <OtherChatChannels />
       </div>
     </OnboardingStepLayout>
   );
