@@ -29,6 +29,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
@@ -36,6 +37,10 @@ import {
   piMemoryPhase2MaintenanceCallbackPayloadSchema,
   handlePiMemoryPhase2MaintenanceCallback,
 } from "../pi-memory-phase2-maintenance.service";
+import {
+  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  PI_MEMORY_PHASE2_BYOK_MODEL,
+} from "../pi-memory-phase2-usage.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import {
   createPhase2TestScope,
@@ -83,7 +88,12 @@ async function dispatchMaintenance(
     });
   });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  await seedBuiltInModelKey(context, "gpt-5.6-terra");
+  await seedBuiltInModelKey(
+    context,
+    type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  );
+  // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+  configureNativeCliArtifact();
   const provider = type
     ? await createPhase2Provider(context, scope, type, credentialScope)
     : undefined;
@@ -194,7 +204,9 @@ async function launchMaintenance(
       ...entry,
       idempotencyKey: randomUUID(),
       kind: "model" as const,
-      provider: "gpt-5.6-terra",
+      provider: type
+        ? PI_MEMORY_PHASE2_BYOK_MODEL
+        : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
     };
   });
   const headers = {
@@ -328,6 +340,13 @@ describe("Pi memory Phase 2 proxy billing", () => {
     "keeps the $type proxy owner through $status and delayed cleanup",
     async ({ status, type }) => {
       const run = await launchMaintenance(type);
+      // Both models stay legitimate forever: the built-in binding dispatches
+      // DeepSeek while every BYOK binding keeps dispatching GPT. The delayed
+      // cleanup below only reports `deleted: 0` while the retained binding is
+      // still resolvable, so this asserts the full set is honoured.
+      expect(run.run.selectedModel).toBe(
+        type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      );
       const completedAt = nowDate();
       // Terminal states, persisted launch snapshots and delayed proxy flushes
       // are infrastructure-only inputs.
@@ -668,13 +687,14 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   const actual = await executePhase2Runtime(context, run.runId);
   expect(actual.requests).toHaveLength(3);
   for (const request of actual.requests) {
-    expect(request.url).toBe("https://api.openai.com/v1/responses");
+    expect(request.url).toBe("https://api.deepseek.com/responses");
     expect(request.headers.get("authorization")).toMatch(
       /^Bearer built-in-key-runtime-fixture-/,
     );
+    // V4.1 Flash publishes no `medium` step, so maintenance sends `high`.
     expect(request.body).toMatchObject({
-      model: "gpt-5.6-terra",
-      reasoning: { effort: "medium" },
+      model: "deepseek-flash",
+      reasoning: { effort: "high" },
     });
     expect(request.body).not.toHaveProperty("service_tier");
   }
@@ -682,7 +702,7 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
     modelProvider: "built-in",
     modelProviderId: null,
     modelProviderCredentialScope: "org",
-    selectedModel: "gpt-5.6-terra",
+    selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   });
   await run.proxy();
   await run.proxy();

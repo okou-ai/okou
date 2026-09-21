@@ -10,7 +10,7 @@ import {
   PI_MEMORY_CITATION_CLOSE,
 } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
-import { PI_MEMORY_STAGE1_MODEL } from "./memory-background-config";
+import { PI_MEMORY_STAGE1_BYOK_MODEL } from "./memory-background-config";
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1Evidence as projectEvidence,
@@ -358,7 +358,7 @@ describe("Pi memory Stage 1 runtime", () => {
           provider: "openai",
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
           apiKey: "test-key",
-          model: PI_MEMORY_STAGE1_MODEL,
+          model: PI_MEMORY_STAGE1_BYOK_MODEL,
           dialect: "openai-responses",
           transport: "sse",
         },

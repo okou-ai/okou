@@ -25,7 +25,11 @@ import { lockModelProviderState } from "./auth-state-lock.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
-import { PI_MEMORY_PHASE2_MODEL } from "./pi-memory-phase2-usage.service";
+import {
+  piMemoryPhase2Model,
+  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  PI_MEMORY_PHASE2_BYOK_MODEL,
+} from "./pi-memory-phase2-usage.service";
 import { gptApiKeyPiRoute } from "./pi-sandbox-config";
 
 type ReadDb = Pick<Db, "select">;
@@ -104,7 +108,7 @@ function sourcePin(source: Source, claim: ClaimedPiMemoryPhase2Job) {
     modelProvider: source.type,
     modelProviderId: source.id,
     modelProviderCredentialScope: source.scope ?? "org",
-    selectedModel: PI_MEMORY_PHASE2_MODEL,
+    selectedModel: piMemoryPhase2Model(source.type),
   } satisfies AgentRunModelPin;
 }
 
@@ -170,7 +174,7 @@ async function customCredentialSnapshot(
   }
   if (
     surface.protocol !== "openai-responses" ||
-    !surface.mappings[PI_MEMORY_PHASE2_MODEL]?.trim()
+    !surface.mappings[PI_MEMORY_PHASE2_BYOK_MODEL]?.trim()
   ) {
     reject("provider_model_unsupported");
   }
@@ -229,7 +233,7 @@ async function credentialSnapshot(db: ReadDb, source: Source) {
   if (
     !route?.endpoint ||
     !isModelSupportedByProvider(
-      PI_MEMORY_PHASE2_MODEL,
+      PI_MEMORY_PHASE2_BYOK_MODEL,
       route.productProviderType,
     )
   ) {
@@ -416,7 +420,10 @@ export async function resolvePiMemoryPhase2Credential(
   };
   const route =
     pin.modelProvider === "built-in"
-      ? await resolveBuiltInModelRuntimeRoute(db, PI_MEMORY_PHASE2_MODEL)
+      ? await resolveBuiltInModelRuntimeRoute(
+          db,
+          PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+        )
       : undefined;
   signal.throwIfAborted();
   if (route === null) {

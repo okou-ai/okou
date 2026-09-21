@@ -12,7 +12,6 @@ import {
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
 import {
-  PI_MEMORY_STAGE1_MODEL,
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
   type PiMemoryStage1Evidence,
@@ -880,6 +879,7 @@ async function recordObservedUsage(
     memoryStorageId: prepared.work.memoryStorageId,
     piSessionId: prepared.work.piSessionId,
     sourceHistoryHash: prepared.work.sourceHistoryHash,
+    model: prepared.credential.selectedModel,
     billing: prepared.credential.billing,
     responseSourceId: observedResult.responseId ?? `request:${requestId}`,
     usage: observedResult.usage,
@@ -920,7 +920,7 @@ async function processPreparedWork(
             db: args.db,
             ...args.prepared.credential.billing,
             modelProviderType: args.prepared.credential.modelProviderType,
-            selectedModel: PI_MEMORY_STAGE1_MODEL,
+            selectedModel: args.prepared.credential.selectedModel,
           });
           requestSignal.throwIfAborted();
           if (admission) {
@@ -977,6 +977,7 @@ async function processPreparedWork(
   } else if (requestPrepared) {
     await observePiMemoryStage1MissingUsage(
       args.prepared.credential.billing.mode,
+      args.prepared.credential.selectedModel,
     );
   }
   if (!provider.ok) {

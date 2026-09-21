@@ -4,6 +4,7 @@ import {
   getProviderRuntimeModel,
   getSecretNameForType,
   isModelSupportedByProvider,
+  type BuiltInModelRouteProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -21,7 +22,11 @@ import {
   resolvePiAgentCredential,
   type PiAgentModelConfig,
 } from "@okouai/pi-agent-runtime";
-import { PI_MEMORY_STAGE1_MODEL } from "@okouai/pi-agent-runtime/api";
+import {
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_BYOK_MODEL,
+  type PiMemoryStage1Model,
+} from "@okouai/pi-agent-runtime/api";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
@@ -74,6 +79,8 @@ export type PiMemoryStage1CredentialResult =
   | {
       readonly status: "available";
       readonly model: PiAgentModelConfig;
+      /** The binding's extraction model: admission, usage and cost share it. */
+      readonly selectedModel: PiMemoryStage1Model;
       readonly billing: PiMemoryStage1Billing;
       readonly modelProviderType: string;
       readonly quota: PiMemoryQuotaSource;
@@ -111,10 +118,16 @@ function skip(
   return { status: "skip", reason };
 }
 
+/** The binding decides both the extraction model and who pays for it. */
+interface Stage1Selection {
+  readonly selectedModel: PiMemoryStage1Model;
+  readonly mode: PiMemoryStage1Billing["mode"];
+}
+
 function availableCredential(
   args: ResolutionContext,
   model: PiAgentModelConfig,
-  mode: PiMemoryStage1Billing["mode"],
+  selection: Stage1Selection,
   validateCredential: (signal: AbortSignal) => Promise<boolean>,
   quota: PiMemoryQuotaSource,
 ): PiMemoryStage1CredentialResult {
@@ -125,9 +138,14 @@ function availableCredential(
   return {
     status: "available",
     model,
+    selectedModel: selection.selectedModel,
     modelProviderType: binding.type,
     quota,
-    billing: { mode, orgId: source.orgId, userId: source.userId },
+    billing: {
+      mode: selection.mode,
+      orgId: source.orgId,
+      userId: source.userId,
+    },
     validate: async (validationSignal) => {
       const current = await sourceBinding(db, source);
       validationSignal.throwIfAborted();
@@ -143,6 +161,33 @@ function availableCredential(
     },
   };
 }
+/**
+ * Pi provider identity for every built-in route that can serve extraction.
+ *
+ * The built-in route for `deepseek-v4-flash` resolves the native `deepseek`
+ * candidate first, so omitting it would skip every built-in Stage 1 run as
+ * `provider_model_unsupported`. This maps route provider types only; it does
+ * not widen which providers may serve the model.
+ */
+function builtInStage1PiProvider(
+  type: BuiltInModelRouteProviderType,
+): "deepseek" | "openai" | "openrouter" | null {
+  switch (type) {
+    case "deepseek": {
+      return "deepseek";
+    }
+    case "openai-api-key": {
+      return "openai";
+    }
+    case "openrouter-codex": {
+      return "openrouter";
+    }
+    default: {
+      return null;
+    }
+  }
+}
+
 async function builtinCredential(
   args: ResolutionContext,
   signal: AbortSignal,
@@ -157,14 +202,11 @@ async function builtinCredential(
   }
   const route = await resolveBuiltInModelRuntimeRoute(
     db,
-    PI_MEMORY_STAGE1_MODEL,
+    PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   );
   signal.throwIfAborted();
-  if (
-    !route ||
-    (route.providerType !== "openai-api-key" &&
-      route.providerType !== "openrouter-codex")
-  ) {
+  const provider = route ? builtInStage1PiProvider(route.providerType) : null;
+  if (!route || !provider) {
     return skip("provider_model_unsupported");
   }
   const endpoint = getModelProviderPiEndpoint(
@@ -187,8 +229,6 @@ async function builtinCredential(
   if (!apiKey?.trim()) {
     return skip("credential_unavailable");
   }
-  const provider =
-    route.providerType === "openai-api-key" ? "openai" : "openrouter";
   return availableCredential(
     args,
     {
@@ -209,7 +249,7 @@ async function builtinCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    "builtin",
+    { selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL, mode: "builtin" },
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();
@@ -281,13 +321,13 @@ async function codexCredential(
     {
       provider: "openai-codex",
       baseUrl: endpoint.baseUrl,
-      model: PI_MEMORY_STAGE1_MODEL,
+      model: PI_MEMORY_STAGE1_BYOK_MODEL,
       apiKey: token,
       accountId,
       dialect: "openai-codex-responses",
       transport: "sse",
     },
-    "byok",
+    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
     async (validationSignal) => {
       const current = await personalModelProviderAccountById(accountArgs);
       validationSignal.throwIfAborted();
@@ -363,7 +403,7 @@ async function gatewayCredential(
   if (!row) {
     return skip("credential_unavailable");
   }
-  const model = row.mappings[PI_MEMORY_STAGE1_MODEL];
+  const model = row.mappings[PI_MEMORY_STAGE1_BYOK_MODEL];
   if (row.protocol !== "openai-responses" || !model?.trim()) {
     return skip("provider_model_unsupported");
   }
@@ -382,7 +422,7 @@ async function gatewayCredential(
       provider: "openai",
       baseUrl: row.baseUrl,
       model,
-      catalogModel: PI_MEMORY_STAGE1_MODEL,
+      catalogModel: PI_MEMORY_STAGE1_BYOK_MODEL,
       ...resolvePiAgentCredential({
         credential,
         header: { name: row.header, valueTemplate: row.template },
@@ -391,7 +431,7 @@ async function gatewayCredential(
       dialect: "openai-responses",
       transport: "sse",
     },
-    "byok",
+    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
     async (validationSignal) => {
       const current = await readSurface();
       validationSignal.throwIfAborted();
@@ -409,7 +449,7 @@ async function apiKeyCredential(
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
   const type = route.productProviderType;
-  if (!isModelSupportedByProvider(PI_MEMORY_STAGE1_MODEL, type)) {
+  if (!isModelSupportedByProvider(PI_MEMORY_STAGE1_BYOK_MODEL, type)) {
     return skip("provider_model_unsupported");
   }
   const secretOwner = binding.scope === "org" ? "__org__" : source.userId;
@@ -453,15 +493,15 @@ async function apiKeyCredential(
     {
       provider: route.provider,
       baseUrl: endpoint.baseUrl,
-      model: getProviderRuntimeModel(type, PI_MEMORY_STAGE1_MODEL),
+      model: getProviderRuntimeModel(type, PI_MEMORY_STAGE1_BYOK_MODEL),
       ...(type === "vercel-ai-gateway-codex"
-        ? { catalogModel: PI_MEMORY_STAGE1_MODEL }
+        ? { catalogModel: PI_MEMORY_STAGE1_BYOK_MODEL }
         : {}),
       apiKey,
       dialect: "openai-responses",
       transport: "sse",
     },
-    "byok",
+    { selectedModel: PI_MEMORY_STAGE1_BYOK_MODEL, mode: "byok" },
     async (validationSignal) => {
       const current = await readKey();
       validationSignal.throwIfAborted();

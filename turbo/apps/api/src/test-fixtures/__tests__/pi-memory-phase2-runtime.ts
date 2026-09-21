@@ -179,7 +179,7 @@ export async function executePhase2Runtime(
     http.post(
       model.provider === "openai-codex"
         ? "https://chatgpt.com/backend-api/codex/responses"
-        : `${model.baseUrl}/responses`,
+        : `${model.baseUrl.replace(/\/+$/, "")}/responses`,
       async ({ request }) => {
         requests.push({
           url: request.url,
