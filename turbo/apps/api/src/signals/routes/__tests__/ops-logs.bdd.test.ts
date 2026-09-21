@@ -593,7 +593,7 @@ describe("OPS-01: user data export", () => {
     });
   });
 
-  it("exports readable shared instructions across current organizations without leaking private resources", async () => {
+  it("exports the exporter's own instructions across current organizations without leaking other members' or former-organization resources", async () => {
     const bdd = createBddApi(context);
     const misc = createMiscRoutesApi(context);
     const actor = bdd.user({ orgRole: "org:member" });
@@ -602,48 +602,59 @@ describe("OPS-01: user data export", () => {
     }
     const teammate = bdd.user({ orgId: actor.orgId, orgRole: "org:admin" });
     const otherOrg = bdd.user();
-    const formerOrg = bdd.user({ userId: actor.userId });
     if (!otherOrg.orgId) {
       throw new Error("Expected secondary organization");
     }
-    const currentActors = [actor, teammate, otherOrg];
-    const readableAgentIds: string[] = [];
-    const readableWorkflowIds: string[] = [];
-    for (const [index, owner] of currentActors.entries()) {
+    // Same person, second current organization, and a third they have left.
+    const actorElsewhere = bdd.user({
+      userId: actor.userId,
+      orgId: otherOrg.orgId,
+    });
+    const formerOrg = bdd.user({ userId: actor.userId });
+    const ownedAgentIds: string[] = [];
+    const ownedWorkflowIds: string[] = [];
+    for (const [index, owner] of [actor, actorElsewhere].entries()) {
       const agent = await bdd.createAgent(owner, {
-        displayName: `Readable agent ${index.toString()}`,
-        visibility: owner === actor ? "private" : "public",
+        displayName: `Own agent ${index.toString()}`,
+        visibility: "private",
       });
       await bdd.updateAgentInstructions(
         owner,
         agent.agentId,
-        `Readable agent instructions ${index.toString()}`,
+        `Own agent instructions ${index.toString()}`,
       );
-      readableAgentIds.push(agent.agentId);
+      ownedAgentIds.push(agent.agentId);
       const workflow = await misc.createWorkflow(
         owner,
         agent.agentId,
-        `readable-workflow-${index.toString()}`,
+        `own-workflow-${index.toString()}`,
         {
-          content: `Readable workflow instruction ${index.toString()}`,
-          visibility: owner === actor ? "private" : "public",
+          content: `Own workflow instruction ${index.toString()}`,
+          visibility: "private",
         },
         [201],
       );
       if (!("id" in workflow.body)) {
-        throw new Error("Expected readable workflow id");
+        throw new Error("Expected own workflow id");
       }
-      readableWorkflowIds.push(workflow.body.id);
+      ownedWorkflowIds.push(workflow.body.id);
     }
-    const sharedAgentId = readableAgentIds[1];
-    if (!sharedAgentId) {
-      throw new Error("Expected shared agent");
-    }
+    // A teammate's public agent is readable in the product but is their record,
+    // not this subject's data. Same for a public workflow they own on it.
+    const sharedAgent = await bdd.createAgent(teammate, {
+      displayName: "Shared teammate agent",
+      visibility: "public",
+    });
+    await bdd.updateAgentInstructions(
+      teammate,
+      sharedAgent.agentId,
+      "Teammate authored these instructions",
+    );
     await misc.createWorkflow(
       teammate,
-      sharedAgentId,
-      "private-workflow-on-shared-agent",
-      { content: "Hidden private workflow", visibility: "private" },
+      sharedAgent.agentId,
+      "public-workflow-owned-by-teammate",
+      { content: "Teammate workflow instruction", visibility: "public" },
       [201],
     );
     for (const owner of [teammate, formerOrg]) {
@@ -680,29 +691,32 @@ describe("OPS-01: user data export", () => {
           return agent.id;
         })
         .sort(),
-    ).toStrictEqual(readableAgentIds.sort());
+    ).toStrictEqual(ownedAgentIds.sort());
     expect(
       workflows
         .map((workflow) => {
           return workflow.id;
         })
         .sort(),
-    ).toStrictEqual(readableWorkflowIds.sort());
-    for (const [index, owner] of currentActors.entries()) {
+    ).toStrictEqual(ownedWorkflowIds.sort());
+    for (const [index, owner] of [actor, actorElsewhere].entries()) {
       expect(agents).toContainEqual(
         expect.objectContaining({
           orgId: owner.orgId,
-          instructions: `Readable agent instructions ${index.toString()}`,
+          instructions: `Own agent instructions ${index.toString()}`,
         }),
       );
       expect(workflows).toContainEqual(
         expect.objectContaining({
           orgId: owner.orgId,
-          instruction: `Readable workflow instruction ${index.toString()}`,
+          instruction: `Own workflow instruction ${index.toString()}`,
         }),
       );
     }
-    expect(readManifest(zip).counts).toMatchObject({ agents: 3, workflows: 3 });
+    expect(JSON.stringify([...agents, ...workflows])).not.toContain(
+      "Teammate authored these instructions",
+    );
+    expect(readManifest(zip).counts).toMatchObject({ agents: 2, workflows: 2 });
   });
 
   it.each(["manifest entry", "archive file"])(

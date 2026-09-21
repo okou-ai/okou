@@ -16,7 +16,6 @@ import { z } from "zod";
 import { extractBinaryFilesFromTarGz } from "../../lib/tar";
 import type { Db } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { APPLICATION_OWNED_AGENT_EXECUTION_PLAN } from "./agent-execution-plan";
 import { readPiResourceVersionIndexes } from "./pi-resource-version-index.service";
 
@@ -41,7 +40,7 @@ async function instructionSource(args: InstructionsArgs, signal: AbortSignal) {
       and(
         eq(agents.id, args.agentId),
         eq(agents.orgId, args.orgId),
-        visibleJoinedAgentCondition(args.userId),
+        eq(agents.owner, args.userId),
       ),
     )
     .limit(1);
