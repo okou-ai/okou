@@ -494,6 +494,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatUnreadOnlyShortcut]: {
+    maintainer: "ethan@okou.ai",
+    description: "Toggle the chat list's unread-only filter with Mod+Shift+U.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
     description:
