@@ -746,17 +746,19 @@ A row's background already paints behind its children; a button does not need
 `relative z-10` to sit above it. Event propagation is handled by event handlers,
 not by raising the button's paint order.
 
-- Shared floating primitives follow shadcn's flat `z-50` convention and own
-  their portals inside `@okouai/ui`. Put the literal utility on the elements
-  participating in the surrounding stacking context: Dialog's Backdrop and
-  Viewport, Sheet's Backdrop and Popup, and the Positioner for Popover, Select,
-  DropdownMenu and Tooltip. A z-index on an inner popup cannot raise its outer
-  viewport or positioner. Base UI appends top-level portals after the isolated
-  app root and nests descendant portals under their owner. Preserve that
-  structure and DOM order so each popup paints above its backdrop and nested
-  surfaces stay above their parents. Callers must not override this order with
-  z-index. The shared value is a maintenance convention; correct ordering still
-  requires browser interaction coverage.
+- Shared floating primitives use shadcn's flat `z-50` baseline inside
+  `@okouai/ui`. Apply `relative z-50` to each Base UI Portal so its complete
+  surface, including Base UI's transparent interaction backdrop, participates
+  as one layer. Keep the internal Backdrop, Viewport, Positioner and Popup in
+  their original paint order. Raising only those visible elements can leave a
+  nested Select's interaction backdrop below its parent dialog, allowing one
+  outside click to activate the parent's Close button as well as dismiss Select.
+  Base UI appends top-level portals after the isolated app root and nests
+  descendant portals under their owner. Preserve that structure and DOM order
+  so each popup paints above its backdrop and nested surfaces stay above their
+  parents. Callers must not override this order with z-index. The shared value
+  is a maintenance convention; correct ordering still requires browser
+  interaction coverage.
 - The shell owns app-wide non-portal layers such as drawers, scrims and
   fullscreen panels. Keep a small fixed set of literal Tailwind z-index
   utilities in shell-owned files, below the shared floating layer in the
@@ -802,7 +804,8 @@ lint does not establish correct stacking.
 [Browser regression tests](../e2e/playwright/tests/floating-layers.spec.ts)
 check actual pointer hit targets over sidebar actions in fullscreen, nested
 dialog interaction and dismissal, a dialog above fullscreen content, and a
-select above its settings dialog. They also cover the composer's effort popover
+select above its settings dialog, including outside-press shielding of the
+parent's Close button. They also cover the composer's effort popover
 and mobile sidebar menus and queue-sheet interaction.
 Class names and computed z-index values alone cannot verify these relationships.
 Fullscreen state preservation also needs the shared primitive's state and

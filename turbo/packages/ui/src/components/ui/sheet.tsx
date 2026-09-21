@@ -77,7 +77,7 @@ const SheetOverlay = React.forwardRef<
       data-slot="sheet-overlay"
       className={cn(
         modalBackdropTransitionClassName,
-        "fixed inset-0 z-50 bg-overlay/45 dark:bg-overlay/55",
+        "fixed inset-0 bg-overlay/45 dark:bg-overlay/55",
         className,
       )}
       {...props}
@@ -97,7 +97,7 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
     ref,
   ) => {
     return (
-      <SheetPortal>
+      <SheetPortal className="relative z-50">
         <SheetOverlay className={overlayClassName} forceRender />
         <SheetPrimitive.Popup
           ref={ref}
@@ -105,7 +105,7 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
           data-side={side}
           className={cn(
             sheetPopupTransitionClassName,
-            "fixed z-50 flex flex-col gap-4 overflow-x-hidden bg-card p-6 outline-none",
+            "fixed flex flex-col gap-4 overflow-x-hidden bg-card p-6 outline-none",
             // The sheet is portalled and fixed, so it is laid out past the
             // shell's padding box and owes its own insets. Only the edges it
             // actually meets take one: a right sheet's left edge sits mid-screen,

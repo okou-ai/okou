@@ -77,7 +77,7 @@ const DialogOverlay = React.forwardRef<
       data-slot="dialog-overlay"
       className={cn(
         dialogBackdropAnimationClassName,
-        "fixed inset-0 z-50 bg-overlay/45 dark:bg-overlay/55",
+        "fixed inset-0 bg-overlay/45 dark:bg-overlay/55",
         className,
       )}
       {...props}
@@ -165,12 +165,12 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     ref,
   ) => {
     return (
-      <DialogPortal>
+      <DialogPortal className="relative z-50">
         <DialogOverlay className={overlayClassName} forceRender />
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"
           className={cn(
-            "fixed inset-x-0 top-0 z-50 flex h-[var(--okou-viewport-height,100dvh)] items-center justify-center overflow-hidden",
+            "fixed inset-x-0 top-0 flex h-[var(--okou-viewport-height,100dvh)] items-center justify-center overflow-hidden",
             mode === "windowed" && "p-safe-offset-6",
           )}
         >

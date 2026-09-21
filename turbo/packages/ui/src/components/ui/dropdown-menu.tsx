@@ -108,12 +108,12 @@ const DropdownMenuContent = React.forwardRef<
         : undefined);
 
     return (
-      <DropdownMenuPortal>
+      <DropdownMenuPortal className="relative z-50">
         <MenuPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
           className={cn(
-            "z-50 outline-none",
+            "outline-none",
             hideWhenDetached && "data-anchor-hidden:invisible",
           )}
           collisionAvoidance={resolvedCollisionAvoidance}

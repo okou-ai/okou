@@ -121,13 +121,12 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
         : undefined);
 
     return (
-      <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Portal className="relative z-50">
         <PopoverPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
           anchor={anchor}
           className={cn(
-            "z-50",
             hideWhenDetached && "data-anchor-hidden:invisible",
             positionerClassName,
           )}
