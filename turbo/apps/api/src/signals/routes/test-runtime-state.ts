@@ -685,6 +685,7 @@ async function builtInModelActionResponse(
       const route = await resolveBuiltInModelRuntimeRoute(
         db,
         body.selected_model,
+        {},
       );
       signal.throwIfAborted();
       return {

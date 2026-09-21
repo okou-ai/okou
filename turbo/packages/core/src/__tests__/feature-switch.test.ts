@@ -171,6 +171,36 @@ describe("isFeatureEnabled", () => {
       }),
     ).toBe(false);
   });
+
+  it("enables DeepSeek alternative routing for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DeepSeekAlternativeRouting, context),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DeepSeekAlternativeRouting, {
+          ...context,
+          overrides: {
+            [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+          },
+        }),
+      ).toBe(true);
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(
+        FeatureSwitchKey.DeepSeekAlternativeRouting,
+        staffContext,
+      ),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.DeepSeekAlternativeRouting, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
+      }),
+    ).toBe(false);
+  });
+
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
     expect(isFeatureEnabled(FeatureSwitchKey.AvatarNeckSweater, {})).toBe(true);

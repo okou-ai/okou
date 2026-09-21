@@ -1,9 +1,14 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import {
+  agentAvatarTexture,
+  avatarTextureUrl,
+} from "@okouai/core/agent-avatar-texture";
 import { agents$ } from "../../signals/agent.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
 import { AvatarSvgPreview } from "./avatar-svg-preview.tsx";
+import { isLegacyAvatarSvgConfig } from "./avatar-svg-utils.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 /**
@@ -102,6 +107,31 @@ export function AvatarFromUrl({
   return <span className={className} aria-hidden="true" data-testid={testId} />;
 }
 
+/**
+ * The brand texture for one agent, or null when it cannot have one.
+ *
+ * Only composer avatars qualify: a texture is chosen to clear the avatar's own
+ * sweater and hair colours, and an uploaded image, the flat default avatar, and
+ * the legacy `svg:` configurations have no such colours to clear. Pass a null
+ * id to opt out entirely — the hook still runs, so callers stay unconditional.
+ *
+ * Exported because the frame around the avatar changes with the answer: with a
+ * texture the frame's own hairline is redundant, and without one it is still
+ * the only edge the artwork has.
+ */
+export function useAgentAvatarTexture(id: string | null): string | null {
+  const { rawAvatarUrl } = useAgentAvatarState(id ?? "");
+  if (id === null) {
+    return null;
+  }
+  const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
+  if (!svgConfig || isLegacyAvatarSvgConfig(svgConfig)) {
+    return null;
+  }
+  const texture = agentAvatarTexture(id, svgConfig);
+  return texture ? avatarTextureUrl(texture) : null;
+}
+
 /** Reactive avatar image that respects DB-persisted and user overrides. */
 export function AgentAvatarImg({
   name,
@@ -109,6 +139,7 @@ export function AgentAvatarImg({
   className,
   size,
   preserveChinBaseline = false,
+  textureUrl,
   "data-testid": testId,
 }: {
   name: string;
@@ -116,6 +147,12 @@ export function AgentAvatarImg({
   className: string;
   size?: number;
   preserveChinBaseline?: boolean;
+  /**
+   * Brand texture to draw behind the artwork, from `useAgentAvatarTexture`.
+   * Only the chat home greeting passes one; it is the single surface that
+   * shows one agent large enough for a brush mark to read as a brush mark.
+   */
+  textureUrl?: string;
   "data-testid"?: string;
 }) {
   const { src, rawAvatarUrl } = useAgentAvatarState(name);
@@ -128,6 +165,7 @@ export function AgentAvatarImg({
         config={svgConfig}
         size={size}
         preserveChinBaseline={preserveChinBaseline}
+        textureUrl={textureUrl}
         className={className}
         alt={alt}
         data-testid={testId}

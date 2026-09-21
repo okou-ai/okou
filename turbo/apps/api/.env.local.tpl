@@ -174,6 +174,9 @@ OKOU_FINANCE_APIDOJO_TOKEN=op://Development/APIDojo/RAPIDAPI_KEY
 OKOU_SEO_DATAFORSEO_LOGIN=op://Development/DataForSEO/LOGIN
 OKOU_SEO_DATAFORSEO_PASSWORD=op://Development/DataForSEO/PASSWORD
 
+# Optional: Saved public Social data jobs
+OKOU_SOCIAL_MONID_API_KEY=
+
 # Optional: Managed browser provider (Browser Use)
 OKOU_BROWSER_USE_API_KEY=op://Development/browser-use/OKOU_BROWSER_USE_API_KEY
 

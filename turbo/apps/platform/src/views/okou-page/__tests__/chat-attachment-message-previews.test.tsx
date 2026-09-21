@@ -1,9 +1,11 @@
 import mermaid from "@okouai/mermaid-lite";
-import type {
-  ChatThreadArtifactFile,
-  UserMessageDocument,
+import {
+  chatThreadArtifactsContract,
+  type ChatThreadArtifactFile,
+  type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
@@ -288,6 +290,95 @@ test("Image navigation stays within the current message", async () => {
   expect(
     screen.queryByAltText("unrelated-generated.png"),
   ).not.toBeInTheDocument();
+});
+
+const PAIR_FIRST_URL = publicArtifactUrl("pair-first.png");
+const PAIR_SECOND_URL = publicArtifactUrl("pair-second.png");
+
+/** One assistant message holding two images that are also run artifacts. */
+function mockAssistantImagePair(): void {
+  mockAttachmentChat(context, {
+    chatEvents: [
+      assistantMessage(
+        [
+          `1. ![pair-first.png](${PAIR_FIRST_URL})`,
+          `2. ![pair-second.png](${PAIR_SECOND_URL})`,
+        ].join("\n"),
+      ),
+    ],
+    artifacts: [
+      artifactFile("pair-first.png", {
+        id: "pair-first",
+        url: PAIR_FIRST_URL,
+      }),
+      artifactFile("pair-second.png", {
+        id: "pair-second",
+        url: PAIR_SECOND_URL,
+      }),
+    ],
+  });
+}
+
+/**
+ * The artifact list only enriches the images a message already shows, so an
+ * assistant group can be stepped through before that list arrives. The sidebar
+ * deliberately waits for it and the lightbox deliberately does not, and nothing
+ * covered that difference — so a single shared navigation source could quietly
+ * flatten the two and no test would notice.
+ */
+test("Arrow keys navigate an assistant group while the artifact list is still loading", async () => {
+  mockAssistantImagePair();
+  const user = userEvent.setup({ delay: null });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ never }) => {
+    return never();
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  click(await findPreviewActionForImage("pair-first.png"));
+  await screen.findByRole("dialog", { name: "pair-first.png preview" });
+
+  await user.keyboard("{ArrowRight}");
+
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "alt",
+      "pair-second.png",
+    );
+  });
+});
+
+/**
+ * A failed artifact list degrades to "no artifact metadata" rather than taking
+ * navigation down with it. Worth pinning because the list is an awaited value:
+ * reading it through a rejected promise instead of a loadable would turn this
+ * into a dead arrow key, or a thrown error, with no other test objecting.
+ */
+test("Arrow keys still navigate when the artifact list request fails", async () => {
+  mockAssistantImagePair();
+  const user = userEvent.setup({ delay: null });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "No access to the artifacts of this thread",
+      },
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  click(await findPreviewActionForImage("pair-first.png"));
+  await screen.findByRole("dialog", { name: "pair-first.png preview" });
+
+  await user.keyboard("{ArrowRight}");
+
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "alt",
+      "pair-second.png",
+    );
+  });
 });
 
 test("Only exact trusted public links receive rich attachment previews", async () => {

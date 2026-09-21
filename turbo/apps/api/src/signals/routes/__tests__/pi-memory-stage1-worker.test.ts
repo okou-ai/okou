@@ -56,16 +56,12 @@ import { server } from "../../../mocks/server";
 import {
   seedBuiltInModelKey,
   seedBuiltInModelCandidateKeys,
-  resolveBuiltInModelRouteFixture,
 } from "./helpers/runtime-state";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import {
-  withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
-  withBuiltInModelRuntimeRouteUnavailableForTest,
-} from "../../../test-fixtures/built-in-model-runtime-route";
+import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -740,47 +736,35 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("never issues a provider request when the built-in route cannot serve the pinned effort", async () => {
+  it("uses the owner's DeepSeek alternative routing switch and fails before an unsupported effort", async () => {
     // V4 Flash's OpenRouter listing publishes no `low` step, so the secondary
     // built-in candidate cannot carry the pinned extraction effort. The work
     // must end before any paid request rather than silently raising it.
     const selectedModel = "deepseek-v4-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
-    const primary = await resolveBuiltInModelRouteFixture(
-      context,
-      selectedModel,
-    );
-    if (!primary || primary.provider_type !== "deepseek") {
-      throw new Error("Expected primary DeepSeek route");
-    }
     const storage = createStorageFixture();
     const piSessionId = randomUUID();
     await storage.seed({
       piSessionId,
       raw: settledHistory(piSessionId, "secondary built-in candidate"),
     });
-    const provider = installProvider();
-    await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: storage.org_id, userId: storage.user_id },
       {
-        selectedModel,
-        providerType: primary.provider_type,
-        upstreamModel: primary.upstream_model,
-      },
-      async () => {
-        const result = await accept(
-          stage1Client([storage]).extract({ headers: stage1Headers() }),
-          [200],
-        );
-        expect(result.body).toMatchObject({
-          success: true,
-          scanned: 1,
-          claimed: 1,
-          succeeded: 0,
-          retryableFailure: 0,
-          terminalFailure: 1,
-        });
+        [FeatureSwitchKey.PiMemory]: true,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+        [FeatureSwitchKey.OpenRouterUsRouting]: false,
       },
     );
+    const provider = installProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      scanned: 1,
+      claimed: 1,
+      succeeded: 0,
+      retryableFailure: 0,
+      terminalFailure: 1,
+    });
     expect(provider.calls).toHaveLength(0);
   });
   it("authenticates the production cron route before the disabled breaker", async () => {

@@ -15,8 +15,8 @@ describe("MCP chat mutation contracts", () => {
   it("publishes a ready-to-use exact-status handoff after send", () => {
     const output = {
       inputRef,
-      acceptedAt: "2026-09-21T00:00:00.000Z",
-      retryUntil: "2026-09-22T00:00:00.000Z",
+      acceptedAt: "2026-09-21T00:00:00.000000Z",
+      retryUntil: "2026-09-22T00:00:00.000000Z",
       disposition: "queued" as const,
       runId: null,
       replayed: false,

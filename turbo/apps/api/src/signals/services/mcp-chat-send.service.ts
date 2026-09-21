@@ -3,6 +3,7 @@ import type {
   McpSendChatMessageOutput,
   McpChatMutationResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -206,10 +207,10 @@ export const sendMcpChatMessage$ = command(
       kind: "ok",
       data: {
         inputRef,
-        acceptedAt: receipt.acceptedAt.toISOString(),
-        retryUntil: new Date(
-          receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
-        ).toISOString(),
+        acceptedAt: formatMcpChatTimestamp(receipt.acceptedAt),
+        retryUntil: formatMcpChatTimestamp(
+          new Date(receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS),
+        ),
         replayed,
         ...disposition,
         url: new URL(`/chats/${input.threadId}`, env("APP_URL")).toString(),

@@ -33,7 +33,8 @@ import {
   chatPageTaglineTypewriterRef$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import { AgentAvatarImg } from "./sidebar-shared.tsx";
+import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
+import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { assistantName$ } from "../../signals/branding.ts";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
@@ -291,18 +292,33 @@ function PinPill() {
  * The size stays on the step the mobile layout already used rather than gaining
  * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
  * reads as a standee beside the text.
+ *
+ * With `avatarTexture` on, the hairline comes back off. It was added so that
+ * something visible would be answerable for the crop; an opaque texture fills
+ * the frame edge to edge and is answerable for it by itself, which leaves the
+ * border as a second, weaker edge just inside the first.
  */
 const AGENT_AVATAR_FRAME =
-  "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl border border-surface-border";
+  "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl";
+const AGENT_AVATAR_BORDER = "border border-surface-border";
 /**
  * Fills the frame's content box. Restating the frame's own `h-14 w-14` here
  * would overflow it by the border on every side and be silently clipped, since
- * the border box is what the frame sizes.
+ * the border box is what the frame sizes. Dropping the border therefore gives
+ * this 2px more to fill, which is the intent and not a second size step.
  */
 const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const { t } = useTranslation("agents");
+  const textureEnabled = useGet(avatarTextureEnabled$);
+  // Not every agent can take a texture: uploaded images and the flat default
+  // avatar have no sweater or hair colour to clear. The frame follows the
+  // answer rather than the switch, so those keep the hairline that is still
+  // their only edge.
+  const textureUrl = useAgentAvatarTexture(
+    textureEnabled && agentId ? agentId : null,
+  );
 
   return (
     <div className="relative shrink-0">
@@ -320,14 +336,31 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                 })}
                 className={cn(
                   AGENT_AVATAR_FRAME,
-                  "cursor-pointer transition-colors duration-150 hover:bg-state-hover",
+                  "cursor-pointer",
+                  textureUrl
+                    ? // The frame's background is behind the texture and the
+                      // border this used to recolour is gone, so hover needs a
+                      // layer of its own above the artwork. Same token and the
+                      // same 150ms, so hover does not change how it feels.
+                      "group relative"
+                    : cn(
+                        AGENT_AVATAR_BORDER,
+                        "transition-colors duration-150 hover:bg-state-hover",
+                      ),
                 )}
               >
                 <AgentAvatarImg
                   name={agentId}
                   alt=""
                   className={AGENT_AVATAR_IMAGE}
+                  textureUrl={textureUrl ?? undefined}
                 />
+                {textureUrl ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                  />
+                ) : null}
               </Link>
             </TooltipTrigger>
             <TooltipContent side="bottom">
@@ -340,7 +373,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
           </Tooltip>
         </TooltipProvider>
       ) : (
-        <div className={AGENT_AVATAR_FRAME}>
+        <div className={cn(AGENT_AVATAR_FRAME, AGENT_AVATAR_BORDER)}>
           <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
         </div>
       )}

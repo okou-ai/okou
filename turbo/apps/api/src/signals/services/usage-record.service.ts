@@ -96,6 +96,7 @@ function usageRecordRunsWith(
         userId: usage.userId,
         credits: usageCreditsExpr(usage).as("credits"),
         tokens: tokenExpr(usage).as("tokens"),
+        processedHour: usage.processedHour,
       })
       .from(usage)
       .where(
@@ -113,10 +114,13 @@ function usageRecordRunsWith(
         credits: usageRows.credits,
         tokens: usageRows.tokens,
         chatThreadId: agentRuns.chatThreadId,
-        createdAt: agentRuns.createdAt,
+        createdAt:
+          sql`COALESCE(${agentRuns.createdAt}, ${usageRows.processedHour})`
+            .mapWith(agentRuns.createdAt)
+            .as("usage_created_at"),
       })
       .from(usageRows)
-      .innerJoin(agentRuns, eq(agentRuns.id, usageRows.runId)),
+      .leftJoin(agentRuns, eq(agentRuns.id, usageRows.runId)),
   );
   return { usageRows, runs };
 }
@@ -310,7 +314,7 @@ async function queryUsageRecordBreakdown(
         credits: usageCreditsExpr(usage).as("credits"),
       })
       .from(usage)
-      .innerJoin(agentRuns, eq(agentRuns.id, usage.runId))
+      .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
       .where(
         and(
           eq(usage.orgId, orgId),

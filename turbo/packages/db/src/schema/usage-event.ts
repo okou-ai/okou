@@ -79,6 +79,9 @@ export const usageEvent = pgTable(
     provider: varchar("provider", { length: 100 }).notNull(),
     category: varchar("category", { length: 100 }).notNull(),
     quantity: bigint("quantity", { mode: "number" }).notNull(),
+    pricingUnitPrice: bigint("pricing_unit_price", { mode: "number" }),
+    pricingUnitSize: bigint("pricing_unit_size", { mode: "number" }),
+    pricingCreditsLimit: bigint("pricing_credits_limit", { mode: "number" }),
     creditsCharged: bigint("credits_charged", { mode: "number" }),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     billingError: varchar("billing_error", { length: 50 }),
@@ -87,6 +90,14 @@ export const usageEvent = pgTable(
   },
   (table) => {
     return [
+      check(
+        "usage_event_pricing_snapshot_check",
+        sql`(
+          (${table.pricingUnitPrice} IS NULL AND ${table.pricingUnitSize} IS NULL AND ${table.pricingCreditsLimit} IS NULL)
+          OR (${table.pricingUnitPrice} IS NOT NULL AND ${table.pricingUnitSize} IS NOT NULL AND ${table.pricingCreditsLimit} IS NOT NULL
+            AND ${table.pricingUnitPrice} >= 0 AND ${table.pricingUnitSize} > 0 AND ${table.pricingCreditsLimit} >= 0)
+        )`,
+      ),
       index("idx_usage_event_billing_run").on(table.billingRunId),
       check(
         "usage_event_billing_context_check",

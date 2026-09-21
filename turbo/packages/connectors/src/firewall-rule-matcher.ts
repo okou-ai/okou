@@ -393,7 +393,12 @@ function matchingRulePath(rule: string, upperMethod: string): string | null {
   const ruleMethod = rule.slice(0, spaceIdx);
   if (!VALID_RULE_METHODS.has(ruleMethod)) return null;
   if (ruleMethod !== "ANY" && ruleMethod !== upperMethod) return null;
-  return rule.slice(spaceIdx + 1);
+  const rest = rule.slice(spaceIdx + 1);
+  // AWS-aware rules need signed request headers and sometimes the body. This
+  // client-side matcher intentionally has neither, so it must not reduce them
+  // to a path-only match. Production evaluation lives in the runner matcher.
+  if (rest.includes(" AWS ")) return null;
+  return rest;
 }
 
 function compileDecisionRule(
@@ -405,6 +410,7 @@ function compileDecisionRule(
   const method = rule.slice(0, spaceIdx);
   if (!VALID_RULE_METHODS.has(method)) return null;
   const path = rule.slice(spaceIdx + 1);
+  if (path.includes(" AWS ")) return null;
   const specificity = pathSpecificity(path);
   if (specificity === null) return null;
   return { permission, raw: rule, method, path, specificity };

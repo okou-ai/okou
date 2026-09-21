@@ -8,6 +8,69 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.648.0](https://github.com/okou-ai/okou/compare/api-v1.647.0...api-v1.648.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+
+
+### Bug Fixes
+
+* **api:** make mcp chat timestamps explicit ([#35738](https://github.com/okou-ai/okou/issues/35738)) ([d7e7529](https://github.com/okou-ai/okou/commit/d7e7529cb90dec882e9ede6b50e55906c2ab7f86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.483.0
+    * @okouai/core bumped to 8.691.0
+    * @okouai/db bumped to 1.282.0
+    * @okouai/pi-agent-runtime bumped to 1.34.3
+
+## [1.647.0](https://github.com/okou-ai/okou/compare/api-v1.646.1...api-v1.647.0) (2026-09-21)
+
+
+### Features
+
+* **connectors:** refresh oauth account identity ([#35780](https://github.com/okou-ai/okou/issues/35780)) ([4e91504](https://github.com/okou-ai/okou/commit/4e915046c91d5cd5723eff7011f34f4ad49db1fb))
+* **model-provider:** gate alternative deepseek routing ([#35775](https://github.com/okou-ai/okou/issues/35775)) ([8cffdc6](https://github.com/okou-ai/okou/commit/8cffdc6ecfd86b58ac65c61c62d20bed6ece2d8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.2
+    * @okouai/connectors bumped to 3.15.0
+    * @okouai/core bumped to 8.690.0
+    * @okouai/db bumped to 1.281.2
+    * @okouai/pi-agent-runtime bumped to 1.34.2
+
+## [1.646.1](https://github.com/okou-ai/okou/compare/api-v1.646.0...api-v1.646.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **templates:** name a shared template's owner instead of their account id ([#35774](https://github.com/okou-ai/okou/issues/35774)) ([2372dfd](https://github.com/okou-ai/okou/commit/2372dfdc21e8c2220571d43e5c56f9c7c5130c3f))
+
+
+### Refactoring
+
+* **mcp:** standardize chat input references ([#35739](https://github.com/okou-ai/okou/issues/35739)) ([8787ed6](https://github.com/okou-ai/okou/commit/8787ed6c473d57f5301f034fbb2fd7f6b0005ccb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.1
+    * @okouai/core bumped to 8.689.3
+    * @okouai/db bumped to 1.281.1
+    * @okouai/pi-agent-runtime bumped to 1.34.1
+
 ## [1.646.0](https://github.com/okou-ai/okou/compare/api-v1.645.0...api-v1.646.0) (2026-09-21)
 
 

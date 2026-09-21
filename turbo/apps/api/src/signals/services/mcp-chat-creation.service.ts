@@ -5,6 +5,7 @@ import type {
   McpCreateChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
@@ -484,12 +485,12 @@ async function createInTransaction(
     titleTruncated: thread.titleTruncated,
     model,
     serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
-    createdAt: thread.createdAt.toISOString(),
+    createdAt: formatMcpChatTimestamp(thread.createdAt),
     url: new URL(`/chats/${thread.id}`, env("APP_URL")).toString(),
     replayed,
-    retryUntil: new Date(
-      acceptedAt.getTime() + CREATION_RETRY_MS,
-    ).toISOString(),
+    retryUntil: formatMcpChatTimestamp(
+      new Date(acceptedAt.getTime() + CREATION_RETRY_MS),
+    ),
     ...(isCombinedCreation(input)
       ? (() => {
           const submission = creation.submission;
@@ -504,10 +505,12 @@ async function createInTransaction(
           return {
             input: {
               inputRef,
-              acceptedAt: submission.acceptedAt.toISOString(),
-              retryUntil: new Date(
-                submission.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
-              ).toISOString(),
+              acceptedAt: formatMcpChatTimestamp(submission.acceptedAt),
+              retryUntil: formatMcpChatTimestamp(
+                new Date(
+                  submission.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
+                ),
+              ),
               disposition: "queued" as const,
               runId: null,
             },
@@ -629,10 +632,12 @@ async function finishCombinedCreation(
       ...args.output,
       input: {
         inputRef,
-        acceptedAt: resolved.receipt.acceptedAt.toISOString(),
-        retryUntil: new Date(
-          resolved.receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
-        ).toISOString(),
+        acceptedAt: formatMcpChatTimestamp(resolved.receipt.acceptedAt),
+        retryUntil: formatMcpChatTimestamp(
+          new Date(
+            resolved.receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
+          ),
+        ),
         ...disposition,
       },
       nextAction: {

@@ -14,7 +14,7 @@ import type { ReadonlyDb } from "../external/db";
 
 export const MCP_SEARCH_CANDIDATE_LIMIT = 100;
 interface McpSearchPosition {
-  readonly createdAt: string;
+  readonly sourceEventAt: string;
   readonly threadId: string;
   readonly seqId: number;
 }
@@ -34,7 +34,7 @@ export function mcpChatSearchCandidates(
     runId: source.runId,
     agentId: source.agentId,
     role: source.role,
-    createdAt: source.createdAt,
+    sourceEventAt: source.createdAt,
     text: source.text,
   };
   const keywordQuery = db
@@ -60,7 +60,7 @@ export function mcpChatSearchCandidates(
           : lt(source.createdAt, sql`${input.before}::timestamp`),
         cursor === null
           ? undefined
-          : sql`(${source.createdAt}, ${source.chatThreadId}, ${source.seqId}) < (${cursor.createdAt}::timestamp, ${cursor.threadId}::uuid, ${cursor.seqId}::bigint)`,
+          : sql`(${source.createdAt}, ${source.chatThreadId}, ${source.seqId}) < (${cursor.sourceEventAt}::timestamp, ${cursor.threadId}::uuid, ${cursor.seqId}::bigint)`,
       ),
     );
   // Keep the Top-N sort outside the complete lexical match. Otherwise rare
@@ -74,7 +74,7 @@ export function mcpChatSearchCandidates(
       seqId: keyword.seqId,
       runId: keyword.runId,
       role: keyword.role,
-      createdAt: keyword.createdAt,
+      sourceEventAt: keyword.sourceEventAt,
       text: keyword.text,
       title: sql`left(${chatThreads.title}, 500)`
         .mapWith(nullableDriverValueDecoder(chatThreads.title))
@@ -105,7 +105,7 @@ export function mcpChatSearchCandidates(
     )
     .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .orderBy(
-      desc(keyword.createdAt),
+      desc(keyword.sourceEventAt),
       desc(keyword.threadId),
       desc(keyword.seqId),
     )
@@ -118,8 +118,8 @@ export function mcpChatSearchCandidates(
       seqId: page.seqId,
       runId: page.runId,
       role: page.role,
-      createdAt:
-        sql`to_char(${page.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+      sourceEventAt:
+        sql`to_char(${page.sourceEventAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
           pgTextDecoder,
         ),
       // No body crosses the DB boundary. Do not detoast/hash an unbounded body;
@@ -136,7 +136,7 @@ export function mcpChatSearchCandidates(
       defaultAgentId: page.defaultAgentId,
     })
     .from(page)
-    .orderBy(desc(page.createdAt), desc(page.threadId), desc(page.seqId));
+    .orderBy(desc(page.sourceEventAt), desc(page.threadId), desc(page.seqId));
 }
 
 export type McpSearchCandidate = Awaited<

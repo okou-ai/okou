@@ -6,6 +6,7 @@ import type {
   McpGetChatStatusOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import type { McpChatInputRef } from "@okouai/api-contracts/contracts/mcp-chat-references";
+import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { trace } from "@opentelemetry/api";
 import {
   runStatusSchema,
@@ -562,7 +563,7 @@ async function projectMcpChatStatus(
   return {
     data: {
       threadId,
-      observedAt: nowDate().toISOString(),
+      observedAt: formatMcpChatTimestamp(nowDate()),
       lifecycle: deriveMcpChatLifecycle(observation),
       messages: selection.run
         ? {

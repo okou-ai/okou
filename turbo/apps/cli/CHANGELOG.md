@@ -1,5 +1,44 @@
 # Changelog
 
+## [9.350.0](https://github.com/okou-ai/okou/compare/cli-v9.349.3...cli-v9.350.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.483.0
+    * @okouai/core bumped to 8.691.0
+    * @okouai/pi-agent-runtime bumped to 1.34.3
+
+## [9.349.3](https://github.com/okou-ai/okou/compare/cli-v9.349.2...cli-v9.349.3) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.482.2
+    * @okouai/connectors bumped to 3.15.0
+    * @okouai/core bumped to 8.690.0
+    * @okouai/pi-agent-runtime bumped to 1.34.2
+
+## [9.349.2](https://github.com/okou-ai/okou/compare/cli-v9.349.1...cli-v9.349.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.482.1
+    * @okouai/core bumped to 8.689.3
+    * @okouai/pi-agent-runtime bumped to 1.34.1
+
 ## [9.349.1](https://github.com/okou-ai/okou/compare/cli-v9.349.0...cli-v9.349.1) (2026-09-21)
 
 

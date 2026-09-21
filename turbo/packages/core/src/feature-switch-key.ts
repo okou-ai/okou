@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  SocialDataJobs = "socialDataJobs",
   DurableUserExport = "_durableUserExport",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
@@ -62,12 +63,14 @@ export enum FeatureSwitchKey {
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
+  DeepSeekAlternativeRouting = "deepSeekAlternativeRouting",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
   GradientColorThemes = "gradientColorThemes",
   AvatarNeckSweater = "avatarNeckSweater",
   AvatarFraming = "avatarFraming",
+  AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatThreadArchiving = "chatThreadArchiving",

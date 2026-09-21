@@ -66,6 +66,7 @@
     "extend": 1,
     "fast-equals": 3,
     "fetch-retry": 3,
+    "fflate": 1,
     "fractional-indexing": 1,
     "github-slugger": 1,
     "hast-util-from-parse5": 1,

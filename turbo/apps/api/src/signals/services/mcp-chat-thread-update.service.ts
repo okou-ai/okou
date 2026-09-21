@@ -3,6 +3,7 @@ import type {
   McpUpdateChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
@@ -122,9 +123,9 @@ export const updateMcpChatThread$ = command(
         titleTruncated: update.state.titleTruncated,
         model,
         serviceTier: update.state.serviceTier,
-        updatedAt: update.state.updatedAt.toISOString(),
-        acceptedAt: update.acceptedAt.toISOString(),
-        retryUntil: update.retryUntil.toISOString(),
+        metadataUpdatedAt: formatMcpChatTimestamp(update.state.updatedAt),
+        acceptedAt: formatMcpChatTimestamp(update.acceptedAt),
+        retryUntil: formatMcpChatTimestamp(update.retryUntil),
         replayed: update.replayed,
         url: new URL(
           `/chats/${update.state.threadId}`,

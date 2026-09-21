@@ -7,6 +7,7 @@ import {
   mcpChatMessageTextSchema,
 } from "./mcp-chat-mutations";
 import { mcpGetChatStatusNextActionSchema } from "./mcp-chat-references";
+import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
 import { mcpChatThreadSchema } from "./mcp-chat-threads";
 
 const requestIdSchema = z.uuid().toLowerCase();
@@ -61,10 +62,10 @@ const createOutputShape = {
   titleTruncated: z.boolean(),
   model: mcpChatThreadSchema.shape.model,
   serviceTier: chatThreadServiceTierSchema.nullable(),
-  createdAt: z.iso.datetime(),
+  createdAt: mcpChatOutputTimestampSchema,
   url: z.url(),
   replayed: z.boolean(),
-  retryUntil: z.iso.datetime(),
+  retryUntil: mcpChatOutputTimestampSchema,
 } as const;
 
 const createOutputBaseSchema = z.strictObject(createOutputShape);

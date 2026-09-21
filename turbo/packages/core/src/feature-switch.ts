@@ -45,6 +45,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SocialDataJobs]: {
+    maintainer: "ethan@okou.ai",
+    description: "Enable bounded public Social data jobs and saved results",
+    enabled: false,
+  },
   [FeatureSwitchKey.DurableUserExport]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -347,6 +352,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.DeepSeekAlternativeRouting]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Skip direct DeepSeek candidates when selecting built-in DeepSeek routes.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -363,6 +375,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Center every avatar's visible artwork in its box and move it halfway to a shared fill, so hair volume stops changing how large an avatar looks.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AvatarTexture]: {
+    maintainer: "tongx@okou.ai",
+    description:
+      "Back the chat home greeting avatar with a brand texture chosen to stay clear of the avatar's own colours, sit it on the frame's bottom edge, and drop the frame's hairline.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -201,7 +201,7 @@ export function readableAttachmentResourceUrl(url: string): string {
   return `${DEV_ARTIFACT_FETCH_PROXY_PATH}?url=${encodeURIComponent(url)}`;
 }
 
-function triggerBlobDownload(blob: Blob, filename: string): void {
+export function triggerBlobDownload(blob: Blob, filename: string): void {
   const blobUrl = URL.createObjectURL(blob);
   triggerAnchorDownload(blobUrl, filename);
   URL.revokeObjectURL(blobUrl);

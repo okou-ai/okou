@@ -9,7 +9,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  useGet,
   useLastLoadable,
   useLastResolved,
   useLoadable,
@@ -35,7 +34,7 @@ import {
   artifactPreviewUrlsMatch,
   publicAttachmentUrl,
 } from "./attachment-url.ts";
-import { lightboxDialogVisible$ } from "../../signals/okou-page/attachment-chips.ts";
+import { bindSidebarImageNavigation$ } from "../../signals/okou-page/artifact-image-navigation.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
 import { jsonParseOr } from "../../signals/utils.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
@@ -49,7 +48,6 @@ import {
   ArtifactActionTooltip,
   ArtifactDownloadMenu,
   ArtifactImageNavigationControls,
-  ArtifactImageNavigationKeydown,
   ArtifactImageZoomControls,
   ArtifactShareButton,
   type ArtifactDownloadSyncTarget,
@@ -1073,7 +1071,10 @@ function ArtifactImageBody({
   url: string;
   filename: string;
 }) {
-  const modalOpen = useGet(lightboxDialogVisible$);
+  const bindNavigation = useSet(bindSidebarImageNavigation$);
+  const hasNavigation = Boolean(
+    imageNavigation?.onPrevious || imageNavigation?.onNext,
+  );
 
   if (resourceUrl === null) {
     return <ArtifactSpinner />;
@@ -1082,16 +1083,11 @@ function ArtifactImageBody({
   return (
     <ArtifactStageShell flush scrollable={false}>
       <ArtifactStageCard fillHeight>
-        <div className="relative h-full min-h-0">
-          {/*
-            The lightbox modal owns arrow keys while open. Focus only matters in
-            the non-fullscreen sidebar, where the composer stays reachable.
-          */}
-          <ArtifactImageNavigationKeydown
-            considerFocus={!fullscreen}
-            enabled={!modalOpen}
-            navigation={imageNavigation}
-          />
+        <div
+          ref={hasNavigation ? bindNavigation : undefined}
+          data-image-navigation-fullscreen={fullscreen}
+          className="relative h-full min-h-0"
+        >
           <ZoomableArtifactImageCanvas
             key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
             src={resourceUrl}
