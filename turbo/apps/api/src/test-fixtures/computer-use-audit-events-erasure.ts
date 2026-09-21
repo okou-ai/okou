@@ -1,6 +1,7 @@
 import {
   barrierQueryBinds,
   barrierQueryText,
+  isErasureSubjectClosureLookup,
   withDatabaseTransactionBarrierFixture,
   type SelectedTransaction,
   type TransactionBarrier,
@@ -17,17 +18,6 @@ interface AuditEventProjectionIdentity {
   readonly commandId?: string;
   readonly hostId?: string;
   readonly runId?: string;
-}
-
-/** The read path takes no advisory lock, so its own closure lookup is the
- * first statement that identifies this transaction. */
-function auditEventClosureLookup(queryArgs: unknown[], orgId: string): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes('from "account_erasure_jobs"') &&
-    barrierQueryBinds(queryArgs, orgId)
-  );
 }
 
 function isAuditEventProjection(
@@ -81,7 +71,9 @@ export async function withComputerUseAuditEventsBarrierFixture<T>(
   return await withDatabaseTransactionBarrierFixture(
     {
       select: (queryArgs) => {
-        return auditEventClosureLookup(queryArgs, args.orgId);
+        return isErasureSubjectClosureLookup(queryArgs, {
+          subjectId: args.orgId,
+        });
       },
       stopAt: (queryArgs, _selectingStatement, transaction) => {
         const text = barrierQueryText(queryArgs);

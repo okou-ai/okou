@@ -6,6 +6,7 @@ import { db } from "../lib/db";
 import {
   barrierQueryBinds,
   barrierQueryText,
+  isErasureSubjectClosureLookup,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
 } from "./account-erasure-subject";
@@ -13,20 +14,6 @@ import {
 interface ComputerUseContentReadBarrier extends TransactionBarrier {
   /** Exact statements issued by the selected transaction, including control. */
   readonly statements: () => readonly string[];
-}
-
-/** The read path takes no advisory lock, so its own closure lookup is the
- * first statement that identifies this transaction. */
-function contentReadClosureLookup(
-  queryArgs: unknown[],
-  orgId: string,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes('from "account_erasure_jobs"') &&
-    barrierQueryBinds(queryArgs, orgId)
-  );
 }
 
 function isContentProjection(
@@ -88,13 +75,15 @@ export async function withComputerUseContentReadBarrierFixture<T>(
         }
         if (
           selectedReceiver === undefined &&
-          contentReadClosureLookup(queryArgs, args.orgId)
+          isErasureSubjectClosureLookup(queryArgs, { subjectId: args.orgId })
         ) {
           selectedReceiver = receiver;
         }
       },
       select: (queryArgs) => {
-        return contentReadClosureLookup(queryArgs, args.orgId);
+        return isErasureSubjectClosureLookup(queryArgs, {
+          subjectId: args.orgId,
+        });
       },
       stopAt: (queryArgs) => {
         const text = barrierQueryText(queryArgs);

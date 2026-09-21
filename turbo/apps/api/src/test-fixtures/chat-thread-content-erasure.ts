@@ -264,11 +264,21 @@ function isMetadataProjectionRead(
   );
 }
 
-/** The first statement shared B1 admission issues, before any advisory lock and
- * before its closure lookup. Pausing here leaves the identity already resolved
- * and admission not yet begun. */
-function isErasureAdmissionStart(queryArgs: unknown[]): boolean {
-  return barrierQueryText(queryArgs).includes("erasure_isolation_probe");
+/** The first statement a fenced transaction issues after its canonical identity
+ * is resolved.
+ *
+ * On the write path that is B1's own advisory-lock statement. On the lock-free
+ * read path admission is folded into the identity statement itself, so there is
+ * no separate admission statement and this is the caller's first real read.
+ * Either way pausing here leaves the identity resolved and admitted, and
+ * nothing the transaction owns yet written or projected, which is the point a
+ * test moves canonical ownership from.
+ */
+function isAfterIdentityResolution(
+  identityRead: boolean,
+  transaction: SelectedTransaction,
+): boolean {
+  return !identityRead && transaction.statements.length > 0;
 }
 
 /** The generated-title gate's own bounded prior-round read. Only that workflow
@@ -326,6 +336,16 @@ function tookIdentityLock(transaction: SelectedTransaction): boolean {
   });
 }
 
+/** A lock-free read revalidates by reading the same content-free identity a
+ * second time, which is the last statement it issues before COMMIT. */
+function revalidatedIdentity(transaction: SelectedTransaction): boolean {
+  return (
+    transaction.statements.filter((statement) => {
+      return statement.includes('from "chat_threads" left join "agents"');
+    }).length >= 2
+  );
+}
+
 /**
  * Where the paused transaction stops. `identity` precedes subject admission and
  * `admission` sits between the resolved identity and B1's first statement, both
@@ -349,6 +369,8 @@ function tookIdentityLock(transaction: SelectedTransaction): boolean {
  * still guaranteed. Pausing at `commit` is already past that check, so a
  * cancellation arriving there races a `COMMIT` that still succeeds.
  */
+type ChatThreadContentBarrierAdmission = "write" | "read";
+
 type ChatThreadContentBarrierStop =
   | "identity"
   | "admission"
@@ -376,12 +398,13 @@ function reachedBarrierStop(
   identityRead: boolean,
   chatThreadId: string,
   transaction: SelectedTransaction,
+  admission: ChatThreadContentBarrierAdmission,
 ): boolean {
   if (stop === "identity") {
     return identityRead;
   }
   if (stop === "admission") {
-    return isErasureAdmissionStart(queryArgs);
+    return isAfterIdentityResolution(identityRead, transaction);
   }
   if (stop === "title-context") {
     return isTitleContextRead(queryArgs, chatThreadId);
@@ -412,9 +435,15 @@ function reachedBarrierStop(
       chatThreadId,
     );
   }
-  return (
-    barrierQueryText(queryArgs) === "commit" && tookIdentityLock(transaction)
-  );
+  if (barrierQueryText(queryArgs) !== "commit") {
+    return false;
+  }
+  // A writer is recognized by the identity lock it retains. A lock-free read
+  // has none, so its own completed revalidation is what distinguishes it from
+  // any earlier transaction that merely read the same thread.
+  return admission === "read"
+    ? revalidatedIdentity(transaction)
+    : tookIdentityLock(transaction);
 }
 
 /** Pauses the draft or rename transaction opened for one thread. See
@@ -425,6 +454,9 @@ export async function withChatThreadContentBarrierFixture<T>(
   args: {
     readonly chatThreadId: string;
     readonly stopAt: ChatThreadContentBarrierStop;
+    /** Defaults to the write path. A route on the lock-free read path takes no
+     * identity lock, so `commit` recognizes its transaction differently. */
+    readonly admission?: ChatThreadContentBarrierAdmission;
     readonly work: (barrier: TransactionBarrier) => Promise<T>;
   },
   signal: AbortSignal,
@@ -441,6 +473,7 @@ export async function withChatThreadContentBarrierFixture<T>(
           selectingStatement,
           args.chatThreadId,
           transaction,
+          args.admission ?? "write",
         );
       },
       pauseAfter: pausesAfterStatement(args.stopAt),
@@ -498,10 +531,12 @@ export async function withChatThreadMetadataSqlControlFixture<T>(
 }
 
 /**
- * Pauses the first metadata attempt before its Agent lock while observing each
- * real transaction on its own driver client. A test can move canonical identity
- * there, then account for the failed attempt's ROLLBACK and the bounded retry's
- * final COMMIT without counting the infrastructure mutation transaction.
+ * Pauses the first metadata attempt before its projection while observing each
+ * real transaction on its own driver client. The lock-free read takes no Agent
+ * lock, so this is the last point at which a test can move canonical identity
+ * and still have the attempt's own post-read revalidation observe it. The test
+ * then accounts for the failed attempt's ROLLBACK and the bounded retry's final
+ * COMMIT without counting the infrastructure mutation transaction.
  */
 export async function withChatThreadMetadataRetrySqlControlFixture<T>(
   args: {
@@ -519,7 +554,7 @@ export async function withChatThreadMetadataRetrySqlControlFixture<T>(
         return isContentIdentityRead(queryArgs, args.chatThreadId);
       },
       stopAt: (queryArgs) => {
-        return isContentLock(queryArgs, "agents");
+        return isMetadataProjectionRead(queryArgs, args.chatThreadId);
       },
       observe: (queryArgs, receiver) => {
         const text = barrierQueryText(queryArgs);

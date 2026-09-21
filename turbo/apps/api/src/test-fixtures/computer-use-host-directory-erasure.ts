@@ -1,6 +1,7 @@
 import {
   barrierQueryBinds,
   barrierQueryText,
+  isErasureSubjectClosureLookup,
   withDatabaseTransactionBarrierFixture,
   type SelectedTransaction,
   type TransactionBarrier,
@@ -9,20 +10,6 @@ import {
 interface ComputerUseHostDirectoryBarrier extends TransactionBarrier {
   /** Actual statements from the B1 closure lookup through the paused phase. */
   readonly statements: () => readonly string[];
-}
-
-/** The read path takes no advisory lock, so its own closure lookup is the
- * first statement that identifies this transaction. */
-function hostDirectoryClosureLookup(
-  queryArgs: unknown[],
-  orgId: string,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  return (
-    text.startsWith("select") &&
-    text.includes('from "account_erasure_jobs"') &&
-    barrierQueryBinds(queryArgs, orgId)
-  );
 }
 
 function isHostDirectoryProjection(
@@ -71,7 +58,9 @@ export async function withComputerUseHostDirectoryBarrierFixture<T>(
   return await withDatabaseTransactionBarrierFixture(
     {
       select: (queryArgs) => {
-        return hostDirectoryClosureLookup(queryArgs, args.orgId);
+        return isErasureSubjectClosureLookup(queryArgs, {
+          subjectId: args.orgId,
+        });
       },
       stopAt: (queryArgs, _selectingStatement, transaction) => {
         const text = barrierQueryText(queryArgs);
