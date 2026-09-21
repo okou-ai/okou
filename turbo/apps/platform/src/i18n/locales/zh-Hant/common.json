@@ -1460,11 +1460,9 @@
           },
           "later": "以後再說",
           "slack": {
-            "appBadge": "APP",
             "confirm": "新增到 Slack",
             "description": "把 {{assistantName}} 新增到團隊的 Slack 工作區。",
             "note": "同事不用再先來找你。他們在頻道里提一句，結果就回到同一個會話裡，所有人都看得到。",
-            "sampleChannel": "# growth",
             "title": "在團隊日常溝通的地方和 {{assistantName}} 協作"
           },
           "workflow": {
