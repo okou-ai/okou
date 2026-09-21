@@ -528,6 +528,56 @@ describe("Browser user-action route", () => {
       body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
     });
 
+    const optionalBlankCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue without changing the optional username",
+          fields: [
+            {
+              key: "username",
+              label: "Username",
+              fieldKind: "username",
+              required: false,
+              selector: "#username",
+            },
+            {
+              key: "password",
+              label: "Password",
+              fieldKind: "password",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const optionalBlankApplied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: optionalBlankCandidate.body.action.requestToken,
+        },
+        body: {
+          values: [
+            { key: "username", value: "" },
+            { key: "password", value: "required-only" },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(optionalBlankApplied.body.state).toBe("succeeded");
+    const optionalBlankWrite = browserInputWrites().at(-1);
+    expect(optionalBlankWrite?.[0].params.objectId).toBe(
+      "native-password-object",
+    );
+    expect(optionalBlankWrite?.[0].params.arguments).toStrictEqual([
+      { value: "required-only" },
+    ]);
+
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;

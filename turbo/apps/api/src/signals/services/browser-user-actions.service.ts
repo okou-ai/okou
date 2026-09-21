@@ -787,7 +787,14 @@ function submittedValues(
       "A required Browser input value is missing",
     );
   }
-  return { kind: "ok", value: values };
+  return {
+    kind: "ok",
+    value: new Map(
+      input.values.flatMap((entry) => {
+        return entry.value.length === 0 ? [] : [[entry.key, entry.value]];
+      }),
+    ),
+  };
 }
 
 async function applyClaimedBrowserUserAction(
