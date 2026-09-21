@@ -72,13 +72,19 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         ),
     ] {
         let expects_serial_fallback = framework == CliFramework::Pi;
-        let (framework, history, session_id, expected_path): (&str, &[u8], &str, String) =
-            match framework {
+        let (framework, history, session_id, expected_path, storage_root): (
+            &str,
+            &[u8],
+            &str,
+            String,
+            &str,
+        ) = match framework {
             CliFramework::ClaudeCode => (
                 "claude-code",
                 HISTORY,
                 "sess-blank-history",
                 "/home/user/.claude/projects/-home-user-workspace/sess-blank-history.jsonl".into(),
+                "/home/user/.claude/projects/-home-user-workspace",
             ),
             CliFramework::Pi => (
                 "pi",
@@ -86,12 +92,14 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
                 "22222222-2222-4222-8222-222222222222",
                 format!("{}/restored-22222222-2222-4222-8222-222222222222.jsonl",
                     api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR),
+                "/home/user/.pi/agent/sessions/--home-user-workspace--",
             ),
             CliFramework::Codex => (
                 "codex",
                 br#"{"type":"session_meta","payload":{"id":"019e9154-c304-70f0-adde-36efb1be1701","timestamp":"2026-07-13T01:02:03Z"}}"#,
                 "019e9154-c304-70f0-adde-36efb1be1701",
                 "/home/user/.codex/sessions/2026/07/13/rollout-2026-07-13T01-02-03-019e9154-c304-70f0-adde-36efb1be1701.jsonl.zst".into(),
+                "/home/user/.codex/sessions",
             ),
         };
         let encoded = match encoding {
@@ -136,6 +144,7 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         let run_id = RunId::new_v4();
         let mut context = history_context(run_id, server.url(), history);
         context.cli_agent_type = framework.into();
+        context.storage_manifest.as_mut().unwrap().artifacts[0].mount_path = storage_root.into();
         if framework == "pi" {
             context.pi_session_id = Some(session_id.into());
             context.pi_launch_config = Some(serde_json::json!({
@@ -169,6 +178,11 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         push_job(&env, run_id, "vm0/default", Some(context));
 
         storage_gate.wait_entered(1, WAIT).await.unwrap();
+        let storage_calls = overrides.storage_manifest_calls();
+        assert_eq!(storage_calls.len(), 1);
+        let guest_manifest: guest_contracts::storage_manifest::Manifest =
+            serde_json::from_slice(&storage_calls[0].manifest_json).unwrap();
+        assert_eq!(guest_manifest.artifacts[0].mount_path, storage_root);
         // Storage is still blocked: release materialization and prove the
         // exact history bytes are staged without touching the canonical path.
         server

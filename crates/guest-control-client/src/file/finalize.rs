@@ -522,6 +522,24 @@ mod tests {
     }
 
     #[test]
+    fn publish_creates_missing_destination_parents_after_staging() {
+        let temp = tempfile::tempdir().unwrap();
+        let staging = temp.path().join("staging");
+        let parent = temp.path().join("missing").join("nested");
+        let destination = parent.join("history.jsonl");
+        let sibling = parent.join(".vm0tmp-test");
+        fs::write(&staging, b"history").unwrap();
+
+        let output = run_shell(&publish_for_test(&staging, &destination, &sibling), None);
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout, PUBLISHED_SAME);
+        assert_eq!(fs::read(destination).unwrap(), b"history");
+        assert!(!staging.exists());
+        assert!(!sibling.exists());
+    }
+
+    #[test]
     fn cross_device_copy_and_rename_failures_remove_partial_sibling() {
         for failing_command in ["cp", "mv"] {
             let temp = tempfile::tempdir().unwrap();
