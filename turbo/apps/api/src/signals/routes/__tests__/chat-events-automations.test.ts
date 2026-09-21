@@ -86,7 +86,7 @@ async function extractOwnedThreadPiMemory(
   }
   // Built-in extraction resolves its own model, independent of the source
   // thread's foreground model.
-  await seedBuiltInModelKey("deepseek-v4-flash");
+  await seedBuiltInModelKey("deepseek-v4.1-flash");
   const requests: unknown[] = [];
   server.use(
     http.post(
