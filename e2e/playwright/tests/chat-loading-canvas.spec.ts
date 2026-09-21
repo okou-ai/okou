@@ -23,6 +23,80 @@ test.use({
   viewport: { width: 1440, height: 900 },
 });
 
+async function throttleChatWorker(page: Page, orgId: string) {
+  const browser = page.context().browser();
+  if (!browser) throw new Error("Canvas verification requires Chromium");
+  const session = await browser.newBrowserCDPSession();
+  const { targetInfos } = await session.send("Target.getTargets");
+  const worker = targetInfos.find((target) => {
+    return (
+      target.type === "shared_worker" &&
+      new URL(target.url).searchParams.get("orgId") === orgId
+    );
+  });
+  if (!worker) {
+    await session.detach();
+    throw new Error("Expected the account's chat database SharedWorker");
+  }
+  const { sessionId } = await session.send("Target.attachToTarget", {
+    targetId: worker.targetId,
+    flatten: false,
+  });
+  // Page routes do not intercept SharedWorker requests. Apply Chromium network
+  // latency while loading; assertions still wait for visible states, not a timer.
+  let commandId = 0;
+  async function send(method: string, params: Record<string, unknown> = {}) {
+    const id = ++commandId;
+    const result = new Promise<void>((resolve, reject) => {
+      const listener = (event: { sessionId: string; message: string }) => {
+        if (event.sessionId !== sessionId) return;
+        const data: unknown = JSON.parse(event.message);
+        if (
+          typeof data !== "object" ||
+          data === null ||
+          !("id" in data) ||
+          data.id !== id
+        )
+          return;
+        session.off("Target.receivedMessageFromTarget", listener);
+        if ("error" in data) reject(new Error(`SharedWorker ${method} failed`));
+        else resolve();
+      };
+      session.on("Target.receivedMessageFromTarget", listener);
+    });
+    await session.send("Target.sendMessageToTarget", {
+      sessionId,
+      message: JSON.stringify({ id, method, params }),
+    });
+    await result;
+  }
+  async function throttle(latency: number) {
+    await send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+    });
+  }
+  try {
+    await send("Network.enable");
+    await throttle(8000);
+  } catch (error) {
+    await session.detach();
+    throw error;
+  }
+  return {
+    release: () => throttle(0),
+    close: async () => {
+      try {
+        await throttle(0);
+      } finally {
+        await session.detach();
+      }
+    },
+  };
+}
+
 async function selectAppearance(page: Page, theme: string, palette: string) {
   const settings = page.getByRole("dialog", { name: "Settings" });
   await settings.getByRole("button", { name: theme, exact: true }).click();
@@ -84,12 +158,12 @@ test("the workspace canvas stays continuous while chat history loads", async ({
           headers: authHeadersForToken(token),
           data: {
             agentId,
-            model: "claude-sonnet-4-6",
+            model: "gpt-5.6-luna",
             title: `${palette} ${theme} canvas`,
           },
         },
       );
-      expect(created.status()).toBe(201);
+      expect(created.status(), await created.text()).toBe(201);
       const body: unknown = await created.json();
       if (
         typeof body !== "object" ||
@@ -113,15 +187,7 @@ test("the workspace canvas stays continuous while chat history loads", async ({
         );
       }
 
-      let releaseHistory!: () => void;
-      const historyReady = new Promise<void>((resolve) => {
-        releaseHistory = resolve;
-      });
-      const rowsUrl = `${apiUrl}/api/chat-threads/${threadId}/event-rows*`;
-      await page.route(rowsUrl, async (route) => {
-        await historyReady;
-        await route.continue();
-      });
+      const network = await throttleChatWorker(page, orgId);
       try {
         await page.locator(`a[href="/chats/${threadId}"]`).click();
         const loading = page.locator("[data-chat-skeleton]");
@@ -147,7 +213,7 @@ test("the workspace canvas stays continuous while chat history loads", async ({
           body: await page.screenshot(),
           contentType: "image/png",
         });
-        releaseHistory();
+        await network.release();
         await expect(
           page.getByText("Send a message to start the conversation", {
             exact: true,
@@ -162,8 +228,7 @@ test("the workspace canvas stays continuous while chat history loads", async ({
           ).toBe(true);
         }
       } finally {
-        releaseHistory();
-        await page.unrouteAll({ behavior: "wait" });
+        await network.close();
       }
     }
   }
