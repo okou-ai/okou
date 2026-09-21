@@ -17,6 +17,7 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
+  assertStableContextStorageWriteLockUnavailableFixture,
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
   deleteExpiredOwnedPiStableContextArtifactFixture,
@@ -37,6 +38,7 @@ import {
   holdWorkflowDeleteBeforeErasureAdmissionFixture,
   holdWorkflowUpdateAfterMetadataMutationFixture,
   observeClerkAgentLifecycleBeforeAgentLockFixture,
+  observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture,
   holdWorkflowUpdateBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
@@ -694,7 +696,7 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
   );
 });
 
-test("completes signed Agent-owner erasure after overlapping scoped artifact GC", async () => {
+test("completes signed Agent-owner erasure after proving scoped artifact GC conflict", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -748,17 +750,20 @@ test("completes signed Agent-owner erasure after overlapping scoped artifact GC"
     })(),
     (async () => {
       await gcEntered.promise;
-      observeClerkAgentLifecycleBeforeAgentLockFixture(async (_tx, agentId) => {
-        if (agentId !== agent.body.agentId) {
-          return;
-        }
-        // The following multi-Agent case proves the production Storage lock
-        // order. This public-boundary case only needs the real operations to
-        // overlap: let GC commit before cleanup enters its 100 ms production
-        // lock deadline.
-        releaseGc.resolve();
-        await gcCommitted.promise;
-      });
+      observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture(
+        async (tx) => {
+          // Prove this exact cleanup transaction conflicts with GC's retained
+          // Storage lock without spending its 100 ms production lock deadline
+          // on JavaScript scheduling. The savepoint contains the expected
+          // NOWAIT refusal before the real lock acquisition proceeds.
+          await assertStableContextStorageWriteLockUnavailableFixture(
+            tx,
+            instructions.storageId,
+          );
+          releaseGc.resolve();
+          await gcCommitted.promise;
+        },
+      );
       await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure");
     })(),
   ]);

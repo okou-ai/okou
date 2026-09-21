@@ -103,6 +103,21 @@ export function observeClerkAgentLifecycleBeforeAgentLockFixture(
   });
 }
 
+export function observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture(
+  observe: NonNullable<
+    Parameters<
+      typeof setClerkAgentLifecycleHooksForTest
+    >[0]["beforeInstructionsStorageLocks"]
+  >,
+): void {
+  setClerkAgentLifecycleHooksForTest({
+    beforeInstructionsStorageLocks: observe,
+  });
+  onTestFinished(() => {
+    clearClerkAgentLifecycleHooksForTest();
+  });
+}
+
 export function holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture(
   hold: NonNullable<
     Parameters<
