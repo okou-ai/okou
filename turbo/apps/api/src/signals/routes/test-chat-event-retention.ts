@@ -64,6 +64,8 @@ const resolveSessionPromptFixturesRoute$ = command(
         computerUseHostDisplayName: null,
         triggerSource: "web",
         agentRunSource: null,
+        // This fixture resolves the rotated prior-round replay, not the
+        // surface note, so it has no feature-switch context to resolve one.
         integrationNote: "",
       },
     });

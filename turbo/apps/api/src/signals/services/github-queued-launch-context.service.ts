@@ -13,6 +13,7 @@ import {
   type GitHubDeliveryTarget,
 } from "./github-chat-callback-payload";
 import { buildGitHubPrompt } from "./github-chat-prompt.service";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface GitHubQueuedLaunchMaterial {
@@ -129,6 +130,7 @@ export async function loadGitHubQueuedLaunchMaterial(
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<GitHubQueuedLaunchMaterial | null> {
   const context = await loadGitHubLaunchContext(db, args);
@@ -147,7 +149,7 @@ export async function loadGitHubQueuedLaunchMaterial(
       appSlug: context.appSlug,
       integrationNote: resolveIntegrationNotePrompt({
         triggerSource: "github",
-        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+        featureSwitchContext: args.featureSwitchContext,
       }),
     }),
     githubDelivery: githubDeliveryTargetSchema.parse({

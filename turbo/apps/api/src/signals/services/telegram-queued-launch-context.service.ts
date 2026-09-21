@@ -15,6 +15,7 @@ import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { buildTelegramPrompt } from "./telegram-prompt";
 
@@ -200,6 +201,7 @@ export async function loadTelegramQueuedLaunchMaterial(
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<TelegramQueuedLaunchMaterial | null> {
   const context = await loadTelegramLaunchContext(db, args);
@@ -243,7 +245,7 @@ export async function loadTelegramQueuedLaunchMaterial(
       },
       resolveIntegrationNotePrompt({
         triggerSource: "telegram",
-        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+        featureSwitchContext: args.featureSwitchContext,
       }),
       context.threadContext,
     ),

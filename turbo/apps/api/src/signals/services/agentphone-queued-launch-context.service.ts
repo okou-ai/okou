@@ -13,6 +13,7 @@ import {
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
 import { buildAgentPhonePrompt } from "./agentphone-prompt";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface AgentPhoneQueuedLaunchMaterial {
@@ -149,6 +150,7 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<AgentPhoneQueuedLaunchMaterial | null> {
   const context = await loadAgentPhoneLaunchContext(db, args);
@@ -169,7 +171,7 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
       },
       resolveIntegrationNotePrompt({
         triggerSource: "agentphone",
-        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+        featureSwitchContext: args.featureSwitchContext,
       }),
       context.threadContext,
     ),

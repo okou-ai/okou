@@ -2891,6 +2891,9 @@ interface QueuedLaunchLoaderArgs {
   readonly chatThreadId: string;
   readonly orgId: string;
   readonly userId: string;
+  // The surface note and `# Agent Tools` must agree on every switch, so both
+  // read the same override-aware context this admission already loaded.
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly contextType: QueuedUserMessageContextType;
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
@@ -2925,7 +2928,7 @@ const loadWebQueuedLaunchMaterial: LaunchLoader = (_db, args) => {
         agentRunSource: args.agentRunSource,
         integrationNote: resolveIntegrationNotePrompt({
           triggerSource,
-          featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+          featureSwitchContext: args.featureSwitchContext,
         }),
       },
     }),
@@ -2975,6 +2978,7 @@ function launchLoader<Material extends NativeQueuedLaunchMaterial>(
 async function resolveQueuedLaunchMaterial(
   args: CreateQueuedChatRunInputArgs & {
     readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<QueuedLaunchMaterial> {
   const contextType = args.queuedMessage.contextType;
@@ -3052,6 +3056,7 @@ async function resolveQueuedLaunchMaterial(
     chatThreadId: args.threadId,
     orgId: args.agent.orgId,
     userId: args.userId,
+    featureSwitchContext: args.featureSwitchContext,
     contextType: args.queuedMessage.contextType,
     userMessageProjection: args.userMessageProjection,
     publicBrand: args.queuedMessage.publicBrand,
@@ -3302,6 +3307,7 @@ async function resolveQueuedMessageTemplateContext(args: {
 async function loadQueuedRunMaterial(
   args: CreateQueuedChatRunInputArgs & {
     readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ) {
   return await resolveQueuedLaunchMaterial(args);
@@ -3370,6 +3376,7 @@ async function buildCreateQueuedChatRunInput(
   const launchMaterial = await loadQueuedRunMaterial({
     ...args,
     userMessageProjection,
+    featureSwitchContext,
   });
   if (args.queuedMessage.autonomyBudget.kind !== "ok") {
     return queuedMessageAdmissionFailure(args, launchMaterial, {

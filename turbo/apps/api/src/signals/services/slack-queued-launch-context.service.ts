@@ -13,6 +13,7 @@ import {
 } from "../../lib/slack-webhook-context";
 import type { SlackUserInfo } from "../external/slack-message-client";
 import type { Db } from "../external/db";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface SlackQueuedLaunchMaterial {
@@ -168,6 +169,7 @@ export async function loadSlackQueuedLaunchMaterial(
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<SlackQueuedLaunchMaterial | null> {
   const context = await loadSlackLaunchContext(db, args);
@@ -191,7 +193,7 @@ export async function loadSlackQueuedLaunchMaterial(
       threadTs: context.threadTs,
       integrationNote: resolveIntegrationNotePrompt({
         triggerSource: "slack",
-        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+        featureSwitchContext: args.featureSwitchContext,
       }),
       executionContext: context.conversationContext,
     }),

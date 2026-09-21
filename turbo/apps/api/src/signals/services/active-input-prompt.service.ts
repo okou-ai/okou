@@ -231,13 +231,18 @@ function isContextBackedContextType(
 async function loadIntegrationPromptMaterial(
   db: Db,
   event: ActiveInputPromptEvent,
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
 ): Promise<IntegrationPromptMaterial | null> {
   const loaderArgs = {
     eventId: event.id,
     chatThreadId: event.chatThreadId,
     orgId: args.orgId,
     userId: args.userId,
+    featureSwitchContext: args.featureSwitchContext,
   };
   switch (event.contextType) {
     case "slack": {
