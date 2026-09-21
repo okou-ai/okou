@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.692.0](https://github.com/okou-ai/okou/compare/core-v8.691.0...core-v8.692.0) (2026-09-21)
+
+
+### Features
+
+* **api:** add the token-authenticated skill import service ([#35813](https://github.com/okou-ai/okou/issues/35813)) ([8b54e49](https://github.com/okou-ai/okou/commit/8b54e494a7115ac3c5fa3125c7ef425d7bbf1f8e))
+* **platform:** hide video discovery entries for new accounts ([#35790](https://github.com/okou-ai/okou/issues/35790)) ([c8dd8ba](https://github.com/okou-ai/okou/commit/c8dd8ba9e605f13c97a011728fb881834b9f343e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.484.0
+
 ## [8.691.0](https://github.com/okou-ai/okou/compare/core-v8.690.0...core-v8.691.0) (2026-09-21)
 
 
