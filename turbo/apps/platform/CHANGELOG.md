@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.929.2](https://github.com/okou-ai/okou/compare/app-v0.929.1...app-v0.929.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **platform:** link a url written straight after an ordinal ([#35703](https://github.com/okou-ai/okou/issues/35703)) ([7bc0c7c](https://github.com/okou-ai/okou/commit/7bc0c7cba481e41156c17618231401b7b452bbf7))
+* refresh api, platform, and runner release markers ([#35702](https://github.com/okou-ai/okou/issues/35702)) ([8f8e88a](https://github.com/okou-ai/okou/commit/8f8e88a73d84e449e46befc07d74f8ee340a73f7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.689.0
+
 ## [0.929.1](https://github.com/okou-ai/okou/compare/app-v0.929.0...app-v0.929.1) (2026-09-20)
 
 
