@@ -8,7 +8,7 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 // Account age, workspace changes and billing updates must not move the cohort.
 const VIDEO_PICKER_ACCOUNT_CUTOFF = Date.parse("2026-09-21T07:13:25.000Z");
 
-/** Picker visibility only; generation permissions remain independent. */
+/** Picker and onboarding visibility; generation permissions remain independent. */
 export const videoPickersVisible$ = computed(async (get) => {
   const user = await get(clerkUser$);
   if (!user) {

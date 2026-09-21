@@ -60,7 +60,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.NewUserVideoPickers]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Show video models and avatar/video templates in pickers for new accounts",
+      "Show video models, avatar/video templates, and the video onboarding choice for new accounts",
     enabled: false,
   },
   [FeatureSwitchKey.RunUsage]: {
