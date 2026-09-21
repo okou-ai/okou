@@ -2,6 +2,8 @@
 
 mod containment;
 
+pub use containment::ContainmentRejection;
+
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
