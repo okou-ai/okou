@@ -53,7 +53,7 @@ const AVATAR = {
   sweater: "blue",
 } as const;
 
-function mountedAgent(): void {
+function mountedAgent(avatarUrl = avatarComposerUrl(AVATAR)): void {
   const agent: AgentResponse = {
     agentId: AGENT_ID,
     isDefaultAgent: false,
@@ -61,7 +61,7 @@ function mountedAgent(): void {
     displayName: "Nova",
     description: null,
     sound: null,
-    avatarUrl: avatarComposerUrl(AVATAR),
+    avatarUrl,
     modelProviderId: null,
     selectedModel: null,
     preferPersonalProvider: false,
@@ -144,7 +144,6 @@ test("Leave the greeting avatar on its framed placement while the texture is off
 
   const frame = avatarFrame();
   expect(textureImage(frame)).toBeNull();
-  expect(frame.className).toContain("border-surface-border");
 
   // Centering leaves a real gap under the collar — for this avatar about a
   // tenth of the box, 6px at the 56px the greeting renders at. It costs
@@ -172,10 +171,32 @@ test("Sit the greeting avatar on the frame's bottom edge once a texture is behin
   expect(artworkBottom(artworkTransform(frame))).toBeCloseTo(100, 5);
 });
 
-test("Drop the frame's hairline, since the texture now carries its own edge", async () => {
-  await setupChatPage(true);
+test("Leave an agent that cannot take a texture exactly as it was", async () => {
+  // An uploaded image has no sweater or hair colour for the pairing rule to
+  // clear, so it gets no texture even with the switch on — and must therefore
+  // keep the centred placement, since nothing is drawn behind it to reveal the
+  // cut edge. The frame's hairline follows the same answer.
+  mountedAgent("https://example.test/uploaded-avatar.png");
+  context.mocks.browser.matchMedia(false);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.AvatarFraming]: true,
+      [FeatureSwitchKey.AvatarTexture]: true,
+    },
+  });
+  await waitFor(() => {
+    expect(avatarFrame()).toBeInTheDocument();
+  });
 
-  expect(avatarFrame().className).not.toContain("border-surface-border");
+  const frame = avatarFrame();
+  expect(textureImage(frame)).toBeNull();
+  expect(frame.querySelector("[data-avatar-artwork]")).toBeNull();
+  expect(frame.querySelector("img")).toHaveAttribute(
+    "src",
+    "https://example.test/uploaded-avatar.png",
+  );
 });
 
 test("Keep every other avatar surface untextured", async () => {

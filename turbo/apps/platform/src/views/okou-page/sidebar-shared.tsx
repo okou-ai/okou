@@ -108,13 +108,38 @@ export function AvatarFromUrl({
 }
 
 /** Reactive avatar image that respects DB-persisted and user overrides. */
+/**
+ * The brand texture for one agent, or null when it cannot have one.
+ *
+ * Only composer avatars qualify: a texture is chosen to clear the avatar's own
+ * sweater and hair colours, and an uploaded image, the flat default avatar, and
+ * the legacy `svg:` configurations have no such colours to clear. Pass a null
+ * id to opt out entirely — the hook still runs, so callers stay unconditional.
+ *
+ * Exported because the frame around the avatar changes with the answer: with a
+ * texture the frame's own hairline is redundant, and without one it is still
+ * the only edge the artwork has.
+ */
+export function useAgentAvatarTexture(id: string | null): string | null {
+  const { rawAvatarUrl } = useAgentAvatarState(id ?? "");
+  if (id === null) {
+    return null;
+  }
+  const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
+  if (!svgConfig || isLegacyAvatarSvgConfig(svgConfig)) {
+    return null;
+  }
+  const texture = agentAvatarTexture(id, svgConfig);
+  return texture ? avatarTextureUrl(texture) : null;
+}
+
 export function AgentAvatarImg({
   name,
   alt,
   className,
   size,
   preserveChinBaseline = false,
-  textured = false,
+  textureUrl,
   "data-testid": testId,
 }: {
   name: string;
@@ -123,12 +148,11 @@ export function AgentAvatarImg({
   size?: number;
   preserveChinBaseline?: boolean;
   /**
-   * Back the avatar with a brand texture. Off everywhere but the chat home
-   * greeting, which is the only surface that shows one agent large enough for
-   * a texture to read. Resolving the avatar here rather than at the call site
-   * keeps one owner for the composer URL.
+   * Brand texture to draw behind the artwork, from `useAgentAvatarTexture`.
+   * Only the chat home greeting passes one; it is the single surface that
+   * shows one agent large enough for a brush mark to read as a brush mark.
    */
-  textured?: boolean;
+  textureUrl?: string;
   "data-testid"?: string;
 }) {
   const { src, rawAvatarUrl } = useAgentAvatarState(name);
@@ -136,18 +160,12 @@ export function AgentAvatarImg({
   // SVG avatar (preset or custom svg:)
   const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
   if (svgConfig) {
-    // Legacy configurations carry no sweater or hair colour, so there is
-    // nothing to check a texture against and they stay untextured.
-    const texture =
-      textured && !isLegacyAvatarSvgConfig(svgConfig)
-        ? agentAvatarTexture(name, svgConfig)
-        : null;
     return (
       <AvatarSvgPreview
         config={svgConfig}
         size={size}
         preserveChinBaseline={preserveChinBaseline}
-        textureUrl={texture ? avatarTextureUrl(texture) : undefined}
+        textureUrl={textureUrl}
         className={className}
         alt={alt}
         data-testid={testId}

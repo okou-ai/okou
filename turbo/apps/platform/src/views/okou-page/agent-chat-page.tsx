@@ -34,7 +34,7 @@ import {
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
-import { AgentAvatarImg } from "./sidebar-shared.tsx";
+import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { assistantName$ } from "../../signals/branding.ts";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
@@ -311,8 +311,14 @@ const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const { t } = useTranslation("agents");
-  const textured = useGet(avatarTextureEnabled$);
-  const frame = cn(AGENT_AVATAR_FRAME, !textured && AGENT_AVATAR_BORDER);
+  const textureEnabled = useGet(avatarTextureEnabled$);
+  // Not every agent can take a texture: uploaded images and the flat default
+  // avatar have no sweater or hair colour to clear. The frame follows the
+  // answer rather than the switch, so those keep the hairline that is still
+  // their only edge.
+  const textureUrl = useAgentAvatarTexture(
+    textureEnabled && agentId ? agentId : null,
+  );
 
   return (
     <div className="relative shrink-0">
@@ -329,25 +335,27 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                   return $.detail.viewProfile;
                 })}
                 className={cn(
-                  frame,
-                  "group relative cursor-pointer",
-                  // Over a texture the frame's own background is not visible,
-                  // and the border this used to recolour is gone, so hover
-                  // needs a layer of its own above the artwork. Same token
-                  // and the same 150ms as the border state it replaces, so
-                  // flipping the switch does not change how hover feels.
-                  textured
-                    ? null
-                    : "transition-colors duration-150 hover:bg-state-hover",
+                  AGENT_AVATAR_FRAME,
+                  "cursor-pointer",
+                  textureUrl
+                    ? // The frame's background is behind the texture and the
+                      // border this used to recolour is gone, so hover needs a
+                      // layer of its own above the artwork. Same token and the
+                      // same 150ms, so hover does not change how it feels.
+                      "group relative"
+                    : cn(
+                        AGENT_AVATAR_BORDER,
+                        "transition-colors duration-150 hover:bg-state-hover",
+                      ),
                 )}
               >
                 <AgentAvatarImg
                   name={agentId}
                   alt=""
                   className={AGENT_AVATAR_IMAGE}
-                  textured={textured}
+                  textureUrl={textureUrl ?? undefined}
                 />
-                {textured ? (
+                {textureUrl ? (
                   <span
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
@@ -365,7 +373,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
           </Tooltip>
         </TooltipProvider>
       ) : (
-        <div className={frame}>
+        <div className={cn(AGENT_AVATAR_FRAME, AGENT_AVATAR_BORDER)}>
           <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
         </div>
       )}
