@@ -392,14 +392,19 @@ function pausesAfterStatement(stop: ChatThreadContentBarrierStop): boolean {
   );
 }
 
+interface BarrierStopContext {
+  readonly stop: ChatThreadContentBarrierStop;
+  readonly identityRead: boolean;
+  readonly chatThreadId: string;
+  readonly transaction: SelectedTransaction;
+  readonly admission: ChatThreadContentBarrierAdmission;
+}
+
 function reachedBarrierStop(
-  stop: ChatThreadContentBarrierStop,
   queryArgs: unknown[],
-  identityRead: boolean,
-  chatThreadId: string,
-  transaction: SelectedTransaction,
-  admission: ChatThreadContentBarrierAdmission,
+  context: BarrierStopContext,
 ): boolean {
+  const { stop, identityRead, chatThreadId, transaction, admission } = context;
   if (stop === "identity") {
     return identityRead;
   }
@@ -467,14 +472,13 @@ export async function withChatThreadContentBarrierFixture<T>(
         return isContentIdentityRead(queryArgs, args.chatThreadId);
       },
       stopAt: (queryArgs, selectingStatement, transaction) => {
-        return reachedBarrierStop(
-          args.stopAt,
-          queryArgs,
-          selectingStatement,
-          args.chatThreadId,
+        return reachedBarrierStop(queryArgs, {
+          stop: args.stopAt,
+          identityRead: selectingStatement,
+          chatThreadId: args.chatThreadId,
           transaction,
-          args.admission ?? "write",
-        );
+          admission: args.admission ?? "write",
+        });
       },
       pauseAfter: pausesAfterStatement(args.stopAt),
       work: args.work,

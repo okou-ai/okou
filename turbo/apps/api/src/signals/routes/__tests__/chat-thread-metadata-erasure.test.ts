@@ -37,7 +37,6 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const computerUse = createComputerUseBddApi(context);
 const runs = createRunsApi(context);
-const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 const CASE_TIMEOUT_MS = 30_000;
 
 interface MetadataFixture {

@@ -43,7 +43,6 @@ const authOrg = createAuthOrgAgentsBddApi(context);
 const computerUse = createComputerUseBddApi(context);
 
 const STARTED_AT_MS = Date.parse("2026-09-18T13:00:00.000Z");
-const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 const CASE_TIMEOUT_MS = 30_000;
 
 type Settled<T> = Awaited<ReturnType<typeof settleIncludingAbort<T>>>;
@@ -758,7 +757,7 @@ describe("Computer Use audit-event account-erasure fence", () => {
   );
 
   it(
-    "lets read-first return while closure waits on its real B1 edge, then denies the next read",
+    "lets closure commit while a read is in flight, then denies the next read",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const actor = orgScoped(bdd.user());
@@ -788,15 +787,17 @@ describe("Computer Use audit-event account-erasure fence", () => {
                 statementTimeout: "5s",
                 transactionTimeout: "0",
               });
+              // The read takes no advisory lock, so closure is not held behind
+              // it. This read was admitted before the decision committed, so
+              // serving its already-projected page stays correct.
               const closing = owner.start(
                 closeSubject({
                   subjectKind: "user",
                   subjectId: actor.userId,
                 }),
               );
-              await expect
-                .poll(barrier.blockedWaiterCount, BLOCKED)
-                .toBeGreaterThanOrEqual(1);
+              valueOf(await closing.settled);
+              await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
 
               const progressing =
                 await computerUse.listComputerUseAuditEvents(unrelated);
@@ -813,7 +814,6 @@ describe("Computer Use audit-event account-erasure fence", () => {
                   return event.commandId;
                 }),
               ).toStrictEqual([commandId]);
-              valueOf(await closing.settled);
             });
           },
         },
@@ -830,7 +830,7 @@ describe("Computer Use audit-event account-erasure fence", () => {
   );
 
   it(
-    "makes closure-first win before projection and exposes the real blocking edge",
+    "serves a read started before a closure commits and denies every read after it",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const actor = orgScoped(bdd.user());
@@ -848,20 +848,32 @@ describe("Computer Use audit-event account-erasure fence", () => {
             }),
           );
           await waitForBarrierEntry(barrier.entered, closing);
+          // A subject whose closure has not committed is not a closed subject.
+          // The read holds no advisory lock to wait on and cannot observe an
+          // uncommitted decision under READ COMMITTED, so it is served.
           const reading = owner.start(
-            computerUse.requestListComputerUseAuditEvents(actor, {}, [403]),
+            computerUse.requestListComputerUseAuditEvents(actor, {}, [200]),
           );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
+          const served = valueOf(await reading.settled);
+          expect(served.status).toBe(200);
+          await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
 
           barrier.release();
           valueOf(await closing.settled);
-          const denied = valueOf(await reading.settled);
-          expect(denied.status).toBe(403);
-          expect(JSON.stringify(denied.body)).not.toContain(commandId);
         });
       }, context.signal);
+
+      // The property that must hold is that a committed closure is never
+      // served again. The closure lookup is the read's own separate statement,
+      // so every read issued after the decision commits observes it.
+      const denied = await computerUse.requestListComputerUseAuditEvents(
+        actor,
+        {},
+        [403],
+      );
+      expect(denied.status).toBe(403);
+      expect(JSON.stringify(denied.body)).not.toContain(commandId);
+      expectApiError(denied.body);
     },
   );
 
@@ -899,7 +911,7 @@ describe("Computer Use audit-event account-erasure fence", () => {
   );
 
   it(
-    "propagates the scoped admission lock timeout instead of fabricating closure or an empty page",
+    "does not stall or fabricate closure or an empty page while a decision is uncommitted",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const actor = orgScoped(bdd.user());
@@ -916,16 +928,16 @@ describe("Computer Use audit-event account-erasure fence", () => {
             closeSubject({ subjectKind: "user", subjectId: actor.userId }),
           );
           await waitForBarrierEntry(barrier.entered, closing);
+          // With no advisory lock there is no admission wait left to exceed
+          // the scoped `lock_timeout`, so this read neither stalls nor turns
+          // an uncommitted decision into closure or an empty page.
           const reading = owner.start(
-            computerUse.requestListComputerUseAuditEvents(
-              actor,
-              {},
-              [200, 403],
-            ),
+            computerUse.requestListComputerUseAuditEvents(actor, {}, [200]),
           );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
+          const served = valueOf(await reading.settled);
+          expect(served.status).toBe(200);
+          expect(served.body).not.toStrictEqual({ auditEvents: [] });
+          await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
           const progress =
             await computerUse.listComputerUseAuditEvents(unrelated);
           expect(
@@ -934,12 +946,6 @@ describe("Computer Use audit-event account-erasure fence", () => {
             }),
           ).toStrictEqual([unrelatedEvent.commandId]);
 
-          const failed = await reading.settled;
-          expect(failed.ok).toBeFalsy();
-          if (!failed.ok) {
-            expect(String(failed.error)).toMatch(/Unknown response status 500/);
-          }
-          reading.acceptFailure();
           barrier.release();
           valueOf(await closing.settled);
         });
@@ -1070,21 +1076,21 @@ describe("Computer Use audit-event account-erasure fence", () => {
               expect(statements[1]).toContain(
                 '"computer_use_command_audit_events"."user_id" =',
               );
-              expect(statements[3]).toContain(
+              expect(statements[1]).toContain(
                 '"computer_use_command_audit_events"."command_id" =',
               );
-              expect(statements[3]).toContain(
+              expect(statements[1]).toContain(
                 '"computer_use_command_audit_events"."host_id" =',
               );
-              expect(statements[3]).toContain(
+              expect(statements[1]).toContain(
                 '"computer_use_command_audit_events"."run_id" =',
               );
-              expect(statements[3]).toContain(
+              expect(statements[1]).toContain(
                 'order by "computer_use_command_audit_events"."created_at" desc',
               );
-              expect(statements[3]).toContain(" limit ");
-              expect(statements[3]).not.toContain(" for ");
-              expect(statements[4]).toBe("commit");
+              expect(statements[1]).toContain(" limit ");
+              expect(statements[1]).not.toContain(" for ");
+              expect(statements[2]).toBe("commit");
 
               barrier.release();
               const response = valueOf(await reading.settled);
@@ -1132,9 +1138,9 @@ describe("Computer Use audit-event account-erasure fence", () => {
                     subjectId: actor.userId,
                   }),
                 );
-                await expect
-                  .poll(barrier.blockedWaiterCount, BLOCKED)
-                  .toBeGreaterThanOrEqual(1);
+                // Closure is not held behind the lock-free read, so joining
+                // its settlement is what proves both operations are in flight.
+                valueOf(await earlyClosure.settled);
                 throw new Error("deliberate audit-event callback exit");
               });
             },
