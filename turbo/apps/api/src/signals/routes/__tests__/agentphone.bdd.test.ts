@@ -246,9 +246,19 @@ function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
   return send;
 }
 
+// The surface delivery rules follow the integration block as their own
+// section, so they are part of the caller-supplied tail this test pins.
+// `privateArtifacts` is off for a BDD organization, so the note is one line.
+const AGENTPHONE_INTEGRATION_NOTE = [
+  "# Integration Note",
+  "",
+  "- AgentPhone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[AgentPhone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+].join("\n");
+
 function expectIntegrationImmediatelyBeforeRestrictedContent(
   appendSystemPrompt: string,
   expectedIntegration: string,
+  expectedThreadContext?: string,
 ): void {
   const restrictedContentIndex = appendSystemPrompt.lastIndexOf(
     "# Restricted Explicit Content",
@@ -262,11 +272,16 @@ function expectIntegrationImmediatelyBeforeRestrictedContent(
   );
   expect(defaultImageModelIndex).toBeGreaterThan(-1);
   expect(defaultImageModelIndex).toBeLessThan(restrictedContentIndex);
+  const expectedTail = [
+    expectedIntegration,
+    AGENTPHONE_INTEGRATION_NOTE,
+    ...(expectedThreadContext === undefined ? [] : [expectedThreadContext]),
+  ].join("\n\n");
   expect(
     appendSystemPrompt
       .slice(0, defaultImageModelIndex)
       .trimEnd()
-      .endsWith(expectedIntegration),
+      .endsWith(expectedTail),
   ).toBeTruthy();
 }
 
@@ -1445,9 +1460,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         "Conversation type: group",
         `Conversation ID: ${conversationId}`,
         `Message ID: ${groupMessageId}`,
-        "",
-        groupThreadContext,
       ].join("\n"),
+      groupThreadContext,
     );
 
     // The completion replies into the conversation, not to a number.

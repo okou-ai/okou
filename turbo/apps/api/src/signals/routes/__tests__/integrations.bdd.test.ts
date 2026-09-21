@@ -2698,8 +2698,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(canonicalInputRun.prompt).toBe(
         `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
       );
+      // The Slack delivery rules follow the integration block as their own
+      // section rather than sitting in `# Agent Tools`.
       expect(canonicalInputRun.appendSystemPrompt).toContain(
-        `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}`,
+        `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}\n\n# Integration Note\n\n- Slack messaging and files: only your final reply is delivered to the originating thread,`,
       );
       expect(canonicalInputRun.appendSystemPrompt).toContain(
         "okou web download-file -h",
