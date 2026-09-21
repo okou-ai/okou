@@ -1,12 +1,22 @@
 use super::*;
+use crate::axiom_layer::{init_with_base_url, with_ingest_filter};
 use crate::http::HttpClientConfig;
 use crate::run_cancellation::{RunCancellationRegistration, RunCancellationRegistry};
-use crate::test_fixtures::raw_http::read_http_request;
+use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, read_http_request};
+use httpmock::{HttpMockRequest, HttpMockResponse, MockServer};
+use serde_json::Value;
 use std::future::Future;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tracing::Level;
+use tracing_subscriber::prelude::*;
+use tracing_test_support::{CapturedEvent, CapturedEvents};
+
+const FAILURE: &str = "cancellation reconciliation read failed; will retry";
+const DEGRADED: &str = "cancellation reconciliation reads degraded; will retry";
+const RECOVERED: &str = "cancellation reconciliation read recovered";
 
 struct Request {
     text: String,
@@ -94,20 +104,44 @@ impl Server {
     }
 
     fn controller(&self) -> CancellationReconciliation {
-        CancellationReconciliation::new(
-            HttpClient::new(HttpClientConfig {
-                api_url: self.url.clone(),
-                vercel_bypass: None,
-                client_session_id: "cancellation-test".into(),
-            })
-            .unwrap(),
-            "test/group".into(),
-            RunnerProcessIdentity::new(uuid::Uuid::from_u128(42), 7).unwrap(),
-        )
+        controller_for_url(self.url.clone())
     }
 
     async fn next(&mut self) -> Request {
         bounded(self.requests.recv()).await.unwrap()
+    }
+}
+
+fn controller_for_url(api_url: String) -> CancellationReconciliation {
+    CancellationReconciliation::new(
+        HttpClient::new(HttpClientConfig {
+            api_url,
+            vercel_bypass: None,
+            client_session_id: "cancellation-test".into(),
+        })
+        .unwrap(),
+        "test/group".into(),
+        RunnerProcessIdentity::new(uuid::Uuid::from_u128(42), 7).unwrap(),
+    )
+}
+
+fn events(captured: &CapturedEvents, message: &str) -> Vec<CapturedEvent> {
+    captured
+        .entries()
+        .into_iter()
+        .filter(|event| event.fields.get("message").map(String::as_str) == Some(message))
+        .collect()
+}
+
+fn request_context() -> ApiRequestContext {
+    ApiRequestContext {
+        endpoint_label: "run cancellation reconciliation",
+        method: "GET".into(),
+        host: "api.example.test".into(),
+        path: "/api/runners/runs/test/cancellation".into(),
+        client_request_id: "request-test".into(),
+        client_session_id: "session-test".into(),
+        client_version: "runner-test".into(),
     }
 }
 
@@ -141,6 +175,150 @@ async fn observe(
     let registration = registry.register(run_id).await.unwrap();
     assert!(controller.observe(run_id, registration.handle(), "sandbox-test-token".into()));
     registration
+}
+
+#[tokio::test]
+async fn real_connection_reset_keeps_typed_safe_request_context() {
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection]).await;
+    let controller = controller_for_url(server.url());
+    let run_id = RunId::new_v4();
+
+    let result = controller.client.read(run_id, "sandbox-test-token").await;
+    let Err(ReadError::Transport(error)) = result else {
+        panic!("expected a typed transport error, got {result:?}");
+    };
+    assert_eq!(error.failure_cause, ApiTransportCause::ConnectionReset);
+    assert_eq!(
+        error.request.endpoint_label,
+        "run cancellation reconciliation"
+    );
+    assert_eq!(error.request.method, "GET");
+    assert_eq!(
+        error.request.path,
+        format!("/api/runners/runs/{run_id}/cancellation")
+    );
+    assert!(!error.request.client_request_id.is_empty());
+    assert_eq!(error.request.client_session_id, "cancellation-test");
+    assert!(!error.request.client_version.is_empty());
+    assert!(!format!("{error:?}").contains("sandbox-test-token"));
+
+    server.assert_finished().await;
+    controller.shutdown().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn transient_episode_warns_once_after_one_interval_and_reports_recovery() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let run_id = RunId::new_v4();
+    let reset = ReadError::Transport(Box::new(ApiTransportError {
+        request: request_context(),
+        failure_kind: ApiFailureKind::Request,
+        failure_cause: ApiTransportCause::ConnectionReset,
+        summary: "connection reset without a URL or credential".into(),
+    }));
+    let mut failures = ReadFailures::default();
+
+    failures.record(run_id, &reset);
+    let first = events(&captured, FAILURE);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].level, Level::INFO);
+    assert_eq!(first[0].fields["failure_kind"], "request");
+    assert_eq!(first[0].fields["failure_cause"], "connection_reset");
+    assert_eq!(first[0].fields["degraded"], "false");
+    assert_eq!(first[0].fields["will_retry"], "true");
+
+    tokio::time::advance(INTERVAL).await;
+    failures.record(run_id, &reset);
+    failures.record(run_id, &reset);
+    let degraded = events(&captured, DEGRADED);
+    assert_eq!(degraded.len(), 1);
+    assert_eq!(degraded[0].level, Level::WARN);
+    assert_eq!(degraded[0].fields["consecutive_failures"], "2");
+    assert_eq!(degraded[0].fields["failure_elapsed_ms"], "30000");
+    assert_eq!(degraded[0].fields["degraded"], "true");
+
+    failures.recover(run_id);
+    let recovered = events(&captured, RECOVERED);
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].level, Level::INFO);
+    assert_eq!(recovered[0].fields["recovered_after_failures"], "3");
+    assert_eq!(recovered[0].fields["was_degraded"], "true");
+    let debug = format!("{:?}", captured.entries());
+    assert!(!debug.contains("sandbox-test-token"));
+    assert!(!debug.contains("connection reset without a URL or credential"));
+}
+
+#[tokio::test]
+async fn genuine_failure_is_the_only_axiom_ingested_event_in_an_episode() {
+    let axiom = MockServer::start_async().await;
+    let ingested = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let sink = Arc::clone(&ingested);
+    let ingest = axiom
+        .mock_async(move |when, then| {
+            when.method(httpmock::Method::POST)
+                .path("/v1/datasets/vm0-web-logs-test/ingest");
+            then.respond_with(move |request: &HttpMockRequest| {
+                let batch: Vec<Value> = serde_json::from_slice(request.body_ref()).unwrap();
+                sink.lock().unwrap().extend(batch);
+                HttpMockResponse::builder().status(200).build()
+            });
+        })
+        .await;
+    let (layer, guard) = init_with_base_url(&axiom.base_url(), "test", "test").unwrap();
+    let captured = CapturedEvents::default();
+    let _subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::registry()
+            .with(captured.clone())
+            .with(with_ingest_filter(layer)),
+    );
+    let run_id = RunId::new_v4();
+    let mut failures = ReadFailures::default();
+
+    failures.record(run_id, &ReadError::Deadline(Box::new(request_context())));
+    failures.record(run_id, &ReadError::Status(StatusCode::SERVICE_UNAVAILABLE));
+    failures.record(run_id, &ReadError::Status(StatusCode::BAD_GATEWAY));
+    guard.shutdown().await;
+
+    assert_eq!(events(&captured, FAILURE).len(), 2);
+    assert_eq!(events(&captured, DEGRADED).len(), 0);
+    assert!(ingest.calls_async().await > 0);
+    let ingested = ingested.lock().unwrap();
+    assert_eq!(ingested.len(), 1);
+    assert_eq!(ingested[0]["message"], FAILURE);
+    assert_eq!(ingested[0]["level"], "warn");
+    assert_eq!(ingested[0]["status"], 503);
+    assert_eq!(ingested[0]["failure_stage"], "status");
+    assert_eq!(ingested[0]["consecutive_failures"], 2);
+}
+
+#[tokio::test]
+async fn retirement_does_not_claim_recovery_after_a_real_reset() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection]).await;
+    let controller = controller_for_url(server.url());
+    let registry = RunCancellationRegistry::new();
+    let run_id = RunId::new_v4();
+    let registration = observe(&controller, &registry, run_id).await;
+
+    server
+        .next_request("cancellation reconciliation read")
+        .await;
+    server.assert_finished().await;
+    bounded(async {
+        while events(&captured, FAILURE).is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    assert!(registration.unregister().await);
+    controller.shutdown().await;
+
+    assert_eq!(events(&captured, FAILURE).len(), 1);
+    assert!(events(&captured, RECOVERED).is_empty());
 }
 
 #[tokio::test]
@@ -287,6 +465,9 @@ async fn cooperative_keeps_observing_and_dispatch_cadence_excludes_response_time
 
 #[tokio::test(start_paused = true)]
 async fn old_api_and_invalid_results_recover_on_normal_ticks_without_stopping() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     let mut server = Server::new().await;
     let controller = server.controller();
     let registry = RunCancellationRegistry::new();
@@ -329,6 +510,24 @@ async fn old_api_and_invalid_results_recover_on_normal_ticks_without_stopping() 
     bounded(registration.handle().signals().hard().cancelled()).await;
     registration.unregister().await;
     controller.shutdown().await;
+
+    let entries = captured.entries();
+    let recoveries: Vec<_> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event.fields.get("message").map(String::as_str) == Some(RECOVERED))
+        .collect();
+    assert_eq!(recoveries.len(), 2);
+    assert_eq!(recoveries[0].1.fields["recovered_after_failures"], "2");
+    assert_eq!(recoveries[1].1.fields["recovered_after_failures"], "2");
+    let observed = entries
+        .iter()
+        .position(|event| {
+            event.fields.get("message").map(String::as_str)
+                == Some("cancellation reconciliation observed stop intent")
+        })
+        .unwrap();
+    assert!(recoveries[1].0 < observed);
 }
 
 #[tokio::test]
@@ -435,6 +634,9 @@ async fn dropping_provider_owner_cancels_reads_and_releases_tracked_credentials(
 
 #[tokio::test(start_paused = true)]
 async fn whole_body_deadline_releases_capacity_without_an_immediate_retry() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     let mut server = Server::new().await;
     let controller = server.controller();
     let registry = RunCancellationRegistry::new();
@@ -458,6 +660,14 @@ async fn whole_body_deadline_releases_capacity_without_an_immediate_retry() {
     bounded(registration.handle().signals().hard().cancelled()).await;
     registration.unregister().await;
     controller.shutdown().await;
+
+    let failures = events(&captured, FAILURE);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].level, Level::INFO);
+    assert_eq!(failures[0].fields["failure_stage"], "deadline");
+    assert_eq!(failures[0].fields["failure_kind"], "timeout");
+    assert_eq!(failures[0].fields["failure_cause"], "timeout");
+    assert_eq!(events(&captured, RECOVERED).len(), 1);
 }
 
 #[tokio::test]

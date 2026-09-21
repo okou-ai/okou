@@ -95,8 +95,31 @@ Only HTTP 200 with an exact, bounded v1 response can make a stop decision. The
 Runner decodes the generated response type and additionally validates required
 fields, permitted fields, version and exact Run ID. The ten-second deadline
 covers the request, body read and decoding. Both declared and streamed bodies
-are limited to 4096 bytes. Errors log a bounded category without bearer tokens
-or response content, and are rechecked at the ordinary cadence.
+are limited to 4096 bytes. Read failures are tracked as episodes without
+changing the ordinary cadence. A timeout or connection reset starts with a
+local INFO event; if that transient episode spans one thirty-second interval,
+the Runner emits one WARN. Status, contract, identity, redirect, oversized-body
+and other non-transient failures emit one WARN immediately. Duplicate failures
+in the same episode are suppressed. The next valid response, including
+`present` with a null mode or `unavailable`, emits an INFO recovery event before
+any stop intent is handled. Retirement and shutdown end the episode without
+claiming recovery.
+
+Failure events contain only bounded structured diagnostics: endpoint label,
+method, host, path without query parameters, client request/session/version
+identifiers, failure stage, typed kind and typed cause where available, status,
+episode count and elapsed time. They never contain bearer tokens, query
+parameters, response bodies or dependency error strings. WARN events are sent
+through the normal Axiom ingest filter; INFO start and recovery events remain in
+local runner logs.
+
+During rollout, query `runner::provider::api_cancellation_reconciliation` for
+`cancellation reconciliation read failed; will retry` and
+`cancellation reconciliation reads degraded; will retry`, grouped by
+`failure_stage`, `failure_kind`, `failure_cause`, `status`, `host` and
+`client_version`. Use `cancellation reconciliation read recovered` to confirm
+episode closure and recovery duration. A WARN with no later recovery for the
+same Run requires investigation; the retry cadence itself continues unchanged.
 
 ## Cadence and observation bound
 
