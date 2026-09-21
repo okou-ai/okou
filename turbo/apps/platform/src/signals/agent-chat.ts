@@ -186,6 +186,8 @@ export const currentChatThreadListSignals$ = computed(
 
 // Indicators bound the unread list. Keep their asynchronous dependency out of
 // the all-chats projection and its synchronous virtual window.
+// Unread only always includes archived threads, so an archived thread never
+// hides an unread message.
 export const unreadChatThreads$ = computed(
   async (get): Promise<EventDrivenChatThread[]> => {
     const agentId = await get(currentChatAgentId$);
@@ -193,14 +195,9 @@ export const unreadChatThreads$ = computed(
       return [];
     }
     const indicators = await get(chatThreadIndicatorsFromWorker$);
-    const archiveEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] ?? false;
-    const showArchived = archiveEnabled && get(chatThreadShowArchived$);
     const threads = get(eventDrivenChatThreads$).filter((thread) => {
       return (
-        thread.agentId === agentId &&
-        indicators.threads[thread.id] === "unread" &&
-        (!archiveEnabled || showArchived || !isChatThreadArchived(thread.title))
+        thread.agentId === agentId && indicators.threads[thread.id] === "unread"
       );
     });
     return sortChatThreads(threads);
