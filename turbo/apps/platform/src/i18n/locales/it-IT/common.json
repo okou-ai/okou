@@ -1518,6 +1518,10 @@
         },
         "notEligible": "Non idoneo",
         "pendingState": "{{amount}} in sospeso",
+        "rejected": {
+          "alreadyRedeemed": "Post già utilizzato",
+          "postMustMention": "Deve menzionare {{assistantName}}"
+        },
         "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "share": {
           "action": "Condividi",

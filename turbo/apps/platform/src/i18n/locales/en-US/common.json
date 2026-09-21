@@ -1494,6 +1494,10 @@
         },
         "notEligible": "Not eligible",
         "pendingState": "{{amount}} pending",
+        "rejected": {
+          "alreadyRedeemed": "Post already used",
+          "postMustMention": "Must mention {{assistantName}}"
+        },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
         "share": {
           "action": "Share",

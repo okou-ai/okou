@@ -1518,6 +1518,10 @@
         },
         "notEligible": "No elegible",
         "pendingState": "{{amount}} pendientes",
+        "rejected": {
+          "alreadyRedeemed": "Publicación ya usada",
+          "postMustMention": "Debe mencionar a {{assistantName}}"
+        },
         "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "share": {
           "action": "Compartir",

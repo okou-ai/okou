@@ -1493,6 +1493,10 @@
         },
         "notEligible": "対象外",
         "pendingState": "{{amount}} 件承諾待ち",
+        "rejected": {
+          "alreadyRedeemed": "投稿は使用済み",
+          "postMustMention": "{{assistantName}} に触れる必要あり"
+        },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "share": {
           "action": "シェア",

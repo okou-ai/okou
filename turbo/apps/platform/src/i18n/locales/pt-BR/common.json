@@ -1518,6 +1518,10 @@
         },
         "notEligible": "Não elegível",
         "pendingState": "{{amount}} pendentes",
+        "rejected": {
+          "alreadyRedeemed": "Publicação já usada",
+          "postMustMention": "Precisa mencionar o {{assistantName}}"
+        },
         "rewardsNote": "As recompensas expiram 7 dias após a concessão. O check-in reinicia às 00:00 UTC. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
         "share": {
           "action": "Compartilhar",
