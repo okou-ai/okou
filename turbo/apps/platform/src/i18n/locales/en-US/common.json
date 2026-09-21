@@ -4609,6 +4609,7 @@
         "invited": "Invited",
         "label": "Teammate’s email",
         "note": "They join this workspace; their own accounts stay theirs.",
+        "notSent": "Not sent",
         "panelTitle": "Invite a teammate",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4616,6 +4617,7 @@
           "workflows": "Anyone here can run the workflows this workspace already has.",
           "workspace": "They land in this workspace, with the sources you just connected."
         },
+        "sending": "Sending…",
         "title": "Bring the people who do this work with you."
       },
       "welcome": {

@@ -3,8 +3,9 @@ import type { IndustryId } from "../../views/onboarding-sources-first/onboarding
 
 /**
  * Source-first onboarding draft. The connector step drives the live connector
- * catalog and the chat-channel step the org's Slack and Teams installations;
- * the remaining answers are held here until their endpoints land.
+ * catalog, the invite step records what the invitation API answered, and the
+ * chat-channel step reads the org's own Slack and Teams installations; the
+ * remaining answers are held here until their endpoints land.
  *
  * One application start owns this draft, because a Store lives exactly that
  * long: switching Clerk session or organization replaces the document, so the
@@ -29,9 +30,23 @@ export type SubscriptionProvider = "codex" | "claudeCode";
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams";
 
+/**
+ * Where one address stands with the invitation API: in flight, accepted by the
+ * API, or refused by it. Nothing but an API answer makes an address invited.
+ */
+export type SourcesFirstInviteStatus = "pending" | "invited" | "failed";
+
+export interface SourcesFirstInvite {
+  readonly email: string;
+  readonly status: SourcesFirstInviteStatus;
+  /** Why the invitation was refused, as the API put it; null otherwise. */
+  readonly failure: string | null;
+}
+
 export interface SourcesFirstDraft {
   readonly industry: IndustryId | null;
-  readonly invites: readonly string[];
+  /** One entry per address this run tried, with what the API answered. */
+  readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
   readonly provider: SubscriptionProvider | null;

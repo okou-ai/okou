@@ -17,15 +17,26 @@ import type { PiAgentThinkingLevel } from "./types";
  * defaults in `@okouai/api-contracts` (`model-reasoning-effort`): tuning the
  * foreground effort of a model must never change background extraction or
  * consolidation cost.
+ *
+ * Built-in extraction names V4.1 Flash, the model DeepSeek actually serves and
+ * the one built-in consolidation already runs. That identifier is load-bearing
+ * for the pinned `low` effort below: V4 Flash's OpenRouter listing publishes no
+ * `low` step, so whenever the native candidate was missing or cooling the
+ * secondary built-in candidate could not carry the pinned effort and extraction
+ * failed terminally instead of falling through. Both V4.1 Flash candidates
+ * publish `low`, so either one can serve extraction.
  */
-export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "deepseek-v4-flash";
+export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "deepseek-v4.1-flash";
 export const PI_MEMORY_STAGE1_BYOK_MODEL = "gpt-5.6-luna";
 
 export type PiMemoryStage1Model =
   | typeof PI_MEMORY_STAGE1_BUILT_IN_MODEL
   | typeof PI_MEMORY_STAGE1_BYOK_MODEL;
 
-/** Both extraction models publish `low`, so one stateless request keeps it. */
+/**
+ * Every extraction route publishes `low`, so one stateless request keeps it:
+ * both built-in candidates of the model above, and the BYOK GPT model.
+ */
 export const PI_MEMORY_STAGE1_REASONING = "low" satisfies PiAgentThinkingLevel;
 
 /** BYOK consolidation keeps `medium`, which its GPT model publishes. */

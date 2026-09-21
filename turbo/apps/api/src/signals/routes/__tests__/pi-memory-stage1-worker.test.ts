@@ -584,7 +584,10 @@ async function inspectUsageCategories(
 ): Promise<string[]> {
   const usage = await inspectUsage(storage);
   for (const row of usage) {
-    expect(row).toMatchObject({ run_id: null, provider: "deepseek-v4-flash" });
+    expect(row).toMatchObject({
+      run_id: null,
+      provider: "deepseek-v4.1-flash",
+    });
   }
   return usage
     .map((row) => {
@@ -616,7 +619,7 @@ beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
   installS3Objects();
-  await seedBuiltInModelKey(context, "deepseek-v4-flash");
+  await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
 });
 
 describe("Pi memory Stage 1 worker", () => {
@@ -736,15 +739,15 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("uses the owner's DeepSeek alternative routing switch and fails before an unsupported effort", async () => {
-    // V4 Flash's OpenRouter listing publishes no `low` step, so the secondary
-    // built-in candidate cannot carry the pinned extraction effort. The work
-    // must end before any paid request rather than silently raising it.
-    const selectedModel = "deepseek-v4-flash";
+  it("uses the owner's DeepSeek alternative routing switch and extracts on the secondary candidate", async () => {
+    // Both V4.1 Flash candidates publish `low`, so the secondary built-in
+    // candidate carries the pinned extraction effort and the work proceeds
+    // whenever the native candidate is filtered out, keyless or cooling.
+    const selectedModel = "deepseek-v4.1-flash";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const storage = createStorageFixture();
     const piSessionId = randomUUID();
-    await storage.seed({
+    const candidate = await storage.seed({
       piSessionId,
       raw: settledHistory(piSessionId, "secondary built-in candidate"),
     });
@@ -761,11 +764,32 @@ describe("Pi memory Stage 1 worker", () => {
     await expect(runScoped(storage)).resolves.toMatchObject({
       scanned: 1,
       claimed: 1,
-      succeeded: 0,
+      succeeded: 1,
       retryableFailure: 0,
-      terminalFailure: 1,
+      terminalFailure: 0,
     });
-    expect(provider.calls).toHaveLength(0);
+    expect(provider.calls).toHaveLength(1);
+    const call = provider.calls[0];
+    expect(call?.url).toBe("https://openrouter.ai/api/v1/responses");
+    expect(call?.request).toMatchObject({
+      model: "deepseek/deepseek-v4.1-flash",
+      reasoning: { effort: "low" },
+    });
+    expect(JSON.stringify(call?.request)).toContain(
+      "secondary built-in candidate",
+    );
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      status: "succeeded",
+      successful_source_history_hash: candidate.source_history_hash,
+      last_error_class: null,
+    });
+    // The secondary route still bills the built-in owner on base categories.
+    await expect(inspectUsageCategories(storage)).resolves.toStrictEqual([
+      "tokens.cache_creation",
+      "tokens.cache_read",
+      "tokens.input",
+      "tokens.output",
+    ]);
   });
   it("authenticates the production cron route before the disabled breaker", async () => {
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "false");
@@ -890,7 +914,7 @@ describe("Pi memory Stage 1 worker", () => {
         expect(serialized).not.toContain(INPUT_SECRET);
         expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
         expect(invocation.request).toMatchObject({
-          model: "deepseek-v4-flash",
+          model: "deepseek-flash",
           reasoning: { effort: "low" },
           text: {
             format: {
@@ -916,12 +940,12 @@ describe("Pi memory Stage 1 worker", () => {
         expect.arrayContaining([
           expect.objectContaining({
             run_id: null,
-            provider: "deepseek-v4-flash",
+            provider: "deepseek-v4.1-flash",
             category: "tokens.input",
           }),
           expect.objectContaining({
             run_id: null,
-            provider: "deepseek-v4-flash",
+            provider: "deepseek-v4.1-flash",
             category: "tokens.output",
           }),
         ]),
@@ -1808,7 +1832,7 @@ describe("Stage 1 source credentials", () => {
       await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
       expect(provider.calls).toHaveLength(1);
       expect(provider.calls[0]?.request).toMatchObject({
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         reasoning: { effort: "low" },
       });
       const usage = await inspectUsage(storage);
@@ -1816,7 +1840,7 @@ describe("Stage 1 source credentials", () => {
       for (const row of usage) {
         expect(row).toMatchObject({
           run_id: null,
-          provider: "deepseek-v4-flash",
+          provider: "deepseek-v4.1-flash",
         });
       }
     },
@@ -1921,7 +1945,7 @@ describe("Stage 1 source credentials", () => {
     // Only the built-in source moves to DeepSeek; every BYOK source keeps Luna.
     const builtInCall = callFor("builtin evidence");
     expect(builtInCall.url).toBe("https://api.deepseek.com/responses");
-    expect(builtInCall.request).toMatchObject({ model: "deepseek-v4-flash" });
+    expect(builtInCall.request).toMatchObject({ model: "deepseek-flash" });
     for (const call of provider.calls) {
       expect(call.request).toMatchObject({ reasoning: { effort: "low" } });
       expect(call.request).not.toHaveProperty("service_tier");
@@ -2666,7 +2690,7 @@ describe("Stage 1 background credential availability", () => {
       const provider = installSourceProvider();
       await expect(
         withBuiltInModelRuntimeRouteUnavailableForTest(
-          "deepseek-v4-flash",
+          "deepseek-v4.1-flash",
           async () => {
             return await runScoped(storage);
           },

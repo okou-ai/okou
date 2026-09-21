@@ -4617,6 +4617,7 @@
         "invited": "न्योता भेजा गया",
         "label": "साथी का ईमेल",
         "note": "वे इसी workspace में आते हैं; उनके अपने खाते उन्हीं के रहते हैं।",
+        "notSent": "न्योता नहीं भेजा गया",
         "panelTitle": "साथी को बुलाएँ",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4624,6 +4625,7 @@
           "workflows": "यहाँ मौजूद कोई भी इस workspace के workflow चला सकता है।",
           "workspace": "वे इसी workspace में आते हैं, उन्हीं स्रोतों के साथ जो आपने अभी जोड़े।"
         },
+        "sending": "भेजा जा रहा है…",
         "title": "जो लोग यह काम करते हैं, उन्हें साथ लाएँ।"
       },
       "welcome": {

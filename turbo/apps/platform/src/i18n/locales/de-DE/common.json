@@ -4617,6 +4617,7 @@
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
         "note": "Sie kommen in diesen Workspace; ihre eigenen Konten bleiben ihre.",
+        "notSent": "Nicht gesendet",
         "panelTitle": "Teammitglied einladen",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4624,6 +4625,7 @@
           "workflows": "Alle hier können die Workflows dieses Workspace ausführen.",
           "workspace": "Sie landen in diesem Workspace, mit den Quellen, die du gerade verbunden hast."
         },
+        "sending": "Wird gesendet…",
         "title": "Hol die Leute dazu, die diese Arbeit machen."
       },
       "welcome": {

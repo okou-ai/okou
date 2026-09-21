@@ -48,6 +48,7 @@ export enum FeatureSwitchKey {
   WorkdayConnector = "workdayConnector",
   ChatPreference = "chatPreference",
   PaidToolControls = "paidToolControls",
+  NewUserVideoPickers = "newUserVideoPickers",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
