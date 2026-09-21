@@ -6,6 +6,7 @@ import matching
 from tests.aws_sigv4_helpers import (
     aws_sigv4_authorization,
     aws_sigv4_header_auth_headers,
+    aws_sigv4_presigned_url,
 )
 from tests.firewall_helpers import firewall_api, firewall_permission, wrap_firewalls
 
@@ -46,6 +47,7 @@ def _match(
     deny: Iterable[str] = (),
     unknown_policy: str = "ask",
     indexed: bool = True,
+    aws_inspection_available: bool = True,
 ) -> object | None:
     firewalls = wrap_firewalls(
         [firewall_api(base, permissions, auth=_AWS_AUTH)],
@@ -69,7 +71,11 @@ def _match(
         method,
         matching.compile_firewalls(firewalls),
         policies,
-        request_context=matching.FirewallRequestContext(headers=headers, body=body),
+        request_context=matching.FirewallRequestContext(
+            headers=headers,
+            body=body,
+            aws_inspection_available=aws_inspection_available,
+        ),
     )
 
 
@@ -275,6 +281,14 @@ def test_s3_rest_query_selector_does_not_fall_through_to_base_operation() -> Non
         headers=headers,
         allow=("get-object-version",),
     )
+    duplicate_version = _match(
+        base="https://s3.amazonaws.com",
+        permissions=permissions,
+        url="https://s3.amazonaws.com/bucket/key?versionId=v1&versionId=v2",
+        method="GET",
+        headers=headers,
+        allow=("get-object-version",),
+    )
     unknown_selector = _match(
         base="https://s3.amazonaws.com",
         permissions=permissions,
@@ -286,6 +300,7 @@ def test_s3_rest_query_selector_does_not_fall_through_to_base_operation() -> Non
 
     _assert_allowed(acl, "get-object-acl")
     _assert_allowed(version, "get-object-version")
+    _assert_unknown(duplicate_version)
     _assert_unknown(unknown_selector)
 
 
@@ -328,6 +343,30 @@ def test_aws_rule_requires_matching_valid_sigv4_service() -> None:
         method="POST",
         headers=_headers(host="ec2.amazonaws.com", service="iam"),
         allow=("describe-instances",),
+    )
+
+    _assert_unknown(result)
+
+
+def test_unavailable_aws_inspection_rejects_presigned_query_rule() -> None:
+    permissions = [
+        firewall_permission(
+            "describe-instances",
+            "POST / AWS sigv4=ec2 action=DescribeInstances",
+        )
+    ]
+    result = _match(
+        base="https://ec2.amazonaws.com",
+        permissions=permissions,
+        url=aws_sigv4_presigned_url(
+            "ec2.amazonaws.com",
+            service="ec2",
+            leading_query="Action=DescribeInstances",
+        ),
+        method="POST",
+        headers=(),
+        allow=("describe-instances",),
+        aws_inspection_available=False,
     )
 
     _assert_unknown(result)

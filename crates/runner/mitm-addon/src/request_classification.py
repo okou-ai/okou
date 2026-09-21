@@ -73,16 +73,25 @@ _MAX_BROWSER_USER_AGENT_BYTES = 4096
 
 
 def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallRequestContext:
-    """Extract only bounded headers used by AWS permission selectors.
+    """Build bounded request input for AWS permission selectors.
 
-    Ordinary firewall classification must not decode unrelated header values.
-    AWS signing already applies a 64 KiB request-header-list budget; exceeding
-    that same budget makes AWS rule inspection unavailable and therefore
+    Ordinary firewall classification must not decode unrelated header values or
+    parse oversized request targets. AWS signing already bounds both inputs;
+    exceeding either bound makes AWS rule inspection unavailable and therefore
     fail-closed without affecting non-AWS path rules.
     """
+    if len(flow.request.data.path) > auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES:
+        return matching.FirewallRequestContext(
+            body=flow.request.raw_content,
+            aws_inspection_available=False,
+        )
+
     raw_fields = flow.request.headers.fields
     if len(raw_fields) > auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS:
-        return matching.FirewallRequestContext(body=flow.request.raw_content)
+        return matching.FirewallRequestContext(
+            body=flow.request.raw_content,
+            aws_inspection_available=False,
+        )
 
     selected: list[tuple[str, str]] = []
     header_list_size = 0
@@ -91,7 +100,10 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
             len(raw_name) + len(raw_value) + auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
         )
         if header_list_size > auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES:
-            return matching.FirewallRequestContext(body=flow.request.raw_content)
+            return matching.FirewallRequestContext(
+                body=flow.request.raw_content,
+                aws_inspection_available=False,
+            )
 
         name_bytes = bytes(raw_name)
         if name_bytes.lower() not in matching.AWS_FIREWALL_REQUEST_HEADER_NAMES:

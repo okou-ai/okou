@@ -786,6 +786,51 @@ async def test_aws_action_rule_uses_buffered_body_for_request_classification(
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
+async def test_aws_rule_rejects_unsupported_streaming_payload_before_auth(
+    tmp_path,
+    real_flow,
+    headers,
+    mitm_ctx,
+) -> None:
+    registry_path = _write_aws_registry(
+        tmp_path,
+        rules=["POST / AWS sigv4=sts"],
+    )
+    flow = _header_auth_flow(
+        real_flow,
+        headers,
+        body=b"",
+        content_length="0",
+        content_hash="STREAMING-AWS4-HMAC-SHA256-PAYLOAD",
+    )
+    get_headers = AsyncMock(return_value=_resolved_token_meta())
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+    get_headers.assert_not_awaited()
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["reason"] == "unknown_endpoint"
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+
+
+def test_aws_firewall_context_marks_oversized_target_uninspectable(
+    real_flow,
+    headers,
+) -> None:
+    flow = _header_auth_flow(real_flow, headers)
+    flow.request.path = "/" + "x" * auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
+
+    context = request_classification._aws_firewall_request_context(flow)
+
+    assert context.aws_inspection_available is False
+
+
 def test_bounded_sigv4_classification_failure_restores_probe_metadata(
     tmp_path,
     real_flow,

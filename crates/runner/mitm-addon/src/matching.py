@@ -109,6 +109,7 @@ AWS_FIREWALL_REQUEST_HEADER_NAMES = frozenset(
         b"content-length",
         b"content-type",
         b"transfer-encoding",
+        b"x-amz-content-sha256",
         b"x-amz-copy-source",
         b"x-amz-date",
         b"x-amz-target",
@@ -420,6 +421,7 @@ class _CompiledRuleCandidate(NamedTuple):
 class FirewallRequestContext(NamedTuple):
     headers: tuple[tuple[str, str], ...] = ()
     body: bytes | None = None
+    aws_inspection_available: bool = True
 
 
 def _is_string_record(value: object) -> bool:
@@ -1856,7 +1858,11 @@ def _aws_query_requirements_match(
     for key, expected_value in query_requirements:
         values = _query_values(query_pairs, key)
         if expected_value == "*":
-            if not values or any(value == "" for value in values):
+            if (
+                not values
+                or any(value == "" for value in values)
+                or (strict_extra_keys and len(values) != 1)
+            ):
                 return False
             continue
         if len(values) != 1:
@@ -2370,12 +2376,15 @@ def _match_compiled_firewall_request_with_api_candidates(
     def get_sigv4_service() -> str | None:
         nonlocal sigv4_service
         if sigv4_service is sigv4_service_unset:
-            sigv4_service = aws_sigv4.inspect_sigv4_service(
-                url=url,
-                headers=_headers_for_sigv4(
-                    request_context.headers if request_context is not None else None
-                ),
-            )
+            if request_context is not None and not request_context.aws_inspection_available:
+                sigv4_service = None
+            else:
+                sigv4_service = aws_sigv4.inspect_sigv4_service(
+                    url=url,
+                    headers=_headers_for_sigv4(
+                        request_context.headers if request_context is not None else None
+                    ),
+                )
         return sigv4_service if isinstance(sigv4_service, str) else None
 
     def get_form_action_result() -> _AwsFormActionResult:
