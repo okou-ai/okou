@@ -1919,3 +1919,14 @@ export {
   activitySummaryResponseSchema,
   type ActivitySummaryResponse,
 } from "./chat-thread-activity-summary";
+
+export {
+  HOME_TASK_RECOMMENDATION_LIMIT,
+  HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY,
+  HOME_TASK_RECOMMENDATION_REFRESH_MS,
+  homeTaskRecommendationSchema,
+  homeTaskRecommendationsContract,
+  homeTaskRecommendationsResponseSchema,
+  type HomeTaskRecommendation,
+  type HomeTaskRecommendationsResponse,
+} from "./home-task-recommendations";

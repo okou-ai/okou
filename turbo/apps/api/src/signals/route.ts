@@ -84,6 +84,7 @@ import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
 import { bankingRoutes } from "./routes/banking";
 import { chatThreadRoutes } from "./routes/chat-threads";
+import { homeTaskRecommendationRoutes } from "./routes/home-task-recommendations";
 import { welcomeChatThreadRoutes } from "./routes/welcome-chat-threads";
 import { chatEventsRoutes } from "./routes/chat-events";
 import { sharedThreadRoutes } from "./routes/shared-threads";
@@ -311,6 +312,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingUsagePackCreditsRoutes,
   ...bankingRoutes,
   ...chatThreadRoutes,
+  ...homeTaskRecommendationRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
   ...sharedThreadRoutes,

@@ -1917,6 +1917,9 @@
       "threads": "Chats",
       "title": "Weiterleiten an"
     },
+    "homeTasks": {
+      "heading": "Aus Ihrer letzten Arbeit aufgegriffen"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "CC",

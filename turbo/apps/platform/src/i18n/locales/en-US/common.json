@@ -1917,6 +1917,9 @@
       "threads": "Chats",
       "title": "Forward to"
     },
+    "homeTasks": {
+      "heading": "Picked up from your recent work"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

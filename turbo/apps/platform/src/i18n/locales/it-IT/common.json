@@ -1954,6 +1954,9 @@
       "threads": "Chat",
       "title": "Inoltra a"
     },
+    "homeTasks": {
+      "heading": "Ripreso dal tuo lavoro recente"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

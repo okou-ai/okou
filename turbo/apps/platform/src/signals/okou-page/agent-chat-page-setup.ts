@@ -22,6 +22,7 @@ import {
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
 import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
+import { subscribeHomeTaskRecommendations$ } from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -95,6 +96,10 @@ export const setupAgentChatPage$ = command(
         }),
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
+    // The recommendation refresh belongs to the page, not to the card that
+    // renders it: the loop must stop when the route does, and a component that
+    // unmounts while the set is empty would otherwise never restart it.
+    set(subscribeHomeTaskRecommendations$, signal);
 
     await set(checkUnifiedSettingsParam$, signal);
 

@@ -161,6 +161,8 @@ surface; the index does not replace their detailed rules.
   commits.
 - [Chat cards](./chat-cards.md): recognizing links in chat messages, creating
   thread-scoped card signals, and rendering rich interactive cards.
+- [Home task recommendations](./home-task-recommendations.md): the two-stage
+  ranking and writing pipeline, its first-party evidence, and the refresh claim.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive

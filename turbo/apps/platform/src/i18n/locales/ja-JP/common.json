@@ -1910,6 +1910,9 @@
       "threads": "チャット",
       "title": "転送先"
     },
+    "homeTasks": {
+      "heading": "最近の作業から選んだタスク"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",

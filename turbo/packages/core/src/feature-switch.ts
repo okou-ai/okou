@@ -87,6 +87,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Generate short public activity summaries for active thread subscriptions.",
     enabled: true,
   },
+  [FeatureSwitchKey.HomeTaskRecommendations]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Recommend personalized tasks on the agent home page from recent chat activity and the connected connector inventory.",
+    enabled: false,
+  },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
     description:

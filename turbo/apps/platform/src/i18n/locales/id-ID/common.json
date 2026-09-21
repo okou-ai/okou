@@ -1910,6 +1910,9 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
+    "homeTasks": {
+      "heading": "Diambil dari pekerjaan terbaru Anda"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

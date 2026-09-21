@@ -1954,6 +1954,9 @@
       "threads": "Chats",
       "title": "Transférer vers"
     },
+    "homeTasks": {
+      "heading": "Repris de votre travail récent"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

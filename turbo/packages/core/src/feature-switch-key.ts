@@ -89,4 +89,5 @@ export enum FeatureSwitchKey {
   OptimisticMessageSpinner = "optimisticMessageSpinner",
   UserMessageLinks = "userMessageLinks",
   BrowserNativeInput = "browserNativeInput",
+  HomeTaskRecommendations = "homeTaskRecommendations",
 }

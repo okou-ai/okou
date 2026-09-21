@@ -1954,6 +1954,9 @@
       "threads": "Conversas",
       "title": "Encaminhar para"
     },
+    "homeTasks": {
+      "heading": "Retomado do seu trabalho recente"
+    },
     "mail": {
       "bcc": "cco",
       "cc": "cc",

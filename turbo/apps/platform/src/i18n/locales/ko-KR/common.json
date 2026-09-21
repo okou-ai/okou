@@ -1910,6 +1910,9 @@
       "threads": "채팅",
       "title": "전달 대상"
     },
+    "homeTasks": {
+      "heading": "최근 작업에서 이어갈 일"
+    },
     "mail": {
       "bcc": "숨은 참조",
       "cc": "참조",
