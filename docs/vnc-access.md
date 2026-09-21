@@ -135,8 +135,9 @@ errors. The UI does not change the default-off switch or existing data.
 Real Agent/server interoperability, two-client admission, mixed versions and
 retained-data rollback for the base profile were verified in
 [#35299](https://github.com/vm0-ai/okou/issues/35299). X509Plain full-path
-verification is recorded separately from implementation; merging support is not
-production activation evidence.
+verification is recorded in the
+[head-specific acceptance record](vnc-x509plain-acceptance.md); merging support
+is not production activation evidence.
 
 ## Secret inventory
 
