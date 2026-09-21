@@ -58,9 +58,9 @@ export type PiModelPolicy =
  * reader vocabulary in `pi-native-models.ts` stays frozen.
  */
 export const PI_MODEL_POLICY = {
-  "okou-1-0-max": { pi: true, route: "gpt-codex" },
-  "okou-1-0-pro": { pi: true, route: "gpt-codex" },
-  "okou-1-0": { pi: true, route: "gpt-codex" },
+  "okou-1.0-max": { pi: true, route: "gpt-codex" },
+  "okou-1.0-pro": { pi: true, route: "gpt-codex" },
+  "okou-1.0": { pi: true, route: "gpt-codex" },
   "claude-fable-5-1": {
     pi: false,
     exception: "frontier-vendor-harness",
@@ -125,12 +125,6 @@ function piRouteClass(model: string | null | undefined): PiRouteClass | null {
   }
   const policy: PiModelPolicy = PI_MODEL_POLICY[active];
   return policy.pi ? policy.route : null;
-}
-
-export function isPiOpenAiExecutionModel(
-  model: string | null | undefined,
-): boolean {
-  return isPiGptModel(model);
 }
 
 /** Admission and API-owned billing must expand together. */

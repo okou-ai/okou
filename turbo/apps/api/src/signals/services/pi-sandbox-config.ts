@@ -2,7 +2,6 @@ import {
   isPiExecutionRoute,
   isPiNativeModel,
   isPiGptModel,
-  isPiOpenAiExecutionModel,
   isPiDeepSeekModel,
 } from "@okouai/core/pi-execution";
 import {
@@ -110,7 +109,7 @@ export function gptApiKeyPiRoute(
 function piCatalogProvider(
   selectedModel: string | null | undefined,
 ): PiCatalogProvider | null {
-  if (isPiOpenAiExecutionModel(selectedModel)) {
+  if (isPiGptModel(selectedModel)) {
     return "openai";
   }
   return isPiDeepSeekModel(selectedModel) ? "deepseek" : null;

@@ -13,6 +13,44 @@ import { createDeferredPromise } from "../signals/utils";
 import { db } from "../lib/db";
 
 /**
+ * Grant one test model the operator-managed addability required for a new
+ * organization policy, then restore the exact prior catalog state.
+ */
+export async function allowNewOrgPolicyForRunModelFixture(
+  model: SupportedRunModel,
+): Promise<() => Promise<void>> {
+  const [previous] = await db()
+    .select()
+    .from(runModelCatalog)
+    .where(eq(runModelCatalog.model, model));
+  await db()
+    .insert(runModelCatalog)
+    .values({ model, allowNewOrgPolicy: true })
+    .onConflictDoUpdate({
+      target: runModelCatalog.model,
+      set: { allowNewOrgPolicy: true },
+    });
+
+  let restored = false;
+  return async () => {
+    if (restored) {
+      return;
+    }
+    if (previous) {
+      await db()
+        .update(runModelCatalog)
+        .set(previous)
+        .where(eq(runModelCatalog.model, model));
+    } else {
+      await db()
+        .delete(runModelCatalog)
+        .where(eq(runModelCatalog.model, model));
+    }
+    restored = true;
+  };
+}
+
+/**
  * The API version before the global addition gate could persist any active
  * model. Stage that historical state to prove a later catalog disablement does
  * not alter or freeze the organization's existing policy.

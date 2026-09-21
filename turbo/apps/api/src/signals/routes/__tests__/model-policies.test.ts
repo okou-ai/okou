@@ -24,6 +24,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
+  allowNewOrgPolicyForRunModelFixture,
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
@@ -218,6 +219,9 @@ describe("GET/PUT /api/model-policies", () => {
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouModels]: true,
     });
+    const restoreCatalogEntry =
+      await allowNewOrgPolicyForRunModelFixture(model);
+    onTestFinished(restoreCatalogEntry);
     await seedBuiltInModelCandidateKeys(context, model);
     const enabled = await accept(
       client.update({

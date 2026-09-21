@@ -873,15 +873,15 @@ async function validateUpdatePolicies(
       return bad(`Unknown model "${policy.model}"`);
     }
     const existing = existingByModel.get(policy.model);
-    if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
-      return bad(`Model "${model}" is not available to add`);
-    }
     if (
       !isRunModelAvailable(policy.model, featureSwitchContext) &&
       (!storedRouteUnchanged(policy, existing) ||
         (policy.isDefault && existing?.isDefault !== true))
     ) {
       return bad(RUN_MODEL_FEATURE_UNAVAILABLE_MESSAGE);
+    }
+    if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
+      return bad(`Model "${model}" is not available to add`);
     }
     const providerType = parseProviderType(policy.defaultProviderType);
     if (!providerType) {
