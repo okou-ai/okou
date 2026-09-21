@@ -17,8 +17,9 @@ import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
 
 interface PaidToolNoticeRow {
+  /** A read in flight only reports; a settled one names a tool or a failure. */
+  readonly kind: "pending" | "settled";
   readonly message: string;
-  /** A settled read offers a way forward; a read in flight only reports. */
   readonly action: { readonly label: string; readonly run: () => void } | null;
 }
 
@@ -33,6 +34,7 @@ function usePaidToolNoticeRow(
   const signal = useGet(pageSignal$);
   if (disabled.state === "loading") {
     return {
+      kind: "pending",
       message: t(($) => {
         return $.settings.paidTools.loading;
       }),
@@ -41,6 +43,7 @@ function usePaidToolNoticeRow(
   }
   if (disabled.state === "hasError") {
     return {
+      kind: "settled",
       message: t(($) => {
         return $.settings.paidTools.loadError;
       }),
@@ -61,6 +64,7 @@ function usePaidToolNoticeRow(
     return null;
   }
   return {
+    kind: "settled",
     message: blocked.map(paidToolDisabledMessage).join(" "),
     action: {
       label: t(($) => {
@@ -76,8 +80,8 @@ function usePaidToolNoticeRow(
 function usePaidToolNoticeEnabled(tools: readonly PaidToolId[]): boolean {
   const features = useGet(featureSwitch$);
   return (
-    (features[FeatureSwitchKey.ChatPreference] ?? false) &&
-    (features[FeatureSwitchKey.PaidToolControls] ?? false) &&
+    features[FeatureSwitchKey.ChatPreference] &&
+    features[FeatureSwitchKey.PaidToolControls] &&
     tools.length > 0
   );
 }
@@ -125,7 +129,9 @@ function ComposerPaidToolNoticeContent({
   readonly fallback: ReactNode;
 }) {
   const row = usePaidToolNoticeRow(tools);
-  if (!row) {
+  // The tray holds one row. A read in flight has nothing to say yet, so the
+  // notice it would replace keeps the tray until the read settles.
+  if (!row || row.kind === "pending") {
     return fallback;
   }
   return withChatScrollLayout(
