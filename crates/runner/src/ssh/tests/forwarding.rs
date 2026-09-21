@@ -206,9 +206,19 @@ async fn early_target_eof_retires_physical_transport_before_stream_drop() {
 async fn caller_cancellation_and_authority_invalidation_interrupt_active_streams() {
     let mut cancelled = Harness::new(Reply::default()).await;
     let _resolve = cancelled.resolve(cancelled.credential(true)).await;
+    assert_eq!(
+        terminal(&cancelled.request(params()).await)["type"],
+        "finished"
+    );
+    assert_eq!(cancelled.observed.auth.load(Ordering::SeqCst), 1);
     let token = CancellationToken::new();
     let mut stream = open(&cancelled, token.clone()).await.unwrap();
     let _target = cancelled.accept_forwarded().await;
+    assert_eq!(
+        cancelled.observed.auth.load(Ordering::SeqCst),
+        1,
+        "forward must observe its caller token even when it checks out an idle transport"
+    );
     token.cancel();
     wait_for(|| cancelled.observed.closed.load(Ordering::SeqCst) == 1).await;
     let mut byte = [0; 1];

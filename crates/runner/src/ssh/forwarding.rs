@@ -27,12 +27,19 @@ const SETUP_TIMEOUT: Duration = Duration::from_secs(60);
 /// pool lease retires the physical connection.
 pub(crate) struct DirectTcpIpStream {
     stream: russh::ChannelStream<client::Msg>,
+    monitor_done: CancellationToken,
     lease: Option<pool::Lease>,
 }
 
 impl DirectTcpIpStream {
     fn retire(&mut self) {
         drop(self.lease.take());
+    }
+}
+
+impl Drop for DirectTcpIpStream {
+    fn drop(&mut self) {
+        self.monitor_done.cancel();
     }
 }
 
@@ -103,6 +110,7 @@ impl Run {
                 .try_acquire_owned()
                 .map_err(|_| FailureReason::ResourceExhausted)?,
         );
+        let caller_cancelled = cancelled.clone();
         let scope = Scope {
             cancelled: self.sessions.cancel.child_token(),
             sandbox_cancelled: cancelled,
@@ -148,8 +156,20 @@ impl Run {
                 .connected()
                 .open_direct_tcpip(host, port, &scope)
                 .await?;
+            let transport_cancelled = lease.cancelled();
+            let monitor_done = CancellationToken::new();
+            let task_done = monitor_done.clone();
+            let task_transport = transport_cancelled.clone();
+            self.sessions.tasks.spawn(async move {
+                tokio::select! { biased;
+                    () = task_done.cancelled() => (),
+                    () = task_transport.cancelled() => (),
+                    () = caller_cancelled.cancelled() => task_transport.cancel(),
+                }
+            });
             Ok(DirectTcpIpStream {
                 stream,
+                monitor_done,
                 lease: Some(lease),
             })
         }
