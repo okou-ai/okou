@@ -16,6 +16,10 @@ def workflow(name):
         ['yq', '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))['jobs']
 
 turbo, security, benchmark = workflow('turbo'), workflow('security'), workflow('benchmark')
+script_tests = security['workflow-script-tests']
+assert script_tests['strategy']['fail-fast'] is False
+assert script_tests['strategy']['matrix']['shard'] == [1, 2, 3, 4]
+assert 'workflow-script-tests' in security['ci-gate-security']['needs']
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
            'test-other']
@@ -71,7 +75,7 @@ for job in ['bench-api', 'bench-app']:
     assert condition(benchmark[job], context(ios=False, ts=True, event='push')), job
 for job in ['codeql', 'pnpm-audit']:
     assert not condition(security[job], native), job
-for job in ['semgrep', 'gitleaks', 'actionlint', 'pr-title']:
+for job in ['semgrep', 'gitleaks', 'actionlint', 'workflow-script-tests', 'pr-title']:
     assert condition(security[job], native), job
 for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True)), job
@@ -115,7 +119,8 @@ native = context()
 for job in ['codeql', 'pnpm-audit']:
     native[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', native, True)
-for job in ['detect-release', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint', 'gitleaks']:
+for job in ['detect-release', 'detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit',
+            'actionlint', 'workflow-script-tests', 'gitleaks']:
     for failure in ['failure', 'cancelled']:
         gate(security, 'ci-gate-security', native | {f'needs.{job}.result': failure}, False)
 gate(security, 'ci-gate-security', native | {'needs.detect-native-only.result': 'skipped'}, False)
@@ -131,7 +136,8 @@ queued = context(ios=False, ts=True, event='merge_group')
 queued['needs.codeql.result'] = 'skipped'
 gate(security, 'ci-gate-security', queued, True)
 released = context(ios=False, ts=True, event='merge_group', release=True)
-for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint', 'gitleaks']:
+for job in ['detect-native-only', 'pr-title', 'semgrep', 'codeql', 'pnpm-audit', 'actionlint',
+            'workflow-script-tests', 'gitleaks']:
     released[f'needs.{job}.result'] = 'skipped'
 gate(security, 'ci-gate-security', released, True)
 

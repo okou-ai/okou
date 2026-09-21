@@ -238,7 +238,7 @@ jobs:
             "$archive"
           tar -xzf "$archive" actionlint
 
-      - name: Install ripgrep for workflow script tests
+      - name: Install ripgrep for workflow checks
         run: |
           RIPGREP_VERSION=14.1.1
           RIPGREP_SHA256=4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
@@ -258,7 +258,7 @@ jobs:
       - name: Check Release Please workspace coverage
         run: .github/scripts/check-release-please-workspace-coverage.sh
 
-      - name: Run workflow script tests
+      - name: Run workflow static checks
         run: |
           shopt -s nullglob
           script_files=(
@@ -293,6 +293,7 @@ jobs:
             .github/actions/report-memory-peak/report.sh \
             .github/scripts/resolve-desktop-version-change.sh \
             .github/scripts/run-semgrep.sh \
+            .github/scripts/run-workflow-script-test-shard.sh \
             .github/scripts/runner-behavior-*.sh \
             .github/scripts/smoke-okou-cli-artifact.sh \
             .github/scripts/verify-okou-cli-artifact.sh \
@@ -342,6 +343,7 @@ jobs:
             .github/scripts/tests/semgrep-results-test.sh \
             .github/scripts/tests/runner-behavior-agent-ready-benchmark-test.sh \
             .github/scripts/tests/runner-behavior-durable-test.sh \
+            .github/scripts/tests/workflow-script-test-shards-test.sh \
             e2e/scripts/ensure-stripe-cli.sh \
             e2e/helpers/browser.bash \
             e2e/helpers/trace-cli.sh \
@@ -349,12 +351,43 @@ jobs:
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/check-workflow-shell-compatibility.sh
-          for test_script in .github/scripts/tests/*.sh; do
-            bash "$test_script"
-          done
 
       - name: Run actionlint
         run: ./actionlint
+
+  workflow-script-tests:
+    needs: [detect-release]
+    name: Workflow Script Tests (${{ matrix.shard }}/4)
+    # Skip for release-please PRs, commits, and merge queue entries
+    if: needs.detect-release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install ripgrep for workflow script tests
+        run: |
+          RIPGREP_VERSION=14.1.1
+          RIPGREP_SHA256=4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
+          archive="$RUNNER_TEMP/ripgrep.tar.gz"
+          bin_dir="$RUNNER_TEMP/ripgrep-bin"
+          bash .github/scripts/download-verified.sh \
+            "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+            "$RIPGREP_SHA256" \
+            "$archive"
+          mkdir -p "$bin_dir"
+          tar -xzf "$archive" \
+            --strip-components=1 \
+            -C "$bin_dir" \
+            "ripgrep-${RIPGREP_VERSION}-x86_64-unknown-linux-musl/rg"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+
+      - name: Run workflow script test shard
+        run: .github/scripts/run-workflow-script-test-shard.sh "${{ matrix.shard }}"
 
   release-workspace-coverage:
     needs: [detect-release]
@@ -412,6 +445,7 @@ jobs:
       - codeql
       - pnpm-audit
       - actionlint
+      - workflow-script-tests
       - release-workspace-coverage
       - gitleaks
     # Always run so the gate reports an explicit result (not "skipped").
@@ -459,6 +493,7 @@ jobs:
           fi
           check_result "pnpm-audit" "${{ needs.pnpm-audit.result }}" "$IOS_ONLY"
           check_result "actionlint" "${{ needs.actionlint.result }}"
+          check_result "workflow-script-tests" "${{ needs.workflow-script-tests.result }}"
           check_result "gitleaks" "${{ needs.gitleaks.result }}"
 
           echo "::endgroup::"
