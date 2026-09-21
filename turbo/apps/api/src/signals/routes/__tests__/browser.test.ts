@@ -84,6 +84,46 @@ function browserInputWrites() {
   });
 }
 
+function browserControlInspections() {
+  return context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
+    return (
+      command.method === "Runtime.callFunctionOn" &&
+      typeof command.params.functionDeclaration === "string" &&
+      command.params.functionDeclaration.includes("supportedInputTypes") &&
+      command.params.functionDeclaration.includes("controls.map")
+    );
+  });
+}
+
+function browserInputVerifications() {
+  return context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
+    return (
+      command.method === "Runtime.callFunctionOn" &&
+      typeof command.params.functionDeclaration === "string" &&
+      command.params.functionDeclaration.includes("expectedValues") &&
+      command.params.functionDeclaration.includes("controls.every")
+    );
+  });
+}
+
+function browserUserActionNodeId(selector: unknown): number {
+  return selector === "#username" ? 12 : 11;
+}
+
+function browserUserActionBackendNodeId(nodeId: unknown): number {
+  return nodeId === 12 ? 43 : 42;
+}
+
+function browserUserActionObjectId(backendNodeId: unknown): string {
+  return backendNodeId === 43
+    ? "native-username-object"
+    : "native-password-object";
+}
+
+function browserUseCdpArgumentCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
 });
@@ -112,6 +152,7 @@ describe("Browser user-action route", () => {
     let resolveNodeAvailable = true;
     let verificationMatches = true;
     let failNextProviderRead = false;
+    let providerReadCount = 0;
     let providerReadBarrier:
       | {
           readonly entered: ReturnType<typeof createDeferredPromise<void>>;
@@ -154,14 +195,26 @@ describe("Browser user-action route", () => {
         return { root: { nodeId: 1 } };
       }
       if (command.method === "DOM.querySelectorAll") {
-        return { nodeIds: [11] };
+        return { nodeIds: [browserUserActionNodeId(command.params.selector)] };
       }
       if (command.method === "DOM.describeNode") {
-        return { node: { backendNodeId: 42 } };
+        return {
+          node: {
+            backendNodeId: browserUserActionBackendNodeId(
+              command.params.nodeId,
+            ),
+          },
+        };
       }
       if (command.method === "DOM.resolveNode") {
         return resolveNodeAvailable
-          ? { object: { objectId: "native-input-object" } }
+          ? {
+              object: {
+                objectId: browserUserActionObjectId(
+                  command.params.backendNodeId,
+                ),
+              },
+            }
           : {};
       }
       if (command.method === "Runtime.callFunctionOn") {
@@ -179,17 +232,21 @@ describe("Browser user-action route", () => {
             disconnectAfterNextWrite = false;
             controlConnected = false;
           }
-          return { result: {} };
+          return { result: { value: true } };
         }
+        const controlCount =
+          1 + browserUseCdpArgumentCount(command.params.arguments);
         return {
           result: {
-            value: {
-              tagName: "INPUT",
-              inputType: "password",
-              connected: controlConnected,
-              mainDocument: true,
-              writable: controlWritable,
-            },
+            value: Array.from({ length: controlCount }, () => {
+              return {
+                tagName: "INPUT",
+                inputType: "password",
+                connected: controlConnected,
+                mainDocument: true,
+                writable: controlWritable,
+              };
+            }),
           },
         };
       }
@@ -221,6 +278,7 @@ describe("Browser user-action route", () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
       http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
+        providerReadCount += 1;
         if (failNextProviderRead) {
           failNextProviderRead = false;
           return HttpResponse.json(
@@ -264,6 +322,9 @@ describe("Browser user-action route", () => {
       body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
     });
     controlWritable = true;
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
 
     const created = await accept(
       userActionClient().create({
@@ -272,6 +333,13 @@ describe("Browser user-action route", () => {
           kind: "input",
           callbackPrompt: "Continue after password entry",
           fields: [
+            {
+              key: "username",
+              label: "Username",
+              fieldKind: "username",
+              required: true,
+              selector: "#username",
+            },
             {
               key: "password",
               label: "Password",
@@ -289,9 +357,18 @@ describe("Browser user-action route", () => {
       kind: "input",
       state: "pending",
       siteOrigin: "https://example.com",
-      fields: [{ key: "password", fieldKind: "password", required: true }],
+      fields: [
+        { key: "username", fieldKind: "username", required: true },
+        { key: "password", fieldKind: "password", required: true },
+      ],
     });
     expect(created.body.action).not.toHaveProperty("selector");
+    expect(providerReadCount).toBe(1);
+    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
+    expect(browserControlInspections()).toHaveLength(1);
+    expect(browserControlInspections()[0]?.[0].params.arguments).toStrictEqual([
+      { objectId: "native-password-object" },
+    ]);
 
     const otherUser = createBddApi(context).user({ orgId: actor.orgId });
     routeMocks.clerk.session(
@@ -328,7 +405,12 @@ describe("Browser user-action route", () => {
     const emptyRequired = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: created.body.action.requestToken },
-      body: { values: [{ key: "password", value: "" }] },
+      body: {
+        values: [
+          { key: "username", value: "user@example.com" },
+          { key: "password", value: "" },
+        ],
+      },
     });
     expect(emptyRequired).toMatchObject({
       status: 400,
@@ -351,12 +433,38 @@ describe("Browser user-action route", () => {
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: created.body.action.requestToken },
         body: {
-          values: [{ key: "password", value: "request-memory-only" }],
+          values: [
+            { key: "username", value: "user@example.com" },
+            { key: "password", value: "request-memory-only" },
+          ],
         },
       }),
       [200],
     );
     expect(applied.body.state).toBe("succeeded");
+    expect(providerReadCount).toBe(2);
+    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(2);
+    expect(browserControlInspections()).toHaveLength(2);
+    expect(browserInputWrites()).toHaveLength(1);
+    expect(browserInputWrites()[0]?.[0].params.arguments).toStrictEqual([
+      { value: "user@example.com" },
+      { objectId: "native-password-object" },
+      { value: "request-memory-only" },
+    ]);
+    expect(browserInputWrites()[0]?.[0].params.functionDeclaration).toContain(
+      'new Event("input"',
+    );
+    expect(browserInputWrites()[0]?.[0].params.functionDeclaration).toContain(
+      'new Event("change"',
+    );
+    expect(
+      browserInputWrites()[0]?.[0].params.functionDeclaration,
+    ).not.toContain("submit");
+    expect(browserInputVerifications()).toHaveLength(1);
+
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
 
     const readBack = await accept(
       userActionClient().get({
@@ -367,13 +475,21 @@ describe("Browser user-action route", () => {
     );
     const serializedReadBack = JSON.stringify(readBack.body);
     expect(serializedReadBack).not.toContain("#password");
+    expect(serializedReadBack).not.toContain("#username");
+    expect(serializedReadBack).not.toContain("user@example.com");
     expect(serializedReadBack).not.toContain("request-memory-only");
+    expect(providerReadCount).toBe(0);
+    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
+    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
 
     const duplicateApply = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: created.body.action.requestToken },
       body: {
-        values: [{ key: "password", value: "must-not-be-written" }],
+        values: [
+          { key: "username", value: "must-not-be-written" },
+          { key: "password", value: "must-not-be-written" },
+        ],
       },
     });
     expect(duplicateApply).toMatchObject({
@@ -381,6 +497,9 @@ describe("Browser user-action route", () => {
       body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
     });
 
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
     const direct = await accept(
       userActionClient().create({
         headers: current.claim.browserHeaders,
@@ -392,6 +511,18 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
+    expect(providerReadCount).toBe(1);
+    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
+        return command.method === "Page.getFrameTree";
+      }),
+    ).toBeTruthy();
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
+        return command.method.startsWith("DOM.");
+      }),
+    ).toBeFalsy();
     const opened = await accept(
       userActionClient().open({
         headers: { authorization: "Bearer clerk-session" },
@@ -406,6 +537,9 @@ describe("Browser user-action route", () => {
         return command.method === "Target.activateTarget";
       }),
     ).toBeTruthy();
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
     const completed = await accept(
       userActionClient().complete({
         headers: { authorization: "Bearer clerk-session" },
@@ -426,6 +560,9 @@ describe("Browser user-action route", () => {
     expect(completedAgain.body.callbackIds).toStrictEqual(
       completed.body.callbackIds,
     );
+    expect(providerReadCount).toBe(0);
+    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
+    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
 
     const cancellable = await accept(
       userActionClient().create({
@@ -438,6 +575,9 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
     const cancelled = await accept(
       userActionClient().cancel({
         headers: { authorization: "Bearer clerk-session" },
@@ -458,16 +598,9 @@ describe("Browser user-action route", () => {
     expect(cancelledAgain.body.callbackIds).toStrictEqual(
       cancelled.body.callbackIds,
     );
-
-    const writes = browserInputWrites();
-    expect(writes).toHaveLength(1);
-    expect(writes[0]?.[0].params.functionDeclaration).toContain(
-      'new Event("input"',
-    );
-    expect(writes[0]?.[0].params.functionDeclaration).toContain(
-      'new Event("change"',
-    );
-    expect(writes[0]?.[0].params.functionDeclaration).not.toContain("submit");
+    expect(providerReadCount).toBe(0);
+    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
+    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
 
     const providerRetryCandidate = await accept(
       userActionClient().create({
@@ -664,13 +797,13 @@ describe("Browser user-action route", () => {
         return (
           command.method === "Runtime.callFunctionOn" &&
           typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("expected") &&
-          command.params.functionDeclaration.includes("this.isConnected")
+          command.params.functionDeclaration.includes("expectedValues") &&
+          command.params.functionDeclaration.includes("control.isConnected")
         );
       },
     );
     expect(verification?.[0].params.functionDeclaration).toContain(
-      "this.ownerDocument === document",
+      "control.ownerDocument === document",
     );
 
     const stuckCandidate = await accept(

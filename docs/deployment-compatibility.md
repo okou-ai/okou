@@ -3006,3 +3006,9 @@ Platform can retry notification only; values are never stored and Browser
 mutation is never retried. Rolling back the API requires disabling the switch
 first. The retained expansion table needs no contraction until all requests
 created by the newer API are outside their product retention window.
+
+Browser access is request-scoped and bounded. Input creation and application,
+and direct-interaction creation and opening, each use at most one provider
+lookup and one short-lived CDP connection. Direct creation issues no DOM
+command; multi-field inspection, mutation, and verification are batched within
+their connection. Read, cancel, and complete do not contact Browser Use or CDP.

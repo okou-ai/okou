@@ -651,52 +651,71 @@ function safeControlInspection(value: unknown):
 }
 
 function browserUseControlInspectionFunction(): string {
-  return `function () {
-    const input = this instanceof HTMLInputElement;
-    const textarea = this instanceof HTMLTextAreaElement;
+  return `function (...otherControls) {
+    const controls = [this, ...otherControls];
     const supportedInputTypes = new Set([
       "text", "password", "email", "tel", "url", "search", "number"
     ]);
-    const supported = textarea || (input && supportedInputTypes.has(this.type));
-    return {
-      tagName: this.tagName,
-      inputType: input ? this.type : textarea ? "textarea" : "",
-      connected: this.isConnected,
-      mainDocument: this.ownerDocument === document,
-      writable: supported && !this.readOnly && !this.disabled,
-    };
+    return controls.map((control) => {
+      const input = control instanceof HTMLInputElement;
+      const textarea = control instanceof HTMLTextAreaElement;
+      const supported =
+        textarea || (input && supportedInputTypes.has(control.type));
+      return {
+        tagName: control.tagName,
+        inputType: input ? control.type : textarea ? "textarea" : "",
+        connected: control.isConnected,
+        mainDocument: control.ownerDocument === document,
+        writable: supported && !control.readOnly && !control.disabled,
+      };
+    });
   }`;
 }
 
-async function inspectBrowserUseControl(
+function safeControlInspections(
+  value: unknown,
+  expectedLength: number,
+): readonly NonNullable<ReturnType<typeof safeControlInspection>>[] | null {
+  if (!Array.isArray(value) || value.length !== expectedLength) {
+    return null;
+  }
+  const inspections: NonNullable<ReturnType<typeof safeControlInspection>>[] =
+    [];
+  for (const item of value) {
+    const inspection = safeControlInspection(item);
+    if (!inspection) {
+      return null;
+    }
+    inspections.push(inspection);
+  }
+  return inspections;
+}
+
+async function inspectBrowserUseControls(
   socket: WebSocket,
   sessionId: string,
-  backendNodeId: number,
+  objectIds: readonly string[],
   commandId: number,
   signal: AbortSignal,
-): Promise<ReturnType<typeof safeControlInspection>> {
-  const remote = browserUseCdpRemoteObjectSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: commandId,
-        method: "DOM.resolveNode",
-        params: { backendNodeId },
-        sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
-  );
+): Promise<
+  readonly NonNullable<ReturnType<typeof safeControlInspection>>[] | null
+> {
+  const [firstObjectId, ...otherObjectIds] = objectIds;
+  if (!firstObjectId) {
+    return [];
+  }
   const inspected = browserUseCdpValueSchema.parse(
     await sendBrowserUseCdpCommand(
       socket,
       {
-        id: commandId + 1,
+        id: commandId,
         method: "Runtime.callFunctionOn",
         params: {
-          objectId: remote.object.objectId,
+          objectId: firstObjectId,
           functionDeclaration: browserUseControlInspectionFunction(),
+          arguments: otherObjectIds.map((objectId) => {
+            return { objectId };
+          }),
           returnByValue: true,
         },
         sessionId,
@@ -705,7 +724,7 @@ async function inspectBrowserUseControl(
     ),
     { reportInput: true },
   );
-  return safeControlInspection(inspected.result.value);
+  return safeControlInspections(inspected.result.value, objectIds.length);
 }
 
 async function findFocusedBrowserUsePage(
@@ -780,7 +799,8 @@ async function captureBrowserUseControl(
   },
   signal: AbortSignal,
 ): Promise<{
-  readonly field: BrowserUseUserActionTarget;
+  readonly backendNodeId: number;
+  readonly objectId: string;
   readonly commandId: number;
 }> {
   const queried = await settle(
@@ -820,30 +840,23 @@ async function captureBrowserUseControl(
     ),
     { reportInput: true },
   );
-  const inspected = await inspectBrowserUseControl(
-    socket,
-    args.sessionId,
-    described.node.backendNodeId,
-    args.commandId + 2,
-    signal,
-  );
-  if (
-    !inspected ||
-    !inspected.connected ||
-    !inspected.mainDocument ||
-    !inspected.writable
-  ) {
-    throw new BrowserUseUserActionCaptureError("unsupported_control");
-  }
-  return {
-    commandId: args.commandId + 4,
-    field: {
-      backendNodeId: described.node.backendNodeId,
-      fingerprint: {
-        tagName: inspected.tagName,
-        inputType: inspected.inputType,
+  const remote = browserUseCdpRemoteObjectSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId + 2,
+        method: "DOM.resolveNode",
+        params: { backendNodeId: described.node.backendNodeId },
+        sessionId: args.sessionId,
       },
-    },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  return {
+    backendNodeId: described.node.backendNodeId,
+    objectId: remote.object.objectId,
+    commandId: args.commandId + 3,
   };
 }
 
@@ -872,6 +885,15 @@ async function captureBrowserUseUserActionOnSocket(
   if (!pageUrl) {
     throw new BrowserUseUserActionCaptureError("unsupported_page");
   }
+  if (selectors.length === 0) {
+    return {
+      pageTargetId: focused.page.targetId,
+      documentLoaderId: frameTree.frameTree.frame.loaderId,
+      pageUrl: pageUrl.toString(),
+      siteOrigin: pageUrl.origin,
+      fields: [],
+    };
+  }
   const document = browserUseCdpDocumentSchema.parse(
     await sendBrowserUseCdpCommand(
       socket,
@@ -886,7 +908,10 @@ async function captureBrowserUseUserActionOnSocket(
     { reportInput: true },
   );
   commandId += 1;
-  const fields: BrowserUseUserActionTarget[] = [];
+  const capturedControls: {
+    readonly backendNodeId: number;
+    readonly objectId: string;
+  }[] = [];
   for (const selector of selectors) {
     const captured = await captureBrowserUseControl(
       socket,
@@ -899,8 +924,42 @@ async function captureBrowserUseUserActionOnSocket(
       signal,
     );
     commandId = captured.commandId;
-    fields.push(captured.field);
+    capturedControls.push(captured);
   }
+  const inspections = await inspectBrowserUseControls(
+    socket,
+    focused.page.sessionId,
+    capturedControls.map((control) => {
+      return control.objectId;
+    }),
+    commandId,
+    signal,
+  );
+  if (
+    !inspections ||
+    inspections.some((inspection) => {
+      return (
+        !inspection.connected ||
+        !inspection.mainDocument ||
+        !inspection.writable
+      );
+    })
+  ) {
+    throw new BrowserUseUserActionCaptureError("unsupported_control");
+  }
+  const fields = capturedControls.map((control, index) => {
+    const inspection = inspections[index];
+    if (!inspection) {
+      throw new BrowserUseUserActionCaptureError("unsupported_control");
+    }
+    return {
+      backendNodeId: control.backendNodeId,
+      fingerprint: {
+        tagName: inspection.tagName,
+        inputType: inspection.inputType,
+      },
+    } satisfies BrowserUseUserActionTarget;
+  });
   return {
     pageTargetId: focused.page.targetId,
     documentLoaderId: frameTree.frameTree.frame.loaderId,
@@ -945,6 +1004,11 @@ interface BrowserUseUserActionApplyTarget {
 interface ResolvedBrowserUseUserActionField {
   readonly objectId: string;
   readonly value?: string;
+}
+
+interface WritableBrowserUseUserActionField {
+  readonly objectId: string;
+  readonly value: string;
 }
 
 async function openBrowserUseApplyPage(
@@ -994,68 +1058,6 @@ async function openBrowserUseApplyPage(
   return attached;
 }
 
-async function resolveBrowserUseApplyField(
-  socket: WebSocket,
-  args: {
-    readonly sessionId: string;
-    readonly field: BrowserUseUserActionApplyField;
-    readonly commandId: number;
-  },
-  signal: AbortSignal,
-): Promise<ResolvedBrowserUseUserActionField | null> {
-  const remoteResult = await settle(
-    sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: args.commandId,
-        method: "DOM.resolveNode",
-        params: { backendNodeId: args.field.backendNodeId },
-        sessionId: args.sessionId,
-      },
-      signal,
-    ),
-  );
-  if (!remoteResult.ok) {
-    return null;
-  }
-  const remote = browserUseCdpRemoteObjectSchema.safeParse(remoteResult.value);
-  if (!remote.success) {
-    return null;
-  }
-  const inspectedResult = browserUseCdpValueSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: args.commandId + 1,
-        method: "Runtime.callFunctionOn",
-        params: {
-          objectId: remote.data.object.objectId,
-          functionDeclaration: browserUseControlInspectionFunction(),
-          returnByValue: true,
-        },
-        sessionId: args.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
-  );
-  const inspected = safeControlInspection(inspectedResult.result.value);
-  if (
-    !inspected ||
-    !inspected.connected ||
-    !inspected.mainDocument ||
-    !inspected.writable ||
-    inspected.tagName !== args.field.fingerprint.tagName ||
-    inspected.inputType !== args.field.fingerprint.inputType
-  ) {
-    return null;
-  }
-  return {
-    objectId: remote.data.object.objectId,
-    ...(args.field.value === undefined ? {} : { value: args.field.value }),
-  };
-}
-
 async function resolveBrowserUseApplyFields(
   socket: WebSocket,
   sessionId: string,
@@ -1066,20 +1068,85 @@ async function resolveBrowserUseApplyFields(
   readonly commandId: number;
 } | null> {
   let commandId = 4;
-  const resolved: ResolvedBrowserUseUserActionField[] = [];
+  const objectIds: string[] = [];
   for (const field of fields) {
-    const result = await resolveBrowserUseApplyField(
-      socket,
-      { sessionId, field, commandId },
-      signal,
+    const remoteResult = await settle(
+      sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId,
+          method: "DOM.resolveNode",
+          params: { backendNodeId: field.backendNodeId },
+          sessionId,
+        },
+        signal,
+      ),
     );
-    if (!result) {
+    if (!remoteResult.ok) {
       return null;
     }
-    resolved.push(result);
-    commandId += 2;
+    const remote = browserUseCdpRemoteObjectSchema.safeParse(
+      remoteResult.value,
+    );
+    if (!remote.success) {
+      return null;
+    }
+    objectIds.push(remote.data.object.objectId);
+    commandId += 1;
+  }
+  const inspections = await inspectBrowserUseControls(
+    socket,
+    sessionId,
+    objectIds,
+    commandId,
+    signal,
+  );
+  if (!inspections) {
+    return null;
+  }
+  commandId += objectIds.length === 0 ? 0 : 1;
+  const resolved: ResolvedBrowserUseUserActionField[] = [];
+  for (const [index, field] of fields.entries()) {
+    const inspection = inspections[index];
+    const objectId = objectIds[index];
+    if (
+      !inspection ||
+      !objectId ||
+      !inspection.connected ||
+      !inspection.mainDocument ||
+      !inspection.writable ||
+      inspection.tagName !== field.fingerprint.tagName ||
+      inspection.inputType !== field.fingerprint.inputType
+    ) {
+      return null;
+    }
+    resolved.push({
+      objectId,
+      ...(field.value === undefined ? {} : { value: field.value }),
+    });
   }
   return { fields: resolved, commandId };
+}
+
+function writableBrowserUseFields(
+  fields: readonly ResolvedBrowserUseUserActionField[],
+): readonly WritableBrowserUseUserActionField[] {
+  const writable: WritableBrowserUseUserActionField[] = [];
+  for (const field of fields) {
+    if (field.value !== undefined) {
+      writable.push({ objectId: field.objectId, value: field.value });
+    }
+  }
+  return writable;
+}
+
+function browserUseAggregateValueArguments(
+  fields: readonly WritableBrowserUseUserActionField[],
+): readonly Readonly<Record<string, unknown>>[] {
+  const [, ...otherFields] = fields;
+  return otherFields.flatMap((field) => {
+    return [{ objectId: field.objectId }, { value: field.value }];
+  });
 }
 
 async function writeBrowserUseApplyFields(
@@ -1092,66 +1159,86 @@ async function writeBrowserUseApplyFields(
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
 ): Promise<void> {
-  let commandId = args.commandId;
-  for (const field of args.fields) {
-    if (field.value === undefined) {
-      continue;
-    }
-    mutation.writeStarted = true;
+  const fields = writableBrowserUseFields(args.fields);
+  const [firstField] = fields;
+  if (!firstField) {
+    return;
+  }
+  const remainingArguments = browserUseAggregateValueArguments(fields);
+  mutation.writeStarted = true;
+  const wrote = browserUseCdpValueSchema.parse(
     await sendBrowserUseCdpCommand(
       socket,
       {
-        id: commandId,
+        id: args.commandId,
         method: "Runtime.callFunctionOn",
         params: {
-          objectId: field.objectId,
-          functionDeclaration: `function (nextValue) {
-            const prototype = this instanceof HTMLTextAreaElement
-              ? HTMLTextAreaElement.prototype
-              : HTMLInputElement.prototype;
-            const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-            if (!setter) throw new Error("native setter unavailable");
-            setter.call(this, nextValue);
-            this.dispatchEvent(new Event("input", { bubbles: true }));
-            this.dispatchEvent(new Event("change", { bubbles: true }));
+          objectId: firstField.objectId,
+          functionDeclaration: `function (nextValue, ...otherControlValues) {
+            const controls = [this];
+            const values = [nextValue];
+            for (let index = 0; index < otherControlValues.length; index += 2) {
+              controls.push(otherControlValues[index]);
+              values.push(otherControlValues[index + 1]);
+            }
+            for (let index = 0; index < controls.length; index += 1) {
+              const control = controls[index];
+              const prototype = control instanceof HTMLTextAreaElement
+                ? HTMLTextAreaElement.prototype
+                : HTMLInputElement.prototype;
+              const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+              if (!setter) throw new Error("native setter unavailable");
+              setter.call(control, values[index]);
+              control.dispatchEvent(new Event("input", { bubbles: true }));
+              control.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            return true;
           }`,
-          arguments: [{ value: field.value }],
+          arguments: [{ value: firstField.value }, ...remainingArguments],
           awaitPromise: false,
           returnByValue: true,
         },
         sessionId: args.sessionId,
       },
       signal,
-    );
-    commandId += 1;
+    ),
+    { reportInput: true },
+  );
+  if (wrote.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
   }
-  for (const field of args.fields) {
-    if (field.value === undefined) {
-      continue;
-    }
-    const verified = browserUseCdpValueSchema.parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: commandId,
-          method: "Runtime.callFunctionOn",
-          params: {
-            objectId: field.objectId,
-            functionDeclaration:
-              "function (expected) { return this.isConnected && this.ownerDocument === document && this.value === expected; }",
-            arguments: [{ value: field.value }],
-            returnByValue: true,
-          },
-          sessionId: args.sessionId,
+  const verified = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId + 1,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: firstField.objectId,
+          functionDeclaration: `function (expected, ...otherControlValues) {
+            const controls = [this];
+            const expectedValues = [expected];
+            for (let index = 0; index < otherControlValues.length; index += 2) {
+              controls.push(otherControlValues[index]);
+              expectedValues.push(otherControlValues[index + 1]);
+            }
+            return controls.every((control, index) => {
+              return control.isConnected &&
+                control.ownerDocument === document &&
+                control.value === expectedValues[index];
+            });
+          }`,
+          arguments: [{ value: firstField.value }, ...remainingArguments],
+          returnByValue: true,
         },
-        signal,
-      ),
-      { reportInput: true },
-    );
-    commandId += 1;
-    if (verified.result.value !== true) {
-      throw new BrowserUseUserActionMutationError(true);
-    }
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  if (verified.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
   }
 }
 
