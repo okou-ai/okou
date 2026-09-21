@@ -1,8 +1,12 @@
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadArtifactsContract,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -11,6 +15,7 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   ATTACHMENT_RUN_ID,
   ATTACHMENT_THREAD_ID,
@@ -1044,3 +1049,89 @@ test.each([
     });
   },
 );
+
+test("A private site card keeps its screenshot credentials when the artifact list reloads", async () => {
+  const deploymentId = "00000000-0000-4000-8000-000000000023";
+  const screenshotId = "00000000-0000-4000-8000-000000000024";
+  const site = artifactReferencePath(deploymentId, "index.html");
+  const screenshot = artifactReferencePath(screenshotId, "preview.webp");
+  const screenshotUrl = `${R2_ORIGIN}/private/screenshot.bin?X-Amz-Signature=owner`;
+  const rotatedScreenshotUrl = `${R2_ORIGIN}/private/screenshot.bin?X-Amz-Signature=rotated`;
+  const previewUrl = `https://pv-${"c".repeat(48)}.sites.vm7.io/`;
+  const files = [
+    artifactFile("private-report.html", {
+      id: "private-screenshot-reload",
+      contentType: "text/html",
+      url: site,
+      artifactKind: "hosted-site",
+      previewImageUrl: screenshot,
+    }),
+  ];
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
+    );
+  });
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`![Private report](${site})`)],
+    artifacts: files,
+  });
+  // Opening the artifacts panel reloads this list, which is what used to
+  // rebuild the card's screenshot graph.
+  let artifactListRequests = 0;
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    artifactListRequests += 1;
+    return respond(200, {
+      runs: [{ runId: ATTACHMENT_RUN_ID, files }],
+    });
+  });
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, { artifacts: [], nextCursor: null });
+  });
+  let screenshotAuthorizations = 0;
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      const isScreenshot =
+        params.reference === screenshot.slice("/artifacts/".length);
+      if (isScreenshot) {
+        screenshotAuthorizations += 1;
+      }
+      return respond(200, {
+        url: isScreenshot
+          ? screenshotAuthorizations > 1
+            ? rotatedScreenshotUrl
+            : screenshotUrl
+          : previewUrl,
+        filename: isScreenshot ? "preview.webp" : "index.html",
+        contentType: isScreenshot ? "image/webp" : "text/html",
+        target: isScreenshot
+          ? { kind: "file", id: screenshotId }
+          : { kind: "html", id: deploymentId },
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+    },
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const card = await screen.findByTestId("attachment-preview-html");
+  const thumbnail = await within(card).findByTestId(
+    "attachment-preview-thumbnail",
+  );
+  expect(thumbnail).toHaveAttribute(
+    "src",
+    `${THUMBNAIL_PREFIX}${screenshotUrl}`,
+  );
+  const requestsBeforeReload = artifactListRequests;
+
+  click(await screen.findByLabelText("Open artifacts"));
+  await screen.findByTestId("thread-sidebar-artifacts");
+  await waitFor(() => {
+    expect(artifactListRequests).toBeGreaterThan(requestsBeforeReload);
+  });
+
+  expect(screenshotAuthorizations).toBe(1);
+  expect(
+    within(card).getByTestId("attachment-preview-thumbnail"),
+  ).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${screenshotUrl}`);
+});
