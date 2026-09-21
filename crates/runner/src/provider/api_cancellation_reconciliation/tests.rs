@@ -206,6 +206,42 @@ async fn real_connection_reset_keeps_typed_safe_request_context() {
     controller.shutdown().await;
 }
 
+#[tokio::test]
+async fn truncated_body_keeps_typed_cause_and_secret_free_diagnostics() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(
+        b"HTTP/1.1 200 OK\r\nContent-Length: 256\r\nConnection: close\r\n\r\nprivate-response-body"
+            .to_vec(),
+    )])
+    .await;
+    let controller = controller_for_url(server.url());
+    let run_id = RunId::new_v4();
+
+    let result = controller.client.read(run_id, "sandbox-test-token").await;
+    let Err(error @ ReadError::Body(cause)) = result else {
+        panic!("expected a typed response-body error, got {result:?}");
+    };
+    assert_eq!(cause, ApiTransportCause::UnexpectedEof);
+
+    let mut failures = ReadFailures::default();
+    failures.record(run_id, &error);
+    let events = events(&captured, FAILURE);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].level, Level::WARN);
+    assert_eq!(events[0].fields["status"], "200");
+    assert_eq!(events[0].fields["failure_stage"], "body");
+    assert_eq!(events[0].fields["failure_kind"], "body");
+    assert_eq!(events[0].fields["failure_cause"], "unexpected_eof");
+    let diagnostic = format!("{:?}", captured.entries());
+    assert!(!diagnostic.contains("private-response-body"));
+    assert!(!diagnostic.contains("sandbox-test-token"));
+
+    server.assert_finished().await;
+    controller.shutdown().await;
+}
+
 #[tokio::test(start_paused = true)]
 async fn transient_episode_warns_once_after_one_interval_and_reports_recovery() {
     let captured = CapturedEvents::default();
