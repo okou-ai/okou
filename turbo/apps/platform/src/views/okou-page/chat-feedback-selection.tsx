@@ -133,17 +133,22 @@ export function ChatFeedbackSelection({
         <Popover
           open
           onOpenChange={(next, eventDetails) => {
-            if (!next) {
-              const eventTarget = eventDetails.event.target;
-              if (
-                eventTarget instanceof Element &&
-                eventTarget.closest("[data-chat-selection-interaction]")
-              ) {
-                eventDetails.cancel();
-                return;
-              }
-              closeSelectionToolbar();
+            if (next) {
+              return;
             }
+            // The selection owns this toolbar: chat-thread-feedback.ts closes
+            // it when the passage collapses, when a press lands outside it, and
+            // when the passage scrolls out of reach. Base UI's outside press
+            // would be a second owner working from a different clock — it
+            // dismisses on `click`, and the toolbar is mounted by the `mouseup`
+            // of the drag that produced the selection, so that same gesture's
+            // trailing click reads as a press outside and closes the toolbar
+            // before the reader ever sees it.
+            if (eventDetails.reason === "outside-press") {
+              eventDetails.cancel();
+              return;
+            }
+            closeSelectionToolbar();
           }}
         >
           <span ref={setFeedbackSelectionToolbarRef} hidden />
