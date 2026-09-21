@@ -6,7 +6,13 @@
  * back a real .pptx, so slide detection, the capability guard, post-processing,
  * the archive round-trip, and coverage grading all run unchanged.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { crc32, inflateRawSync } from "zlib";
@@ -17,6 +23,10 @@ import { presentationCommand } from "../index";
 
 /** Width the fake renderer gives a table frame, in EMU. */
 const TABLE_FRAME_CX = 7_620_000;
+
+/** Named here rather than imported, so the published address stays pinned. */
+const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
+const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/dom-to-pptx@2.1.2/dist/${RENDERER_BUNDLE}`;
 
 /**
  * A table as the renderer writes one: rows carrying the zero-height placeholder
@@ -134,6 +144,8 @@ const state = {
   pageTexts: ["Hello deck", "Second line"] as string[],
   /** Text the fake renderer writes into the deck; differs to force a shortfall. */
   deckTexts: undefined as string[] | undefined,
+  /** Every expression the command evaluated in the page, in order. */
+  evaluated: [] as string[],
   fontStack: 'Lexend, "PingFang SC", sans-serif',
   slideCount: 2,
   /** Rows the fake renderer writes into slide 1's table, all at the placeholder. */
@@ -161,6 +173,7 @@ function deckBase64(): string {
 
 /** Answers the page scripts the command evaluates, in the order it evaluates them. */
 function fakeEval(expression: string): string {
+  state.evaluated.push(expression);
   // agent-browser prints the evaluated value JSON-encoded, and the page scripts
   // already stringify their result, so a string answer is encoded twice.
   const encoded = (value: unknown): string => {
@@ -284,6 +297,7 @@ describe("okou presentation convert", () => {
     errorSpy.mockClear();
     state.pageTexts = ["Hello deck", "Second line"];
     state.deckTexts = undefined;
+    state.evaluated = [];
     state.fontStack = 'Lexend, "PingFang SC", sans-serif';
     state.slideCount = 2;
     state.tableRows = 0;
@@ -349,6 +363,33 @@ describe("okou presentation convert", () => {
       readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
     expect(slide).toContain('wrap="square"');
     expect(slide).not.toContain('wrap="none"');
+  });
+
+  it("reads the cached renderer into a local deck", async () => {
+    await convert([]);
+
+    expect(state.evaluated.join("")).toContain(
+      `file://${join(cacheHome, "okou", "presentation-convert", "v1", RENDERER_BUNDLE)}`,
+    );
+  });
+
+  it("serves the renderer over the network to a hosted deck", async () => {
+    await presentationCommand.parseAsync(
+      ["convert", "--input", "https://example.com/deck", "--out", outPath],
+      { from: "user" },
+    );
+
+    // A browser refuses a file:// script from a network origin, so a hosted
+    // deck has to be handed the published artifact instead of this cache.
+    const evaluated = state.evaluated.join("");
+    expect(evaluated).toContain(RENDERER_CDN);
+    expect(evaluated).not.toContain("file://");
+    // Nothing on this machine is needed, so nothing is fetched into the cache.
+    expect(
+      existsSync(
+        join(cacheHome, "okou", "presentation-convert", "v1", RENDERER_BUNDLE),
+      ),
+    ).toBe(false);
   });
 
   it("gives table rows the heights the page painted", async () => {

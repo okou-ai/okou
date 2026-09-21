@@ -585,10 +585,11 @@ function readTableBoxes(value: unknown): readonly (readonly TableBox[])[] {
  * Settles the deck, normalises it, and renders it to a .pptx without ever
  * leaving the page — the geometry that exports is the geometry that painted.
  */
-function render(options: Options, bundle: string): Rendered {
+function render(options: Options): Rendered {
   // A hosted deck can sit behind a login or a bot check that only the thread's
   // managed browser clears, so the session is addressable rather than private.
   const borrowed = options.session !== undefined;
+  const deckUrl = sourceUrl(options.input);
   const page = browser(
     options.session ?? `okou-convert-${process.pid.toString()}`,
   );
@@ -604,7 +605,7 @@ function render(options: Options, bundle: string): Rendered {
       ]);
       page.quiet(["set", "media", "reduced-motion"]);
     }
-    page.call(["open", sourceUrl(options.input)]);
+    page.call(["open", deckUrl]);
     page.call(["eval", SETTLE]);
     awaitSlides(page);
 
@@ -647,11 +648,14 @@ function render(options: Options, bundle: string): Rendered {
       page.evaluate(`${MEASURE}(${JSON.stringify(selector)})`),
     );
 
-    // An owned session is a browser this process started here, so its failure
-    // to read the cached bundle is a broken cache and must surface. A borrowed
-    // session may be driving a remote browser with no view of this filesystem,
-    // which is why it is served the same published artifact over the network.
-    const source = borrowed ? RENDERER_CDN : `file://${bundle}`;
+    // The renderer runs as a script in the deck's own page, so the page has to
+    // be allowed to load it. A file:// deck can read the cached bundle off this
+    // machine; an http(s) deck cannot — a browser refuses a file:// script from
+    // a network origin — and a borrowed session may be driving a browser with
+    // no view of this filesystem at all. Both take the published artifact over
+    // the network, which is the same bytes as the cache.
+    const local = !borrowed && deckUrl.startsWith("file://");
+    const source = local ? `file://${ensureRenderer()}` : RENDERER_CDN;
     page.call([
       "eval",
       `(async()=>{
@@ -1067,8 +1071,7 @@ function requirePresentationConvertCapability(): void {
 
 async function convert(options: Options): Promise<void> {
   requirePresentationConvertCapability();
-  const bundle = ensureRenderer();
-  const rendered = render(options, bundle);
+  const rendered = render(options);
 
   const target =
     options.out ?? `${basename(options.input, extname(options.input))}.pptx`;
