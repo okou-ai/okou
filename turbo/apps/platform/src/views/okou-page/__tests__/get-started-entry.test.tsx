@@ -861,6 +861,58 @@ test("The dialog leads with the connectors the step can still be completed with"
   ).toBeTruthy();
 });
 
+test("The Slack step starts the install instead of handing over a list", async () => {
+  const data = configureQuestPage(context, "admin");
+  // The workspace this step exists for: an admin who has not installed yet, so
+  // the quest is still claimable and the status carries the URL that does the
+  // work. The shared fixture ships Slack already installed.
+  const slack = data.quests.find((quest) => {
+    return quest.key === "slack";
+  });
+  if (!slack) {
+    throw new Error("Missing slack fixture");
+  }
+  slack.claimedCount = 0;
+  slack.earnedCredits = 0;
+  slack.canEarnMore = true;
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      ...slackInstalled(),
+      isConnected: false,
+      isInstalled: false,
+      installUrl: "https://slack.com/oauth/v2/authorize?state=quest",
+    });
+  });
+  const opened: string[] = [];
+  vi.spyOn(window, "open").mockImplementation((url) => {
+    opened.push(String(url));
+    return null;
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-slack"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Work with Okou where your team already talks",
+  });
+
+  click(buttonNamed("Add to Slack", dialog));
+  await waitFor(() => {
+    expect(opened).toHaveLength(1);
+  });
+  expect(opened[0]).toContain("https://slack.com/oauth/v2/authorize");
+  // The authorization owns the next step, so the reader is not also dropped on
+  // the integrations page behind it.
+  expect(pathname()).toBe(questChatPath());
+});
+
 test("Declining an introduced step costs the user nothing", async () => {
   configureQuestPage(context, "admin");
   await setupPage({

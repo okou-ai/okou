@@ -33,8 +33,10 @@ import {
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
+import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { QuestConnectorPicker } from "./get-started-connector-picker.tsx";
+import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import {
   ILLUSTRATION_ACCENTS,
   LINE_ALPHA,
@@ -549,9 +551,29 @@ function ConnectorIntro({
   );
 }
 
+/**
+ * Slack, with the install itself on the confirm button.
+ *
+ * The step used to hand the reader to the integrations list and leave them to
+ * find Slack in it, which is a page of other people's logos between them and
+ * the thing the row asked for. The status this dialog reads already carries the
+ * workspace's install URL, so confirming starts the authorization the way the
+ * connector step does — the same reason that one shows the catalog rather than
+ * a link to it.
+ *
+ * The URL is read while the dialog is open and spent inside the click, because
+ * a `window.open` that waits on a request first is no longer a user gesture.
+ * Without one, confirm falls back to the list.
+ */
 function SlackIntro({ onConfirm, onClose }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
+  const slackLoadable = useLastLoadable(slackOrgData$);
+  const slack = slackLoadable.state === "hasData" ? slackLoadable.data : null;
+  const installUrl =
+    slack && slack.isAdmin && slack.isInstalled !== true
+      ? (slack.installUrl ?? null)
+      : null;
   return (
     <IntroLayout
       title={t(($) => {
@@ -569,7 +591,14 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
       confirmLabel={t(($) => {
         return $.chat.agentPage.getStarted.intro.slack.confirm;
       })}
-      onConfirm={onConfirm}
+      onConfirm={() => {
+        if (installUrl === null) {
+          onConfirm();
+          return;
+        }
+        openFreshOAuth(installUrl);
+        onClose();
+      }}
     >
       <IntroNote>
         {t(($) => {
