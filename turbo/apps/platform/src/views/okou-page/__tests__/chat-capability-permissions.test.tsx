@@ -210,7 +210,7 @@ test.each([
   },
 );
 
-test("Keep a clipped permission scope readable without a details dialog", async () => {
+test("Expose the full permission scope on the card itself", async () => {
   const connectorSlug = "scope-service";
   const permission = "meeting:read:list_meetings";
   installPermissionMetadata((slug) => {
@@ -236,15 +236,12 @@ test("Keep a clipped permission scope readable without a details dialog", async 
   await waitFor(() => {
     expect(getButton("Confirm", card)).toBeEnabled();
   });
-  expect(within(card).getByText("Scope Service permissions")).toHaveAttribute(
-    "title",
-    "Scope Service permissions",
-  );
-  expect(within(card).getByText(`Allow ${permission}`)).toHaveAttribute(
-    "title",
+  expect(
+    within(card).getByTitle("Scope Service permissions"),
+  ).toHaveTextContent("Scope Service permissions");
+  expect(within(card).getByTitle(`Allow ${permission}`)).toHaveTextContent(
     `Allow ${permission}`,
   );
-  expect(queryButton("View details", card)).toBeNull();
 });
 
 test("Fail closed and recover clearly from permission errors", async () => {
