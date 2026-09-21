@@ -110,6 +110,8 @@ interface PersistedChatThreadModelEvaluation {
   readonly persistedCodexServiceTier: CodexServiceTier | null;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly selectedModelChanged: boolean;
+  /** Keep the saved selection while using a temporary switch-aware run route. */
+  readonly preservePersistedSelection: boolean;
   readonly tierChanged: boolean;
   readonly modelSettingsChanged: boolean;
   readonly requiresReconciliation: boolean;
@@ -260,6 +262,7 @@ async function persistReconciledChatThreadModel(args: {
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly selectedModelChanged: boolean;
+  readonly preservePersistedSelection: boolean;
   readonly tierChanged: boolean;
   readonly modelSettingsChanged: boolean;
 }): Promise<void> {
@@ -273,7 +276,14 @@ async function persistReconciledChatThreadModel(args: {
   }
 
   const updatedAt = nowDate();
-  const pinColumns = chatThreadModelPinColumns(args.pin);
+  const pinColumns = args.preservePersistedSelection
+    ? {
+        modelProviderId: args.thread.modelProviderId,
+        modelProviderType: args.thread.modelProviderType,
+        modelProviderCredentialScope: args.thread.modelProviderCredentialScope,
+        selectedModel: args.thread.selectedModel,
+      }
+    : chatThreadModelPinColumns(args.pin);
   await args.tx
     .update(chatThreads)
     .set({
@@ -327,6 +337,7 @@ async function evaluatePersistedChatThreadModel(
   const modelSettings = modelSettingsSchema.parse(thread.modelSettings);
   let pin: ModelFirstPin;
   let selectedModelChanged: boolean;
+  let preservePersistedSelection = false;
   let externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource = {
     kind: "load-current",
   };
@@ -376,8 +387,9 @@ async function evaluatePersistedChatThreadModel(
       selectedModel: modelResolution.route.selectedModel,
     };
     selectedModelChanged =
-      modelResolution.selectedModelChanged ||
-      thread.selectedModel !== pin.selectedModel;
+      !modelResolution.preservePersistedSelection &&
+      modelResolution.selectedModelChanged;
+    preservePersistedSelection = modelResolution.preservePersistedSelection;
     externalPlanCapabilities = {
       kind: "resolved",
       capabilities: modelResolution.orgPlanCapabilities,
@@ -430,12 +442,13 @@ async function evaluatePersistedChatThreadModel(
         : undefined,
       modelSettingsChanged,
       selectedModelChanged,
+      preservePersistedSelection,
       tierChanged: tier.tierChanged,
       requiresReconciliation:
         selectedModelChanged ||
         tier.tierChanged ||
         modelSettingsChanged ||
-        legacyProviderPinPresent(thread),
+        (!preservePersistedSelection && legacyProviderPinPresent(thread)),
     },
   };
 }
@@ -480,6 +493,7 @@ async function resolvePersistedChatThreadModelInTransaction(
     modelSettings: evaluation.modelSettings,
     modelSettingsPatch: evaluation.modelSettingsPatch,
     selectedModelChanged: evaluation.selectedModelChanged,
+    preservePersistedSelection: evaluation.preservePersistedSelection,
     tierChanged: evaluation.tierChanged,
     modelSettingsChanged: evaluation.modelSettingsChanged,
   });

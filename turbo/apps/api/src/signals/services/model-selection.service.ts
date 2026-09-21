@@ -76,6 +76,8 @@ export interface DefaultModelFirstPin extends ModelFirstPin {
 interface PersistedModelFirstRouteResolution {
   readonly route: ResolvedModelFirstPolicyRoute | null;
   readonly selectedModelChanged: boolean;
+  /** The runtime route changed only because a rollout switch hid saved state. */
+  readonly preservePersistedSelection: boolean;
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
 }
 
@@ -359,6 +361,7 @@ export async function resolvePersistedModelFirstRoute(params: {
     return {
       route: currentRoute,
       selectedModelChanged: false,
+      preservePersistedSelection: false,
       orgPlanCapabilities: facts.orgPlanCapabilities,
     };
   }
@@ -372,6 +375,10 @@ export async function resolvePersistedModelFirstRoute(params: {
     selectedModelChanged:
       defaultRoute !== null &&
       defaultRoute.selectedModel !== params.selectedModel,
+    preservePersistedSelection: !isRunModelAvailable(
+      params.selectedModel,
+      facts.featureSwitchContext,
+    ),
     orgPlanCapabilities: facts.orgPlanCapabilities,
   };
 }
