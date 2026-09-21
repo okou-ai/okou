@@ -172,9 +172,6 @@ jobs:
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: javascript-typescript
-          trap-caching: false
-        env:
-          CODEQL_ACTION_OVERLAY_DATABASE_CACHE: false
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
@@ -303,6 +300,7 @@ jobs:
             .github/scripts/tests/cancel-superseded-merge-group-runs-test.sh \
             .github/scripts/tests/check-release-please-component-releases-test.sh \
             .github/scripts/tests/check-release-please-workspace-coverage-test.sh \
+            .github/scripts/tests/codeql-cache-workflow-test.sh \
             .github/scripts/tests/pass-release-pr-ci-gates-test.sh \
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
             .github/scripts/tests/checkout-depth-test.sh \
