@@ -318,6 +318,19 @@ pub const PI_LAUNCH_PAYLOAD_PRIVATE_DIR_NAME: &str = "pi-launch-payload";
 /// Private runtime filename used by [`PI_LAUNCH_PAYLOAD_FILE_ENV`].
 pub const PI_LAUNCH_PAYLOAD_FILENAME: &str = "payload.json";
 
+/// Guest-owned capability key telling the Pi CLI child to report its session
+/// preparation phases on stderr.
+///
+/// The guest agent owns the sandbox operation log, so it also owns whether a
+/// child reports into it. The key is set only by a guest agent that recognizes
+/// the `pi_preparation_timing` envelope; a child that does not observe `"1"`
+/// stays silent, which keeps a newer CLI package from adding unrecognized
+/// lines to an older guest agent's failure diagnostics.
+pub const PI_PREPARATION_TIMING_ENV: &str = "OKOU_PI_PREPARATION_TIMING";
+
+/// Value of [`PI_PREPARATION_TIMING_ENV`] that enables child reporting.
+pub const PI_PREPARATION_TIMING_ENABLED: &str = "1";
+
 /// Runner-owned bootstrap key carrying non-secret Pi model metadata into the
 /// Pi CLI child environment.
 pub const PI_MODEL_CONFIG_ENV: &str = "OKOU_PI_MODEL_CONFIG";
@@ -704,6 +717,8 @@ mod tests {
         assert_eq!(PI_LAUNCH_PAYLOAD_PRIVATE_DIR_NAME, "pi-launch-payload");
         assert_eq!(PI_LAUNCH_PAYLOAD_FILENAME, "payload.json");
         assert_eq!(PI_MODEL_CONFIG_ENV, "OKOU_PI_MODEL_CONFIG");
+        assert_eq!(PI_PREPARATION_TIMING_ENV, "OKOU_PI_PREPARATION_TIMING");
+        assert_eq!(PI_PREPARATION_TIMING_ENABLED, "1");
         assert_eq!(CLI_AGENT_TYPE_ENV, "CLI_AGENT_TYPE");
         assert_eq!(
             CANONICAL_AGENT_EXECUTION_TIMEOUT_SECS_ENV,
