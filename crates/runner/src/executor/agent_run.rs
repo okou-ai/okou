@@ -1556,7 +1556,7 @@ struct StagedSessionRestoreInput<'a> {
     staging_path: &'a str,
 }
 
-async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) {
+async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) -> bool {
     match sandbox
         .finalize_staged_file(&StagedFileFinalizeRequest {
             staging_path,
@@ -1564,7 +1564,7 @@ async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &st
         })
         .await
     {
-        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {}
+        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => return true,
         Ok(outcome) => {
             warn!(?outcome, "staged session history was not discarded");
         }
@@ -1572,6 +1572,7 @@ async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &st
             warn!(error = %error, "failed to discard staged session history");
         }
     }
+    false
 }
 
 async fn write_staged_session(
@@ -2381,7 +2382,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         Err(_) => true,
                     };
                     if should_discard_staging {
-                        discard_staged_session_history(sandbox, &staging_path).await;
+                        let _ = discard_staged_session_history(sandbox, &staging_path).await;
                     }
                     if let Some(prepared) = prepared_storage.as_mut() {
                         prepared.delivery.cancel_and_drain(telemetry).await;
@@ -2410,7 +2411,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let staged = match staged_result {
                 Ok(staged) => staged,
                 Err(error) => {
-                    discard_staged_session_history(sandbox, &staging_path).await;
+                    let _ = discard_staged_session_history(sandbox, &staging_path).await;
                     model_catalog_prefetch.finish(telemetry).await;
                     if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
                         info!(
@@ -2449,7 +2450,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     StagedSessionRestorePreparation::Missing => false,
                 };
                 if should_discard_staging {
-                    discard_staged_session_history(sandbox, &staging_path).await;
+                    let _ = discard_staged_session_history(sandbox, &staging_path).await;
                 }
                 model_catalog_prefetch.finish(telemetry).await;
                 info!(
@@ -2540,9 +2541,28 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                                     .ok()
                                     .map(|diagnostics| diagnostics.transfer.clone()),
                             );
-                            discard_staged_session_history(sandbox, &staging_path).await;
+                            let staged_discarded =
+                                discard_staged_session_history(sandbox, &staging_path).await;
                             match result {
-                                Ok(diagnostics) => (diagnostics, elapsed, false),
+                                Ok(diagnostics) if staged_discarded => {
+                                    (diagnostics, elapsed, false)
+                                }
+                                Ok(_) => {
+                                    let restore_elapsed = staged
+                                        .staging_elapsed
+                                        .saturating_add(publication_elapsed)
+                                        .saturating_add(elapsed);
+                                    record_staged_workspace_restore_outcome(
+                                        telemetry,
+                                        &staged,
+                                        restore_elapsed,
+                                        false,
+                                    );
+                                    return Err(RunnerError::Internal(
+                                        "staged session history remained after serial recovery"
+                                            .into(),
+                                    ));
+                                }
                                 Err(error) => {
                                     let restore_elapsed = staged
                                         .staging_elapsed

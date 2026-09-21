@@ -116,7 +116,8 @@ fn publish_command(staging_path: &str, destination: &str, sibling: &str) -> io::
                tmp_owner=$(stat -c %u:%g -- \"$tmp\" 2>/dev/null) || {{ rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:metadata_failed; exit 0; }}; \
                if test \"$tmp_owner\" != \"$expected_owner\"; then rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:metadata_failed; exit 0; fi; \
              fi; \
-             if mv -fT -- \"$tmp\" \"$dest\" >/dev/null 2>&1; then rm -f -- \"$src\" >/dev/null 2>&1 || true; printf '%s\\n' published_cross; \
+             if mv -fT -- \"$tmp\" \"$dest\" >/dev/null 2>&1; then \
+               if rm -f -- \"$src\" >/dev/null 2>&1; then printf '%s\\n' published_cross; else exit 1; fi; \
              else rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:rename_failed; fi; \
            else rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:copy_failed; fi; \
          fi"
@@ -519,6 +520,25 @@ mod tests {
         assert_eq!(published.uid(), previous.uid());
         assert_eq!(published.gid(), previous.gid());
         assert!(!staging.exists());
+        assert!(!sibling.exists());
+    }
+
+    #[test]
+    fn cross_device_source_cleanup_failure_is_not_reported_as_published() {
+        let temp = tempfile::tempdir().unwrap();
+        let (staging, destination, sibling) = command_paths(temp.path());
+        fs::write(&staging, b"history").unwrap();
+        let fake_bin = temp.path().join("fake-bin");
+        install_failing_command(&fake_bin, "rm", "#!/bin/sh\nexit 1\n");
+        let command = force_cross_device(publish_for_test(&staging, &destination, &sibling));
+
+        let output = run_shell(&command, Some(&fake_bin));
+
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+        assert_eq!(fs::read(&destination).unwrap(), b"history");
+        assert!(staging.exists());
         assert!(!sibling.exists());
     }
 

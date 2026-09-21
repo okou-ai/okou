@@ -31,6 +31,7 @@ const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";
 enum PublicationExpectation {
     Published,
     SerialRecovery,
+    SerialRecoveryCleanupFailure,
     AmbiguousFailure,
 }
 
@@ -94,6 +95,12 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             ResumeSessionHistoryEncoding::Identity,
             PublicationExpectation::AmbiguousFailure,
         ),
+        (
+            CliFramework::ClaudeCode,
+            true,
+            ResumeSessionHistoryEncoding::Identity,
+            PublicationExpectation::SerialRecoveryCleanupFailure,
+        ),
     ] {
         let (framework, history, session_id, expected_path, storage_root): (
             &str,
@@ -144,13 +151,22 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         let overrides = Arc::new(MockSandboxOverrides::new());
         match publication {
             PublicationExpectation::Published => {}
-            PublicationExpectation::SerialRecovery => {
+            PublicationExpectation::SerialRecovery
+            | PublicationExpectation::SerialRecoveryCleanupFailure => {
                 overrides.push_finalize_staged_file_result(Ok(
                     StagedFileFinalizeOutcome::NotPublished {
                         reason: StagedFileNotPublishedReason::CopyFailed,
                         measurements: StagedFileFinalizeMeasurements::default(),
                     },
                 ));
+                if publication == PublicationExpectation::SerialRecoveryCleanupFailure {
+                    overrides.push_finalize_staged_file_result(Ok(
+                        StagedFileFinalizeOutcome::NotPublished {
+                            reason: StagedFileNotPublishedReason::DiscardFailed,
+                            measurements: StagedFileFinalizeMeasurements::default(),
+                        },
+                    ));
+                }
             }
             PublicationExpectation::AmbiguousFailure => {
                 overrides.push_finalize_staged_file_result(Err(sandbox::SandboxError::Operation {
@@ -274,7 +290,11 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             continue;
         }
 
-        if publication == PublicationExpectation::SerialRecovery {
+        if matches!(
+            publication,
+            PublicationExpectation::SerialRecovery
+                | PublicationExpectation::SerialRecoveryCleanupFailure
+        ) {
             write_gate.wait_entered(2, WAIT).await.unwrap();
             let writes = overrides.write_file_calls();
             assert_eq!(writes.len(), 2);
@@ -291,6 +311,19 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
                 StagedFileDispositionCall::Discard
             );
             finalize_gate.release_one();
+
+            if publication == PublicationExpectation::SerialRecoveryCleanupFailure {
+                let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
+                assert_ne!(completion.exit_code, 0);
+                assert!(completion.error.as_deref().is_some_and(|error| {
+                    error.contains("staged session history remained after serial recovery")
+                }));
+                assert!(overrides.start_agent_process_calls().is_empty());
+                server.assert_finished().await;
+                shutdown(&env, run_handle).await;
+                assert_eq!(budget.allocated().2, 0);
+                continue;
+            }
         }
 
         process_gate.wait_entered(1, WAIT).await.unwrap();
