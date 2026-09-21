@@ -55,7 +55,6 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
-import { shouldIgnoreImageArtifactNavigationKey } from "./artifact-image-navigation.ts";
 import type { ZoomableImageControls } from "./zoomable-image-canvas.tsx";
 
 const GOOGLE_DRIVE_CONNECTOR_SLUG = "google-drive";
@@ -673,6 +672,7 @@ export function ArtifactImageNavigationControls({
           showTooltip
           type="button"
           onClick={navigation.onPrevious}
+          data-image-navigation="previous"
           aria-label={t(($) => {
             return $.artifacts.actions.previousImage;
           })}
@@ -689,6 +689,7 @@ export function ArtifactImageNavigationControls({
           showTooltip
           type="button"
           onClick={navigation.onNext}
+          data-image-navigation="next"
           aria-label={t(($) => {
             return $.artifacts.actions.nextImage;
           })}
@@ -811,58 +812,5 @@ export function ArtifactImageZoomControls({
         <RotateCcw size={15} />
       </ArtifactImageZoomButton>
     </div>
-  );
-}
-
-/**
- * Document-level arrow-key navigation between image artifacts. Renders a
- * hidden marker so the listener follows the mounted preview.
- */
-export function ArtifactImageNavigationKeydown({
-  capture = false,
-  considerFocus,
-  enabled = true,
-  navigation,
-}: {
-  capture?: boolean;
-  considerFocus: boolean;
-  enabled?: boolean;
-  navigation?: ArtifactImageNavigationActions;
-}) {
-  let cleanup: (() => void) | null = null;
-
-  return (
-    <span
-      ref={(node) => {
-        cleanup?.();
-        cleanup = null;
-        if (!node || (!navigation?.onPrevious && !navigation?.onNext)) {
-          return;
-        }
-
-        const onKeyDown = (event: KeyboardEvent) => {
-          if (
-            !enabled ||
-            shouldIgnoreImageArtifactNavigationKey(event, { considerFocus })
-          ) {
-            return;
-          }
-          if (event.key === "ArrowLeft" && navigation.onPrevious) {
-            event.preventDefault();
-            navigation.onPrevious();
-          }
-          if (event.key === "ArrowRight" && navigation.onNext) {
-            event.preventDefault();
-            navigation.onNext();
-          }
-        };
-
-        document.addEventListener("keydown", onKeyDown, capture);
-        cleanup = () => {
-          document.removeEventListener("keydown", onKeyDown, capture);
-        };
-      }}
-      hidden
-    />
   );
 }

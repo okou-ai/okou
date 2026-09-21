@@ -75,6 +75,7 @@ import {
   type AttachmentLightboxState,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { openThreadArtifactSplitView$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { bindLightboxImageNavigation$ } from "../../signals/okou-page/artifact-image-navigation.ts";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import {
@@ -92,7 +93,6 @@ import {
   ArtifactActionSeparator,
   ArtifactDownloadMenu,
   ArtifactImageNavigationControls,
-  ArtifactImageNavigationKeydown,
   ArtifactImageZoomControls,
   ArtifactShareButton,
   type ArtifactDownloadSyncTarget,
@@ -629,6 +629,10 @@ function ArtifactDialogImageStage({
   resourceUrl: string | null;
 }) {
   const { t } = useTranslation();
+  const bindNavigation = useSet(bindLightboxImageNavigation$);
+  const hasNavigation = Boolean(
+    imageNavigation?.onPrevious || imageNavigation?.onNext,
+  );
   // Marks live on the draft rather than in the file, so the viewer has to draw
   // them too — otherwise reopening an annotated image shows a clean picture.
   const annotation = preview.annotationTarget?.annotations ?? null;
@@ -636,7 +640,10 @@ function ArtifactDialogImageStage({
   return (
     <ArtifactDialogStage flush scrollable={false}>
       <ArtifactDialogCard fillHeight>
-        <div className="relative h-full min-h-0">
+        <div
+          ref={hasNavigation ? bindNavigation : undefined}
+          className="relative h-full min-h-0"
+        >
           {resourceUrl === null ? (
             <div
               role="status"
@@ -1454,16 +1461,6 @@ function ArtifactPreviewDialogContent({
         )}
         data-testid="attachment-lightbox"
       >
-        {/* An immersive overlay: arrow keys always navigate, regardless of focus. */}
-        <ArtifactImageNavigationKeydown
-          capture
-          considerFocus={false}
-          navigation={
-            !connectionProgressActive && preview.kind === "image"
-              ? imageNavigation
-              : undefined
-          }
-        />
         <div
           ref={registerConnectionDialog}
           className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
