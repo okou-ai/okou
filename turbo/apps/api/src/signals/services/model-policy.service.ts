@@ -1,10 +1,5 @@
 import { createHash } from "node:crypto";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
-import {
-  isRunModelAddable,
-  RUN_MODEL_ADD_UNAVAILABLE_MESSAGE,
-} from "@okouai/core/run-model-addability";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
@@ -26,6 +21,7 @@ import {
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
+  isOkouRunModel,
   isModelSupportedByProvider,
   isLimitedFree1RestrictedRunModel,
   getRunModelAccess,
@@ -841,7 +837,6 @@ interface UpdatePolicyValidationContext {
   >;
   readonly existingRows: readonly OrgModelPolicyRow[];
   readonly modelsAllowedForNewPolicy: ReadonlySet<SupportedRunModel>;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 async function validateUpdatePolicies(
@@ -850,12 +845,7 @@ async function validateUpdatePolicies(
   policies: UpdateOrgModelPolicy[],
   context: UpdatePolicyValidationContext,
 ): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
-  const {
-    capabilities,
-    existingRows,
-    modelsAllowedForNewPolicy,
-    featureSwitchContext,
-  } = context;
+  const { capabilities, existingRows, modelsAllowedForNewPolicy } = context;
   if (policies.length === 0) {
     return bad("Request must include at least one model");
   }
@@ -873,9 +863,6 @@ async function validateUpdatePolicies(
       return bad(`Unknown model "${policy.model}"`);
     }
     const existing = existingByModel.get(policy.model);
-    if (!existing && !isRunModelAddable(policy.model, featureSwitchContext)) {
-      return bad(RUN_MODEL_ADD_UNAVAILABLE_MESSAGE);
-    }
     if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
       return bad(`Model "${model}" is not available to add`);
     }
@@ -1171,6 +1158,10 @@ async function listOrgModelPolicies(
     }),
   );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
+  const okouModelsEnabled = isFeatureEnabled(
+    FeatureSwitchKey.OkouModels,
+    featureSwitchContext,
+  );
 
   return {
     policies,
@@ -1180,7 +1171,7 @@ async function listOrgModelPolicies(
       persistedRows,
       modelsAllowedForNewPolicy,
     ).filter((model) => {
-      return isRunModelAddable(model, featureSwitchContext);
+      return okouModelsEnabled || !isOkouRunModel(model);
     }),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
@@ -1361,7 +1352,6 @@ export const updateOrgModelPolicies$ = command(
           capabilities,
           existingRows: existing,
           modelsAllowedForNewPolicy,
-          featureSwitchContext: context,
         },
       );
       signal.throwIfAborted();

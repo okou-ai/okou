@@ -193,7 +193,7 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
-  it("gates only adding Okou policies with a personal switch", async () => {
+  it("filters only the Add Model projection with a personal switch", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -203,18 +203,6 @@ describe("GET/PUT /api/model-policies", () => {
     );
     const model = "okou-1.0";
     expect(existing.body.modelsAvailableToAdd).not.toContain(model);
-    const unavailable = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          policies: [...toUpdate(existing.body), makeBuiltInPolicy(model)],
-        },
-      }),
-      [400],
-    );
-    expect(unavailable.body.error.message).toBe(
-      "This model is not currently available to add.",
-    );
 
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.OkouModels]: true,
@@ -225,7 +213,10 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(addable.body.modelsAvailableToAdd).toContain(model);
-    const enabled = await accept(
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: false,
+    });
+    const addedWithSwitchOff = await accept(
       client.update({
         headers: authHeaders(),
         body: {
@@ -235,7 +226,7 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(
-      enabled.body.policies.find((policy) => {
+      addedWithSwitchOff.body.policies.find((policy) => {
         return policy.model === model;
       }),
     ).toMatchObject({
@@ -243,9 +234,6 @@ describe("GET/PUT /api/model-policies", () => {
       routeStatus: "valid",
     });
 
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.OkouModels]: false,
-    });
     const listedAfterDisable = await accept(
       client.list({ headers: authHeaders() }),
       [200],

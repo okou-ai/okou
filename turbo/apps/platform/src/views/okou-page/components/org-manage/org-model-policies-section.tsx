@@ -60,13 +60,11 @@ import {
   type ModelProviderConnectionResponse,
   type ModelProviderSurfaceProtocol,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { isRunModelAddable } from "@okouai/core/run-model-addability";
 import {
   orgModelPolicies$,
   updateOrgModelPolicies$,
 } from "../../../../signals/external/org-model-policies.ts";
 import { modelProviderConnections$ } from "../../../../signals/external/model-provider-connections.ts";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { orgConfiguredProviders$ } from "../../../../signals/okou-page/settings/org-model-providers.ts";
 import {
   closeModelPolicyDialog$,
@@ -1739,7 +1737,6 @@ export function OrgModelPoliciesSection() {
   const modelCapabilitiesLoadable = useLoadable(modelPlanCapabilities$);
   const lastModelCapabilities = useLastResolved(modelPlanCapabilities$);
   const pageSignal = useGet(pageSignal$);
-  const featureSwitches = useGet(featureSwitch$);
   const openAddModelDialog = useSet(openAddModelPolicyDialog$);
   const openEditModelDialog = useSet(openEditModelPolicyDialog$);
   const openSettingsBillingPlans = useSet(openSettingsBillingPlans$);
@@ -1776,10 +1773,7 @@ export function OrgModelPoliciesSection() {
   // A new App can briefly reach an API from before this projection existed.
   // Fail closed during that rollback window; make the field required in #35900.
   const addableModels = (data.modelsAvailableToAdd ?? []).filter((model) => {
-    return (
-      isAddableBuiltInModel(model) &&
-      isRunModelAddable(model, { overrides: featureSwitches })
-    );
+    return isAddableBuiltInModel(model);
   });
 
   const submit = (next: UpdateOrgModelPolicy[]) => {
