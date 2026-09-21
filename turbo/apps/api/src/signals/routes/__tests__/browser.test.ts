@@ -120,10 +120,6 @@ function browserUserActionObjectId(backendNodeId: unknown): string {
     : "native-password-object";
 }
 
-function browserUseCdpArgumentCount(value: unknown): number {
-  return Array.isArray(value) ? value.length : 0;
-}
-
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
 });
@@ -234,14 +230,25 @@ describe("Browser user-action route", () => {
           }
           return { result: { value: true } };
         }
-        const controlCount =
-          1 + browserUseCdpArgumentCount(command.params.arguments);
+        const objectIds = [
+          command.params.objectId,
+          ...(Array.isArray(command.params.arguments)
+            ? command.params.arguments.flatMap((argument) => {
+                return typeof argument === "object" &&
+                  argument !== null &&
+                  "objectId" in argument
+                  ? [argument.objectId]
+                  : [];
+              })
+            : []),
+        ];
         return {
           result: {
-            value: Array.from({ length: controlCount }, () => {
+            value: objectIds.map((objectId) => {
               return {
                 tagName: "INPUT",
-                inputType: "password",
+                inputType:
+                  objectId === "native-username-object" ? "email" : "password",
                 connected: controlConnected,
                 mainDocument: true,
                 writable: controlWritable,
@@ -322,6 +329,30 @@ describe("Browser user-action route", () => {
       body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
     });
     controlWritable = true;
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    providerReadCount = 0;
+
+    const mismatchedKind = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after mismatched input",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            selector: "#username",
+          },
+        ],
+      },
+    });
+    expect(mismatchedKind).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+    });
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;

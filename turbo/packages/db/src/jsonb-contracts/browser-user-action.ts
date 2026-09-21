@@ -31,6 +31,27 @@ export type BrowserUserActionPayload =
       readonly reason: string;
     };
 
+export function browserUserActionFieldSupportsTarget(
+  fieldKind: BrowserUserActionFieldKind,
+  fingerprint: BrowserUserActionInputTarget["fingerprint"],
+): boolean {
+  if (fingerprint.tagName === "TEXTAREA") {
+    return fieldKind === "text" && fingerprint.inputType === "textarea";
+  }
+  switch (fieldKind) {
+    case "text":
+      return ["text", "email", "tel", "url", "search"].includes(
+        fingerprint.inputType,
+      );
+    case "username":
+      return ["text", "email", "tel"].includes(fingerprint.inputType);
+    case "password":
+      return fingerprint.inputType === "password";
+    case "one_time_code":
+      return ["text", "tel", "number"].includes(fingerprint.inputType);
+  }
+}
+
 function objectValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -94,19 +115,26 @@ function decodeField(value: unknown): BrowserUserActionInputTarget | null {
   ) {
     return null;
   }
+  const fieldKind = field.fieldKind as BrowserUserActionFieldKind;
+  const tagName: "INPUT" | "TEXTAREA" =
+    fingerprint.tagName === "INPUT" ? "INPUT" : "TEXTAREA";
+  const safeFingerprint: BrowserUserActionInputTarget["fingerprint"] = {
+    tagName,
+    inputType: fingerprint.inputType,
+  };
+  if (!browserUserActionFieldSupportsTarget(fieldKind, safeFingerprint)) {
+    return null;
+  }
   return {
     key: field.key,
     label: field.label,
     ...(field.description === undefined
       ? {}
       : { description: field.description as string }),
-    fieldKind: field.fieldKind as BrowserUserActionFieldKind,
+    fieldKind,
     required: field.required,
     backendNodeId: Number(field.backendNodeId),
-    fingerprint: {
-      tagName: fingerprint.tagName,
-      inputType: fingerprint.inputType,
-    },
+    fingerprint: safeFingerprint,
   };
 }
 

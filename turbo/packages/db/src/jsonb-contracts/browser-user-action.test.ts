@@ -47,6 +47,22 @@ describe("Browser user-action JSONB payload", () => {
         ],
       });
     }).toThrow("Invalid Browser user-action input payload");
+    expect(() => {
+      return parseBrowserUserActionPayload({
+        version: 1,
+        kind: "input",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 5,
+            fingerprint: { tagName: "INPUT", inputType: "text" },
+          },
+        ],
+      });
+    }).toThrow("Invalid Browser user-action input payload");
     const field = {
       key: "same",
       label: "Same",

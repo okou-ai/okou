@@ -7,6 +7,7 @@ import type {
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/contracts/browser";
 import {
+  browserUserActionFieldSupportsTarget,
   parseBrowserUserActionPayload,
   type BrowserUserActionPayload,
 } from "@okouai/db/jsonb-contracts/browser-user-action";
@@ -403,6 +404,25 @@ async function prepareBrowserUserAction(
           `BROWSER_USER_ACTION_${captureResult.error.code.toUpperCase()}`,
         )
       : providerFailure(captureResult.error);
+  }
+  if (
+    args.input.kind === "input" &&
+    (captureResult.value.fields.length !== args.input.fields.length ||
+      args.input.fields.some((field, index) => {
+        const target = captureResult.value.fields[index];
+        return (
+          !target ||
+          !browserUserActionFieldSupportsTarget(
+            field.fieldKind,
+            target.fingerprint,
+          )
+        );
+      }))
+  ) {
+    return conflict(
+      "The requested Browser field kind does not match its control",
+      "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
+    );
   }
   return {
     kind: "ok",
