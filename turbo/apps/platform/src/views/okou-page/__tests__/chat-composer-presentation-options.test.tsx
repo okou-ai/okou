@@ -228,9 +228,12 @@ test("Leaving presentation hides its picker and resets its length", async () => 
   expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
   // Coming back starts the length over rather than restoring the last one.
   click(
-    button("Presentation", await screen.findByRole("group", {
-      name: "Choose a task",
-    })),
+    button(
+      "Presentation",
+      await screen.findByRole("group", {
+        name: "Choose a task",
+      }),
+    ),
   );
   await expect(
     screen.findByRole("combobox", { name: "Slide count" }),
