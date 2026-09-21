@@ -134,8 +134,10 @@ export function useAgentAvatarTexture(id: string | null): string | null {
   // chat home opens on it. It gets the one tile that clears the five brand
   // colours it is painted in, by the same rule as everyone else.
   if (rawAvatarUrl === DEFAULT_AGENT_AVATAR_URL) {
-    const texture = defaultAgentAvatarTextures()[0];
-    return texture ? avatarTextureUrl(texture) : null;
+    // Not guarded for emptiness, for the same reason `agentAvatarTexture` is
+    // not: the suite pins this list to exactly one tile, so a repaint that
+    // emptied it should fail there rather than quietly drop the texture.
+    return avatarTextureUrl(defaultAgentAvatarTextures()[0]!);
   }
   const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
   if (!svgConfig || isLegacyAvatarSvgConfig(svgConfig)) {

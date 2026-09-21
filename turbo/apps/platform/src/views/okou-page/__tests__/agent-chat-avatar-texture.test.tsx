@@ -244,9 +244,10 @@ test("Give the organization default agent its own texture", async () => {
   });
 
   const frame = avatarFrame();
-  const expected = defaultAgentAvatarTextures()[0];
-  expect(expected).toBeDefined();
-  expect(textureUrl(frame)).toBe(avatarTextureUrl(expected!));
+  expect(defaultAgentAvatarTextures()).toHaveLength(1);
+  expect(textureUrl(frame)).toBe(
+    avatarTextureUrl(defaultAgentAvatarTextures()[0]!),
+  );
   // The artwork is the drawn file, still shown through the same frame.
   expect(frame.querySelector("img")).toHaveAttribute(
     "src",
