@@ -127,13 +127,13 @@ Agent grant table; the existing connection schema and public responses stay
 unchanged. Runners predating the original VNC runtime make no VNC calls; missing
 endpoints cannot authorize a new Runner operation.
 
-Deploy the API decoder before Runners that advertise X509Plain. The widened API
-continues serving older X509Vnc-only Runners. A new Runner against an older API
-fails closed because the older strict request contract rejects the added
-advertised profile. A new Runner also rejects malformed or cross-paired
-responses before DNS; there is no fallback to classic authentication. No database
-migration, stored-data rewrite, guest RPC change or feature activation is part
-of this extension.
+Deploy the widened API request/response contract before Runners that advertise
+X509Plain. The widened API continues serving older X509Vnc-only Runners. A new
+Runner against an older API fails closed because the older strict request
+contract rejects the added advertised profile. A new Runner also rejects
+malformed or cross-paired responses before DNS; there is no fallback to classic
+authentication. No database migration, stored-data rewrite, guest RPC change or
+feature activation is part of this extension.
 
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new

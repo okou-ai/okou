@@ -2240,8 +2240,8 @@ widened API before the Runner. Old Runners continue advertising only X509Vnc and
 the new API returns their existing response shape. New Runners against an older
 API fail closed; they do not retry a saved X509Plain connection as X509Vnc.
 
-The response decoder remains strict and rejects unknown fields and tags. The
-Runner then rejects cross-paired authentication and security variants before
+The Runner response decoder remains strict and rejects unknown fields and tags.
+The Runner then rejects cross-paired authentication and security variants before
 DNS or socket creation. The common generated secret wrapper enforces the largest
 wire bound and zeroizes its value; the selected engine authentication type
 enforces the profile-specific bound.
@@ -2251,7 +2251,8 @@ typed fields rather than widening an existing discriminator's meaning.
 This change requires no migration, stored-data rewrite, guest/CLI protocol
 change or feature-switch activation. Existing saved rows keep their exact
 discriminators. Roll back the Runner before the API; once a Runner can advertise
-X509Plain, retain the widened API decoder for the lifetime of that process.
+X509Plain, retain the widened API request/response contract for the lifetime of
+that process.
 
 ## Testing Expectations
 
