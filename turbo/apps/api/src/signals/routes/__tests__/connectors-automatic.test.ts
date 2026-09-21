@@ -175,6 +175,9 @@ describe("builtin MCP automatic authentication", () => {
     expect(account.body).toMatchObject({
       authMethod: f.methodId,
       connectionStatus: "connected",
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
     });
     expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(
       "https://api.okou.ai/api/connectors/automatic/callback",
@@ -185,6 +188,129 @@ describe("builtin MCP automatic authentication", () => {
     mocks.clerk.session(`user_${randomUUID()}`, f.orgId);
     await accept(receipt(f, started.oauthAttemptId), [404]);
     mocks.clerk.session(f.userId, f.orgId);
+  });
+
+  it("persists a verified OIDC identity without expanding scopes", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "automatic-user-123",
+        tokenUsername: "token-user",
+        tokenEmail: "token-user@example.test",
+        userInfoUsername: "userinfo-user",
+        userInfoEmail: "userinfo-user@example.test",
+      },
+    });
+    const started = await beginOAuth(f);
+    expect(started.url.searchParams.get("scope")).toBe("read write");
+    expect((await callback(started.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const account = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId: completed.body.connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      externalId: "automatic-user-123",
+      externalUsername: "userinfo-user",
+      externalEmail: "userinfo-user@example.test",
+    });
+  });
+
+  it("keeps verified identity when an optional ID-token label is oversized", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "automatic-bounded-label-user",
+        tokenUsername: "x".repeat(256),
+        tokenEmail: "bounded-label-user@example.test",
+      },
+    });
+    const started = await beginOAuth(f);
+    expect((await callback(started.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const account = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId: completed.body.connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      externalId: "automatic-bounded-label-user",
+      externalUsername: "bounded-label-user@example.test",
+      externalEmail: "bounded-label-user@example.test",
+    });
+  });
+
+  it("keeps a successful connection unnamed for a future-issued ID token", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "future-issued-user",
+        tokenIssuedAtOffsetSeconds: 300,
+      },
+    });
+    const started = await beginOAuth(f);
+    expect((await callback(started.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const account = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId: completed.body.connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+    });
+  });
+
+  it("keeps a successful connection unnamed when its ID token is invalid", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "untrusted-user",
+        tokenUsername: "untrusted-name",
+        tokenEmail: "untrusted@example.test",
+        invalidIdToken: true,
+      },
+    });
+    const started = await beginOAuth(f);
+    expect((await callback(started.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const account = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId: completed.body.connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+    });
   });
 
   it("keeps DCR clients bound and rejects an OAuth issuer mismatch", async () => {

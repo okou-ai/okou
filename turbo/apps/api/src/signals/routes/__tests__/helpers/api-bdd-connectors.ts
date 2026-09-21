@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync } from "node:crypto";
+import { SignJWT } from "jose";
 
 import type {
   BuiltinConnectorExternalCodeSessionCompleteResponse,
@@ -191,10 +192,11 @@ const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
 const SLACK_OAUTH_USER_INFO_URL = "https://slack.com/api/users.info";
 const GITHUB_APP_INSTALLATIONS_URL = "https://api.github.com/app/installations";
 const GITHUB_APP_SLUG = "bdd-github-app";
-const CUSTOM_CONNECTOR_OAUTH2_AUTHORIZATION_URL =
-  "https://custom-oauth.example.test/authorize";
-const CUSTOM_CONNECTOR_OAUTH2_TOKEN_URL =
-  "https://custom-oauth.example.test/token";
+const CUSTOM_CONNECTOR_OAUTH2_ISSUER = "https://custom-oauth.example.test";
+const CUSTOM_CONNECTOR_OAUTH2_AUTHORIZATION_URL = `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/authorize`;
+const CUSTOM_CONNECTOR_OAUTH2_TOKEN_URL = `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/token`;
+const CUSTOM_CONNECTOR_OAUTH2_JWKS_URL = `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/jwks.json`;
+const CUSTOM_CONNECTOR_OAUTH2_USERINFO_URL = `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/userinfo`;
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
   return actor ? { authorization: "Bearer clerk-session" } : {};
@@ -219,12 +221,60 @@ interface CustomConnectorOAuth2ProviderRecorder {
   readonly authorizationHeaders: (string | null)[];
 }
 
+interface OAuthIdentityFixtureOptions {
+  readonly subject: string;
+  readonly tokenUsername?: string;
+  readonly tokenEmail?: string;
+  readonly tokenIssuedAtOffsetSeconds?: number;
+  readonly userInfoUsername?: string;
+  readonly userInfoEmail?: string;
+  readonly userInfoSubject?: string;
+  readonly invalidIdToken?: boolean;
+}
+
+const automaticOAuthIdentityKeyPair = Object.freeze(
+  generateKeyPairSync("rsa", { modulusLength: 2048 }),
+);
+const automaticOAuthIdentityKeyId = "automatic-oauth-test-key";
+const automaticOAuthIdentityPublicJwk = Object.freeze({
+  ...automaticOAuthIdentityKeyPair.publicKey.export({ format: "jwk" }),
+  alg: "RS256",
+  kid: automaticOAuthIdentityKeyId,
+  use: "sig",
+});
+
+async function oauthIdentityIdToken(
+  identity: OAuthIdentityFixtureOptions,
+  issuer: string,
+  audience: string,
+): Promise<string> {
+  if (identity.invalidIdToken) {
+    return "invalid-id-token";
+  }
+  const timestamp =
+    Math.floor(now() / 1000) + (identity.tokenIssuedAtOffsetSeconds ?? 0);
+  return await new SignJWT({
+    ...(identity.tokenUsername
+      ? { preferred_username: identity.tokenUsername }
+      : {}),
+    ...(identity.tokenEmail ? { email: identity.tokenEmail } : {}),
+  })
+    .setProtectedHeader({ alg: "RS256", kid: automaticOAuthIdentityKeyId })
+    .setIssuer(issuer)
+    .setAudience(audience)
+    .setSubject(identity.subject)
+    .setIssuedAt(timestamp)
+    .setExpirationTime(timestamp + 300)
+    .sign(automaticOAuthIdentityKeyPair.privateKey);
+}
+
 interface CustomConnectorOAuth2ProviderOptions {
   readonly initialExpiresIn?: number;
   readonly authorizationCodeScopes?: readonly string[];
   readonly initialRefreshToken?: string | null;
   readonly initialScope?: string;
   readonly refreshResponse?: (attempt: number) => Response | Promise<Response>;
+  readonly identity?: OAuthIdentityFixtureOptions;
 }
 
 export function mockCustomConnectorOAuth2Provider(
@@ -242,6 +292,39 @@ export function mockCustomConnectorOAuth2Provider(
       : options.initialRefreshToken;
   let refreshAttempts = 0;
   server.use(
+    http.get(
+      `${CUSTOM_CONNECTOR_OAUTH2_ISSUER}/.well-known/openid-configuration`,
+      () => {
+        return HttpResponse.json({
+          issuer: CUSTOM_CONNECTOR_OAUTH2_ISSUER,
+          authorization_endpoint: CUSTOM_CONNECTOR_OAUTH2_AUTHORIZATION_URL,
+          token_endpoint: CUSTOM_CONNECTOR_OAUTH2_TOKEN_URL,
+          jwks_uri: CUSTOM_CONNECTOR_OAUTH2_JWKS_URL,
+          userinfo_endpoint: CUSTOM_CONNECTOR_OAUTH2_USERINFO_URL,
+          subject_types_supported: ["public"],
+          id_token_signing_alg_values_supported: ["RS256"],
+        });
+      },
+    ),
+    http.get(CUSTOM_CONNECTOR_OAUTH2_JWKS_URL, () => {
+      return HttpResponse.json({ keys: [automaticOAuthIdentityPublicJwk] });
+    }),
+    http.get(CUSTOM_CONNECTOR_OAUTH2_USERINFO_URL, () => {
+      const identity = options.identity;
+      if (!identity) {
+        return HttpResponse.json(
+          { error: "identity_unavailable" },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json({
+        sub: identity.userInfoSubject ?? identity.subject,
+        ...(identity.userInfoUsername
+          ? { preferred_username: identity.userInfoUsername }
+          : {}),
+        ...(identity.userInfoEmail ? { email: identity.userInfoEmail } : {}),
+      });
+    }),
     http.post(CUSTOM_CONNECTOR_OAUTH2_TOKEN_URL, async ({ request }) => {
       const body = new URLSearchParams(await request.text());
       tokenBodies.push(body);
@@ -257,12 +340,19 @@ export function mockCustomConnectorOAuth2Provider(
           expires_in: 3600,
         });
       }
+      const idToken = options.identity
+        ? await oauthIdentityIdToken(
+            options.identity,
+            CUSTOM_CONNECTOR_OAUTH2_ISSUER,
+            "branded-oauth-client-id",
+          )
+        : "custom-oauth-id-token";
       return HttpResponse.json({
         access_token: "custom-oauth-initial-access-token",
         ...(initialRefreshToken === null
           ? {}
           : { refresh_token: initialRefreshToken }),
-        id_token: "custom-oauth-id-token",
+        id_token: idToken,
         token_type: "Bearer",
         expires_in: options.initialExpiresIn ?? 0,
         ...(options.initialScope === undefined
@@ -325,6 +415,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
+  readonly identity?: OAuthIdentityFixtureOptions;
 }
 
 interface AutomaticMcpOAuthProviderRecorder {
@@ -343,6 +434,50 @@ const automaticDcrRequestSchema = z.object({
   scope: z.string().optional(),
 });
 
+async function automaticOAuthIdToken(
+  options: AutomaticMcpOAuthProviderOptions,
+  issuer: string,
+  refresh: boolean,
+): Promise<string | undefined> {
+  const identity = options.identity;
+  if (refresh || !identity) {
+    return undefined;
+  }
+  return await oauthIdentityIdToken(
+    identity,
+    issuer,
+    options.registration === "dcr"
+      ? "automatic-dcr-client"
+      : "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json",
+  );
+}
+
+function automaticOAuthTokenResponse(args: {
+  readonly options: AutomaticMcpOAuthProviderOptions;
+  readonly refresh: boolean;
+  readonly authorizationCodeAttempts: number;
+  readonly idToken: string | undefined;
+}) {
+  return {
+    access_token: args.refresh
+      ? "automatic-refreshed-access-token"
+      : (args.options.initialAccessToken ?? "automatic-initial-access-token"),
+    ...(!args.refresh && !args.options.omitRefreshToken
+      ? {
+          refresh_token:
+            args.options.initialRefreshToken ?? "automatic-refresh-token",
+        }
+      : {}),
+    token_type: "Bearer",
+    ...(args.idToken ? { id_token: args.idToken } : {}),
+    expires_in: args.refresh ? 3600 : (args.options.initialExpiresIn ?? 0),
+    scope:
+      args.options.authorizationCodeScopes?.[
+        args.authorizationCodeAttempts - 1
+      ] ?? "read write",
+  };
+}
+
 export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
@@ -355,6 +490,8 @@ export function mockAutomaticMcpOAuthProvider(
   const authorizationUrl = `${issuer}/authorize`;
   const tokenUrl = `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
+  const jwksUrl = `${issuer}/jwks.json`;
+  const userInfoUrl = `${issuer}/userinfo`;
   const resourceMetadata = {
     resource: options.resource ?? endpoint,
     scopes_supported: [...(options.metadataScopes ?? ["metadata-fallback"])],
@@ -378,6 +515,14 @@ export function mockAutomaticMcpOAuthProvider(
     authorization_response_iss_parameter_supported:
       options.issuerParameterSupported ?? true,
     client_id_metadata_document_supported: options.registration === "cimd",
+    ...(options.identity
+      ? {
+          jwks_uri: jwksUrl,
+          userinfo_endpoint: userInfoUrl,
+          subject_types_supported: ["public"],
+          id_token_signing_alg_values_supported: ["RS256"],
+        }
+      : {}),
     ...(options.registration === "dcr"
       ? { registration_endpoint: registrationUrl }
       : {}),
@@ -520,6 +665,25 @@ export function mockAutomaticMcpOAuthProvider(
         id_token_signing_alg_values_supported: ["RS256"],
       });
     }),
+    http.get(jwksUrl, () => {
+      return HttpResponse.json({ keys: [automaticOAuthIdentityPublicJwk] });
+    }),
+    http.get(userInfoUrl, () => {
+      const identity = options.identity;
+      if (!identity) {
+        return HttpResponse.json(
+          { error: "identity_unavailable" },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json({
+        sub: identity.userInfoSubject ?? identity.subject,
+        ...(identity.userInfoUsername
+          ? { preferred_username: identity.userInfoUsername }
+          : {}),
+        ...(identity.userInfoEmail ? { email: identity.userInfoEmail } : {}),
+      });
+    }),
     http.post(registrationUrl, async ({ request }) => {
       const body = automaticDcrRequestSchema.parse(await request.json());
       registrationBodies.push(body);
@@ -587,22 +751,15 @@ export function mockAutomaticMcpOAuthProvider(
           },
         );
       }
-      return HttpResponse.json({
-        access_token: refresh
-          ? "automatic-refreshed-access-token"
-          : (options.initialAccessToken ?? "automatic-initial-access-token"),
-        ...(!refresh && !options.omitRefreshToken
-          ? {
-              refresh_token:
-                options.initialRefreshToken ?? "automatic-refresh-token",
-            }
-          : {}),
-        token_type: "Bearer",
-        expires_in: refresh ? 3600 : (options.initialExpiresIn ?? 0),
-        scope:
-          options.authorizationCodeScopes?.[authorizationCodeAttempts - 1] ??
-          "read write",
-      });
+      const idToken = await automaticOAuthIdToken(options, issuer, refresh);
+      return HttpResponse.json(
+        automaticOAuthTokenResponse({
+          options,
+          refresh,
+          authorizationCodeAttempts,
+          idToken,
+        }),
+      );
     }),
   );
   return {

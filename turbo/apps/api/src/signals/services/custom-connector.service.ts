@@ -2901,6 +2901,7 @@ async function persistCustomConnectorValues(
       kind: "custom",
       customConnectorId: args.request.connectorId,
       oauthScopes: null,
+      identity: { kind: "local" },
     },
   };
   let connectedAccountId: string;

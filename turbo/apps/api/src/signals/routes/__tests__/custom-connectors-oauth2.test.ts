@@ -126,6 +126,60 @@ describe("Custom connector OAuth callbacks", () => {
     );
     expect(provider.tokenBodies).toHaveLength(1);
     expect(provider.tokenBodies[0]?.get("redirect_uri")).toBe(callbackUri);
+    await expect(
+      connectors.listCustomConnectorAccounts(actor, connector.id),
+    ).resolves.toMatchObject([
+      {
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+      },
+    ]);
+
+    await connectors.deleteCustomConnector(actor, connector.id);
+  });
+
+  it("persists verified OIDC identity for a static custom OAuth grant", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const provider = mockCustomConnectorOAuth2Provider(context, {
+      initialScope: "read",
+      identity: {
+        subject: "static-custom-user-123",
+        tokenUsername: "static-token-user",
+        tokenEmail: "static-token-user@example.test",
+        userInfoUsername: "static-userinfo-user",
+        userInfoEmail: "static-userinfo-user@example.test",
+      },
+    });
+    const actor = createBddApi(context).user({ orgRole: "org:admin" });
+    const connector = await createCustomOAuthConnector(actor, provider);
+    const authorizationUrl = new URL(
+      await connectors.startCustomConnectorOAuth2AtBaseUrl(
+        actor,
+        connector.id,
+        "https://api.okou.ai",
+      ),
+    );
+    expect(authorizationUrl.searchParams.get("scope")).toBe("read");
+
+    await connectors.completeCustomConnectorOAuth2Callback(
+      {
+        code: "static-custom-identity-code",
+        state: authorizationState(authorizationUrl),
+      },
+      { baseUrl: "https://api.okou.ai" },
+    );
+
+    await expect(
+      connectors.listCustomConnectorAccounts(actor, connector.id),
+    ).resolves.toMatchObject([
+      {
+        externalId: "static-custom-user-123",
+        externalUsername: "static-userinfo-user",
+        externalEmail: "static-userinfo-user@example.test",
+        oauthScopes: ["read"],
+      },
+    ]);
 
     await connectors.deleteCustomConnector(actor, connector.id);
   });
