@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { mcpChatMessageSchema } from "./mcp-chat-messages";
+import {
+  mcpChatInputRefSchema,
+  mcpGetChatStatusNextActionSchema,
+} from "./mcp-chat-references";
 
 export const mcpChatMessageTextSchema = z
   .string()
@@ -13,11 +16,10 @@ export const mcpSendChatMessageInputSchema = z.strictObject({
   requestId: z.uuid().toLowerCase(),
 });
 
-export const mcpSendChatMessageOutputSchema = z.strictObject({
-  inputRef: mcpChatMessageSchema.shape.ref,
+export const mcpChatInputReceiptSchema = z.strictObject({
+  inputRef: mcpChatInputRefSchema,
   acceptedAt: z.iso.datetime(),
   retryUntil: z.iso.datetime(),
-  replayed: z.boolean(),
   disposition: z.enum([
     "queued",
     "reserved",
@@ -27,22 +29,20 @@ export const mcpSendChatMessageOutputSchema = z.strictObject({
     "unavailable",
   ]),
   runId: z.uuid().nullable(),
-  url: z.url(),
 });
 
-export const mcpChatInputReceiptSchema = mcpSendChatMessageOutputSchema.omit({
-  replayed: true,
-  url: true,
+export const mcpSendChatMessageOutputSchema = mcpChatInputReceiptSchema.extend({
+  replayed: z.boolean(),
+  url: z.url(),
+  nextAction: mcpGetChatStatusNextActionSchema,
 });
 
 export const mcpRevokeQueuedMessageInputSchema = z.strictObject({
-  threadId: z.uuid().toLowerCase(),
-  inputId: z.uuid().toLowerCase(),
+  inputRef: mcpChatInputRefSchema,
 });
 
 export const mcpRevokeQueuedMessageOutputSchema = z.strictObject({
-  threadId: z.uuid(),
-  inputId: z.uuid(),
+  inputRef: mcpChatInputRefSchema,
   outcome: z.enum([
     "revoked",
     "already_revoked",

@@ -197,14 +197,15 @@ export const sendMcpChatMessage$ = command(
       input.requestId,
     );
     signal.throwIfAborted();
+    const inputRef = {
+      threadId: input.threadId,
+      eventId: receipt.requestId,
+      seqId: receipt.inputSeqId,
+    };
     return {
       kind: "ok",
       data: {
-        inputRef: {
-          threadId: input.threadId,
-          eventId: receipt.requestId,
-          seqId: receipt.inputSeqId,
-        },
+        inputRef,
         acceptedAt: receipt.acceptedAt.toISOString(),
         retryUntil: new Date(
           receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
@@ -212,6 +213,10 @@ export const sendMcpChatMessage$ = command(
         replayed,
         ...disposition,
         url: new URL(`/chats/${input.threadId}`, env("APP_URL")).toString(),
+        nextAction: {
+          tool: "get_chat_status",
+          arguments: { inputRef },
+        },
       },
     };
   },

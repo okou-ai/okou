@@ -25,7 +25,7 @@ const baseOutput = {
 };
 
 const input = {
-  inputRef: { threadId: id, eventId: "event-1", seqId: 1 },
+  inputRef: { threadId: id, eventId: id, seqId: 1 },
   acceptedAt: timestamp,
   retryUntil: timestamp,
   disposition: "queued" as const,
@@ -66,7 +66,7 @@ describe("MCP chat creation output", () => {
       input,
       nextAction: {
         tool: "get_chat_status" as const,
-        arguments: { threadId: id, inputRef: input.inputRef },
+        arguments: { inputRef: input.inputRef },
       },
     };
 

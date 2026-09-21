@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   mcpChatLifecycleSchema,
+  mcpGetChatStatusInputSchema,
   mcpGetChatStatusOutputSchema,
   type McpGetChatStatusOutput,
 } from "./mcp-chat-status";
@@ -10,6 +12,11 @@ const threadId = "00000000-0000-4000-8000-000000000001";
 const runId = "00000000-0000-4000-8000-000000000002";
 const otherThreadId = "00000000-0000-4000-8000-000000000003";
 const otherRunId = "00000000-0000-4000-8000-000000000004";
+const inputRef = {
+  threadId,
+  eventId: "00000000-0000-4000-8000-000000000006",
+  seqId: 1,
+};
 const messages = {
   tool: "get_chat_messages" as const,
   arguments: { threadId, runId, limit: 20 as const },
@@ -94,6 +101,55 @@ describe("MCP chat lifecycle contract", () => {
 
   it.each(invalidLifecycles)("rejects $phase/$outcome/$output", (lifecycle) => {
     expect(mcpChatLifecycleSchema.safeParse(lifecycle).success).toBeFalsy();
+  });
+});
+
+describe("MCP chat status input", () => {
+  it("publishes distinct exact-input and latest-thread branches", () => {
+    expect(z.toJSONSchema(mcpGetChatStatusInputSchema)).toMatchObject({
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            inputRef: { type: "object" },
+            waitMs: { type: "integer", minimum: 0, maximum: 60_000 },
+          },
+          required: ["inputRef"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: { threadId: { type: "string", format: "uuid" } },
+          required: ["threadId"],
+          additionalProperties: false,
+        },
+      ],
+    });
+  });
+
+  it("normalizes exact refs and keeps latest status immediate", () => {
+    expect(
+      mcpGetChatStatusInputSchema.parse({
+        inputRef: {
+          ...inputRef,
+          threadId: threadId.toUpperCase(),
+          eventId: inputRef.eventId.toUpperCase(),
+        },
+        waitMs: 1000,
+      }),
+    ).toStrictEqual({ inputRef, waitMs: 1000 });
+    expect(mcpGetChatStatusInputSchema.parse({ threadId })).toStrictEqual({
+      threadId,
+    });
+  });
+
+  it("rejects redundant selectors and latest-thread wait controls", () => {
+    for (const value of [
+      { threadId, inputRef },
+      { threadId, waitMs: 0 },
+    ]) {
+      expect(mcpGetChatStatusInputSchema.safeParse(value).success).toBe(false);
+    }
   });
 });
 

@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import { mcpCreateChatThreadInputSchema } from "../mcp-chat-creation";
 import { mcpChatModelIdSchema } from "../mcp-chat-discovery";
-import { mcpSendChatMessageInputSchema } from "../mcp-chat-mutations";
+import {
+  mcpRevokeQueuedMessageInputSchema,
+  mcpSendChatMessageInputSchema,
+} from "../mcp-chat-mutations";
+import { mcpGetChatStatusInputSchema } from "../mcp-chat-status";
 import { mcpUpdateChatThreadInputSchema } from "../mcp-chat-thread-update";
 import { mcpListChatThreadsInputSchema } from "../mcp-chat-threads";
 
@@ -163,5 +167,18 @@ describe("MCP chat input schemas", () => {
         mcpUpdateChatThreadInputSchema.safeParse({ ...update, patch }).success,
       ).toBe(true);
     }
+  });
+
+  it("publishes canonical chat status and revocation selectors", () => {
+    const inputRef = { threadId: id, eventId: id, seqId: 1 };
+    expect(mcpGetChatStatusInputSchema.parse({ inputRef })).toStrictEqual({
+      inputRef,
+    });
+    expect(mcpGetChatStatusInputSchema.parse({ threadId: id })).toStrictEqual({
+      threadId: id,
+    });
+    expect(mcpRevokeQueuedMessageInputSchema.parse({ inputRef })).toStrictEqual(
+      { inputRef },
+    );
   });
 });
