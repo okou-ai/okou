@@ -50,13 +50,9 @@ async function main(): Promise<void> {
   }
 
   const accounts = runnerTestAccounts();
+  // Paid upgrades dominate each fixed batch. Pair them first so the shorter
+  // free credential owns the singleton batch without raising provider load.
   const targets: readonly RunnerCredentialTarget[] = [
-    {
-      email: accounts.runner,
-      fileName: "e2e-api-credentials-runner.json",
-      organizationId: requiredEnvironmentVariable("E2E_RUNNER_ORGANIZATION_ID"),
-      upgradeToPro: false,
-    },
     {
       email: accounts.codex,
       fileName: "e2e-api-credentials-runner-real-codex.json",
@@ -88,6 +84,12 @@ async function main(): Promise<void> {
         "E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID",
       ),
       upgradeToPro: true,
+    },
+    {
+      email: accounts.runner,
+      fileName: "e2e-api-credentials-runner.json",
+      organizationId: requiredEnvironmentVariable("E2E_RUNNER_ORGANIZATION_ID"),
+      upgradeToPro: false,
     },
   ];
   const vercelAutomationBypassSecret =
