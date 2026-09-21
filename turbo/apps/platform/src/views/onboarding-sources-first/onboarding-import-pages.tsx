@@ -1,26 +1,35 @@
 import type { ReactNode } from "react";
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Check, FileText } from "lucide-react";
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  surfaceVariants,
-  cn,
-} from "@okouai/ui";
+import { Check, Copy, FileText, Loader2 } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   captureSourceOnboardingChannelClicked$,
   captureSourceOnboardingSlackInstallStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
-  sourcesFirstUi$,
+  agentPhoneLinkStatus$,
+  createAgentPhoneLinkCode$,
+  setAgentPhoneConnectDialogOpen$,
+} from "../../signals/okou-page/agentphone.ts";
+import { AgentPhoneConnectDialog } from "../okou-page/agentphone-connect-dialog.tsx";
+import {
+  copySkillImportPrompt$,
+  enterSkillImport$,
+  sourcesFirstSkillImport$,
+  type SkillImportState,
+} from "../../signals/onboarding/onboarding-skill-import.ts";
+import {
   updateSourcesFirstDraft$,
-  updateSourcesFirstUi$,
   type ChatChannelId,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import {
   OnboardingIllustration,
   ProductMark,
@@ -29,7 +38,6 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
-const SKILL_FILE_ACCEPT = ".md,text/markdown";
 /* The scene's faces: Okou's own avatar, and a photo for each teammate. */
 const OKOU_AVATAR_URL = platformStaticAssetUrl(
   "views/onboarding/assets/okou-avatar-2df72642115f.webp",
@@ -42,80 +50,123 @@ const SLACK_SCENE_AVATARS = {
     "views/onboarding/assets/slack-scene-mia-379d5c026871.jpg",
   ),
 } as const;
-const SKILL_FILE_INPUT_ID = "onboarding-skill-file";
 
-/** Confirms the chosen SKILL.md before it becomes a personal workflow. */
-function SkillImportDialog() {
+/** The prompt itself: long, read in full, and selectable where it stands. */
+function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
   const { t } = useTranslation();
-  const ui = useGet(sourcesFirstUi$);
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const updateDraft = useSet(updateSourcesFirstDraft$);
 
   return (
-    <Dialog
-      open={ui.pendingSkillName !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          updateUi({ pendingSkillName: null });
-        }
-      }}
+    <pre
+      tabIndex={0}
+      aria-label={t(($) => {
+        return $.onboarding.sourcesFirst.skills.promptLabel;
+      })}
+      className="max-h-[240px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-5 text-muted-foreground"
     >
-      <DialogContent maxWidth="sm" contentClassName="p-6">
-        <DialogTitle className="text-base font-semibold">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.previewTitle;
-          })}
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.previewCopy;
-          })}
-        </DialogDescription>
-        <p
-          className={cn(
-            surfaceVariants(),
-            "mt-4 truncate p-3 text-sm text-foreground",
-          )}
-        >
-          {ui.pendingSkillName}
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              updateUi({ pendingSkillName: null });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.common.cancel;
-            })}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => {
-              // Frontend pass: the SKILL.md upload becomes a personal workflow
-              // once the import endpoint is wired.
-              updateDraft({ importedWorkflowName: ui.pendingSkillName });
-              updateUi({ pendingSkillName: null });
-            }}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.confirm;
-            })}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      {prompt}
+    </pre>
   );
 }
 
-/** The file the import produced, as the row a workflow list would show. */
-function ImportedSkillRow({ name }: { readonly name: string }) {
+/** The session is still opening: the step says so where the prompt will be. */
+function SkillImportPromptPending() {
   const { t } = useTranslation();
 
   return (
-    <div className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
+    <p
+      role="status"
+      className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground"
+    >
+      <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+      {t(($) => {
+        return $.onboarding.sourcesFirst.skills.preparing;
+      })}
+    </p>
+  );
+}
+
+/**
+ * The session could not be opened. The step offers it again and stays out of
+ * the way otherwise: Continue and Skip never waited on it.
+ */
+function SkillImportPromptFailed() {
+  const { t } = useTranslation();
+  const retry = useSet(enterSkillImport$);
+  const pageSignal = useGet(pageSignal$);
+
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+      <p role="alert" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.startError;
+        })}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          detach(retry(pageSignal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.tryAgain;
+        })}
+      </Button>
+    </div>
+  );
+}
+
+/** Copies the prompt, and says whether the clipboard took it. */
+function SkillImportCopyButton({ copied }: { readonly copied: boolean }) {
+  const { t } = useTranslation();
+  const copyPrompt = useSet(copySkillImportPrompt$);
+  const pageSignal = useGet(pageSignal$);
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="shrink-0 gap-1.5"
+      onClick={() => {
+        detach(
+          (async () => {
+            if (await copyPrompt(pageSignal)) {
+              return;
+            }
+            toast.error(
+              t(($) => {
+                return $.onboarding.sourcesFirst.skills.copyError;
+              }),
+            );
+          })(),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      {copied ? (
+        <Check size={14} aria-hidden="true" />
+      ) : (
+        <Copy size={14} aria-hidden="true" />
+      )}
+      {copied
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.skills.copied;
+          })
+        : t(($) => {
+            return $.onboarding.sourcesFirst.skills.copyPrompt;
+          })}
+    </Button>
+  );
+}
+
+/** One skill the import wrote, as the row the workflow list would show. */
+function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
       <span
         className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground"
         aria-hidden="true"
@@ -124,7 +175,7 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">
-          {name}
+          {skill.displayName ?? skill.name}
         </span>
         <span className="block truncate text-xs text-muted-foreground">
           {t(($) => {
@@ -138,54 +189,73 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
 }
 
 /**
- * The drop target and the imported workflow read as one column on the step's
- * own sheet, so importing a file only changes what the column says.
+ * What the import has produced so far. The list is polled, so a skill appears
+ * here on its own; until one does, the step says what it is waiting for.
  */
-function SkillDropCard({ imported }: { readonly imported: string | null }) {
+function ImportedSkillList({
+  skills,
+}: {
+  readonly skills: readonly WorkflowSummary[];
+}) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col items-center justify-center gap-4 text-center">
-      {imported ? (
-        <>
-          <ImportedSkillRow name={imported} />
-          {/* A label opens the file picker without reaching for the DOM, so
-              the control is not the native button Base UI expects. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            nativeButton={false}
-            render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
-          >
+    <div>
+      <p className="text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.importedLabel;
+        })}
+      </p>
+      <div className="mt-2 flex flex-col gap-2">
+        {skills.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 px-4 py-3">
+            <OnboardingIllustration name="skill-import" alt="" />
+            <span className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.skills.waiting;
+              })}
+            </span>
+          </div>
+        ) : (
+          skills.map((skill) => {
+            return <ImportedSkillRow key={skill.id} skill={skill} />;
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SkillImportPanel({ state }: { readonly state: SkillImportState }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
             {t(($) => {
-              return $.onboarding.sourcesFirst.skills.replace;
+              return $.onboarding.sourcesFirst.skills.promptTitle;
             })}
-          </Button>
-        </>
+          </p>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.skills.promptCopy;
+            })}
+          </p>
+        </div>
+        {state.prompt === null ? null : (
+          <SkillImportCopyButton copied={state.copied} />
+        )}
+      </div>
+      {state.prompt === null ? (
+        state.status === "failed" ? (
+          <SkillImportPromptFailed />
+        ) : (
+          <SkillImportPromptPending />
+        )
       ) : (
-        <>
-          <OnboardingIllustration name="skill-import" alt="" size="poster" />
-          <span>
-            <span className="block text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.skills.panelTitle;
-              })}
-            </span>
-            <span className="mt-1 block text-sm text-muted-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.skills.panelCopy;
-              })}
-            </span>
-          </span>
-          <Button
-            nativeButton={false}
-            render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
-          >
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.import;
-            })}
-          </Button>
-        </>
+        <SkillImportPromptBody prompt={state.prompt} />
       )}
     </div>
   );
@@ -194,15 +264,14 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
 export function OnboardingSkillsPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("skills");
-  const updateUi = useSet(updateSourcesFirstUi$);
-  const imported = flow.draft.importedWorkflowName;
+  const skillImport = useGet(sourcesFirstSkillImport$);
 
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={
-        imported
+        skillImport.imported.length > 0
           ? t(($) => {
               return $.onboarding.sourcesFirst.skills.importedTitle;
             })
@@ -216,29 +285,19 @@ export function OnboardingSkillsPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
+      // Nothing on this step is required: a run that imports no skill at all
+      // leaves it the same way as one that imports ten.
       onPrimary={flow.goNext}
-      primaryDisabled={imported === null}
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.skip;
       })}
       onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
-      <SkillDropCard imported={imported} />
-      <input
-        id={SKILL_FILE_INPUT_ID}
-        type="file"
-        accept={SKILL_FILE_ACCEPT}
-        className="hidden"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) {
-            updateUi({ pendingSkillName: file.name.replace(/\.md$/u, "") });
-          }
-        }}
-      />
-      <SkillImportDialog />
+      <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
+        <SkillImportPanel state={skillImport} />
+        <ImportedSkillList skills={skillImport.imported} />
+      </div>
     </OnboardingStepLayout>
   );
 }
@@ -494,6 +553,105 @@ function SlackPreview() {
 }
 
 /**
+ * A chat channel offered beside Slack, as the button that adds it: the name
+ * stays whatever the state, so a button reading only "Added" never stops
+ * saying which channel was added.
+ */
+function ChatChannelButton({
+  label,
+  mark,
+  added,
+  disabled = false,
+  onClick,
+}: {
+  readonly label: string;
+  readonly mark: Parameters<typeof ProductMark>[0]["name"];
+  readonly added: boolean;
+  readonly disabled?: boolean;
+  readonly onClick: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="flex-1 gap-2"
+      aria-pressed={added}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {label}
+      {added ? (
+        <>
+          <span className="sr-only">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.slack.otherAdded;
+            })}
+          </span>
+          <Check size={16} aria-hidden="true" />
+        </>
+      ) : (
+        <ProductMark name={mark} alt="" size="mark" />
+      )}
+    </Button>
+  );
+}
+
+/**
+ * iMessage is AgentPhone: the tile opens the same link this workspace uses
+ * everywhere else, and what it reports is the link's own status rather than
+ * anything this step remembers. It is behind the switch the Works entry uses,
+ * so it is absent where that entry is.
+ */
+function AgentPhoneChannelButton() {
+  const { t } = useTranslation();
+  const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
+  const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
+    createAgentPhoneLinkCode$,
+  );
+  const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
+  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
+  const pageSignal = useGet(pageSignal$);
+  const status =
+    statusLoadable.state === "hasData" ? statusLoadable.data : null;
+  const agentPhoneNumber = status?.agentPhoneNumber ?? null;
+  const connectionCode =
+    connectionCodeLoadable.state === "hasData"
+      ? connectionCodeLoadable.data
+      : null;
+  const requestConnectionCode = () => {
+    detach(createConnectionCode(pageSignal), Reason.DomCallback);
+  };
+
+  return (
+    <>
+      <ChatChannelButton
+        label={t(($) => {
+          return $.onboarding.sourcesFirst.slack.otherImessage;
+        })}
+        mark="imessage"
+        added={status?.linked ?? false}
+        // Until the link status is read there is nothing to connect to, and a
+        // workspace without a number has no message to send.
+        disabled={agentPhoneNumber === null || (status?.linked ?? false)}
+        onClick={() => {
+          captureChannelClicked("imessage", true);
+          requestConnectionCode();
+          setConnectOpen(true);
+        }}
+      />
+      <AgentPhoneConnectDialog
+        phoneNumber={agentPhoneNumber}
+        connectionCode={connectionCode}
+        connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
+        onRetry={requestConnectionCode}
+      />
+    </>
+  );
+}
+
+/**
  * The same mention works in Telegram, iMessage and Teams. They sit under
  * Slack's own button, each with its mark beside the name.
  */
@@ -505,29 +663,8 @@ function OtherChatChannels({
   readonly onPick: (channel: ChatChannelId) => void;
 }) {
   const { t } = useTranslation();
-  const channels = [
-    {
-      id: "telegram",
-      mark: "telegram",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherTelegram;
-      }),
-    },
-    {
-      id: "imessage",
-      mark: "imessage",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherImessage;
-      }),
-    },
-    {
-      id: "teams",
-      mark: "teams",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherTeams;
-      }),
-    },
-  ] as const;
+  const agentPhoneEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.AgentPhoneEntry] ?? false;
 
   return (
     <div>
@@ -537,37 +674,27 @@ function OtherChatChannels({
         })}
       </p>
       <div className="flex gap-2">
-        {channels.map((channel) => {
-          const added = picked.includes(channel.id);
-          return (
-            <Button
-              key={channel.id}
-              type="button"
-              variant="outline"
-              className="flex-1 gap-2"
-              aria-pressed={added}
-              onClick={() => {
-                onPick(channel.id);
-              }}
-            >
-              {/* The name stays whatever the state: a button reading only
-                  "Added" no longer says which channel was added. */}
-              {channel.label}
-              {added ? (
-                <>
-                  <span className="sr-only">
-                    {t(($) => {
-                      return $.onboarding.sourcesFirst.slack.otherAdded;
-                    })}
-                  </span>
-                  <Check size={16} aria-hidden="true" />
-                </>
-              ) : (
-                <ProductMark name={channel.mark} alt="" size="mark" />
-              )}
-            </Button>
-          );
-        })}
+        <ChatChannelButton
+          label={t(($) => {
+            return $.onboarding.sourcesFirst.slack.otherTelegram;
+          })}
+          mark="telegram"
+          added={picked.includes("telegram")}
+          onClick={() => {
+            onPick("telegram");
+          }}
+        />
+        {agentPhoneEnabled ? <AgentPhoneChannelButton /> : null}
+        <ChatChannelButton
+          label={t(($) => {
+            return $.onboarding.sourcesFirst.slack.otherTeams;
+          })}
+          mark="teams"
+          added={picked.includes("teams")}
+          onClick={() => {
+            onPick("teams");
+          }}
+        />
       </div>
     </div>
   );

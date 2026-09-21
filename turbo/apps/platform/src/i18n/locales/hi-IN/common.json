@@ -4148,7 +4148,6 @@
     "sourcesFirst": {
       "common": {
         "back": "वापस",
-        "cancel": "रद्द करें",
         "continue": "आगे बढ़ें",
         "finish": "सेटअप पूरा करें",
         "notNow": "अभी नहीं",
@@ -4220,17 +4219,21 @@
         "title": "आप किस तरह का काम करते हैं?"
       },
       "skills": {
-        "confirm": "इम्पोर्ट करें और आगे बढ़ें",
-        "copy": "एक SKILL.md इम्पोर्ट करें और वह Okou में workflow बन जाती है, / से चलाने के लिए तैयार।",
-        "import": "फ़ाइल चुनें",
+        "copied": "कॉपी हो गया",
+        "copy": "इस prompt को अपने Codex या Claude Code सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
+        "copyError": "prompt कॉपी नहीं हो सका।",
+        "copyPrompt": "prompt कॉपी करें",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
-        "importedTitle": "आपका workflow तैयार है",
-        "panelCopy": "Codex, Claude Code या इसे लिखने वाले किसी भी एजेंट से।",
-        "panelTitle": "SKILL.md यहाँ छोड़ें",
-        "previewCopy": "Okou workflow के रूप में इम्पोर्ट होगा। साझा करने तक इसे सिर्फ़ आप चला सकते हैं।",
-        "previewTitle": "अपनी skill देखें",
-        "replace": "दूसरी फ़ाइल चुनें",
-        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।"
+        "importedLabel": "इम्पोर्ट हुई skills",
+        "importedTitle": "आपकी skills Okou में आ गईं",
+        "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
+        "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
+        "promptLabel": "skill इम्पोर्ट prompt",
+        "promptTitle": "इसे Codex या Claude Code में चलाएँ",
+        "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
+        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।",
+        "tryAgain": "फिर से कोशिश करें",
+        "waiting": "इम्पोर्ट हुई skills आते ही यहाँ दिखेंगी।"
       },
       "slack": {
         "add": "Slack में जोड़ें",

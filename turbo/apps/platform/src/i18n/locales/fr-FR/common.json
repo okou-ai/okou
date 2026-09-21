@@ -4202,7 +4202,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Retour",
-        "cancel": "Annuler",
         "continue": "Continuer",
         "finish": "Terminer la configuration",
         "notNow": "Pas maintenant",
@@ -4274,17 +4273,21 @@
         "title": "Quel type de travail faites-vous ?"
       },
       "skills": {
-        "confirm": "Importer et continuer",
-        "copy": "Importez un SKILL.md : il devient un workflow dans Okou, prêt à lancer avec /.",
-        "import": "Choisir un fichier",
+        "copied": "Copié",
+        "copy": "Collez ce prompt dans votre propre session Codex ou Claude Code : il amène dans Okou les skills présentes sur votre machine.",
+        "copyError": "Le prompt n’a pas pu être copié.",
+        "copyPrompt": "Copier le prompt",
         "importedCopy": "Importé comme workflow Okou.",
-        "importedTitle": "Votre workflow est prêt",
-        "panelCopy": "Depuis Codex, Claude Code ou tout agent qui en écrit un.",
-        "panelTitle": "Déposez un SKILL.md ici",
-        "previewCopy": "Importé comme workflow Okou. Vous seul pouvez l'utiliser tant que vous ne le partagez pas.",
-        "previewTitle": "Vérifier votre skill",
-        "replace": "Choisir un autre fichier",
-        "title": "Amenez les skills que vous avez déjà écrites."
+        "importedLabel": "Skills importées",
+        "importedTitle": "Vos skills sont dans Okou",
+        "preparing": "Ouverture de votre session d’import…",
+        "promptCopy": "Il lit les skills de votre machine et les écrit dans Okou.",
+        "promptLabel": "Prompt d’import de skills",
+        "promptTitle": "Lancez ceci dans Codex ou Claude Code",
+        "startError": "La session d’import n’a pas pu être ouverte.",
+        "title": "Amenez les skills que vous avez déjà écrites.",
+        "tryAgain": "Réessayer",
+        "waiting": "Les skills importées apparaissent ici au fur et à mesure."
       },
       "slack": {
         "add": "Ajouter à Slack",

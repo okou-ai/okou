@@ -55,7 +55,6 @@ export interface SourcesFirstDraft {
    * answer, read from `/api/me/model-providers`, never held here.
    */
   readonly provider: SubscriptionProvider | null;
-  readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
   readonly slackWorkspace: string;
   /** Channels picked beside Slack; each still waits for its own install. */
@@ -72,7 +71,6 @@ function emptyDraft(): SourcesFirstDraft {
     invites: [],
     experienced: null,
     provider: null,
-    importedWorkflowName: null,
     slackStatus: "disconnected",
     slackWorkspace: "",
     chatChannels: [],
@@ -112,15 +110,12 @@ interface SourcesFirstUi {
   /** What the catalog search is filtered by, kept while its dialog is open. */
   readonly searchQuery: string;
   readonly inviteEmail: string;
-  /** File name waiting for import confirmation, null when no file is chosen. */
-  readonly pendingSkillName: string | null;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   searchOpen: false,
   searchQuery: "",
   inviteEmail: "",
-  pendingSkillName: null,
 });
 
 export const sourcesFirstUi$ = computed((get) => {
