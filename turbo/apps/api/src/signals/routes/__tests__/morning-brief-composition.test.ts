@@ -6,7 +6,7 @@ import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agent
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -74,6 +74,16 @@ const CALENDAR_EVENTS_URL =
 const SLACK_CONVERSATIONS_URL = "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
 const GITHUB_API_URL = "https://api.github.com/*";
+const GITHUB_USER_URL = "https://api.github.com/user";
+const GITHUB_NOTIFICATIONS_URL = "https://api.github.com/notifications";
+const GITHUB_SEARCH_URL = "https://api.github.com/search/issues";
+const GITHUB_PULL_URL =
+  "https://api.github.com/repos/:owner/:repo/pulls/:number";
+const GITHUB_CHECK_RUNS_URL =
+  "https://api.github.com/repos/:owner/:repo/commits/:ref/check-runs";
+const GITHUB_STATUS_URL =
+  "https://api.github.com/repos/:owner/:repo/commits/:ref/status";
+const SLACK_REPLIES_URL = "https://slack.com/api/conversations.replies";
 
 /** The documented absolute phase and the cutoff that sits inside it. */
 const COLLECTION_PHASE_MS = 45_000;
@@ -570,6 +580,135 @@ function stubInstructionStorage(onArchiveRead: () => void): void {
       handler?.(command as TestObjectStorageCommand) ?? Promise.resolve({})
     );
   });
+}
+
+/**
+ * Every provider answer this attempt received, in arrival order.
+ *
+ * The cases below are about a source that ran out of *time*, so the recorded
+ * statuses are load-bearing: an assertion that a source kept its evidence is
+ * only meaningful once the same run has shown that every read succeeded.
+ */
+interface PacedTraffic {
+  readonly paths: string[];
+  readonly statuses: number[];
+}
+
+/**
+ * Double GitHub so every read answers `200` after a fixed real delay.
+ *
+ * Production saw twenty GitHub reads return `200` and the source still finish
+ * as a failure with zero items, because the budget — not the provider — ended
+ * the collection. Pacing successful answers is what reproduces that: the
+ * caller's deadline expires while every individual read is healthy.
+ */
+function pacedGithub(perRequestMs: number, updatedAt: Date): PacedTraffic {
+  const traffic: PacedTraffic = { paths: [], statuses: [] };
+  const paced = (body: (query: URLSearchParams) => unknown) => {
+    return async ({ request }: { request: Request }) => {
+      const url = new URL(request.url);
+      traffic.paths.push(url.pathname);
+      await delay(perRequestMs);
+      traffic.statuses.push(200);
+      return HttpResponse.json(body(url.searchParams));
+    };
+  };
+  const pullNotification = (index: number) => {
+    return {
+      id: `acme/api-${String(index)}`,
+      reason: "review_requested",
+      unread: true,
+      updated_at: updatedAt.toISOString(),
+      subject: {
+        title: `pull ${String(index)}`,
+        type: "PullRequest",
+        url: `https://api.github.com/repos/acme/api/pulls/${String(index)}`,
+      },
+      repository: { full_name: "acme/api" },
+    };
+  };
+  server.use(
+    http.get(
+      GITHUB_USER_URL,
+      paced(() => ({ id: 424_242, login: "owner" })),
+    ),
+    http.get(
+      GITHUB_NOTIFICATIONS_URL,
+      paced(() => [1, 2, 3, 4, 5].map(pullNotification)),
+    ),
+    http.get(
+      GITHUB_SEARCH_URL,
+      paced(() => ({ total_count: 0, incomplete_results: false, items: [] })),
+    ),
+    http.get(
+      GITHUB_PULL_URL,
+      paced((query) => ({
+        number: Number(query.get("number") ?? "1"),
+        state: "open",
+        draft: false,
+        updated_at: updatedAt.toISOString(),
+        head: { sha: "a".repeat(40) },
+      })),
+    ),
+    http.get(
+      GITHUB_CHECK_RUNS_URL,
+      paced(() => ({ total_count: 0, check_runs: [] })),
+    ),
+    http.get(
+      GITHUB_STATUS_URL,
+      paced(() => ({ state: "success", total_count: 0, statuses: [] })),
+    ),
+  );
+  return traffic;
+}
+
+/** Double Slack the same way, across enough channels to outlast a budget. */
+function pacedSlack(perRequestMs: number, at: number): PacedTraffic {
+  const traffic: PacedTraffic = { paths: [], statuses: [] };
+  const channels = Array.from({ length: 14 }, (_, index) => ({
+    id: `C${String(index + 1)}`,
+    name: `channel-${String(index + 1)}`,
+    is_private: false,
+  }));
+  const paced = (body: () => unknown) => {
+    return async ({ request }: { request: Request }) => {
+      const url = new URL(request.url);
+      traffic.paths.push(url.pathname);
+      await delay(perRequestMs);
+      traffic.statuses.push(200);
+      return HttpResponse.json(body());
+    };
+  };
+  server.use(
+    http.get(
+      SLACK_CONVERSATIONS_URL,
+      paced(() => ({
+        ok: true,
+        channels,
+        response_metadata: { next_cursor: "" },
+      })),
+    ),
+    http.get(
+      SLACK_HISTORY_URL,
+      paced(() => ({
+        ok: true,
+        has_more: false,
+        messages: [
+          {
+            type: "message",
+            ts: `${String(Math.floor((at - 2 * 60 * 60 * 1000) / 1000))}.000100`,
+            user: "U2",
+            text: "Shipping the migration today",
+          },
+        ],
+      })),
+    ),
+    http.get(
+      SLACK_REPLIES_URL,
+      paced(() => ({ ok: true, messages: [] })),
+    ),
+  );
+  return traffic;
 }
 
 /** The coverage this composition reported for one source. */
@@ -1432,5 +1571,111 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     await expect(pending).rejects.toThrow("cancel composition");
     expect(providers.maximum()).toBe(3);
     expect(providers.slackCalls()).toBe(0);
+  });
+  /**
+   * A source that runs out of time keeps what it already read.
+   *
+   * These cases deliberately do **not** freeze the clock. Every other case in
+   * this suite asserts about the budget a source was *allocated*, which the
+   * application clock decides; these assert about the cancellation that ends
+   * it, and that is an `AbortSignal.timeout` on the monotonic clock which
+   * `mockNow` cannot move. Under a frozen clock the collector stops on its own
+   * graceful budget check and the defect disappears — which is exactly why it
+   * survived into production.
+   *
+   * Production evidence (okou-ai/okou#35737): twenty GitHub reads and
+   * twenty-nine Slack reads all returned `200`, and both sources still settled
+   * as `failed` with zero items, in every recorded occurrence.
+   */
+  describe("a source whose budget expires mid-collection", () => {
+    /** Read one source's row out of whichever successful shape came back. */
+    function sourceRow(
+      body: Awaited<ReturnType<typeof compose>>,
+      source: string,
+    ) {
+      const sources =
+        body.result === "incomplete"
+          ? body.sources
+          : body.result === "composed" || body.result === "empty"
+            ? body.composition.sources
+            : [];
+      return sources.find((entry) => {
+        return entry.source === source;
+      });
+    }
+
+    it("keeps the GitHub evidence its successful reads produced", async () => {
+      const fixture = await readyOwner({ github: true });
+      const at = now();
+      // Paced so the bounded GitHub read — identity, notifications, both
+      // searches and five pull requests' checks — cannot finish inside the
+      // caller's budget, while every individual read still answers 200.
+      const github = pacedGithub(500, new Date(at - 3 * 60 * 60 * 1000));
+
+      const body = await compose(fixture, {
+        anchor: anchorFor(at),
+        deadlineAt: new Date(at + 6000).toISOString(),
+      });
+
+      // The provider never refused: this is a clock outcome, not a GitHub one.
+      expect(github.paths.length).toBeGreaterThan(0);
+      expect(
+        github.statuses.every((status) => {
+          return status === 200;
+        }),
+      ).toBeTruthy();
+      const row = sourceRow(body, "github");
+      // This was `failed` with zero items: the deadline arrived as an abort,
+      // `settle` rethrew it, and the wave loop replaced the whole source with
+      // a failed collection that discarded every pull request already read.
+      expect(row?.coverage).not.toBe("failed");
+      expect(row?.items ?? 0).toBeGreaterThan(0);
+      // A bounded read is still an incomplete one, and says so.
+      expect(row?.omitted.unknownRemaining).toBeTruthy();
+    }, 30_000);
+
+    it("keeps the Slack conversations it already read and proved", async () => {
+      const fixture = await readyOwner({ slack: true });
+      const at = now();
+      const slack = pacedSlack(400, at);
+
+      const body = await compose(fixture, {
+        anchor: anchorFor(at),
+        // Slack runs in the second wave, so this budget also covers the
+        // unconfigured first wave ahead of its fourteen paced channel reads.
+        deadlineAt: new Date(at + 5000).toISOString(),
+      });
+
+      expect(slack.paths.length).toBeGreaterThan(0);
+      expect(
+        slack.statuses.every((status) => {
+          return status === 200;
+        }),
+      ).toBeTruthy();
+      const row = sourceRow(body, "slack");
+      expect(row?.coverage).not.toBe("failed");
+      expect(row?.items ?? 0).toBeGreaterThan(0);
+    }, 30_000);
+
+    it("never calls a refused GitHub read a quiet morning", async () => {
+      const fixture = await readyOwner({ github: true });
+      const at = freezeClock();
+      // Keeping a bounded read's evidence must not make a refusal survivable.
+      // A source the provider refused has no evidence to keep, and the gap it
+      // could not read stays declared rather than becoming an empty morning.
+      server.use(
+        http.get(GITHUB_API_URL, () => {
+          return HttpResponse.json({ message: "boom" }, { status: 500 });
+        }),
+      );
+
+      const body = await compose(fixture, { anchor: anchorFor(at) });
+
+      const row = sourceRow(body, "github");
+      expect(row?.coverage).not.toBe("complete");
+      expect(row?.coverage).not.toBe("empty");
+      expect(row?.items ?? 0).toBe(0);
+      expect(row?.omitted.unknownRemaining).toBeTruthy();
+    });
   });
 });

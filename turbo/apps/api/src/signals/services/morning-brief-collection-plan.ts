@@ -54,18 +54,29 @@ export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
  */
 export const MORNING_BRIEF_SOURCE_READ_RESERVE_MS = 3000;
 
+/** At most this share of a source's remaining budget becomes the reserve. */
+const MORNING_BRIEF_SOURCE_READ_RESERVE_SHARE = 4;
+
 /**
  * The instant one source stops starting provider reads.
  *
- * Never earlier than the moment it is asked: a budget already shorter than the
- * reserve has no reading time to give back, and reporting a cutoff in the past
- * would turn a short budget into a source that never started.
+ * The reserve is a share of what is actually left, capped at the fixed amount
+ * above, rather than the fixed amount itself. Subtracting a flat three seconds
+ * from a budget of one would move the cutoff to the moment it was asked, and a
+ * collector that is out of time before its first read reports a source that
+ * read nothing — which the outcome rules would then have to call a quiet
+ * morning. A short budget buys a short read, never no read at all.
  */
 export function morningBriefSourceReadCutoff(
   deadlineAt: number,
   at: number,
 ): number {
-  return Math.max(at, deadlineAt - MORNING_BRIEF_SOURCE_READ_RESERVE_MS);
+  const remainingMs = Math.max(0, deadlineAt - at);
+  const reserveMs = Math.min(
+    MORNING_BRIEF_SOURCE_READ_RESERVE_MS,
+    Math.floor(remainingMs / MORNING_BRIEF_SOURCE_READ_RESERVE_SHARE),
+  );
+  return deadlineAt - reserveMs;
 }
 
 /** At most three sources are in flight; the rest queue in the fixed order. */

@@ -1508,6 +1508,14 @@ class GithubPrioritiesCollector {
         );
       }
     } else {
+      // A branch nobody had time to start is not a branch with nothing to do.
+      // The outcome is already partial either way, because a skipped branch is
+      // not a healthy one — but the bundle's own gap set is what becomes
+      // `omittedBySource.unknownRemaining`, and leaving it empty states that
+      // nothing was left unread by a source that never read at all.
+      if (this.login !== null) {
+        this.limits.add("deadline");
+      }
       this.notifications.skip();
       this.assigned.skip();
       this.reviewRequested.skip();
