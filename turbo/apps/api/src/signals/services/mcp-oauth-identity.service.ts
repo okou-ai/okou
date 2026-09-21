@@ -13,6 +13,7 @@ import { safeJsonParse, safeSync, settle } from "../utils";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 
 const ID_TOKEN_FUTURE_IAT_TOLERANCE_SECONDS = 60;
+const MCP_OAUTH_IDENTITY_TIMEOUT_MS = 10_000;
 
 const oidcDiscoveryIdentitySchema = z
   .object({
@@ -233,7 +234,7 @@ async function optionalUserInfoClaims(
   return result.value;
 }
 
-export async function discoverMcpAutomaticOAuthUserInfo(
+async function discoverMcpAutomaticOAuthUserInfoWithinDeadline(
   args: {
     readonly context: McpAutomaticOAuthIdentityContext;
     readonly accessToken: string;
@@ -305,6 +306,26 @@ export async function discoverMcpAutomaticOAuthUserInfo(
     return null;
   }
   return result.value;
+}
+
+export async function discoverMcpAutomaticOAuthUserInfo(
+  args: {
+    readonly context: McpAutomaticOAuthIdentityContext;
+    readonly accessToken: string;
+    readonly idToken: string | undefined;
+  },
+  signal: AbortSignal,
+): Promise<McpAutomaticOAuthUserInfo | null> {
+  const identitySignal = AbortSignal.any([
+    signal,
+    AbortSignal.timeout(MCP_OAUTH_IDENTITY_TIMEOUT_MS),
+  ]);
+  const result = await settle(
+    discoverMcpAutomaticOAuthUserInfoWithinDeadline(args, identitySignal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return result.ok ? result.value : null;
 }
 
 export async function discoverStaticCustomOAuthUserInfo(
