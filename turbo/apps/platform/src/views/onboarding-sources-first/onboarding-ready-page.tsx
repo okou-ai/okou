@@ -1,6 +1,10 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Textarea } from "@okouai/ui";
+import {
+  captureSourceOnboardingPromptEdited$,
+  captureSourceOnboardingStartClicked$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { updateSourcesFirstDraft$ } from "../../signals/onboarding/onboarding-sources-first-state.ts";
@@ -34,6 +38,8 @@ export function OnboardingReadyPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("ready");
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
+  const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const { runPrompt } = useOnboardingNavigation();
@@ -79,7 +85,10 @@ export function OnboardingReadyPage() {
         return $.onboarding.sourcesFirst.welcome.start;
       })}
       onPrimary={() => {
-        runPrompt(text.trim());
+        const request = text.trim();
+        // The request's length, never the request itself.
+        captureStartClicked(request.length);
+        runPrompt(request);
       }}
       primaryDisabled={text.trim().length === 0}
       onBack={flow.goBack}
@@ -132,6 +141,7 @@ export function OnboardingReadyPage() {
                 startingPromptKey: promptKey,
                 startingPromptDraft: event.target.value,
               });
+              capturePromptEdited(event.target.value.length);
             }}
           />
         </div>

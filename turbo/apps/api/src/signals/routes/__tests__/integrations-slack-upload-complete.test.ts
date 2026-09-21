@@ -737,6 +737,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       const driveFolders: DriveFolderFixture[] = [];
       const driveUploadBodies: string[] = [];
       const driveUploadContentTypes: (string | null)[] = [];
+      const driveUploadSessionUrl =
+        "https://www.googleapis.com/upload/drive/v3/files/resumable-session";
       server.use(
         http.get("https://www.googleapis.com/drive/v3/files", ({ request }) => {
           const query = new URL(request.url).searchParams.get("q");
@@ -773,19 +775,27 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             return HttpResponse.json(folder);
           },
         ),
+        // A resumable upload opens a session with the metadata, then sends the
+        // content against the returned session URI.
         http.post(
           "https://www.googleapis.com/upload/drive/v3/files",
           async ({ request }) => {
             driveUploadContentTypes.push(request.headers.get("content-type"));
             driveUploadBodies.push(await request.text());
-            return HttpResponse.json({
-              id: "drive-canonical-asset",
-              name: "report.csv",
-              webViewLink:
-                "https://drive.google.com/file/d/drive-canonical-asset/view",
+            return new HttpResponse(null, {
+              status: 200,
+              headers: { Location: driveUploadSessionUrl },
             });
           },
         ),
+        http.put(driveUploadSessionUrl, () => {
+          return HttpResponse.json({
+            id: "drive-canonical-asset",
+            name: "report.csv",
+            webViewLink:
+              "https://drive.google.com/file/d/drive-canonical-asset/view",
+          });
+        }),
       );
       mocks.clerk.session(userId, orgId);
       const driveClient = setupApp({
@@ -855,9 +865,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       }
       expect(
         driveUploadContentTypes.every((contentType) => {
-          return contentType?.startsWith(
-            "multipart/related; boundary=multipart-",
-          );
+          return contentType === "application/json; charset=UTF-8";
         }),
       ).toBeTruthy();
 

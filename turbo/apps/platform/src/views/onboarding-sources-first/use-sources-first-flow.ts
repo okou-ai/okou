@@ -1,5 +1,9 @@
 import { useGet, useSet } from "ccstate-react";
 import {
+  captureSourceOnboardingBack$,
+  captureSourceOnboardingSkipped$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import {
   nextSourcesFirstStep,
   previousSourcesFirstStep,
   sourcesFirstDraft$,
@@ -31,6 +35,8 @@ interface SourcesFirstFlowState {
   readonly goBack: (() => void) | undefined;
   /** Moves to the next step; the last step's action is its own. */
   readonly goNext: () => void;
+  /** The same move, from a step's own Skip or Not now. */
+  readonly goSkip: () => void;
   readonly goTo: (step: SourcesFirstStep) => void;
 }
 
@@ -44,11 +50,20 @@ export function useSourcesFirstFlow(
   const flow = useGet(sourcesFirstFlow$);
   const draft = useGet(sourcesFirstDraft$);
   const navigate = useSet(detachedNavigateTo$);
+  const captureBack = useSet(captureSourceOnboardingBack$);
+  const captureSkipped = useSet(captureSourceOnboardingSkipped$);
   const previous = previousSourcesFirstStep(step, flow, draft.experienced);
   const progress = sourcesFirstProgress(step, flow, draft.experienced);
 
   const goTo = (target: SourcesFirstStep): void => {
     navigate(STEP_ROUTES[target], { searchParams: new URLSearchParams() });
+  };
+
+  const goNext = (): void => {
+    const next = nextSourcesFirstStep(step, flow, draft.experienced);
+    if (next) {
+      goTo(next);
+    }
   };
 
   return {
@@ -58,14 +73,14 @@ export function useSourcesFirstFlow(
     totalSteps: progress.total,
     goBack: previous
       ? () => {
+          captureBack(step);
           goTo(previous);
         }
       : undefined,
-    goNext: () => {
-      const next = nextSourcesFirstStep(step, flow, draft.experienced);
-      if (next) {
-        goTo(next);
-      }
+    goNext,
+    goSkip: () => {
+      captureSkipped(step);
+      goNext();
     },
     goTo,
   };

@@ -8,6 +8,11 @@ import {
   sourcesFirstInviteSendable,
 } from "../../signals/onboarding/onboarding-sources-first-invite.ts";
 import {
+  captureSourceOnboardingExperienceAnswered$,
+  captureSourceOnboardingIndustrySelected$,
+  captureSourceOnboardingInviteAdded$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import {
   nextSourcesFirstStep,
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
@@ -32,6 +37,9 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const captureIndustrySelected = useSet(
+    captureSourceOnboardingIndustrySelected$,
+  );
   const flow = useSourcesFirstFlow("industry");
 
   return (
@@ -54,7 +62,9 @@ export function OnboardingIndustryPage() {
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
-          updateDraft({ industry: value as IndustryId });
+          const industry = value as IndustryId;
+          updateDraft({ industry });
+          captureIndustrySelected(industry);
         }}
         className="grid gap-3 sm:grid-cols-2"
       >
@@ -181,6 +191,7 @@ function InviteList({
 
 export function OnboardingTeamPage() {
   const { t } = useTranslation();
+  const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
   const flow = useSourcesFirstFlow("team");
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
@@ -193,10 +204,19 @@ export function OnboardingTeamPage() {
     if (!sendable) {
       return;
     }
+    // A refused address is sent again under its own entry, so only a new one
+    // makes the list longer.
+    const known = flow.draft.invites.some((entry) => {
+      return entry.email === address;
+    });
     // The address moves into the list, so the field is free for the next one
     // while the API is still answering for this one.
     updateUi({ inviteEmail: "" });
     detach(sendInvite(address, pageSignal), Reason.DomCallback);
+    // The funnel counts invitees; the addresses themselves stay in the draft.
+    captureInviteAdded(
+      known ? flow.draft.invites.length : flow.draft.invites.length + 1,
+    );
   };
 
   return (
@@ -216,7 +236,7 @@ export function OnboardingTeamPage() {
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.notNow;
       })}
-      onSecondary={flow.goNext}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       <OnboardingPanel
@@ -273,6 +293,9 @@ export function OnboardingTeamPage() {
 export function OnboardingExperiencePage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const captureExperienceAnswered = useSet(
+    captureSourceOnboardingExperienceAnswered$,
+  );
   const flow = useSourcesFirstFlow("experience");
   const { experienced, provider } = flow.draft;
 
@@ -312,15 +335,19 @@ export function OnboardingExperiencePage() {
       <RadioGroup
         value={experienced === false ? "no" : (provider ?? "")}
         onValueChange={(value) => {
-          updateDraft(
+          const answer =
             value === "no"
               ? { experienced: false, provider: null, providerConnected: false }
               : {
                   experienced: true,
-                  provider: value === "codex" ? "codex" : "claudeCode",
+                  provider:
+                    value === "codex"
+                      ? ("codex" as const)
+                      : ("claudeCode" as const),
                   providerConnected: false,
-                },
-          );
+                };
+          updateDraft(answer);
+          captureExperienceAnswered(answer.experienced, answer.provider);
         }}
         className="grid gap-4 sm:grid-cols-3"
       >
