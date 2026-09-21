@@ -75,7 +75,7 @@ async function dispatchMaintenance(
   type?: Phase2ProviderType,
   credentialScope: "org" | "member" = "org",
   represented?: "valid" | "invalid",
-  featureSwitches?: Readonly<Record<string, boolean>>,
+  featureSwitches?: Readonly<Partial<Record<FeatureSwitchKey, boolean>>>,
 ) {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
   // PiMemory is off for everyone by default; the dispatcher only runs for
@@ -201,7 +201,7 @@ async function launchMaintenance(
   type?: Phase2ProviderType,
   credentialScope: "org" | "member" = "org",
   represented?: "valid" | "invalid",
-  featureSwitches?: Readonly<Record<string, boolean>>,
+  featureSwitches?: Readonly<Partial<Record<FeatureSwitchKey, boolean>>>,
 ) {
   const { scope, run, runId, binding, provider, baseFiles } =
     await dispatchMaintenance(

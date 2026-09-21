@@ -94,6 +94,7 @@ import {
 import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
+import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
@@ -113,7 +114,10 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { updateChatEventSnapshotHead } from "./helpers/runtime-state";
+import {
+  seedBuiltInModelCandidateKeys,
+  updateChatEventSnapshotHead,
+} from "./helpers/runtime-state";
 import {
   deleteFakeChatEventObject,
   installFakeChatEventR2,
@@ -1020,6 +1024,60 @@ describe("MCP chat discovery and creation", () => {
     structuredToolError(first);
     await expect(callTool(auth.token(), "list_models")).resolves.toStrictEqual(
       first,
+    );
+  });
+
+  it("projects the owner's DeepSeek OpenRouter-only routing in model discovery", async () => {
+    const f = await threadFixture();
+    const runs = createRunsApi(context);
+    const model = "deepseek-v4-flash";
+    await runs.grantProEntitlement(f.actor);
+    await seedBuiltInModelCandidateKeys(context, model);
+    await runs.updateOrgModelPolicies(f.actor, [
+      {
+        model,
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: f.auth.userId, orgId: f.auth.orgId },
+      { [FeatureSwitchKey.DeepSeekOpenRouterRouting]: false },
+    );
+    const token = f.auth.token();
+    expect((await listModels(token)).models).toContainEqual(
+      expect.objectContaining({
+        id: model,
+        availability: "available",
+      }),
+    );
+
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: f.auth.userId, orgId: f.auth.orgId },
+      { [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true },
+    );
+    const models =
+      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+        {
+          selectedModel: model,
+          providerType: "openrouter-codex",
+          upstreamModel: `deepseek/${model}`,
+        },
+        async () => {
+          return await listModels(token);
+        },
+      );
+    expect(models.models).toContainEqual(
+      expect.objectContaining({
+        id: model,
+        availability: "unavailable",
+        reason:
+          "The built-in model is temporarily unavailable. Retry later or select another model.",
+      }),
     );
   });
 

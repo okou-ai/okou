@@ -109,11 +109,10 @@ function routeFromTarget(
 
 function eligibleBuiltInModelRouteCandidates(
   selectedModel: string,
-  featureSwitchContext?: FeatureSwitchContext,
+  featureSwitchContext: FeatureSwitchContext,
 ): readonly BuiltInModelRouteTarget[] {
   const candidates = getBuiltInModelRouteCandidates(selectedModel);
   const requireOpenRouter =
-    featureSwitchContext !== undefined &&
     isFeatureEnabled(
       FeatureSwitchKey.DeepSeekOpenRouterRouting,
       featureSwitchContext,
@@ -145,7 +144,7 @@ export function isBuiltInModelRuntimeRoutePermitted(
 export async function resolveBuiltInModelRuntimeRoute(
   db: Db,
   selectedModel: string,
-  featureSwitchContext?: FeatureSwitchContext,
+  featureSwitchContext: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const timestamp = nowDate();
   for (const target of eligibleBuiltInModelRouteCandidates(

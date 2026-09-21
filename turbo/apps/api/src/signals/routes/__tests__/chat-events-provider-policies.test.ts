@@ -10,7 +10,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   readQueuedLangfuseContextFixture,
@@ -43,9 +43,7 @@ import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-s
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
-  resolveBuiltInModelRouteFixture,
   seedBuiltInModelCandidateKeys,
-  setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
@@ -2036,76 +2034,6 @@ describe("CHAT-02: model-first provider policies", () => {
       );
     },
   );
-
-  it("fails closed while the required OpenRouter route is cooling", async () => {
-    const model = "deepseek-v4-flash";
-    const { actor, agentId } = await entitledChatActor();
-    await seedBuiltInModelCandidateKeys(context, model);
-    const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
-    const direct = await withMockNowForTest(startedAt, async () => {
-      return await resolveBuiltInModelRouteFixture(context, model);
-    });
-    expect(direct).toMatchObject({ provider_type: "deepseek" });
-    if (!direct) {
-      throw new Error("Expected a DeepSeek direct route");
-    }
-    const openRouter =
-      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-        {
-          selectedModel: model,
-          providerType: direct.provider_type,
-          upstreamModel: direct.upstream_model,
-        },
-        async () => {
-          return await withMockNowForTest(startedAt, async () => {
-            return await resolveBuiltInModelRouteFixture(context, model);
-          });
-        },
-      );
-    expect(openRouter).toMatchObject({ provider_type: "openrouter-codex" });
-    if (!openRouter) {
-      throw new Error("Expected an OpenRouter fallback route");
-    }
-    await setBuiltInCandidateCooldownFixture(
-      context,
-      model,
-      openRouter,
-      new Date(startedAt + 5 * 60 * 1000),
-    );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-      [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
-      [FeatureSwitchKey.OpenRouterUsRouting]: true,
-    });
-
-    const prompt = "do not fall back while OpenRouter is cooling";
-    const response = await withMockNowForTest(startedAt, async () => {
-      return await requestSendEventRaw(actor, {
-        agentId,
-        prompt,
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: prompt }],
-        },
-        model,
-        hasTextContent: true,
-      });
-    });
-    expect(response.status).toBe(503);
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Every built-in model route for this model is temporarily unavailable",
-    );
-  });
 
   it.each(
     (

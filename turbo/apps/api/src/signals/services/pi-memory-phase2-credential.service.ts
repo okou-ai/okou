@@ -418,19 +418,22 @@ export async function resolvePiMemoryPhase2Credential(
   const quota: PiMemoryQuotaSource = subscription?.quota ?? {
     providerClass: pin.modelProvider === "built-in" ? "builtin" : "api_key",
   };
-  const featureSwitchContext =
-    pin.modelProvider === "built-in"
-      ? await loadUserFeatureSwitchContext(db, claim.orgId, claim.userId)
-      : undefined;
-  signal.throwIfAborted();
-  const route =
-    pin.modelProvider === "built-in"
-      ? await resolveBuiltInModelRuntimeRoute(
-          db,
-          PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-          featureSwitchContext,
-        )
-      : undefined;
+  let route:
+    | Awaited<ReturnType<typeof resolveBuiltInModelRuntimeRoute>>
+    | undefined;
+  if (pin.modelProvider === "built-in") {
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
+      db,
+      claim.orgId,
+      claim.userId,
+    );
+    signal.throwIfAborted();
+    route = await resolveBuiltInModelRuntimeRoute(
+      db,
+      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      featureSwitchContext,
+    );
+  }
   signal.throwIfAborted();
   if (route === null) {
     reject("model_route_unavailable");
