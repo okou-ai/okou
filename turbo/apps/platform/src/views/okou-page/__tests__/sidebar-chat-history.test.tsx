@@ -542,14 +542,13 @@ test("Hide archived chats until they are explicitly shown, except in Unread only
   });
 });
 
-test("Keep the current archived chat until navigating away", async () => {
+test("Hide the current chat after archiving it", async () => {
   prepareDefaultAgent();
   const untitledThread: SidebarThread = {
     ...createThread(EXISTING_THREAD_ID, "Unused title"),
     title: null,
   };
-  const otherThread = createThread(INCIDENT_THREAD_ID, "Incident notes");
-  mockSidebarThreadStory([untitledThread, otherThread]);
+  mockSidebarThreadStory([untitledThread]);
 
   await setupSidebarPage({
     context,
@@ -559,27 +558,18 @@ test("Keep the current archived chat until navigating away", async () => {
 
   await waitFor(() => {
     expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
   });
   openThreadMenu("New chat");
   click(menuItemByText("Archive chat"));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("✅")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("All caught up")).toBeInTheDocument();
     expect(
-      within(sidebar()).queryByTestId("sidebar-skeleton"),
-    ).not.toBeInTheDocument();
+      within(sidebar()).getByText("All your chats are archived"),
+    ).toBeInTheDocument();
+    expect(within(sidebar()).queryByText("New chat")).not.toBeInTheDocument();
   });
-
-  click(threadLinkByTitle("Incident notes"));
-
-  await waitFor(() => {
-    expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
-  });
-
-  openChatListMenu();
-  click(menuItemByText("Show archived"));
+  click(buttonByText("Show archived chats", sidebar()));
 
   await waitFor(() => {
     expect(within(sidebar()).getByText("✅")).toBeInTheDocument();

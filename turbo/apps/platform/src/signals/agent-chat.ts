@@ -91,6 +91,7 @@ export const currentChatAgentDisplayName$ = computed(async (get) => {
 
 export interface ChatThreadListSignals {
   readonly threads$: Computed<EventDrivenChatThread[]>;
+  readonly allThreadIds$: Computed<readonly string[]>;
   readonly threadIds$: Computed<readonly string[]>;
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
@@ -118,24 +119,29 @@ function createChatThreadListSignals(
   agentId: string | null,
   filter: ChatThreadListFilter,
 ): ChatThreadListSignals {
-  const agentThreads$ = computed((get): EventDrivenChatThread[] => {
+  const allThreads$ = computed((get): EventDrivenChatThread[] => {
     if (!agentId) {
       return [];
     }
-    return get(eventDrivenChatThreads$).filter((thread) => {
-      return thread.agentId === agentId;
+    return sortChatThreads(
+      get(eventDrivenChatThreads$).filter((thread) => {
+        return thread.agentId === agentId;
+      }),
+    );
+  });
+  const allThreadIds$ = computed((get): readonly string[] => {
+    return get(allThreads$).map((thread) => {
+      return thread.id;
     });
   });
   const threads$ = computed((get): EventDrivenChatThread[] => {
-    const currentThreadId = get(currentChatThreadId$);
-    const threads = get(agentThreads$).filter((thread) => {
-      const hiddenArchived =
+    return get(allThreads$).filter((thread) => {
+      return !(
         filter.archiveEnabled &&
         !filter.showArchived &&
-        isChatThreadArchived(thread.title);
-      return !hiddenArchived || thread.id === currentThreadId;
+        isChatThreadArchived(thread.title)
+      );
     });
-    return sortChatThreads(threads);
   });
   const threadIds$ = computed((get): readonly string[] => {
     return get(threads$).map((thread) => {
@@ -145,6 +151,7 @@ function createChatThreadListSignals(
 
   return {
     threads$,
+    allThreadIds$,
     threadIds$,
     count$: computed((get): number => {
       return get(threadIds$).length;
@@ -157,11 +164,8 @@ function createChatThreadListSignals(
       if (!filter.archiveEnabled || filter.showArchived) {
         return false;
       }
-      const currentThreadId = get(currentChatThreadId$);
-      return get(agentThreads$).some((thread) => {
-        return (
-          thread.id !== currentThreadId && isChatThreadArchived(thread.title)
-        );
+      return get(allThreads$).some((thread) => {
+        return isChatThreadArchived(thread.title);
       });
     }),
   };
@@ -219,5 +223,31 @@ export const currentChatThreadListIds$ = computed(
     return (await get(chatThreads$)).map((thread) => {
       return thread.id;
     });
+  },
+);
+
+export interface ChatThreadNavigationList {
+  readonly orderedThreadIds: readonly string[];
+  readonly listedThreadIds: readonly string[];
+}
+
+// A filtered current chat still needs its position in the complete ordering so
+// adjacent navigation can skip hidden chats. Unread navigation intentionally
+// keeps using its independently computed list for both ordering and eligibility.
+export const currentChatThreadNavigationList$ = computed(
+  async (get): Promise<ChatThreadNavigationList> => {
+    if (get(chatThreadOnlyUnread$)) {
+      const listedThreadIds = await get(currentChatThreadListIds$);
+      return {
+        orderedThreadIds: listedThreadIds,
+        listedThreadIds,
+      };
+    }
+
+    const list = await get(currentChatThreadListSignals$);
+    return {
+      orderedThreadIds: get(list.allThreadIds$),
+      listedThreadIds: get(list.threadIds$),
+    };
   },
 );
