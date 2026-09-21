@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.349.0](https://github.com/okou-ai/okou/compare/cli-v9.348.8...cli-v9.349.0) (2026-09-21)
+
+
+### Features
+
+* **templates:** show a document template's first page in the catalog ([#35723](https://github.com/okou-ai/okou/issues/35723)) ([0d07c92](https://github.com/okou-ai/okou/commit/0d07c92b8719a472b61be04574ba87a9527cf5ba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.481.0
+    * @okouai/core bumped to 8.689.1
+    * @okouai/pi-agent-runtime bumped to 1.33.33
+
 ## [9.348.8](https://github.com/okou-ai/okou/compare/cli-v9.348.7...cli-v9.348.8) (2026-09-21)
 
 
