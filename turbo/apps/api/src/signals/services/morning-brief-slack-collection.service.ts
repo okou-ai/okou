@@ -23,13 +23,24 @@ import { settle } from "../utils";
  * day. Nothing here is persisted or logged: message bodies, tokens and provider
  * errors stay in memory and reach only the authenticated preview caller.
  *
- * **Live scope.** Enumerating the intersection once authorizes nothing later:
- * the bot keeps its own access after the member loses theirs. Every protected
- * history or reply page is therefore preceded by a fresh bounded proof that the
- * connected member still shares that conversation, and one final proof is the
- * release boundary for everything the bundle would name. Those proofs spend the
- * same finite request and time budgets as the reads, which lowers effective
+ * **Live scope.** Discovery authorizes nothing later: the bot keeps its own
+ * access after the member loses theirs. No protected history or reply page is
+ * therefore read without a bounded proof that the connected member still
+ * shares that conversation — one pass taken after discovery, which answers
+ * every conversation this attempt reads — and one final proof is the release
+ * boundary for everything the bundle would name. Those proofs spend the same
+ * finite request and time budgets as the reads, which lowers effective
  * throughput and is reported as partial.
+ *
+ * **Containment.** One conversation that cannot be read is not the source. A
+ * conversation outside the readable surface — one the bot was never invited to,
+ * one that no longer exists, one that has been archived — leaves the bundle
+ * silently, because a workspace's access decision is not a gap in this owner's
+ * morning. A conversation inside the surface that did not answer is named as a
+ * limit, so coverage cannot claim a morning this attempt did not see. Either
+ * way the conversations already read and proved are still released. Only a loss
+ * of the authority the whole read runs under — the installation's identity, its
+ * credential, its granted scope — fails the source as a whole.
  *
  * **Release authority.** Coverage and authorization are separate facts. A
  * bounded attempt may omit work and say so, but it may never release a
@@ -188,6 +199,7 @@ class SlackCollectionBudget {
   private readonly seen = new Set<string>();
   private readonly roots: DiscoveredThread[] = [];
   private readonly revoked = new Set<string>();
+  private readonly excluded = new Set<string>();
   private readonly withheld = new Set<string>();
   readonly entries: MorningBriefSlackEntry[] = [];
   readonly limits = new Set<MorningBriefCollectionLimit>();
@@ -227,6 +239,19 @@ class SlackCollectionBudget {
 
   note(limit: MorningBriefCollectionLimit): void {
     this.limits.add(limit);
+  }
+
+  /**
+   * Stop reading for this attempt while its release proof still runs.
+   *
+   * The provider refusing one read refuses the next one just as well, so the
+   * read phase ends here rather than spending the rest of its allowance on
+   * answers it has already been told it cannot have. The reserved proof
+   * allowance is untouched, which is what lets the conversations this attempt
+   * did read be proved and released instead of discarded.
+   */
+  stopReading(limit: MorningBriefCollectionLimit): void {
+    this.stop(limit);
   }
 
   private spendWithin(ceiling: number, until: number): boolean {
@@ -381,6 +406,25 @@ class SlackCollectionBudget {
   }
 
   /**
+   * Drop a conversation that is not part of this owner's readable surface.
+   *
+   * A channel the bot was never invited to, one that no longer exists, and one
+   * that has been archived are all outside what this attempt could ever have
+   * covered. That boundary is the workspace's own decision, not a gap in the
+   * morning: reporting it as an omission would describe a member's access
+   * choice as a degraded read and push a fully covered morning to `partial`.
+   * So no limit is recorded and coverage is left alone — the conversation
+   * simply leaves the bundle, with whatever this attempt held for it. Content
+   * read before the removal is discarded for the same reason a proven
+   * revocation discards it: it may not be released out of a conversation the
+   * reader is no longer in.
+   */
+  excludeChannel(channelId: string): void {
+    this.excluded.add(channelId);
+    this.discardChannel(channelId);
+  }
+
+  /**
    * Withhold a conversation whose final scope proof could not be completed.
    *
    * Unproven is neither an allow nor a proven removal, so the attempt simply
@@ -394,13 +438,14 @@ class SlackCollectionBudget {
     this.discardChannel(channelId);
   }
 
-  isRevoked(channelId: string): boolean {
-    return this.revoked.has(channelId);
+  /** True once this attempt stopped reading a conversation for good. */
+  isDropped(channelId: string): boolean {
+    return this.revoked.has(channelId) || this.excluded.has(channelId);
   }
 
   /** True when a fresh proof still authorizes naming this conversation. */
   isReleasable(channelId: string): boolean {
-    return !this.revoked.has(channelId) && !this.withheld.has(channelId);
+    return !this.isDropped(channelId) && !this.withheld.has(channelId);
   }
 
   /** Keeps a message only when it falls inside the frozen half-open window. */
@@ -435,7 +480,113 @@ class SlackCollectionBudget {
   }
 }
 
-/** Slack failures are classified once, so no caller invents its own mapping. */
+/**
+ * Provider errors that take one conversation out of this attempt's surface.
+ *
+ * `not_in_channel` and `channel_not_found` are the reader's own access
+ * boundary: the conversation is not part of what this owner's brief could have
+ * covered. An archived conversation has no live morning to miss either.
+ */
+const OUT_OF_SCOPE_CONVERSATION_CODES: readonly string[] = [
+  "channel_not_found",
+  "is_archived",
+  "not_in_channel",
+];
+
+/**
+ * Provider errors that end the whole attempt rather than one conversation.
+ *
+ * These name the authority every read runs under — the installation's identity,
+ * its credential and its granted scope — so the next conversation would fail
+ * exactly the same way and the source has to report the failure instead of
+ * quietly covering less of the morning.
+ */
+const SOURCE_FATAL_SLACK_CODES: readonly string[] = [
+  "account_inactive",
+  "ekm_access_denied",
+  "invalid_auth",
+  "missing_scope",
+  "no_permission",
+  "not_authed",
+  "org_login_required",
+  "team_access_not_granted",
+  "token_expired",
+  "token_revoked",
+];
+
+/**
+ * What one conversation's failed provider read means for this attempt.
+ *
+ * `out-of-scope` is a conversation that was never part of the readable surface,
+ * `unread` is one this owner is entitled to read that did not answer, and
+ * `rate-limited` is the provider refusing the reads themselves. Only
+ * `source-fatal` is about the whole attempt.
+ */
+type SlackConversationFailure =
+  | "out-of-scope"
+  | "unread"
+  | "rate-limited"
+  | "source-fatal";
+
+function classifyConversationFailure(error: unknown): SlackConversationFailure {
+  if (!isSlackApiClientError(error)) {
+    // A transport or decoding failure belongs to this one request. The
+    // attempt's cancellation and its deadline never reach here: `settle`
+    // re-throws an abort ahead of any classification.
+    return "unread";
+  }
+  if (error.statusCode === 429 || error.code === "ratelimited") {
+    return "rate-limited";
+  }
+  if (SOURCE_FATAL_SLACK_CODES.includes(error.code)) {
+    return "source-fatal";
+  }
+  return OUT_OF_SCOPE_CONVERSATION_CODES.includes(error.code)
+    ? "out-of-scope"
+    : "unread";
+}
+
+/**
+ * Keep one conversation's failed read inside that conversation.
+ *
+ * A single `ok:false` used to escape the read loop and discard the whole
+ * source, so one conversation the bot had never been invited to threw away the
+ * thirteen conversations already read and proved (#35818). The failure is
+ * contained here instead, and the two kinds of containment are deliberately
+ * different: a conversation outside the readable surface leaves silently,
+ * while unread work inside it is named so coverage cannot claim a morning this
+ * attempt did not see. Losing the authority the whole read runs under is
+ * neither, and is re-thrown for the source to classify.
+ */
+function containConversationFailure(
+  channelId: string,
+  error: unknown,
+  budget: SlackCollectionBudget,
+): SlackConversationFailure {
+  const failure = classifyConversationFailure(error);
+  if (failure === "source-fatal") {
+    throw error;
+  }
+  if (failure === "out-of-scope") {
+    budget.excludeChannel(channelId);
+    return failure;
+  }
+  if (failure === "rate-limited") {
+    budget.stopReading("rate-limited");
+    return failure;
+  }
+  budget.note("conversation-failed");
+  return failure;
+}
+
+/**
+ * Slack failures are classified once, so no caller invents its own mapping.
+ *
+ * This is the source-level classifier for a failure that bounds the whole
+ * attempt — enumeration, the release proof, or an authority loss a read
+ * re-threw. A per-conversation error no longer arrives here; the codes that
+ * describe one conversation stay mapped for any other origin.
+ */
 function classifySlackFailure(
   error: unknown,
   requests: number,
@@ -492,6 +643,16 @@ async function discoverChannels(
       if (channel.id.startsWith("D")) {
         continue;
       }
+      if (channel.is_member === false) {
+        // The bot cannot read a public conversation it never joined, so
+        // enumerating one only buys a `not_in_channel` a request later. Every
+        // conversation this enumeration lists is one the connected member
+        // belongs to, which is why an explicit `false` can only be about the
+        // calling bot: reading it as the member's own membership would make it
+        // a value Slack could never return here. An absent field filters
+        // nothing and leaves the read path's own containment to answer.
+        continue;
+      }
       if (channels.length >= MAX_CHANNELS) {
         budget.note("channels");
         return channels;
@@ -526,25 +687,40 @@ async function discoverChannels(
 type SlackScopeProof = "shared" | "revoked" | "unproven";
 
 /**
- * Ask Slack whether the connected member still shares one conversation.
+ * One bounded walk of the member's live intersection, over a pending set.
  *
- * This is the same intersection discovery uses, charged to the same budgets and
- * carrying the same cancellation and deadline signal. It stops at the first page
- * naming the conversation, so the common case costs one request. The unbounded
- * `isSlackConversationShared` convenience loop is the behavioral precedent for
- * checking before a protected read, not a permissible implementation here.
+ * This is the same intersection discovery uses, carrying the same cancellation
+ * and deadline signal, and charged to whichever allowance the caller is
+ * spending from. Every conversation the walk names is deleted from `pending`,
+ * so what remains afterwards is what it never saw, and the walk stops at the
+ * first page that settles them all — one request in the ordinary case, however
+ * many conversations were asked about.
+ *
+ * The return value says whether that silence is an answer. A walk that named
+ * everything, or that listed the member's whole intersection, is complete, and
+ * whatever is still pending is provably outside that intersection. A walk
+ * stopped by its page cap, its allowance, a repeated cursor or the attempt's
+ * wall clock proves nothing about what is still pending: unproven is never an
+ * allow. The unbounded `isSlackConversationShared` convenience loop is the
+ * behavioral precedent for checking before a protected read, not a permissible
+ * implementation here.
  */
-async function proveSharedScope(
+async function walkSharedScope(
   scope: MorningBriefSlackCollectionScope,
-  channelId: string,
-  budget: SlackCollectionBudget,
+  pending: Set<string>,
+  allowance: {
+    /** Spend one enumeration request, from the caller's own allowance. */
+    readonly spend: () => boolean;
+    /** True once the attempt's wall clock has outlived a held answer. */
+    readonly expired: () => boolean;
+  },
   signal: AbortSignal,
-): Promise<SlackScopeProof> {
+): Promise<boolean> {
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < MAX_CHANNEL_PAGES; page += 1) {
-    if (!budget.spendRequest()) {
-      return "unproven";
+    if (!allowance.spend()) {
+      return false;
     }
     const result = await listSharedSlackChannelsPage(
       scope.botToken,
@@ -552,28 +728,112 @@ async function proveSharedScope(
       { limit: CHANNEL_PAGE_LIMIT, cursor },
       signal,
     );
-    if (
-      result.channels.some((channel) => {
-        return channel.id === channelId;
-      })
-    ) {
-      return "shared";
+    // An answer that lands after this attempt's own wall clock is no longer a
+    // current proof, however well the request was started inside it.
+    if (allowance.expired()) {
+      return false;
+    }
+    for (const channel of result.channels) {
+      pending.delete(channel.id);
+    }
+    if (pending.size === 0) {
+      return true;
     }
     cursor = result.response_metadata?.next_cursor || undefined;
     if (cursor === undefined) {
-      // The member's whole intersection was listed without this conversation.
-      return "revoked";
+      // The member's whole intersection was listed without them.
+      return true;
     }
     if (seenCursors.has(cursor)) {
-      return "unproven";
+      return false;
     }
     seenCursors.add(cursor);
   }
-  return "unproven";
+  return false;
 }
 
 /**
- * Gate one protected page read on a fresh proof of the member's own access.
+ * The pre-read authorization this attempt takes once, for every conversation.
+ *
+ * Enumerating per conversation asked one identical question fifteen times in
+ * production, spent twenty-nine of the thirty-seven read requests on the same
+ * 14 KB page, and at nineteen conversations would have exhausted the read
+ * allowance before a single message was collected (#35818). One walk answers
+ * every conversation's question, because the intersection it lists is the
+ * whole answer rather than one conversation's row of it.
+ *
+ * Freshness still bounds how much this one pass may authorize: it is taken
+ * after discovery and before the first protected read, and the final release
+ * proof — a separate enumeration that every conversation in the bundle must
+ * pass — remains the boundary a removal during the read phase is caught by.
+ */
+class SharedScopeProof {
+  private readonly asked: ReadonlySet<string>;
+  private pass:
+    | Promise<{
+        readonly unnamed: ReadonlySet<string>;
+        readonly complete: boolean;
+      }>
+    | undefined;
+
+  constructor(
+    private readonly scope: MorningBriefSlackCollectionScope,
+    private readonly budget: SlackCollectionBudget,
+    channels: readonly DiscoveredChannel[],
+  ) {
+    this.asked = new Set(
+      channels.map((channel) => {
+        return channel.id;
+      }),
+    );
+  }
+
+  /**
+   * What this attempt can prove about the member's access to one conversation.
+   *
+   * The first question takes the pass and every later one reads its answer, so
+   * an attempt enumerates at most once here. A conversation the pass was never
+   * asked about is unproven rather than allowed.
+   */
+  async prove(
+    channelId: string,
+    signal: AbortSignal,
+  ): Promise<SlackScopeProof> {
+    if (!this.asked.has(channelId)) {
+      return "unproven";
+    }
+    this.pass ??= this.take(signal);
+    const { unnamed, complete } = await this.pass;
+    if (!unnamed.has(channelId)) {
+      return "shared";
+    }
+    return complete ? "revoked" : "unproven";
+  }
+
+  private async take(signal: AbortSignal): Promise<{
+    readonly unnamed: ReadonlySet<string>;
+    readonly complete: boolean;
+  }> {
+    const pending = new Set(this.asked);
+    const complete = await walkSharedScope(
+      this.scope,
+      pending,
+      {
+        spend: () => {
+          return this.budget.spendRequest();
+        },
+        expired: () => {
+          return this.budget.stopIfExpired();
+        },
+      },
+      signal,
+    );
+    return { unnamed: pending, complete };
+  }
+}
+
+/**
+ * Gate one protected page read on this attempt's proof of the member's access.
  *
  * A proven removal also discards whatever this attempt already holds for the
  * conversation. An unproven lookup stops further reads and is recorded so the
@@ -582,16 +842,16 @@ async function proveSharedScope(
  * conversation in the bundle must pass.
  */
 async function authorizeChannelRead(
-  scope: MorningBriefSlackCollectionScope,
+  proof: SharedScopeProof,
   channelId: string,
   budget: SlackCollectionBudget,
   signal: AbortSignal,
 ): Promise<boolean> {
-  const proof = await proveSharedScope(scope, channelId, budget, signal);
-  if (proof === "shared") {
+  const proven = await proof.prove(channelId, signal);
+  if (proven === "shared") {
     return true;
   }
-  if (proof === "revoked") {
+  if (proven === "revoked") {
     budget.revokeChannel(channelId);
     return false;
   }
@@ -635,43 +895,26 @@ async function confirmSharedScope(
   if (pending.size === 0) {
     return;
   }
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_CHANNEL_PAGES; page += 1) {
-    if (!budget.spendProofRequest()) {
-      break;
-    }
-    const result = await listSharedSlackChannelsPage(
-      scope.botToken,
-      scope.slackUserId,
-      { limit: CHANNEL_PAGE_LIMIT, cursor },
-      signal,
-    );
-    // An answer that lands after this attempt's own wall clock is no longer a
-    // current proof, however well the request was started inside it.
-    if (budget.stopIfExpired()) {
-      break;
-    }
-    for (const channel of result.channels) {
-      pending.delete(channel.id);
-    }
-    if (pending.size === 0) {
-      return;
-    }
-    cursor = result.response_metadata?.next_cursor || undefined;
-    if (cursor === undefined) {
-      for (const channelId of pending) {
-        budget.revokeChannel(channelId);
-      }
-      return;
-    }
-    if (seenCursors.has(cursor)) {
-      break;
-    }
-    seenCursors.add(cursor);
-  }
+  const complete = await walkSharedScope(
+    scope,
+    pending,
+    {
+      spend: () => {
+        return budget.spendProofRequest();
+      },
+      expired: () => {
+        return budget.stopIfExpired();
+      },
+    },
+    signal,
+  );
   for (const channelId of pending) {
-    budget.withholdChannel(channelId);
+    if (complete) {
+      // The pass listed the member's whole intersection without it.
+      budget.revokeChannel(channelId);
+    } else {
+      budget.withholdChannel(channelId);
+    }
   }
 }
 
@@ -682,6 +925,7 @@ interface ChannelHistory {
 
 async function readChannelHistory(
   scope: MorningBriefSlackCollectionScope,
+  proof: SharedScopeProof,
   channel: DiscoveredChannel,
   budget: SlackCollectionBudget,
   signal: AbortSignal,
@@ -690,23 +934,39 @@ async function readChannelHistory(
   let read = false;
   let cursor: string | undefined;
   for (let page = 0; page < MAX_HISTORY_PAGES_PER_CHANNEL; page += 1) {
-    if (!(await authorizeChannelRead(scope, channel.id, budget, signal))) {
+    if (!(await authorizeChannelRead(proof, channel.id, budget, signal))) {
       return { read, truncated: true };
     }
     if (!budget.spendRequest()) {
       return { read, truncated: true };
     }
-    read = true;
-    const result = await readSlackHistoryPage(
-      scope.botToken,
-      {
-        channel: channel.id,
-        limit: HISTORY_PAGE_LIMIT,
-        cursor,
-        ...budget.range,
-      },
+    const answer = await settle(
+      readSlackHistoryPage(
+        scope.botToken,
+        {
+          channel: channel.id,
+          limit: HISTORY_PAGE_LIMIT,
+          cursor,
+          ...budget.range,
+        },
+        signal,
+      ),
       signal,
     );
+    if (!answer.ok) {
+      const failure = containConversationFailure(
+        channel.id,
+        answer.error,
+        budget,
+      );
+      // A conversation outside the readable surface is not a truncated one:
+      // it leaves the bundle, with nothing for coverage to be short of.
+      return { read, truncated: failure !== "out-of-scope" };
+    }
+    // A page that answered is what makes this conversation one the attempt
+    // read; a request that failed leaves it unread however it is reported.
+    read = true;
+    const result = answer.value;
     for (const message of result.messages) {
       if (!budget.withinWindow(message.ts)) {
         continue;
@@ -747,29 +1007,45 @@ async function readChannelHistory(
   return { read, truncated: true };
 }
 
-/** Exactly one reply page per expanded thread; a longer thread is truncation. */
+/**
+ * Exactly one reply page per expanded thread; a longer thread is truncation.
+ *
+ * A thread that fails to answer costs this conversation its expansion and
+ * nothing else. The channel history that discovered the root was already
+ * collected and proved, and a reply page is the last work of the read phase, so
+ * there is nothing a failure here could honestly invalidate.
+ */
 async function readThreadReplies(
   scope: MorningBriefSlackCollectionScope,
+  proof: SharedScopeProof,
   thread: DiscoveredThread,
   budget: SlackCollectionBudget,
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!(await authorizeChannelRead(scope, thread.channel.id, budget, signal))) {
+  if (!(await authorizeChannelRead(proof, thread.channel.id, budget, signal))) {
     return false;
   }
   if (!budget.spendRequest()) {
     return false;
   }
-  const result = await readSlackRepliesPage(
-    scope.botToken,
-    {
-      channel: thread.channel.id,
-      thread: thread.threadTs,
-      limit: HISTORY_PAGE_LIMIT,
-      ...budget.range,
-    },
+  const answer = await settle(
+    readSlackRepliesPage(
+      scope.botToken,
+      {
+        channel: thread.channel.id,
+        thread: thread.threadTs,
+        limit: HISTORY_PAGE_LIMIT,
+        ...budget.range,
+      },
+      signal,
+    ),
     signal,
   );
+  if (!answer.ok) {
+    containConversationFailure(thread.channel.id, answer.error, budget);
+    return false;
+  }
+  const result = answer.value;
   for (const message of result.messages) {
     if (!budget.withinWindow(message.ts)) {
       continue;
@@ -803,11 +1079,13 @@ async function readThreadReplies(
  * Collect one bounded Slack bundle for the frozen window.
  *
  * `signal` carries both the caller's cancellation and this attempt's deadline
- * and is handed to every provider read and authorization proof. A mid-stream
- * provider failure abandons the attempt with its classified outcome instead of
- * returning the partial data as a successful read. A conversation whose scope
- * is disproved, or which the final proof could not confirm, leaves nothing
- * behind in the bundle — no message, name, id or link.
+ * and is handed to every provider read and authorization proof. A provider
+ * failure on one conversation is contained to that conversation; a failure of
+ * the enumeration, of the release proof, or of the authority every read runs
+ * under abandons the attempt with its classified outcome instead of returning
+ * partial data as a successful read. A conversation whose scope is disproved,
+ * or which the final proof could not confirm, leaves nothing behind in the
+ * bundle — no message, name, id or link.
  */
 export async function collectMorningBriefSlackBundle(
   scope: MorningBriefSlackCollectionScope,
@@ -828,16 +1106,23 @@ export async function collectMorningBriefSlackBundle(
   const collected = await settle(
     (async () => {
       const channels = await discoverChannels(scope, budget, signal);
+      const proof = new SharedScopeProof(scope, budget, channels);
       const truncatedChannels = new Set<string>();
       const readChannels = new Set<string>();
       for (const channel of channels) {
         signal.throwIfAborted();
-        if (budget.stopped || budget.isRevoked(channel.id)) {
+        // A dropped conversation is not part of this attempt's surface, so it
+        // is neither read again nor reported as work the morning is short of.
+        if (budget.isDropped(channel.id)) {
+          continue;
+        }
+        if (budget.stopped) {
           truncatedChannels.add(channel.id);
           continue;
         }
         const history = await readChannelHistory(
           scope,
+          proof,
           channel,
           budget,
           signal,
@@ -854,13 +1139,16 @@ export async function collectMorningBriefSlackBundle(
       const expandedThreads: string[] = [];
       for (const thread of budget.threads) {
         signal.throwIfAborted();
-        if (budget.stopped || budget.isRevoked(thread.channel.id)) {
+        if (budget.isDropped(thread.channel.id)) {
+          continue;
+        }
+        if (budget.stopped) {
           truncatedChannels.add(thread.channel.id);
           continue;
         }
-        if (await readThreadReplies(scope, thread, budget, signal)) {
+        if (await readThreadReplies(scope, proof, thread, budget, signal)) {
           expandedThreads.push(thread.channel.id);
-        } else {
+        } else if (!budget.isDropped(thread.channel.id)) {
           truncatedChannels.add(thread.channel.id);
         }
       }
@@ -868,7 +1156,7 @@ export async function collectMorningBriefSlackBundle(
       // last live proof of the scope that produced it.
       const pendingRelease = channels
         .filter((channel) => {
-          return !budget.isRevoked(channel.id);
+          return !budget.isDropped(channel.id);
         })
         .map((channel) => {
           return channel.id;

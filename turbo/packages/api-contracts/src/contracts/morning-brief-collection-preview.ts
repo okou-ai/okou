@@ -48,6 +48,13 @@ export const morningBriefCollectionOutcomeSchema = z.enum([
  * `scope-lost` is a proven loss of the connected member's shared access, and
  * `scope-unproven` is a bounded authorization lookup that established neither
  * access nor its absence — never an allow.
+ *
+ * `conversation-failed` is a conversation this owner is entitled to read that
+ * answered with an error, and `rate-limited` is the provider refusing further
+ * reads for this attempt. Both are unread work inside the declared scope, so
+ * they make coverage partial. A conversation that is not part of the readable
+ * surface at all — one the bot was never invited to, or that no longer exists —
+ * is not a limit: it leaves the bundle without an omission to report.
  */
 const morningBriefCollectionLimitSchema = z.enum([
   "channel-pages",
@@ -63,6 +70,8 @@ const morningBriefCollectionLimitSchema = z.enum([
   "cursor-anomaly",
   "scope-lost",
   "scope-unproven",
+  "conversation-failed",
+  "rate-limited",
 ]);
 
 export const morningBriefCollectionOccurrenceSchema = z.object({

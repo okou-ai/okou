@@ -241,6 +241,13 @@ public and private channels. Direct messages and unshared conversations never
 appear. Windowed history is read per channel, and a bounded number of thread
 roots discovered inside that history are expanded.
 
+A conversation the enumeration marks `is_member: false` is dropped there too.
+Slack renders that flag for the calling identity, so on a bot token it names a
+conversation the bot never joined and whose history could only answer
+`not_in_channel`. Every conversation the enumeration lists is one the connected
+member belongs to, which is why an explicit `false` can only describe the bot;
+an absent flag filters nothing and leaves the read path to answer.
+
 ### Live shared scope
 
 Enumerating the intersection once authorizes nothing afterwards. The
@@ -248,11 +255,21 @@ organization's bot keeps its own membership when the connected member loses
 theirs, so a channel discovered at the start of an attempt must not become
 standing read authority for the rest of it.
 
-Every protected history or reply page read is therefore preceded by a fresh
-bounded lookup of the same intersection, and one final lookup decides what may
-leave the collector at all. Each lookup uses the exact organization bot token,
-connected Slack user and workspace, the same fixed `users.conversations` method
-discovery uses, and the same combined cancellation and deadline signal.
+No protected history or reply page is therefore read without a bounded lookup of
+the same intersection, taken after discovery and before the first read, and one
+final lookup decides what may leave the collector at all. Each lookup uses the
+exact organization bot token, connected Slack user and workspace, the same fixed
+`users.conversations` method discovery uses, and the same combined cancellation
+and deadline signal.
+
+The pre-read lookup is one pass for the whole attempt rather than one per
+conversation. The intersection it lists answers every conversation's question at
+once, so asking per conversation only repeated the same page: fifteen identical
+enumerations in the occurrence behind #35818, twenty-nine of the thirty-seven
+read requests and about 3.5 s of the wall clock, and an allowance nineteen
+conversations would have exhausted before a message was collected. A removal
+during the read phase is caught by the final lookup, which every conversation in
+the bundle must pass, rather than by re-proving each conversation as it is read.
 
 A lookup produces one of three results, and only the first authorizes a read:
 
@@ -266,6 +283,51 @@ An unproven lookup is never an allow, never a proven removal, and never a
 healthy empty day: it always leaves a named limit and therefore `partial`
 coverage. There is no fallback to bot-only visibility, another workspace, a
 default account, or the channel list discovery produced earlier.
+
+### Per-conversation containment
+
+One conversation that cannot be read is not the source. A provider error on one
+conversation's history or replies is contained there, and the conversations
+already read and proved are still released. A single `ok:false` used to escape
+the read loop instead and discard the whole Slack source, so one conversation
+the bot had never been invited to reported `coverage: failed, items: 0` for a
+morning in which thirteen of fourteen conversations had been read (#35818).
+
+Two kinds of containment are deliberately kept apart.
+
+**Outside the readable surface — filtered, still `complete`.**
+`not_in_channel`, `channel_not_found` and `is_archived` say the conversation is
+not part of what this owner's brief could have covered. It leaves the bundle
+with whatever the attempt held for it, and no limit is recorded: Okou not being
+in a conversation is the workspace's own access decision, and reporting it as an
+omission would describe that decision as a degraded read and push a fully
+covered morning to `partial`. Content read before a removal is discarded for the
+same reason a proven revocation discards it — a read may not be published out of
+a conversation its reader is no longer in.
+
+**Inside the surface but unread — recorded, `partial`.** HTTP 429, 5xx, and
+transport or decoding failures are conversations Okou is entitled to read and
+did not manage to. The conversation is named as truncated and the limit is
+`conversation-failed`, or `rate-limited` when the provider refused the read
+itself, so coverage cannot claim a morning the attempt did not see. A rate limit
+belongs to the credential rather than to one conversation, so the read phase
+stops instead of asking again for what was just refused; the reserved release
+proof still runs, which is what lets the conversations already read be
+published. A failure during the thread phase costs that conversation its
+expansion and leaves the history it already collected alone.
+
+**Neither — the source fails.** `invalid_auth`, `not_authed`,
+`account_inactive`, `token_revoked`, `token_expired`, `missing_scope`,
+`no_permission`, `team_access_not_granted`, `org_login_required` and
+`ekm_access_denied` name the authority the whole read runs under, so the next
+conversation would answer the same way and the attempt ends with its classified
+failure. A failure of the enumeration itself, or of the final release proof, is
+whole-attempt for the same reason: neither is one conversation's own failure,
+and a release proof that never answered leaves nothing a bundle may carry.
+
+Discovery-time filtering does not replace any of this. The bot can be removed
+from a conversation between discovery and the read, so the read path resolves
+that to the same silent filter.
 
 ### The release boundary
 
@@ -345,16 +407,18 @@ it.
 
 Authorization lookups are ordinary provider requests: they spend the same total
 request and wall-clock budgets as the reads they guard, and introduce no new
-cap. Fewer channels therefore fit inside one attempt than the channel budget
-alone suggests, and an attempt bounded that way reports `requests` or `deadline`
-and `partial` coverage rather than raising a limit.
+cap. Two of the three passes are fixed per attempt rather than per conversation,
+so what competes with the reads is the pages those passes need. Fewer channels
+can still fit inside one attempt than the channel budget alone suggests, and an
+attempt bounded that way reports `requests` or `deadline` and `partial` coverage
+rather than raising a limit.
 
 Because nothing may be released without the final lookup, one enumeration's
 worth of pages is reserved for it inside the same 40-request ceiling: discovery,
-pre-read proofs and protected reads share 37, and the final pass spends up to
-the remaining 3. This lowers effective throughput rather than raising a budget —
-an attempt that would previously have read one more channel now reports
-`requests` a little earlier and still releases what it collected. A content cap
+the one pre-read proof and the protected reads share 37, and the final pass
+spends up to the remaining 3. This lowers effective throughput rather than
+raising a budget — an attempt that would previously have read one more channel
+now reports `requests` a little earlier and still releases what it collected. A content cap
 (`messages` or `text-bytes`) stops reading without spending the reserve, so it
 can never waive the final proof; the wall clock is not reserved the same way, so
 an attempt that runs out of time withholds everything instead.
@@ -377,12 +441,15 @@ and replies keys on the exact `(channel, ts)` pair.
 ### Outcomes
 
 `complete` and `partial` both produced a bundle. `partial` means a documented
-budget, an unusable continuation, a repeated cursor or an authorization boundary
-bounded the read, and it names each limit that applied. `no_shared_channels` is a
-healthy empty read. `rate_limited`, `permission_denied` and `provider_failed` are
-failures and are deliberately distinct from an empty read: a mid-stream provider
-problem, a `has_more` without a usable cursor, a repeated cursor and an exhausted
-budget can never become false completeness.
+budget, an unusable continuation, a repeated cursor, an unread conversation or an
+authorization boundary bounded the read, and it names each limit that applied.
+`no_shared_channels` is a healthy empty read. `rate_limited`, `permission_denied`
+and `provider_failed` are failures and are deliberately distinct from an empty
+read. They describe the whole attempt — a failed enumeration, a failed release
+proof, or a lost authority — because one conversation's own failure is contained
+rather than raised. A `has_more` without a usable cursor, a repeated cursor, an
+exhausted budget and a conversation that did not answer can never become false
+completeness.
 
 Every limit names work or content that was actually skipped or removed:
 
@@ -397,6 +464,8 @@ Every limit names work or content that was actually skipped or removed:
 | `cursor-anomaly`                | A continuation repeated a cursor instead of advancing.                                                                |
 | `scope-lost`                    | A live lookup proved the member no longer shares a conversation, so everything held for it was discarded.             |
 | `scope-unproven`                | A bounded lookup established neither access nor its absence, so the conversation was not read or was withheld.        |
+| `conversation-failed`           | A conversation inside the readable surface answered with an error, or failed in transport, and was not read.          |
+| `rate-limited`                  | The provider refused a conversation read, so the read phase stopped and what it already held was proved and released. |
 
 ### Coverage limits
 
@@ -411,10 +480,12 @@ needs older-root reply coverage is a content-policy decision recorded for the
 S4/S8 gate.
 
 **Omitted work or content.** Everything inside the declared scope that a budget,
-a continuation anomaly or an authorization boundary actually removed is recorded
-as a named limit and makes the attempt `partial`. `complete` therefore means the
-declared scope was read without omission, never that the whole workspace or day
-was.
+a continuation anomaly, an authorization boundary or a conversation that did not
+answer actually removed is recorded as a named limit and makes the attempt
+`partial`. `complete` therefore means the declared scope was read without
+omission, never that the whole workspace or day was. A conversation the reader is
+not in was never inside that scope, so its absence is a filter rather than an
+omission and leaves `complete` intact.
 
 Omission is the only thing partial coverage buys. It never widens what the
 attempt may release: a conversation the final lookup could not confirm is
