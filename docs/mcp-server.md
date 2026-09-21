@@ -16,6 +16,29 @@ Successful results keep the complete machine-readable value in
 `structuredContent` and include a tool-specific human summary of at most 512
 UTF-8 bytes in text content; they do not duplicate the full JSON value as text.
 
+## Timestamp contract
+
+All MCP chat output timestamps are UTC RFC 3339 strings with exactly six
+fractional-second digits, for example `2026-09-21T01:02:03.123000Z`. Time-filter
+inputs continue to accept zero through six fractional-second digits. Each field
+names one clock; callers must not substitute another timestamp from the same
+response:
+
+| Field               | Meaning                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| `createdAt`         | Conversation creation time.                                                                     |
+| `acceptedAt`        | Server acceptance/persistence time for the submitted mutation or input.                         |
+| `messageAt`         | Original accepted-input time for a visible user message, or output-event time for an assistant. |
+| `sourceEventAt`     | Indexed source-event time used by search bounds, ordering and continuation.                     |
+| `metadataUpdatedAt` | Conversation metadata-row update time; ordinary message activity does not advance it.           |
+| `lastMessageAt`     | Conversation activity time used by thread bounds, ordering and continuation.                    |
+| `observedAt`        | Completion time of a bounded status observation.                                                |
+| `retryUntil`        | Absolute end of the relevant idempotent retry window.                                           |
+
+Replacement processing can make `messageAt` and `sourceEventAt` differ for the
+same visible message reference. Metadata edits can advance `metadataUpdatedAt`
+without advancing `lastMessageAt`; later message activity can do the reverse.
+
 ## Tool errors and CLI exit status
 
 MCP server-declared tool failures use `isError: true` and content for human
@@ -123,7 +146,7 @@ points to `get_chat_status` with only the complete stable `inputRef`. Use that h
 and then `get_chat_messages` to observe output.
 
 Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
-current title, selected/effective model, service tier, creation time,
+current title, selected/effective model, service tier, creation time in `createdAt`,
 authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
 defaults apply and service tier starts unset. Credentials, quota, and execution
 policy are checked when the initial or later input is dispatched, as indicated
@@ -185,7 +208,7 @@ An existing run retains its run-scoped model, and a message steered into that ru
 continues with the existing model.
 
 The result contains the current bounded title, selected/effective model and source,
-current service tier, update timestamp, authenticated App URL and retry metadata.
+current service tier, `metadataUpdatedAt`, authenticated App URL and retry metadata.
 Generate one UUID `requestId` for each intended patch. Retry an uncertain response
 with the identical request ID, thread ID, exact field presence and exact values
 within 24 hours. Concurrent identical requests converge. Exact replay does not
@@ -222,8 +245,10 @@ then pass a result's `threadId` to `get_chat_thread` as
 `unreadCoverage`; detail returns `thread` and `unreadCoverage`.
 
 Each thread includes its current title, Agent identity/name, selected and
-effective model metadata, timestamps, authenticated App URL, queued/pending/
-running activity flags and unread state. Titles are bounded to 500 Unicode
+effective model metadata, `createdAt`, `metadataUpdatedAt`, `lastMessageAt`,
+authenticated App URL, queued/pending/running activity flags and unread state.
+`since`, `before`, ordering and continuation use `lastMessageAt`, not the
+metadata clock. Titles are bounded to 500 Unicode
 characters, with an explicit truncation flag. Agent names retain their existing
 256-character storage bound. Private drafts, Agent
 instructions, message content and provider credentials are excluded.
@@ -288,7 +313,7 @@ run-filtered anchor returns an explicit unavailable-reference error. Around
 pages expose older and newer continuations where applicable.
 
 Every message includes `ref: {threadId,eventId,seqId}`, `role`, `eventType`,
-`createdAt`, nullable `runId`, visible `text`, `files` and the actual authenticated
+`messageAt`, nullable `runId`, visible `text`, `files` and the actual authenticated
 conversation `url`. Files retain original `fileId`, filename and content type,
 plus `annotatedFileId` when present. Assistant Markdown keeps its original
 artifact links. Neither an event reference nor a file/artifact identifier grants
@@ -372,7 +397,7 @@ For example, search with `{"query":"上海发布","limit":10}`. For each match,
 pass `ref.threadId` as `threadId` and `{eventId: ref.eventId, seqId: ref.seqId}`
 as `around` to `get_chat_messages`. Search returns a bounded excerpt, its UTF-16
 offset and `hasBefore`/`hasAfter`, thread title/truncation, current Agent, role,
-nullable run ID, source-event timestamp, authenticated conversation URL and the
+nullable run ID, `sourceEventAt`, authenticated conversation URL and the
 real canonical `ref`. Excerpts contain at most 1,000 UTF-16 units and do not split
 surrogate pairs. Use the message reader for complete text/files. This is lexical
 text search, not semantic search or attachment-content indexing. Punctuation-only
@@ -386,7 +411,7 @@ Revoked, replaced, hidden or changed candidates are skipped. A missing/corrupt
 archive fails the whole call instead of returning a successful partial page.
 Search does not advance read state, run work, update projections or repair data.
 
-Order is indexed source-event time descending, then thread UUID and sequence descending;
+Order is indexed `sourceEventAt` descending, then thread UUID and sequence descending;
 cursor ordering preserves the stored PostgreSQL microseconds. The live JavaScript
 projector stores millisecond dates; historical SQL-produced rows may have finer
 precision. Replacement-event timestamps

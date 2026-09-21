@@ -29,7 +29,7 @@ const pageMessage = {
   },
   role: "assistant" as const,
   eventType: "output.message" as const,
-  createdAt: "2026-09-20T00:00:00.000Z",
+  messageAt: "2026-09-20T00:00:00.000000Z",
   runId,
   text: "Ready output",
   textOffset: 0,
@@ -55,7 +55,7 @@ const waitMetrics = {
 function statusOutput(overrides: Partial<McpGetChatStatusOutput>): unknown {
   return {
     threadId,
-    observedAt: "2026-09-20T00:00:00.000Z",
+    observedAt: "2026-09-20T00:00:00.000000Z",
     lifecycle: { phase: "idle", outcome: null, output: "none" },
     messages: null,
     wait: null,

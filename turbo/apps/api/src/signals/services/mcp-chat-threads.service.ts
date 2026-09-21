@@ -8,6 +8,7 @@ import type {
   McpListChatThreadsOutput,
   McpThreadReadResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
+import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { agentDisplayName } from "@okouai/core/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -223,10 +224,10 @@ function threadQuery(
       defaultAgentId: orgMetadata.defaultAgentId,
       selectedModel: chatThreads.selectedModel,
       createdAt: chatThreads.createdAt,
-      updatedAt: chatThreads.updatedAt,
+      metadataUpdatedAt: chatThreads.updatedAt,
       lastMessageAt: chatThreads.lastMessageAt,
-      // Preserve all six timestamp digits in continuation, even though ordinary
-      // response timestamps use the application's JavaScript Date representation.
+      // Preserve all six stored digits in continuation. The public fields have
+      // fixed six-digit syntax, but JavaScript Date projection has millisecond data.
       cursorTime:
         sql`to_char(${chatThreads.lastMessageAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
           pgTextDecoder,
@@ -281,9 +282,9 @@ async function projectThreads(
           }) ?? row.agentName,
       },
       model,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      lastMessageAt: row.lastMessageAt.toISOString(),
+      createdAt: formatMcpChatTimestamp(row.createdAt),
+      metadataUpdatedAt: formatMcpChatTimestamp(row.metadataUpdatedAt),
+      lastMessageAt: formatMcpChatTimestamp(row.lastMessageAt),
       url: new URL(`/chats/${row.threadId}`, env("APP_URL")).toString(),
       activity: {
         queued: row.queued,

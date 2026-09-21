@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { mcpGetChatMessagesOutputSchema } from "./mcp-chat-messages";
 import { mcpChatInputRefSchema } from "./mcp-chat-references";
+import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
 
 const activeLifecycleOutputSchema = z.enum(["pending", "partial"]);
 const terminalRunOutcomes = [
@@ -66,7 +67,7 @@ export const mcpGetChatStatusInputSchema = z.union([
 
 const mcpGetChatStatusOutputObjectSchema = z.strictObject({
   threadId: z.uuid(),
-  observedAt: z.iso.datetime(),
+  observedAt: mcpChatOutputTimestampSchema,
   lifecycle: mcpChatLifecycleSchema,
   messages: z
     .strictObject({

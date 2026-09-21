@@ -818,6 +818,16 @@ async function cancelRun(token: string, runId: string) {
   return mcpCancelRunOutputSchema.parse(result.structuredContent);
 }
 
+function expectFixedMcpTimestamp(value: string): void {
+  expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u);
+}
+
+function fixedMcpTimestamp(value: string | Date): string {
+  return (value instanceof Date ? value : new Date(value))
+    .toISOString()
+    .replace(/Z$/u, "000Z");
+}
+
 async function projectSearchMessages(threadIds: string[]) {
   await accept(
     setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
@@ -3184,7 +3194,7 @@ describe("MCP chat mutations", () => {
     ).toMatchObject([{ text }]);
   });
 
-  it("preserves exact text and the original input reference when run admission rejects it", async () => {
+  it("correlates acceptance, visible-message, source-event, metadata, and activity times", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
@@ -3192,6 +3202,7 @@ describe("MCP chat mutations", () => {
     const text = "  Keep my whitespace\n中文 😀  ";
     const requestId = randomUUID();
     const token = f.auth.token({ scope: defaultScopes });
+    const beforeInput = await getThread(token, thread.id);
     const result = await sendMessage(token, {
       threadId: thread.id,
       text,
@@ -3203,6 +3214,8 @@ describe("MCP chat mutations", () => {
       disposition: "rejected",
       runId: null,
     });
+    expectFixedMcpTimestamp(result.acceptedAt);
+    expectFixedMcpTimestamp(result.retryUntil);
     expect(Date.parse(result.retryUntil) - Date.parse(result.acceptedAt)).toBe(
       24 * 60 * 60 * 1000,
     );
@@ -3216,9 +3229,95 @@ describe("MCP chat mutations", () => {
       eventType: "input.prompt",
       userMessage: { version: 1, parts: [{ type: "text", text }] },
     });
-    expect(
-      (await getMessages(token, { threadId: thread.id })).messages,
-    ).toMatchObject([{ text, eventType: "input.rejected", runId: null }]);
+    const [message] = (await getMessages(token, { threadId: thread.id }))
+      .messages;
+    if (!message) {
+      throw new Error("Expected the visible rejected input");
+    }
+    expect(message).toMatchObject({
+      text,
+      eventType: "input.rejected",
+      runId: null,
+      messageAt: result.acceptedAt,
+    });
+    expect(message).not.toHaveProperty("createdAt");
+    expectFixedMcpTimestamp(message.messageAt);
+
+    const afterInput = await getThread(token, thread.id);
+    expectFixedMcpTimestamp(afterInput.thread.createdAt);
+    expectFixedMcpTimestamp(afterInput.thread.metadataUpdatedAt);
+    expectFixedMcpTimestamp(afterInput.thread.lastMessageAt);
+    expect(afterInput.thread).not.toHaveProperty("updatedAt");
+    expect(afterInput.thread.metadataUpdatedAt).toBe(
+      beforeInput.thread.metadataUpdatedAt,
+    );
+    expect(Date.parse(afterInput.thread.lastMessageAt)).toBeGreaterThanOrEqual(
+      Date.parse(beforeInput.thread.lastMessageAt),
+    );
+
+    await projectSearchMessages([thread.id]);
+    const sourceEventTime = new Date(Date.parse(result.acceptedAt) + 10_000);
+    // Infrastructure exception: the public API cannot choose an indexed
+    // sub-millisecond source coordinate. This centralized fixture changes only
+    // that coordinate so the authenticated search boundary can prove its clock.
+    await setChatSearchEventTimestampPrecisionFixture({
+      eventId: message.ref.eventId,
+      createdAt: sourceEventTime.toISOString(),
+    });
+    const searched = await searchMessages(token, { query: "whitespace" });
+    expect(searched.matches).toHaveLength(1);
+    const [match] = searched.matches;
+    if (!match) {
+      throw new Error("Expected the indexed visible message");
+    }
+    expect(match.ref).toStrictEqual(message.ref);
+    expect(match.sourceEventAt).toBe(fixedMcpTimestamp(sourceEventTime));
+    expect(match.sourceEventAt).not.toBe(message.messageAt);
+    expect(match).not.toHaveProperty("createdAt");
+    expectFixedMcpTimestamp(match.sourceEventAt);
+    await expect(
+      searchMessages(token, {
+        query: "whitespace",
+        since: sourceEventTime.toISOString(),
+        before: new Date(sourceEventTime.getTime() + 1).toISOString(),
+      }),
+    ).resolves.toMatchObject({ matches: [{ ref: message.ref }] });
+    await expect(
+      searchMessages(token, {
+        query: "whitespace",
+        before: sourceEventTime.toISOString(),
+      }),
+    ).resolves.toMatchObject({ matches: [] });
+
+    const activityBeforeMetadataUpdate = afterInput.thread.lastMessageAt;
+    const update = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: thread.id,
+      patch: { title: "Explicit timestamp semantics" },
+    });
+    expect(update).not.toHaveProperty("updatedAt");
+    expectFixedMcpTimestamp(update.metadataUpdatedAt);
+    const afterMetadataUpdate = await getThread(token, thread.id);
+    expect(afterMetadataUpdate.thread.metadataUpdatedAt).toBe(
+      update.metadataUpdatedAt,
+    );
+    expect(afterMetadataUpdate.thread.lastMessageAt).toBe(
+      activityBeforeMetadataUpdate,
+    );
+
+    await sendMessage(token, {
+      threadId: thread.id,
+      text: "Later activity marker",
+      requestId: randomUUID(),
+    });
+    const afterLaterActivity = await getThread(token, thread.id);
+    expect(afterLaterActivity.thread.metadataUpdatedAt).toBe(
+      afterMetadataUpdate.thread.metadataUpdatedAt,
+    );
+    expect(Date.parse(afterLaterActivity.thread.lastMessageAt)).toBeGreaterThan(
+      Date.parse(afterMetadataUpdate.thread.lastMessageAt),
+    );
+
     const status = await getStatus(token, {
       inputRef: result.inputRef,
     });
@@ -3227,6 +3326,10 @@ describe("MCP chat mutations", () => {
       messages: null,
       retryAfterMs: null,
     });
+    expectFixedMcpTimestamp(status.observedAt);
+    const beforeReplayEvents = (
+      await f.chat.listThreadEvents(f.actor, thread.id)
+    ).events;
     const replay = await sendMessage(token, {
       threadId: thread.id,
       text,
@@ -3235,7 +3338,7 @@ describe("MCP chat mutations", () => {
     expect(replay).toStrictEqual({ ...result, replayed: true });
     expect(
       (await f.chat.listThreadEvents(f.actor, thread.id)).events,
-    ).toStrictEqual(events);
+    ).toStrictEqual(beforeReplayEvents);
   });
 
   it("settles concurrent identical sends once and accepts refreshed authorization for the original receipt", async () => {
@@ -3369,11 +3472,13 @@ describe("MCP chat mutations", () => {
           eventId: requestId,
           seqId: original.seqId,
         },
-        acceptedAt: original.createdAt,
         replayed: true,
         disposition: "rejected",
         runId: null,
       });
+      expect(Date.parse(replay.acceptedAt)).toBe(
+        Date.parse(original.createdAt),
+      );
     }
     await expect(
       f.chat.listThreadEvents(f.actor, thread.id),
@@ -4162,12 +4267,41 @@ describe("MCP chat mutations", () => {
       reason: "reserved_or_associated",
       runId: active.runId,
     });
-    expect(
-      (await getMessages(token, { threadId: args.threadId })).messages,
-    ).toMatchObject([
+    const associatedMessages = (
+      await getMessages(token, { threadId: args.threadId })
+    ).messages;
+    expect(associatedMessages).toMatchObject([
       { text: "Active steer target", runId: active.runId },
       { text: args.text, runId: active.runId },
     ]);
+    const associatedMessage = associatedMessages.find((message) => {
+      return message.text === args.text;
+    });
+    if (!associatedMessage) {
+      throw new Error("Expected the associated visible input");
+    }
+    expect(associatedMessage.messageAt).toBe(sent.acceptedAt);
+    expectFixedMcpTimestamp(associatedMessage.messageAt);
+    await projectSearchMessages([args.threadId]);
+    const associatedSourceTime = new Date(Date.parse(sent.acceptedAt) + 10_000);
+    // Infrastructure exception: product writes cannot select an exact indexed
+    // source coordinate; the centralized fixture preserves every other route.
+    await setChatSearchEventTimestampPrecisionFixture({
+      eventId: associatedMessage.ref.eventId,
+      createdAt: associatedSourceTime.toISOString(),
+    });
+    const associatedSearch = await searchMessages(token, {
+      query: "Steer the current run",
+      threadId: args.threadId,
+    });
+    expect(associatedSearch.matches).toHaveLength(1);
+    expect(associatedSearch.matches[0]).toMatchObject({
+      ref: associatedMessage.ref,
+      sourceEventAt: fixedMcpTimestamp(associatedSourceTime),
+    });
+    expect(associatedSearch.matches[0]?.sourceEventAt).not.toBe(
+      associatedMessage.messageAt,
+    );
     await expect(
       f.api.readRun(actor.actor, active.runId),
     ).resolves.toMatchObject({
@@ -4382,7 +4516,7 @@ describe("MCP canonical message reads", () => {
           eventId: original?.id,
           seqId: original?.seqId,
         },
-        createdAt: initialInput?.createdAt,
+        messageAt: expect.any(String),
         eventType: "input.rejected",
         role: "user",
         runId: null,
@@ -4392,6 +4526,9 @@ describe("MCP canonical message reads", () => {
         filesComplete: true,
         nextContentCursor: null,
       });
+      expect(Date.parse(message.messageAt)).toBe(
+        Date.parse(initialInput?.createdAt ?? ""),
+      );
       expect(new URL(message.url).pathname).toBe(`/chats/${sent.threadId}`);
     }
   });
@@ -5495,8 +5632,8 @@ describe("MCP message search", () => {
       matches.push(...page.matches);
     }
     expect(
-      matches.map(({ ref, createdAt }) => {
-        return { ref, createdAt: new Date(createdAt).toISOString() };
+      matches.map(({ ref, sourceEventAt }) => {
+        return { ref, createdAt: new Date(sourceEventAt).toISOString() };
       }),
     ).toStrictEqual(source);
     expect(matches).toHaveLength(29);
@@ -5558,7 +5695,7 @@ describe("MCP message search", () => {
     ];
     const expected: {
       ref: (typeof source.messages)[number]["ref"];
-      createdAt: string;
+      sourceEventAt: string;
     }[] = [];
     for (const [index, message] of source.messages.entries()) {
       const createdAt = timestamps[index];
@@ -5574,11 +5711,11 @@ describe("MCP message search", () => {
         eventId: message.ref.eventId,
         createdAt,
       });
-      expected.push({ ref: message.ref, createdAt });
+      expected.push({ ref: message.ref, sourceEventAt: createdAt });
     }
     expected.sort((left, right) => {
       return (
-        right.createdAt.localeCompare(left.createdAt) ||
+        right.sourceEventAt.localeCompare(left.sourceEventAt) ||
         right.ref.seqId - left.ref.seqId
       );
     });
@@ -5591,8 +5728,8 @@ describe("MCP message search", () => {
       actual.push(...page.matches);
     }
     expect(
-      actual.map(({ ref, createdAt }) => {
-        return { ref, createdAt };
+      actual.map(({ ref, sourceEventAt }) => {
+        return { ref, sourceEventAt };
       }),
     ).toStrictEqual(expected);
     const bounded = await searchMessages(token, {

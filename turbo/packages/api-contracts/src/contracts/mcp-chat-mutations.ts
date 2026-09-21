@@ -4,6 +4,7 @@ import {
   mcpChatInputRefSchema,
   mcpGetChatStatusNextActionSchema,
 } from "./mcp-chat-references";
+import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
 
 export const mcpChatMessageTextSchema = z
   .string()
@@ -18,8 +19,8 @@ export const mcpSendChatMessageInputSchema = z.strictObject({
 
 export const mcpChatInputReceiptSchema = z.strictObject({
   inputRef: mcpChatInputRefSchema,
-  acceptedAt: z.iso.datetime(),
-  retryUntil: z.iso.datetime(),
+  acceptedAt: mcpChatOutputTimestampSchema,
+  retryUntil: mcpChatOutputTimestampSchema,
   disposition: z.enum([
     "queued",
     "reserved",

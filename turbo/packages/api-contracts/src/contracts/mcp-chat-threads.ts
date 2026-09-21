@@ -1,15 +1,10 @@
 import { z } from "zod";
 
-export const mcpFilterTimestampSchema = z.iso
-  .datetime()
-  .regex(/:\d{2}(?:\.\d{1,6})?Z$/u, "Use at most six fractional-second digits");
-
-export function mcpTimestampKey(value: string): string {
-  const withoutZone = value.slice(0, -1);
-  return value.includes(".")
-    ? withoutZone.padEnd(26, "0")
-    : `${withoutZone}.000000`;
-}
+import {
+  mcpChatOutputTimestampSchema,
+  mcpFilterTimestampSchema,
+  mcpTimestampKey,
+} from "./mcp-chat-time";
 
 export const mcpListChatThreadsInputSchema = z
   .strictObject({
@@ -57,9 +52,9 @@ export const mcpChatThreadSchema = z.strictObject({
     source: z.enum(["thread", "member_default", "org_default"]).nullable(),
     admission: z.literal("checked_on_send"),
   }),
-  createdAt: z.iso.datetime(),
-  updatedAt: z.iso.datetime(),
-  lastMessageAt: z.iso.datetime(),
+  createdAt: mcpChatOutputTimestampSchema,
+  metadataUpdatedAt: mcpChatOutputTimestampSchema,
+  lastMessageAt: mcpChatOutputTimestampSchema,
   url: z.url(),
   activity: z.strictObject({
     queued: z.boolean(),

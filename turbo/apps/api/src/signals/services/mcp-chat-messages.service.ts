@@ -12,6 +12,7 @@ import type {
   McpGetChatMessagesOutput,
   McpMessageReadResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { computed, type Computed } from "ccstate";
 import { z } from "zod";
 
@@ -159,7 +160,9 @@ export function projectMcpChatMessages(
         },
         role: event.eventType === "output.message" ? "assistant" : "user",
         eventType: event.eventType,
-        createdAt: state.inputCreatedAt ?? event.createdAt,
+        messageAt: formatMcpChatTimestamp(
+          state.inputCreatedAt ?? event.createdAt,
+        ),
         runId: event.runId ?? null,
         text:
           event.eventType === "output.message"
