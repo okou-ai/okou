@@ -120,15 +120,16 @@ use super::ownership::{OwnershipTransitions, RunSandbox};
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::config::ProfileConfig;
 use crate::executor::{
-    ExactReuseSpeculationTiming, GuestTimezoneSyncOutcome, RunnerPreSpawnOperationTiming,
-    RunnerPreSpawnPhase, RunnerPreSpawnTiming, SessionHistoryRestorePlanInput,
-    build_session_history_restore_plan, restore_guest_state_with_intent,
-    try_sync_guest_timezone_intent, validate_resume_session_id,
+    BlankPoolSelection, ExactReuseSpeculationTiming, GuestTimezoneSyncOutcome,
+    RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
+    SessionHistoryRestorePlanInput, build_session_history_restore_plan,
+    restore_guest_state_with_intent, try_sync_guest_timezone_intent, validate_resume_session_id,
 };
 use crate::guest_timezone::{GuestTimezoneAssumption, GuestTimezoneIntent};
 use crate::idle_pool::{
-    DestroyOutcome, ExactIdleReservationMiss, IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult,
-    ReservedIdleSandbox, RestoreReservedIdleResult, ReusableIdleSandbox, SpeculativeIdleSandbox,
+    BlankIdleReservation, BlankIdleSelection, DestroyOutcome, ExactIdleReservationMiss,
+    IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult, ReservedIdleSandbox,
+    RestoreReservedIdleResult, ReusableIdleSandbox, SpeculativeIdleSandbox,
     SpeculativeIdleUnparkResult, SpeculativeReparkResult,
 };
 use crate::ids::RunId;
@@ -189,6 +190,7 @@ impl DiscoveredJobResult {
 struct LocalAdmission {
     resource: LocalAdmissionResource,
     cancellation: RunCancellationRegistration,
+    blank_pool_selection: Option<BlankPoolSelection>,
 }
 
 enum LocalAdmissionResource {
@@ -257,11 +259,13 @@ struct AdmittedClaim {
     resource: AdmittedResource,
     cancellation: RunCancellationRegistration,
     claim_returned_at: Instant,
+    blank_pool_selection: Option<BlankPoolSelection>,
 }
 
 struct PreparedCandidate {
     candidate: JobCandidate,
     resource: Option<LocalAdmissionResource>,
+    blank_pool_selection: Option<BlankPoolSelection>,
 }
 
 enum PreferencePreparation {
@@ -317,6 +321,7 @@ impl LocalAdmission {
         let Self {
             resource,
             cancellation,
+            blank_pool_selection: _,
         } = self;
         cancellation.unregister().await;
         rollback_untracked_resource(resource, ctx).await;
@@ -382,6 +387,7 @@ pub(super) async fn handle_discovered_job(
         resource,
         cancellation,
         claim_returned_at,
+        blank_pool_selection,
     } = admission;
     let resource = match resource {
         AdmittedResource::Finalizing(admission) => {
@@ -430,6 +436,9 @@ pub(super) async fn handle_discovered_job(
         claimed.api_claim_timing(),
         &ctx.spawn_ctx.pre_spawn_concurrency,
     );
+    if let Some(selection) = blank_pool_selection {
+        pre_spawn_timing.record_blank_pool_selection(selection);
+    }
     let started_at = Instant::now();
     let resume_session_error = validate_resume_session_id(claimed.context()).err();
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::ResumeSessionValidation, started_at);
@@ -1047,6 +1056,7 @@ async fn claim_with_local_admission(
     let PreparedCandidate {
         mut candidate,
         resource,
+        mut blank_pool_selection,
     } = prepared;
     candidate.mark_local_admission_started();
 
@@ -1058,7 +1068,7 @@ async fn claim_with_local_admission(
     let resource = match resource {
         Some(resource) => resource,
         None => {
-            acquire_local_admission_resource(
+            let (resource, selection) = acquire_local_admission_resource(
                 &candidate,
                 profile_name,
                 job_vcpu,
@@ -1066,7 +1076,9 @@ async fn claim_with_local_admission(
                 device_rate_limits,
                 ctx,
             )
-            .await?
+            .await?;
+            blank_pool_selection = selection;
+            resource
         }
     };
     // Register cancellation before claiming so provider-side cancel channels
@@ -1084,6 +1096,7 @@ async fn claim_with_local_admission(
     let admission = LocalAdmission {
         resource,
         cancellation,
+        blank_pool_selection,
     };
 
     // This is the last reversible point before provider-side ownership.
@@ -1113,6 +1126,7 @@ async fn claim_with_local_admission(
     let LocalAdmission {
         resource,
         cancellation,
+        blank_pool_selection,
     } = admission;
     let claim_started_at = Instant::now();
     let (claimed, admitted_resource, claim_returned_at) = match resource {
@@ -1194,6 +1208,7 @@ async fn claim_with_local_admission(
         resource: admitted_resource,
         cancellation,
         claim_returned_at,
+        blank_pool_selection,
     })
 }
 
@@ -1378,6 +1393,7 @@ async fn prepare_ranked_preference_candidate(
         return PreferencePreparation::Ready(PreparedCandidate {
             candidate,
             resource: Some(LocalAdmissionResource::Fresh(lease)),
+            blank_pool_selection: None,
         });
     }
 
@@ -1415,6 +1431,7 @@ fn ordinary_preparation(candidate: JobCandidate) -> PreferencePreparation {
     PreferencePreparation::Ready(PreparedCandidate {
         candidate,
         resource: None,
+        blank_pool_selection: None,
     })
 }
 
@@ -1425,6 +1442,7 @@ fn reusable_preparation(
     PreferencePreparation::Ready(PreparedCandidate {
         candidate,
         resource: Some(LocalAdmissionResource::Reusable(reservation)),
+        blank_pool_selection: None,
     })
 }
 
@@ -1453,6 +1471,7 @@ async fn exact_speculative_preparation(
                 idle_snapshot,
             },
         )),
+        blank_pool_selection: None,
     })
 }
 
@@ -1471,6 +1490,7 @@ fn finalizing_preparation(
             reuse_key: reuse_key.to_owned(),
             history_generation_run_id,
         })),
+        blank_pool_selection: None,
     })
 }
 
@@ -1524,14 +1544,14 @@ async fn acquire_local_admission_resource(
     job_memory: u32,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
     ctx: &mut DiscoveredJobContext<'_>,
-) -> Option<LocalAdmissionResource> {
+) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
     let workspace_cache_possible = ctx.spawn_ctx.exec_config.workspace_cache.is_some()
         && candidate.reuse_key().is_some_and(|reuse_key| {
             ctx.spawn_ctx
                 .workspace_cache_snapshot
                 .might_contain_workspace_cache_reuse_key(reuse_key)
         });
-    match select_idle_entries_for_pressure(
+    let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
         ctx.idle_pool,
         ctx.status,
         &ctx.spawn_ctx.idle_destroy_tracker,
@@ -1544,16 +1564,18 @@ async fn acquire_local_admission_resource(
             device_rate_limits,
             history_generation_run_id: None,
             allow_compatible_blank: !workspace_cache_possible,
+            blank_pool_diagnostics: Some(&ctx.spawn_ctx.blank_pool_diagnostics),
             vcpu: job_vcpu,
             memory_mb: job_memory,
             context: "candidate_admission_oldest",
         },
     )
-    .await
-    {
-        IdlePressureSelection::Reusable(reservation) => {
-            Some(LocalAdmissionResource::Reusable(reservation))
-        }
+    .await;
+    match selection {
+        IdlePressureSelection::Reusable(reservation) => Some((
+            LocalAdmissionResource::Reusable(reservation),
+            blank_pool_selection,
+        )),
         IdlePressureSelection::Fresh(lease) => {
             if let Some(reuse_key) = candidate.reuse_key()
                 && let Some(reservation) =
@@ -1561,9 +1583,12 @@ async fn acquire_local_admission_resource(
                         .await
             {
                 drop(lease);
-                return Some(LocalAdmissionResource::Reusable(reservation));
+                return Some((
+                    LocalAdmissionResource::Reusable(reservation),
+                    blank_pool_selection,
+                ));
             }
-            Some(LocalAdmissionResource::Fresh(lease))
+            Some((LocalAdmissionResource::Fresh(lease), blank_pool_selection))
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
             drop(retiring_leases);
@@ -2652,17 +2677,40 @@ async fn try_reuse_from_pool(
         });
     pre_spawn_timing
         .record_phase_elapsed(RunnerPreSpawnPhase::WorkspaceCacheStateLookup, started_at);
-    let taken = match exact {
-        Some(exact) => Some(exact),
+    let (taken, blank_pool_selection) = match exact {
+        Some(exact) => (Some(exact), None),
         None if !claimed_workspace_cache_reuse_key => {
             let mut pool = ctx.idle_pool.lock().await;
-            reuse_key
+            let exact = reuse_key
                 .and_then(|reuse_key| pool.take_reserved(reuse_key))
-                .or_else(|| pool.reserve_blank(profile_name, device_rate_limits))
-                .map(|entry| (entry, pool.status_snapshot()))
+                .map(|entry| (entry, pool.status_snapshot()));
+            if exact.is_some() {
+                (exact, None)
+            } else {
+                let reservation = pool.reserve_blank(profile_name, device_rate_limits);
+                let (raw_selection, taken) = match reservation {
+                    BlankIdleReservation::Reserved(entry) => (
+                        BlankIdleSelection::Hit,
+                        Some((*entry, pool.status_snapshot())),
+                    ),
+                    BlankIdleReservation::Empty => (BlankIdleSelection::Empty, None),
+                    BlankIdleReservation::Incompatible => (BlankIdleSelection::Incompatible, None),
+                };
+                let selection = ctx.spawn_ctx.blank_pool_diagnostics.classify(
+                    raw_selection,
+                    profile_name,
+                    device_rate_limits,
+                    pool.revision(),
+                    ctx.budget.allocated(),
+                );
+                (taken, Some(selection))
+            }
         }
-        None => None,
+        None => (None, None),
     };
+    if let Some(selection) = blank_pool_selection {
+        pre_spawn_timing.record_blank_pool_selection(selection);
+    }
     let took_idle_session = taken.is_some();
     let needs_reuse_state_refresh = took_idle_session || claimed_workspace_cache_reuse_key;
     match taken {

@@ -380,6 +380,10 @@ fn park_respects_max_idle() {
 #[test]
 fn blank_entries_are_reserved_only_by_compatible_blank_lookup() {
     let mut pool = IdlePool::new(pool_config(0));
+    assert!(matches!(
+        pool.reserve_blank("vm0/default", &None),
+        BlankIdleReservation::Empty
+    ));
     let blank = make_blank_candidate("vm0/default", 2, 2048);
     let blank_id = blank.sandbox_id();
     assert!(blank.reuse_key().is_none());
@@ -391,7 +395,10 @@ fn blank_entries_are_reserved_only_by_compatible_blank_lookup() {
         pool.reserve_reusable(&blank_id.to_string(), "vm0/default", &None)
             .is_none()
     );
-    assert!(pool.reserve_blank("vm0/large", &None).is_none());
+    assert!(matches!(
+        pool.reserve_blank("vm0/large", &None),
+        BlankIdleReservation::Incompatible
+    ));
 
     // A real exact key that equals a blank's sandbox ID is a different identity.
     let exact_key = blank_id.to_string();
@@ -410,9 +417,9 @@ fn blank_entries_are_reserved_only_by_compatible_blank_lookup() {
         RestoreReservedIdleResult::Restored
     ));
 
-    let reserved = pool
-        .reserve_blank("vm0/default", &None)
-        .expect("compatible blank should reserve");
+    let BlankIdleReservation::Reserved(reserved) = pool.reserve_blank("vm0/default", &None) else {
+        panic!("compatible blank should reserve");
+    };
     assert_eq!(reserved.kind(), IdleSandboxKind::Blank);
     assert_eq!(reserved.sandbox_id(), blank_id);
     assert!(reserved.reuse_key().is_none());

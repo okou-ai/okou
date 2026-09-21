@@ -832,7 +832,7 @@ async fn acquire_fallback_resource(
     let cancel = cancellation.token();
     let mut retiring_leases = Vec::new();
     loop {
-        match select_idle_entries_for_pressure(
+        let (selection, blank_pool_selection) = select_idle_entries_for_pressure(
             &ctx.idle_pool,
             &ctx.status,
             &ctx.idle_destroy_tracker,
@@ -845,13 +845,15 @@ async fn acquire_fallback_resource(
                 device_rate_limits,
                 history_generation_run_id: Some(history_generation_run_id),
                 allow_compatible_blank: false,
+                blank_pool_diagnostics: None,
                 vcpu,
                 memory_mb,
                 context: "finalizing_fallback_oldest",
             },
         )
-        .await
-        {
+        .await;
+        debug_assert!(blank_pool_selection.is_none());
+        match selection {
             IdlePressureSelection::Reusable(reservation) => {
                 let reservation = accept_fallback_exact(cancellation, reservation, ctx).await?;
                 pre_spawn_timing

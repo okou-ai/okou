@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
@@ -17,7 +17,10 @@ use super::idle_lifecycle::{
     IdleDestroyTracker, SharedIdlePool, set_idle_status_snapshot, spawn_idle_destroy_job,
 };
 use crate::config::ProfileConfig;
-use crate::idle_pool::{DestroyOutcome, IdleDestroyJob, ParkResult, ParkedIdleCandidate};
+use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
+use crate::idle_pool::{
+    BlankIdleSelection, DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate,
+};
 use crate::lifecycle::RunnerMode;
 use crate::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
 use crate::resource_budget::{BudgetLease, ResourceBudget};
@@ -38,8 +41,132 @@ struct BlankPoolPlan {
     device_rate_limits: Option<sandbox::DeviceRateLimits>,
 }
 
+#[derive(Clone)]
+pub(super) struct BlankPoolDiagnostics {
+    plan: Option<BlankPoolDiagnosticPlan>,
+    state: Arc<Mutex<BlankPoolObservedState>>,
+}
+
+#[derive(Clone)]
+struct BlankPoolDiagnosticPlan {
+    profile_name: String,
+    device_rate_limits: Option<sandbox::DeviceRateLimits>,
+}
+
+enum BlankPoolObservedState {
+    Ready,
+    Preparing(CancellationToken),
+    Suppressed {
+        reason: BlankPoolSelectionReason,
+        pool_revision: u64,
+        budget_allocated: (u32, u32, usize),
+    },
+    Unknown,
+}
+
+impl BlankPoolDiagnostics {
+    fn new(plan: Option<&BlankPoolPlan>) -> Self {
+        Self {
+            plan: plan.map(|plan| BlankPoolDiagnosticPlan {
+                profile_name: plan.profile_name.clone(),
+                device_rate_limits: plan.device_rate_limits.clone(),
+            }),
+            state: Arc::new(Mutex::new(BlankPoolObservedState::Ready)),
+        }
+    }
+
+    pub(super) fn classify(
+        &self,
+        selection: BlankIdleSelection,
+        profile_name: &str,
+        device_rate_limits: &Option<sandbox::DeviceRateLimits>,
+        pool_revision: u64,
+        budget_allocated: (u32, u32, usize),
+    ) -> BlankPoolSelection {
+        match selection {
+            BlankIdleSelection::Hit => return BlankPoolSelection::Hit,
+            BlankIdleSelection::Incompatible => {
+                return BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape);
+            }
+            BlankIdleSelection::Empty => {}
+        }
+
+        let Some(plan) = self.plan.as_ref() else {
+            return BlankPoolSelection::Miss(BlankPoolSelectionReason::DisabledPlan);
+        };
+        if plan.profile_name != profile_name
+            || plan.device_rate_limits.as_ref() != device_rate_limits.as_ref()
+        {
+            return BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape);
+        }
+
+        match &*self.lock_state() {
+            BlankPoolObservedState::Ready => {
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory)
+            }
+            BlankPoolObservedState::Preparing(cancel) if cancel.is_cancelled() => {
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
+            }
+            BlankPoolObservedState::Preparing(_) => {
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
+            }
+            BlankPoolObservedState::Suppressed {
+                reason,
+                pool_revision: observed_revision,
+                budget_allocated: observed_budget,
+            } if *observed_revision == pool_revision && *observed_budget == budget_allocated => {
+                BlankPoolSelection::Miss(*reason)
+            }
+            BlankPoolObservedState::Suppressed { .. } | BlankPoolObservedState::Unknown => {
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
+            }
+        }
+    }
+
+    fn ready(&self) {
+        *self.lock_state() = BlankPoolObservedState::Ready;
+    }
+
+    fn preparing(&self, cancel: CancellationToken) {
+        *self.lock_state() = BlankPoolObservedState::Preparing(cancel);
+    }
+
+    fn suppressed(
+        &self,
+        reason: BlankPoolSelectionReason,
+        pool: &IdlePool,
+        budget: &ResourceBudget,
+    ) {
+        let pool_revision = pool.revision();
+        let budget_allocated = budget.allocated();
+        *self.lock_state() = BlankPoolObservedState::Suppressed {
+            reason,
+            pool_revision,
+            budget_allocated,
+        };
+    }
+
+    fn unknown(&self) {
+        *self.lock_state() = BlankPoolObservedState::Unknown;
+    }
+
+    fn preparing_was_cancelled(&self) -> bool {
+        matches!(
+            &*self.lock_state(),
+            BlankPoolObservedState::Preparing(cancel) if cancel.is_cancelled()
+        )
+    }
+
+    fn lock_state(&self) -> MutexGuard<'_, BlankPoolObservedState> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
 pub(super) struct BlankPoolReplenisher {
     plan: Option<BlankPoolPlan>,
+    diagnostics: BlankPoolDiagnostics,
     task: Option<JoinHandle<BlankPrepareResult>>,
     task_cancel: Option<CancellationToken>,
     attempt_requested: bool,
@@ -101,12 +228,18 @@ impl BlankPoolReplenisher {
                 "blank sandbox pool disabled by effective capacity"
             );
         }
+        let diagnostics = BlankPoolDiagnostics::new(plan.as_ref());
         Self {
             plan,
+            diagnostics,
             task: None,
             task_cancel: None,
             attempt_requested: true,
         }
+    }
+
+    pub(super) fn diagnostics(&self) -> BlankPoolDiagnostics {
+        self.diagnostics.clone()
     }
 
     pub(super) fn request_attempt(&mut self) {
@@ -117,6 +250,7 @@ impl BlankPoolReplenisher {
         if mode != RunnerMode::Running
             && let Some(cancel) = self.task_cancel.as_ref()
         {
+            self.diagnostics.unknown();
             cancel.cancel();
         }
     }
@@ -142,12 +276,18 @@ impl BlankPoolReplenisher {
             let inventory = pool.blank_len();
             let total_idle = pool.len();
             if inventory >= plan.target {
+                self.diagnostics.ready();
                 return;
             }
 
             let pre_spawn_lease = match admission.try_acquire_background(plan.profile.vcpu) {
                 Ok(Some(lease)) => lease,
                 Ok(None) => {
+                    // Admission unavailability can reflect a real waiter or a
+                    // permit holder that releases before a later selection.
+                    // Only a live cancelled preparation token proves foreground
+                    // preemption at selection time.
+                    self.diagnostics.unknown();
                     info!(
                         target = plan.target,
                         inventory,
@@ -157,6 +297,7 @@ impl BlankPoolReplenisher {
                     return;
                 }
                 Err(error) => {
+                    self.diagnostics.unknown();
                     warn!(
                         target = plan.target,
                         inventory,
@@ -169,7 +310,7 @@ impl BlankPoolReplenisher {
             };
 
             let ordinary_budget = if plan.max_idle > 0 && total_idle >= plan.max_idle {
-                Err("idle_pool_full")
+                Err(BlankPoolSelectionReason::MaxIdle)
             } else {
                 match ResourceBudget::try_reserve_lease(
                     budget,
@@ -183,9 +324,9 @@ impl BlankPoolReplenisher {
                     }
                     Some(lease) => {
                         drop(lease);
-                        Err("headroom_reserved")
+                        Err(BlankPoolSelectionReason::HeadroomReserved)
                     }
-                    None => Err("resource_unavailable"),
+                    None => Err(BlankPoolSelectionReason::ResourceUnavailable),
                 }
             };
 
@@ -196,7 +337,7 @@ impl BlankPoolReplenisher {
                     BlankPrepareBudget::Available(lease),
                     None,
                 ),
-                Err(blocked_by) => {
+                Err(reason) => {
                     let Some((job, idle_age)) = pool.evict_oldest_exact_for_blank(
                         Instant::now(),
                         EXACT_IDLE_CAPACITY_YIELD_AGE,
@@ -205,11 +346,12 @@ impl BlankPoolReplenisher {
                         plan.profile.vcpu,
                         plan.profile.memory_mb,
                     ) else {
+                        self.diagnostics.suppressed(reason, &pool, budget);
                         info!(
                             target = plan.target,
                             inventory,
                             total_idle,
-                            outcome = blocked_by,
+                            outcome = reason.as_str(),
                             aged_exact_eligible = false,
                             "blank sandbox refill suppressed"
                         );
@@ -221,7 +363,7 @@ impl BlankPoolReplenisher {
                         target = plan.target,
                         inventory,
                         total_idle,
-                        blocked_by,
+                        blocked_by = reason.as_str(),
                         idle_age_seconds = idle_age.as_secs(),
                         "retiring aged exact sandbox for blank capacity"
                     );
@@ -257,6 +399,7 @@ impl BlankPoolReplenisher {
             "preparing blank sandbox"
         );
         self.task_cancel = Some(task_cancel.clone());
+        self.diagnostics.preparing(task_cancel.clone());
         self.task = Some(tokio::spawn(prepare_blank_sandbox(input, task_cancel)));
     }
 
@@ -308,6 +451,7 @@ impl BlankPoolReplenisher {
                 }
                 match park_result {
                     ParkResult::Parked => {
+                        self.diagnostics.ready();
                         info!(
                             target = plan.target,
                             inventory,
@@ -320,6 +464,7 @@ impl BlankPoolReplenisher {
                         }
                     }
                     ParkResult::Replaced(evicted) => {
+                        self.diagnostics.ready();
                         info!(
                             target = plan.target,
                             inventory,
@@ -334,6 +479,7 @@ impl BlankPoolReplenisher {
                         );
                     }
                     ParkResult::Rejected(rejected) => {
+                        self.diagnostics.unknown();
                         info!(
                             target = plan.target,
                             inventory,
@@ -356,6 +502,7 @@ impl BlankPoolReplenisher {
             }
             BlankPrepareResult::Failed(failure) => {
                 if let Some(error) = failure.error {
+                    self.diagnostics.unknown();
                     warn!(
                         target = plan.target,
                         stage = failure.stage,
@@ -364,6 +511,9 @@ impl BlankPoolReplenisher {
                         "blank sandbox refill failed"
                     );
                 } else {
+                    if !self.diagnostics.preparing_was_cancelled() {
+                        self.diagnostics.unknown();
+                    }
                     info!(
                         target = plan.target,
                         stage = failure.stage,
@@ -752,6 +902,268 @@ mod tests {
         }
     }
 
+    fn enabled_diagnostics() -> BlankPoolDiagnostics {
+        BlankPoolDiagnostics {
+            plan: Some(BlankPoolDiagnosticPlan {
+                profile_name: "vm0/default".into(),
+                device_rate_limits: None,
+            }),
+            state: Arc::new(Mutex::new(BlankPoolObservedState::Ready)),
+        }
+    }
+
+    async fn observed_empty_selection(
+        replenisher: &BlankPoolReplenisher,
+        idle_pool: &SharedIdlePool,
+        budget: &ResourceBudget,
+    ) -> BlankPoolSelection {
+        let pool = idle_pool.lock().await;
+        replenisher.diagnostics().classify(
+            BlankIdleSelection::Empty,
+            "vm0/default",
+            &None,
+            pool.revision(),
+            budget.allocated(),
+        )
+    }
+
+    #[test]
+    fn diagnostics_classify_inventory_and_plan_facts() {
+        let diagnostics = enabled_diagnostics();
+
+        assert_eq!(
+            diagnostics.classify(BlankIdleSelection::Hit, "vm0/default", &None, 0, (0, 0, 0)),
+            BlankPoolSelection::Hit
+        );
+        assert_eq!(
+            diagnostics.classify(
+                BlankIdleSelection::Incompatible,
+                "vm0/default",
+                &None,
+                0,
+                (0, 0, 0),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape)
+        );
+        assert_eq!(
+            diagnostics.classify(BlankIdleSelection::Empty, "vm0/large", &None, 0, (0, 0, 0),),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape)
+        );
+        assert_eq!(
+            diagnostics.classify(
+                BlankIdleSelection::Empty,
+                "vm0/default",
+                &None,
+                0,
+                (0, 0, 0),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory)
+        );
+        assert_eq!(
+            BlankPoolDiagnostics::new(None).classify(
+                BlankIdleSelection::Empty,
+                "vm0/default",
+                &None,
+                0,
+                (0, 0, 0),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::DisabledPlan)
+        );
+    }
+
+    #[test]
+    fn diagnostics_classify_live_preparation_and_preemption() {
+        let diagnostics = enabled_diagnostics();
+        let cancel = CancellationToken::new();
+        diagnostics.preparing(cancel.clone());
+        assert_eq!(
+            diagnostics.classify(
+                BlankIdleSelection::Empty,
+                "vm0/default",
+                &None,
+                0,
+                (0, 0, 0),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
+        );
+
+        cancel.cancel();
+        assert_eq!(
+            diagnostics.classify(
+                BlankIdleSelection::Empty,
+                "vm0/default",
+                &None,
+                0,
+                (0, 0, 0),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
+        );
+    }
+
+    #[test]
+    fn diagnostics_keep_only_fresh_bounded_suppression() {
+        let diagnostics = enabled_diagnostics();
+        let pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
+        let budget = ResourceBudget::new(8, 16_384, 1.0, 0);
+
+        for reason in [
+            BlankPoolSelectionReason::ResourceUnavailable,
+            BlankPoolSelectionReason::HeadroomReserved,
+            BlankPoolSelectionReason::MaxIdle,
+        ] {
+            diagnostics.suppressed(reason, &pool, &budget);
+            assert_eq!(
+                diagnostics.classify(
+                    BlankIdleSelection::Empty,
+                    "vm0/default",
+                    &None,
+                    pool.revision(),
+                    budget.allocated(),
+                ),
+                BlankPoolSelection::Miss(reason)
+            );
+        }
+
+        diagnostics.suppressed(
+            BlankPoolSelectionReason::ResourceUnavailable,
+            &pool,
+            &budget,
+        );
+        assert_eq!(
+            diagnostics.classify(
+                BlankIdleSelection::Empty,
+                "vm0/default",
+                &None,
+                pool.revision() + 1,
+                budget.allocated(),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
+        );
+        diagnostics.unknown();
+        assert_eq!(
+            diagnostics.classify(
+                BlankIdleSelection::Empty,
+                "vm0/default",
+                &None,
+                pool.revision(),
+                budget.allocated(),
+            ),
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
+        );
+    }
+
+    #[tokio::test]
+    async fn replenisher_classifies_authoritative_suppression_branches() {
+        let mut profiles = BTreeMap::new();
+        profiles.insert("vm0/default".to_owned(), profile(2, 4096));
+        let factory: SharedFactory = Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new()));
+        let mut factories = BTreeMap::new();
+        factories.insert("vm0/default".to_owned(), (factory, true));
+        let temp = tempfile::tempdir().unwrap();
+        let status = StatusTracker::new(temp.path().join("status.json"), 1, None, None);
+        let tracker = IdleDestroyTracker::new(Arc::new(tokio::sync::Notify::new()));
+
+        let budget = Arc::new(ResourceBudget::new(20, 40_960, 1.0, 0));
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 0,
+        })));
+        let admission = PreSpawnAdmission::new(2).unwrap();
+        let foreground_cancel = CancellationToken::new();
+        let foreground = admission.acquire(2, &foreground_cancel).await.unwrap();
+        let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 0, None);
+        replenisher
+            .maybe_start(
+                RunnerMode::Running,
+                &idle_pool,
+                &budget,
+                &admission,
+                &status,
+                &tracker,
+            )
+            .await;
+        assert!(!replenisher.is_preparing());
+        assert_eq!(
+            observed_empty_selection(&replenisher, &idle_pool, &budget).await,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
+        );
+        drop(foreground);
+
+        let budget = Arc::new(ResourceBudget::new(20, 40_960, 1.0, 0));
+        let held = ResourceBudget::try_reserve_lease(&budget, 18, 36_864).unwrap();
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 0,
+        })));
+        let admission = PreSpawnAdmission::new(2).unwrap();
+        let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 0, None);
+        replenisher
+            .maybe_start(
+                RunnerMode::Running,
+                &idle_pool,
+                &budget,
+                &admission,
+                &status,
+                &tracker,
+            )
+            .await;
+        assert_eq!(
+            observed_empty_selection(&replenisher, &idle_pool, &budget).await,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::ResourceUnavailable)
+        );
+        drop(held);
+
+        let budget = Arc::new(ResourceBudget::new(20, 40_960, 1.0, 0));
+        let held = ResourceBudget::try_reserve_lease(&budget, 17, 34_816).unwrap();
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 0,
+        })));
+        let admission = PreSpawnAdmission::new(2).unwrap();
+        let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 0, None);
+        replenisher
+            .maybe_start(
+                RunnerMode::Running,
+                &idle_pool,
+                &budget,
+                &admission,
+                &status,
+                &tracker,
+            )
+            .await;
+        assert_eq!(
+            observed_empty_selection(&replenisher, &idle_pool, &budget).await,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::HeadroomReserved)
+        );
+        drop(held);
+
+        let budget = Arc::new(ResourceBudget::new(20, 40_960, 1.0, 0));
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+        let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+        assert!(matches!(
+            pool.park(ParkedIdleCandidateBuilder::new("recent-exact", lease).build()),
+            ParkResult::Parked
+        ));
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(pool));
+        let admission = PreSpawnAdmission::new(2).unwrap();
+        let mut replenisher = BlankPoolReplenisher::new(&profiles, &factories, &budget, 1, None);
+        replenisher
+            .maybe_start(
+                RunnerMode::Running,
+                &idle_pool,
+                &budget,
+                &admission,
+                &status,
+                &tracker,
+            )
+            .await;
+        assert_eq!(
+            observed_empty_selection(&replenisher, &idle_pool, &budget).await,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::MaxIdle)
+        );
+        for job in idle_pool.lock().await.drain() {
+            job.run().await;
+        }
+        tracker.close_and_wait().await;
+    }
+
     #[test]
     fn target_scales_with_capacity_and_operator_cap() {
         assert_eq!(blank_pool_target(0, 0), 0);
@@ -791,6 +1203,19 @@ mod tests {
             )
             .await;
         assert!(replenisher.is_preparing());
+        {
+            let pool = idle_pool.lock().await;
+            assert_eq!(
+                replenisher.diagnostics().classify(
+                    BlankIdleSelection::Empty,
+                    "vm0/default",
+                    &None,
+                    pool.revision(),
+                    budget.allocated(),
+                ),
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
+            );
+        }
         let result = replenisher
             .wait_for_preparation()
             .await
@@ -1052,6 +1477,19 @@ mod tests {
         .unwrap();
         assert!(replenisher.is_preparing());
         assert_eq!(budget.allocated().2, 1);
+        {
+            let pool = idle_pool.lock().await;
+            assert_eq!(
+                replenisher.diagnostics().classify(
+                    BlankIdleSelection::Empty,
+                    "vm0/default",
+                    &None,
+                    pool.revision(),
+                    budget.allocated(),
+                ),
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
+            );
+        }
 
         destroy_gate.release_many(1);
         let result = replenisher.wait_for_preparation().await.unwrap();

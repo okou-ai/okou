@@ -154,6 +154,56 @@ pub(crate) enum FinalizingExactIdleLookup {
     Miss(ExactIdleReservationMiss),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BlankPoolSelectionReason {
+    EmptyInventory,
+    IncompatibleShape,
+    RefillInProgress,
+    ForegroundPreempted,
+    ResourceUnavailable,
+    HeadroomReserved,
+    MaxIdle,
+    DisabledPlan,
+    Unknown,
+}
+
+impl BlankPoolSelectionReason {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyInventory => "empty_inventory",
+            Self::IncompatibleShape => "incompatible_shape",
+            Self::RefillInProgress => "refill_in_progress",
+            Self::ForegroundPreempted => "foreground_preempted",
+            Self::ResourceUnavailable => "resource_unavailable",
+            Self::HeadroomReserved => "headroom_reserved",
+            Self::MaxIdle => "max_idle",
+            Self::DisabledPlan => "disabled_plan",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BlankPoolSelection {
+    Hit,
+    Miss(BlankPoolSelectionReason),
+}
+
+impl BlankPoolSelection {
+    fn record(self, telemetry: &mut JobTelemetry) {
+        let (outcome, reason) = match self {
+            Self::Hit => ("hit", None),
+            Self::Miss(reason) => ("miss", Some(reason.as_str())),
+        };
+        telemetry.record_bounded_outcome(
+            "runner_claim_blank_pool_selection",
+            true,
+            outcome,
+            reason,
+        );
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct FinalizingDiagnostics {
     handoff: Option<FinalizingHandoffTelemetry>,
@@ -313,6 +363,7 @@ pub(crate) struct RunnerPreSpawnTiming {
     exact_reuse_speculation: Option<ExactReuseSpeculationTiming>,
     finalizing_handoff: Option<FinalizingHandoffTelemetry>,
     finalizing_exact_idle_lookup: Option<FinalizingExactIdleLookup>,
+    blank_pool_selection: Option<BlankPoolSelection>,
 }
 
 #[derive(Clone, Copy)]
@@ -356,6 +407,7 @@ impl RunnerPreSpawnTiming {
             exact_reuse_speculation: None,
             finalizing_handoff: None,
             finalizing_exact_idle_lookup: None,
+            blank_pool_selection: None,
         }
     }
 
@@ -390,6 +442,13 @@ impl RunnerPreSpawnTiming {
         // Capacity waits can probe more than once. Retaining only the latest atomic observation
         // emits one terminal decision for the successor instead of one row per retry.
         self.finalizing_exact_idle_lookup = Some(lookup);
+    }
+
+    pub(crate) fn record_blank_pool_selection(&mut self, selection: BlankPoolSelection) {
+        // A fresh admission can probe before claim and again after authoritative
+        // claim metadata is available. Retain only the latest decision so one
+        // run emits one terminal blank-selection operation.
+        self.blank_pool_selection = Some(selection);
     }
 
     pub(crate) fn record_phase(&mut self, phase: RunnerPreSpawnPhase, duration: Duration) {
@@ -465,6 +524,9 @@ impl RunnerPreSpawnTiming {
         }
         if let Some(exact_lookup) = self.finalizing_exact_idle_lookup {
             exact_lookup.record(telemetry);
+        }
+        if let Some(blank_pool_selection) = self.blank_pool_selection {
+            blank_pool_selection.record(telemetry);
         }
         if let Some(timing) = self.exact_reuse_speculation.as_ref() {
             telemetry.record(
