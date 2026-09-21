@@ -347,6 +347,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.DeepSeekAlternativeRouting]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Skip direct DeepSeek candidates when selecting built-in DeepSeek routes.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",
     description:

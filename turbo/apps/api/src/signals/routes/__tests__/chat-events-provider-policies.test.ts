@@ -43,7 +43,6 @@ import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-s
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
-  resolveBuiltInModelRouteFixture,
   seedBuiltInModelCandidateKeys,
 } from "./helpers/runtime-state";
 import {
@@ -1853,13 +1852,15 @@ describe("CHAT-02: model-first provider policies", () => {
     (
       ["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"] as const
     ).flatMap((model) => {
-      return [false, true].map((enabled) => {
-        return { model, enabled };
+      return [false, true].flatMap((alternativeRoutingEnabled) => {
+        return [false, true].map((usRoutingEnabled) => {
+          return { model, alternativeRoutingEnabled, usRoutingEnabled };
+        });
       });
     }),
   )(
-    "keeps direct built-in $model priority with OpenRouter US switch $enabled",
-    async ({ model, enabled }) => {
+    "routes built-in $model with alternative routing $alternativeRoutingEnabled and US routing $usRoutingEnabled",
+    async ({ model, alternativeRoutingEnabled, usRoutingEnabled }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
@@ -1876,7 +1877,9 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
-        [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]:
+          alternativeRoutingEnabled,
+        [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
       });
 
       const run = await sendChatRun(actor, {
@@ -1884,23 +1887,40 @@ describe("CHAT-02: model-first provider policies", () => {
         model,
         prompt: "capture the managed DeepSeek route",
       });
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]:
+          !alternativeRoutingEnabled,
+        [FeatureSwitchKey.OpenRouterUsRouting]: !usRoutingEnabled,
+      });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       const environment = claimEnvironment(claim);
-      const expectedModel =
-        model === "deepseek-v4.1-flash" ? "deepseek-flash" : model;
-      expect(environment.OPENAI_BASE_URL).toBe("https://api.deepseek.com/");
+      const expectedProvider = alternativeRoutingEnabled
+        ? "openrouter-codex"
+        : "deepseek";
+      const expectedModel = alternativeRoutingEnabled
+        ? `deepseek/${model}`
+        : model === "deepseek-v4.1-flash"
+          ? "deepseek-flash"
+          : model;
+      expect(environment.OPENAI_BASE_URL).toBe(
+        alternativeRoutingEnabled
+          ? `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1`
+          : "https://api.deepseek.com/",
+      );
       expect(environment.OPENAI_MODEL).toBe(expectedModel);
       expect(claim.codexRuntimeConfig).toMatchObject({
-        providerId: "deepseek",
+        providerId: expectedProvider,
         modelCatalog: {
           models: expect.arrayContaining([
             expect.objectContaining({ slug: expectedModel }),
           ]),
         },
       });
-      expect(claim.billableFirewalls).toContain("model-provider:deepseek");
+      expect(claim.billableFirewalls).toContain(
+        `model-provider:${expectedProvider}`,
+      );
       expect(claim.billableFirewalls).not.toContain(
-        "model-provider:openrouter-codex",
+        `model-provider:${alternativeRoutingEnabled ? "deepseek" : "openrouter-codex"}`,
       );
       await cancelChatRun(actor, run.runId);
     },
@@ -1932,6 +1952,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
         [FeatureSwitchKey.OpenRouterUsRouting]: true,
       });
 
@@ -1958,67 +1979,61 @@ describe("CHAT-02: model-first provider policies", () => {
     },
   );
 
-  it("restores direct DeepSeek while the OpenRouter US fallback is cooling", async () => {
-    const model = "deepseek-v4-flash";
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelCandidateKeys(context, model);
-    const direct = await resolveBuiltInModelRouteFixture(context, model);
-    expect(direct).toMatchObject({ provider_type: "deepseek" });
-    if (!direct) {
-      throw new Error("Expected a DeepSeek direct route");
-    }
-    const openRouter =
-      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+  it.each([
+    "deepseek-v4.1-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+  ] as const)(
+    "fails closed for built-in %s when its required OpenRouter route is unavailable",
+    async (model) => {
+      const { actor, agentId } = await entitledChatActor();
+      if (model === "deepseek-v4.1-flash") {
+        configureNativeCliArtifact();
+      }
+      await seedBuiltInModelCandidateKeys(context, model);
+      await api.updateOrgModelPolicies(actor, [
         {
-          selectedModel: model,
-          providerType: direct.provider_type,
-          upstreamModel: direct.upstream_model,
-        },
-        async () => {
-          return await resolveBuiltInModelRouteFixture(context, model);
-        },
-      );
-    expect(openRouter).toMatchObject({ provider_type: "openrouter-codex" });
-    if (!openRouter) {
-      throw new Error("Expected an OpenRouter fallback route");
-    }
-    // Exiting the direct-candidate scope restores it. Keep only the fallback
-    // unavailable in this request chain without mutating shared cooldown rows.
-    await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-      {
-        selectedModel: model,
-        providerType: openRouter.provider_type,
-        upstreamModel: openRouter.upstream_model,
-      },
-      async () => {
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model,
-            isDefault: true,
-            defaultProviderType: "built-in",
-            credentialScope: "org",
-            modelProviderId: null,
-          },
-        ]);
-        await authDeviceSupport.updateFeatureSwitches(actor, {
-          [FeatureSwitchKey.PiLoop]: false,
-          [FeatureSwitchKey.OpenRouterUsRouting]: true,
-        });
-
-        const run = await sendChatRun(actor, {
-          agentId,
-          prompt: "restore direct DeepSeek while its fallback is cooling",
           model,
-        });
-        const { claim } = await claimChatRun(runnerGroup, run.runId);
-        expect(claimEnvironment(claim).OPENAI_BASE_URL).toBe(
-          "https://api.deepseek.com/",
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
+        [FeatureSwitchKey.OpenRouterUsRouting]: false,
+      });
+
+      const prompt = "require the managed OpenRouter DeepSeek route";
+      const response =
+        await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+          {
+            selectedModel: model,
+            providerType: "openrouter-codex",
+            upstreamModel: `deepseek/${model}`,
+          },
+          async () => {
+            return await requestSendEventRaw(actor, {
+              agentId,
+              prompt,
+              userMessage: {
+                version: 1,
+                parts: [{ type: "text", text: prompt }],
+              },
+              model,
+              hasTextContent: true,
+            });
+          },
         );
-        expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
-        await cancelChatRun(actor, run.runId);
-      },
-    );
-  });
+      expect(response.status).toBe(503);
+      expectApiError(response.body);
+      expect(response.body.error.message).toBe(
+        "Every built-in model route for this model is temporarily unavailable",
+      );
+    },
+  );
 
   it.each(
     (

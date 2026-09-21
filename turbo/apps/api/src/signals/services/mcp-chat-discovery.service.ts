@@ -38,6 +38,7 @@ import {
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { shouldReplaceExistingDefaultForPlan } from "./model-policy.service";
 import {
   loadOrgPlanCapabilities,
@@ -447,6 +448,12 @@ export async function listMcpModels(
         principal.orgId,
         principal.userId,
       );
+      await budget.beforeQuery(tx);
+      const featureSwitchContext = await loadUserFeatureSwitchContext(
+        tx,
+        principal.orgId,
+        principal.userId,
+      );
       // Explicit member policies still need connection metadata when personal
       // priority is disabled. Keep this separate from route selection.
       const needsPersonalMetadata =
@@ -498,7 +505,11 @@ export async function listMcpModels(
           isBuiltInModelProviderType(route.modelProviderType)
         ) {
           await budget.beforeQuery(tx);
-          const runtime = await resolveBuiltInModelRuntimeRoute(tx, model);
+          const runtime = await resolveBuiltInModelRuntimeRoute(
+            tx,
+            model,
+            featureSwitchContext,
+          );
           budget.check();
           if (!runtime) {
             entry.availability = "unavailable";

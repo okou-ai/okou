@@ -2621,7 +2621,12 @@ async function builtInModelProviderEnvironment(
     return null;
   }
   const route =
-    resolvedRoute ?? (await resolveBuiltInModelRuntimeRoute(db, selectedModel));
+    resolvedRoute ??
+    (await resolveBuiltInModelRuntimeRoute(
+      db,
+      selectedModel,
+      featureSwitchContext,
+    ));
   if (!route || !isBuiltInModelRuntimeRoutePermitted(route)) {
     return null;
   }
