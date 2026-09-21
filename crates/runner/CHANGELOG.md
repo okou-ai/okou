@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.205.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.1...runner-rs-v0.205.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* refresh api, platform, and runner release markers ([#35702](https://github.com/okou-ai/okou/issues/35702)) ([8f8e88a](https://github.com/okou-ai/okou/commit/8f8e88a73d84e449e46befc07d74f8ee340a73f7))
+
 ## [0.205.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.0...runner-rs-v0.205.1) (2026-09-20)
 
 

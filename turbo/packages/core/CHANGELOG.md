@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.689.0](https://github.com/okou-ai/okou/compare/core-v8.688.3...core-v8.689.0) (2026-09-21)
+
+
+### Features
+
+* **core:** release color themes to every workspace ([#35645](https://github.com/okou-ai/okou/issues/35645)) ([95569a7](https://github.com/okou-ai/okou/commit/95569a7cdae3b6f6795f6b8ae545bb46a41375b0))
+
 ## [8.688.3](https://github.com/okou-ai/okou/compare/core-v8.688.2...core-v8.688.3) (2026-09-20)
 
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [9.348.7](https://github.com/okou-ai/okou/compare/cli-v9.348.6...cli-v9.348.7) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.689.0
+
 ## [9.348.6](https://github.com/okou-ai/okou/compare/cli-v9.348.5...cli-v9.348.6) (2026-09-21)
 
 
