@@ -13,6 +13,9 @@ import {
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
+import { PiApiFirstTurnCompactionRequiredError } from "./errors";
+import type { MemoryPiSession } from "./session-memory";
+
 /**
  * 0.86 resolves compaction settings through the manager and adds optional
  * per-model overrides, so the resolved shape is no longer `Required<CompactionSettings>`.
@@ -20,9 +23,6 @@ import {
 type ResolvedCompactionSettings = ReturnType<
   SettingsManager["getCompactionSettings"]
 >;
-
-import { PiApiFirstTurnCompactionRequiredError } from "./errors";
-import type { MemoryPiSession } from "./session-memory";
 
 function validTokenCount(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;

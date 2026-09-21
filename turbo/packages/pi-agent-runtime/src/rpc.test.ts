@@ -6,6 +6,7 @@ import {
   createFauxCore,
   fauxAssistantMessage,
   fauxToolCall,
+  type Message,
   Type,
 } from "@earendil-works/pi-ai";
 import {
@@ -67,7 +68,13 @@ describe("Pi API first-turn sandbox resume", () => {
     });
     faux.setResponses([
       (context) => {
-        expect(context.messages.at(-1)).toMatchObject({
+        // 0.86 appends a tool-declaration system message after the tool
+        // results, so the pending result is no longer the final message.
+        expect(
+          [...context.messages].reverse().find((message: Message) => {
+            return message.role === "toolResult";
+          }),
+        ).toMatchObject({
           role: "toolResult",
           toolCallId: TOOL_CALL_ID,
           content: [
@@ -171,7 +178,13 @@ describe("Pi API first-turn sandbox resume", () => {
     });
     faux.setResponses([
       (context) => {
-        expect(context.messages.at(-1)).toMatchObject({
+        // 0.86 appends a tool-declaration system message after the tool
+        // results, so the pending result is no longer the final message.
+        expect(
+          [...context.messages].reverse().find((message: Message) => {
+            return message.role === "toolResult";
+          }),
+        ).toMatchObject({
           role: "toolResult",
           toolCallId: TOOL_CALL_ID,
           toolName: "add_ad_hoc_note",
@@ -283,7 +296,13 @@ describe("Pi API first-turn sandbox resume", () => {
     });
     faux.setResponses([
       (context) => {
-        expect(context.messages.at(-1)).toMatchObject({
+        // 0.86 appends a tool-declaration system message after the tool
+        // results, so the pending result is no longer the final message.
+        expect(
+          [...context.messages].reverse().find((message: Message) => {
+            return message.role === "toolResult";
+          }),
+        ).toMatchObject({
           role: "toolResult",
           toolCallId: TOOL_CALL_ID,
         });
@@ -339,8 +358,9 @@ describe("Pi API first-turn sandbox resume", () => {
     expect(faux.state.callCount).toBe(1);
     session.dispose();
     const reopened = SessionManager.open(sessionFile);
-    expect(reopened.buildSessionContext().messages.slice(-2)).toMatchObject([
+    expect(reopened.buildSessionContext().messages.slice(-3)).toMatchObject([
       { role: "toolResult", toolCallId: TOOL_CALL_ID, isError: false },
+      { role: "system" },
       {
         role: "assistant",
         content: [{ type: "text", text: "sandbox continuation complete" }],
@@ -385,7 +405,13 @@ describe("Pi API first-turn sandbox resume", () => {
     });
     faux.setResponses([
       (context) => {
-        expect(context.messages.at(-1)).toMatchObject({
+        // 0.86 appends a tool-declaration system message after the tool
+        // results, so the pending result is no longer the final message.
+        expect(
+          [...context.messages].reverse().find((message: Message) => {
+            return message.role === "toolResult";
+          }),
+        ).toMatchObject({
           role: "toolResult",
           toolCallId: TOOL_CALL_ID,
           content: [{ type: "text", text: "Okou CLI fixture help" }],

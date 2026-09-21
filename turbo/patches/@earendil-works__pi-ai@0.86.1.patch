@@ -119,7 +119,7 @@ index 0000000..af6bdff
 +export declare function isProviderQueueTimeout(error: unknown): boolean;
 diff --git a/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
 new file mode 100644
-index 0000000..564f082
+index 0000000..d4b554b
 --- /dev/null
 +++ b/dist/utils/provider-queue-timeout.js
 @@ -0,0 +1,33 @@
@@ -129,7 +129,7 @@ index 0000000..564f082
 +export function isProviderQueueTimeout(error) {
 +    const normalized = typeof error === "string" ? { message: error } : normalizeProviderError(error);
 +    let message = (normalized.body ?? normalized.message).trim()
-+        .replace(/^(?:OpenAI|Anthropic) API error \(\d{3}\):\s*/i, "")
++        .replace(/^[A-Za-z0-9 ._-]{1,40} API error \(\d{3}\):\s*/i, "")
 +        .replace(/^Codex error: /i, "")
 +        .replace(/^\d{3}(?::| )\s*/, "");
 +    if (message.startsWith("{")) {

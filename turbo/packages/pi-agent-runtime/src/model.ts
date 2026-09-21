@@ -72,6 +72,35 @@ function isCodexResponsesModel(
 }
 
 function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
+  // the product still offers it. Pin the exact 0.85.1 definition so admission,
+  // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.
+  // `api` stays "openai-completions" as upstream shipped it: resolvePiAgentModel
+  // copies `source.compat` only when `source.api === dialect`, so recording the
+  // upstream dialect keeps that guard false and leaves the wire unchanged.
+  // This is the V4 text-only model, priced apart from V4.1; never substitute one
+  // for the other. The OpenRouter route still resolves from the 0.86.1 catalog.
+  if (provider === "deepseek" && model === "deepseek-v4-flash") {
+    return {
+      id: model,
+      name: "DeepSeek V4 Flash",
+      provider,
+      api: "openai-completions",
+      baseUrl: "https://api.deepseek.com",
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        max: "max",
+      },
+      input: ["text"],
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
+    };
+  }
   // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
   // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
   if (

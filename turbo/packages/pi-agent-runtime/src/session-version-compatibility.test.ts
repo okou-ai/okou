@@ -123,7 +123,9 @@ it("continues the official 0.84.1 branch and compaction fixture without replay o
     "continued once",
   );
   expect(faux.state.callCount).toBe(1);
-  expect(started).toEqual(["toolResult", "assistant"]);
+  // 0.86 declares the tool loadout in a system message before each model
+  // request, so the post-tool assistant response is preceded by one.
+  expect(started).toEqual(["toolResult", "system", "assistant"]);
   expect(settled).toBe(1);
   await session.prompt("new explicit follow-up");
   expect(faux.state.callCount).toBe(2);

@@ -1831,7 +1831,8 @@ describe("Okou Harness base system prompt", () => {
       // prompt still surrounds it.
       expect(systemPrompt).toContain(INTERMEDIATE_COMMENTARY_PROMPT);
       expect(systemPrompt).toContain("Caller instructions stay appended.");
-      expect(systemPrompt).toContain(`Current working directory: ${cwd}`);
+      // 0.86 renders the working directory as its own `<cwd>` prompt section.
+      expect(systemPrompt).toContain(`<cwd>\n${cwd}\n</cwd>`);
       expect(systemPrompt.indexOf("Okou Harness")).toBeLessThan(
         systemPrompt.indexOf(INTERMEDIATE_COMMENTARY_PROMPT),
       );

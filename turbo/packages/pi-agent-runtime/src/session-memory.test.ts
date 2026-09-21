@@ -6,6 +6,7 @@ import {
   createFauxCore,
   fauxAssistantMessage,
   fauxToolCall,
+  getCurrentSystemPrompt,
   Type,
   type Context,
 } from "@earendil-works/pi-ai";
@@ -161,12 +162,16 @@ describe("MemoryPiSession", () => {
     expect(turn.handoffRequired).toBe(true);
     expect(ownership.stage).toBe("provider-may-have-started");
     expect(faux.state.callCount).toBe(1);
-    expect(modelContext?.systemPrompt).toBe("preheated Pi system prompt");
+    // 0.86 carries the system prompt as a leading transcript system message
+    // rather than a separate `systemPrompt` field on the request context.
+    expect(getCurrentSystemPrompt(modelContext?.messages ?? [])).toBe(
+      "preheated Pi system prompt",
+    );
     expect(
       modelContext?.messages.map((message) => {
         return message.role;
       }),
-    ).toStrictEqual(["user", "assistant", "user"]);
+    ).toStrictEqual(["system", "user", "assistant", "user"]);
     expect(memory.toJsonl().startsWith(nativeJsonl)).toBe(true);
     expect(await readFile(sessionFile, "utf8")).toBe(nativeJsonl);
   });
