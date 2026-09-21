@@ -321,6 +321,67 @@ async fn retirement_does_not_claim_recovery_after_a_real_reset() {
     assert!(events(&captured, RECOVERED).is_empty());
 }
 
+#[tokio::test(start_paused = true)]
+async fn real_reset_then_present_null_reports_local_recovery_without_cancellation() {
+    let captured = CapturedEvents::default();
+    let _subscriber =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
+    let run_id = RunId::new_v4();
+    let response = serde_json::json!({
+        "protocolVersion": 1,
+        "runId": run_id,
+        "state": "present",
+        "mode": null,
+    })
+    .to_string();
+    let mut server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::ResetConnection,
+        RawHttpAction::Respond(crate::test_fixtures::raw_http::json_response(
+            "200 OK", &response,
+        )),
+    ])
+    .await;
+    let controller = controller_for_url(server.url());
+    let registry = RunCancellationRegistry::new();
+    let registration = observe(&controller, &registry, run_id).await;
+
+    server
+        .next_request("initial cancellation reconciliation read")
+        .await;
+    bounded(async {
+        while events(&captured, FAILURE).is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    tokio::time::advance(INTERVAL).await;
+    server
+        .next_request("cancellation reconciliation retry")
+        .await;
+    bounded(async {
+        while events(&captured, RECOVERED).is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+
+    assert!(!registration.is_cancelled());
+    assert!(registration.unregister().await);
+    controller.shutdown().await;
+    server.assert_finished().await;
+
+    let failures = events(&captured, FAILURE);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].level, Level::INFO);
+    assert_eq!(failures[0].fields["failure_cause"], "connection_reset");
+    assert!(events(&captured, DEGRADED).is_empty());
+    let recoveries = events(&captured, RECOVERED);
+    assert_eq!(recoveries.len(), 1);
+    assert_eq!(recoveries[0].level, Level::INFO);
+    assert_eq!(recoveries[0].fields["recovered_after_failures"], "1");
+    assert_eq!(recoveries[0].fields["was_degraded"], "false");
+}
+
 #[tokio::test]
 async fn authenticated_read_accepts_only_explicit_complete_matching_v1_results() {
     let mut server = Server::new().await;
@@ -465,9 +526,6 @@ async fn cooperative_keeps_observing_and_dispatch_cadence_excludes_response_time
 
 #[tokio::test(start_paused = true)]
 async fn old_api_and_invalid_results_recover_on_normal_ticks_without_stopping() {
-    let captured = CapturedEvents::default();
-    let _subscriber =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     let mut server = Server::new().await;
     let controller = server.controller();
     let registry = RunCancellationRegistry::new();
@@ -510,24 +568,6 @@ async fn old_api_and_invalid_results_recover_on_normal_ticks_without_stopping() 
     bounded(registration.handle().signals().hard().cancelled()).await;
     registration.unregister().await;
     controller.shutdown().await;
-
-    let entries = captured.entries();
-    let recoveries: Vec<_> = entries
-        .iter()
-        .enumerate()
-        .filter(|(_, event)| event.fields.get("message").map(String::as_str) == Some(RECOVERED))
-        .collect();
-    assert_eq!(recoveries.len(), 2);
-    assert_eq!(recoveries[0].1.fields["recovered_after_failures"], "2");
-    assert_eq!(recoveries[1].1.fields["recovered_after_failures"], "2");
-    let observed = entries
-        .iter()
-        .position(|event| {
-            event.fields.get("message").map(String::as_str)
-                == Some("cancellation reconciliation observed stop intent")
-        })
-        .unwrap();
-    assert!(recoveries[1].0 < observed);
 }
 
 #[tokio::test]
@@ -661,13 +701,32 @@ async fn whole_body_deadline_releases_capacity_without_an_immediate_retry() {
     registration.unregister().await;
     controller.shutdown().await;
 
-    let failures = events(&captured, FAILURE);
+    let entries = captured.entries();
+    let failures: Vec<_> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event.fields.get("message").map(String::as_str) == Some(FAILURE))
+        .collect();
     assert_eq!(failures.len(), 1);
-    assert_eq!(failures[0].level, Level::INFO);
-    assert_eq!(failures[0].fields["failure_stage"], "deadline");
-    assert_eq!(failures[0].fields["failure_kind"], "timeout");
-    assert_eq!(failures[0].fields["failure_cause"], "timeout");
-    assert_eq!(events(&captured, RECOVERED).len(), 1);
+    assert_eq!(failures[0].1.level, Level::INFO);
+    assert_eq!(failures[0].1.fields["failure_stage"], "deadline");
+    assert_eq!(failures[0].1.fields["failure_kind"], "timeout");
+    assert_eq!(failures[0].1.fields["failure_cause"], "timeout");
+    let recoveries: Vec<_> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| event.fields.get("message").map(String::as_str) == Some(RECOVERED))
+        .collect();
+    assert_eq!(recoveries.len(), 1);
+    let observed = entries
+        .iter()
+        .position(|event| {
+            event.fields.get("message").map(String::as_str)
+                == Some("cancellation reconciliation observed stop intent")
+        })
+        .unwrap();
+    assert!(failures[0].0 < recoveries[0].0);
+    assert!(recoveries[0].0 < observed);
 }
 
 #[tokio::test]
