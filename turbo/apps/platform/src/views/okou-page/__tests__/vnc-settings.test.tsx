@@ -503,6 +503,56 @@ test.each([
   },
 );
 
+test("An X509Plain host edit preserves its exact profile and compatible credential", async () => {
+  const data = mockSettings({
+    connections: [plainHost],
+    credentials: [plainCredential],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.update,
+    ({ body, params, respond }) => {
+      requests.push({ id: params.connectionId, body });
+      const updated = {
+        ...plainHost,
+        displayName: "Reviewed Plain workstation",
+        generation: 5,
+      };
+      data.connections = [updated];
+      return respond(200, updated);
+    },
+  );
+  await page();
+  await screen.findByText(plainHost.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  expect(within(dialog).getByLabelText("Security profile")).toHaveTextContent(
+    "Encrypted username and password (X509Plain)",
+  );
+  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+    plainCredential.name,
+  );
+  await fill(
+    within(dialog).getByLabelText("Display name"),
+    "Reviewed Plain workstation",
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: plainHost.id,
+      body: expect.objectContaining({
+        expectedGeneration: 4,
+        displayName: "Reviewed Plain workstation",
+        credential: { id: plainCredential.id },
+        security: { type: "x509_plain", trust: { mode: "system" } },
+      }),
+    },
+  ]);
+});
+
 test("Host edits send the reviewed generation and explicit certificate trust changes", async () => {
   const data = mockSettings({
     connections: [
