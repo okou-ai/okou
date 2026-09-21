@@ -13,6 +13,7 @@ export const socialDataPlatformSchema = z.enum([
   "tiktok",
   "youtube",
   "facebook",
+  "xiaohongshu",
 ]);
 
 export const socialDataOperationSchema = z.enum([

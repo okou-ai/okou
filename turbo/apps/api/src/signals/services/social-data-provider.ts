@@ -65,15 +65,18 @@ const parameterSchema = z.object({
   maximum: z.number().optional(),
 });
 
+const inputSchemaShape = z.object({
+  type: z.literal("object"),
+  properties: z.record(z.string(), parameterSchema),
+  required: z.array(z.string()).optional(),
+});
+
 const inspectionSchema = z.object({
-  provider: z.literal("apify"),
+  provider: z.enum(["apify", "tikhub"]),
   endpoint: z.string(),
   input: z.object({
-    body: z.object({
-      type: z.literal("object"),
-      properties: z.record(z.string(), parameterSchema),
-      required: z.array(z.string()).optional(),
-    }),
+    body: inputSchemaShape.optional(),
+    queryParams: inputSchemaShape.optional(),
   }),
   price: priceSchema,
 });
@@ -266,9 +269,15 @@ function checkedPlan(plan: SocialDataProviderPlan): SocialDataProviderPlan {
 }
 
 function inspectionMatchesInput(
-  body: SocialDataProviderPlan["input"]["body"],
-  schema: z.infer<typeof inspectionSchema>["input"]["body"],
+  body: Readonly<Record<string, unknown>> | undefined,
+  schema: z.infer<typeof inputSchemaShape> | undefined,
 ): boolean {
+  if (body === undefined) {
+    return schema === undefined || !schema.required?.length;
+  }
+  if (schema === undefined) {
+    return false;
+  }
   if (
     schema.required?.some((name) => {
       return body[name] === undefined;
@@ -332,8 +341,13 @@ export async function inspectSocialDataProviderPlan(
   const parsed = inspectionSchema.safeParse(response.body);
   if (
     !parsed.success ||
+    parsed.data.provider !== checked.provider ||
     parsed.data.endpoint !== checked.endpoint ||
-    !inspectionMatchesInput(checked.input.body, parsed.data.input.body)
+    !inspectionMatchesInput(checked.input.body, parsed.data.input.body) ||
+    !inspectionMatchesInput(
+      checked.input.queryParams,
+      parsed.data.input.queryParams,
+    )
   ) {
     throw new SocialDataProviderError(
       "SOCIAL_DATA_UNBOUNDED_PRICE",

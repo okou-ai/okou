@@ -14,14 +14,20 @@ export class SocialDataProviderError extends Error {
   }
 }
 
+export type SocialDataProviderInput = {
+  readonly body?: Readonly<Record<string, unknown>>;
+  readonly queryParams?: Readonly<Record<string, unknown>>;
+};
+
 export interface SocialDataProviderPlan {
   readonly request: SocialDataRequest;
-  readonly provider: "apify";
+  /** Apify runs Actors; TikHub proxies vendor APIs with per-call pricing. */
+  readonly provider: "apify" | "tikhub";
   readonly endpoint: string;
-  readonly input: { readonly body: Readonly<Record<string, unknown>> };
+  readonly input: SocialDataProviderInput;
   readonly maxBillableUnits: number;
   readonly format:
-    | "instagram-profile"
+    | "instagram-user"
     | "instagram-post"
     | "instagram-comment"
     | "tiktok-post"
@@ -32,8 +38,14 @@ export interface SocialDataProviderPlan {
     | "facebook-page"
     | "facebook-post"
     | "facebook-comment"
-    | "x-post";
+    | "x-post"
+    | "xiaohongshu-user"
+    | "xiaohongshu-note"
+    | "xiaohongshu-comment";
 }
+
+/** Recent posts and Reels carried by one Instagram profile lookup. */
+const INSTAGRAM_PROFILE_FEED = 12;
 
 function unsupported(message: string): never {
   throw new SocialDataProviderError("SOCIAL_DATA_UNSUPPORTED", message, 422);
@@ -82,6 +94,26 @@ function plan(
   };
 }
 
+/**
+ * TikHub endpoints are priced per call and take query parameters, so the
+ * billable unit is always one regardless of how many rows come back.
+ */
+function queryPlan(
+  request: SocialDataRequest,
+  endpoint: string,
+  queryParams: Readonly<Record<string, unknown>>,
+  format: SocialDataProviderPlan["format"],
+): SocialDataProviderPlan {
+  return {
+    request,
+    provider: "tikhub",
+    endpoint,
+    input: { queryParams },
+    format,
+    maxBillableUnits: 1,
+  };
+}
+
 function targetUrl(request: SocialDataRequest): URL {
   if (!request.url) {
     throw new SocialDataProviderError(
@@ -98,6 +130,12 @@ function targetUrl(request: SocialDataRequest): URL {
     youtube: ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"],
     facebook: ["facebook.com", "www.facebook.com", "m.facebook.com"],
     x: ["x.com", "www.x.com", "twitter.com", "www.twitter.com"],
+    xiaohongshu: [
+      "xiaohongshu.com",
+      "www.xiaohongshu.com",
+      "xhslink.com",
+      "xhslink.cn",
+    ],
   };
   if (!hosts[request.platform].includes(host) || url.hash) {
     unsupported("Use a full public URL belonging to the selected platform.");
@@ -115,64 +153,126 @@ function instagramPlan(request: SocialDataRequest): SocialDataProviderPlan {
   if (!isPost && !profile) {
     unsupported("Use an Instagram profile, post, or Reel URL.");
   }
-  if (request.operation === "inspect" && profile) {
-    rejectOptions(request);
-    return plan(
-      request,
-      "/apify/instagram-profile-scraper",
-      { usernames: [profile], includeAboutSection: false },
-      "instagram-profile",
-      1,
-    );
-  }
-  if (request.operation === "posts" && profile) {
-    rejectOptions(request, ["kind"]);
-    return plan(
-      request,
-      "/apify/instagram-api-scraper",
-      {
-        directUrls: [url.href],
-        resultsType: request.kind === "reels" ? "reels" : "posts",
-        resultsLimit: request.limit,
-        addParentData: false,
-      },
-      "instagram-post",
-    );
-  }
-  if (request.operation === "comments" && isPost) {
-    rejectOptions(request);
-    if (request.limit > 50) {
-      unsupported("Instagram data jobs support at most 50 comments per post.");
+  if (profile) {
+    if (request.operation === "comments") {
+      unsupported("Comments require an Instagram post or Reel URL.");
     }
-    return plan(
+    rejectOptions(request, request.operation === "posts" ? ["kind"] : []);
+    if (request.operation === "posts" && request.limit > INSTAGRAM_PROFILE_FEED) {
+      unsupported(
+        `Instagram data jobs return at most ${INSTAGRAM_PROFILE_FEED} recent items per profile request.`,
+      );
+    }
+    // One call carries the profile plus its recent posts and Reels, so
+    // inspect and posts share it instead of paying for a second lookup.
+    return queryPlan(
       request,
-      "/apify/instagram-api-scraper",
+      "/api/v1/instagram/v1/fetch_user_info_by_username",
+      { username: profile },
+      "instagram-user",
+    );
+  }
+  if (request.operation === "comments") {
+    rejectOptions(request, ["sort"]);
+    return queryPlan(
+      request,
+      "/api/v1/instagram/v2/fetch_post_comments",
       {
-        directUrls: [url.href],
-        resultsType: "comments",
-        resultsLimit: request.limit,
-        addParentData: false,
+        code_or_url: url.href,
+        sort_by:
+          request.sort && choice(request.sort, ["recent", "popular"]) === "popular"
+            ? "popular"
+            : "recent",
       },
       "instagram-comment",
     );
   }
-  if (request.operation === "inspect" && isPost) {
-    rejectOptions(request);
-    return plan(
+  rejectOptions(request);
+  return queryPlan(
+    request,
+    "/api/v1/instagram/v1/fetch_post_by_url",
+    { post_url: url.href },
+    "instagram-post",
+  );
+}
+
+function xiaohongshuPlan(request: SocialDataRequest): SocialDataProviderPlan {
+  if (request.operation === "transcript") {
+    unsupported("Xiaohongshu data jobs do not provide transcripts.");
+  }
+  if (request.operation === "search") {
+    rejectOptions(request, ["sort", "kind"]);
+    if (/[\r\n]/.test(request.query ?? "")) {
+      unsupported("Xiaohongshu search accepts one query on a single line.");
+    }
+    return queryPlan(
       request,
-      "/apify/instagram-api-scraper",
+      "/api/v1/xiaohongshu/app_v2/search_notes",
       {
-        directUrls: [url.href],
-        resultsType: "details",
-        resultsLimit: 1,
-        addParentData: false,
+        keyword: request.query,
+        page: 1,
+        sort_type: request.sort
+          ? choice(request.sort, ["general", "popularity_descending", "time_descending"])
+          : "general",
+        note_type: request.kind === "reels" ? "视频笔记" : "不限",
       },
-      "instagram-post",
-      1,
+      "xiaohongshu-note",
     );
   }
-  return unsupported(
-    "Posts require a profile URL; comments require a post or Reel URL.",
+  const url = targetUrl(request);
+  rejectOptions(request);
+  // Share links resolve upstream, so they are forwarded untouched.
+  const share = url.hostname.endsWith("xhslink.com") || url.hostname.endsWith("xhslink.cn");
+  const userId = /^\/user\/profile\/([0-9a-f]{24})\/?$/.exec(url.pathname)?.[1];
+  const noteId = /^\/(?:explore|discovery\/item)\/([0-9a-f]{24})\/?$/.exec(
+    url.pathname,
+  )?.[1];
+  if (!share && !userId && !noteId) {
+    unsupported(
+      "Use a Xiaohongshu profile URL, note URL, or an xhslink share link.",
+    );
+  }
+  const target = share
+    ? { share_text: url.href }
+    : userId
+      ? { user_id: userId }
+      : { note_id: noteId };
+  if (request.operation === "posts") {
+    if (noteId) {
+      unsupported("Posts require a Xiaohongshu profile URL.");
+    }
+    return queryPlan(
+      request,
+      "/api/v1/xiaohongshu/app_v2/get_user_posted_notes",
+      target,
+      "xiaohongshu-note",
+    );
+  }
+  if (request.operation === "comments") {
+    if (userId) {
+      unsupported("Comments require a Xiaohongshu note URL.");
+    }
+    return queryPlan(
+      request,
+      "/api/v1/xiaohongshu/app_v2/get_note_comments",
+      { ...target, sort_strategy: "like_count" },
+      "xiaohongshu-comment",
+    );
+  }
+  if (userId) {
+    return queryPlan(
+      request,
+      "/api/v1/xiaohongshu/app_v2/get_user_info",
+      target,
+      "xiaohongshu-user",
+    );
+  }
+  // The image endpoint returns both image and video notes.
+  return queryPlan(
+    request,
+    "/api/v1/xiaohongshu/app_v2/get_image_note_detail",
+    target,
+    "xiaohongshu-note",
   );
 }
 
@@ -496,6 +596,9 @@ export function prepareSocialDataProviderPlan(
     }
     case "x": {
       return xPlan(request);
+    }
+    case "xiaohongshu": {
+      return xiaohongshuPlan(request);
     }
   }
 }
