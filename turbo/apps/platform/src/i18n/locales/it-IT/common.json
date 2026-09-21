@@ -6354,11 +6354,11 @@
       }
     },
     "paidTools": {
-      "description": "Scegli quali strumenti integrati a pagamento puoi usare.",
-      "disabledForCreation": "{{tool}} è disattivato nelle impostazioni degli strumenti a pagamento.",
+      "description": "Scegli gli strumenti a pagamento che Okou può usare nelle tue attività. Ogni utilizzo consuma crediti.",
+      "disabledForCreation": "{{tool}} è disattivato per te",
       "loadError": "Impossibile caricare le impostazioni.",
       "loading": "Caricamento delle impostazioni…",
-      "openSettings": "Apri le impostazioni degli strumenti a pagamento",
+      "openSettings": "Apri le impostazioni",
       "retry": "Riprova",
       "saveError": "La modifica non è stata salvata.",
       "saving": "Salvataggio…",

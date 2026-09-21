@@ -6294,11 +6294,11 @@
       }
     },
     "paidTools": {
-      "description": "Wähle, welche kostenpflichtigen integrierten Tools du verwenden kannst.",
-      "disabledForCreation": "{{tool}} ist in deinen Einstellungen für kostenpflichtige Tools deaktiviert.",
+      "description": "Wähle die kostenpflichtigen Tools, die Okou für deine Aufgaben nutzen darf. Jede Nutzung kostet Credits.",
+      "disabledForCreation": "{{tool}} ist für dich deaktiviert",
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
-      "openSettings": "Einstellungen für kostenpflichtige Tools öffnen",
+      "openSettings": "Einstellungen öffnen",
       "retry": "Erneut versuchen",
       "saveError": "Deine Änderung wurde nicht gespeichert.",
       "saving": "Wird gespeichert…",

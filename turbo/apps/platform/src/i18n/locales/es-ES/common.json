@@ -6354,11 +6354,11 @@
       }
     },
     "paidTools": {
-      "description": "Elige qué herramientas de pago integradas puedes usar.",
-      "disabledForCreation": "{{tool}} está desactivado en tus ajustes de herramientas de pago.",
+      "description": "Elige las herramientas de pago que Okou puede usar en tus tareas. Cada uso consume créditos.",
+      "disabledForCreation": "{{tool}} está desactivado para ti",
       "loadError": "No se pudieron cargar tus ajustes.",
       "loading": "Cargando tus ajustes…",
-      "openSettings": "Abrir ajustes de herramientas de pago",
+      "openSettings": "Abrir ajustes",
       "retry": "Reintentar",
       "saveError": "No se ha guardado tu cambio.",
       "saving": "Guardando…",

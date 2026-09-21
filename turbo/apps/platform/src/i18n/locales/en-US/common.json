@@ -6286,16 +6286,16 @@
       }
     },
     "paidTools": {
-      "description": "Choose which paid built-in tools you can use.",
-      "disabledForCreation": "{{tool}} is disabled in your paid tool settings.",
+      "description": "Choose the paid tools Okou can use in your tasks. Each use costs credits.",
+      "disabledForCreation": "{{tool}} is off for you",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
-      "openSettings": "Open paid tool settings",
+      "openSettings": "Open settings",
       "retry": "Retry",
       "saveError": "Your change was not saved.",
       "saving": "Saving…",
       "scope": "These settings apply only to you in {{workspace}}.",
-      "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
+      "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
       "title": "Paid tools",
       "tools": {
         "avatar-video-generation": {
