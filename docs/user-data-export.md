@@ -5,7 +5,7 @@ chat threads, chat messages, readable agent instructions, readable workflow
 instructions, and current personal memory. The existing status, download,
 48-hour expiry, and 24-hour completion cooldown contract remains unchanged.
 
-The `_durableUserExport` switch admits new exports to a persistent job handler
+The `durableUserExport` switch admits new exports to a persistent job handler
 and is enabled for every owner. Its ZIP format is v3. An owner override turns
 admission off and returns that owner's next export to the v2 streaming
 exporter; jobs already accepted in either mode keep the execution mode stored
@@ -181,7 +181,7 @@ and export entry/part inventory. Apply it before promoting the API.
 Old code after migration ignores the additive tables/column; new code before
 migration is unsupported, including its unconditional cleanup reads.
 
-`_durableUserExport` stayed disabled until every serving API and scheduled
+`durableUserExport` stayed disabled until every serving API and scheduled
 cleanup instance understood `execution_mode = durable-v1`, excluded those jobs
 from legacy timeout cleanup, and served the minute cron route. API 1.642.1
 shipped that boundary with migration 1175, so the switch now admits every new
