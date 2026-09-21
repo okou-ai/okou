@@ -179,12 +179,10 @@ function CustomTemplateMeta({
 
 function CustomTemplateActions({
   template,
-  onRename,
   onVisibilityChange,
   onDelete,
 }: {
   readonly template: UserTemplateCatalogEntry;
-  readonly onRename: () => void;
   readonly onVisibilityChange: (visibility: UserTemplateVisibility) => void;
   readonly onDelete: () => void;
 }) {
@@ -211,11 +209,6 @@ function CustomTemplateActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={onRename}>
-            {t(($) => {
-              return $.templates.actions.rename;
-            })}
-          </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <span className="flex-1">
@@ -342,7 +335,6 @@ function CustomTemplateCard({
         {template.canManage ? (
           <CustomTemplateActions
             template={template}
-            onRename={open}
             onVisibilityChange={(visibility) => {
               detach(
                 updateTemplate(
