@@ -1519,6 +1519,10 @@
         },
         "notEligible": "Non éligible",
         "pendingState": "{{amount}} en attente",
+        "rejected": {
+          "alreadyRedeemed": "Publication déjà utilisée",
+          "postMustMention": "Doit mentionner {{assistantName}}"
+        },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "share": {
           "action": "Partager",

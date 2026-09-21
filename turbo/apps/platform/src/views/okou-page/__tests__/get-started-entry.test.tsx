@@ -357,6 +357,32 @@ test("Building a workflow opens the workflows page", async () => {
   });
 });
 
+test("A workflow reward still with the reviewer stops offering the step again", async () => {
+  const data = configureQuestPage(context, "admin");
+  const workflow = data.quests.find((quest) => {
+    return quest.key === "workflow";
+  });
+  if (!workflow) {
+    throw new Error("Missing workflow fixture");
+  }
+  // The claim the review worker creates when a workflow is built. It is granted
+  // by an hourly job, so the row has to say so for as long as that takes.
+  workflow.pendingCount = 1;
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await openQuestPanel();
+  const row = screen.getByTestId("get-started-quest-workflow");
+  expect(normalizedText(row)).toContain("In review");
+  // The action label alone, not the title that also starts with the verb.
+  expect(within(row).queryByText("Build")).toBeNull();
+  // Nothing left to press, so the row is a status line rather than an option.
+  expect(row.getAttribute("role")).not.toBe("menuitem");
+});
+
 test("Sharing on X restores pending state and an Ably review notification updates the open panel", async () => {
   const data = configureQuestPage(context, "admin");
   await setupPage({
@@ -491,7 +517,7 @@ test("Reward notifications refresh quests without disconnecting shared chat hist
   await waitFor(() => {
     expect(
       normalizedText(screen.getByTestId("get-started-quest-share")),
-    ).toContain("Not eligible");
+    ).toContain("Must mention Okou");
   });
   expect(within(panel).getByText("300 earned")).toBeInTheDocument();
   expect(
@@ -614,9 +640,11 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   await openQuestPanel();
+  // The reviewer's own reason, not a bare refusal: a reader told only that the
+  // claim failed submits the same link again.
   expect(
     normalizedText(screen.getByTestId("get-started-quest-share")),
-  ).toContain("Not eligible");
+  ).toContain("Must mention Okou");
   click(screen.getByTestId("get-started-quest-share"));
   await expect(
     screen.findByRole("dialog", { name: "Share Okou on X" }),

@@ -14,6 +14,7 @@ import {
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import {
   checkinClaimedOpen$,
   questIntroKey$,
@@ -746,7 +747,7 @@ function WorkflowIntro({ onConfirm, onClose }: IntroProps) {
         searchParams.set("prompt", prompt);
         // The composer picks the prompt up on arrival, so the user lands in a
         // chat that is already filled in rather than on an empty page.
-        navigate("/", { searchParams });
+        navigate(ROUTES.home, { searchParams });
         onClose();
       }}
       onBrowse={onConfirm}
