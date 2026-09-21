@@ -98,7 +98,12 @@ function PaidToolNoticeContent({
     >
       <span>{row.message}</span>
       {row.action && (
-        <Button variant="ghost" size="sm" onClick={row.action.run}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={row.action.run}
+        >
           {row.action.label}
         </Button>
       )}
@@ -130,6 +135,7 @@ function ComposerPaidToolNoticeContent({
       </span>
       {row.action && (
         <Button
+          type="button"
           variant="ghost"
           size="sm"
           className="ml-auto shrink-0 text-xs font-medium text-foreground"

@@ -6349,7 +6349,7 @@
     },
     "paidTools": {
       "description": "Choisissez les outils payants qu’Okou peut utiliser dans vos tâches. Chaque utilisation consomme des crédits.",
-      "disabledForCreation": "{{tool}} est désactivé dans vos paramètres d’outils payants.",
+      "disabledForCreation": "{{tool}} est désactivé pour vous",
       "loadError": "Impossible de charger vos paramètres.",
       "loading": "Chargement de vos paramètres…",
       "openSettings": "Ouvrir les paramètres",

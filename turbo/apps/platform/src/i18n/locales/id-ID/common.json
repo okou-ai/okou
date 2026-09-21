@@ -6274,7 +6274,7 @@
     },
     "paidTools": {
       "description": "Pilih alat berbayar yang dapat digunakan Okou dalam tugas Anda. Setiap penggunaan memakai kredit.",
-      "disabledForCreation": "{{tool}} dinonaktifkan di pengaturan alat berbayar Anda.",
+      "disabledForCreation": "{{tool}} nonaktif untuk Anda",
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
       "openSettings": "Buka pengaturan",

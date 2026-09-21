@@ -6280,7 +6280,7 @@
     },
     "paidTools": {
       "description": "Choose the paid tools Okou can use in your tasks. Each use costs credits.",
-      "disabledForCreation": "{{tool}} is disabled in your paid tool settings.",
+      "disabledForCreation": "{{tool}} is off for you",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
       "openSettings": "Open settings",

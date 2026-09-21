@@ -6274,7 +6274,7 @@
     },
     "paidTools": {
       "description": "Okou がタスクで使用できる有料ツールを選択します。使用するたびにクレジットを消費します。",
-      "disabledForCreation": "有料ツールの設定で{{tool}}が無効になっています。",
+      "disabledForCreation": "{{tool}}はあなたの設定でオフです",
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
       "openSettings": "設定を開く",
