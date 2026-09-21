@@ -4,23 +4,12 @@ import {
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
-  changeChatThreadList,
-  changeChatThreadReadCursor,
-  chatThreadEventsContract,
-  chatThreadsContract,
-  click,
   commandItemByText,
   context,
   createDataTransferStub,
   createThread,
-  DEFAULT_AGENT_AVATAR_URL,
   dialogAgentOrder,
-  expect,
   EXISTING_THREAD_ID,
-  FeatureSwitchKey,
-  fill,
-  fireEvent,
-  holdElementAnimations,
   INCIDENT_THREAD_ID,
   LAYERED_AVATAR_URL,
   menuItemByText,
@@ -31,25 +20,40 @@ import {
   mockUnreadAgents,
   mountedComposer,
   openThreadMenu,
-  pathname,
   pinnedAgentLink,
   pinnedAgentNames,
-  PLACEHOLDER,
   prepareAgents,
   prepareDefaultAgent,
   prepareOverflowingPinnedAgents,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
   renderTailwindUtilities,
-  screen,
   setupSidebarPage,
   sidebar,
   SUPPORT_AGENT_ID,
-  test,
   threadRowByTitle,
-  waitFor,
-  within,
 } from "./sidebar-test-helpers.tsx";
+
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import {
+  chatThreadEventsContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  click,
+  fill,
+  holdElementAnimations,
+} from "../../../__tests__/page-helper.ts";
+import { pathname } from "../../../signals/location.ts";
+import { PLACEHOLDER } from "./chat-test-helpers.ts";
+import {
+  changeChatThreadList,
+  changeChatThreadReadCursor,
+} from "../../../mocks/mock-helpers.ts";
 
 test("Move to the next relevant agent with a shortcut", async () => {
   prepareAgents();

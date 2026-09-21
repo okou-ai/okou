@@ -1,72 +1,81 @@
 import {
-  act,
   AGENT_ID,
   agentRowByName,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByLabel,
   buttonByText,
-  chatEventRowsResponse,
   chatListNewChatButton,
+  context,
+  createThread,
+  EXISTING_THREAD_ID,
+  INCIDENT_THREAD_ID,
+  menuItemByText,
+  mobileSidebar,
+  mountedComposer,
+  mockChatThreadSnapshot,
+  mockLongSidebarHistory,
+  mockMobileLayout,
+  mockSidebarThreadStory,
+  mockSidebarViewport,
+  mockUnreadAgents,
+  openChatListMenu,
+  openThreadMenu,
+  pinnedAgentLink,
+  prepareAgents,
+  prepareDefaultAgent,
+  prepareOverflowingPinnedAgents,
+  queryMenuItemByText,
+  queryMobileSidebar,
+  RESEARCH_AGENT_ID,
+  RESEARCH_THREAD_ID,
+  scrollToArchivedContext,
+  setupSidebarPage,
+  sidebar,
+  type SidebarThread,
+  stubSidebarTitleLayout,
+  SUPPORT_AGENT_ID,
+  threadLinkByTitle,
+  threadRowByTitle,
+  titleFadeBox,
+  visibleThreadTitles,
+} from "./sidebar-test-helpers.tsx";
+
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import {
   chatThreadByIdContract,
   chatThreadEventsContract,
   chatThreadMarkAgentReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
   chatThreadsContract,
-  changeChatThreadReadCursor,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import {
   click,
-  context,
-  createChatEvent,
-  createThread,
-  expect,
-  EXISTING_THREAD_ID,
-  FeatureSwitchKey,
   fill,
-  fireEvent,
-  INCIDENT_THREAD_ID,
-  menuItemByText,
-  mobileSidebar,
-  mountedComposer,
-  mockChatEventRows,
-  mockChatThreadSnapshot,
-  mockLongSidebarHistory,
-  mockMobileLayout,
-  mockNow,
-  mockSidebarThreadStory,
-  mockSidebarViewport,
-  mockUnreadAgents,
-  openChatListMenu,
-  openThreadMenu,
-  pathname,
-  PLACEHOLDER,
-  pinnedAgentLink,
-  prepareAgents,
-  prepareDefaultAgent,
-  prepareOverflowingPinnedAgents,
   queryAllByRoleFast,
-  queryMenuItemByText,
-  queryMobileSidebar,
-  RESEARCH_AGENT_ID,
-  RESEARCH_THREAD_ID,
-  screen,
-  scrollToArchivedContext,
-  setupSidebarPage,
-  sidebar,
-  type SidebarThread,
   startPage,
-  stubSidebarTitleLayout,
-  SUPPORT_AGENT_ID,
-  test,
-  threadLinkByTitle,
-  threadRowByTitle,
-  titleFadeBox,
-  userPreferencesContract,
-  visibleThreadTitles,
-  waitFor,
-  within,
-  CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
-} from "./sidebar-test-helpers.tsx";
+} from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
+import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
+import { pathname } from "../../../signals/location.ts";
+import { CHAT_THREAD_VIRTUAL_ROW_HEIGHT } from "../../../signals/okou-page/sidebar-state.ts";
+import { PLACEHOLDER } from "./chat-test-helpers.ts";
+import { mockChatEventRows } from "./chat-event-test-helpers.ts";
+import {
+  changeChatThreadReadCursor,
+  createChatEvent,
+} from "../../../mocks/mock-helpers.ts";
 
 test("Browse a long sidebar chat history", async () => {
   const cachedChatThreadEvents = mockLongSidebarHistory();

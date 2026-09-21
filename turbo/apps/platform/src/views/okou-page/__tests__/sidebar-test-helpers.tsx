@@ -1,20 +1,9 @@
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
-import { expect, test, vi } from "vitest";
+import { expect, vi } from "vitest";
 
 import {
-  chatSearchContract,
   chatThreadByIdContract,
-  chatThreadMarkAgentReadContract,
-  chatThreadMarkReadContract,
-  chatThreadMarkUnreadContract,
-  chatThreadEventsContract,
   chatThreadPinContract,
   chatThreadRenameContract,
   chatThreadUnpinContract,
@@ -26,37 +15,14 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  avatarComposerUrl,
-  DEFAULT_AGENT_AVATAR_URL,
-} from "@okouai/core/agent-avatar";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { avatarComposerUrl } from "@okouai/core/agent-avatar";
 import {
   click,
   setupPage,
-  startPage,
-  fill,
-  holdElementAnimations,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
-import { emptySearchImg } from "../platform-assets.ts";
-import {
-  testContext,
-  chatEventRowsResponse,
-} from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
-import { CHAT_THREAD_VIRTUAL_ROW_HEIGHT } from "../../../signals/okou-page/sidebar-state.ts";
-import { PLACEHOLDER } from "./chat-test-helpers.ts";
-import { mockChatEventRows } from "./chat-event-test-helpers.ts";
-import {
-  changeChatThreadList,
-  changeChatThreadReadCursor,
-  createChatEvent,
-} from "../../../mocks/mock-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 // The composer editor is mounted on first paint and mounted again once page
 // bootstrap settles, so an element captured too early is detached before a test
@@ -828,39 +794,3 @@ export async function scrollToArchivedContext(): Promise<HTMLElement> {
   expect(within(sidebar()).queryByText("Load more")).not.toBeInTheDocument();
   return scrollArea;
 }
-
-export {
-  act,
-  artifactCatalogContract,
-  chatEventRowsResponse,
-  chatSearchContract,
-  chatThreadByIdContract,
-  chatThreadEventsContract,
-  chatThreadMarkAgentReadContract,
-  chatThreadMarkReadContract,
-  chatThreadMarkUnreadContract,
-  chatThreadsContract,
-  changeChatThreadList,
-  changeChatThreadReadCursor,
-  click,
-  createChatEvent,
-  DEFAULT_AGENT_AVATAR_URL,
-  emptySearchImg,
-  expect,
-  FeatureSwitchKey,
-  fill,
-  fireEvent,
-  holdElementAnimations,
-  mockChatEventRows,
-  mockNow,
-  pathname,
-  PLACEHOLDER,
-  queryAllByRoleFast,
-  screen,
-  startPage,
-  test,
-  userPreferencesContract,
-  waitFor,
-  within,
-  CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
-};

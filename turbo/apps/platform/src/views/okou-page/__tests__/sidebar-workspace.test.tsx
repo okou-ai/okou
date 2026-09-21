@@ -2,42 +2,41 @@ import {
   AGENT_ID,
   agentRowByName,
   ARCHIVED_THREAD_ID,
-  artifactCatalogContract,
   AUTOMATION_THREAD_ID,
   buttonByText,
-  changeChatThreadReadCursor,
-  chatSearchContract,
-  chatThreadsContract,
-  click,
   context,
   createThread,
-  emptySearchImg,
-  expect,
-  fill,
-  fireEvent,
   INCIDENT_THREAD_ID,
   menuItemByText,
   mobileSidebar,
   mockMobileLayout,
-  mockNow,
   mockSidebarThreadStory,
   mockUnreadAgents,
   openChatListMenu,
-  pathname,
   pinnedAgentLink,
   prepareAgents,
   prepareDefaultAgent,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
-  screen,
   setupSidebarPage,
   sidebar,
   SUPPORT_AGENT_ID,
-  test,
-  waitFor,
-  within,
 } from "./sidebar-test-helpers.tsx";
+
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
+
+import {
+  chatSearchContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { click, fill } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
+import { emptySearchImg } from "../platform-assets.ts";
+import { pathname } from "../../../signals/location.ts";
+import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
 
 async function setupWorkspaceSearch() {
   prepareAgents();
