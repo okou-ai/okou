@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import type { TestEmailOutboxStateItem } from "@okouai/api-contracts/contracts/test-email-outbox-state";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -10,6 +11,7 @@ import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { userExportRoutes } from "../../user-export";
 import type { ApiTestUser } from "./api-bdd";
 import { createEmailOutboxStateApi } from "./email-outbox-state";
+import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 import { installUserExportStorage } from "./user-export-storage";
 
@@ -47,6 +49,18 @@ export function createEmailApi(context: TestContext) {
     async enqueueDataExportEmail(
       actor: ApiTestUser,
     ): Promise<{ readonly to: string; readonly subject: string }> {
+      if (!actor.orgId) {
+        throw new Error("A data export email requires an organization");
+      }
+      // The completion email is owed by both execution modes. This helper
+      // wants one inline request to finish the export, which the legacy
+      // streaming exporter does, so it opts its owner out of durable
+      // admission instead of reading the registry default.
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.DurableUserExport]: false },
+      );
       context.mocks.s3.send.mockResolvedValue({});
       installUserExportStorage(context);
       context.mocks.s3.getSignedUrl.mockResolvedValue(

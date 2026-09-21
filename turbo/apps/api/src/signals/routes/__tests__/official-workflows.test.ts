@@ -5501,6 +5501,17 @@ describe("Official Workflow installations", () => {
     expect(current.body.workflow.instruction).toBe(instruction);
 
     const exports = createOpsLogsApi(context);
+    // The installed instruction is read through the legacy streaming exporter,
+    // which a new export reaches only when its owner opts out of durable
+    // admission.
+    if (!actor.orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: actor.orgId, userId: actor.userId },
+      { [FeatureSwitchKey.DurableUserExport]: false },
+    );
     installUserExportStorage(context);
     const started = await exports.requestPostUserExport(actor, [202]);
     await flushWaitUntilForTest();
