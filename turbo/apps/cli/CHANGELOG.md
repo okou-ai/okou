@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.349.1](https://github.com/okou-ai/okou/compare/cli-v9.349.0...cli-v9.349.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** stop adding private artifact delivery prompts to generation output ([#35720](https://github.com/okou-ai/okou/issues/35720)) ([b0b9997](https://github.com/okou-ai/okou/commit/b0b99976690882c00e27b411fb701eed774002c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.482.0
+    * @okouai/core bumped to 8.689.2
+    * @okouai/pi-agent-runtime bumped to 1.34.0
+
 ## [9.349.0](https://github.com/okou-ai/okou/compare/cli-v9.348.8...cli-v9.349.0) (2026-09-21)
 
 
