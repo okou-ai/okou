@@ -1520,7 +1520,11 @@ describe("sandbox Pi agent loop", () => {
           const state = await host.state(`native-input-state-${turn}`);
           expect(state).toMatchObject({
             sessionId: SESSION_ID,
-            messageCount: (turn - 1) * 2,
+            // A fresh session has projected nothing yet. Once the first turn
+            // has run, 0.86's single leading transcript system message is part
+            // of the projection this count reports, alongside each completed
+            // user/assistant pair.
+            messageCount: turn === 1 ? 0 : (turn - 1) * 2 + 1,
           });
           expect(host.records[0]).toStrictEqual({
             type: "vm0_pi_api_first_turn_boundary",
