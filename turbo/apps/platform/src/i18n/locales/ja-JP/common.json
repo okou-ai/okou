@@ -1731,21 +1731,12 @@
       "create": {
         "addStyle": "スタイルを追加",
         "addTemplate": "テンプレートを追加",
-        "chooseType": "種類を選択",
-        "exit": "作成モードを終了",
-        "image": "画像を作成",
-        "imageDescription": "アイデアを画像に",
         "imagePlaceholder": "作成したい画像を説明してください…",
-        "presentation": "プレゼンテーションを作成",
-        "presentationDescription": "ストーリーを伝えるスライド",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
         "settingsAdjusted": "このモデルに合わせて一部の動画設定を調整しました",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
-        "slideCountRange": "{{range}}枚",
-        "video": "動画を作成",
-        "videoDescription": "アイデアを動画に",
-        "videoPlaceholder": "作成したい動画を説明してください…"
+        "slideCountRange": "{{range}}枚"
       },
       "createWorkflow": "ワークフローの作成",
       "imageModelForThisChat": "このチャットの画像モデル",
@@ -2270,40 +2261,6 @@
             "prompt": "指定したテーマの研修デッキを作成してください。受講者と、受講後にできるようになることを質問してください。"
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "写真を動画にする",
-            "prompt": "提供した写真に自然な動きを付けてください。被写体の特徴を保ち、何を動かすか確認してください。"
-          },
-          "brandIntro": {
-            "label": "ブランドのオープニング動画を作る",
-            "prompt": "提供するロゴとブランド情報で短いオープニング動画を作り、雰囲気を決めるのを手伝ってください。"
-          },
-          "eventPromo": {
-            "label": "イベントを動画で告知する",
-            "prompt": "イベントの短い告知動画を作ってください。内容、対象者、載せたい情報を確認してください。"
-          },
-          "loopingBackground": {
-            "label": "ループする背景動画を作る",
-            "prompt": "穏やかに動く、継ぎ目のないループ背景動画を作ってください。場面と雰囲気を確認してください。"
-          },
-          "productDemo": {
-            "label": "商品を動きのある動画で見せる",
-            "prompt": "商品写真から短い紹介動画を作ってください。見た目を保ち、指定した特徴を強調してください。"
-          },
-          "socialClip": {
-            "label": "SNS向けの短い動画を作る",
-            "prompt": "SNS向けの短い動画を作ってください。見る人に合うメッセージと映像スタイルを一緒に決めてください。"
-          },
-          "videoGreeting": {
-            "label": "お祝いの動画を作る",
-            "prompt": "誕生日や祝日などのお祝い動画を短く作ってください。機会、贈る相手、メッセージを確認してください。"
-          },
-          "visualExplainer": {
-            "label": "アイデアを映像で説明する",
-            "prompt": "一つのアイデアをわかりやすく伝える短い動画を作ってください。内容と対象者を確認してください。"
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "予約してもらうためのページを作る",
@@ -2385,13 +2342,11 @@
         "image": "画像スタイル",
         "nextPage": "次のページ",
         "previousPage": "前のページ",
-        "video": "動画テンプレート",
         "website": "ウェブサイトテンプレート"
       },
       "tasks": {
         "image": "画像",
         "presentation": "スライド",
-        "video": "動画",
         "visualization": "可視化",
         "website": "ウェブサイト",
         "workflow": "ワークフロー"

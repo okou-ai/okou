@@ -1731,21 +1731,12 @@
       "create": {
         "addStyle": "스타일 추가",
         "addTemplate": "템플릿 추가",
-        "chooseType": "유형 선택",
-        "exit": "만들기 모드 종료",
-        "image": "이미지 만들기",
-        "imageDescription": "아이디어를 이미지로 표현",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
-        "presentation": "프레젠테이션 만들기",
-        "presentationDescription": "이야기를 담은 슬라이드",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
         "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
-        "slideCountRange": "{{range}}장",
-        "video": "동영상 만들기",
-        "videoDescription": "아이디어를 영상으로 표현",
-        "videoPlaceholder": "만들고 싶은 동영상을 설명하세요…"
+        "slideCountRange": "{{range}}장"
       },
       "createWorkflow": "워크플로 생성",
       "imageModelForThisChat": "이 채팅의 이미지 모델",
@@ -2270,40 +2261,6 @@
             "prompt": "제가 정한 주제로 교육용 덱을 만들어 주세요. 교육 대상과 교육 후 할 수 있어야 하는 일을 물어봐 주세요."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "사진을 동영상으로 만들기",
-            "prompt": "제공한 사진에 자연스러운 움직임을 더해 주세요. 피사체의 특징을 유지하고 무엇을 움직일지 확인해 주세요."
-          },
-          "brandIntro": {
-            "label": "브랜드 인트로 만들기",
-            "prompt": "제공한 로고와 브랜드 정보로 짧은 오프닝 영상을 만들어 주세요. 분위기를 정하는 것도 도와주세요."
-          },
-          "eventPromo": {
-            "label": "내 행사 홍보하기",
-            "prompt": "행사를 홍보하는 짧은 영상을 만들어 주세요. 행사 내용, 대상, 포함할 정보를 확인해 주세요."
-          },
-          "loopingBackground": {
-            "label": "반복 재생되는 배경 만들기",
-            "prompt": "잔잔한 움직임이 자연스럽게 반복되는 배경 영상을 만들어 주세요. 원하는 장면과 분위기를 확인해 주세요."
-          },
-          "productDemo": {
-            "label": "제품을 움직이는 영상으로 보여주기",
-            "prompt": "제품 사진으로 짧은 소개 영상을 만들어 주세요. 제품 외형을 유지하고 제가 고른 특징을 강조해 주세요."
-          },
-          "socialClip": {
-            "label": "소셜 미디어용 짧은 영상 만들기",
-            "prompt": "소셜 미디어용 짧은 영상을 만들어 주세요. 대상 시청자에 맞는 메시지와 영상 스타일을 함께 정해 주세요."
-          },
-          "videoGreeting": {
-            "label": "축하 영상 만들기",
-            "prompt": "생일, 명절, 기념일을 위한 짧은 축하 영상을 만들어 주세요. 행사, 받는 사람, 메시지를 확인해 주세요."
-          },
-          "visualExplainer": {
-            "label": "아이디어를 영상으로 설명하기",
-            "prompt": "한 가지 아이디어를 쉽게 설명하는 짧은 영상을 만들어 주세요. 설명할 내용과 대상을 확인해 주세요."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "서비스 예약 페이지 만들기",
@@ -2385,13 +2342,11 @@
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
         "previousPage": "이전 페이지",
-        "video": "동영상 템플릿",
         "website": "웹사이트 템플릿"
       },
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",
-        "video": "동영상",
         "visualization": "시각화",
         "website": "웹사이트",
         "workflow": "워크플로"

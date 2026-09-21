@@ -84,15 +84,12 @@ export function createComposerTaskChipsSignals(
    * what the member has just started rather than pressing the chip, so
    * repeating it has to leave the surface the last one opened standing.
    *
-   * A create mode is its own surface and carries the slash panel's own switch,
-   * so it opens whether or not the chips are on. A general task has only the
-   * chip row to live in, so there it waits for that switch.
+   * Every task lives in this surface, so all of them wait for its switch. A
+   * caller the switch turns away keeps whatever else it does: the slash panel
+   * still opens the template picker on a row that cannot enter a task.
    */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
-    if (get(task$) === task) {
-      return;
-    }
-    if (isComposerGeneralTask(task) && !get(enabled$)) {
+    if (!get(enabled$) || get(task$) === task) {
       return;
     }
     set(applyTask$, task);
@@ -100,7 +97,6 @@ export function createComposerTaskChipsSignals(
   const internalIdeaPages$ = state({
     image: 0,
     workflow: 0,
-    video: 0,
     website: 0,
     presentation: 0,
   });

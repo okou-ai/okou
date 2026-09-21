@@ -1763,21 +1763,12 @@
       "create": {
         "addStyle": "Adicionar estilo",
         "addTemplate": "Adicionar modelo",
-        "chooseType": "Escolha um tipo",
-        "exit": "Sair do modo de criação",
-        "image": "Criar imagem",
-        "imageDescription": "Transforme uma ideia em uma imagem",
         "imagePlaceholder": "Descreva a imagem que você quer criar…",
-        "presentation": "Criar apresentação",
-        "presentationDescription": "Slides para sua história",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
         "settingsAdjusted": "Algumas configurações de vídeo foram ajustadas para este modelo",
         "slideCount": "Número de slides",
         "slideCountAuto": "Automático",
-        "slideCountRange": "{{range}} slides",
-        "video": "Criar vídeo",
-        "videoDescription": "Dê movimento às suas ideias",
-        "videoPlaceholder": "Descreva o vídeo que você quer criar…"
+        "slideCountRange": "{{range}} slides"
       },
       "createWorkflow": "Criar fluxo de trabalho",
       "imageModelForThisChat": "Modelo de imagem para este chat",
@@ -2324,40 +2315,6 @@
             "prompt": "Crie uma apresentação de treinamento sobre um tema que eu escolher. Pergunte quem será treinado e o que deverão saber fazer depois."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Transformar uma foto em vídeo",
-            "prompt": "Anime uma foto que eu fornecer com movimentos naturais. Mantenha o assunto reconhecível e pergunte o que deve se mover."
-          },
-          "brandIntro": {
-            "label": "Criar uma abertura para minha marca",
-            "prompt": "Crie uma abertura curta para minha marca com o logotipo e os detalhes que eu fornecer. Ajude a escolher o clima."
-          },
-          "eventPromo": {
-            "label": "Divulgar meu evento",
-            "prompt": "Crie um vídeo promocional curto para meu evento. Pergunte sobre o evento, o público e os detalhes a incluir."
-          },
-          "loopingBackground": {
-            "label": "Criar um fundo em loop",
-            "prompt": "Crie um fundo de vídeo em loop contínuo com movimentos suaves. Pergunte qual cenário e clima eu quero."
-          },
-          "productDemo": {
-            "label": "Mostrar meu produto em movimento",
-            "prompt": "Crie um vídeo curto a partir da foto do meu produto. Preserve sua aparência e destaque a característica que eu escolher."
-          },
-          "socialClip": {
-            "label": "Criar um vídeo para redes sociais",
-            "prompt": "Crie um vídeo curto para redes sociais. Ajude a escolher uma mensagem clara e um estilo visual adequado ao meu público."
-          },
-          "videoGreeting": {
-            "label": "Criar uma mensagem de vídeo comemorativa",
-            "prompt": "Crie uma mensagem curta em vídeo para um aniversário, feriado ou celebração. Pergunte a ocasião, o destinatário e a mensagem."
-          },
-          "visualExplainer": {
-            "label": "Explicar uma ideia visualmente",
-            "prompt": "Crie um vídeo curto que torne uma ideia fácil de entender. Pergunte qual ideia explicar e para quem."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Criar uma página para agendar meus serviços",
@@ -2439,13 +2396,11 @@
         "image": "Estilos de imagem",
         "nextPage": "Próxima página",
         "previousPage": "Página anterior",
-        "video": "Modelos de vídeo",
         "website": "Modelos de site"
       },
       "tasks": {
         "image": "Imagem",
         "presentation": "Slides",
-        "video": "Vídeo",
         "visualization": "Visualização",
         "website": "Site",
         "workflow": "Fluxo de trabalho"

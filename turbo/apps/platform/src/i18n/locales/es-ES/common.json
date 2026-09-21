@@ -1763,21 +1763,12 @@
       "create": {
         "addStyle": "Añadir estilo",
         "addTemplate": "Añadir plantilla",
-        "chooseType": "Elige un tipo",
-        "exit": "Salir del modo de creación",
-        "image": "Crear imagen",
-        "imageDescription": "Convierte una idea en una imagen",
         "imagePlaceholder": "Describe la imagen que quieres crear…",
-        "presentation": "Crear presentación",
-        "presentationDescription": "Diapositivas para tu historia",
         "presentationPlaceholder": "¿De qué trata tu presentación?",
         "settingsAdjusted": "Se han ajustado algunas opciones de vídeo para este modelo",
         "slideCount": "Número de diapositivas",
         "slideCountAuto": "Automático",
-        "slideCountRange": "{{range}} diapositivas",
-        "video": "Crear vídeo",
-        "videoDescription": "Da movimiento a tus ideas",
-        "videoPlaceholder": "Describe el vídeo que quieres crear…"
+        "slideCountRange": "{{range}} diapositivas"
       },
       "createWorkflow": "Crear flujo de trabajo",
       "imageModelForThisChat": "Modelo de imagen para este chat",
@@ -2324,40 +2315,6 @@
             "prompt": "Crea una presentación de formación sobre un tema que yo elija. Pregúntame a quién se forma y qué debería saber hacer después."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Convertir una foto en vídeo",
-            "prompt": "Anima una foto que proporcione con movimiento natural. Conserva el aspecto del sujeto y pregunta qué debe moverse."
-          },
-          "brandIntro": {
-            "label": "Crear una introducción para mi marca",
-            "prompt": "Crea una apertura breve para mi marca usando el logotipo y los datos que aporte. Ayúdame a elegir el ambiente."
-          },
-          "eventPromo": {
-            "label": "Promocionar mi evento",
-            "prompt": "Crea un vídeo promocional breve para mi evento. Pregunta por el evento, la audiencia y los detalles que debo incluir."
-          },
-          "loopingBackground": {
-            "label": "Crear un fondo en bucle",
-            "prompt": "Crea un fondo de vídeo en bucle continuo con movimiento suave. Pregunta qué escena y ambiente quiero."
-          },
-          "productDemo": {
-            "label": "Mostrar mi producto en movimiento",
-            "prompt": "Crea un vídeo breve a partir de la foto de mi producto. Mantén su aspecto y destaca la característica que elija."
-          },
-          "socialClip": {
-            "label": "Crear un clip para redes sociales",
-            "prompt": "Crea un vídeo corto para redes sociales. Ayúdame a elegir un mensaje claro y un estilo visual adecuado para mi audiencia."
-          },
-          "videoGreeting": {
-            "label": "Crear una felicitación en vídeo",
-            "prompt": "Crea una felicitación breve en vídeo para un cumpleaños, fiesta o celebración. Pregunta por la ocasión, el destinatario y el mensaje."
-          },
-          "visualExplainer": {
-            "label": "Explicar una idea de forma visual",
-            "prompt": "Crea un vídeo breve que explique una idea con claridad. Pregunta qué idea y para quién es."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Crear una página para que me reserven",
@@ -2439,13 +2396,11 @@
         "image": "Estilos de imagen",
         "nextPage": "Página siguiente",
         "previousPage": "Página anterior",
-        "video": "Plantillas de vídeo",
         "website": "Plantillas de sitio web"
       },
       "tasks": {
         "image": "Imagen",
         "presentation": "Diapositivas",
-        "video": "Vídeo",
         "visualization": "Visualización",
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"

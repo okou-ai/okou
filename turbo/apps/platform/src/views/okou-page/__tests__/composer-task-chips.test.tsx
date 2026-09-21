@@ -629,7 +629,6 @@ async function setupTaskChangesWithUpload() {
   });
   click(selectedTask(editor, "Presentation"));
   await composerModelTrigger("Claude Sonnet 4.6");
-  expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
   expect(screen.getByText("brief.txt")).toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
@@ -1023,7 +1022,6 @@ test("Browsing the catalog opens the existing library in the matching category",
   click(button(browseLabel("Website")));
   await screen.findByRole("dialog");
   expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
-  expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
 });
 

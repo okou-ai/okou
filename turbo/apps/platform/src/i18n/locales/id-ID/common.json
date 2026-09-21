@@ -1731,21 +1731,12 @@
       "create": {
         "addStyle": "Tambahkan gaya",
         "addTemplate": "Tambahkan templat",
-        "chooseType": "Pilih jenis",
-        "exit": "Keluar dari mode pembuatan",
-        "image": "Buat gambar",
-        "imageDescription": "Ubah ide menjadi visual",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
-        "presentation": "Buat presentasi",
-        "presentationDescription": "Slide untuk cerita Anda",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
         "settingsAdjusted": "Beberapa pengaturan video disesuaikan untuk model ini",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
-        "slideCountRange": "{{range}} slide",
-        "video": "Buat video",
-        "videoDescription": "Hidupkan ide Anda dengan gerakan",
-        "videoPlaceholder": "Jelaskan video yang ingin Anda buat…"
+        "slideCountRange": "{{range}} slide"
       },
       "createWorkflow": "Buat alur kerja",
       "imageModelForThisChat": "Model gambar untuk chat ini",
@@ -2270,40 +2261,6 @@
             "prompt": "Buat dek pelatihan tentang topik yang saya pilih. Tanyakan siapa yang dilatih dan apa yang harus mereka kuasai setelahnya."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Ubah foto menjadi video",
-            "prompt": "Animasikan foto yang saya berikan dengan gerakan alami. Pertahankan ciri subjek dan tanyakan bagian yang perlu bergerak."
-          },
-          "brandIntro": {
-            "label": "Buat pembuka untuk merek saya",
-            "prompt": "Buat video pembuka singkat untuk merek saya dengan logo dan detail yang saya berikan. Bantu memilih suasananya."
-          },
-          "eventPromo": {
-            "label": "Promosikan acara saya",
-            "prompt": "Buat video promosi singkat untuk acara saya. Tanyakan acara, audiens, dan detail yang perlu disertakan."
-          },
-          "loopingBackground": {
-            "label": "Buat latar belakang berulang",
-            "prompt": "Buat video latar dengan gerakan lembut yang berulang tanpa jeda. Tanyakan adegan dan suasana yang saya inginkan."
-          },
-          "productDemo": {
-            "label": "Tampilkan produk saya dalam gerakan",
-            "prompt": "Buat video singkat dari foto produk saya. Pertahankan tampilannya dan tonjolkan fitur yang saya pilih."
-          },
-          "socialClip": {
-            "label": "Buat klip untuk media sosial",
-            "prompt": "Buat video singkat untuk media sosial. Bantu pilih pesan yang jelas dan gaya visual yang sesuai dengan audiens saya."
-          },
-          "videoGreeting": {
-            "label": "Buat video ucapan",
-            "prompt": "Buat video ucapan singkat untuk ulang tahun, hari raya, atau perayaan. Tanyakan acara, penerima, dan pesannya."
-          },
-          "visualExplainer": {
-            "label": "Jelaskan ide secara visual",
-            "prompt": "Buat video singkat yang memudahkan pemahaman satu ide. Tanyakan ide yang akan dijelaskan dan target audiensnya."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Buat halaman pemesanan layanan saya",
@@ -2385,13 +2342,11 @@
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
         "previousPage": "Halaman sebelumnya",
-        "video": "Templat video",
         "website": "Templat situs web"
       },
       "tasks": {
         "image": "Gambar",
         "presentation": "Slide",
-        "video": "Video",
         "visualization": "Visualisasi",
         "website": "Situs web",
         "workflow": "Alur kerja"

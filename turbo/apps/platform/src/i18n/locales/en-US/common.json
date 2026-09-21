@@ -1734,21 +1734,12 @@
       "create": {
         "addStyle": "Add style",
         "addTemplate": "Add template",
-        "chooseType": "Choose a type",
-        "exit": "Exit create mode",
-        "image": "Create image",
-        "imageDescription": "Turn an idea into a visual",
         "imagePlaceholder": "Describe the image you want to create…",
-        "presentation": "Create presentation",
-        "presentationDescription": "Slides for your story",
         "presentationPlaceholder": "What is your presentation about?",
         "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
-        "slideCountRange": "{{range}} slides",
-        "video": "Create video",
-        "videoDescription": "Bring your ideas to motion",
-        "videoPlaceholder": "Describe the video you want to create…"
+        "slideCountRange": "{{range}} slides"
       },
       "createWorkflow": "Create workflow",
       "imageModelForThisChat": "Image model for this chat",
@@ -2278,40 +2269,6 @@
             "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Turn a photo into a video",
-            "prompt": "Animate a photo I provide with natural movement. Keep the subject recognizable and ask what should move."
-          },
-          "brandIntro": {
-            "label": "Make a brand intro",
-            "prompt": "Create a short opening video for my brand. Use the logo and brand details I provide and help me choose the mood."
-          },
-          "eventPromo": {
-            "label": "Promote my event",
-            "prompt": "Create a short promotional video for my event. Ask about the event, audience, and details to include."
-          },
-          "loopingBackground": {
-            "label": "Create a looping background",
-            "prompt": "Create a seamless looping video background with gentle motion. Ask what scene and mood I want."
-          },
-          "productDemo": {
-            "label": "Show my product in motion",
-            "prompt": "Create a short product showcase from my product photo. Keep its appearance consistent and highlight the feature I choose."
-          },
-          "socialClip": {
-            "label": "Make a clip for social media",
-            "prompt": "Create a short video for social media. Help me choose a clear message and a visual style for my audience."
-          },
-          "videoGreeting": {
-            "label": "Create a video greeting",
-            "prompt": "Create a short video greeting for a birthday, holiday, or celebration. Ask about the occasion, recipient, and message."
-          },
-          "visualExplainer": {
-            "label": "Explain an idea visually",
-            "prompt": "Create a short video that makes one idea easy to understand. Ask which idea to explain and who it is for."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Give people a place to book me",
@@ -2393,13 +2350,11 @@
         "image": "Image styles",
         "nextPage": "Next page",
         "previousPage": "Previous page",
-        "video": "Video templates",
         "website": "Website templates"
       },
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",
-        "video": "Video",
         "visualization": "Visualization",
         "website": "Website",
         "workflow": "Workflow"

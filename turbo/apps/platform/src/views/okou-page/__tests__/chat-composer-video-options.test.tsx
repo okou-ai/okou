@@ -73,13 +73,6 @@ function pickerTrigger(label: string): HTMLElement {
 }
 
 /** A slash panel row opens the template picker, and it covers the composer. */
-async function closeTemplatePicker(): Promise<void> {
-  click(fastControl("button", "Close", await screen.findByRole("dialog")));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-}
-
 function fastControl(
   role: "button" | "radio" | "tab",
   label: string,
@@ -219,14 +212,14 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Keep video settings collapsed until requested with the slash panel on: %s",
+  "Keep video settings collapsed until requested with the composer task chips on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+        [FeatureSwitchKey.ComposerTaskChips]: enabled,
       },
     });
     await selectVideoTemplate();
@@ -269,7 +262,7 @@ test("Keep the video spec with the run controls below the message", async () => 
 });
 
 test.each([false, true])(
-  "Submit default video options with the slash panel on: %s",
+  "Submit default video options with the composer task chips on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
@@ -277,7 +270,7 @@ test.each([false, true])(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+        [FeatureSwitchKey.ComposerTaskChips]: enabled,
       },
     });
 
@@ -335,7 +328,7 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "Submit a selected video ratio with the slash panel on: %s",
+  "Submit a selected video ratio with the composer task chips on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
@@ -343,7 +336,7 @@ test.each([false, true])(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+        [FeatureSwitchKey.ComposerTaskChips]: enabled,
       },
     });
 
@@ -402,57 +395,6 @@ test.each([false, true])(
     await expect(screen.findByText(prompt)).resolves.toBeVisible();
   },
 );
-
-// No surface names Video on its own any more, so a create mode the slash panel
-// does offer is what carries the composer to the type picker.
-test("Submit the current model's defaults without a template through the video type", async () => {
-  const submissions = installVideoSubmissionCapture();
-  await setupPage({
-    locale: "en-US",
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
-  });
-  const prompt = "Generate a video without a template.";
-  const editor = await enterText(prompt);
-  await fill(editor, "/");
-  // Presentation leads the panel's Make rows, so Illustration is second.
-  await userEvent.setup({ delay: null }).keyboard("{ArrowDown}{Enter}");
-  // The row opens the template picker as well, and it covers the composer.
-  await closeTemplatePicker();
-  await enterText(prompt);
-  click(await screen.findByRole("combobox", { name: "Choose a type" }));
-  click(await screen.findByRole("option", { name: "Video" }));
-  click(await screen.findByRole("combobox", { name: "Video models" }));
-  click(await screen.findByRole("option", { name: "MiniMax H3" }));
-  await waitFor(() => {
-    expect(
-      fastControl("button", "Video options 16:9 · 8s · 2k"),
-    ).toBeInTheDocument();
-  });
-  await sendCurrent(editor, prompt);
-  await waitFor(() => {
-    expect(submissions).toHaveLength(1);
-  });
-  expect(videoTemplatePart(submissions[0]!)).toBeUndefined();
-  expect(submissions[0]?.runOptions).toBeUndefined();
-  expect(submissions[0]?.userMessage?.parts).toContainEqual({
-    type: "additional_info",
-    text: [
-      "# Video Generation Defaults",
-      "The user set these for videos generated in this run:",
-      "- Aspect ratio: 16:9",
-      "- Duration: 8s",
-      "- Resolution: 2k",
-      "- Audio: on",
-      "Where this run's message asks for something else, the message wins, for that parameter only.",
-      "",
-      "Create a video.",
-    ].join("\n"),
-  });
-});
 
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();

@@ -6,7 +6,7 @@ import { i18n } from "../../i18n/index.ts";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 import type { ComposerUiSignalGroups } from "./chat-composer.ts";
 
-const COMPOSER_CREATE_MODES = ["presentation", "video", "image"] as const;
+const COMPOSER_CREATE_MODES = ["presentation", "image"] as const;
 
 export const PRESENTATION_SLIDE_COUNTS = [
   "auto",
@@ -21,78 +21,11 @@ export type PresentationSlideCount = (typeof PRESENTATION_SLIDE_COUNTS)[number];
 
 export type ComposerCreateMode = (typeof COMPOSER_CREATE_MODES)[number];
 
-export function composerCreateModeLabel(mode: ComposerCreateMode): string {
-  switch (mode) {
-    case "image": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.image;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.video;
-      });
-    }
-    case "presentation": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.presentation;
-      });
-    }
-  }
-}
-
-export function composerCreateModeName(mode: ComposerCreateMode): string {
-  switch (mode) {
-    case "presentation": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.presentation;
-      });
-    }
-    case "image": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.image;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.video;
-      });
-    }
-  }
-}
-
-export function composerCreateModeDescription(
-  mode: ComposerCreateMode,
-): string {
-  switch (mode) {
-    case "presentation": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.presentationDescription;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.videoDescription;
-      });
-    }
-    case "image": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.imageDescription;
-      });
-    }
-  }
-}
-
 export function composerCreatePlaceholder(mode: ComposerCreateMode): string {
   switch (mode) {
     case "image": {
       return i18n.t(($) => {
         return $.chat.composer.create.imagePlaceholder;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.chat.composer.create.videoPlaceholder;
       });
     }
     case "presentation": {
@@ -132,86 +65,51 @@ export function createComposerCreateSignals(
   ui: ComposerUiSignalGroups,
   media: { readonly image: boolean; readonly video: boolean },
 ) {
-  const pickerId = `composer-create-picker-${crypto.randomUUID()}`;
   const modes = COMPOSER_CREATE_MODES.filter((mode) => {
-    return (
-      (mode !== "image" || media.image) && (mode !== "video" || media.video)
-    );
+    return mode !== "image" || media.image;
   });
   const internalMode$ = state<ComposerCreateMode | null>(null);
-  const internalPickerOpen$ = state(false);
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
   /**
-   * Create modes are infrastructure, not a surface: the two places that pick
-   * one are the slash panel and the task chips, and each owns its own switch.
-   * Reading both here keeps either surface from depending on the other's
-   * rollout, so turning the chips off cannot empty the slash panel.
+   * What the run will make is the task chips' own state, so it waits for their
+   * switch alone. The slash panel names the same tasks, but it is a way in, not
+   * the surface: reading its switch here is what let a panel row raise the
+   * footer's task state for a member the chips had not reached yet.
    */
   const enabled$ = computed((get) => {
-    const features = get(featureSwitch$);
-    return (
-      features[FeatureSwitchKey.ComposerSlashTemplatePanel] ||
-      features[FeatureSwitchKey.ComposerTaskChips]
-    );
+    return get(featureSwitch$)[FeatureSwitchKey.ComposerTaskChips];
   });
   const hasOtherTemplate$ = createNonCreativeTemplateSignal(composer);
   const mode$ = computed((get) => {
-    const mode = get(internalMode$);
-    if (mode === "video" && get(hasOtherTemplate$)) {
-      return null;
-    }
-    return get(enabled$) ? mode : null;
+    return get(enabled$) ? get(internalMode$) : null;
   });
+  /**
+   * Video is no longer a type anyone picks; a video template standing on its
+   * own is what states the composer is making one.
+   */
   const creativeVideo$ = computed((get) => {
-    const mode = get(mode$);
-    if (
-      !media.video ||
-      get(hasOtherTemplate$) ||
-      (mode !== null && mode !== "video")
-    ) {
+    if (!media.video || get(hasOtherTemplate$) || get(mode$) !== null) {
       return false;
     }
-    return get(composer.templateRequests$).length > 0 || mode === "video";
-  });
-  const pickerOpen$ = computed((get) => {
-    return get(enabled$) && get(internalPickerOpen$);
+    return get(composer.templateRequests$).length > 0;
   });
   const setMode$ = command(({ get, set }, mode: ComposerCreateMode | null) => {
     if (!get(enabled$)) {
       return;
     }
     const wasCreativeVideo = get(creativeVideo$);
-    set(internalPickerOpen$, false);
     set(internalMode$, mode);
     set(composer.closeSuggestionMenu$);
     set(ui.model.setModelPickerOpen$, false);
-    set(
-      ui.model.setMediaModelCategory$,
-      mode === "image" || mode === "video" ? mode : null,
-    );
-    if (wasCreativeVideo && mode !== "video") {
+    set(ui.model.setMediaModelCategory$, mode === "image" ? "image" : null);
+    if (wasCreativeVideo) {
       set(ui.videoOptions.setVideoOptionsOpen$, false);
     }
     if (mode !== "presentation") {
       set(setPresentationSlideCount$, "8-12");
     }
     set(composer.focus$);
-  });
-  const setPickerOpen$ = command(({ get, set }, open: boolean) => {
-    if (!get(enabled$)) {
-      return;
-    }
-    set(internalPickerOpen$, open);
-    if (open) {
-      set(composer.closeSuggestionMenu$);
-      set(ui.model.setModelPickerOpen$, false);
-      if (get(creativeVideo$)) {
-        set(ui.videoOptions.setVideoOptionsOpen$, false);
-      }
-    } else {
-      set(composer.focus$);
-    }
   });
   const selectCommand$ = command(({ get, set }, mode: ComposerCreateMode) => {
     if (!get(enabled$)) {
@@ -225,9 +123,6 @@ export function createComposerCreateSignals(
     modes,
     mode$,
     creativeVideo$,
-    pickerId,
-    pickerOpen$,
-    setPickerOpen$,
     setMode$,
     selectCommand$,
     presentationSlideCount$,
