@@ -6,33 +6,13 @@ VALUES
 ON CONFLICT ("model") DO NOTHING;
 --> statement-breakpoint
 -- Give each Okou model its own billing identity while copying the complete
--- corresponding GPT 5.6 price schedule from the development seed. The four
--- variants cover base, long-context, fast, and long-context fast usage.
-WITH "base_prices" ("provider", "category", "unit_price") AS (
+-- GPT 5.6 price schedule already configured in the target database. This keeps
+-- the new identities aligned with the current managed rates at migration time.
+WITH "price_sources" ("provider", "source_provider") AS (
 	VALUES
-		('okou-1.0', 'tokens.input', 200),
-		('okou-1.0', 'tokens.cache_read', 20),
-		('okou-1.0', 'tokens.cache_creation', 250),
-		('okou-1.0', 'tokens.output', 1200),
-		('okou-1.0-pro', 'tokens.input', 5000),
-		('okou-1.0-pro', 'tokens.cache_read', 500),
-		('okou-1.0-pro', 'tokens.cache_creation', 6250),
-		('okou-1.0-pro', 'tokens.output', 30000),
-		('okou-1.0-max', 'tokens.input', 5000),
-		('okou-1.0-max', 'tokens.cache_read', 500),
-		('okou-1.0-max', 'tokens.cache_creation', 6250),
-		('okou-1.0-max', 'tokens.output', 30000)
-),
-"price_variants" (
-	"category_suffix",
-	"input_family_multiplier",
-	"output_multiplier"
-) AS (
-	VALUES
-		('', 1::numeric, 1::numeric),
-		('.long_context', 2::numeric, 1.5::numeric),
-		('.fast', 2::numeric, 2::numeric),
-		('.long_context.fast', 4::numeric, 3::numeric)
+		('okou-1.0', 'gpt-5.6-luna'),
+		('okou-1.0-pro', 'gpt-5.6-sol'),
+		('okou-1.0-max', 'gpt-5.6-sol')
 )
 INSERT INTO "usage_pricing" (
 	"kind",
@@ -42,19 +22,15 @@ INSERT INTO "usage_pricing" (
 	"unit_size"
 )
 SELECT
-	'model',
-	"base_prices"."provider",
-	"base_prices"."category" || "price_variants"."category_suffix",
-	(
-		"base_prices"."unit_price" * CASE
-			WHEN "base_prices"."category" = 'tokens.output'
-				THEN "price_variants"."output_multiplier"
-			ELSE "price_variants"."input_family_multiplier"
-		END
-	)::bigint,
-	1000000
-FROM "base_prices"
-CROSS JOIN "price_variants"
+	"source_prices"."kind",
+	"price_sources"."provider",
+	"source_prices"."category",
+	"source_prices"."unit_price",
+	"source_prices"."unit_size"
+FROM "price_sources"
+INNER JOIN "usage_pricing" AS "source_prices"
+	ON "source_prices"."kind" = 'model'
+	AND "source_prices"."provider" = "price_sources"."source_provider"
 ON CONFLICT ("kind", "provider", "category") DO UPDATE SET
 	"unit_price" = EXCLUDED."unit_price",
 	"unit_size" = EXCLUDED."unit_size",
