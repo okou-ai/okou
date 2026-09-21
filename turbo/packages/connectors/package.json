@@ -24,6 +24,10 @@
       "import": "./src/connector-catalog/authority.ts",
       "types": "./src/connector-catalog/authority.ts"
     },
+    "./connector-catalog/aws-semantic-sidecar": {
+      "import": "./src/connector-catalog/aws-semantic-sidecar.ts",
+      "types": "./src/connector-catalog/aws-semantic-sidecar.ts"
+    },
     "./connector-catalog/compatibility": {
       "import": "./src/connector-catalog/compatibility.ts",
       "types": "./src/connector-catalog/compatibility.ts"
