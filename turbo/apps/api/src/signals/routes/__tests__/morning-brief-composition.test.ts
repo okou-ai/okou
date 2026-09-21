@@ -594,6 +594,9 @@ interface PacedTraffic {
   readonly statuses: number[];
 }
 
+/** A doubled provider answer, in the shape MSW can serialize. */
+type PacedBody = Record<string, unknown> | unknown[];
+
 /**
  * Double GitHub so every read answers `200` after a fixed real delay.
  *
@@ -604,7 +607,7 @@ interface PacedTraffic {
  */
 function pacedGithub(perRequestMs: number, updatedAt: Date): PacedTraffic {
   const traffic: PacedTraffic = { paths: [], statuses: [] };
-  const paced = (body: (query: URLSearchParams) => unknown) => {
+  const paced = (body: (query: URLSearchParams) => PacedBody) => {
     return async ({ request }: { request: Request }) => {
       const url = new URL(request.url);
       traffic.paths.push(url.pathname);
@@ -670,7 +673,7 @@ function pacedSlack(perRequestMs: number, at: number): PacedTraffic {
     name: `channel-${String(index + 1)}`,
     is_private: false,
   }));
-  const paced = (body: () => unknown) => {
+  const paced = (body: () => PacedBody) => {
     return async ({ request }: { request: Request }) => {
       const url = new URL(request.url);
       traffic.paths.push(url.pathname);
