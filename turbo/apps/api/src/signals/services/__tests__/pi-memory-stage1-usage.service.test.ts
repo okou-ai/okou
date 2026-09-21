@@ -307,9 +307,11 @@ describe("Stage 1 durable usage boundary", () => {
       { billing_context: "runless", q: "5" },
     ]);
     await h.store.set(compactUsageEvents$, h.orgId, context.signal);
+    // Late raw usage for the same built-in extraction model, so it reconciles
+    // into the existing Stage 1 groups instead of opening a new provider group.
     await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model','gpt-5.6-luna','tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
-      [h.orgId, h.userId, original],
+      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
+      [h.orgId, h.userId, original, PI_MEMORY_STAGE1_BUILT_IN_MODEL],
     );
     const late = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
       .rows[0].report;
