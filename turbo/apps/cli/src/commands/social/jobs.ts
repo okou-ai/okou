@@ -21,7 +21,11 @@ import {
   quoteSocialData,
   SocialDataRecoveryError,
 } from "../../lib/api/domains/social-data";
-import { parseSocialTarget, parseXiaohongshuTarget } from "./intents";
+import {
+  parseJobOnlyTarget,
+  parseSocialTarget,
+  SOCIAL_JOB_ONLY_PLATFORMS,
+} from "./intents";
 import { withSocialOutput, type SocialExportOptions } from "./output";
 
 export interface SocialJobOptions extends SocialExportOptions {
@@ -129,28 +133,23 @@ function dataRequest(
   input: string,
   options: SocialJobOptions,
 ): SocialDataRequest {
-  const xiaohongshu =
-    operation === "search" ? undefined : parseXiaohongshuTarget(input);
+  const jobOnly = operation === "search" ? null : parseJobOnlyTarget(input);
   const target =
-    operation === "search" || xiaohongshu
-      ? undefined
-      : parseSocialTarget(input);
-  const platform = xiaohongshu
-    ? "xiaohongshu"
-    : (target?.platform ?? options.platform);
+    operation === "search" || jobOnly ? undefined : parseSocialTarget(input);
+  const platform = jobOnly?.platform ?? target?.platform ?? options.platform;
   const parsedPlatform = socialDataPlatformSchema.safeParse(
     platform === "twitter" ? "x" : platform,
   );
   if (!parsedPlatform.success) {
     throw new InvalidArgumentError(
-      "Saved Social data jobs support x, instagram, tiktok, youtube, facebook, and xiaohongshu",
+      `Saved Social data jobs support x, instagram, tiktok, youtube, facebook, and ${SOCIAL_JOB_ONLY_PLATFORMS.join(", ")}`,
     );
   }
   const parsed = socialDataRequestSchema.safeParse({
     operation,
     platform: parsedPlatform.data,
-    ...(xiaohongshu
-      ? { url: xiaohongshu }
+    ...(jobOnly
+      ? { url: jobOnly.url }
       : target
         ? { url: target.canonicalUrl }
         : { query: input }),

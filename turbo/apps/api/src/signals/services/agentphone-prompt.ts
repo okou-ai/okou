@@ -10,6 +10,7 @@ export function buildAgentPhonePrompt(
     readonly messageId?: string;
     readonly agentphoneAgentId?: string;
   },
+  integrationNote: string,
   threadContext: string,
 ): string {
   const headerParts = [
@@ -32,7 +33,12 @@ export function buildAgentPhonePrompt(
   if (opts.messageId) {
     headerParts.push(`Message ID: ${opts.messageId}`);
   }
-  return [CONVERSATION_GUIDANCE, headerParts.join("\n"), threadContext]
+  return [
+    CONVERSATION_GUIDANCE,
+    headerParts.join("\n"),
+    integrationNote,
+    threadContext,
+  ]
     .filter(Boolean)
     .join("\n\n");
 }

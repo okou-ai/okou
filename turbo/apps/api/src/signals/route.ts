@@ -191,6 +191,7 @@ import { integrationsTelegramRoutes } from "./routes/integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "./routes/integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "./routes/integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "./routes/integrations-telegram-upload-init";
+import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
 import { slackCommandsRoutes } from "./routes/slack-commands";
 import { slackConnectRoutes } from "./routes/slack-connect";
@@ -406,6 +407,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,
+  ...skillImportRoutes,
   ...integrationsGithubRoutes,
   ...slackConnectRoutes,
   ...slackOauthRoutes,

@@ -1007,10 +1007,10 @@ function ChatThreadFilterMenuItems() {
       {archiveEnabled ? (
         <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={toggleShowArchived}>
+          <DropdownMenuItem onSelect={toggleShowArchived} disabled={unreadOnly}>
             <Check
               size={16}
-              className={`mr-2 ${showArchived ? "" : "invisible"}`}
+              className={`mr-2 ${showArchived || unreadOnly ? "" : "invisible"}`}
             />
             {t(($) => {
               return $.chat.sidebar.showArchived;

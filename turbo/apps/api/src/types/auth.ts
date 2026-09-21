@@ -105,3 +105,16 @@ export interface ComposeJobAuth {
   readonly userId: string;
   readonly jobId: string;
 }
+
+/**
+ * A skill import session. Deliberately absent from `AuthContext`: only the
+ * skill import upload handler verifies this credential, so it cannot
+ * authenticate any other route.
+ */
+export interface SkillImportAuth {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+  /** Session start, used to count the skills this session has created. */
+  readonly issuedAtSeconds: number;
+}

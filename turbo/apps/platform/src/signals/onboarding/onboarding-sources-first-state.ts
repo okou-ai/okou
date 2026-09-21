@@ -1,10 +1,10 @@
 import { command, computed, state } from "ccstate";
-import type { IndustryId } from "../../views/onboarding-sources-first/onboarding-sources-first-data.ts";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
- * Source-first onboarding draft. The screens are frontend-only for now: the
- * connector step drives the live connector catalog, everything else is held
- * here until the onboarding state endpoints land.
+ * Source-first onboarding draft. The connector step drives the live connector
+ * catalog and the invite step records what the invitation API answered;
+ * everything else is held here until the onboarding state endpoints land.
  *
  * One application start owns this draft, because a Store lives exactly that
  * long: switching Clerk session or organization replaces the document, so the
@@ -31,13 +31,30 @@ export type SubscriptionProvider = "codex" | "claudeCode";
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams";
 
+/**
+ * Where one address stands with the invitation API: in flight, accepted by the
+ * API, or refused by it. Nothing but an API answer makes an address invited.
+ */
+export type SourcesFirstInviteStatus = "pending" | "invited" | "failed";
+
+export interface SourcesFirstInvite {
+  readonly email: string;
+  readonly status: SourcesFirstInviteStatus;
+  /** Why the invitation was refused, as the API put it; null otherwise. */
+  readonly failure: string | null;
+}
+
 export interface SourcesFirstDraft {
-  readonly industry: IndustryId | null;
-  readonly invites: readonly string[];
+  readonly industry: OnboardingIndustry | null;
+  /** One entry per address this run tried, with what the API answered. */
+  readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
+  /**
+   * The plan the answer names. Whether it is connected is the account's
+   * answer, read from `/api/me/model-providers`, never held here.
+   */
   readonly provider: SubscriptionProvider | null;
-  readonly providerConnected: boolean;
   readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
   readonly slackWorkspace: string;
@@ -55,7 +72,6 @@ function emptyDraft(): SourcesFirstDraft {
     invites: [],
     experienced: null,
     provider: null,
-    providerConnected: false,
     importedWorkflowName: null,
     slackStatus: "disconnected",
     slackWorkspace: "",

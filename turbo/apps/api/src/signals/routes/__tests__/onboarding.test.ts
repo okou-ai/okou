@@ -6,7 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/onboarding";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
 import { createRouteMocks } from "./helpers/route-test";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
@@ -27,6 +28,21 @@ function onboardingStatusClient() {
 function onboardingCompleteClient() {
   return setupApp({ context, routes: onboardingCompleteRoutes })(
     onboardingCompleteContract,
+  );
+}
+
+/**
+ * A request the typed client cannot express: the contract narrows `industry`
+ * to the offered list and rejects a key it does not declare.
+ */
+function rawCompleteRequest(body: Record<string, unknown>) {
+  return setupRawAppRequest({ context, routes: onboardingCompleteRoutes })(
+    "/api/onboarding/complete",
+    {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
   );
 }
 
@@ -137,5 +153,63 @@ describe("POST /api/onboarding/complete", () => {
       hasDefaultAgent: true,
       defaultAgentId: before.body.defaultAgentId,
     });
+    // No endpoint returns the stored field, so the column is the only place
+    // this can be read. The make-something flow never asks the question, so it
+    // stays uncollected rather than being filled with a guess.
+    await expect(
+      readOnboardingIndustryFixture(actor.orgId),
+    ).resolves.toBeNull();
+  });
+
+  it("stores the field the source-first flow answered", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+
+    const completed = await accept(
+      onboardingCompleteClient().complete({
+        headers: authHeaders(),
+        body: { industry: "marketing" },
+      }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+
+    // Read from the column because no endpoint exposes the stored field.
+    await expect(readOnboardingIndustryFixture(actor.orgId)).resolves.toBe(
+      "marketing",
+    );
+  });
+
+  it("rejects a field the flow does not offer", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.test/default-agent.tar.gz?signature=test",
+    );
+
+    const rejected = await rawCompleteRequest({ industry: "farming" });
+
+    expect(rejected.status).toBe(400);
+    const status = await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
+    );
+    expect(status.body).toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: false,
+    });
+  });
+
+  it("rejects a key the completion body does not declare", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+
+    const rejected = await rawCompleteRequest({ industries: ["marketing"] });
+
+    expect(rejected.status).toBe(400);
   });
 });

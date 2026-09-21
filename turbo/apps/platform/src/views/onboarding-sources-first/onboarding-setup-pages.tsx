@@ -1,7 +1,16 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import {
+  sendSourcesFirstInvite$,
+  sourcesFirstInviteSendable,
+} from "../../signals/onboarding/onboarding-sources-first-invite.ts";
+import {
+  ONBOARDING_INDUSTRY_IDS,
+  type OnboardingIndustry,
+} from "@okouai/core/onboarding-industry";
 import {
   captureSourceOnboardingExperienceAnswered$,
   captureSourceOnboardingIndustrySelected$,
@@ -12,11 +21,17 @@ import {
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
+  type SourcesFirstInvite,
+  type SubscriptionProvider,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import {
-  INDUSTRY_IDS,
-  type IndustryId,
-} from "./onboarding-sources-first-data.ts";
+  connectOnboardingSubscription$,
+  onboardingSubscriptionStatus$,
+  type OnboardingSubscriptionStatus,
+} from "../../signals/onboarding/onboarding-subscription-connect.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { PersonalClaudeCodeDeviceAuthDialog } from "../okou-page/components/settings/claude-code-device-auth-dialog.tsx";
+import { PersonalCodexDeviceAuthDialog } from "../okou-page/components/settings/codex-device-auth-dialog.tsx";
 import {
   OnboardingChoiceCard,
   OnboardingIllustration,
@@ -55,13 +70,13 @@ export function OnboardingIndustryPage() {
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
-          const industry = value as IndustryId;
+          const industry = value as OnboardingIndustry;
           updateDraft({ industry });
           captureIndustrySelected(industry);
         }}
         className="grid gap-3 sm:grid-cols-2"
       >
-        {INDUSTRY_IDS.map((id) => {
+        {ONBOARDING_INDUSTRY_IDS.map((id) => {
           return (
             <OnboardingChoiceCard
               key={id}
@@ -109,30 +124,72 @@ function TeamPoints() {
   );
 }
 
-/** The invitees already sent, under the form that sent them. */
-function InvitedList({ invites }: { readonly invites: readonly string[] }) {
+/** What the API last answered for one address, in its own row. */
+function InviteOutcome({ invite }: { readonly invite: SourcesFirstInvite }) {
   const { t } = useTranslation();
 
+  if (invite.status === "pending") {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+        {t(($) => {
+          return $.onboarding.sourcesFirst.team.sending;
+        })}
+      </span>
+    );
+  }
+  if (invite.status === "invited") {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <Check size={14} aria-hidden="true" />
+        {t(($) => {
+          return $.onboarding.sourcesFirst.team.invited;
+        })}
+      </span>
+    );
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-xs text-destructive">
+      <TriangleAlert size={14} aria-hidden="true" />
+      {t(($) => {
+        return $.onboarding.sourcesFirst.team.notSent;
+      })}
+    </span>
+  );
+}
+
+/** The addresses this run tried, under the form that sent them. */
+function InviteList({
+  invites,
+}: {
+  readonly invites: readonly SourcesFirstInvite[];
+}) {
   return (
     <div className="border-t border-border/60">
-      {invites.map((invitee) => {
+      {invites.map((invite) => {
         return (
           <div
-            key={invitee}
-            className="flex items-center gap-3 border-t border-border/60 px-5 py-3.5 first:border-t-0"
+            key={invite.email}
+            className="flex items-start gap-3 border-t border-border/60 px-5 py-3.5 first:border-t-0"
           >
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium text-foreground">
-              {invitee.slice(0, 1).toUpperCase()}
+              {invite.email.slice(0, 1).toUpperCase()}
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-              {invitee}
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm text-foreground">
+                {invite.email}
+              </span>
+              {/* The reason belongs to the address, so it stays with it. */}
+              {invite.failure === null ? null : (
+                <span
+                  role="alert"
+                  className="mt-0.5 text-xs leading-5 text-destructive"
+                >
+                  {invite.failure}
+                </span>
+              )}
             </span>
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Check size={14} aria-hidden="true" />
-              {t(($) => {
-                return $.onboarding.sourcesFirst.team.invited;
-              })}
-            </span>
+            <InviteOutcome invite={invite} />
           </div>
         );
       })}
@@ -142,22 +199,32 @@ function InvitedList({ invites }: { readonly invites: readonly string[] }) {
 
 export function OnboardingTeamPage() {
   const { t } = useTranslation();
-  const updateDraft = useSet(updateSourcesFirstDraft$);
   const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
   const flow = useSourcesFirstFlow("team");
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
+  const sendInvite = useSet(sendSourcesFirstInvite$);
+  const pageSignal = useGet(pageSignal$);
+  const address = ui.inviteEmail.trim();
+  const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
 
   const invite = (): void => {
-    const value = ui.inviteEmail.trim();
-    if (!value || flow.draft.invites.includes(value)) {
+    if (!sendable) {
       return;
     }
-    const invites = [...flow.draft.invites, value];
-    updateDraft({ invites });
+    // A refused address is sent again under its own entry, so only a new one
+    // makes the list longer.
+    const known = flow.draft.invites.some((entry) => {
+      return entry.email === address;
+    });
+    // The address moves into the list, so the field is free for the next one
+    // while the API is still answering for this one.
     updateUi({ inviteEmail: "" });
+    detach(sendInvite(address, pageSignal), Reason.DomCallback);
     // The funnel counts invitees; the addresses themselves stay in the draft.
-    captureInviteAdded(invites.length);
+    captureInviteAdded(
+      known ? flow.draft.invites.length : flow.draft.invites.length + 1,
+    );
   };
 
   return (
@@ -210,7 +277,7 @@ export function OnboardingTeamPage() {
                 updateUi({ inviteEmail: event.target.value });
               }}
             />
-            <Button type="button" onClick={invite}>
+            <Button type="button" onClick={invite} disabled={!sendable}>
               {t(($) => {
                 return $.onboarding.sourcesFirst.team.invite;
               })}
@@ -218,12 +285,167 @@ export function OnboardingTeamPage() {
           </div>
         </div>
         {flow.draft.invites.length > 0 ? (
-          <InvitedList invites={flow.draft.invites} />
+          <InviteList invites={flow.draft.invites} />
         ) : (
           <TeamPoints />
         )}
       </OnboardingPanel>
     </OnboardingStepLayout>
+  );
+}
+
+/** The name of the plan an answer names, for the copy that talks about it. */
+function useProviderName(provider: SubscriptionProvider): string {
+  const { t } = useTranslation();
+  return provider === "codex"
+    ? t(($) => {
+        return $.onboarding.sourcesFirst.subscription.codex;
+      })
+    : t(($) => {
+        return $.onboarding.sourcesFirst.subscription.claudeCode;
+      });
+}
+
+/** The line under the connect, for a state that needs one. */
+function ConnectNoteLine({ children }: { readonly children: string }) {
+  return (
+    <p className="text-xs leading-5 text-muted-foreground" role="status">
+      {children}
+    </p>
+  );
+}
+
+/** What the step says about the account, once an attempt has settled. */
+function SubscriptionConnectNote({
+  status,
+  providerName,
+}: {
+  readonly status: OnboardingSubscriptionStatus;
+  readonly providerName: string;
+}) {
+  const { t } = useTranslation();
+  if (status === "failed") {
+    return (
+      <ConnectNoteLine>
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.subscription.failedNote;
+          },
+          { provider: providerName },
+        )}
+      </ConnectNoteLine>
+    );
+  }
+  if (status === "cancelled") {
+    return (
+      <ConnectNoteLine>
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.subscription.cancelledNote;
+          },
+          { provider: providerName },
+        )}
+      </ConnectNoteLine>
+    );
+  }
+  if (status === "unconfirmed") {
+    return (
+      <ConnectNoteLine>
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.subscription.unconfirmedNote;
+          },
+          { provider: providerName },
+        )}
+      </ConnectNoteLine>
+    );
+  }
+  return null;
+}
+
+/** What the connect itself offers, from the state the account is in. */
+function SubscriptionConnectLabel({
+  status,
+  providerName,
+}: {
+  readonly status: OnboardingSubscriptionStatus;
+  readonly providerName: string;
+}) {
+  const { t } = useTranslation();
+  if (status === "connected") {
+    return t(($) => {
+      return $.onboarding.sourcesFirst.subscription.connected;
+    });
+  }
+  if (status === "connecting") {
+    return t(($) => {
+      return $.onboarding.sourcesFirst.subscription.connecting;
+    });
+  }
+  if (status === "idle") {
+    return t(
+      ($) => {
+        return $.onboarding.sourcesFirst.subscription.connect;
+      },
+      { provider: providerName },
+    );
+  }
+  return t(($) => {
+    return $.onboarding.sourcesFirst.subscription.retry;
+  });
+}
+
+/**
+ * The connect for the chosen plan. Connected is what `/api/me/model-providers`
+ * answers, so an attempt that failed or was called off says so and leaves the
+ * step passable either way.
+ */
+function SubscriptionConnect({
+  provider,
+}: {
+  readonly provider: SubscriptionProvider;
+}) {
+  const pageSignal = useGet(pageSignal$);
+  const connect = useSet(connectOnboardingSubscription$);
+  const statusLoadable = useLastLoadable(onboardingSubscriptionStatus$);
+  // A provider list that cannot be read leaves the account unknown, which is
+  // its own answer: never the connected one.
+  const status: OnboardingSubscriptionStatus =
+    statusLoadable.state === "hasData"
+      ? statusLoadable.data
+      : statusLoadable.state === "hasError"
+        ? "unconfirmed"
+        : "idle";
+  const providerName = useProviderName(provider);
+  const connected = status === "connected";
+  const connecting = status === "connecting";
+
+  return (
+    <div className="mx-auto flex w-full max-w-[600px] flex-col gap-2">
+      <Button
+        type="button"
+        variant={connected ? "outline" : "neutral"}
+        className="w-full gap-2"
+        disabled={connected || connecting}
+        aria-busy={connecting}
+        onClick={() => {
+          detach(connect(provider, pageSignal), Reason.DomCallback);
+        }}
+      >
+        {connected ? (
+          <Check size={16} aria-hidden="true" />
+        ) : (
+          <ProductMark
+            name={provider === "codex" ? "openai" : "anthropic"}
+            alt=""
+            size="mark"
+            invertInDarkMode={provider === "codex"}
+          />
+        )}
+        <SubscriptionConnectLabel status={status} providerName={providerName} />
+      </Button>
+      <SubscriptionConnectNote status={status} providerName={providerName} />
+    </div>
   );
 }
 
@@ -250,84 +472,94 @@ export function OnboardingExperiencePage() {
   };
 
   return (
-    <OnboardingStepLayout
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={t(($) => {
-        return $.onboarding.sourcesFirst.experience.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.experience.copy;
-      })}
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
-      })}
-      onPrimary={() => {
-        if (provider !== null) {
-          // Frontend pass: the personal model-provider connect flow is wired
-          // in the follow-up that adds the onboarding endpoints.
-          updateDraft({ providerConnected: true });
-        }
-        goNext();
-      }}
-      primaryDisabled={experienced === null}
-      onBack={flow.goBack}
-    >
-      <RadioGroup
-        value={experienced === false ? "no" : (provider ?? "")}
-        onValueChange={(value) => {
-          const answer =
-            value === "no"
-              ? { experienced: false, provider: null, providerConnected: false }
-              : {
-                  experienced: true,
-                  provider:
-                    value === "codex"
-                      ? ("codex" as const)
-                      : ("claudeCode" as const),
-                  providerConnected: false,
-                };
-          updateDraft(answer);
-          captureExperienceAnswered(answer.experienced, answer.provider);
-        }}
-        className="grid gap-4 sm:grid-cols-3"
+    <>
+      <OnboardingStepLayout
+        currentStep={flow.currentStep}
+        totalSteps={flow.totalSteps}
+        title={t(($) => {
+          return $.onboarding.sourcesFirst.experience.title;
+        })}
+        description={t(($) => {
+          return $.onboarding.sourcesFirst.experience.copy;
+        })}
+        primaryLabel={t(($) => {
+          return $.onboarding.sourcesFirst.common.continue;
+        })}
+        // The connect is its own action: answering the question is what this
+        // step asks for, so the way on never waits on the plan.
+        onPrimary={goNext}
+        primaryDisabled={experienced === null}
+        onBack={flow.goBack}
       >
-        <OnboardingPosterCard
-          value="codex"
-          selected={experienced === true && provider === "codex"}
-          mark={
-            <ProductMark name="openai" alt="" size="choice" invertInDarkMode />
-          }
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.codex;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.rowCopy;
-          })}
-        />
-        <OnboardingPosterCard
-          value="claudeCode"
-          selected={experienced === true && provider === "claudeCode"}
-          mark={<ProductMark name="anthropic" alt="" size="choice" />}
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.claudeCode;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.rowCopy;
-          })}
-        />
-        <OnboardingPosterCard
-          value="no"
-          selected={experienced === false}
-          mark={<OnboardingIllustration name="new" alt="" size="choice" />}
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.experience.no;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.experience.noCopy;
-          })}
-        />
-      </RadioGroup>
-    </OnboardingStepLayout>
+        <div className="flex flex-col gap-6">
+          <RadioGroup
+            value={experienced === false ? "no" : (provider ?? "")}
+            onValueChange={(value) => {
+              const answer =
+                value === "no"
+                  ? { experienced: false, provider: null }
+                  : {
+                      experienced: true,
+                      provider:
+                        value === "codex"
+                          ? ("codex" as const)
+                          : ("claudeCode" as const),
+                    };
+              updateDraft(answer);
+              captureExperienceAnswered(answer.experienced, answer.provider);
+            }}
+            className="grid gap-4 sm:grid-cols-3"
+          >
+            <OnboardingPosterCard
+              value="codex"
+              selected={experienced === true && provider === "codex"}
+              mark={
+                <ProductMark
+                  name="openai"
+                  alt=""
+                  size="choice"
+                  invertInDarkMode
+                />
+              }
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.codex;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.rowCopy;
+              })}
+            />
+            <OnboardingPosterCard
+              value="claudeCode"
+              selected={experienced === true && provider === "claudeCode"}
+              mark={<ProductMark name="anthropic" alt="" size="choice" />}
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.claudeCode;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.rowCopy;
+              })}
+            />
+            <OnboardingPosterCard
+              value="no"
+              selected={experienced === false}
+              mark={<OnboardingIllustration name="new" alt="" size="choice" />}
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.experience.no;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.experience.noCopy;
+              })}
+            />
+          </RadioGroup>
+          {provider === null ? null : (
+            <SubscriptionConnect provider={provider} />
+          )}
+        </div>
+      </OnboardingStepLayout>
+      {/* The same device-auth dialogs Settings uses, so the step connects the
+          account rather than keeping an answer of its own. */}
+      <PersonalCodexDeviceAuthDialog />
+      <PersonalClaudeCodeDeviceAuthDialog />
+    </>
   );
 }

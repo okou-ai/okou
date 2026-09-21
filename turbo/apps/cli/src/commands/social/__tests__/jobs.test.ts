@@ -609,6 +609,101 @@ describe("saved Social data jobs", () => {
     expect(stdout()).toBe("");
   });
 
+  it("routes job-only platform URLs and search platforms to the saved-job API", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(`${api}/jobs`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json(
+          job({ platform: "wechat", status: "pending", data: null }),
+          { status: 202 },
+        );
+      }),
+      http.post(`${api}/quote`, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({
+          platform: "threads",
+          operation: "search",
+          estimatedCredits: 21,
+          maxCredits: 21,
+          quantity: 1,
+          unit: "request",
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "comments",
+      "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
+      "--limit",
+      "50",
+      "--max-credits",
+      "200",
+      "--async",
+      "--json",
+    ]);
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "example",
+      "--platform",
+      "threads",
+      "--limit",
+      "10",
+      "--dry-run",
+      "--json",
+    ]);
+    expect(requests).toEqual([
+      {
+        operation: "comments",
+        platform: "wechat",
+        url: "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
+        limit: 50,
+        maxCredits: 200,
+        requestId: expect.any(String),
+      },
+      {
+        operation: "search",
+        platform: "threads",
+        query: "example",
+        limit: 10,
+      },
+    ]);
+  });
+
+  it("requires a job control for job-only platforms", async () => {
+    const requests: string[] = [];
+    server.use(
+      http.all("http://localhost:3000/api/social/*", ({ request }) => {
+        requests.push(request.url);
+        return HttpResponse.json({});
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "search",
+        "example",
+        "--platform",
+        "wechat",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        "https://www.threads.com/@example",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toEqual([]);
+  });
+
   it("keeps the existing request protocol when no job controls are supplied", async () => {
     const requests: unknown[] = [];
     server.use(

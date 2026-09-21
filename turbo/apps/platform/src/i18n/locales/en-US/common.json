@@ -1761,8 +1761,6 @@
       "slashPanel": {
         "browseAll": "Browse all templates",
         "make": "Make",
-        "templateCount_one": "{{count}} template",
-        "templateCount_other": "{{count}} templates",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
@@ -4595,9 +4593,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} isn’t connected. You can try again, or continue and connect it later.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Runs on your plan, not on Okou credits."
+        "connect": "Connect {{provider}}",
+        "connected": "Connected",
+        "connecting": "Connecting…",
+        "failedNote": "We couldn’t connect {{provider}}. You can try again, or continue and connect it later.",
+        "retry": "Try again",
+        "rowCopy": "Runs on your plan, not on Okou credits.",
+        "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
         "copy": "Invite a teammate now, or do it later from the workspace menu.",
@@ -4605,6 +4610,7 @@
         "invited": "Invited",
         "label": "Teammate’s email",
         "note": "They join this workspace; their own accounts stay theirs.",
+        "notSent": "Not sent",
         "panelTitle": "Invite a teammate",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4612,6 +4618,7 @@
           "workflows": "Anyone here can run the workflows this workspace already has.",
           "workspace": "They land in this workspace, with the sources you just connected."
         },
+        "sending": "Sending…",
         "title": "Bring the people who do this work with you."
       },
       "welcome": {

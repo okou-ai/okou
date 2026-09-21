@@ -149,10 +149,12 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
       {imported ? (
         <>
           <ImportedSkillRow name={imported} />
-          {/* A label opens the file picker without reaching for the DOM. */}
+          {/* A label opens the file picker without reaching for the DOM, so
+              the control is not the native button Base UI expects. */}
           <Button
             variant="ghost"
             size="sm"
+            nativeButton={false}
             render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
           >
             {t(($) => {
@@ -175,7 +177,10 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
               })}
             </span>
           </span>
-          <Button render={<label htmlFor={SKILL_FILE_INPUT_ID} />}>
+          <Button
+            nativeButton={false}
+            render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
+          >
             {t(($) => {
               return $.onboarding.sourcesFirst.skills.import;
             })}

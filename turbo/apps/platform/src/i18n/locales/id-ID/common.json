@@ -1758,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
         "make": "Buat",
-        "templateCount_other": "{{count}} templat",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -4590,9 +4589,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} belum terhubung. Anda bisa mencoba lagi atau menghubungkannya nanti.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Berjalan di paket Anda, bukan kredit Okou."
+        "connect": "Hubungkan {{provider}}",
+        "connected": "Terhubung",
+        "connecting": "Menghubungkan…",
+        "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Coba lagi atau hubungkan nanti.",
+        "retry": "Coba lagi",
+        "rowCopy": "Berjalan di paket Anda, bukan kredit Okou.",
+        "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
         "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
@@ -4600,6 +4606,7 @@
         "invited": "Diundang",
         "label": "Email rekan kerja",
         "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "notSent": "Tidak terkirim",
         "panelTitle": "Undang rekan kerja",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4607,6 +4614,7 @@
           "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
           "workspace": "Mereka masuk ke workspace ini, dengan sumber yang baru Anda hubungkan."
         },
+        "sending": "Mengirim…",
         "title": "Bawa serta orang-orang yang mengerjakan ini bersama Anda."
       },
       "welcome": {

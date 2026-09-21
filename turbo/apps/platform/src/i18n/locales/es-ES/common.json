@@ -1790,9 +1790,6 @@
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
         "make": "Crear",
-        "templateCount_one": "{{count}} plantilla",
-        "templateCount_many": "{{count}} plantillas",
-        "templateCount_other": "{{count}} plantillas",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
@@ -4658,9 +4655,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} no está conectado. Puedes volver a intentarlo o conectarlo más tarde.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Se ejecuta en tu plan, no con créditos de Okou."
+        "connect": "Conectar {{provider}}",
+        "connected": "Conectado",
+        "connecting": "Conectando…",
+        "failedNote": "No hemos podido conectar {{provider}}. Puedes volver a intentarlo o conectarlo más tarde.",
+        "retry": "Volver a intentarlo",
+        "rowCopy": "Se ejecuta en tu plan, no con créditos de Okou.",
+        "unconfirmedNote": "No hemos podido comprobar tu conexión con {{provider}}. Puedes volver a intentarlo o conectarlo más tarde."
       },
       "team": {
         "copy": "Invita a alguien ahora, o hazlo luego desde el menú del workspace.",
@@ -4668,6 +4672,7 @@
         "invited": "Invitado",
         "label": "Correo de tu compañero",
         "note": "Se unen a este workspace; sus cuentas siguen siendo suyas.",
+        "notSent": "No enviada",
         "panelTitle": "Invita a alguien del equipo",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4675,6 +4680,7 @@
           "workflows": "Cualquiera aquí puede ejecutar los workflows que ya tiene este workspace.",
           "workspace": "Entran en este workspace, con las fuentes que acabas de conectar."
         },
+        "sending": "Enviando…",
         "title": "Trae a la gente que hace este trabajo contigo."
       },
       "welcome": {

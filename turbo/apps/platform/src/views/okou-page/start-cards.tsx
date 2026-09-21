@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Play } from "lucide-react";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
@@ -425,7 +425,8 @@ export function StartCards({
   onSelectPrompt: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const kinds = useGet(startCardKinds$);
+  const kindsLoadable = useLoadable(startCardKinds$);
+  const kinds = kindsLoadable.state === "hasData" ? kindsLoadable.data : [];
   const workflowTemplate = useGet(startCardWorkflowTemplate$);
   const composerSignals = useGet(agentChatComposerSignals$);
   const setTemplateCategory = useSet(

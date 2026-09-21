@@ -342,13 +342,44 @@ test("Image creation opens its template gallery", async () => {
   expect(selectedTab).toHaveAttribute("aria-selected", "true");
 });
 
-test("Video production opens its template gallery", async () => {
+test("Existing accounts can open the Video production template gallery", async () => {
   const selectedTab = await expectCreativeChoiceOpensTemplateGallery({
     option: "Video production",
     description: "Turn your ideas into video",
     tab: "Video",
   });
   expect(selectedTab).toHaveAttribute("aria-selected", "true");
+});
+
+test("New accounts skip the Video production choice and can continue onboarding", async () => {
+  mockOnboardingNeeded();
+  await setupPage({
+    context,
+    path: "/onboarding",
+    auth: {
+      user: {
+        id: "test-user-123",
+        fullName: "Test User",
+        createdAt: new Date("2026-09-21T07:13:25.000Z"),
+      },
+    },
+  });
+  const choices = await screen.findByRole("radiogroup");
+  const radios = queryAllByRoleFast("radio", choices);
+  expect(radios).toHaveLength(6);
+  expect(
+    within(choices).queryByText("Video production"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(choices).getByText("Generate a presentation"),
+  ).toBeInTheDocument();
+  expect(within(choices).getByText("Generate images")).toBeInTheDocument();
+  expect(within(choices).getByText("Build a website")).toBeInTheDocument();
+
+  chooseMakeOption("Workflow automation");
+  await expect(
+    screen.findByRole("heading", { name: "What do you work on?" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Website creation opens its template gallery", async () => {

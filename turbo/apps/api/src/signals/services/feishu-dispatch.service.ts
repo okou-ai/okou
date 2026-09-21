@@ -642,6 +642,7 @@ export function buildFeishuSystemPrompt(args: {
   readonly threadId: string;
   readonly messageId: string;
   readonly senderOpenId: string;
+  readonly integrationNote: string;
   readonly history: string;
 }): string {
   const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
@@ -650,9 +651,7 @@ export function buildFeishuSystemPrompt(args: {
   const groupIdLine = isDirectMessage
     ? ""
     : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--chat\` value for \`okou ${args.platform ?? "feishu"} message send\`)`;
-  return [
-    CONVERSATION_GUIDANCE,
-    "",
+  const currentIntegration = [
     "# Current Integration",
     `You are currently running inside: ${platformName}`,
     `Scope: ${typeLabel}`,
@@ -663,10 +662,17 @@ export function buildFeishuSystemPrompt(args: {
     `Thread ID: ${args.threadId}`,
     `Message ID: ${args.messageId}`,
     `Sender open ID: ${args.senderOpenId}`,
-    args.history,
   ]
     .filter(Boolean)
     .join("\n");
+  return [
+    CONVERSATION_GUIDANCE,
+    currentIntegration,
+    args.integrationNote,
+    args.history,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export async function markFeishuMessageReceived(

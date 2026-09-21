@@ -1,5 +1,8 @@
 import { command, computed, type Computed } from "ccstate";
-import type { OnboardingStatusResponse } from "@okouai/api-contracts/contracts/onboarding";
+import type {
+  OnboardingIndustry,
+  OnboardingStatusResponse,
+} from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/public-brand";
 import { isValidTimeZone } from "@okouai/core/timezone";
@@ -40,8 +43,16 @@ type CompleteOnboardingResponse = {
   };
 };
 
-async function markOnboardingComplete(db: Db, orgId: string): Promise<boolean> {
+async function markOnboardingComplete(
+  db: Db,
+  orgId: string,
+  industry: OnboardingIndustry | undefined,
+): Promise<boolean> {
   const updatedAt = nowDate();
+  // An unanswered field leaves the column alone: the make-something flow never
+  // asks the question, and it must not erase an answer the org already gave.
+  const industryWrite =
+    industry === undefined ? {} : { onboardingIndustry: industry };
   return await db.transaction(async (tx) => {
     const rows = await writeOrgMetadataWithDefaultPlanEntitlement(
       tx,
@@ -52,12 +63,14 @@ async function markOnboardingComplete(db: Db, orgId: string): Promise<boolean> {
           .values({
             orgId,
             onboardingComplete: true,
+            ...industryWrite,
             updatedAt,
           })
           .onConflictDoUpdate({
             target: orgMetadataCanonicalWrites.orgId,
             set: {
               onboardingComplete: true,
+              ...industryWrite,
               updatedAt,
             },
             setWhere: eq(orgMetadataCanonicalWrites.onboardingComplete, false),
@@ -110,6 +123,7 @@ interface CompleteOnboardingArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
   readonly timezone?: string;
+  readonly industry?: OnboardingIndustry;
 }
 
 interface MorningBriefOnboardingOutcome {
@@ -242,7 +256,11 @@ export const completeOnboarding$ = command(
     signal: AbortSignal,
   ): Promise<CompleteOnboardingResponse> => {
     const writeDb = set(writeDb$);
-    const firstCompletion = await markOnboardingComplete(writeDb, args.orgId);
+    const firstCompletion = await markOnboardingComplete(
+      writeDb,
+      args.orgId,
+      args.industry,
+    );
     signal.throwIfAborted();
 
     const additiveOutcome = await settle(
