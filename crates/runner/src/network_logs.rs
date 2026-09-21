@@ -151,6 +151,13 @@ struct NetworkLogUploadDegradation {
 }
 
 impl NetworkLogUploadHealthState {
+    fn is_degraded(&self) -> bool {
+        self.transport_failures >= NETWORK_LOG_UPLOAD_HEALTH_MIN_FAILURES
+            && (self.transport_failures as u128) * 100
+                >= (self.outcomes.len() as u128)
+                    * (NETWORK_LOG_UPLOAD_HEALTH_FAILURE_PERCENT as u128)
+    }
+
     fn observe(
         &mut self,
         now: Instant,
@@ -171,6 +178,10 @@ impl NetworkLogUploadHealthState {
                 }
             }
         }
+        if !self.is_degraded() {
+            self.degradation_emitted = false;
+        }
+
         self.outcomes.push_back(TimedNetworkLogUploadOutcome {
             observed_at: now,
             outcome,
@@ -185,11 +196,7 @@ impl NetworkLogUploadHealthState {
         }
 
         let eligible_sessions = self.outcomes.len();
-        let degraded = self.transport_failures >= NETWORK_LOG_UPLOAD_HEALTH_MIN_FAILURES
-            && (self.transport_failures as u128) * 100
-                >= (eligible_sessions as u128)
-                    * (NETWORK_LOG_UPLOAD_HEALTH_FAILURE_PERCENT as u128);
-        if !degraded {
+        if !self.is_degraded() {
             self.degradation_emitted = false;
             return None;
         }
@@ -1121,6 +1128,42 @@ mod tests {
         assert_eq!(state.successful_sessions, 1);
         assert_eq!(state.transport_failures, 1);
         assert!(!state.degradation_emitted);
+    }
+
+    #[test]
+    fn upload_health_reopens_incident_when_expiry_and_failure_share_observation() {
+        let tracker = NetworkLogUploadHealthTracker::new();
+        let started_at = Instant::now();
+        assert!(
+            tracker
+                .record_at(started_at, eligible_transport_failure())
+                .is_none()
+        );
+        assert!(
+            tracker
+                .record_at(
+                    started_at + Duration::from_nanos(1),
+                    eligible_transport_failure(),
+                )
+                .is_none()
+        );
+        assert!(
+            tracker
+                .record_at(
+                    started_at + Duration::from_nanos(2),
+                    eligible_transport_failure(),
+                )
+                .is_some()
+        );
+
+        let degradation = tracker
+            .record_at(
+                started_at + NETWORK_LOG_UPLOAD_HEALTH_WINDOW + Duration::from_nanos(1),
+                eligible_transport_failure(),
+            )
+            .expect("expiry below the threshold resets before the new failure recrosses it");
+        assert_eq!(degradation.eligible_sessions, 3);
+        assert_eq!(degradation.transport_failures, 3);
     }
 
     #[tokio::test]
