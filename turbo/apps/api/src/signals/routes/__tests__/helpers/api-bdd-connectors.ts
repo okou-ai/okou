@@ -221,7 +221,7 @@ interface CustomConnectorOAuth2ProviderRecorder {
   readonly authorizationHeaders: (string | null)[];
 }
 
-interface OAuthIdentityFixtureOptions {
+export interface OAuthIdentityFixtureOptions {
   readonly subject: string;
   readonly tokenUsername?: string;
   readonly tokenEmail?: string;
@@ -275,6 +275,8 @@ interface CustomConnectorOAuth2ProviderOptions {
   readonly initialScope?: string;
   readonly refreshResponse?: (attempt: number) => Response | Promise<Response>;
   readonly identity?: OAuthIdentityFixtureOptions;
+  readonly refreshIdentity?: OAuthIdentityFixtureOptions;
+  readonly identityAudience?: string;
 }
 
 export function mockCustomConnectorOAuth2Provider(
@@ -309,8 +311,12 @@ export function mockCustomConnectorOAuth2Provider(
     http.get(CUSTOM_CONNECTOR_OAUTH2_JWKS_URL, () => {
       return HttpResponse.json({ keys: [automaticOAuthIdentityPublicJwk] });
     }),
-    http.get(CUSTOM_CONNECTOR_OAUTH2_USERINFO_URL, () => {
-      const identity = options.identity;
+    http.get(CUSTOM_CONNECTOR_OAUTH2_USERINFO_URL, ({ request }) => {
+      const identity =
+        request.headers.get("authorization") ===
+        "Bearer custom-oauth-refreshed-access-token"
+          ? options.refreshIdentity
+          : options.identity;
       if (!identity) {
         return HttpResponse.json(
           { error: "identity_unavailable" },
@@ -334,17 +340,25 @@ export function mockCustomConnectorOAuth2Provider(
         if (options.refreshResponse) {
           return await options.refreshResponse(refreshAttempts);
         }
+        const idToken = options.refreshIdentity
+          ? await oauthIdentityIdToken(
+              options.refreshIdentity,
+              CUSTOM_CONNECTOR_OAUTH2_ISSUER,
+              options.identityAudience ?? "branded-oauth-client-id",
+            )
+          : undefined;
         return HttpResponse.json({
           access_token: "custom-oauth-refreshed-access-token",
           token_type: "Bearer",
           expires_in: 3600,
+          ...(idToken ? { id_token: idToken } : {}),
         });
       }
       const idToken = options.identity
         ? await oauthIdentityIdToken(
             options.identity,
             CUSTOM_CONNECTOR_OAUTH2_ISSUER,
-            "branded-oauth-client-id",
+            options.identityAudience ?? "branded-oauth-client-id",
           )
         : "custom-oauth-id-token";
       return HttpResponse.json({
@@ -416,6 +430,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
   readonly identity?: OAuthIdentityFixtureOptions;
+  readonly refreshIdentity?: OAuthIdentityFixtureOptions;
 }
 
 interface AutomaticMcpOAuthProviderRecorder {
@@ -440,11 +455,12 @@ async function automaticOAuthIdToken(
   refresh: boolean,
 ): Promise<string | undefined> {
   const identity = options.identity;
-  if (refresh || !identity) {
+  const selectedIdentity = refresh ? options.refreshIdentity : identity;
+  if (!selectedIdentity) {
     return undefined;
   }
   return await oauthIdentityIdToken(
-    identity,
+    selectedIdentity,
     issuer,
     options.registration === "dcr"
       ? "automatic-dcr-client"
@@ -668,8 +684,12 @@ export function mockAutomaticMcpOAuthProvider(
     http.get(jwksUrl, () => {
       return HttpResponse.json({ keys: [automaticOAuthIdentityPublicJwk] });
     }),
-    http.get(userInfoUrl, () => {
-      const identity = options.identity;
+    http.get(userInfoUrl, ({ request }) => {
+      const identity =
+        request.headers.get("authorization") ===
+        "Bearer automatic-refreshed-access-token"
+          ? options.refreshIdentity
+          : options.identity;
       if (!identity) {
         return HttpResponse.json(
           { error: "identity_unavailable" },
