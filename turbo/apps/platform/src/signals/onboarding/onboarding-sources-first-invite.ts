@@ -1,8 +1,6 @@
 import { command } from "ccstate";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { accept } from "../../lib/accept.ts";
-import { ApiError } from "../../lib/api-error.ts";
-import { i18n } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { onRejection, settle } from "../utils.ts";
 import {
@@ -10,25 +8,6 @@ import {
   updateSourcesFirstDraft$,
   type SourcesFirstInvite,
 } from "./onboarding-sources-first-state.ts";
-
-/**
- * The statuses the invitation route answers with a reason of its own — already
- * a member, already invited, no permission, plan inactive. Their message names
- * the address's actual problem, so it is shown as it arrived. Anything else,
- * including a server fault or a lost connection, only carries a status code.
- */
-function explainsItself(status: number): boolean {
-  return status === 400 || status === 403 || status === 409 || status === 503;
-}
-
-function failureMessage(error: unknown): string {
-  if (error instanceof ApiError && explainsItself(error.status)) {
-    return error.message;
-  }
-  return i18n.t(($) => {
-    return $.onboarding.sourcesFirst.team.failed;
-  });
-}
 
 /** Replaces the entry for this address, or appends it the first time. */
 const recordInvite$ = command(({ get, set }, invite: SourcesFirstInvite) => {
@@ -82,32 +61,41 @@ export const sendSourcesFirstInvite$ = command(
     }
     set(recordInvite$, { email: address, status: "pending", failure: null });
     const client = get(apiClient$)(orgInviteContract);
+    // The route refuses an address it cannot invite — already a member,
+    // already invited, no permission, inactive plan — and names the reason,
+    // so those answers belong to the address. A session, server, or network
+    // failure says nothing about it and keeps `accept`'s own handling.
     const invitation = accept(
       client.invite({
         body: { email: address, role: "member" },
         fetchOptions: { signal },
       }),
-      [200],
+      [200, 400, 403, 409, 503],
       signal,
-      // The address carries its own outcome; a toast would only repeat it.
-      { showErrorToast: false },
     );
     const answer = await onRejection(settle(invitation, signal), () => {
-      // Only cancellation gets here: leaving the step aborted the request
+      // Only cancellation reaches here: leaving the step aborted the request
       // before its answer was read. Drop the entry rather than report an
       // outcome this browser never saw; typing the address again asks the API
       // for a fresh one.
       set(dropInvite$, address);
     });
     signal.throwIfAborted();
+    if (!answer.ok) {
+      // `accept` already reported the failure, and it belongs to the request
+      // rather than to the address.
+      set(dropInvite$, address);
+      return;
+    }
+    const response = answer.value;
     set(
       recordInvite$,
-      answer.ok
+      response.status === 200
         ? { email: address, status: "invited", failure: null }
         : {
             email: address,
             status: "failed",
-            failure: failureMessage(answer.error),
+            failure: response.body.error.message,
           },
     );
   },

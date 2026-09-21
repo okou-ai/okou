@@ -4596,7 +4596,6 @@
       },
       "team": {
         "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
-        "failed": "Terjadi kesalahan. Coba lagi.",
         "invite": "Kirim undangan",
         "invited": "Diundang",
         "label": "Email rekan kerja",

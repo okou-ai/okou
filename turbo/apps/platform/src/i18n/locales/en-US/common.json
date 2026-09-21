@@ -4601,7 +4601,6 @@
       },
       "team": {
         "copy": "Invite a teammate now, or do it later from the workspace menu.",
-        "failed": "Something went wrong. Try again.",
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Teammate’s email",

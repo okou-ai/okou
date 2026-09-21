@@ -4664,7 +4664,6 @@
       },
       "team": {
         "copy": "Convide alguém do time agora, ou depois pelo menu do workspace.",
-        "failed": "Algo deu errado. Tente novamente.",
         "invite": "Enviar convite",
         "invited": "Convidado",
         "label": "E-mail do colega",

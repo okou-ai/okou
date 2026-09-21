@@ -164,6 +164,23 @@ test("A refused address shows why, and the step continues anyway", async () => {
   expect(pathname()).toBe(ROUTES.onboardingExperience);
 });
 
+test("A request that fails outside the invitation's own answers leaves no outcome", async () => {
+  context.mocks.api(orgInviteContract.invite, ({ respond }) => {
+    return respond(500, {
+      error: { message: "Internal server error", code: "INTERNAL" },
+    });
+  });
+  await openTeamStep();
+
+  await typeInvite(TEAMMATE);
+  click(getButtonByName("Send invite"));
+
+  // The failure belongs to the request, not to the address: the step keeps no
+  // outcome for it and offers what joining gives a teammate again.
+  await expect(screen.findByText(TEAM_POINT)).resolves.toBeInTheDocument();
+  expect(screen.queryByText(TEAMMATE)).not.toBeInTheDocument();
+});
+
 test("An invitation cancelled by leaving the step reports no outcome", async () => {
   const sent = context.mocks.deferred<void>();
   context.mocks.api(orgInviteContract.invite, async ({ body, respond }) => {

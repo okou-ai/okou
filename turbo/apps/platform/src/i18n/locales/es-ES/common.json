@@ -4664,7 +4664,6 @@
       },
       "team": {
         "copy": "Invita a alguien ahora, o hazlo luego desde el menú del workspace.",
-        "failed": "Algo salió mal. Inténtalo de nuevo.",
         "invite": "Enviar invitación",
         "invited": "Invitado",
         "label": "Correo de tu compañero",

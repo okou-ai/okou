@@ -4664,7 +4664,6 @@
       },
       "team": {
         "copy": "Invitez un collègue maintenant, ou plus tard depuis le menu de l'espace de travail.",
-        "failed": "Une erreur s'est produite. Réessayez.",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
         "label": "E-mail du collègue",

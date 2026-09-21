@@ -4609,7 +4609,6 @@
       },
       "team": {
         "copy": "Lade jetzt jemanden ein – oder später über das Workspace-Menü.",
-        "failed": "Etwas ist schiefgelaufen. Versuch es erneut.",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
