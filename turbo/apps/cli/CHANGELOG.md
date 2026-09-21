@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.352.3](https://github.com/okou-ai/okou/compare/cli-v9.352.2...cli-v9.352.3) (2026-09-21)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35915](https://github.com/okou-ai/okou/issues/35915)) ([e9a08cf](https://github.com/okou-ai/okou/commit/e9a08cfb7946ad10b779b86603d08cfb9d08f6f5))
+
 ## [9.352.2](https://github.com/okou-ai/okou/compare/cli-v9.352.1...cli-v9.352.2) (2026-09-21)
 
 
