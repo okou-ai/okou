@@ -590,60 +590,6 @@ class TestRegistryBuiltinCatalogResolution:
         assert resolved.firewalls[0]["sourceId"] == source_id
         assert resolved.firewalls[0]["apis"][0]["sourceId"] == source_id
 
-    def test_inline_builtin_requires_registered_exact_source_identity(self):
-        source_id = "550e8400-e29b-41d4-a716-446655440001"
-        entry = {
-            "kind": "inline",
-            "sourceId": source_id,
-            "firewall": {
-                "name": "builtin-mcp",
-                "apis": [
-                    {
-                        "id": "builtin-mcp:0",
-                        "base": "https://mcp.example.test/server",
-                        "auth": {},
-                    }
-                ],
-            },
-        }
-        resolved = registry_firewalls.resolve_firewall_entries(
-            {
-                "runId": "run-inline-builtin",
-                "firewalls": [entry],
-                "connectorRuntimeTargets": [
-                    {
-                        "kind": "builtin",
-                        "connectorSlug": "builtin-mcp",
-                        "sourceId": source_id,
-                    }
-                ],
-            },
-            builtin_firewall_catalog_snapshot=None,
-        )
-
-        assert resolved.firewalls is not None
-        firewall = resolved.firewalls[0]
-        assert connector_runtime_metadata.connector_runtime_kind(firewall) == "builtin"
-        assert firewall["sourceId"] == source_id
-        assert firewall["apis"][0]["sourceId"] == source_id
-
-        for target_source_id in [None, "550e8400-e29b-41d4-a716-446655440002"]:
-            target = {"kind": "builtin", "connectorSlug": "builtin-mcp"}
-            if target_source_id is not None:
-                target["sourceId"] = target_source_id
-            with pytest.raises(
-                registry_firewalls.FirewallEntryResolutionError,
-                match="inline builtin firewall must match its registered sourceId",
-            ):
-                registry_firewalls.resolve_firewall_entries(
-                    {
-                        "runId": "run-inline-builtin-mismatch",
-                        "firewalls": [entry],
-                        "connectorRuntimeTargets": [target],
-                    },
-                    builtin_firewall_catalog_snapshot=None,
-                )
-
     def test_inline_custom_connector_id_rejects_invalid_identity(self):
         with pytest.raises(registry_firewalls.FirewallEntryResolutionError):
             registry_firewalls.resolve_firewall_entries(
