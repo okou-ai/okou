@@ -5,47 +5,33 @@ import { onTestFinished } from "vitest";
 
 import { db } from "../lib/db";
 import {
-  barrierQueryBinds,
   barrierQueryText,
+  ERASURE_FENCE_BEGIN,
+  ERASURE_FENCE_COMMIT,
+  erasureFenceStatementPatterns,
+  isErasureSubjectLockStatement,
   type TransactionBarrier,
   withDatabaseTransactionBarrierFixture,
 } from "./account-erasure-subject";
 
-const BEGIN = /^(?:begin|start transaction)(?:$|\s)/;
-const SET_LOCK_TIMEOUT = /^select set_config\('lock_timeout', ?\$\d+, true\)$/;
-const SET_STATEMENT_TIMEOUT =
-  /^select set_config\('statement_timeout', ?\$\d+, true\)$/;
-const FIRST_SUBJECT_LOCK =
-  /^select (?=.*erasure_isolation_probe)(?=.*pg_advisory_xact_lock_shared).+$/;
-const SECOND_SUBJECT_LOCK =
-  /^select pg_advisory_xact_lock_shared\(hashtextextended\(\$\d+, \d+\)\)$/;
-const SUBJECT_CLOSED_SELECT =
-  /^select .+ from "account_erasure_jobs" where .+ limit \$\d+$/;
 const HOST_SELECTION =
   /^select .+ from "computer_use_hosts" where \("computer_use_hosts"\."org_id" = \$\d+ and "computer_use_hosts"\."user_id" = \$\d+ and "computer_use_hosts"\."revoked_at" is null\) order by "computer_use_hosts"\."last_seen_at" desc$/;
 const COMMAND_INSERT = /^insert into "computer_use_commands" .+ returning .+$/;
-const COMMIT = /^commit$/;
 
+/** The write template's own statements come from the shared fence prefix, so
+ * this fixture pins only what command creation itself issues. */
 const CREATED_STATEMENTS: readonly RegExp[] = [
-  BEGIN,
-  SET_LOCK_TIMEOUT,
-  SET_STATEMENT_TIMEOUT,
-  FIRST_SUBJECT_LOCK,
-  SECOND_SUBJECT_LOCK,
-  SUBJECT_CLOSED_SELECT,
+  ERASURE_FENCE_BEGIN,
+  ...erasureFenceStatementPatterns("write"),
   HOST_SELECTION,
   COMMAND_INSERT,
-  COMMIT,
+  ERASURE_FENCE_COMMIT,
 ];
 
 const CLOSED_STATEMENTS: readonly RegExp[] = [
-  BEGIN,
-  SET_LOCK_TIMEOUT,
-  SET_STATEMENT_TIMEOUT,
-  FIRST_SUBJECT_LOCK,
-  SECOND_SUBJECT_LOCK,
-  SUBJECT_CLOSED_SELECT,
-  COMMIT,
+  ERASURE_FENCE_BEGIN,
+  ...erasureFenceStatementPatterns("write"),
+  ERASURE_FENCE_COMMIT,
 ];
 
 function commandCreateStatements(
@@ -60,12 +46,16 @@ function assertCommandCreateStatements(args: {
   readonly stopAt: "host_selection" | "insert" | "commit";
 }): void {
   const pathStatements = commandCreateStatements(args.path);
-  const expected =
+  // Derive the stop from the pattern itself: the shared fence prefix decides
+  // how many statements precede this route's own, and that must not be
+  // restated here as an index.
+  const stopIndex =
     args.stopAt === "host_selection"
-      ? pathStatements.slice(0, 7)
+      ? pathStatements.indexOf(HOST_SELECTION)
       : args.stopAt === "insert"
-        ? pathStatements.slice(0, 8)
-        : pathStatements;
+        ? pathStatements.indexOf(COMMAND_INSERT)
+        : pathStatements.length - 1;
+  const expected = pathStatements.slice(0, stopIndex + 1);
   if (args.statements.length !== expected.length) {
     throw new Error(
       `Unexpected computer-use command creation SQL count: ${args.statements.length}; expected ${expected.length}: ${args.statements.join(" | ")}`,
@@ -110,35 +100,32 @@ export async function withComputerUseCommandCreateBarrierFixture<T>(
     {
       observe: (queryArgs, receiver) => {
         const text = barrierQueryText(queryArgs).replaceAll(/\s+/g, " ").trim();
-        if (BEGIN.test(text)) {
+        if (ERASURE_FENCE_BEGIN.test(text)) {
           startedTransactionCount += 1;
           statementsByReceiver.set(receiver, [text]);
         } else {
           statementsByReceiver.get(receiver)?.push(text);
         }
-        const organizationLockKey = `account-erasure:${JSON.stringify(["organization", args.orgId])}`;
         if (
           selectedReceiver === undefined &&
-          FIRST_SUBJECT_LOCK.test(text) &&
-          barrierQueryBinds(queryArgs, organizationLockKey)
+          isErasureSubjectLockStatement(queryArgs, {
+            subject: { subjectKind: "organization", subjectId: args.orgId },
+          })
         ) {
           selectedReceiver = receiver;
         }
       },
       select: (queryArgs) => {
-        const text = barrierQueryText(queryArgs).replaceAll(/\s+/g, " ").trim();
-        const organizationLockKey = `account-erasure:${JSON.stringify(["organization", args.orgId])}`;
-        return (
-          FIRST_SUBJECT_LOCK.test(text) &&
-          barrierQueryBinds(queryArgs, organizationLockKey)
-        );
+        return isErasureSubjectLockStatement(queryArgs, {
+          subject: { subjectKind: "organization", subjectId: args.orgId },
+        });
       },
       stopAt: (queryArgs) => {
         const text = barrierQueryText(queryArgs).replaceAll(/\s+/g, " ").trim();
         const stops =
           (args.stopAt === "host_selection" && HOST_SELECTION.test(text)) ||
           (args.stopAt === "insert" && COMMAND_INSERT.test(text)) ||
-          (args.stopAt === "commit" && COMMIT.test(text));
+          (args.stopAt === "commit" && ERASURE_FENCE_COMMIT.test(text));
         if (stops) {
           selectedStatements = [
             ...(statementsByReceiver.get(selectedReceiver) ?? [text]),

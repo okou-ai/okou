@@ -1,9 +1,9 @@
 import { command } from "ccstate";
 import {
-  assertErasureSubjectWritable,
+  assertErasureSubjectReadable,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
-import { sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
@@ -31,22 +31,21 @@ function auditEventSubjects(args: {
 }
 
 async function setAuditEventDeadlines(tx: Tx): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${AUDIT_EVENTS_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${AUDIT_EVENTS_STATEMENT_TIMEOUT}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: AUDIT_EVENTS_LOCK_TIMEOUT,
+    statementTimeout: AUDIT_EVENTS_STATEMENT_TIMEOUT,
+  });
 }
 
 /**
  * Admits the standalone audit projection for its exact data owner.
  *
  * User and organization are the complete authority for audit rows. Command,
- * host and run ids remain filters only. Shared B1 admission is retained through
- * the complete ordered/limited projection and COMMIT without business-row
- * locks. Only B1's exact closure result becomes `closed`; cancellation,
- * timeouts and every other database failure retain their original error.
+ * host and run ids remain filters only. This route only reads, so it takes no
+ * advisory lock: closure never has to wait for a list that creates nothing,
+ * and refusing to serve an already closed subject is the whole contract. Only
+ * B1's exact closure result becomes `closed`; cancellation, timeouts and every
+ * other database failure retain their original error.
  */
 export const listAdmittedComputerUseAuditEvents$ = command(
   async (
@@ -66,7 +65,7 @@ export const listAdmittedComputerUseAuditEvents$ = command(
       async (tx): Promise<ComputerUseAuditEventsOutcome> => {
         await setAuditEventDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(tx, auditEventSubjects(args)),
+          assertErasureSubjectReadable(tx, auditEventSubjects(args)),
         );
         if (!admitted.ok) {
           if (

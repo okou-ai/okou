@@ -1,9 +1,9 @@
 import { command } from "ccstate";
 import {
-  assertErasureSubjectWritable,
+  assertErasureSubjectReadable,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
-import { sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -33,22 +33,21 @@ function hostDirectorySubjects(args: {
 }
 
 async function setHostDirectoryDeadlines(tx: Tx): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${HOST_DIRECTORY_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${HOST_DIRECTORY_STATEMENT_TIMEOUT}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: HOST_DIRECTORY_LOCK_TIMEOUT,
+    statementTimeout: HOST_DIRECTORY_STATEMENT_TIMEOUT,
+  });
 }
 
 /**
  * Admits the standalone host directory for its exact host-data owner.
  *
  * User and organization are the complete authority for these rows; a Run,
- * Agent or chat thread does not own this directory. Shared B1 admission is
- * retained through the complete ordered projection and COMMIT without taking a
- * host-row lock. Only B1's exact closure result becomes `closed`; cancellation,
- * timeouts and every other database failure retain their original error.
+ * Agent or chat thread does not own this directory. This route only reads, so
+ * it takes neither an advisory lock nor a host-row lock: closure never has to
+ * wait for a directory listing that creates nothing. Only B1's exact closure
+ * result becomes `closed`; cancellation, timeouts and every other database
+ * failure retain their original error.
  */
 export const listAdmittedComputerUseHosts$ = command(
   async (
@@ -66,7 +65,7 @@ export const listAdmittedComputerUseHosts$ = command(
       async (tx): Promise<ComputerUseHostDirectoryOutcome> => {
         await setHostDirectoryDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(tx, hostDirectorySubjects(args)),
+          assertErasureSubjectReadable(tx, hostDirectorySubjects(args)),
         );
         if (!admitted.ok) {
           if (
@@ -79,9 +78,9 @@ export const listAdmittedComputerUseHosts$ = command(
         }
         signal.throwIfAborted();
 
-        // Admission may have waited for an earlier closure transaction. The
-        // projection clock belongs to the fresh READ COMMITTED state after that
-        // wait, not to request start.
+        // The clock still belongs to the state after admission rather than to
+        // request start, so a projection cannot report liveness from before
+        // the closure lookup it was admitted by.
         const projection = await projectComputerUseHosts(
           { db: tx, orgId: args.orgId, userId: args.userId, now: nowDate() },
           signal,

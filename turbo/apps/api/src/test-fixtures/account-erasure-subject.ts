@@ -144,12 +144,167 @@ export function barrierQueryText(queryArgs: unknown[]): string {
   ).toLowerCase();
 }
 
+/**
+ * Whether a statement binds one exact value.
+ *
+ * Subject admission binds every sorted lock key as one `text[]` parameter, so a
+ * bound array is inspected as well as a scalar bind. Both forms are real driver
+ * parameters; neither is matched against statement text.
+ */
 export function barrierQueryBinds(
   queryArgs: unknown[],
   value: string,
 ): boolean {
   const values = z.array(z.unknown()).safeParse(queryArgs[1]);
-  return values.success && values.data.includes(value);
+  if (!values.success) {
+    return false;
+  }
+  return values.data.some((bound) => {
+    return bound === value || (Array.isArray(bound) && bound.includes(value));
+  });
+}
+
+/** The ordered statement kinds the fence itself contributes to a transaction.
+ *
+ * Every fenced route used to restate this prefix in its own fixture, which is
+ * why one change to admission broke every suite at once. The prefix lives here
+ * instead: a route fixture contributes only the statements that are actually
+ * its own.
+ *
+ * A writer is admitted by `assertErasureSubjectWritable`: one deadline
+ * statement, one statement that locks every subject key, then the separate
+ * closure lookup. A reader takes no advisory lock at all, so it contributes the
+ * deadline statement and the closure lookup only. A reader whose own statement
+ * carries `erasureSubjectOpenCondition` contributes no closure lookup either,
+ * which is `"folded"`.
+ */
+export type ErasureFenceAdmission = "write" | "read" | "folded";
+
+export const ERASURE_FENCE_DEADLINES = "FENCE DEADLINES";
+export const ERASURE_FENCE_SUBJECT_LOCKS = "B1 SUBJECT LOCKS";
+export const ERASURE_FENCE_CLOSED_LOOKUP = "B1 CLOSED LOOKUP";
+
+/** The exact ordered kinds {@link classifyErasureFenceStatement} yields for one
+ * admission mode, so a route suite asserts the shared prefix by reference. */
+export function erasureFenceStatementKinds(
+  admission: ErasureFenceAdmission,
+): readonly string[] {
+  if (admission === "write") {
+    return [
+      ERASURE_FENCE_DEADLINES,
+      ERASURE_FENCE_SUBJECT_LOCKS,
+      ERASURE_FENCE_CLOSED_LOOKUP,
+    ];
+  }
+  if (admission === "read") {
+    return [ERASURE_FENCE_DEADLINES, ERASURE_FENCE_CLOSED_LOOKUP];
+  }
+  return [ERASURE_FENCE_DEADLINES];
+}
+
+export const ERASURE_FENCE_BEGIN = /^(?:begin|start transaction)(?:$|\s)/;
+export const ERASURE_FENCE_COMMIT = /^commit$/;
+
+/** The same shared prefix as exact statement patterns, for a suite that pins
+ * complete SQL shapes rather than classified kinds. Both views are generated
+ * from one place so admission cannot drift away from what suites assert. */
+export function erasureFenceStatementPatterns(
+  admission: ErasureFenceAdmission,
+): readonly RegExp[] {
+  const deadlines =
+    /^select set_config\('lock_timeout', ?\$\d+, true\), ?set_config\('statement_timeout', ?\$\d+, true\)$/;
+  const subjectLocks =
+    /^select (?=.*erasure_isolation_probe)(?=.*pg_advisory_xact_lock_shared).+$/;
+  const closedLookup =
+    /^select .+ from "account_erasure_jobs" where .+ limit \$\d+$/;
+  if (admission === "write") {
+    return [deadlines, subjectLocks, closedLookup];
+  }
+  if (admission === "read") {
+    return [deadlines, closedLookup];
+  }
+  return [deadlines];
+}
+
+/** Classifies the transaction controls and fence statements every fenced route
+ * shares. Returns null for a statement the route itself owns, which its own
+ * classifier must name. */
+export function classifyErasureFenceStatement(
+  statement: string,
+): string | null {
+  if (statement.startsWith("begin") || statement.startsWith("start ")) {
+    return "BEGIN READ COMMITTED";
+  }
+  if (statement === "commit") {
+    return "COMMIT";
+  }
+  if (statement === "rollback") {
+    return "ROLLBACK";
+  }
+  if (statement.includes("set_config('lock_timeout'")) {
+    return ERASURE_FENCE_DEADLINES;
+  }
+  if (statement.includes("erasure_isolation_probe")) {
+    return ERASURE_FENCE_SUBJECT_LOCKS;
+  }
+  if (statement.includes('from "account_erasure_jobs"')) {
+    return ERASURE_FENCE_CLOSED_LOOKUP;
+  }
+  return null;
+}
+
+/** The advisory lock key admission derives from one subject. */
+export function erasureSubjectLockKey(subject: ErasureSubject): string {
+  return `account-erasure:${JSON.stringify([
+    subject.subjectKind,
+    subject.subjectId,
+  ])}`;
+}
+
+/**
+ * The one statement that acquires every named subject's advisory lock.
+ *
+ * Admission folds the whole sorted key set into a single statement, so a route
+ * fixture recognizes its transaction from any one subject it admits rather than
+ * from a per-subject statement that no longer exists.
+ */
+export function isErasureSubjectLockStatement(
+  queryArgs: unknown[],
+  args: {
+    readonly subject: ErasureSubject;
+    readonly mode?: "shared" | "exclusive";
+  },
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes("erasure_isolation_probe") &&
+    text.includes(
+      args.mode === "exclusive"
+        ? "pg_advisory_xact_lock(hashtextextended"
+        : "pg_advisory_xact_lock_shared(hashtextextended",
+    ) &&
+    barrierQueryBinds(queryArgs, erasureSubjectLockKey(args.subject))
+  );
+}
+
+/**
+ * The closure lookup every admission ends with.
+ *
+ * A read path takes no advisory lock, so this is the first statement that
+ * identifies its transaction; a write path issues it immediately after its
+ * lock statement. It binds the subject id directly rather than the lock key.
+ */
+export function isErasureSubjectClosureLookup(
+  queryArgs: unknown[],
+  args: { readonly subjectId: string },
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('from "account_erasure_jobs"') &&
+    barrierQueryBinds(queryArgs, args.subjectId)
+  );
 }
 
 /**

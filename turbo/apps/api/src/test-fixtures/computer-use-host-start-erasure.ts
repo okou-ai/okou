@@ -7,6 +7,7 @@ import { db } from "../lib/db";
 import {
   barrierQueryBinds,
   barrierQueryText,
+  isErasureSubjectLockStatement,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
 } from "./account-erasure-subject";
@@ -19,23 +20,6 @@ export interface ComputerUseHostStartTarget {
 
 interface ComputerUseHostStartTransactionBarrierHandle extends TransactionBarrier {
   readonly statements: () => readonly string[];
-}
-
-function firstHostStartSubjectLock(
-  queryArgs: unknown[],
-  target: ComputerUseHostStartTarget,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  const lockKey = `account-erasure:${JSON.stringify([
-    "organization",
-    target.orgId,
-  ])}`;
-  return (
-    text.startsWith("select") &&
-    text.includes("erasure_isolation_probe") &&
-    text.includes("pg_advisory_xact_lock_shared") &&
-    barrierQueryBinds(queryArgs, lockKey)
-  );
 }
 
 function hostWrite(
@@ -102,13 +86,23 @@ export async function withComputerUseHostStartTransactionBarrierFixture<T>(
         }
         if (
           selectedReceiver === undefined &&
-          firstHostStartSubjectLock(queryArgs, options.target)
+          isErasureSubjectLockStatement(queryArgs, {
+            subject: {
+              subjectKind: "organization",
+              subjectId: options.target.orgId,
+            },
+          })
         ) {
           selectedReceiver = receiver;
         }
       },
       select: (queryArgs) => {
-        return firstHostStartSubjectLock(queryArgs, options.target);
+        return isErasureSubjectLockStatement(queryArgs, {
+          subject: {
+            subjectKind: "organization",
+            subjectId: options.target.orgId,
+          },
+        });
       },
       stopAt: (queryArgs) => {
         const text = barrierQueryText(queryArgs);

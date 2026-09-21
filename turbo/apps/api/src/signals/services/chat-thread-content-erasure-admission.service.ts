@@ -1,11 +1,14 @@
 import {
   assertErasureSubjectWritable,
+  erasureSubjectOpenCondition,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
@@ -55,12 +58,10 @@ type ChatThreadContentWriteOutcome<T> =
   | { readonly outcome: "closed" };
 
 async function setChatThreadContentDeadlines(tx: Tx): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${CONTENT_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${CONTENT_STATEMENT_TIMEOUT}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: CONTENT_LOCK_TIMEOUT,
+    statementTimeout: CONTENT_STATEMENT_TIMEOUT,
+  });
 }
 
 /**
@@ -100,6 +101,67 @@ async function loadChatThreadContentIdentity(
     agentId: thread.agentId,
     agentOwner: thread.agentOwner,
     orgId: thread.orgId,
+  };
+}
+
+/**
+ * The same canonical identity plus the lock-free closure state of the subjects
+ * that identity owns, resolved by one statement.
+ *
+ * A read creates nothing, so it needs no advisory lock and closure must not
+ * have to wait for it; all a read owes is that it does not serve an already
+ * closed subject. Folding `erasureSubjectOpenCondition` into the statement the
+ * route already issues buys that for no extra round trip, and the predicate
+ * covers exactly the subjects {@link chatThreadContentSubjects} derives from
+ * the same row: an absent Agent parent contributes no subject here either,
+ * because a job's subject id is never equal to SQL NULL.
+ *
+ * The result carries no authority. It can go stale the moment the statement
+ * returns, so a caller that writes must still be admitted by
+ * `assertErasureSubjectWritable` inside its own transaction.
+ */
+async function loadChatThreadContentAdmission(
+  tx: Tx,
+  chatThreadId: string,
+): Promise<{
+  readonly identity: ChatThreadContentIdentity;
+  readonly subjectOpen: boolean;
+} | null> {
+  const [thread] = await tx
+    .select({
+      chatThreadId: chatThreads.id,
+      userId: chatThreads.userId,
+      threadAgentId: chatThreads.agentId,
+      agentId: agents.id,
+      agentOwner: agents.owner,
+      orgId: agents.orgId,
+      subjectOpen: erasureSubjectOpenCondition(tx, [
+        { subjectKind: "user", subjectId: chatThreads.userId },
+        { subjectKind: "user", subjectId: agents.owner },
+        { subjectKind: "organization", subjectId: agents.orgId },
+      ]).mapWith(pgBooleanDecoder),
+    })
+    .from(chatThreads)
+    .leftJoin(agents, eq(chatThreads.agentId, agents.id))
+    .where(eq(chatThreads.id, chatThreadId))
+    .limit(1);
+  if (!thread) {
+    return null;
+  }
+  if (thread.threadAgentId !== null && thread.agentId === null) {
+    // Same cascade window as the identity resolution above: reselecting
+    // resolves it, and it must never degrade to a thread-user-only admission.
+    throw new ChatThreadContentOwnershipChangedError();
+  }
+  return {
+    identity: {
+      chatThreadId: thread.chatThreadId,
+      userId: thread.userId,
+      agentId: thread.agentId,
+      agentOwner: thread.agentOwner,
+      orgId: thread.orgId,
+    },
+    subjectOpen: thread.subjectOpen,
   };
 }
 
@@ -209,36 +271,75 @@ async function lockChatThreadContentIdentity(
 }
 
 /**
- * Admission for a read-only **initiation gate**: deadlines -> content-free
- * identity -> the caller's own ownership check -> shared B1 admission -> the
- * caller's bounded read, committed without taking any business lock.
+ * The read transaction every lock-free caller shares: deadlines -> the folded
+ * identity-and-closure statement -> the caller's own ownership check -> the
+ * caller's bounded read -> a revalidation of the same content-free identity.
  *
- * An optional background workflow uses this to refuse to start producing
- * content for a subject already known closed. It deliberately takes neither
- * `agents` nor `chat_threads` KEY SHARE: those conflict with the `FOR UPDATE`
- * that the chat queue takes on the same thread, so a gate that acquired them
- * would contend with the very request that scheduled the work and delay it
- * behind that request's own bounded lock wait.
+ * It takes no lock of its own. It deliberately acquires neither
+ * `pg_advisory_xact_lock_shared` nor `agents`/`chat_threads` KEY SHARE: a read
+ * creates nothing that closure would have to erase, and those locks conflict
+ * with the writers of the very rows being read — the chat queue's `FOR UPDATE`
+ * on the same thread, and every ordinary content write. A reader that acquired
+ * them would serialize behind the request that scheduled the work and add
+ * nothing to erasure safety.
  *
- * The consequence is explicit: this gate carries **no authority**. Taking no
- * lock means a canonical parent can move immediately after it commits, so a
- * caller must revalidate the identity it captured here under
- * {@link withChatThreadContentWrite} before writing anything. Closure observed
- * here is a reason to stop early, never a licence to write later.
+ * The consequence is explicit: this carries **no authority**. A canonical
+ * parent can move the moment it commits, so a caller that later writes what it
+ * captured here must be readmitted under {@link withChatThreadContentWrite}.
+ * Closure observed here is a reason to stop early, never a licence to write.
  *
- * Within the gate the identity is still revalidated. Admission and the caller's
- * read are both awaits, and under `READ COMMITTED` without a lock a transfer can
- * commit during either one, so the same content-free identity is read again
- * after the read and compared field by field. Without that, the gate could admit
- * one account's subjects and then hand the caller content belonging to another:
- * the writer's own pin check rejects the later write, but it cannot recall
- * content the caller has already sent somewhere else. A moved identity raises
+ * Within the read the identity is still revalidated. The read is an await and
+ * under READ COMMITTED without a lock a transfer can commit during it, so the
+ * same content-free identity is read again afterwards and compared field by
+ * field. Without that the gate could admit one account's subjects and then hand
+ * the caller content belonging to another: a later writer's pin check rejects
+ * the write, but it cannot recall content the caller has already sent
+ * elsewhere. A moved identity raises
  * {@link ChatThreadContentOwnershipChangedError} rather than returning a value.
  *
- * This narrows the window to the gate's own transaction; it does not close it.
- * Ownership can still move between this `COMMIT` and whatever the caller does
- * next, which is why the writer revalidates under retained locks, and it is not
- * a fence around anything the caller sends outside the database.
+ * This narrows the window to one transaction; it does not close it. Ownership
+ * can still move between this COMMIT and whatever the caller does next.
+ */
+async function readAdmittedChatThreadContent<T>(
+  tx: Tx,
+  args: {
+    readonly chatThreadId: string;
+    readonly authorize: (identity: ChatThreadContentIdentity) => boolean;
+  },
+  read: (tx: Tx, identity: ChatThreadContentIdentity) => Promise<T>,
+  signal: AbortSignal,
+): Promise<ChatThreadContentWriteOutcome<T>> {
+  await setChatThreadContentDeadlines(tx);
+  const selected = await loadChatThreadContentAdmission(tx, args.chatThreadId);
+  if (!selected || !args.authorize(selected.identity)) {
+    return { outcome: "missing" };
+  }
+  if (!selected.subjectOpen) {
+    return { outcome: "closed" };
+  }
+  signal.throwIfAborted();
+  const value = await read(tx, selected.identity);
+  const current = await loadChatThreadContentIdentity(tx, args.chatThreadId);
+  if (!current) {
+    return { outcome: "missing" };
+  }
+  if (!sameChatThreadContentIdentity(current, selected.identity)) {
+    throw new ChatThreadContentOwnershipChangedError();
+  }
+  signal.throwIfAborted();
+  return { outcome: "written", value };
+}
+
+/**
+ * Admission for a read-only **initiation gate**, on the lock-free read path.
+ *
+ * An optional background workflow uses this to refuse to start producing
+ * content for a subject already known closed. A moved canonical parent is
+ * surfaced to its caller rather than reselected: the gate's own caller decides
+ * whether starting that work is still meaningful.
+ *
+ * See {@link readAdmittedChatThreadContent} for the complete contract,
+ * including why this gate carries no authority.
  */
 export async function withChatThreadContentAdmission<T>(
   db: Db,
@@ -252,36 +353,56 @@ export async function withChatThreadContentAdmission<T>(
   signal.throwIfAborted();
   const outcome = await db.transaction(
     async (tx): Promise<ChatThreadContentWriteOutcome<T>> => {
-      await setChatThreadContentDeadlines(tx);
-      const selected = await loadChatThreadContentIdentity(
-        tx,
-        args.chatThreadId,
-      );
-      if (!selected || !args.authorize(selected)) {
-        return { outcome: "missing" };
-      }
-      if (!(await admitChatThreadContentSubjects(tx, selected))) {
-        return { outcome: "closed" };
-      }
-      signal.throwIfAborted();
-      const value = await read(tx, selected);
-      const current = await loadChatThreadContentIdentity(
-        tx,
-        args.chatThreadId,
-      );
-      if (!current) {
-        return { outcome: "missing" };
-      }
-      if (!sameChatThreadContentIdentity(current, selected)) {
-        throw new ChatThreadContentOwnershipChangedError();
-      }
-      signal.throwIfAborted();
-      return { outcome: "written", value };
+      return await readAdmittedChatThreadContent(tx, args, read, signal);
     },
     { isolationLevel: "read committed" },
   );
   signal.throwIfAborted();
   return outcome;
+}
+
+/**
+ * Owns the transaction for a canonical route that only reads.
+ *
+ * It is {@link readAdmittedChatThreadContent} under the same bounded
+ * reselection the write helper uses, so a GET that previously ran through
+ * {@link withChatThreadContentWrite} keeps its existing behaviour when a
+ * canonical parent moves: roll back, reselect a bounded number of times, and
+ * raise `ChatThreadContentOwnershipChangedError` only once they are exhausted.
+ * Its outcomes, and therefore each route's 404 and `closed` dispositions, are
+ * unchanged; what it no longer does is take the write path's advisory,
+ * `agents` and `chat_threads` locks.
+ */
+export async function withChatThreadContentRead<T>(
+  db: Db,
+  args: {
+    readonly chatThreadId: string;
+    readonly authorize: (identity: ChatThreadContentIdentity) => boolean;
+  },
+  read: (tx: Tx, identity: ChatThreadContentIdentity) => Promise<T>,
+  signal: AbortSignal,
+): Promise<ChatThreadContentWriteOutcome<T>> {
+  for (let attempt = 1; ; attempt++) {
+    signal.throwIfAborted();
+    const result = await settle(
+      db.transaction(
+        async (tx): Promise<ChatThreadContentWriteOutcome<T>> => {
+          return await readAdmittedChatThreadContent(tx, args, read, signal);
+        },
+        { isolationLevel: "read committed" },
+      ),
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      return result.value;
+    }
+    if (
+      !(result.error instanceof ChatThreadContentOwnershipChangedError) ||
+      attempt === OWNERSHIP_ATTEMPTS
+    ) {
+      throw result.error;
+    }
+  }
 }
 
 /**

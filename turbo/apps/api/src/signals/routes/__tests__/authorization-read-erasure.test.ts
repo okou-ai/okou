@@ -726,7 +726,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -736,7 +736,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -772,7 +772,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -782,7 +782,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -820,7 +820,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -830,7 +830,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -871,7 +871,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -881,7 +881,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -891,7 +891,7 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
-      "retains thread identity through a real request-pin wait",
+      "denies a thread identity that moves during a real request-pin wait",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
@@ -906,27 +906,24 @@ describe.each(["browser", "computer-use"] as const)(
                 signal: context.signal,
               });
         await withOwnedOperations(holder.release, async (scope) => {
-          const reading = scope.start(readAuthorization(fixture, [200]));
+          const reading = scope.start(readAuthorization(fixture, [404]));
           await expect
             .poll(holder.blockedRequestPinCount, BLOCKED)
             .toBeGreaterThanOrEqual(1);
+          // The read retains the request pin but no identity lock, so the
+          // thread user moves immediately instead of queueing behind it.
           const moving = scope.start(
             setChatThreadUserFixture({
               chatThreadId: fixture.threadId,
               userId: `user_${randomUUID()}`,
             }),
           );
-          const blocked = scope.start(
-            (async () => {
-              await expect
-                .poll(holder.blockedIdentityMutationCount, BLOCKED)
-                .toBeGreaterThanOrEqual(1);
-            })(),
-          );
-          valueOf(await blocked);
-          await scope.release();
-          expect(valueOf(await reading).status).toBe(200);
           valueOf(await moving);
+          await expect(holder.blockedIdentityMutationCount()).resolves.toBe(0);
+          await scope.release();
+          // The thread recheck runs under the pin and observes the move, so
+          // the read denies itself rather than projecting a moved thread.
+          expect(valueOf(await reading).status).toBe(404);
         });
         await expect(readAuthorization(fixture, [404])).resolves.toMatchObject({
           status: 404,
@@ -992,7 +989,7 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
-      "lets read-first finish while real closure waits, then denies subsequent reads",
+      "lets closure commit while a read is in flight, then denies subsequent reads",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
@@ -1014,15 +1011,17 @@ describe.each(["browser", "computer-use"] as const)(
               statementTimeout: "5s",
               transactionTimeout: "0",
             });
+            // The read takes no advisory lock, so closure is not held behind
+            // it. This read was admitted before the decision committed, so
+            // serving its already-pinned projection stays correct.
             const closing = scope.start(
               closeSubject({
                 subjectKind: "user",
                 subjectId: fixture.actor.userId,
               }),
             );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+            valueOf(await closing);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
             await expect(
               readAuthorization(unrelated, [200]),
             ).resolves.toMatchObject({
@@ -1030,7 +1029,6 @@ describe.each(["browser", "computer-use"] as const)(
             });
             await scope.release();
             expect(valueOf(await reading).status).toBe(200);
-            valueOf(await closing);
           });
         };
         if (kind === "browser") {
@@ -1060,7 +1058,7 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
-      "makes closure-first wait on the real admission edge and return no projection",
+      "serves a read started before a closure commits and denies every read after it",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
@@ -1073,17 +1071,22 @@ describe.each(["browser", "computer-use"] as const)(
               }),
             );
             await barrier.entered;
-            const reading = scope.start(readAuthorization(fixture, [404]));
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+            // A subject whose closure has not committed is not a closed
+            // subject. The read holds no advisory lock to wait on and cannot
+            // observe an uncommitted decision under READ COMMITTED.
+            const reading = scope.start(readAuthorization(fixture, [200]));
+            expect(valueOf(await reading).status).toBe(200);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
             await scope.release();
             valueOf(await closing);
-            const denied = valueOf(await reading);
-            expect(denied.status).toBe(404);
-            expectDeniedBody(denied.body, fixture);
           });
         }, context.signal);
+
+        // The property that must hold is that a committed decision is never
+        // served again; the closure lookup is the read's own statement.
+        const denied = await readAuthorization(fixture, [404]);
+        expect(denied.status).toBe(404);
+        expectDeniedBody(denied.body, fixture);
       },
     );
 
@@ -1190,7 +1193,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
     ["computer-use/computer-use", "computer-use", "computer-use"],
     ["mixed", "computer-use", "browser"],
   ] as const)(
-    "serializes %s before the caller-local thread pin without writes",
+    "runs %s concurrently without serializing on a thread lock or writing",
     { timeout: 60_000 },
     async (_label, firstKind, secondKind) => {
       const first = await createAuthorizationReadFixture({ kind: firstKind });
@@ -1220,16 +1223,18 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
             statementTimeout: "5s",
             transactionTimeout: "0",
           });
+          // #35311 had to take the thread row FOR UPDATE to break a KEY
+          // SHARE -> UPDATE upgrade cycle between two of these GETs. Neither
+          // reader locks the thread now, so the second completes while the
+          // first is still paused inside its own transaction.
           const secondRead = scope.start(readAuthorization(second, [200]));
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
+          expectFoundProjection(valueOf(await secondRead), second, false);
+          await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
           await expect(
             readAuthorization(unrelated, [200]),
           ).resolves.toMatchObject({ status: 200 });
           await scope.release();
           expectFoundProjection(valueOf(await firstRead), first, false);
-          expectFoundProjection(valueOf(await secondRead), second, false);
         });
       };
       if (first.kind === "browser") {
@@ -1237,7 +1242,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: first.threadId,
             requestToken: first.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
@@ -1247,7 +1252,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: first.threadId,
             requestToken: first.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
@@ -1286,7 +1291,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: fixture.threadId,
             requestToken: fixture.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
@@ -1296,7 +1301,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: fixture.threadId,
             requestToken: fixture.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
