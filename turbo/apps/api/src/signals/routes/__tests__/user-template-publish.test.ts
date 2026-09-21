@@ -79,7 +79,6 @@ function guidance(
   }
 }
 
-/** Signs a member in and turns the switch on for them. */
 /** A directory entry with a name of its own, to tell two members apart. */
 function clerkProfile(userId: string, firstName: string, lastName: string) {
   const emailId = `email_${userId}`;
@@ -95,6 +94,7 @@ function clerkProfile(userId: string, firstName: string, lastName: string) {
   };
 }
 
+/** Signs a member in and turns the switch on for them. */
 async function enableFor(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("User template tests require an organization");
