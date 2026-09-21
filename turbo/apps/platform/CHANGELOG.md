@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.931.0](https://github.com/okou-ai/okou/compare/app-v0.930.0...app-v0.931.0) (2026-09-21)
+
+
+### Features
+
+* expand free byok and plan concurrency ([#35610](https://github.com/okou-ai/okou/issues/35610)) ([5430b89](https://github.com/okou-ai/okou/commit/5430b89a8c88a976e4ca90bd1d9b8ee67c526466))
+
+
+### Refactoring
+
+* own annotation editor shortcuts in a command ([#35748](https://github.com/okou-ai/okou/issues/35748)) ([d4839e5](https://github.com/okou-ai/okou/commit/d4839e5941ddc84b44e2f975e60d825c09991b56))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.0
+    * @okouai/core bumped to 8.689.2
+
 ## [0.930.0](https://github.com/okou-ai/okou/compare/app-v0.929.3...app-v0.930.0) (2026-09-21)
 
 
