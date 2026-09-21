@@ -63,7 +63,10 @@ async fn assert_web_search_policy(
                 .iter()
                 .position(|arg| arg == "--disallowed-tools")
                 .ok_or("Claude command omitted --disallowed-tools")?;
-            assert_eq!(args[disallowed_tools_index + 1], "CronCreate");
+            let first_disallowed_tool = args
+                .get(disallowed_tools_index + 1)
+                .ok_or("Claude command omitted the disallowed-tools value")?;
+            assert_eq!(first_disallowed_tool, "CronCreate");
             assert_eq!(
                 args.iter().any(|arg| arg == "WebSearch"),
                 expect_disabled,
@@ -71,8 +74,13 @@ async fn assert_web_search_policy(
             );
         } else {
             assert_eq!(
-                args.windows(2)
-                    .any(|window| { window[0] == "-c" && window[1] == r#"web_search="disabled""# }),
+                args.windows(2).any(|window| {
+                    matches!(
+                        window,
+                        [flag, value]
+                            if flag == "-c" && value == r#"web_search="disabled""#
+                    )
+                }),
                 expect_disabled,
                 "unexpected Codex web-search policy: {args:?}"
             );
