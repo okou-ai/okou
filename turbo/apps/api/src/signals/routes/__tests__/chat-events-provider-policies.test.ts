@@ -1904,7 +1904,7 @@ describe("CHAT-02: model-first provider policies", () => {
           : model;
       expect(environment.OPENAI_BASE_URL).toBe(
         alternativeRoutingEnabled
-          ? `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1`
+          ? "https://openrouter.ai/api/v1"
           : "https://api.deepseek.com/",
       );
       expect(environment.OPENAI_MODEL).toBe(expectedModel);
