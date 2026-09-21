@@ -90,6 +90,8 @@ pub(crate) struct ExecOverrideState {
 pub(crate) struct FileOverrideState {
     /// Recorded write_file calls across all sandboxes built from this override set.
     pub(crate) write_file_calls: Mutex<Vec<WriteFileCall>>,
+    /// FIFO write_file results consumed by factory-created sandboxes.
+    pub(crate) write_file_results: Mutex<VecDeque<Result<()>>>,
     /// Optional gate entered after recording a write_file call.
     pub(crate) write_file_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded staged-file finalizer calls across attached sandboxes.
@@ -333,6 +335,14 @@ impl MockSandboxOverrides {
     pub fn push_finalize_staged_file_result(&self, result: Result<StagedFileFinalizeOutcome>) {
         self.file
             .finalize_staged_file_results
+            .lock_ignoring_poison()
+            .push_back(result);
+    }
+
+    /// Queue one write_file result shared by attached sandboxes.
+    pub fn push_write_file_result(&self, result: Result<()>) {
+        self.file
+            .write_file_results
             .lock_ignoring_poison()
             .push_back(result);
     }

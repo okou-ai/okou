@@ -1266,11 +1266,19 @@ impl Sandbox for MockSandbox {
         if let Some(overrides) = &self.overrides {
             wait_lifecycle_gate(&overrides.file.write_file_gate).await;
         }
-        self.write_file_results
-            .lock_ignoring_poison()
-            .pop_front()
-            .unwrap_or(Ok(()))
-            .map(|()| None)
+        if let Some(result) = self.write_file_results.lock_ignoring_poison().pop_front() {
+            return result.map(|()| None);
+        }
+        if let Some(overrides) = &self.overrides
+            && let Some(result) = overrides
+                .file
+                .write_file_results
+                .lock_ignoring_poison()
+                .pop_front()
+        {
+            return result.map(|()| None);
+        }
+        Ok(None)
     }
 
     async fn finalize_staged_file(

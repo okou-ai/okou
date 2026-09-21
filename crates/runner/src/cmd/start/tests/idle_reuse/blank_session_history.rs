@@ -27,6 +27,13 @@ const WAIT: Duration = Duration::from_secs(5);
 const INSTRUMENTED_WRITE_WAIT: Duration = Duration::from_secs(30);
 const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum PublicationExpectation {
+    Published,
+    SerialRecovery,
+    AmbiguousFailure,
+}
+
 pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> ExecutionContext {
     let mut context = minimal_context(run_id);
     context.cli_agent_type = "claude-code".into();
@@ -62,20 +69,32 @@ pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> Exe
 
 #[tokio::test]
 async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
-    for (framework, keyed, encoding) in [
+    for (framework, keyed, encoding, publication) in [
         (
             CliFramework::ClaudeCode,
             true,
             ResumeSessionHistoryEncoding::Identity,
+            PublicationExpectation::Published,
         ),
-        (CliFramework::Pi, false, ResumeSessionHistoryEncoding::Gzip),
+        (
+            CliFramework::Pi,
+            false,
+            ResumeSessionHistoryEncoding::Gzip,
+            PublicationExpectation::SerialRecovery,
+        ),
         (
             CliFramework::Codex,
             true,
             ResumeSessionHistoryEncoding::Zstd,
+            PublicationExpectation::Published,
+        ),
+        (
+            CliFramework::ClaudeCode,
+            true,
+            ResumeSessionHistoryEncoding::Identity,
+            PublicationExpectation::AmbiguousFailure,
         ),
     ] {
-        let expects_serial_fallback = framework == CliFramework::Pi;
         let (framework, history, session_id, expected_path, storage_root): (
             &str,
             &[u8],
@@ -123,13 +142,23 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         }])
         .await;
         let overrides = Arc::new(MockSandboxOverrides::new());
-        if expects_serial_fallback {
-            overrides.push_finalize_staged_file_result(Ok(
-                StagedFileFinalizeOutcome::NotPublished {
-                    reason: StagedFileNotPublishedReason::CopyFailed,
-                    measurements: StagedFileFinalizeMeasurements::default(),
-                },
-            ));
+        match publication {
+            PublicationExpectation::Published => {}
+            PublicationExpectation::SerialRecovery => {
+                overrides.push_finalize_staged_file_result(Ok(
+                    StagedFileFinalizeOutcome::NotPublished {
+                        reason: StagedFileNotPublishedReason::CopyFailed,
+                        measurements: StagedFileFinalizeMeasurements::default(),
+                    },
+                ));
+            }
+            PublicationExpectation::AmbiguousFailure => {
+                overrides.push_finalize_staged_file_result(Err(sandbox::SandboxError::Operation {
+                    operation: sandbox::SandboxOperation::FinalizeStagedFile,
+                    reason: sandbox::SandboxOperationReason::Other,
+                    message: "ambiguous publication".into(),
+                }));
+            }
         }
         let storage_gate = MockLifecycleGate::new();
         overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
@@ -227,7 +256,25 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         );
         finalize_gate.release_one();
 
-        if expects_serial_fallback {
+        if publication == PublicationExpectation::AmbiguousFailure {
+            let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
+            assert_ne!(completion.exit_code, 0);
+            assert!(
+                completion
+                    .error
+                    .as_deref()
+                    .is_some_and(|error| error.contains("ambiguous publication"))
+            );
+            assert_eq!(overrides.write_file_calls().len(), 1);
+            assert_eq!(overrides.finalize_staged_file_calls().len(), 1);
+            assert!(overrides.start_agent_process_calls().is_empty());
+            server.assert_finished().await;
+            shutdown(&env, run_handle).await;
+            assert_eq!(budget.allocated().2, 0);
+            continue;
+        }
+
+        if publication == PublicationExpectation::SerialRecovery {
             write_gate.wait_entered(2, WAIT).await.unwrap();
             let writes = overrides.write_file_calls();
             assert_eq!(writes.len(), 2);
@@ -265,6 +312,71 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         shutdown(&env, run_handle).await;
         assert_eq!(budget.allocated().2, 0);
     }
+}
+
+#[tokio::test]
+async fn blank_history_storage_failure_precedes_staging_failure() {
+    let (release_history, history_release) = oneshot::channel();
+    let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+        release: history_release,
+        response: http_response("200 OK", HISTORY),
+    }])
+    .await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.push_storage_manifest_result(Ok(sandbox::ExecResult::new(
+        1,
+        Vec::new(),
+        "storage preparation failed".into(),
+    )));
+    overrides.push_write_file_result(Err(sandbox::SandboxError::Operation {
+        operation: sandbox::SandboxOperation::WriteFile,
+        reason: sandbox::SandboxOperationReason::Other,
+        message: "staging write failed".into(),
+    }));
+    let storage_gate = MockLifecycleGate::new();
+    overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
+    let write_gate = MockLifecycleGate::new();
+    overrides.set_write_file_lifecycle_gate(write_gate.clone());
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, Arc::clone(&overrides));
+    let budget = Arc::clone(&config.capacity.budget);
+    let run_handle = tokio::spawn(run(config));
+    wait_idle_pool_len(&env.idle_pool, 1, WAIT).await;
+    let run_id = RunId::new_v4();
+    push_job(
+        &env,
+        run_id,
+        "vm0/default",
+        Some(history_context(run_id, server.url(), HISTORY)),
+    );
+
+    storage_gate.wait_entered(1, WAIT).await.unwrap();
+    server
+        .next_request("history for dual preparation failure")
+        .await;
+    release_history.send(()).unwrap();
+    write_gate
+        .wait_entered(1, INSTRUMENTED_WRITE_WAIT)
+        .await
+        .unwrap();
+    write_gate.release_one();
+    storage_gate.release_one();
+
+    let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
+    assert_ne!(completion.exit_code, 0);
+    let error = completion.error.as_deref().unwrap();
+    assert!(error.contains("storage preparation failed"), "{error}");
+    assert!(!error.contains("staging write failed"), "{error}");
+    assert!(overrides.start_agent_process_calls().is_empty());
+    assert_eq!(overrides.write_file_calls().len(), 1);
+    assert_eq!(overrides.finalize_staged_file_calls().len(), 1);
+    assert_eq!(
+        overrides.finalize_staged_file_calls()[0].disposition,
+        StagedFileDispositionCall::Discard
+    );
+    server.assert_finished().await;
+    shutdown(&env, run_handle).await;
+    assert_eq!(budget.allocated().2, 0);
 }
 
 #[tokio::test]
