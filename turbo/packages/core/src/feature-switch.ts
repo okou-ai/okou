@@ -62,6 +62,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.NewUserVideoPickers]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
+    enabled: false,
+  },
   [FeatureSwitchKey.RunUsage]: {
     maintainer: "liangyou@okou.ai",
     description:

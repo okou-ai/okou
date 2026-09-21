@@ -20,11 +20,11 @@ export async function withUsageEventCompactionLockScopeForTest<T>(
 }
 
 const scopedUsageEventCompactionLockAttempt = singleton(() => {
-  return new AsyncLocalStorage<() => void>();
+  return new AsyncLocalStorage<() => Promise<void> | void>();
 });
 
 export async function withUsageEventCompactionLockAttemptTrackingForTest<T>(
-  onAttempt: () => void,
+  onAttempt: () => Promise<void> | void,
   work: () => Promise<T>,
 ): Promise<T> {
   return await scopedUsageEventCompactionLockAttempt().run(onAttempt, work);
@@ -34,7 +34,10 @@ export async function lockUsageEventCompaction(
   db: UsageEventCompactionLockDb,
   mode: "shared" | "exclusive" = "exclusive",
 ): Promise<void> {
-  scopedUsageEventCompactionLockAttempt.peek()?.getStore()?.();
+  const onAttempt = scopedUsageEventCompactionLockAttempt.peek()?.getStore();
+  if (onAttempt) {
+    await onAttempt();
+  }
   const scope = scopedUsageEventCompactionLock.peek()?.getStore();
   const lockKey =
     scope === undefined
