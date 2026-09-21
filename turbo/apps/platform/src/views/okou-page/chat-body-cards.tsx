@@ -1249,6 +1249,57 @@ function permissionActionExpiryText(
             );
 }
 
+function PermissionActionInfo({
+  connectorLabel,
+  actionLabel,
+  permissionName,
+  status,
+  expiryText,
+}: {
+  connectorLabel: string;
+  actionLabel: string;
+  permissionName: string;
+  status: PermissionActionCardStatus;
+  expiryText: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-2xs"
+            className="shrink-0"
+            aria-label={t(($) => {
+              return $.chat.cards.viewDetails;
+            })}
+          >
+            <Info size={16} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="space-y-1 break-words">
+          <p className="font-medium">{connectorLabel}</p>
+          <p>
+            {t(
+              ($) => {
+                return $.chat.permissions.actionDescription;
+              },
+              {
+                action: actionLabel,
+                permissionName,
+              },
+            )}
+          </p>
+          <PermissionActionInlineStatus status={status} />
+          {expiryText && <p>{expiryText}</p>}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function PermissionActionCardContent({
   signals,
   icon,
@@ -1308,39 +1359,13 @@ function PermissionActionCardContent({
                 },
               )}
             </div>
-            <TooltipProvider delayDuration={200}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="quiet"
-                    size="icon-2xs"
-                    className="shrink-0"
-                    aria-label={t(($) => {
-                      return $.chat.cards.viewDetails;
-                    })}
-                  >
-                    <Info size={16} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="space-y-1 break-words">
-                  <p className="font-medium">{connectorLabel}</p>
-                  <p>
-                    {t(
-                      ($) => {
-                        return $.chat.permissions.actionDescription;
-                      },
-                      {
-                        action: actionLabel,
-                        permissionName,
-                      },
-                    )}
-                  </p>
-                  <PermissionActionInlineStatus status={status} />
-                  {expiryText && <p>{expiryText}</p>}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <PermissionActionInfo
+              connectorLabel={connectorLabel}
+              actionLabel={actionLabel}
+              permissionName={permissionName}
+              status={status}
+              expiryText={expiryText}
+            />
           </div>
           <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {t(
