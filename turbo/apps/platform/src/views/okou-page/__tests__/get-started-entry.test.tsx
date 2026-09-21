@@ -224,6 +224,9 @@ function configureQuestPage(
     if (!data.claimedToday) {
       checkin.claimedCount++;
       checkin.earnedCredits += 100;
+      // The server counts the day it just recorded, so the fixture does too:
+      // the streak is what decides whether the reward gets a screen or a line.
+      data.checkinStreak++;
     }
     checkin.canEarnMore = false;
     data.claimedToday = true;
@@ -980,6 +983,28 @@ test("The workflow step ends by handing over the prompt itself", async () => {
   await waitFor(() => {
     expect(pathname()).toBe("/workflows");
   });
+});
+
+test("An ordinary day's check-in reports the streak without taking the screen", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  // Mid-streak: the next check-in is day four, which is neither the first nor
+  // a full week, so it is the case that should stay out of the way.
+  data.checkinStreak = 3;
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+
+  // The streak is the part worth saying, and it is said without a modal.
+  await expect(screen.findByText("4-day streak")).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("Checking in confirms the reward instead of closing silently", async () => {

@@ -1485,11 +1485,9 @@
           },
           "later": "Più tardi",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Aggiungi a Slack",
             "description": "Aggiungi {{assistantName}} allo spazio Slack del tuo team.",
             "note": "I colleghi non devono più passare da te. Lo chiedono nel canale e il lavoro torna nel thread, dove lo vedono tutti.",
-            "sampleChannel": "# growth",
             "title": "Lavora con {{assistantName}} dove il team già parla"
           },
           "workflow": {

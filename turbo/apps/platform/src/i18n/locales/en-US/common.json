@@ -1461,11 +1461,9 @@
           },
           "later": "Later",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Add to Slack",
             "description": "Add {{assistantName}} to your team's Slack workspace.",
             "note": "Your teammates stop coming to you first. They ask in the channel, and the work comes back in the thread where everyone can see it.",
-            "sampleChannel": "# growth",
             "title": "Work with {{assistantName}} where your team already talks"
           },
           "workflow": {
