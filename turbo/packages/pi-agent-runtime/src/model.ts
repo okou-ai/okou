@@ -14,7 +14,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type {
   Api,
   AssistantMessageEventStream,
-  Context,
+  TranscriptContext,
   Model,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -109,7 +109,7 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
 
 function streamSimpleResponsesWithPolicy(
   model: Model<"openai-responses">,
-  context: Context,
+  context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
   const serviceTier = options?.serviceTier;
@@ -249,7 +249,7 @@ function observeResponsesServiceTier(
 
 const piAgentStream = (
   model: Model<"openai-responses">,
-  context: Context,
+  context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
   if (
@@ -263,7 +263,7 @@ const piAgentStream = (
 
 function piAgentCodexStream(
   model: Model<"openai-codex-responses">,
-  context: Context,
+  context: TranscriptContext,
   accountId: string,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
@@ -301,7 +301,7 @@ function piAgentCodexStream(
 /** Type bridge for Pi's API-generic provider registration callback. */
 export const piAgentRegisteredStream = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
   if (!isResponsesModel(model)) {
@@ -468,15 +468,29 @@ export function resolvePiAgentModel(
     contextWindow: source.contextWindow,
     maxTokens: source.maxTokens,
     headers: source.headers,
-    // Pi's catalog API tag controls only whether its API-specific compatibility
-    // metadata is safe to reuse. It never selects Okou's runtime transport.
-    ...(source.api === dialect && source.compat !== undefined
-      ? { compat: source.compat }
-      : {}),
   };
+  // Pi's catalog API tag controls only whether its API-specific compatibility
+  // metadata is safe to reuse. It never selects Okou's runtime transport.
+  const compat =
+    source.api === dialect && source.compat !== undefined
+      ? source.compat
+      : undefined;
   return dialect === "openai-codex-responses"
-    ? { ...base, api: "openai-codex-responses" }
-    : { ...base, api: "openai-responses" };
+    ? {
+        ...base,
+        api: "openai-codex-responses",
+        // 0.86's Codex adapter resolves an unset `supportsStrictMode` to true
+        // and its catalog never sets the field. Keep strict JSON-schema tools
+        // off; enabling them is out of scope for the 0.86.1 upgrade.
+        // `supportsMidConvoSystemMessages` from the catalog is deliberately
+        // preserved, and asserted on the wire in model.test.ts.
+        compat: { ...compat, supportsStrictMode: false },
+      }
+    : {
+        ...base,
+        api: "openai-responses",
+        ...(compat !== undefined ? { compat } : {}),
+      };
 }
 
 export function isPiAgentModelSupported(config: PiAgentModelConfig): boolean {

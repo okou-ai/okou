@@ -20,12 +20,12 @@ import {
   type PiModelTransportFailure,
 } from "./model-transport-diagnostics";
 
-export interface ModelRequestObservation {
+export type ModelRequestObservation = {
   httpStatus?: number;
   transportAttempts: number;
   failureReason?: KnownRunFailureReason;
   transportFailure?: PiModelTransportFailure;
-}
+};
 
 /** Decorate both native consumption paths without starting another stream pump. */
 export class ModelRequestEventStream extends AssistantMessageEventStream {

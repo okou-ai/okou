@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 
+import { normalizeContext } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { materializePiAgentModelConfig } from "./credential";
@@ -29,10 +30,10 @@ async function codexFailureResult(response: () => Response) {
   });
   const stream = piAgentStreamForConfig(CODEX_ROUTE)(
     model,
-    {
+    normalizeContext({
       messages: [{ role: "user", content: "hello", timestamp: 1 }],
       tools: [],
-    },
+    }),
     {
       apiKey: CODEX_ROUTE.apiKey,
       fetch: providerFetch,
@@ -126,9 +127,9 @@ describe("Pi agent model adapter", () => {
       if (!model) throw new Error("Expected a public model");
       const result = await piAgentStreamForConfig(config)(
         model,
-        {
+        normalizeContext({
           messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        },
+        }),
         { apiKey: config.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
@@ -290,7 +291,7 @@ describe("Pi agent model adapter", () => {
 
       const result = await piAgentStreamForConfig(config)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: config.apiKey, fetch: providerFetch },
       ).result();
 
@@ -419,10 +420,10 @@ describe("Pi agent model adapter", () => {
       });
       expect(resolvePiAgentModel(config)).toBeNull();
       expect(() => {
-        return piAgentStreamForConfig(config)(model, {
+        return piAgentStreamForConfig(config)(model, normalizeContext({
           messages: [],
           tools: [],
-        });
+        }));
       }).toThrow("service tier");
     },
   );
@@ -448,10 +449,10 @@ describe("Pi agent model adapter", () => {
         }
         const stream = piAgentStreamForConfig(config)(
           model,
-          {
+          normalizeContext({
             messages: [{ role: "user", content: "hello", timestamp: 1 }],
             tools: [],
-          },
+          }),
           { apiKey: config.apiKey, serviceTier: "priority" },
         );
         for await (const _event of stream) {
@@ -553,10 +554,10 @@ describe("Pi agent model adapter", () => {
 
     const stream = piAgentStreamForConfig(config)(
       model,
-      {
+      normalizeContext({
         messages: [{ role: "user", content: "use a tool", timestamp: 1 }],
         tools: [],
-      },
+      }),
       {
         apiKey: config.apiKey,
         fetch: providerFetch,

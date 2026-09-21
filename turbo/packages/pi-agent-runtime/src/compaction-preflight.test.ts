@@ -8,11 +8,12 @@ import { resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000123";
-const SETTINGS: Required<CompactionSettings> = {
+const SETTINGS = {
   enabled: true,
   reserveTokens: 16_384,
   keepRecentTokens: 20_000,
-};
+  modelOverrides: {},
+} satisfies Required<CompactionSettings>;
 function terraModel() {
   const model = resolvePiAgentModel({
     provider: "openai",

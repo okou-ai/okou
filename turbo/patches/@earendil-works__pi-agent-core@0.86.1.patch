@@ -21,10 +21,10 @@ index e2616c0..3a4896c 100644
  //# sourceMappingURL=agent-loop.d.ts.map
 \ No newline at end of file
 diff --git a/dist/agent-loop.js b/dist/agent-loop.js
-index ca1186c..2f02b35 100644
+index 9da1651..745e6fd 100644
 --- a/dist/agent-loop.js
 +++ b/dist/agent-loop.js
-@@ -69,25 +69,51 @@ export async function runAgentLoopContinue(context, config, emit, signal, stream
+@@ -70,26 +70,52 @@ export async function runAgentLoopContinue(context, config, emit, signal, stream
      await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
      return newMessages;
  }
@@ -72,23 +72,40 @@ index ca1186c..2f02b35 100644
          // Inner loop: process tool calls and steering messages
          while (hasMoreToolCalls || pendingMessages.length > 0) {
 +            signal?.throwIfAborted();
+             let preparedMessages = [];
              if (lastCompletedTurn) {
                  const nextTurnSnapshot = await config.prepareNextTurn?.(lastCompletedTurn);
 +                signal?.throwIfAborted();
                  if (nextTurnSnapshot) {
                      currentContext = nextTurnSnapshot.context ?? currentContext;
-                     config = {
-@@ -118,16 +144,19 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+                     preparedMessages = nextTurnSnapshot.messages ?? [];
+@@ -111,24 +137,31 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  }
-                 pendingMessages = [];
+                 await emit({ type: "turn_start" });
              }
--            // Stream assistant response
--            const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
--            newMessages.push(message);
-+            signal?.throwIfAborted();
 +            // A handoff already persisted its assistant; only new messages emit/persist.
 +            const pending = pendingTools;
 +            pendingTools = undefined;
+             // Process prepared and queued messages before the next assistant response.
+-            for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
+-                await emit({ type: "message_start", message });
+-                await emit({ type: "message_end", message });
+-                currentContext.messages.push(message);
+-                newMessages.push(message);
++            // A resumed assistant issues no request, so it declares no tool changes.
++            if (!pending) {
++                for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
++                    await emit({ type: "message_start", message });
++                    await emit({ type: "message_end", message });
++                    currentContext.messages.push(message);
++                    newMessages.push(message);
++                }
+             }
+             pendingMessages = [];
++            signal?.throwIfAborted();
+             // Stream assistant response
+-            const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
+-            newMessages.push(message);
 +            const message = pending?.assistant ?? await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
 +            if (!pending) newMessages.push(message);
              if (message.stopReason === "error" || message.stopReason === "aborted") {
@@ -102,7 +119,7 @@ index ca1186c..2f02b35 100644
              const toolResults = [];
              hasMoreToolCalls = false;
              if (toolCalls.length > 0) {
-@@ -136,7 +165,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+@@ -137,7 +170,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  // them all instead of executing potentially borked calls.
                  const executedToolBatch = message.stopReason === "length"
                      ? await failToolCallsFromTruncatedMessage(toolCalls, emit)
@@ -111,7 +128,7 @@ index ca1186c..2f02b35 100644
                  toolResults.push(...executedToolBatch.messages);
                  hasMoreToolCalls = !executedToolBatch.terminate;
                  for (const result of toolResults) {
-@@ -145,6 +174,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+@@ -146,6 +179,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  }
              }
              await emit({ type: "turn_end", message, toolResults });
@@ -119,7 +136,7 @@ index ca1186c..2f02b35 100644
              lastCompletedTurn = {
                  message,
                  toolResults,
-@@ -155,8 +185,10 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+@@ -156,8 +190,10 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  await emit({ type: "agent_end", messages: newMessages });
                  return;
              }
@@ -130,7 +147,7 @@ index ca1186c..2f02b35 100644
          // Agent would stop here. Check for follow-up messages.
          const followUpMessages = (await config.getFollowUpMessages?.()) || [];
          if (followUpMessages.length > 0) {
-@@ -174,13 +206,16 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+@@ -222,16 +258,20 @@ function withToolChanges(message, { toolsAdded, toolsRemoved }) {
   * This is where AgentMessage[] gets transformed to Message[] for the LLM.
   */
  async function streamAssistantResponse(context, config, signal, emit, streamFunction) {
@@ -144,18 +161,14 @@ index ca1186c..2f02b35 100644
      // Convert to LLM-compatible messages (AgentMessage[] → Message[])
      const llmMessages = await config.convertToLlm(messages);
 +    signal?.throwIfAborted();
-     // Build LLM context
-     const llmContext = {
-         systemPrompt: context.systemPrompt,
-@@ -189,6 +224,7 @@ async function streamAssistantResponse(context, config, signal, emit, streamFunc
-     };
+     const llmContext = normalizeContext({ messages: llmMessages });
      // Resolve API key (important for expiring tokens)
      const resolvedApiKey = (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
 +    signal?.throwIfAborted();
      const response = await streamFunction(config.model, llmContext, {
          ...config,
          apiKey: resolvedApiKey,
-@@ -282,8 +318,7 @@ async function failToolCallsFromTruncatedMessage(toolCalls, emit) {
+@@ -325,8 +365,7 @@ async function failToolCallsFromTruncatedMessage(toolCalls, emit) {
  /**
   * Execute tool calls from an assistant message.
   */
@@ -165,7 +178,7 @@ index ca1186c..2f02b35 100644
      const hasSequentialToolCall = toolCalls.some((tc) => currentContext.tools?.find((t) => t.name === tc.name)?.executionMode === "sequential");
      if (config.toolExecution === "sequential" || hasSequentialToolCall) {
          return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
-@@ -369,7 +404,7 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
+@@ -412,7 +451,7 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
              break;
          }
      }
@@ -174,7 +187,7 @@ index ca1186c..2f02b35 100644
      const messages = [];
      for (const finalized of orderedFinalizedCalls) {
          const toolResultMessage = createToolResultMessage(finalized);
-@@ -381,6 +416,14 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
+@@ -424,6 +463,14 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
          terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
      };
  }
@@ -189,7 +202,7 @@ index ca1186c..2f02b35 100644
  function shouldTerminateToolBatch(finalizedCalls) {
      return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
  }
-@@ -407,6 +450,7 @@ async function prepareToolCall(currentContext, assistantMessage, toolCall, confi
+@@ -450,6 +497,7 @@ async function prepareToolCall(currentContext, assistantMessage, toolCall, confi
          };
      }
      try {
@@ -197,7 +210,7 @@ index ca1186c..2f02b35 100644
          const preparedToolCall = prepareToolCallArguments(tool, toolCall);
          const validatedArgs = validateToolArguments(tool, preparedToolCall);
          if (config.beforeToolCall) {
-@@ -461,6 +505,7 @@ async function executePreparedToolCall(prepared, signal, emit) {
+@@ -504,6 +552,7 @@ async function executePreparedToolCall(prepared, signal, emit) {
      const updateEvents = [];
      let acceptingUpdates = true;
      try {
@@ -205,7 +218,7 @@ index ca1186c..2f02b35 100644
          const result = await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal, (partialResult) => {
              if (!acceptingUpdates)
                  return;
-@@ -473,12 +518,12 @@ async function executePreparedToolCall(prepared, signal, emit) {
+@@ -516,12 +565,12 @@ async function executePreparedToolCall(prepared, signal, emit) {
              })));
          });
          acceptingUpdates = false;
@@ -221,10 +234,10 @@ index ca1186c..2f02b35 100644
              result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
              isError: true,
 diff --git a/dist/agent.d.ts b/dist/agent.d.ts
-index 42e1eab..0958666 100644
+index d5f93a8..1d2ea36 100644
 --- a/dist/agent.d.ts
 +++ b/dist/agent.d.ts
-@@ -84,6 +84,7 @@ export declare class Agent {
+@@ -86,6 +86,7 @@ export declare class Agent {
      steer(message: AgentMessage): void;
      /** Queue a message to run only after the agent would otherwise stop. */
      followUp(message: AgentMessage): void;
@@ -232,14 +245,14 @@ index 42e1eab..0958666 100644
      /** Remove all queued steering messages. */
      clearSteeringQueue(): void;
      /** Remove all queued follow-up messages. */
-@@ -109,6 +110,16 @@ export declare class Agent {
+@@ -111,6 +112,16 @@ export declare class Agent {
      prompt(input: string, images?: ImageContent[]): Promise<void>;
      /** Continue from the current transcript. The last message must be a user or tool-result message. */
      continue(): Promise<void>;
 +    /** Local pinned integration; prepare once, reconcile cancellation/input, then commit synchronously. */
 +    continuePendingTools(options?: {
 +        onStart?: () => void;
-+        afterRun?: (signal: AbortSignal) => Promise<boolean>;
++        afterRun?: () => Promise<boolean>;
 +        beforeSettled?: () => Promise<void>;
 +        onSettled?: () => void;
 +    }): Promise<void>;
@@ -250,16 +263,17 @@ index 42e1eab..0958666 100644
      private runPromptMessages;
      private runContinuation;
 diff --git a/dist/agent.js b/dist/agent.js
-index ee4f225..3746596 100644
+index 209c9d3..61bfa6b 100644
 --- a/dist/agent.js
 +++ b/dist/agent.js
-@@ -1,4 +1,4 @@
+@@ -1,5 +1,5 @@
+ import { createInitialSystemMessage, getCurrentSystemMessage, getCurrentSystemPrompt, toToolDeclaration, } from "@earendil-works/pi-ai";
 -import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
 +import { getPendingToolContinuation, runAgentLoop, runAgentLoopContinue, runAgentLoopPendingTools } from "./agent-loop.js";
  import { getDefaultStreamFn } from "./stream-fn.js";
  function defaultConvertToLlm(messages) {
-     return messages.filter((message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult");
-@@ -60,6 +60,12 @@ class PendingMessageQueue {
+     return messages.filter((message) => message.role === "system" ||
+@@ -69,6 +69,12 @@ class PendingMessageQueue {
      hasItems() {
          return this.messages.length > 0;
      }
@@ -272,7 +286,7 @@ index ee4f225..3746596 100644
      drain() {
          if (this.mode === "all") {
              const drained = this.messages.slice();
-@@ -171,12 +177,19 @@ export class Agent {
+@@ -180,12 +186,19 @@ export class Agent {
      }
      /** Queue a message to be injected after the current assistant turn finishes. */
      steer(message) {
@@ -292,7 +306,7 @@ index ee4f225..3746596 100644
      /** Remove all queued steering messages. */
      clearSteeringQueue() {
          this.steeringQueue.clear();
-@@ -200,7 +213,7 @@ export class Agent {
+@@ -209,7 +222,7 @@ export class Agent {
      }
      /** Abort the current run, if one is active. */
      abort() {
@@ -301,7 +315,7 @@ index ee4f225..3746596 100644
      }
      /**
       * Resolve when the current run and all awaited event listeners have finished.
-@@ -254,6 +267,53 @@ export class Agent {
+@@ -264,6 +277,53 @@ export class Agent {
          }
          await this.runContinuation();
      }
@@ -321,7 +335,7 @@ index ee4f225..3746596 100644
 +    async handlePendingPostRun(signal, afterRun) {
 +        if (signal.aborted && this._state.messages.at(-1)?.stopReason === "aborted") return;
 +        signal.throwIfAborted();
-+        while (await afterRun?.(signal)) {
++        while (await afterRun?.()) {
 +            await this.runPendingContinuation(signal);
 +            if (signal.aborted && this._state.messages.at(-1)?.stopReason === "aborted") return;
 +            signal.throwIfAborted();
@@ -355,7 +369,7 @@ index ee4f225..3746596 100644
      normalizePromptInput(input, images) {
          if (Array.isArray(input)) {
              return input;
-@@ -318,12 +378,14 @@ export class Agent {
+@@ -327,12 +387,14 @@ export class Agent {
                      skipInitialSteeringPoll = false;
                      return [];
                  }
@@ -373,7 +387,7 @@ index ee4f225..3746596 100644
          if (this.activeRun) {
              throw new Error("Agent is already processing.");
          }
-@@ -332,7 +394,7 @@ export class Agent {
+@@ -341,7 +403,7 @@ export class Agent {
          const promise = new Promise((resolve) => {
              resolvePromise = resolve;
          });
@@ -382,7 +396,7 @@ index ee4f225..3746596 100644
          this._state.isStreaming = true;
          this._state.streamingMessage = undefined;
          this._state.errorMessage = undefined;
-@@ -343,7 +405,38 @@ export class Agent {
+@@ -352,7 +414,38 @@ export class Agent {
              await this.handleRunFailure(error, abortController.signal.aborted);
          }
          finally {
@@ -422,7 +436,7 @@ index ee4f225..3746596 100644
          }
      }
      async handleRunFailure(error, aborted) {
-@@ -388,6 +481,8 @@ export class Agent {
+@@ -397,6 +490,8 @@ export class Agent {
              case "message_end":
                  this._state.streamingMessage = undefined;
                  this._state.messages.push(event.message);

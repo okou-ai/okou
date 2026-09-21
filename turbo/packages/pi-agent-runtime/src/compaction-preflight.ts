@@ -6,12 +6,20 @@ import type {
 } from "@earendil-works/pi-ai";
 import {
   calculateContextTokens,
-  type CompactionSettings,
   getLastAssistantUsage,
   getLatestCompactionEntry,
+  type SettingsManager,
   shouldCompact,
   type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
+
+/**
+ * 0.86 resolves compaction settings through the manager and adds optional
+ * per-model overrides, so the resolved shape is no longer `Required<CompactionSettings>`.
+ */
+type ResolvedCompactionSettings = ReturnType<
+  SettingsManager["getCompactionSettings"]
+>;
 
 import { PiApiFirstTurnCompactionRequiredError } from "./errors";
 import type { MemoryPiSession } from "./session-memory";
@@ -60,7 +68,7 @@ function requireOfficialCompaction(): never {
 export function assertPiApiFirstTurnCompactionSafe<TApi extends Api>(args: {
   readonly model: Model<TApi>;
   readonly session: MemoryPiSession;
-  readonly settings: Required<CompactionSettings>;
+  readonly settings: ResolvedCompactionSettings;
 }): void {
   if (!args.settings.enabled) {
     return;

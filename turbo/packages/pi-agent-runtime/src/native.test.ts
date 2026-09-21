@@ -25,6 +25,7 @@ import { materializePiAgentModelConfig } from "./credential";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiApiFirstTurnOwnership, runPiApiFirstTurn } from "./api";
 import { projectPiApiAssistantMessage } from "./api-turn";
+import { normalizeContext } from "@earendil-works/pi-ai";
 
 const server = setupServer();
 beforeAll(() => {
@@ -229,7 +230,7 @@ describe("native Pi execution edges", () => {
         expect(model.contextWindow).toBeGreaterThanOrEqual(200000);
         const result = await piAgentStreamForConfig(materialized)(
           model,
-          { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+          normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
           { apiKey: materialized.apiKey },
         ).result();
         expect(result.stopReason).toBe("toolUse");
@@ -398,7 +399,7 @@ describe("native Pi execution edges", () => {
       if (!model) throw new Error("Missing native model");
       const result = await piAgentStreamForConfig(materialized)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: materialized.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
@@ -485,7 +486,7 @@ describe("native Pi execution edges", () => {
         const onObservedResponseStatus = vi.fn();
         const result = await piAgentStreamForConfig(materialized)(
           model,
-          { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+          normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
           { apiKey: materialized.apiKey, onObservedResponseStatus },
         ).result();
         expect(result.stopReason, scenario.code).toBe("error");
@@ -548,7 +549,7 @@ describe("native Pi execution edges", () => {
       );
       const result = await piAgentStreamForConfig(materialized)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: materialized.apiKey },
       ).result();
       expect(attempts).toBe(1);
@@ -615,7 +616,7 @@ describe("native Pi execution edges", () => {
       );
       const result = await piAgentStreamForConfig(materialized)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: materialized.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
@@ -657,7 +658,7 @@ describe("native Pi execution edges", () => {
       );
       const result = await piAgentStreamForConfig(materialized)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: materialized.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
@@ -694,7 +695,7 @@ describe("native Pi execution edges", () => {
 
       const result = await piAgentStreamForConfig(materialized)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: materialized.apiKey },
       ).result();
 
@@ -731,7 +732,7 @@ describe("native Pi execution edges", () => {
       if (!model) throw new Error("Missing native model");
       const result = await piAgentStreamForConfig(materialized)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }] }),
         { apiKey: materialized.apiKey, signal: controller.signal },
       ).result();
       expect(result.stopReason).toBe("aborted");
@@ -785,12 +786,12 @@ describe("native Pi execution edges", () => {
       };
       const first = await stream(
         model,
-        { messages: [user] },
+        normalizeContext({ messages: [user] }),
         { apiKey: materialized.apiKey },
       ).result();
       const second = await stream(
         model,
-        {
+        normalizeContext({
           messages: [
             user,
             first,
@@ -803,7 +804,7 @@ describe("native Pi execution edges", () => {
               timestamp: 2,
             },
           ],
-        },
+        }),
         { apiKey: materialized.apiKey },
       ).result();
       expect(second.stopReason).toBe("toolUse");
@@ -813,7 +814,7 @@ describe("native Pi execution edges", () => {
       expect(bodies[1]).toContain("iVBORw0KGgo=");
       await stream(
         model,
-        { messages: [user, { ...first, model: "unselected-upstream-model" }] },
+        normalizeContext({ messages: [user, { ...first, model: "unselected-upstream-model" }] }),
         { apiKey: materialized.apiKey },
       ).result();
       expect(bodies[2]).not.toContain("opaque-signature");
