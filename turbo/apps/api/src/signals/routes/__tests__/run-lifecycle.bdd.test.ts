@@ -36,7 +36,10 @@ import type {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
@@ -13832,6 +13835,8 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "okou maps --help",
       "Public-web search, current public facts, and source discovery",
       "okou web-search <query>",
+      "framework-native web search tool is exposed",
+      "managed Web Search is disabled for a BYOK Run",
       "external public-web provider",
       "bounded, ranked results",
       "result-count, recency, and domain filters",
@@ -13992,7 +13997,13 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
       '["image-generation","web-search"]',
     );
+    expect(claim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]).toBe(
+      "true",
+    );
     expect(claim.environment).not.toHaveProperty(DISABLED_PAID_TOOLS_ENV_VAR);
+    expect(claim.environment).not.toHaveProperty(
+      ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+    );
     await api.requestCancelRun(actor, queued.runId, [200]);
 
     const enabled = await api.createRun(actor, {
@@ -14003,6 +14014,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const enabledClaim = await api.claimRunnerJob(enabled.runId);
     expect(enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
       "[]",
+    );
+    expect(enabledClaim.platformEnvironment).not.toHaveProperty(
+      ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
     );
     await api.requestCancelRun(actor, enabled.runId, [200]);
 
@@ -14020,7 +14034,57 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(
       rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
     ).toBe('["video-generation","web-search"]');
+    expect(
+      rolloutOffClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+    ).toBe("true");
     await api.requestCancelRun(actor, rolloutOff.runId, [200]);
+
+    await api.createOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "bdd-native-web-search-openai-key",
+    });
+    const codexByok = await api.createRun(actor, {
+      agentId,
+      prompt: "use Codex native web search",
+      modelProvider: "openai-api-key",
+    });
+    const codexByokClaim = await api.claimRunnerJob(codexByok.runId);
+    expect(codexByokClaim.cliAgentType).toBe("codex");
+    expect(
+      codexByokClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+    ).toBe("true");
+    await api.requestCancelRun(actor, codexByok.runId, [200]);
+
+    const explicitKeyAgent = await api.createDirectAgent(actor, {
+      version: "1",
+      agents: {
+        main: {
+          framework: "claude-code",
+          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
+        },
+      },
+    });
+    const explicitKeyRun = await api.createDirectRun(actor, {
+      agentId: explicitKeyAgent.agentId,
+      prompt: "use native search with an explicit framework key",
+    });
+    const explicitKeyClaim = await api.claimRunnerJob(explicitKeyRun.runId);
+    expect(
+      explicitKeyClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+    ).toBe("true");
+    await api.requestCancelRun(actor, explicitKeyRun.runId, [200]);
+
+    await seedBuiltInDefaultModelKey();
+    const builtIn = await api.createRun(actor, {
+      agentId,
+      prompt: "keep native web search disabled for built-in routing",
+      modelProvider: "built-in",
+    });
+    const builtInClaim = await api.claimRunnerJob(builtIn.runId);
+    expect(builtInClaim.platformEnvironment).not.toHaveProperty(
+      ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+    );
+    await api.requestCancelRun(actor, builtIn.runId, [200]);
   });
 
   it("uses the executing member's paid tool preferences for a shared agent", async () => {

@@ -49,6 +49,33 @@ Prompt injection is unchanged. A disabled paid invocation exits with status 1
 and identifies the disabled tool, links to Settings → Personal → Chat,
 and explains that re-enabling applies to later runs.
 
+### BYOK web-search fallback
+
+Claude Code and Codex normally keep framework-native web search disabled so
+public-web discovery uses managed `okou web-search`. Run preparation exposes
+the framework-native tool only when the captured policy disables `web-search`
+and the resolved route uses BYOK credentials. This includes a stored member or
+organization provider and an explicit framework key declared in compose. An
+outer `built-in` provider remains non-BYOK even when its concrete upstream
+provider is OpenAI or Anthropic.
+
+The API records the resolved decision in trusted platform environment as
+`OKOU_ENABLE_FRAMEWORK_WEB_SEARCH=true`. Guest Agent accepts only that exact
+positive value; an absent, false, or malformed value keeps native search
+disabled. User environment cannot author this signal because the reserved
+`OKOU_*` namespace is removed before the trusted platform overlay. The tools
+prompt uses managed search by default and directs the agent to native search
+only when that fallback is exposed.
+
+| Captured `web-search` policy | Resolved route | Claude/Codex native search |
+| ---------------------------- | -------------- | -------------------------- |
+| Enabled                      | Any            | Disabled                   |
+| Disabled                     | Built-in       | Disabled                   |
+| Disabled                     | BYOK           | Enabled                    |
+
+Pi behavior does not change. Pi has no registered native web-search tool and
+continues to reach managed search through the Okou CLI.
+
 ## Media execution
 
 Media commands check the same snapshot at their paid execution boundary.
@@ -83,6 +110,13 @@ after the API, settings client, and run-selected CLI include this implementation
 Do not enable it while an old serving API can prepare runs without the policy.
 Runner job schemas are unchanged: the existing platform environment carries
 the variable, and prepared jobs retain their commit-addressed CLI package.
+
+The BYOK native-search fallback is also additive. A new Guest paired with an
+old API sees no positive marker and keeps native search disabled; an old Guest
+paired with a new API ignores the marker and also keeps native search disabled.
+The fallback activates only after both surfaces are current. Prepared jobs keep
+their captured decision, so changing the personal preference affects later
+Runs rather than already prepared, queued, deferred, or running work.
 
 The media catalog extension needs no database migration. Deploy the expanded
 API and select a CLI that enforces the new IDs before deploying the App's media
