@@ -253,7 +253,6 @@ describe("okou generate image-batch command", () => {
     "bundles private images locally and retains the selected %s chat references",
     async (visibility) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
       const root = await makeTemporaryDirectory();
       const manifestPath = join(root, "images.tsv");
       const stateDirectory = join(root, "state");
@@ -281,7 +280,6 @@ describe("okou generate image-batch command", () => {
               contentType: "image/png",
               size: 33,
               url: reference,
-              privateArtifacts: true,
               creditsCharged: 1,
               model: "seedream4",
               provider: "fal",
@@ -352,7 +350,6 @@ describe("okou generate image-batch command", () => {
               : {}),
             inlineMarkdownLink: `[hero](<${artifact.url}>)`,
             previewMarkdownBlock: `![hero](<${artifact.url}>)`,
-            privateArtifacts: true,
           },
         ],
       });
@@ -369,17 +366,14 @@ describe("okou generate image-batch command", () => {
       expect(stdout).toContain("hero\tassets/image-hero.webp");
       expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
       expect(stdout).toContain("only available inside the agent runtime");
+      expect(stdout).not.toContain("private artifact link");
       if (visibility === "public") {
         if (sharingUrl === undefined) {
           throw new Error("Public fixture did not provide its delivery alias");
         }
-        expect(stdout).not.toContain("upload-file");
         expect(stdout).not.toContain(sharingUrl);
-      } else {
-        expect(stdout).toContain("okou slack upload-file");
       }
       mockConsoleLog.mockClear();
-      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "lark");
       await generateCommand.parseAsync([
         "node",
         "cli",
@@ -392,21 +386,14 @@ describe("okou generate image-batch command", () => {
         JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
       ).toMatchObject({
         artifacts: [
-          {
-            url: artifact.url,
-            ...(visibility ? { visibility } : {}),
-            artifactPresentationContext:
-              visibility === "public"
-                ? expect.not.stringContaining("upload-file")
-                : expect.stringContaining("okou lark upload-file"),
-          },
+          { url: artifact.url, ...(visibility ? { visibility } : {}) },
         ],
       });
       const artifactsJson = await readFile(
         join(stateDirectory, "artifacts.json"),
         "utf8",
       );
-      expect(artifactsJson).not.toContain("upload-file");
+      expect(artifactsJson).not.toContain("private artifact link");
       if (visibility === "public") {
         if (sharingUrl === undefined) {
           throw new Error("Public fixture did not provide its delivery alias");
