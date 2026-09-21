@@ -601,13 +601,13 @@
       "loadFailed": "無法載入權限",
       "loadingPermissions": "正在載入權限",
       "onlyMe": "僅自己",
-      "onlyMeDescription": "只有你能檢視這個成果",
+      "onlyMeOption": "僅自己",
       "organization": "組織",
-      "organizationDescription": "{{organization}} 中拿到連結的人都能檢視",
-      "organizationDescriptionUnnamed": "你所在組織中拿到連結的人都能檢視",
+      "organizationOption": "{{organization}}的所有成員",
+      "organizationOptionUnnamed": "組織內的所有成員",
       "permissionsUpdated": "訪問權限已更新",
       "publicAccess": "公開訪問",
-      "publicDescription": "任何拿到連結的人都能檢視",
+      "publicOption": "知道連結的所有人",
       "retry": "重試"
     },
     "sidebar": {
@@ -647,7 +647,6 @@
       "importedSlides_one": "{{count}} 頁",
       "importedSlides_other": "{{count}} 頁",
       "importFile": "匯入你自己的檔案",
-      "importFileHint": "沿用你檔案裡的設計",
       "multiAccent": "多口音",
       "needPro": "需要 Pro",
       "nextSlide": "預覽下一頁",
@@ -852,9 +851,9 @@
           "title": "Sentry問題摘要"
         },
         "social-posts-to-sheets": {
-          "description": "把你關注的帳號的公開帖子和互動資料彙集到一張表裡。",
-          "shortDescription": "把公開的社交帖子彙集到一張表。",
-          "title": "把社交帖子收集到Google Sheets"
+          "description": "把你關注的帳號的公開貼文和互動資料彙集到一張表裡。",
+          "shortDescription": "把公開的社交貼文彙集到一張表。",
+          "title": "把社交貼文收集到Google Sheets"
         },
         "sort-gmail-draft-replies": {
           "description": "整理收件箱，併為需要回復的郵件起草回覆。",
@@ -897,7 +896,7 @@
           "title": "把網頁資料收集到表格"
         },
         "x-brand-monitor": {
-          "description": "跟蹤X上的品牌提及，把相關帖子存到Notion，並在出現重要提及時提醒Slack。",
+          "description": "跟蹤X上的品牌提及，把相關貼文存到Notion，並在出現重要提及時提醒Slack。",
           "shortDescription": "X上出現重要品牌提及時提醒Slack。",
           "title": "X品牌監控"
         }
@@ -1494,6 +1493,10 @@
         },
         "notEligible": "不符合條件",
         "pendingState": "{{amount}} 待發放",
+        "rejected": {
+          "alreadyRedeemed": "貼文已被使用",
+          "postMustMention": "需要提到{{assistantName}}"
+        },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
         "share": {
           "action": "分享",
@@ -1501,9 +1504,9 @@
           "name": "分享到 X"
         },
         "shareDialog": {
-          "description": "提交一條公開帖子供稽核。每人只能成功領取一次獎勵。",
-          "helper": "帖子必須是公開的，並且提到 {{assistantName}}。",
-          "inputLabel": "帖子連結",
+          "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
+          "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
+          "inputLabel": "貼文連結",
           "placeholder": "https://x.com/...",
           "submit": "提交",
           "title": "在 X 上分享 {{assistantName}}"
@@ -4136,7 +4139,6 @@
     "sourcesFirst": {
       "common": {
         "back": "返回",
-        "cancel": "取消",
         "continue": "繼續",
         "finish": "完成設定",
         "notNow": "暫不",
@@ -4208,24 +4210,32 @@
         "title": "你主要做哪類工作？"
       },
       "skills": {
-        "confirm": "匯入並繼續",
+        "copied": "已複製",
         "copy": "匯入一個SKILL.md，它就會變成Okou裡的工作流，輸入/即可執行。",
-        "import": "選擇檔案",
+        "copyError": "無法複製提示詞。",
+        "copyPrompt": "複製提示詞",
         "importedCopy": "已匯入為Okou工作流。",
+        "importedLabel": "已匯入的技能",
         "importedTitle": "你的工作流已就緒",
-        "panelCopy": "可以來自Codex、Claude Code，或任何能寫出它的智能體。",
-        "panelTitle": "把SKILL.md拖到這裡",
-        "previewCopy": "已匯入為Okou工作流。在你分享之前，只有你能用。",
-        "previewTitle": "檢查你的技能",
-        "replace": "換一個檔案",
-        "title": "把你已經寫好的技能帶過來。"
+        "preparing": "正在開啟匯入會話…",
+        "promptCopy": "它會讀取你本機上的技能，並寫入Okou。",
+        "promptLabel": "技能匯入提示詞",
+        "promptTitle": "在Codex或Claude Code中執行",
+        "startError": "無法開啟匯入會話。",
+        "title": "把你已經寫好的技能帶過來。",
+        "tryAgain": "重試",
+        "waiting": "匯入的技能會在到達後顯示在這裡。"
       },
       "slack": {
         "add": "新增到Slack",
+        "channelAdminRequired": "請讓工作區管理員把Okou加入{{channel}}。",
+        "channelUnavailable": "{{channel}}在這個工作區還不可用。",
+        "connectAction": "連線Slack",
         "connectedCopy": "開啟Slack，@Okou就能派任務。",
         "connectedStatus": "已新增到你的工作區",
         "connectedTitle": "Slack已連線",
         "copy": "新增一次，之後在工作發生的地方@Okou就行。",
+        "name": "Slack",
         "otherAdded": "已新增",
         "otherImessage": "iMessage",
         "othersLabel": "這些可以現在加，也可以以後加",
@@ -4442,7 +4452,7 @@
           "marketing_sheets": {
             "outcome": "下週可用的五條創意",
             "question": "內容資料在哪個表格裡？",
-            "text": "看看我在{{source}}裡的內容資料，建議五條下週可以試試的帖子。先問我用哪個表格。"
+            "text": "看看我在{{source}}裡的內容資料，建議五條下週可以試試的貼文。先問我用哪個表格。"
           },
           "operations_calendar": {
             "outcome": "你的一週，已規劃好",
@@ -5761,8 +5771,8 @@
         "title": "在Sheets中分析BigQuery資料"
       },
       "watch-brand-mentions": {
-        "description": "把確認過的影片改寫成適合各平臺的帖子和長推。",
-        "scenario": "一條好影片可以用在不止一個渠道。{{assistantName}}分析指定的YouTube影片，起草X帖子和長推，並可把確認後的方案儲存到Notion。",
+        "description": "把確認過的影片改寫成適合各平臺的貼文和長推。",
+        "scenario": "一條好影片可以用在不止一個渠道。{{assistantName}}分析指定的YouTube影片，起草X貼文和長推，並可把確認後的方案儲存到Notion。",
         "steps": {
           "one": {
             "description": "{{assistantName}}讀取YouTube影片、字幕文稿和相關背景。",
@@ -5773,7 +5783,7 @@
             "title": "內容待你確認"
           },
           "two": {
-            "description": "{{assistantName}}寫出簡潔的X帖子和多個長推方案。",
+            "description": "{{assistantName}}寫出簡潔的X貼文和多個長推方案。",
             "title": "起草社交文案"
           }
         },
@@ -6892,15 +6902,20 @@
       "preview": "預覽{{title}}",
       "rename": "重新命名模板"
     },
+    "clearSearch": "清除搜尋",
     "custom": "自定義",
     "detail": {
       "back": "自定義模板",
-      "page": "第{{number}}頁",
-      "sourceFile": "來自{{filename}}"
+      "page": "第{{number}}頁"
     },
     "empty": {
-      "description": "Okou會把你檔案裡的設計變成可以反覆使用的模板。"
+      "description": "Okou會把你檔案裡的設計變成可以反覆使用的模板。",
+      "document": "還沒有文件",
+      "illustration": "還沒有圖片",
+      "presentation": "還沒有簡報",
+      "title": "打造你自己的模板"
     },
+    "importHint": "可以匯入文件、簡報或圖片。",
     "loadFailed": "無法載入模板。",
     "renameFailed": "無法重新命名該模板。",
     "retry": "重試",
@@ -6977,6 +6992,7 @@
     "configured": "已配置",
     "credential": {
       "add": "新增憑據",
+      "authentication": "認證方式",
       "createNew": "新建憑據",
       "delete": "刪除憑據",
       "deleteHelp": "刪除這條未使用的憑據？此操作無法撤銷。",
@@ -6996,7 +7012,14 @@
       "sharedHelp_one": "有{{count}}臺主機正在使用。修改密碼會影響這臺主機。",
       "sharedHelp_other": "有{{count}}臺主機正在使用。修改密碼會影響所有這些主機。",
       "summary_other": "已配置{{count}}條憑據",
-      "unused": "沒有已儲存的主機在使用。"
+      "unused": "沒有已儲存的主機在使用。",
+      "username": "使用者名稱",
+      "usernameHelp": "1–255個UTF-8位元組，不允許使用NUL。",
+      "usernameHint": "輸入伺服器使用者名稱",
+      "usernamePassword": "密碼",
+      "usernamePasswordHelp": "1–1023個UTF-8位元組，不允許使用NUL，空格會被保留。",
+      "usernamePasswordHint": "輸入該使用者名稱對應的密碼",
+      "usernamePasswordMethod": "使用者名稱和密碼"
     },
     "credentialsTab": "憑據",
     "delete": "刪除主機",
@@ -7041,10 +7064,13 @@
       "caHelp": "最多8個CA證書，總大小64 KiB。請勿貼上私鑰或伺服器證書。",
       "caHint": "貼上簽發該伺服器證書的公開CA證書",
       "custom": "自定義證書頒發機構",
-      "help": "需要支援VeNCrypt X509Vnc的VNC伺服器。伺服器證書必須與所配置的主機名或IP地址一致。",
-      "profile": "加密VNC（X509Vnc）",
+      "profileLabel": "安全方案",
       "system": "系統證書頒發機構",
-      "title": "伺服器證書信任"
+      "title": "伺服器證書信任",
+      "x509Plain": "加密的使用者名稱和密碼（X509Plain）",
+      "x509PlainHelp": "需要VeNCrypt X509Plain。TLS會在傳送使用者名稱和密碼之前驗證伺服器。",
+      "x509Vnc": "加密VNC（X509Vnc）",
+      "x509VncHelp": "需要VeNCrypt X509Vnc。TLS會在傳送VNC密碼之前驗證伺服器。"
     },
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",

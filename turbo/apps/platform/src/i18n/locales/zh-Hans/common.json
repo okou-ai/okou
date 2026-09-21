@@ -601,13 +601,13 @@
       "loadFailed": "无法加载权限",
       "loadingPermissions": "正在加载权限",
       "onlyMe": "仅自己",
-      "onlyMeDescription": "只有你能查看这个成果",
+      "onlyMeOption": "仅自己",
       "organization": "组织",
-      "organizationDescription": "{{organization}} 中拿到链接的人都能查看",
-      "organizationDescriptionUnnamed": "你所在组织中拿到链接的人都能查看",
+      "organizationOption": "{{organization}}的所有成员",
+      "organizationOptionUnnamed": "组织内的所有成员",
       "permissionsUpdated": "访问权限已更新",
       "publicAccess": "公开访问",
-      "publicDescription": "任何拿到链接的人都能查看",
+      "publicOption": "知道链接的所有人",
       "retry": "重试"
     },
     "sidebar": {
@@ -647,7 +647,6 @@
       "importedSlides_one": "{{count}} 页",
       "importedSlides_other": "{{count}} 页",
       "importFile": "导入你自己的文件",
-      "importFileHint": "沿用你文件里的设计",
       "multiAccent": "多口音",
       "needPro": "需要 Pro",
       "nextSlide": "预览下一页",
@@ -1494,6 +1493,10 @@
         },
         "notEligible": "不符合条件",
         "pendingState": "{{amount}} 待发放",
+        "rejected": {
+          "alreadyRedeemed": "帖子已被使用",
+          "postMustMention": "需要提到{{assistantName}}"
+        },
         "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
         "share": {
           "action": "分享",
@@ -4136,7 +4139,6 @@
     "sourcesFirst": {
       "common": {
         "back": "返回",
-        "cancel": "取消",
         "continue": "继续",
         "finish": "完成设置",
         "notNow": "暂不",
@@ -4208,24 +4210,32 @@
         "title": "你主要做哪类工作？"
       },
       "skills": {
-        "confirm": "导入并继续",
+        "copied": "已复制",
         "copy": "导入一个SKILL.md，它就会变成Okou里的工作流，输入/即可运行。",
-        "import": "选择文件",
+        "copyError": "无法复制提示词。",
+        "copyPrompt": "复制提示词",
         "importedCopy": "已导入为Okou工作流。",
+        "importedLabel": "已导入的技能",
         "importedTitle": "你的工作流已就绪",
-        "panelCopy": "可以来自Codex、Claude Code，或任何能写出它的智能体。",
-        "panelTitle": "把SKILL.md拖到这里",
-        "previewCopy": "已导入为Okou工作流。在你分享之前，只有你能用。",
-        "previewTitle": "检查你的技能",
-        "replace": "换一个文件",
-        "title": "把你已经写好的技能带过来。"
+        "preparing": "正在打开导入会话…",
+        "promptCopy": "它会读取你本机上的技能，并写入Okou。",
+        "promptLabel": "技能导入提示词",
+        "promptTitle": "在Codex或Claude Code中运行",
+        "startError": "无法打开导入会话。",
+        "title": "把你已经写好的技能带过来。",
+        "tryAgain": "重试",
+        "waiting": "导入的技能会在到达后显示在这里。"
       },
       "slack": {
         "add": "添加到Slack",
+        "channelAdminRequired": "请让工作区管理员把Okou加入{{channel}}。",
+        "channelUnavailable": "{{channel}}在这个工作区还不可用。",
+        "connectAction": "连接Slack",
         "connectedCopy": "打开Slack，@Okou就能派任务。",
         "connectedStatus": "已添加到你的工作区",
         "connectedTitle": "Slack已连接",
         "copy": "添加一次，之后在工作发生的地方@Okou就行。",
+        "name": "Slack",
         "otherAdded": "已添加",
         "otherImessage": "iMessage",
         "othersLabel": "这些可以现在加，也可以以后加",
@@ -6892,15 +6902,20 @@
       "preview": "预览{{title}}",
       "rename": "重命名模板"
     },
+    "clearSearch": "清除搜索",
     "custom": "自定义",
     "detail": {
       "back": "自定义模板",
-      "page": "第{{number}}页",
-      "sourceFile": "来自{{filename}}"
+      "page": "第{{number}}页"
     },
     "empty": {
-      "description": "Okou会把你文件里的设计变成可以反复使用的模板。"
+      "description": "Okou会把你文件里的设计变成可以反复使用的模板。",
+      "document": "还没有文档",
+      "illustration": "还没有图片",
+      "presentation": "还没有演示文稿",
+      "title": "打造你自己的模板"
     },
+    "importHint": "可以导入文档、演示文稿或图片。",
     "loadFailed": "无法加载模板。",
     "renameFailed": "无法重命名该模板。",
     "retry": "重试",
@@ -6977,6 +6992,7 @@
     "configured": "已配置",
     "credential": {
       "add": "添加凭据",
+      "authentication": "认证方式",
       "createNew": "新建凭据",
       "delete": "删除凭据",
       "deleteHelp": "删除这条未使用的凭据？此操作无法撤销。",
@@ -6996,7 +7012,14 @@
       "sharedHelp_one": "有{{count}}台主机正在使用。修改密码会影响这台主机。",
       "sharedHelp_other": "有{{count}}台主机正在使用。修改密码会影响所有这些主机。",
       "summary_other": "已配置{{count}}条凭据",
-      "unused": "没有已保存的主机在使用。"
+      "unused": "没有已保存的主机在使用。",
+      "username": "用户名",
+      "usernameHelp": "1–255个UTF-8字节，不允许使用NUL。",
+      "usernameHint": "输入服务器用户名",
+      "usernamePassword": "密码",
+      "usernamePasswordHelp": "1–1023个UTF-8字节，不允许使用NUL，空格会被保留。",
+      "usernamePasswordHint": "输入该用户名对应的密码",
+      "usernamePasswordMethod": "用户名和密码"
     },
     "credentialsTab": "凭据",
     "delete": "删除主机",
@@ -7041,10 +7064,13 @@
       "caHelp": "最多8个CA证书，总大小64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开CA证书",
       "custom": "自定义证书颁发机构",
-      "help": "需要支持VeNCrypt X509Vnc的VNC服务器。服务器证书必须与所配置的主机名或IP地址一致。",
-      "profile": "加密VNC（X509Vnc）",
+      "profileLabel": "安全方案",
       "system": "系统证书颁发机构",
-      "title": "服务器证书信任"
+      "title": "服务器证书信任",
+      "x509Plain": "加密的用户名和密码（X509Plain）",
+      "x509PlainHelp": "需要VeNCrypt X509Plain。TLS会在发送用户名和密码之前验证服务器。",
+      "x509Vnc": "加密VNC（X509Vnc）",
+      "x509VncHelp": "需要VeNCrypt X509Vnc。TLS会在发送VNC密码之前验证服务器。"
     },
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
