@@ -646,7 +646,7 @@ export function CustomTemplatePickerPane({
       {showHeaderImport ? (
         <div
           className={cn(
-            "relative shrink-0 pb-5 sm:pt-[68px] lg:flex lg:min-h-[68px] lg:items-center lg:gap-4 lg:py-4 lg:pr-9",
+            "relative shrink-0 pb-5 sm:pt-[68px] lg:flex lg:items-center lg:gap-4",
             !showToolbar && "pb-0",
           )}
         >
@@ -676,7 +676,7 @@ export function CustomTemplatePickerPane({
               <CustomTemplateKindFilters kind={view.kind} />
             </>
           ) : null}
-          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px] lg:static lg:ml-auto">
+          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px]">
             <CustomTemplateImportButton
               signals={signals}
               onImported={onImported}
