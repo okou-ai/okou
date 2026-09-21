@@ -170,7 +170,12 @@ describe("v4 connector catalog reader", () => {
     delete api.auth.awsSigv4;
     expect(() => {
       decodeConnectorCatalogArtifact(rawArtifact(artifact));
-    }).toThrow("relationship-mismatch");
+    }).toThrow(
+      expect.objectContaining({
+        code: "relationship-mismatch",
+        relationshipRule: "invalid-firewall-permission",
+      }),
+    );
 
     api.auth.awsSigv4 = {
       accessKeyId: "${{ vars.SMS019_USERNAME }}",
@@ -179,7 +184,12 @@ describe("v4 connector catalog reader", () => {
     permission.rules = ["POST / AWS action=DescribeInstances"];
     expect(() => {
       decodeConnectorCatalogArtifact(rawArtifact(artifact));
-    }).toThrow("relationship-mismatch");
+    }).toThrow(
+      expect.objectContaining({
+        code: "relationship-mismatch",
+        relationshipRule: "invalid-firewall-permission",
+      }),
+    );
   });
 
   it("loads candidates only from the canonical v4 release path", async () => {
