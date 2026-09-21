@@ -105,7 +105,7 @@ async function completedZip(
   });
   expect(new Set(names).size).toBe(names.length);
   expect(JSON.parse(readExportText(zip, "export-manifest.json"))).toMatchObject(
-    { formatVersion: 3 },
+    { formatVersion: 4 },
   );
   for (const name of names.filter((path) => {
     return path.startsWith("manifest/files-");
@@ -232,13 +232,18 @@ test("continues the same export across bounded requests after a staged write los
     title: thread.title,
     pinOrder: "a0",
   });
+  // An empty thread contributes exactly one entry: no snapshot, no tail, and
+  // no per-thread index file. Its bound lives on the thread's manifest record.
   expect(
-    JSON.parse(readExportText(zip, `chat-messages/${thread.id}/index.json`)),
-  ).toMatchObject({
-    threadId: thread.id,
-    snapshotPath: null,
-    upperSeqId: 0,
-  });
+    zip
+      .getEntries()
+      .map((entry) => {
+        return entry.entryName;
+      })
+      .filter((path) => {
+        return path.startsWith(`chat-messages/${thread.id}/`);
+      }),
+  ).toStrictEqual([]);
   expect(
     JSON.parse(readExportText(zip, `agents/${agent.agentId}.json`)),
   ).toMatchObject({
@@ -475,7 +480,7 @@ test.each([false, true])(
   },
 );
 
-test("does not publish shared instructions after their owner revokes access", async () => {
+test("excludes agents owned by other members from a subject data export", async () => {
   const user = await actor();
   const bdd = createBddApi(context);
   createMiscRoutesApi(context);
@@ -484,8 +489,36 @@ test("does not publish shared instructions after their owner revokes access", as
     displayName: "Shared export source",
     visibility: "public",
   });
-  const instructions = "Instruction access will be revoked during export.";
+  const instructions = "A colleague authored these instructions.";
   await bdd.updateAgentInstructions(owner, agent.agentId, instructions);
+  const storage = installDurableUserExportStorage(context);
+  const api = createOpsLogsApi(context);
+  const started = await api.requestPostUserExport(user, [202]);
+  cleanup(user, started.body.jobId);
+  await flushWaitUntilForTest();
+  await work(user, started.body.jobId, "run", 200);
+  const zip = await completedZip(user, started.body.jobId, storage);
+  // A public agent stays its author's record. Sharing it grants this user read
+  // access in the product; it does not make its text this user's export data.
+  expect(zip.getEntry(`agents/${agent.agentId}.json`)).toBeNull();
+  for (const entry of zip.getEntries()) {
+    expect(entry.getData().toString("utf8")).not.toContain(instructions);
+  }
+});
+
+test("does not publish an export after one of its agents stops being reachable", async () => {
+  const user = await actor();
+  const bdd = createBddApi(context);
+  createMiscRoutesApi(context);
+  const agent = await bdd.createAgent(user, {
+    displayName: "Own export source",
+    visibility: "private",
+  });
+  await bdd.updateAgentInstructions(
+    user,
+    agent.agentId,
+    "Instruction access will be revoked during export.",
+  );
   installDurableUserExportStorage(context);
   const api = createOpsLogsApi(context);
   const started = await api.requestPostUserExport(user, [202]);
@@ -504,9 +537,7 @@ test("does not publish shared instructions after their owner revokes access", as
     (await api.requestGetUserExport(user, [200])).body.job?.downloadUrl,
   ).toBeNull();
   // Authority can change after the earlier paginated authorization pass.
-  await bdd.updateAgentMetadata(owner, agent.agentId, {
-    visibility: "private",
-  });
+  await bdd.deleteAgent(user, agent.agentId);
   for (let attempt = 0; attempt < 6; attempt += 1) {
     await work(user, started.body.jobId, "make-due");
     await work(user, started.body.jobId, "run", 200);

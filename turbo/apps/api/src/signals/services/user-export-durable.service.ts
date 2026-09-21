@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray } from "drizzle-orm";
 import { createSHA256 } from "hash-wasm";
 import { z } from "zod";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
@@ -11,6 +11,7 @@ import {
 } from "@okouai/db/schema/user-export-entry";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
@@ -25,6 +26,7 @@ import {
   createMultipartS3Upload,
   generatePresignedGetUrl,
   putS3Object,
+  putS3ObjectReturningEtag,
   readS3ObjectRange,
   s3ObjectHead,
 } from "../external/s3";
@@ -49,6 +51,7 @@ import {
 const log = logger("service:user-export-durable");
 const PART_BYTES = 16 * 1024 * 1024;
 const SCAN_BYTES = 4 * 1024 * 1024;
+const SCAN_BATCH_SIZE = 100;
 const INVOCATION_BUDGET_MS = 20_000;
 const ATTEMPT_TIMEOUT_MS = 30_000;
 const MAX_FAILURES = 6;
@@ -93,6 +96,12 @@ interface Runtime {
   readonly state: ExportState;
 }
 
+interface EntryPosition {
+  readonly ordinal: number;
+  readonly localOffset: number;
+  readonly centralOffset: number;
+}
+
 function entryCondition(jobId: string, ordinal: number) {
   return and(
     eq(userExportEntries.jobId, jobId),
@@ -121,6 +130,63 @@ async function saveState(
   );
 }
 
+/** Commit one collection step: pin its snapshots, record its entries, run the job. */
+async function commitCollectedEntries(
+  args: {
+    readonly db: Db;
+    readonly job: ClaimedBackgroundJob;
+    readonly entries: readonly (typeof userExportEntries.$inferInsert)[];
+    readonly next: ExportState;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const { db, job, entries, next } = args;
+  return await db.transaction(async (tx) => {
+    if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
+      return false;
+    }
+    for (const entry of entries) {
+      if (entry.metadata?.sourceKind !== "chat-snapshot") {
+        continue;
+      }
+      const threadId = entry.metadata.threadId;
+      if (typeof threadId !== "string") {
+        throw new Error("Export snapshot has no thread identity");
+      }
+      // Pin while holding the current head against replacement. GC observes
+      // either the live head or this committed export reference, never a gap.
+      const [head] = await tx
+        .select({ id: chatEventSnapshots.id })
+        .from(chatEventSnapshots)
+        .where(
+          and(
+            eq(chatEventSnapshots.chatThreadId, threadId),
+            eq(chatEventSnapshots.archiveSchemaVersion, 7),
+            eq(chatEventSnapshots.objectKey, entry.sourceKey),
+          ),
+        )
+        .limit(1)
+        .for("share");
+      signal.throwIfAborted();
+      if (!head) {
+        throw new Error(
+          "Export snapshot changed before its durable pin; retry collection",
+        );
+      }
+    }
+    if (entries.length > 0) {
+      await tx.insert(userExportEntries).values([...entries]);
+      signal.throwIfAborted();
+    }
+    await tx
+      .update(exportJobs)
+      .set({ status: "running" })
+      .where(and(eq(exportJobs.id, job.id), eq(exportJobs.status, "pending")));
+    signal.throwIfAborted();
+    return true;
+  });
+}
+
 const collectStep$ = command(
   async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
     const { db, bucket, job, state } = runtime;
@@ -145,9 +211,11 @@ const collectStep$ = command(
       if (!sourceKey) {
         throw new Error("Export source has no durable bytes");
       }
+      // Bytes we author are already in memory: their size, ETag, and digests
+      // are known here, so they never need a read-back pass in `scan`.
       if (entry.content !== undefined) {
-        await get(
-          putS3Object(
+        const etag = await get(
+          putS3ObjectReturningEtag(
             bucket,
             sourceKey,
             entry.content,
@@ -156,6 +224,29 @@ const collectStep$ = command(
           ),
         );
         signal.throwIfAborted();
+        const size = entry.content.length;
+        userExportZipEntryLayout({
+          path: entry.path,
+          size,
+          localHeaderOffset: 0,
+        });
+        entries.push({
+          jobId: job.id,
+          ordinal: state.entryCount + index,
+          path: entry.path,
+          sourceKey,
+          size,
+          scannedBytes: size,
+          crc32: updateUserExportCrc32(0, entry.content),
+          ready: true,
+          metadata: {
+            ...entry.metadata,
+            etag,
+            // `contentKey` derives the staging key from this same digest.
+            sha256: sourceKey.slice(sourceKey.lastIndexOf("/") + 1),
+          },
+        });
+        continue;
       }
       const head = await get(s3ObjectHead(bucket, sourceKey, signal));
       signal.throwIfAborted();
@@ -198,70 +289,112 @@ const collectStep$ = command(
       phase: result.done ? "scan" : "collect",
       collectedAt: result.done ? nowDate().toISOString() : state.collectedAt,
     };
-    return await db.transaction(async (tx) => {
-      if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
-        return false;
-      }
-      for (const entry of entries) {
-        if (entry.metadata?.sourceKind !== "chat-snapshot") {
-          continue;
-        }
-        const threadId = entry.metadata.threadId;
-        if (typeof threadId !== "string") {
-          throw new Error("Export snapshot has no thread identity");
-        }
-        // Pin while holding the current head against replacement. GC observes
-        // either the live head or this committed export reference, never a gap.
-        const [head] = await tx
-          .select({ id: chatEventSnapshots.id })
-          .from(chatEventSnapshots)
-          .where(
-            and(
-              eq(chatEventSnapshots.chatThreadId, threadId),
-              eq(chatEventSnapshots.archiveSchemaVersion, 7),
-              eq(chatEventSnapshots.objectKey, entry.sourceKey),
-            ),
-          )
-          .limit(1)
-          .for("share");
-        signal.throwIfAborted();
-        if (!head) {
-          throw new Error(
-            "Export snapshot changed before its durable pin; retry collection",
-          );
-        }
-      }
-      if (entries.length > 0) {
-        await tx.insert(userExportEntries).values(entries);
-        signal.throwIfAborted();
-      }
-      await tx
-        .update(exportJobs)
-        .set({ status: "running" })
-        .where(
-          and(eq(exportJobs.id, job.id), eq(exportJobs.status, "pending")),
-        );
-      signal.throwIfAborted();
-      return true;
-    });
+    return await commitCollectedEntries({ db, job, entries, next }, signal);
   },
 );
+
+/**
+ * Entries hashed while their bytes were in memory need no read-back. Only their
+ * archive offsets are still unknown, and those follow from path and size alone,
+ * so a run of them advances in one step instead of one step each.
+ */
+function placePrehashedEntries(
+  rows: readonly (typeof userExportEntries.$inferSelect)[],
+  state: ExportState,
+):
+  | {
+      readonly placed: readonly EntryPosition[];
+      readonly next: ExportState;
+    }
+  | undefined {
+  const placed: EntryPosition[] = [];
+  let localSize = state.localSize;
+  let centralSize = state.centralSize;
+  for (const row of rows) {
+    if (!row.ready || stringMetadata(row.metadata, "sha256") === undefined) {
+      break;
+    }
+    const layout = userExportZipEntryLayout({
+      path: row.path,
+      size: row.size,
+      localHeaderOffset: localSize,
+    });
+    placed.push({
+      ordinal: row.ordinal,
+      localOffset: localSize,
+      centralOffset: centralSize,
+    });
+    localSize += layout.localHeaderSize + row.size;
+    centralSize += layout.centralHeaderSize;
+  }
+  if (placed.length === 0) {
+    return undefined;
+  }
+  return {
+    placed,
+    next: {
+      ...state,
+      cursor: state.cursor + placed.length,
+      localSize,
+      centralSize,
+    },
+  };
+}
+
+async function commitPlacedEntries(
+  args: {
+    readonly db: Db;
+    readonly job: ClaimedBackgroundJob;
+    readonly placed: readonly EntryPosition[];
+    readonly next: ExportState;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  const { db, job, placed, next } = args;
+  return await db.transaction(async (tx) => {
+    if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
+      return false;
+    }
+    for (const position of placed) {
+      await tx
+        .update(userExportEntries)
+        .set({
+          localOffset: position.localOffset,
+          centralOffset: position.centralOffset,
+        })
+        .where(entryCondition(job.id, position.ordinal));
+      signal.throwIfAborted();
+    }
+    return true;
+  });
+}
 
 const scanStep$ = command(
   async ({ get }, runtime: Runtime, signal: AbortSignal) => {
     const { db, bucket, job, state } = runtime;
-    const [entry] = await db
+    const rows = await db
       .select()
       .from(userExportEntries)
-      .where(entryCondition(job.id, state.cursor))
-      .limit(1);
+      .where(
+        and(
+          eq(userExportEntries.jobId, job.id),
+          gte(userExportEntries.ordinal, state.cursor),
+        ),
+      )
+      .orderBy(asc(userExportEntries.ordinal))
+      .limit(SCAN_BATCH_SIZE);
     signal.throwIfAborted();
+    const [entry] = rows;
     if (!entry) {
       return await saveState(
         runtime,
         { ...state, phase: "inventory", cursor: 0 },
         signal,
       );
+    }
+    const advanced = placePrehashedEntries(rows, state);
+    if (advanced) {
+      return await commitPlacedEntries({ db, job, ...advanced }, signal);
     }
     const etag = stringMetadata(entry.metadata, "etag");
     if (!etag) {
@@ -441,8 +574,8 @@ const manifestStep$ = command(
     const bytes = Buffer.from(
       JSON.stringify(
         {
-          formatVersion: 3,
-          chatEventSchemaVersion: 7,
+          formatVersion: 4,
+          chatEventSchemaVersion: CURRENT_CHAT_EVENT_SCHEMA_VERSION,
           userId: job.userId,
           requestOrgId: job.orgId,
           startedAt: state.source.startedAt,
