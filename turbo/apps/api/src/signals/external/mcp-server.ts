@@ -768,7 +768,7 @@ function registerManageTools(
     "create_chat_thread",
     {
       description:
-        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model leaves the thread unpinned for current defaults at run admission; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, dispatch follows acceptance; use get_chat_status because acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
+        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model pins the then-current default at first run admission; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, dispatch follows acceptance; use get_chat_status because acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
@@ -801,7 +801,7 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Atomically update a conversation title and/or future-run model; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock, separate from lastMessageAt activity. model:null clears the pin. A title update suppresses automatic naming; model changes affect future runs, not an active run. Use one UUID requestId per patch. Within 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry, so inspect current state. Replay returns current state without restoring older settings.",
+        "Update title and/or future-run model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock, not lastMessageAt. model:null clears the pin; next run admission pins the then-current default. A title update suppresses automatic naming; model changes do not affect an active run. Use one UUID requestId per patch. For 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without restoring older settings.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
