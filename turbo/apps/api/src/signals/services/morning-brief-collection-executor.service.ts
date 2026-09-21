@@ -37,6 +37,7 @@ import {
   type MorningBriefCollectionOwner,
 } from "./morning-brief-collection-occurrence.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
+import { morningBriefSourceReadCutoff } from "./morning-brief-collection-plan";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
 import {
   resolveMorningBriefChoiceAuthority,
@@ -936,6 +937,7 @@ export const executeMorningBriefSlackCollection$ = command(
         MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
       ),
     );
+    const deadlineAt = nowDate().getTime() + budgetMs;
     if (
       botToken === null ||
       admission.slackUserId === null ||
@@ -961,7 +963,16 @@ export const executeMorningBriefSlackCollection$ = command(
         clock: () => {
           return nowDate().getTime();
         },
-        deadline: nowDate().getTime() + budgetMs,
+        deadline: deadlineAt,
+        // The same reserve the composed path holds. Reading until the instant
+        // the timeout below fires means a history read is still in flight when
+        // it does, and an aborted read takes the whole attempt with it: the
+        // abort never reaches `classifySlackFailure`, so every message already
+        // collected and proved is discarded instead of released.
+        readDeadline: morningBriefSourceReadCutoff(
+          deadlineAt,
+          nowDate().getTime(),
+        ),
       },
       AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]),
     );

@@ -110,6 +110,7 @@ nothing observed.
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Collection phase, admission to COMMIT        | 45 s                                                                                                                               |
 | Final checks and guarded commit reserve      | 5 s                                                                                                                                |
+| Per-source read reserve                      | the smaller of 3 s and a quarter of that source's remaining budget                                                                 |
 | New provider read cutoff                     | 40 s into the phase                                                                                                                |
 | Concurrent source jobs                       | 3, in the fixed order below                                                                                                        |
 | Fixed source order                           | calendar, gmail, github, slack, chat                                                                                               |
@@ -125,6 +126,34 @@ a grace period: a source that has not started by the 40-second cutoff does not
 start at all, because a read finishing after the commit window has nowhere to be
 finalized. Cancellation stops new admissions and joins work already owned —
 there are no detached readers, no sleeping retries and no unbounded queue.
+
+Each source holds a second reserve inside its own budget, and it protects the
+payload rather than the commit. A source's cancellation signal and the clock
+its collector consults describe the same instant, so a collector that reads
+right up to its deadline is always **cancelled** rather than **stopped**: the
+abort escapes classification — `settle` re-throws aborts by contract, because
+a cancellation must never be mistaken for a result — the source job rejects,
+and the wave loop replaces the whole source with a failed collection carrying
+zero items. Every pull request, check run and channel history the successful
+reads already produced is discarded with it.
+
+That is not hypothetical. GitHub issued twenty reads and Slack twenty-nine, all
+answering `200`, and both sources settled as `failed` with no items in every
+recorded occurrence, while the two light sources beside them answered normally.
+Compounding it, GitHub's collector started a _second_ twenty-second budget of
+its own instead of using the one the composition had already allocated, so
+every graceful budget check inside the read was measured against a clock
+strictly later than the signal that cancels the source — the graceful path was
+unreachable by construction.
+
+So new provider reads stop at the read cutoff and the rest of the budget pays
+for the release proof, the release fence and the bundle projection. The reserve
+is a share of what is actually left rather than a flat subtraction: taking three
+seconds from a one-second budget would put the cutoff at the moment the source
+was asked, and a source that is out of time before its first read would report a
+morning it never looked at. A source that runs out of time now hands back the
+partial evidence it holds; a source that was refused, revoked or could not prove
+its release still hands back nothing.
 
 ### One deadline, sampled after every wait
 

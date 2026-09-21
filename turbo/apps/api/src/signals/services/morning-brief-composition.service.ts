@@ -52,6 +52,7 @@ import {
   allocateMorningBriefRequest,
   morningBriefCompositionDeadline,
   morningBriefSourceBudget,
+  morningBriefSourceReadCutoff,
   morningBriefSourceWaves,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
   type MorningBriefCompositionDeadline,
@@ -1026,7 +1027,12 @@ async function readMorningBriefSource(
       return null;
     }
     return await readSlackSource(
-      { scope, capturedAt, slack: args.slack, budgetMs },
+      {
+        scope,
+        capturedAt,
+        slack: args.slack,
+        deadlineAt: sourceDeadline.at,
+      },
       sourceSignal,
     );
   };
@@ -1714,6 +1720,11 @@ async function readGithubSource(
       owner: { orgId: args.scope.orgId, userId: args.scope.userId },
       anchor: args.scope.anchor,
       authority: args.authority,
+      // The composition allocated this source's absolute deadline before the
+      // read started. Letting the collector start its own instead put its
+      // graceful budget checks behind the signal that cancels it, so GitHub
+      // could only ever end as a rejected job with nothing released.
+      deadline: args.deadline,
     },
     signal,
   );
@@ -1813,7 +1824,8 @@ async function readGmailSource(
 async function readSlackSource(
   args: Pick<SourceReadArgs, "scope" | "capturedAt"> & {
     readonly slack: SlackBinding;
-    readonly budgetMs: number;
+    /** The exact instant this source's cancellation signal fires. */
+    readonly deadlineAt: number;
   },
   signal: AbortSignal,
 ): Promise<CollectedSource> {
@@ -1847,7 +1859,14 @@ async function readSlackSource(
       clock: () => {
         return nowDate().getTime();
       },
-      deadline: nowDate().getTime() + args.budgetMs,
+      deadline: args.deadlineAt,
+      // Reading stops before the signal that cancels this source fires, so an
+      // attempt that runs out of time still proves and releases the channels
+      // it read instead of being aborted into a failure with zero items.
+      readDeadline: morningBriefSourceReadCutoff(
+        args.deadlineAt,
+        nowDate().getTime(),
+      ),
     },
     signal,
   );
