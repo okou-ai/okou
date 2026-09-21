@@ -40,6 +40,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@okouai/core": "workspace:*",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "@types/node": "^24.3.0",
