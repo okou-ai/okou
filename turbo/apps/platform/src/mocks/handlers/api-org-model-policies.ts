@@ -1,4 +1,5 @@
 import {
+  ACTIVE_RUN_MODELS,
   getCanonicalModelDisplayName,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
@@ -44,6 +45,11 @@ function response(): OrgModelPoliciesResponse {
     policies.find((policy) => {
       return policy.isDefault;
     }) ?? null;
+  const configuredModels = new Set(
+    policies.map((policy) => {
+      return policy.model;
+    }),
+  );
   return {
     revision: policies
       .map((policy) => {
@@ -52,6 +58,9 @@ function response(): OrgModelPoliciesResponse {
       .join(","),
     writePreconditionRequired: false,
     policies,
+    modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
+      return model !== "gpt-6-sol" && !configuredModels.has(model);
+    }),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };

@@ -3,6 +3,7 @@ import type {
   SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -10,6 +11,60 @@ import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise } from "../signals/utils";
 
 import { db } from "../lib/db";
+
+/**
+ * The API version before the global addition gate could persist any active
+ * model. Stage that historical state to prove a later catalog disablement does
+ * not alter or freeze the organization's existing policy.
+ */
+export async function stagePreAddabilityModelPolicyFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly model: SupportedRunModel;
+}): Promise<void> {
+  const inserted = await db()
+    .insert(orgModelPolicies)
+    .values({
+      orgId: args.orgId,
+      model: args.model,
+      isDefault: false,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+      modelProviderSurfaceId: null,
+      createdByUserId: args.userId,
+      updatedByUserId: args.userId,
+    })
+    .returning({ id: orgModelPolicies.id });
+  if (inserted.length !== 1) {
+    throw new Error("Expected one pre-addability model policy to be inserted");
+  }
+}
+
+/** Remove one operator catalog row to exercise the production fail-closed path. */
+export async function removeRunModelCatalogEntryFixture(
+  model: SupportedRunModel,
+): Promise<() => Promise<void>> {
+  const [removed] = await db()
+    .delete(runModelCatalog)
+    .where(eq(runModelCatalog.model, model))
+    .returning();
+  if (!removed) {
+    throw new Error(`Expected run model catalog entry for ${model}`);
+  }
+
+  let restored = false;
+  return async () => {
+    if (restored) {
+      return;
+    }
+    await db()
+      .insert(runModelCatalog)
+      .values(removed)
+      .onConflictDoNothing({ target: runModelCatalog.model });
+    restored = true;
+  };
+}
 
 /**
  * Simulate a persisted discriminator written by a later release. The current
