@@ -255,7 +255,12 @@ async function collectThread(
       // anyway costs a whole extra step per thread to read zero rows.
       if (physicalCoverage >= upperSeqId) {
         return step(
-          { ...checkpoint, phase: "threads", cursor: thread.id, thread: undefined },
+          {
+            ...checkpoint,
+            phase: "threads",
+            cursor: thread.id,
+            thread: undefined,
+          },
           entries,
         );
       }

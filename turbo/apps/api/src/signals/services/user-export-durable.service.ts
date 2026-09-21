@@ -289,10 +289,7 @@ const collectStep$ = command(
       phase: result.done ? "scan" : "collect",
       collectedAt: result.done ? nowDate().toISOString() : state.collectedAt,
     };
-    return await commitCollectedEntries(
-      { db, job, entries, next },
-      signal,
-    );
+    return await commitCollectedEntries({ db, job, entries, next }, signal);
   },
 );
 

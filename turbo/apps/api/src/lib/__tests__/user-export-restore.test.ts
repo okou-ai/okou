@@ -181,7 +181,9 @@ describe("downloaded export recovery tool", () => {
     "restores verified paged sources, current chat events, instructions and %s binary memory",
     async (producer) => {
       const fixture = sources(producer);
-      const { result, output } = await runRestore(exportZip(fixture.files, fixture.meta));
+      const { result, output } = await runRestore(
+        exportZip(fixture.files, fixture.meta),
+      );
       expect(result.error).toBeUndefined();
       expect(result.stderr).toBe("");
       expect(result.status).toBe(0);
@@ -221,7 +223,9 @@ describe("downloaded export recovery tool", () => {
           [field]: field === "fileCount" ? 2 : fixture.binary.length + 1,
         }),
       );
-      const { result, output } = await runRestore(exportZip(fixture.files, fixture.meta));
+      const { result, output } = await runRestore(
+        exportZip(fixture.files, fixture.meta),
+      );
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(
         "Memory manifest totals do not match its files",

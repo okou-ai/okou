@@ -226,12 +226,12 @@ function readDurableChatRows(zip: AdmZip, threadId: string) {
   const snapshot = zip
     .getEntries()
     .filter((entry) => {
-      return entry.entryName.startsWith(
-        `chat-messages/${threadId}/snapshots/`,
-      );
+      return entry.entryName.startsWith(`chat-messages/${threadId}/snapshots/`);
     })
     .sort((left, right) => {
-      return snapshotCoverage(left.entryName) - snapshotCoverage(right.entryName);
+      return (
+        snapshotCoverage(left.entryName) - snapshotCoverage(right.entryName)
+      );
     })
     .at(-1);
   if (!snapshot) {
