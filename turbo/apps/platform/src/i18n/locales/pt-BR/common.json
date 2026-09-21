@@ -4664,10 +4664,12 @@
       },
       "team": {
         "copy": "Convide alguém do time agora, ou depois pelo menu do workspace.",
+        "failed": "Algo deu errado. Tente novamente.",
         "invite": "Enviar convite",
         "invited": "Convidado",
         "label": "E-mail do colega",
         "note": "Eles entram neste workspace; as contas deles continuam sendo deles.",
+        "notSent": "Não enviado",
         "panelTitle": "Convide alguém do time",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4675,6 +4677,7 @@
           "workflows": "Qualquer pessoa aqui pode rodar os workflows que este workspace já tem.",
           "workspace": "Eles chegam neste workspace, com as fontes que você acabou de conectar."
         },
+        "sending": "Enviando…",
         "title": "Traga as pessoas que fazem este trabalho com você."
       },
       "welcome": {

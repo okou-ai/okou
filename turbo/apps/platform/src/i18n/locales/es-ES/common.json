@@ -4664,10 +4664,12 @@
       },
       "team": {
         "copy": "Invita a alguien ahora, o hazlo luego desde el menú del workspace.",
+        "failed": "Algo salió mal. Inténtalo de nuevo.",
         "invite": "Enviar invitación",
         "invited": "Invitado",
         "label": "Correo de tu compañero",
         "note": "Se unen a este workspace; sus cuentas siguen siendo suyas.",
+        "notSent": "No enviada",
         "panelTitle": "Invita a alguien del equipo",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4675,6 +4677,7 @@
           "workflows": "Cualquiera aquí puede ejecutar los workflows que ya tiene este workspace.",
           "workspace": "Entran en este workspace, con las fuentes que acabas de conectar."
         },
+        "sending": "Enviando…",
         "title": "Trae a la gente que hace este trabajo contigo."
       },
       "welcome": {
