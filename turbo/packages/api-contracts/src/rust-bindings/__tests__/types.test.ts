@@ -324,7 +324,10 @@ describe("Rust type bindings", () => {
           .object({ outcome: z.literal("key"), shared: z.string().max(8) })
           .strict(),
         z
-          .object({ outcome: z.literal("password"), shared: z.string().max(16) })
+          .object({
+            outcome: z.literal("password"),
+            shared: z.string().max(16),
+          })
           .strict(),
       ]),
       declarations: [
