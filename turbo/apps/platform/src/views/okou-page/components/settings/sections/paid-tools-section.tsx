@@ -21,7 +21,6 @@ import {
   type PaidToolsSettings,
   type PaidToolSettings,
 } from "../../../../../signals/okou-page/settings/paid-tools.ts";
-import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
@@ -111,29 +110,9 @@ function PaidToolsContent({
 }) {
   const { t } = useTranslation();
   const loadable = useLoadable(settings.disabledTools$);
-  const workspace = useLoadable(currentOrgInfo$);
   const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-        {workspace.state === "hasData" && workspace.data && (
-          <p>
-            {t(
-              ($) => {
-                return $.settings.paidTools.scope;
-              },
-              {
-                workspace: workspace.data.name,
-              },
-            )}
-          </p>
-        )}
-        <p>
-          {t(($) => {
-            return $.settings.paidTools.timing;
-          })}
-        </p>
-      </div>
       {loadable.state === "loading" ? (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -160,11 +139,18 @@ function PaidToolsContent({
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {settings.tools.map((tool) => {
-            return <PaidToolRow key={tool.toolId} tool={tool} />;
-          })}
-        </div>
+        <>
+          <div className="flex flex-col gap-3">
+            {settings.tools.map((tool) => {
+              return <PaidToolRow key={tool.toolId} tool={tool} />;
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.settings.paidTools.timing;
+            })}
+          </p>
+        </>
       )}
     </div>
   );

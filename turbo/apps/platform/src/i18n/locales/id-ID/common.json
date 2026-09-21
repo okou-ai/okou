@@ -6274,6 +6274,7 @@
     },
     "paidTools": {
       "description": "Pilih alat bawaan berbayar yang dapat Anda gunakan.",
+      "descriptionInWorkspace": "Pilih alat bawaan berbayar yang dapat Anda gunakan di {{workspace}}.",
       "disabledForCreation": "{{tool}} dinonaktifkan di pengaturan alat berbayar Anda.",
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
@@ -6281,7 +6282,6 @@
       "retry": "Coba lagi",
       "saveError": "Perubahan Anda tidak tersimpan.",
       "saving": "Menyimpan…",
-      "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
       "title": "Alat berbayar",
       "tools": {

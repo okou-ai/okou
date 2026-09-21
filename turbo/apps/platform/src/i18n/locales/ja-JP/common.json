@@ -6274,6 +6274,7 @@
     },
     "paidTools": {
       "description": "使用する有料の組み込みツールを選択します。",
+      "descriptionInWorkspace": "{{workspace}} で使用する有料の組み込みツールを選択します。",
       "disabledForCreation": "有料ツールの設定で{{tool}}が無効になっています。",
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
@@ -6281,7 +6282,6 @@
       "retry": "再試行",
       "saveError": "変更を保存できませんでした。",
       "saving": "保存中…",
-      "scope": "この設定は {{workspace}} のあなたにのみ適用されます。",
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "有料ツール",
       "tools": {

@@ -6349,6 +6349,7 @@
     },
     "paidTools": {
       "description": "Elige qué herramientas de pago integradas puedes usar.",
+      "descriptionInWorkspace": "Elige qué herramientas de pago integradas puedes usar en {{workspace}}.",
       "disabledForCreation": "{{tool}} está desactivado en tus ajustes de herramientas de pago.",
       "loadError": "No se pudieron cargar tus ajustes.",
       "loading": "Cargando tus ajustes…",
@@ -6356,7 +6357,6 @@
       "retry": "Reintentar",
       "saveError": "No se ha guardado tu cambio.",
       "saving": "Guardando…",
-      "scope": "Estos ajustes solo se aplican a ti en {{workspace}}.",
       "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
       "title": "Herramientas de pago",
       "tools": {

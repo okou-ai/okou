@@ -65,11 +65,11 @@ test("Members manage Paid tools inside Chat when both rollouts are enabled", asy
   expect(within(dialog).getAllByRole("switch")).toHaveLength(13);
   expect(
     within(dialog).getByText(
-      "These settings apply only to you in Research team.",
+      "Choose which paid built-in tools you can use in Research team.",
     ),
   ).toBeInTheDocument();
   expect(
-    within(dialog).getByText(/Running tasks and tasks already prepared/),
+    within(dialog).getByText(/Tasks already running or prepared/),
   ).toBeInTheDocument();
   expect(window.location.search).toContain("settings=chat");
   expect(
@@ -255,7 +255,7 @@ test("An in-flight read from the previous workspace cannot populate the next wor
     context.mocks.clerk().stateChanged();
   });
   await screen.findByText(
-    "These settings apply only to you in Second workspace.",
+    "Choose which paid built-in tools you can use in Second workspace.",
   );
   await expect(readySwitch("People search")).resolves.not.toBeChecked();
   oldResponse.resolve();
@@ -324,7 +324,7 @@ test("A workspace switch while a save obtains its token prevents sending that sa
   });
   releaseToken.resolve();
   await screen.findByText(
-    "These settings apply only to you in Second workspace.",
+    "Choose which paid built-in tools you can use in Second workspace.",
   );
   await expect(readySwitch("Web search")).resolves.toBeChecked();
   expect(updates).toStrictEqual([]);
@@ -357,7 +357,7 @@ test("A same-identity Clerk refresh preserves an in-flight save and its confirme
     context.mocks.clerk().stateChanged();
   });
   await screen.findByText(
-    "These settings apply only to you in Renamed research team.",
+    "Choose which paid built-in tools you can use in Renamed research team.",
   );
   expect(screen.getByRole("switch", { name: "Web search" })).toHaveAttribute(
     "aria-disabled",

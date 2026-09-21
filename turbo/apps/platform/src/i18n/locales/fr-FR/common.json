@@ -6349,6 +6349,7 @@
     },
     "paidTools": {
       "description": "Choisissez les outils payants intégrés que vous pouvez utiliser.",
+      "descriptionInWorkspace": "Choisissez les outils payants intégrés que vous pouvez utiliser dans {{workspace}}.",
       "disabledForCreation": "{{tool}} est désactivé dans vos paramètres d’outils payants.",
       "loadError": "Impossible de charger vos paramètres.",
       "loading": "Chargement de vos paramètres…",
@@ -6356,7 +6357,6 @@
       "retry": "Réessayer",
       "saveError": "Votre modification n’a pas été enregistrée.",
       "saving": "Enregistrement…",
-      "scope": "Ces paramètres ne concernent que vous dans {{workspace}}.",
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
       "title": "Outils payants",
       "tools": {

@@ -7,6 +7,7 @@ import { Switch } from "@okouai/ui/components/ui/switch";
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
+import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { orgModelPolicies$ } from "../../../../../signals/external/org-model-policies.ts";
 import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
@@ -162,8 +163,35 @@ export function SendModePreference() {
   );
 }
 
-export function ChatSection() {
+function PaidToolsHeading() {
   const { t } = useTranslation();
+  const workspace = useLoadable(currentOrgInfo$);
+  const workspaceName =
+    workspace.state === "hasData" && workspace.data
+      ? workspace.data.name
+      : undefined;
+  return (
+    <SettingsSectionHeading
+      title={t(($) => {
+        return $.settings.paidTools.title;
+      })}
+      description={
+        workspaceName === undefined
+          ? t(($) => {
+              return $.settings.paidTools.description;
+            })
+          : t(
+              ($) => {
+                return $.settings.paidTools.descriptionInWorkspace;
+              },
+              { workspace: workspaceName },
+            )
+      }
+    />
+  );
+}
+
+export function ChatSection() {
   const features = useGet(featureSwitch$);
   const showChatPreferences =
     features[FeatureSwitchKey.ChatPreference] ?? false;
@@ -183,14 +211,7 @@ export function ChatSection() {
 
       {showPaidTools ? (
         <section className="flex flex-col gap-3">
-          <SettingsSectionHeading
-            title={t(($) => {
-              return $.settings.paidTools.title;
-            })}
-            description={t(($) => {
-              return $.settings.paidTools.description;
-            })}
-          />
+          <PaidToolsHeading />
           <PaidToolsSection />
         </section>
       ) : null}

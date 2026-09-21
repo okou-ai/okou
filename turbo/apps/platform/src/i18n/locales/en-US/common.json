@@ -6280,6 +6280,7 @@
     },
     "paidTools": {
       "description": "Choose which paid built-in tools you can use.",
+      "descriptionInWorkspace": "Choose which paid built-in tools you can use in {{workspace}}.",
       "disabledForCreation": "{{tool}} is disabled in your paid tool settings.",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
@@ -6287,8 +6288,7 @@
       "retry": "Retry",
       "saveError": "Your change was not saved.",
       "saving": "Saving…",
-      "scope": "These settings apply only to you in {{workspace}}.",
-      "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
+      "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
       "title": "Paid tools",
       "tools": {
         "avatar-video-generation": {

@@ -6349,6 +6349,7 @@
     },
     "paidTools": {
       "description": "Scegli quali strumenti integrati a pagamento puoi usare.",
+      "descriptionInWorkspace": "Scegli quali strumenti integrati a pagamento puoi usare in {{workspace}}.",
       "disabledForCreation": "{{tool}} è disattivato nelle impostazioni degli strumenti a pagamento.",
       "loadError": "Impossibile caricare le impostazioni.",
       "loading": "Caricamento delle impostazioni…",
@@ -6356,7 +6357,6 @@
       "retry": "Riprova",
       "saveError": "La modifica non è stata salvata.",
       "saving": "Salvataggio…",
-      "scope": "Queste impostazioni si applicano solo a te in {{workspace}}.",
       "timing": "Le modifiche valgono per le esecuzioni future. Le attività in corso o già preparate potrebbero mantenere le impostazioni precedenti.",
       "title": "Strumenti a pagamento",
       "tools": {
