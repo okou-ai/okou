@@ -29,6 +29,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
@@ -91,6 +92,8 @@ async function dispatchMaintenance(
     context,
     type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   );
+  // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+  configureNativeCliArtifact();
   const provider = type
     ? await createPhase2Provider(context, scope, type, credentialScope)
     : undefined;

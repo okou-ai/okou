@@ -51,6 +51,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import {
   advancePiMemoryPhase2InputRevision,
   notifyPiMemoryPhase2ExternalHeadChange,
@@ -490,6 +491,8 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
     }
   });
   await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
+  // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+  configureNativeCliArtifact();
   context.mocks.s3.getSignedUrl.mockResolvedValue(
     "https://objects.example.test/private-first-turn",
   );

@@ -42,6 +42,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import {
   failPiMemoryPhase2Job,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
@@ -134,6 +135,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       credits: 100_000,
     });
     await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     await insertPhase2Candidates(scope, [
       {
         piSessionId: randomUUID(),
@@ -237,6 +240,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       credits: 100_000,
     });
     await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     const sessionId = randomUUID();
     await insertPhase2Candidates(scope, [
       {
@@ -377,6 +382,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       await deleteRunSessionsForScope(scope);
     });
     await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     await insertPhase2Candidates(scope, [
       {
         piSessionId: randomUUID(),
@@ -499,6 +506,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       await db().delete(agents).where(eq(agents.id, agentId));
     });
     await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     const sessionId = randomUUID();
     const [sourceHistoryHash] = await insertPhase2Candidates(scope, [
       {
@@ -796,6 +805,8 @@ async function createPhase2WorkerFixture(label: string, emptyBase = true) {
   await enablePiMemoryForScope(scope);
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
   await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+  // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+  configureNativeCliArtifact();
   await insertPendingPhase2Job(scope, {
     updatedAt: new Date("2026-09-05T02:00:00Z"),
   });
