@@ -1,11 +1,11 @@
-# Pi 0.85.1 pending-tool integration
+# Pi 0.86.1 pending-tool integration
 
 `AgentSession.continuePendingTools()` is a local additive API, paired with
 `Agent.continuePendingTools()` and their declarations. Upstream `continue()`
 and both low-level continuation APIs reject a trailing assistant; consuming
 queued input is not an equivalent handoff. Keep the version pinned at exactly
-0.85.1; the three patches are based on the official npm distribution for that
-version, not a replacement copy of the 0.84.1 loop.
+0.86.1; the three patches are based on the official npm distribution for that
+version, not a replacement copy of the 0.85.1 loop.
 
 The entrypoint validates the current assistant and its unresolved calls, then
 claims native Agent ownership before session startup acknowledgement or any
@@ -14,14 +14,38 @@ tools without emitting or appending that assistant or its original user again.
 It retains argument preparation, hooks, sequential/parallel execution, partial
 updates, result metadata, persistence, turn preparation, and the length guard.
 
-The Agent's native abort controller remains active through AgentSession's
-post-run retry/compaction/queue handling and awaited terminal extension hooks.
-These run within the original lifecycle through the integration callbacks;
-`finishRun()` releases it only afterwards. Normal prompt calls retain their
-existing post-run path. Optional signals on shared session helpers identify
-the pending operation; retry/compaction retain their own explicit abort controls
-while also observing that native owner. A fresh explicit prompt obtains a new
-signal.
+## Cancellation convergence on 0.86.1
+
+Through 0.85.1 this integration threaded an explicit signal through the shared
+session helpers, because upstream had no cancellation of its own between the
+post-run steps. 0.86.1 added that mechanism natively: `_agentRunAbortRequested`
+with `_finishCancelledRetry()`, a signal-bearing
+`_getSummarizationRequestAuth(model, signal)`, and a `_runAutoCompaction` that
+owns an `AbortController` and calls `signal.throwIfAborted()` around auth, the
+`session_before_compact` extension, `_runDefaultCompaction` and the pre-persist
+boundary.
+
+Those upstream paths and this integration are driven by the same cancellation
+entry point. `this.agent.abort()` has exactly two call sites in
+`agent-session.js` — `abort()` and `dispose()` — and each aborts the retry,
+auto-compaction and branch-summary controllers in the same synchronous block
+that aborts the native Agent. The signal this integration used is the native
+Agent run signal, so the previous per-helper threading duplicated a guarantee
+upstream now provides.
+
+The signal-passthrough hunks were therefore **deleted rather than stacked**:
+`_handlePostAgentRun`, `_checkCompaction`, `_runAutoCompaction`,
+`_prepareRetry`, `_compactBeforeNextAssistantResponse` and the combined
+`AbortSignal.any` wiring all keep their upstream signatures. Five hunks remain
+in `agent-session.js`: the `continuePendingTools()` entrypoint, the
+`_queueSteer` / `_queueFollowUp` admission order, and `waitForIdle()`. The
+entrypoint resets `_agentRunAbortRequested` on start, matching
+`_runAgentPrompt`, and calls `_finishCancelledRetry()` at settlement instead of
+carrying a second signal.
+
+Restore per-helper threading only with evidence that a cancellation entry point
+exists which does not abort those controllers together. A version bump alone is
+not that evidence; re-read both `agent.abort()` call sites first.
 
 For this entrypoint, extension `agent_settled` handlers are awaited preparation,
 called once per owner while both native lifecycles remain busy. They can queue
@@ -32,9 +56,9 @@ handlers. The public `agent_settled` event is the terminal commit notification.
 
 After preparation, the same owner reconciles cancellation first. Otherwise it
 drains accepted input in native steering/follow-up order, including post-run
-retry/compaction, and rechecks after every await. An empty queue and un-aborted
-signal close admission synchronously with public settlement and owner release.
-There is no asynchronous callback after this decision.
+retry/compaction, and rechecks after every await. An empty queue and an
+unrequested abort close admission synchronously with public settlement and owner
+release. There is no asynchronous callback after this decision.
 
 When cancellation wins, native queue admission closes before awaited message
 callbacks. Accepted input is drained once into native message events and JSONL,
@@ -70,18 +94,33 @@ install plus the runtime/CLI type, build and focused test checks. Preserve the
 independent photon and provider account-binding patches.
 
 The coding-agent patch also retains the Bash spool backpressure repair merged
-in #32651 for #32637. Its six JS/declaration hunks are rebased onto 0.85.1's
-shared shell factories without replacing upstream context-cwd or spool-prefix
-selection. The existing `bash-spool.test.ts` and real child/file fixtures are
-preserved unchanged; see `packages/pi-agent-runtime/bash-spool-backpressure.md`.
+in #32651 for #32637, rebased onto 0.86.1's shared shell factories without
+replacing upstream context-cwd or spool-prefix selection. 0.86.1 changed the
+surrounding exit semantics: a signal-killed shell now reports `128 + signal`
+instead of a bare code, and upstream itself raises when `exitCode` is `null`
+(upstream #9577), so this patch keeps upstream's wording there and no longer
+carries its own workaround for that case. The existing `bash-spool.test.ts` and
+real child/file fixtures are preserved unchanged; see
+`packages/pi-agent-runtime/bash-spool-backpressure.md`.
 
-## 0.85.1 next-response preparation
+## 0.86.1 tool-loadout declaration
+
+0.86.1 moved the system prompt and tool loadout into the transcript. The agent
+loop calls `declareToolChanges([...prepared, ...pending])` before each request
+and inserts a `system` message carrying `toolsAdded` / `toolsRemoved`.
+
+`runAgentLoopPendingTools()` must skip that injection block entirely. A
+pending-tool continuation resolves the previous assistant's calls and issues no
+model request in that pass, so declaring a tool change there would append a
+`system` entry that no request ever consumed.
+
+## 0.86.1 next-response preparation
 
 Retain upstream `lastCompletedTurn`: prepare only before an actual next model
-response, including after a pending-tool handoff. The SDK's new pre-response
-compaction estimates context after tool results. Its native signal now reaches
-auto-compaction, summary authentication checks, the shared
-`_runDefaultCompaction` helper, summary retry, and extension preparation. Keep
+response, including after a pending-tool handoff. The SDK's pre-response
+compaction estimates context after tool results, and 0.86.1 owns its own
+cancellation across auto-compaction, summary authentication, the shared
+`_runDefaultCompaction` helper, summary retry and extension preparation. Keep
 upstream compaction-failure events and their cancellation outcome consistent.
 Do not move preparation back to the end of every completed turn.
 
@@ -92,20 +131,23 @@ and drains those same queues; there is no new journal or restoration queue.
 Upstream's second steering poll remains conditional on an empty first poll, so
 one-at-a-time admission does not deliver two messages in one response.
 
-Upstream 0.85.1 also defers context-only custom messages while streaming to
-avoid inserting them between tool calls and results. Flush that existing
-custom-message queue before and after terminal extension preparation and at
-the final settlement boundary. These messages must reach native state, JSONL
-and message events before public settlement, without triggering another model
-request. The regression covers messages accepted during a tool and an awaited
-settlement extension, with successful and cancelled outcomes.
+Upstream defers context-only custom messages while streaming to avoid inserting
+them between tool calls and results. Flush that existing custom-message queue
+before and after terminal extension preparation and at the final settlement
+boundary. These messages must reach native state, JSONL and message events
+before public settlement, without triggering another model request. The
+regression covers messages accepted during a tool and an awaited settlement
+extension, with successful and cancelled outcomes.
 
 API first-turn preflight still compares a settled checkpoint against the public
 pre-prompt compaction semantics and delegates unproven cases to the sandbox.
 The API transport issues one response only; next-response compaction belongs
 to the sandbox's native continuation. `MemoryPiSession` remains byte-backed.
-The restricted Phase 2 system-prompt equality check includes the exact trailing
-newline added by 0.85.1; its tools, model, ownership and prompt body are unchanged.
+The restricted Phase 2 system-prompt equality check is re-pinned to 0.86.1's
+rendering — named sections joined by a blank line, with the working directory
+as a `<cwd>` block — and still recomputes its digest from the rendered prompt
+rather than a hardcoded value. Its tools, model, ownership and prompt body are
+unchanged.
 
 ## Provider-declared queue expiry
 
@@ -119,6 +161,17 @@ native session settlement, an earlier transient, completed tools, cancellation
 and independent accepted input. The shared provider-failure fixture protects
 diagnostic precedence in TypeScript and Rust.
 
+0.86.1 changed the label these errors carry: the prefix is the provider id
+(`deepseek API error (503):`) rather than a fixed `OpenAI API error`. The
+predicate's prefix strip is therefore provider-agnostic. A prefix list limited
+to OpenAI and Anthropic silently stops matching on every other provider, and
+both retry owners then keep retrying an expired queue; the regression covers
+that case directly.
+
+The same patch carries the structured retry classification merged for #35819
+(`OKOU_RETRYABLE_MODEL_REQUEST_REASONS` / `isOkouRetryableModelRequest`),
+ported from the 0.85.1 patch during this upgrade.
+
 Remove these hunks and their helper together only when the pinned upstream SDK
 implements the same terminal behavior at both retry owners and these boundary
 tests pass against it. A version bump alone is insufficient. Regenerate the
@@ -131,21 +184,49 @@ independent integration hunks.
 with official npm `pi-coding-agent@0.84.1` and `pi-ai@0.84.1`. It contains session
 v3, model/thinking entries, an abandoned branch, a branch summary, a compaction
 boundary, and one resolved plus one unresolved tool call. Its missing trailing
-newline is deliberate. `session-version-compatibility.test.ts` opens it using
-0.85.1, runs only the unresolved call, follows up, and checks the original byte
-prefix, session identity, branch entries, and settled memory projection.
+newline is deliberate. `session-version-compatibility.test.ts` opens it using the
+pinned runtime, runs only the unresolved call, follows up, and checks the original
+byte prefix, session identity, branch entries, and settled memory projection.
 The upstream reader repairs only the missing final newline before appending.
 
-A separate official 0.84.1 installation also reads a 0.85.1-written continuation
-with a new branch summary and usage-bearing compaction. Old/new readers produce
-identical entries, active branch and projected context (18 entries, 16 active
-branch entries, 5 context messages). This is representative fixture evidence,
-not a production-history replay. Session format remains v3, with no migration
-or rewrite of existing records.
+Session format remains v3 across this upgrade, with no migration or rewrite of
+existing records. A separate official 0.85.1 installation reads a 0.86.1-written
+continuation with identical session id, entries and active branch. The projected
+context is not identical in shape: 0.86.1 records the transcript `system` entry,
+and a 0.85.1 reader projects it into `buildSessionContext().messages` while its
+own LLM boundary discards it. Rolling back to 0.85.1 is therefore readable but
+semantically lossy for the prompt and tool loadout, which the runtime rebuilds
+per run anyway. This is representative fixture evidence, not a production-history
+replay.
 
-The dependency graph introduces upstream `chord@0.85.1`, upgrades the Pi
-telemetry/TUI and provider SDK dependencies, and removes the former runtime
-client/protocol dependency edges. Okou still imports the root modular SDK;
+The dependency graph upgrades the Pi telemetry/TUI and provider SDK
+dependencies: `@smithy/node-http-handler` to 4.12.1 — matched by
+`pi-agent-runtime`'s own pin because `PiBedrockHttpHandler` extends it —
+`@aws-sdk/client-bedrock-runtime` to 3.1127.0, `@google/genai` to 2.21.0,
+`@anthropic-ai/sdk` to 0.124.0, `undici` to 8.10.2 and `chalk` to 6.0.0.
+`engines.node` is unchanged. Okou still imports the root modular SDK;
 `./rpc-entry`, the experimental client/harness, model admission, defaults,
 provider routes, tiers and billing policy are not changed. Verify the actual
 packed CLI, including Photon worker and fallback, after every bundle change.
+
+## Behaviour pinned off at this version
+
+0.86.1 turns on three behaviours by default that this upgrade deliberately does
+not adopt, so that the version bump carries no wire or cost change of its own:
+
+- Codex strict JSON-schema tools. The `openai-codex-responses` gate is
+  `model.compat?.supportsStrictMode ?? true` and the Codex catalog never sets
+  the field, so `resolvePiAgentModel` pins it to `false` for that dialect.
+  `anthropic-messages`, `bedrock-converse-stream` and `openai-responses` all
+  default to `false` upstream and need no pin.
+- Prompt cache warming, whose unset mode resolves to `streaming`. It is pinned
+  off through `setCacheWarmingMode("off")`, which is the effective setter;
+  writing `settings` directly does not work because the mode getter reads
+  `globalSettings`, and the setter does not persist to disk, so a disk-backed
+  settings path keeps its project configuration.
+
+Mid-conversation system messages are the exception and are allowed through:
+0.86.1's Codex catalog sets `supportsMidConvoSystemMessages` and
+`resolvePiAgentModel` copies `source.compat` wholesale. Suppressing it would
+require a compat-copy exception and would construct a combination upstream does
+not test.
