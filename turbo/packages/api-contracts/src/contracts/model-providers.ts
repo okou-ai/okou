@@ -198,7 +198,10 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
 
-type ActiveRunModel = Exclude<SupportedRunModel, "claude-fable-5" | "gpt-5.5">;
+export type ActiveRunModel = Exclude<
+  SupportedRunModel,
+  "claude-fable-5" | "gpt-5.5"
+>;
 
 // Historical IDs remain in the wire schemas and billing catalog. Availability
 // is a separate product decision, including for provider-prefixed aliases.

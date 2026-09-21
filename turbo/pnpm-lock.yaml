@@ -1178,6 +1178,9 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
     devDependencies:
+      '@okouai/core':
+        specifier: workspace:*
+        version: link:../core
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
