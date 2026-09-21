@@ -18,6 +18,7 @@ import {
   type PiLangfuseRuntimeConfig,
   type PiMemoryRecallOutcome,
   type PiMemoryToolSourceUse,
+  type PiPreparationObservation,
 } from "@okouai/pi-agent-runtime/node";
 
 import {
@@ -54,6 +55,30 @@ export function recordPiMemoryToolSourceUse(
       runId,
       sessionId,
       ...sourceUse,
+    })}\n`,
+  );
+}
+
+/**
+ * Report one sandbox session-preparation phase to guest-agent.
+ *
+ * The sandbox host has no telemetry sink of its own, so guest-agent stays the
+ * single writer of the sandbox operation log: it recognizes this envelope on
+ * stderr and records `pi_prepare_<phase>`. The ingestion boundary then stamps
+ * `source: sandbox`, which is what separates these from the API-first observer's
+ * identically named operations.
+ */
+export function recordPiPreparationTiming(
+  runId: string,
+  observation: PiPreparationObservation,
+): void {
+  process.stderr.write(
+    `${JSON.stringify({
+      type: "pi_preparation_timing",
+      runId,
+      phase: observation.phase,
+      durationMs: observation.durationMs,
+      outcome: observation.outcome,
     })}\n`,
   );
 }
@@ -260,6 +285,9 @@ export async function runPiSandboxAgentLoop(args: {
         args.config.sessionId,
         sourceUse,
       );
+    },
+    onPreparationTiming(observation) {
+      recordPiPreparationTiming(args.config.runId, observation);
     },
     sessionFile: handoff.sessionFile,
     ownershipTransferMode: handoff.ownershipTransferMode,
