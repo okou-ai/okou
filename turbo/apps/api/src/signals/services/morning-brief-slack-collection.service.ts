@@ -205,8 +205,13 @@ class SlackCollectionBudget {
      * message these reads already collected and proved is discarded. Leaving
      * the last stretch to the release proof is what lets an attempt that ran
      * out of time still hand back the conversations it actually read.
+     *
+     * Required rather than defaulted. A default is how one of this
+     * collector's two callers would keep the destructive behaviour by saying
+     * nothing, and there is no caller that legitimately wants to read until
+     * the instant it is cancelled.
      */
-    private readonly readDeadline: number = deadline,
+    private readonly readDeadline: number,
   ) {}
 
   /** True once a total budget stopped this attempt from reading further. */
@@ -810,7 +815,7 @@ export async function collectMorningBriefSlackBundle(
     readonly clock: () => number;
     readonly deadline: number;
     /** When reading stops, leaving the rest of the budget to the proof. */
-    readonly readDeadline?: number;
+    readonly readDeadline: number;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefSlackCollectionResult> {
@@ -818,7 +823,7 @@ export async function collectMorningBriefSlackBundle(
     scope,
     options.clock,
     options.deadline,
-    options.readDeadline ?? options.deadline,
+    options.readDeadline,
   );
   const collected = await settle(
     (async () => {
