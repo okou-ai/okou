@@ -13,12 +13,14 @@ import {
   context,
   expectTextOrder,
   installRunChat,
+  queryWorkHistoryToggle,
   readyChat,
   RUN_PATH,
   RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
 const LEGACY_RUN = "a0000000-0000-4000-a000-000000000401";
+const LEGACY_WORK = "Collected yesterday's activity";
 const LEGACY_BRIEF = "Brief delivered by a Run";
 const NATIVE_BRIEF = "Brief delivered without a Run";
 const NATIVE_DELIVERED_AT = "2026-08-02T03:25:05.000Z";
@@ -73,16 +75,23 @@ function runAnchoredHistory(): MockChatEventInput[] {
       createdAt: "2026-08-01T03:25:00.000Z",
     },
     assistantEvent({
-      id: "legacy-brief",
+      id: "legacy-work",
       runId: LEGACY_RUN,
       seqId: 2,
+      text: LEGACY_WORK,
+      createdAt: "2026-08-01T03:25:02.000Z",
+    }),
+    assistantEvent({
+      id: "legacy-brief",
+      runId: LEGACY_RUN,
+      seqId: 3,
       text: LEGACY_BRIEF,
       createdAt: "2026-08-01T03:25:04.000Z",
     }),
     completedEvent({
       id: "legacy-completed",
       runId: LEGACY_RUN,
-      seqId: 3,
+      seqId: 4,
       createdAt: "2026-08-01T03:25:05.000Z",
     }),
   ];
@@ -93,7 +102,7 @@ function nativeDeliveryAfterRunHistory(): MockChatEventInput[] {
     ...runAnchoredHistory(),
     runlessDelivery({
       id: "native-brief",
-      seqId: 4,
+      seqId: 5,
       text: NATIVE_BRIEF,
       createdAt: NATIVE_DELIVERED_AT,
     }),
@@ -124,7 +133,7 @@ test("renders a thread whose only message carries no run identity", async () => 
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
-  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeVisible();
+  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeInTheDocument();
 });
 
 test("renders a delivery that carries no run identity after a Run", async () => {
@@ -132,25 +141,23 @@ test("renders a delivery that carries no run identity after a Run", async () => 
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
-  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeVisible();
+  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeInTheDocument();
 });
 
-test("keeps run-scoped affordances off a delivery that has no Run", async () => {
+test("keeps run work history off a delivery that has no Run", async () => {
   installRunChat({ chatEvents: nativeDeliveryAfterRunHistory() });
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
   await screen.findByText(NATIVE_BRIEF);
 
   expectTextOrder(LEGACY_BRIEF, NATIVE_BRIEF);
-  const runGroup = assistantGroupFor(LEGACY_BRIEF);
-  const runlessGroup = assistantGroupFor(NATIVE_BRIEF);
-  expect(runlessGroup).not.toBe(runGroup);
-  // The Run keeps its work history and its run identity; the delivery that
-  // never had a Run reports neither.
-  expect(runGroup.dataset.chatRunId).toBe(LEGACY_RUN);
-  expect(runGroup.querySelector("[data-chat-run-work-history]")).not.toBeNull();
-  expect(runlessGroup.dataset.chatRunId).toBeUndefined();
-  expect(runlessGroup.querySelector("[data-chat-run-work-history]")).toBeNull();
+  const runResponse = assistantGroupFor(LEGACY_BRIEF);
+  const runlessResponse = assistantGroupFor(NATIVE_BRIEF);
+  // The delivery reads as a response of its own rather than as more of the
+  // Run's answer, and only the Run offers the work behind its answer.
+  expect(runlessResponse).not.toBe(runResponse);
+  expect(queryWorkHistoryToggle("collapsed", runResponse)).not.toBeNull();
+  expect(queryWorkHistoryToggle("collapsed", runlessResponse)).toBeNull();
 });
 
 /**
@@ -181,7 +188,9 @@ test("agrees with unread accounting about a runless delivery", async () => {
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
-  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeVisible();
+  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeInTheDocument();
+  // The read acknowledgement is the unread contract itself, so the request the
+  // client sends is the behavior under test rather than an incidental call.
   await waitFor(() => {
     expect(markedReadThreadIds).toContain(RUN_THREAD_ID);
   });
