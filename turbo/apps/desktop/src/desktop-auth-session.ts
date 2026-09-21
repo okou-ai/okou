@@ -1,7 +1,10 @@
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import type { DesktopAuthWindowRequest } from "./desktop-auth-window";
 import type { DesktopAuthState } from "./desktop-bridge";
-import type { DesktopAuthCallback } from "./desktop-auth";
+import {
+  DesktopAuthTeardownError,
+  type DesktopAuthCallback,
+} from "./desktop-auth";
 import type { DesktopClientHeaderInjector } from "./desktop-client-headers";
 import { singleFlight } from "./desktop-async-control";
 
@@ -15,9 +18,14 @@ type RunAuthWindow = (
 /**
  * `signed_out` is the server's authoritative answer: the session is gone and
  * only an interactive sign-in restores it. `unavailable` means the attempt
- * never reached that answer, so a later retry can still succeed.
+ * never reached that answer, so a later retry can still succeed. `cancelled`
+ * means it was abandoned on purpose — superseded by a newer attempt, or torn
+ * down with its window — which is ordinary lifecycle and not a failure.
  */
-export type DesktopAuthRestoreFailure = "signed_out" | "unavailable";
+export type DesktopAuthRestoreFailure =
+  | "signed_out"
+  | "unavailable"
+  | "cancelled";
 
 export type DesktopAuthRefreshEvent =
   | { readonly phase: "started"; readonly signal: AbortSignal }
@@ -381,7 +389,11 @@ export class DesktopAuthSession {
             this.onBackgroundRefresh({
               phase: "failed",
               signal: lifetime.signal,
-              classification: deniedBySession ? "signed_out" : "unavailable",
+              classification: deniedBySession
+                ? "signed_out"
+                : failureCause instanceof DesktopAuthTeardownError
+                  ? "cancelled"
+                  : "unavailable",
               cause: failureCause,
             });
           this.onChange();

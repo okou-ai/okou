@@ -5,6 +5,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import {
+  DesktopAuthTeardownError,
   isDesktopAuthCompletionNavigation,
   isDesktopAuthSelectOrgNavigation,
   isDesktopAuthStartNavigation,
@@ -33,6 +34,20 @@ interface ActiveAuthWindow {
   readonly signal: AbortSignal;
   readonly deliver: (token: string) => void;
   readonly cancel: () => void;
+}
+
+/**
+ * An elapsed deadline aborts the attempt without anyone abandoning it, so it is
+ * genuine unavailability rather than teardown and must keep reporting.
+ * `AbortSignal.timeout` marks it with the standard `TimeoutError` name.
+ */
+function isDeadlineAbort(signal: AbortSignal): boolean {
+  const reason: unknown = signal.reason;
+  return (
+    typeof reason === "object" &&
+    reason !== null &&
+    (reason as { readonly name?: unknown }).name === "TimeoutError"
+  );
 }
 
 /** Owns the IPC capability and the staged token until document completion. */
@@ -150,10 +165,24 @@ export class DesktopAuthWindow {
         if (error) reject(error);
         else resolve(result);
       };
-      const cancel = () =>
-        finish(null, new Error("Desktop auth operation cancelled"));
+      // Cancelling and closing abandon the attempt, so they are teardown rather
+      // than a failed restore. A deadline is the one abort nobody asked for and
+      // stays an ordinary error: the wording is identical either way, leaving
+      // the type as the only thing a caller can classify on.
+      const cancel = () => {
+        const message = "Desktop auth operation cancelled";
+        finish(
+          null,
+          isDeadlineAbort(request.signal)
+            ? new Error(message)
+            : new DesktopAuthTeardownError(message),
+        );
+      };
       const closed = () =>
-        finish(null, new Error("Desktop auth window closed"));
+        finish(
+          null,
+          new DesktopAuthTeardownError("Desktop auth window closed"),
+        );
       const navigate = (_event: Electron.Event, url: string) => {
         if (
           !request.allowInteractiveFallbacks &&
@@ -203,9 +232,19 @@ export class DesktopAuthWindow {
       contents.on("did-fail-load", failed);
       window.on("closed", closed);
       void window.loadURL(request.url).catch((error: unknown) => {
-        if (!isElectronNavigationAborted(error)) {
-          finish(null, new Error("Desktop auth page could not load"));
-        }
+        if (isElectronNavigationAborted(error)) return;
+        // Tearing the attempt down rejects its pending load, and that rejection
+        // can outrun the close that caused it. What separates the two is
+        // whether this attempt was already being abandoned, never the wording:
+        // the same message is a genuine failure while the attempt is live.
+        const message = "Desktop auth page could not load";
+        const tearingDown = request.signal.aborted || window.isDestroyed();
+        finish(
+          null,
+          tearingDown
+            ? new DesktopAuthTeardownError(message)
+            : new Error(message),
+        );
       });
     });
   }
