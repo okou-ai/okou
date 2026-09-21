@@ -302,6 +302,24 @@ They run after completion reporting and sandbox ownership settlement, but
 graceful Runner shutdown waits for outstanding uploads. Deadline cancellation
 can leave a request's result unknown; it does not prove that ingestion failed.
 
+Request transport failures are INFO and remain in local Runner logs. Each
+Runner process maintains an exact five-minute rolling window of eligible upload
+sessions. A session is an eligible success only when it sends at least one HTTP
+request, every response is a confirmed 2xx, and the session completes normally;
+a request transport failure is an eligible failure. Confirmed rejection,
+request construction, malformed input, capacity or source truncation, deadline
+cancellation, and sessions that send no request are excluded even if an earlier
+batch received 2xx.
+
+When the window contains at least three eligible failures and a failure rate of
+at least 20%, the Runner emits one `network log uploads degraded` ERROR with
+bounded window, count, rate, and stable transport-cause fields. Further
+qualifying outcomes do not repeat the ERROR while the threshold remains met.
+The latch resets silently after a later eligible observation leaves either
+threshold unmet, allowing a later incident to emit once. There is no recovery
+log, background timer, persistence, cross-Runner aggregation, retry, or replay;
+a Runner restart begins with an empty window.
+
 ### Guest root filesystem usage after abnormal exits
 
 The existing abnormal-exit probe records `guest_root_fs_usage` separately from
