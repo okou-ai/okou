@@ -4,31 +4,54 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import type { JsonSchemaType } from "@modelcontextprotocol/server";
+import type {
+  JsonSchemaType,
+  StandardSchemaWithJSON,
+} from "@modelcontextprotocol/server";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
+  mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
+  mcpListChatThreadsInputSchema,
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
-import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
-import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
-import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import {
+  mcpGetChatMessagesInputSchema,
+  mcpGetChatMessagesOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import {
+  mcpSearchChatMessagesInputSchema,
+  mcpSearchChatMessagesOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-search";
+import {
+  mcpGetChatStatusInputSchema,
+  mcpGetChatStatusOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-status";
+import {
+  mcpListAgentsInputSchema,
   mcpListAgentsOutputSchema,
+  mcpListModelsInputSchema,
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import {
+  mcpCreateChatThreadInputSchema,
   mcpCreateChatThreadOutputSchema,
   mcpCreateChatWithMessageOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
+import {
+  mcpUpdateChatThreadInputSchema,
+  mcpUpdateChatThreadOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
+  mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
+  mcpRevokeQueuedMessageInputSchema,
   mcpRevokeQueuedMessageOutputSchema,
+  mcpCancelRunInputSchema,
   mcpCancelRunOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
@@ -107,12 +130,369 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
-// Full-scope tools/list before this optimization on main at 20ac28bd53.
-const fullCatalogBaselineBytes = 47_144;
-const fullCatalogMaximumBytes = Math.floor(fullCatalogBaselineBytes * 0.8);
+const fullCatalogToolNames = [
+  "get_chat_messages",
+  "search_chat_messages",
+  "get_chat_status",
+  "list_agents",
+  "list_models",
+  "list_chat_threads",
+  "get_chat_thread",
+  "create_chat_thread",
+  "update_chat_thread",
+  "send_chat_message",
+  "revoke_queued_message",
+  "cancel_run",
+] as const;
+
+type FullCatalogToolName = (typeof fullCatalogToolNames)[number];
+type CatalogSchemaContract = {
+  readonly input: StandardSchemaWithJSON;
+  readonly output: StandardSchemaWithJSON;
+};
+type CatalogBudget = {
+  readonly description: number;
+  readonly inputSchema: number;
+  readonly outputSchema: number;
+  readonly annotations: number;
+  readonly total: number;
+};
+
+function standardSchema(schema: z.ZodType): StandardSchemaWithJSON {
+  return schema as unknown as StandardSchemaWithJSON;
+}
+
+const catalogContracts = {
+  get_chat_messages: {
+    input: standardSchema(mcpGetChatMessagesInputSchema),
+    output: standardSchema(mcpGetChatMessagesOutputSchema),
+  },
+  search_chat_messages: {
+    input: standardSchema(mcpSearchChatMessagesInputSchema),
+    output: standardSchema(mcpSearchChatMessagesOutputSchema),
+  },
+  get_chat_status: {
+    input: standardSchema(mcpGetChatStatusInputSchema),
+    output: standardSchema(mcpGetChatStatusOutputSchema),
+  },
+  list_agents: {
+    input: standardSchema(mcpListAgentsInputSchema),
+    output: standardSchema(mcpListAgentsOutputSchema),
+  },
+  list_models: {
+    input: standardSchema(mcpListModelsInputSchema),
+    output: standardSchema(mcpListModelsOutputSchema),
+  },
+  list_chat_threads: {
+    input: standardSchema(mcpListChatThreadsInputSchema),
+    output: standardSchema(mcpListChatThreadsOutputSchema),
+  },
+  get_chat_thread: {
+    input: standardSchema(mcpGetChatThreadInputSchema),
+    output: standardSchema(mcpGetChatThreadOutputSchema),
+  },
+  create_chat_thread: {
+    input: standardSchema(mcpCreateChatThreadInputSchema),
+    output: standardSchema(mcpCreateChatThreadOutputSchema),
+  },
+  update_chat_thread: {
+    input: standardSchema(mcpUpdateChatThreadInputSchema),
+    output: standardSchema(mcpUpdateChatThreadOutputSchema),
+  },
+  send_chat_message: {
+    input: standardSchema(mcpSendChatMessageInputSchema),
+    output: standardSchema(mcpSendChatMessageOutputSchema),
+  },
+  revoke_queued_message: {
+    input: standardSchema(mcpRevokeQueuedMessageInputSchema),
+    output: standardSchema(mcpRevokeQueuedMessageOutputSchema),
+  },
+  cancel_run: {
+    input: standardSchema(mcpCancelRunInputSchema),
+    output: standardSchema(mcpCancelRunOutputSchema),
+  },
+} satisfies Record<FullCatalogToolName, CatalogSchemaContract>;
+
+const fullCatalogBudgets = {
+  get_chat_messages: {
+    description: 520,
+    inputSchema: 749,
+    outputSchema: 1851,
+    annotations: 89,
+    total: 3298,
+  },
+  search_chat_messages: {
+    description: 561,
+    inputSchema: 1102,
+    outputSchema: 1989,
+    annotations: 89,
+    total: 3833,
+  },
+  get_chat_status: {
+    description: 1064,
+    inputSchema: 722,
+    outputSchema: 5309,
+    annotations: 89,
+    total: 7271,
+  },
+  list_agents: {
+    description: 321,
+    inputSchema: 241,
+    outputSchema: 832,
+    annotations: 89,
+    total: 1566,
+  },
+  list_models: {
+    description: 368,
+    inputSchema: 119,
+    outputSchema: 1026,
+    annotations: 89,
+    total: 1685,
+  },
+  list_chat_threads: {
+    description: 421,
+    inputSchema: 1060,
+    outputSchema: 2202,
+    annotations: 89,
+    total: 3861,
+  },
+  get_chat_thread: {
+    description: 321,
+    inputSchema: 366,
+    outputSchema: 2108,
+    annotations: 89,
+    total: 2971,
+  },
+  create_chat_thread: {
+    description: 701,
+    inputSchema: 649,
+    outputSchema: 2934,
+    annotations: 90,
+    total: 4464,
+  },
+  update_chat_thread: {
+    description: 484,
+    inputSchema: 723,
+    outputSchema: 1653,
+    annotations: 91,
+    total: 3041,
+  },
+  send_chat_message: {
+    description: 488,
+    inputSchema: 521,
+    outputSchema: 1358,
+    annotations: 90,
+    total: 2546,
+  },
+  revoke_queued_message: {
+    description: 301,
+    inputSchema: 451,
+    outputSchema: 698,
+    annotations: 89,
+    total: 1632,
+  },
+  cancel_run: {
+    description: 274,
+    inputSchema: 360,
+    outputSchema: 473,
+    annotations: 88,
+    total: 1277,
+  },
+} satisfies Record<FullCatalogToolName, CatalogBudget>;
+
+const representativeSchemaValues: readonly unknown[] = [
+  null,
+  [],
+  {},
+  { unexpected: true },
+  { limit: 1 },
+  { threadId: "00000000-0000-4000-8000-000000000000" },
+  { query: "chat" },
+  { runId: "00000000-0000-4000-8000-000000000000" },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    inputId: "00000000-0000-4000-8000-000000000000",
+  },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    text: "Continue",
+    requestId: "00000000-0000-4000-8000-000000000000",
+  },
+  { agents: [], nextCursor: null },
+  {
+    models: [],
+    defaultModel: { model: null, source: null },
+    admission: "checked_on_send",
+  },
+  {
+    threads: [],
+    nextCursor: null,
+    unreadCoverage: "retained_terminal_events_and_native_deliveries",
+  },
+  { messages: [], olderCursor: null, newerCursor: null },
+  { matches: [], nextCursor: null, scanLimited: false },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    inputId: "00000000-0000-4000-8000-000000000000",
+    outcome: "not_revocable",
+    runId: null,
+    reason: "not_queued",
+  },
+  {
+    runId: "00000000-0000-4000-8000-000000000000",
+    status: "cancelled",
+    alreadyCancelled: false,
+  },
+];
 
 function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProvablyObjectShapedRoot(schema: Record<string, unknown>): boolean {
+  if (
+    "properties" in schema ||
+    "patternProperties" in schema ||
+    "additionalProperties" in schema ||
+    "required" in schema
+  ) {
+    return true;
+  }
+  for (const keyword of ["oneOf", "anyOf", "allOf"] as const) {
+    const members = schema[keyword];
+    if (
+      Array.isArray(members) &&
+      members.length > 0 &&
+      members.every((member) => {
+        return (
+          isJsonObject(member) &&
+          (member.type === "object" || isProvablyObjectShapedRoot(member))
+        );
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function canonicalJsonSchema(
+  schema: StandardSchemaWithJSON,
+  io: "input" | "output",
+): Record<string, unknown> {
+  const converted = schema["~standard"].jsonSchema[io]({
+    target: "draft-2020-12",
+  });
+  if (io === "input") {
+    if (converted.type !== undefined && converted.type !== "object") {
+      throw new Error("MCP input schema root must be an object");
+    }
+    return { type: "object", ...converted };
+  }
+  return converted.type === undefined && isProvablyObjectShapedRoot(converted)
+    ? { type: "object", ...converted }
+    : converted;
+}
+
+function jsonPointerValue(root: unknown, reference: string): unknown {
+  if (!reference.startsWith("#/")) {
+    throw new Error(`Expected a local JSON Pointer, received ${reference}`);
+  }
+  let value = root;
+  for (const encodedSegment of reference.slice(2).split("/")) {
+    const segment = encodedSegment.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (Array.isArray(value)) {
+      const index = Number(segment);
+      if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
+        throw new Error(`Unresolved JSON Pointer ${reference}`);
+      }
+      value = value.at(index);
+      continue;
+    }
+    if (!isJsonObject(value)) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    const entry = Object.entries(value).find(([key]) => {
+      return key === segment;
+    });
+    if (!entry) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    value = entry[1];
+  }
+  return value;
+}
+
+function resolveLocalJsonSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  function resolve(
+    value: unknown,
+    activeReferences: ReadonlySet<string>,
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => {
+        return resolve(item, activeReferences);
+      });
+    }
+    if (!isJsonObject(value)) {
+      return value;
+    }
+    if (typeof value.$ref === "string") {
+      if (
+        Object.keys(value).some((key) => {
+          return key !== "$ref";
+        })
+      ) {
+        throw new Error(`Unsupported sibling next to $ref ${value.$ref}`);
+      }
+      if (activeReferences.has(value.$ref)) {
+        throw new Error(`Cyclic local JSON Pointer ${value.$ref}`);
+      }
+      return resolve(
+        jsonPointerValue(schema, value.$ref),
+        new Set(activeReferences).add(value.$ref),
+      );
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => {
+          return key !== "$defs";
+        })
+        .map(([key, child]) => {
+          return [key, resolve(child, activeReferences)];
+        }),
+    );
+  }
+
+  const resolved = resolve(schema, new Set());
+  if (!isJsonObject(resolved)) {
+    throw new Error("Resolved JSON Schema root must be an object");
+  }
+  return resolved;
+}
+
+function measureCatalogTool(tool: {
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+  readonly outputSchema: Record<string, unknown>;
+  readonly annotations: Record<string, unknown>;
+}): CatalogBudget {
+  return {
+    description: jsonBytes(tool.description),
+    inputSchema: jsonBytes(tool.inputSchema),
+    outputSchema: jsonBytes(tool.outputSchema),
+    annotations: jsonBytes(tool.annotations),
+    total: jsonBytes(tool),
+  };
+}
+
+function catalogArrayOverhead(toolCount: number): number {
+  return toolCount === 0 ? 2 : toolCount + 1;
 }
 
 function measureCompactSuccess(result: unknown): {
@@ -5994,6 +6374,7 @@ describe("external MCP entry", () => {
                 description: z.string(),
                 inputSchema: z.record(z.string(), z.unknown()),
                 outputSchema: z.record(z.string(), z.unknown()),
+                annotations: z.record(z.string(), z.unknown()),
               }),
             ),
           }),
@@ -6117,10 +6498,80 @@ describe("external MCP entry", () => {
         }).not.toThrow();
       }
       if (scopes === defaultScopes) {
-        expect(listedTools).toHaveLength(12);
-        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(
-          fullCatalogMaximumBytes,
+        const listedNames = listedTools.map((tool) => {
+          return tool.name;
+        });
+        expect(listedNames).toStrictEqual(fullCatalogToolNames);
+        expect(Object.keys(catalogContracts)).toStrictEqual(
+          fullCatalogToolNames,
         );
+        expect(Object.keys(fullCatalogBudgets)).toStrictEqual(
+          fullCatalogToolNames,
+        );
+
+        for (const tool of listedTools) {
+          if (!(tool.name in fullCatalogBudgets)) {
+            throw new Error(`Missing catalog budget for ${tool.name}`);
+          }
+          const toolName = tool.name as FullCatalogToolName;
+          const measured = measureCatalogTool(tool);
+          const budget = fullCatalogBudgets[toolName];
+          for (const component of [
+            "description",
+            "inputSchema",
+            "outputSchema",
+            "annotations",
+            "total",
+          ] as const) {
+            expect(
+              measured[component],
+              `${toolName}.${component} exceeds its reviewed budget`,
+            ).toBeLessThanOrEqual(budget[component]);
+          }
+
+          const contract = catalogContracts[toolName];
+          for (const [schemaName, advertised, canonical] of [
+            [
+              "inputSchema",
+              tool.inputSchema,
+              canonicalJsonSchema(contract.input, "input"),
+            ],
+            [
+              "outputSchema",
+              tool.outputSchema,
+              canonicalJsonSchema(contract.output, "output"),
+            ],
+          ] as const) {
+            expect(
+              jsonBytes(advertised),
+              `${toolName}.${schemaName} compaction must be byte-nonincreasing`,
+            ).toBeLessThanOrEqual(jsonBytes(canonical));
+            expect(
+              resolveLocalJsonSchema(advertised),
+              `${toolName}.${schemaName} must preserve the canonical contract`,
+            ).toStrictEqual(resolveLocalJsonSchema(canonical));
+            const advertisedValidator = schemaValidator.getValidator(
+              advertised as JsonSchemaType,
+            );
+            const canonicalValidator = schemaValidator.getValidator(
+              canonical as JsonSchemaType,
+            );
+            for (const value of representativeSchemaValues) {
+              expect(
+                advertisedValidator(value).valid,
+                `${toolName}.${schemaName} must validate representative values equivalently`,
+              ).toBe(canonicalValidator(value).valid);
+            }
+          }
+        }
+        const catalogBudget =
+          catalogArrayOverhead(listedTools.length) +
+          listedTools.reduce((total, tool) => {
+            return (
+              total + fullCatalogBudgets[tool.name as FullCatalogToolName].total
+            );
+          }, 0);
+        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(catalogBudget);
         expect(JSON.stringify(listedTools)).toContain('"$ref":"#/$defs/');
         const safetyTerms = {
           get_chat_messages: [
@@ -6176,6 +6627,7 @@ describe("external MCP entry", () => {
           revoke_queued_message: [/never cancels a run/iu, /not_revocable/iu],
           cancel_run: [/neither revokes/iu, /prior effects/iu],
         } as const;
+        expect(Object.keys(safetyTerms)).toStrictEqual(fullCatalogToolNames);
         for (const tool of listedTools) {
           const terms = safetyTerms[tool.name as keyof typeof safetyTerms];
           expect(terms, `Unexpected tool ${tool.name}`).toBeDefined();
@@ -6251,26 +6703,24 @@ describe("external MCP entry", () => {
         tools.tools.map((tool) => {
           return tool.name;
         }),
-      ).toStrictEqual([
-        "get_chat_messages",
-        "search_chat_messages",
-        "get_chat_status",
-        "list_agents",
-        "list_models",
-        "list_chat_threads",
-        "get_chat_thread",
-        "create_chat_thread",
-        "update_chat_thread",
-        "send_chat_message",
-        "revoke_queued_message",
-        "cancel_run",
-      ]);
+      ).toStrictEqual(fullCatalogToolNames);
       const advertisedOutputValidators = new Map(
         tools.tools.map((tool) => {
           const validator = new AjvJsonSchemaValidator().getValidator(
             tool.outputSchema as JsonSchemaType,
           );
           return [tool.name, validator] as const;
+        }),
+      );
+      const canonicalOutputValidators = new Map(
+        fullCatalogToolNames.map((toolName) => {
+          const validator = new AjvJsonSchemaValidator().getValidator(
+            canonicalJsonSchema(
+              catalogContracts[toolName].output,
+              "output",
+            ) as JsonSchemaType,
+          );
+          return [toolName, validator] as const;
         }),
       );
       const result = await sdk.callTool({
@@ -6367,9 +6817,22 @@ describe("external MCP entry", () => {
           if (!validateOutput) {
             throw new Error(`Missing output validator for ${toolName}`);
           }
-          expect(validateOutput(toolResult.structuredContent)).toMatchObject({
-            valid: true,
-          });
+          const validateCanonicalOutput =
+            canonicalOutputValidators.get(toolName);
+          if (!validateCanonicalOutput) {
+            throw new Error(
+              `Missing canonical output validator for ${toolName}`,
+            );
+          }
+          const advertisedValidation = validateOutput(
+            toolResult.structuredContent,
+          );
+          const canonicalValidation = validateCanonicalOutput(
+            toolResult.structuredContent,
+          );
+          expect(advertisedValidation).toMatchObject({ valid: true });
+          expect(canonicalValidation).toMatchObject({ valid: true });
+          expect(advertisedValidation.valid).toBe(canonicalValidation.valid);
           return measureCompactSuccess(toolResult);
         },
       );
