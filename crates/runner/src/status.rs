@@ -1585,9 +1585,7 @@ mod tests {
         assert_eq!(doctor.blank_sandboxes[0].sandbox_id, blank_id.to_string());
         assert!(doctor.active_runs.is_empty());
 
-        let crate::idle_pool::BlankIdleReservation::Reserved(reservation) =
-            pool.reserve_blank("vm0/default", &None)
-        else {
+        let Ok(reservation) = pool.reserve_blank("vm0/default", &None) else {
             panic!("compatible blank should reserve");
         };
         assert!(reservation.reuse_key().is_none());
@@ -1605,7 +1603,7 @@ mod tests {
         assert_eq!(wire["active_runs"][0]["phase"], "preparing");
 
         assert!(matches!(
-            pool.restore_reserved(*reservation),
+            pool.restore_reserved(reservation),
             RestoreReservedIdleResult::Restored
         ));
         let restored = pool.status_snapshot();

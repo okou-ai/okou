@@ -37,8 +37,7 @@ use super::support::{
 use crate::guest_timezone::GuestTimezoneAssumption;
 use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{
-    BlankIdleReservation, IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult,
-    ParkedIdleCandidate,
+    IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
 };
 use crate::ids::RunId;
 use crate::provider::ApiClaimTiming;
@@ -2130,7 +2129,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
         None,
     );
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
-    let BlankIdleReservation::Reserved(reserved) = pool.reserve_blank("vm0/default", &None) else {
+    let Ok(reserved) = pool.reserve_blank("vm0/default", &None) else {
         panic!("blank sandbox should be compatible");
     };
     let (idle_sandbox, budget_lease) = match reserved.try_unpark_for_run(RunId::new_v4()).await {

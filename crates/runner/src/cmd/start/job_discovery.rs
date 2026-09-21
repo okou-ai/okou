@@ -127,7 +127,7 @@ use crate::executor::{
 };
 use crate::guest_timezone::{GuestTimezoneAssumption, GuestTimezoneIntent};
 use crate::idle_pool::{
-    BlankIdleReservation, DestroyOutcome, ExactIdleReservationMiss, IdlePoolSnapshot,
+    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdlePoolSnapshot,
     IdleSandboxKind, IdleUnparkResult, ReservedIdleSandbox, RestoreReservedIdleResult,
     ReusableIdleSandbox, SpeculativeIdleSandbox, SpeculativeIdleUnparkResult,
     SpeculativeReparkResult,
@@ -2688,11 +2688,11 @@ async fn try_reuse_from_pool(
                 (exact, None)
             } else {
                 match pool.reserve_blank(profile_name, device_rate_limits) {
-                    BlankIdleReservation::Reserved(entry) => (
-                        Some((*entry, pool.status_snapshot())),
+                    Ok(entry) => (
+                        Some((entry, pool.status_snapshot())),
                         Some(BlankPoolSelection::Hit),
                     ),
-                    BlankIdleReservation::Empty => (
+                    Err(BlankIdleReservationMiss::Empty) => (
                         None,
                         Some(ctx.spawn_ctx.blank_pool_diagnostics.classify_empty(
                             profile_name,
@@ -2701,7 +2701,7 @@ async fn try_reuse_from_pool(
                             ctx.budget.allocated(),
                         )),
                     ),
-                    BlankIdleReservation::Incompatible => (
+                    Err(BlankIdleReservationMiss::Incompatible) => (
                         None,
                         Some(BlankPoolSelection::Miss(
                             BlankPoolSelectionReason::IncompatibleShape,

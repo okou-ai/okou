@@ -382,7 +382,7 @@ fn blank_entries_are_reserved_only_by_compatible_blank_lookup() {
     let mut pool = IdlePool::new(pool_config(0));
     assert!(matches!(
         pool.reserve_blank("vm0/default", &None),
-        BlankIdleReservation::Empty
+        Err(BlankIdleReservationMiss::Empty)
     ));
     let blank = make_blank_candidate("vm0/default", 2, 2048);
     let blank_id = blank.sandbox_id();
@@ -397,7 +397,7 @@ fn blank_entries_are_reserved_only_by_compatible_blank_lookup() {
     );
     assert!(matches!(
         pool.reserve_blank("vm0/large", &None),
-        BlankIdleReservation::Incompatible
+        Err(BlankIdleReservationMiss::Incompatible)
     ));
 
     // A real exact key that equals a blank's sandbox ID is a different identity.
@@ -417,7 +417,7 @@ fn blank_entries_are_reserved_only_by_compatible_blank_lookup() {
         RestoreReservedIdleResult::Restored
     ));
 
-    let BlankIdleReservation::Reserved(reserved) = pool.reserve_blank("vm0/default", &None) else {
+    let Ok(reserved) = pool.reserve_blank("vm0/default", &None) else {
         panic!("compatible blank should reserve");
     };
     assert_eq!(reserved.kind(), IdleSandboxKind::Blank);

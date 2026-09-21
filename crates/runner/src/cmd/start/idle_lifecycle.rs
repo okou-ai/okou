@@ -14,8 +14,8 @@ use tracing::{info, warn};
 use super::blank_pool::BlankPoolDiagnostics;
 use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use crate::idle_pool::{
-    BlankIdleReservation, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult,
-    IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
+    BlankIdleReservationMiss, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload,
+    IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
 };
 use crate::ids::RunId;
 use crate::paths::short_digest;
@@ -211,10 +211,8 @@ pub(super) async fn select_idle_entries_for_pressure(
             Some(reservation) => (Some(reservation), None),
             None if request.allow_compatible_blank => {
                 match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
-                    BlankIdleReservation::Reserved(reservation) => {
-                        (Some(*reservation), Some(BlankPoolSelection::Hit))
-                    }
-                    BlankIdleReservation::Empty => (
+                    Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
+                    Err(BlankIdleReservationMiss::Empty) => (
                         None,
                         Some(request.blank_pool_diagnostics.map_or(
                             BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
@@ -228,7 +226,7 @@ pub(super) async fn select_idle_entries_for_pressure(
                             },
                         )),
                     ),
-                    BlankIdleReservation::Incompatible => (
+                    Err(BlankIdleReservationMiss::Incompatible) => (
                         None,
                         Some(BlankPoolSelection::Miss(
                             BlankPoolSelectionReason::IncompatibleShape,

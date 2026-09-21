@@ -84,8 +84,8 @@ pub(crate) enum ExactIdleReservationMiss {
 /// Keeping inventory absence separate from shape incompatibility lets callers
 /// attach the authoritative pool observation to the run without a racy second
 /// lookup.
-pub(crate) enum BlankIdleReservation {
-    Reserved(Box<ReservedIdleSandbox>),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BlankIdleReservationMiss {
     Empty,
     Incompatible,
 }
@@ -295,7 +295,7 @@ impl IdlePool {
         &mut self,
         profile_name: &str,
         device_rate_limits: &Option<DeviceRateLimits>,
-    ) -> BlankIdleReservation {
+    ) -> Result<ReservedIdleSandbox, BlankIdleReservationMiss> {
         let Some(key) = self
             .blank_entries
             .iter()
@@ -307,16 +307,16 @@ impl IdlePool {
             .map(|(key, _)| *key)
         else {
             return if self.blank_entries.is_empty() {
-                BlankIdleReservation::Empty
+                Err(BlankIdleReservationMiss::Empty)
             } else {
-                BlankIdleReservation::Incompatible
+                Err(BlankIdleReservationMiss::Incompatible)
             };
         };
         let Some(entry) = self.blank_entries.remove(&key) else {
-            return BlankIdleReservation::Incompatible;
+            return Err(BlankIdleReservationMiss::Incompatible);
         };
         self.bump_revision();
-        BlankIdleReservation::Reserved(Box::new(ReservedIdleSandbox::parked(entry)))
+        Ok(ReservedIdleSandbox::parked(entry))
     }
 
     pub(crate) fn blank_len(&self) -> usize {
