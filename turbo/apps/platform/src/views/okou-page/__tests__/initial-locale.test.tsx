@@ -20,9 +20,30 @@ test.each([
   {
     scenario: "the first supported browser language family is selected",
     cookie: "v1.unsupported",
-    languages: ["zh-CN", "de-AT", "ja-JP"],
+    languages: ["sv-SE", "de-AT", "ja-JP"],
     locale: "de-DE",
     title: "Diese Seite ist nicht hier.",
+  },
+  {
+    scenario: "a Simplified Chinese browser reaches the Simplified bundle",
+    cookie: null,
+    languages: ["zh-CN"],
+    locale: "zh-Hans",
+    title: "这个页面不在这里。",
+  },
+  {
+    scenario: "a Taiwan browser reaches the Traditional bundle, not Simplified",
+    cookie: null,
+    languages: ["zh-TW"],
+    locale: "zh-Hant",
+    title: "這個頁面不在這裡。",
+  },
+  {
+    scenario: "a declared Chinese script wins over the region subtag",
+    cookie: null,
+    languages: ["zh-Hant-HK"],
+    locale: "zh-Hant",
+    title: "這個頁面不在這裡。",
   },
   {
     scenario: "browser language works before a site cookie exists",
@@ -34,7 +55,7 @@ test.each([
   {
     scenario: "English is used when no locale hint is supported",
     cookie: "v0.fr-FR",
-    languages: ["zh-CN", "ar-SA"],
+    languages: ["sv-SE", "ar-SA"],
     locale: "en-US",
     title: "That page isn't here.",
   },
