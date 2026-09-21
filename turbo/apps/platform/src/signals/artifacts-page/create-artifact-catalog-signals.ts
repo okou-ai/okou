@@ -61,16 +61,17 @@ function withThumbnailLoad(page: {
       const videoPreview = artifact.videoSourceUrl
         ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
         : null;
+      const thumbnailPreview = artifact.thumbnail
+        ? createAttachmentPreviewSignals(artifact.thumbnail.url, {
+            thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
+          })
+        : null;
       return {
         ...artifact,
         thumbnailLoad: createImageLoadSignals(),
         thumbnailUrl$: computed(async (get) => {
-          return artifact.thumbnail
-            ? await get(
-                createAttachmentPreviewSignals(artifact.thumbnail.url, {
-                  thumbnailSize: { width: ARTIFACT_CARD_THUMBNAIL_WIDTH_PX },
-                }).thumbnailUrl$,
-              )
+          return thumbnailPreview
+            ? await get(thumbnailPreview.thumbnailUrl$)
             : null;
         }),
         videoPreview,

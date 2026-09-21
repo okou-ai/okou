@@ -157,17 +157,19 @@ function createAttachmentPresignedToken$(
   });
 }
 
+interface AttachmentPreviewOptions {
+  readonly contentType?: string;
+  readonly resolvedToken?: AttachmentPresignedToken;
+  readonly thumbnailSize?: {
+    readonly width: number;
+    readonly height?: number;
+  };
+}
+
 /** Resolve the authenticated resource once for its owning preview. */
 export function createAttachmentPreviewSignals(
   inputUrl: string,
-  options: {
-    readonly contentType?: string;
-    readonly resolvedToken?: AttachmentPresignedToken;
-    readonly thumbnailSize?: {
-      readonly width: number;
-      readonly height?: number;
-    };
-  } = {},
+  options: AttachmentPreviewOptions = {},
 ) {
   const {
     contentType,
@@ -263,6 +265,33 @@ export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
     },
   );
   return { register$ };
+}
+
+/**
+ * The one preview graph an owner holds for the resource it currently shows.
+ *
+ * {@link createAttachmentPreviewRegistry} writes to the Store, so an owner that
+ * only learns its URL while a `computed` runs cannot register there. Resolving
+ * inside that `computed` instead rebuilds the graph on every evaluation: a
+ * reloaded list reports the same preview image, signs it again, and hands the
+ * browser a new URL for bytes it already loaded. The slot keeps the resolved
+ * graph with its owner, so the same URL reuses it and only a different URL
+ * replaces it. It lives and dies with the owner that created it.
+ */
+export function createAttachmentPreviewSlot(
+  options: AttachmentPreviewOptions = {},
+): (url: string) => AttachmentPreviewSignals {
+  let resolved: {
+    readonly url: string;
+    readonly preview: AttachmentPreviewSignals;
+  } | null = null;
+  return (inputUrl: string): AttachmentPreviewSignals => {
+    const url = publicAttachmentUrl(inputUrl);
+    if (resolved?.url !== url) {
+      resolved = { url, preview: createAttachmentPreviewSignals(url, options) };
+    }
+    return resolved.preview;
+  };
 }
 
 export function createAttachmentResourceUrl$(url: string) {

@@ -5,6 +5,12 @@ import type { IndustryId } from "../../views/onboarding-sources-first/onboarding
  * Source-first onboarding draft. The screens are frontend-only for now: the
  * connector step drives the live connector catalog, everything else is held
  * here until the onboarding state endpoints land.
+ *
+ * One application start owns this draft, because a Store lives exactly that
+ * long: switching Clerk session or organization replaces the document, so the
+ * draft cannot reach another user or workspace. Re-entering the flow within
+ * one start continues the same run and keeps its answers, which is also what
+ * the back button relies on.
  */
 
 export type SourcesFirstFlow = "owner" | "member";
