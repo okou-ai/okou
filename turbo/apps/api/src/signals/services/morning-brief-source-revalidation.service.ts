@@ -43,8 +43,10 @@ import {
   admitMorningBriefCollection,
   admitMorningBriefNativeCollection,
   revalidateMorningBriefRetainedRead,
+  startMorningBriefOwnerAuthority,
   withMorningBriefDatabaseDeadline,
   type MorningBriefCollectionScope,
+  type MorningBriefOwnerAuthority,
   type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
@@ -199,6 +201,16 @@ export async function revalidateMorningBriefRetainedSources(
   }
 
   const revoked: MorningBriefRevokedSource[] = [];
+  // One owner observation for the whole pass. Every descriptor below names the
+  // same member, binding and Agent, so asking again per source would repeat one
+  // network read and one locked local transaction per retained source without
+  // being able to answer differently. A change that lands during the pass is
+  // still caught: the owner authorizer above ran before it and runs again after
+  // it, and each retained source keeps its own live per-source check.
+  const owner = startMorningBriefOwnerAuthority(
+    { db, clerk, scope, deadline: input.deadline },
+    bounded,
+  );
   for (const descriptor of input.descriptors) {
     if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
       return { kind: "unresolved", reason: "deadline-exceeded" };
@@ -212,6 +224,7 @@ export async function revalidateMorningBriefRetainedSources(
           slack: input.slack,
           descriptor,
           deadline: input.deadline,
+          owner,
         },
         bounded,
       ),
@@ -298,6 +311,7 @@ async function revalidateSource(
     readonly slack: MorningBriefSlackAuthority | null;
     readonly descriptor: MorningBriefRetainedSourceDescriptor;
     readonly deadline: MorningBriefSourceDeadline;
+    readonly owner: MorningBriefOwnerAuthority;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -330,6 +344,7 @@ async function revalidateSource(
         scopeDigest: descriptor.scopeDigest,
         endpoints: descriptor.endpoints,
         deadline: args.deadline,
+        owner: args.owner,
       },
       signal,
     );
