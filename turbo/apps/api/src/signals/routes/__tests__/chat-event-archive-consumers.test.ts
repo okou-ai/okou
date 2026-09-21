@@ -216,6 +216,22 @@ function manifestRecord(zip: AdmZip, path: string): Record<string, unknown> {
   throw new Error(`Expected a manifest record for ${path}`);
 }
 
+/**
+ * The bound as of the export's cut, raised to the newest snapshot's coverage. A
+ * snapshot that overtakes the bound mid-export is retained whole, so it carries
+ * the bound with it exactly as `collectMessages` recomputes `upperSeqId`.
+ */
+function exportedUpperSeqId(
+  zip: AdmZip,
+  threadId: string,
+  coverage: number,
+): number {
+  return Math.max(
+    Number(manifestRecord(zip, `chat-threads/${threadId}.json`).upperSeqId),
+    coverage,
+  );
+}
+
 function snapshotCoverage(entryName: string): number {
   return Number(/\/snapshots\/(\d+)-/u.exec(entryName)?.[1] ?? 0);
 }
@@ -238,9 +254,7 @@ function readDurableChatRows(zip: AdmZip, threadId: string) {
     throw new Error("Expected the authoritative exported chat snapshot");
   }
   const coverage = snapshotCoverage(snapshot.entryName);
-  const upperSeqId = Number(
-    manifestRecord(zip, `chat-threads/${threadId}.json`).upperSeqId,
-  );
+  const upperSeqId = exportedUpperSeqId(zip, threadId, coverage);
   const archived = gunzipSync(snapshot.getData())
     .toString("utf8")
     .trimEnd()
@@ -740,22 +754,19 @@ describe("archived chat event consumers", () => {
       }
       const archiveBytes = storage.download(downloadUrl);
       const zip = new AdmZip(archiveBytes);
-      const threadRecord = manifestRecord(
-        zip,
-        `chat-threads/${fixture.threadId}.json`,
-      );
       const coverage = Math.max(
         ...zip.getEntries().map((entry) => {
           return snapshotCoverage(entry.entryName);
         }),
       );
+      const exportedUpper = exportedUpperSeqId(zip, fixture.threadId, coverage);
       const expectedUpper = expectedLast.seqId;
-      expect(threadRecord.upperSeqId).toBe(expectedUpper);
+      expect(exportedUpper).toBe(expectedUpper);
       expect(coverage).toBe(
         advancement === "within-bound" ? projectedLast.seqId : expectedUpper,
       );
       if (advancement === "overtake-with-revocation") {
-        expect(threadRecord.upperSeqId).toBeGreaterThan(originalUpper);
+        expect(exportedUpper).toBeGreaterThan(originalUpper);
       }
       expect(
         zip.getEntries().filter((entry) => {

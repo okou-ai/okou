@@ -252,7 +252,6 @@ def restore_threads(archive, output):
             base = "chat-messages/" + thread_id + "/"
             record = entry_metadata(archive, path)
             require(record.get("threadId") == thread_id, "Thread entry identity mismatch")
-            upper = integer(record["upperSeqId"], "upper chat sequence")
             archive.db.execute("DELETE FROM events")
             # The newest snapshot wins: one may land while the export is paging
             # a thread, and it supersedes the coverage recorded up to that point.
@@ -263,6 +262,9 @@ def restore_threads(archive, output):
                 covered = integer(meta["lastSeqId"], "snapshot coverage")
                 if covered >= coverage:
                     snapshot, coverage = candidate, covered
+            # A snapshot that overtook the bound is retained whole, so it raises
+            # the bound with it. The thread record holds the bound as of the cut.
+            upper = max(integer(record["upperSeqId"], "upper chat sequence"), coverage)
             if snapshot is not None:
                 with archive.open(snapshot) as raw, gzip.GzipFile(fileobj=raw) as source:
                     add_events(archive, source, thread_id, -1, upper)
@@ -470,9 +472,10 @@ restoring any content. Temporary files are removed if verification fails.
 The output contains chat-threads.jsonl, chat-messages/<threadId>.jsonl,
 agents.jsonl, workflows.jsonl, and memory/<orgId>/<originalPath>. Chat events
 preserve their IDs, sequence numbers, payloads and control/revocation records.
-The newest snapshot of each thread supplies its events, and the thread's own
-manifest record supplies the captured upper sequence bound; earlier snapshot
-copies and overlapping tail rows are excluded.
+The newest snapshot of each thread supplies its events. The upper sequence
+bound is the thread's own manifest record raised to that snapshot's coverage,
+so a snapshot that overtook the bound mid-export is retained whole; earlier
+snapshot copies and overlapping tail rows are excluded.
 Sequence gaps are valid. This is a collection over time, not one account-wide
 point-in-time snapshot.
 

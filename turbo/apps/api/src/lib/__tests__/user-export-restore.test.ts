@@ -236,6 +236,33 @@ describe("downloaded export recovery tool", () => {
     },
   );
 
+  it("raises the thread bound to a snapshot that overtook it mid-export", async () => {
+    const { files, meta } = sources();
+    // The collector records the bound in the `threads` step. A snapshot landing
+    // during paging is retained whole, so it carries the bound past 10.
+    files.set(
+      "chat-messages/thread-a/snapshots/overtaking.ndjson.gz",
+      gzipSync(jsonLines([event(3), event(5), event(8), event(9), event(12)])),
+    );
+    meta.set("chat-messages/thread-a/snapshots/overtaking.ndjson.gz", {
+      threadId: "thread-a",
+      lastSeqId: 12,
+    });
+    const { result, output } = await runRestore(exportZip(files, meta));
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    await expect(
+      readFile(join(output, "chat-messages/thread-a.jsonl"), "utf8"),
+    ).resolves.toBe(
+      // Event 12 proves the bound rose; a stale bound of 10 would drop it. The
+      // snapshot covers through 12, so every tail row at or below it is
+      // superseded — including the revocation that event 10 carried.
+      jsonLines([event(3), event(5), event(8), event(9), event(12)]).toString(
+        "utf8",
+      ),
+    );
+  });
+
   it("rejects changed source bytes even when their ZIP CRC is internally valid", async () => {
     const zip = exportZip(sources().files, sources().meta);
     zip.updateFile(
