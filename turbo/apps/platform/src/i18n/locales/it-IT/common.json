@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
-      "importFile": "Importa il tuo file",
-      "importFileHint": "Riutilizza il design del tuo file",
+      "importFile": "Importa modello",
       "multiAccent": "Multiaccento",
       "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
@@ -6982,14 +6981,20 @@
       "preview": "Anteprima di {{title}}",
       "rename": "Rinomina modello"
     },
+    "clearSearch": "Cancella ricerca",
     "custom": "Personalizzati",
     "detail": {
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}"
     },
     "empty": {
-      "description": "Okou trasforma il design del tuo file in un modello che puoi riutilizzare."
+      "description": "Importa un documento, una presentazione o un’immagine per riutilizzarne il design.",
+      "document": "Ancora nessun documento",
+      "illustration": "Ancora nessuna immagine",
+      "presentation": "Ancora nessuna presentazione",
+      "title": "Fallo tuo"
     },
+    "importHint": "Importa un documento, una presentazione o un’immagine.",
     "loadFailed": "Impossibile caricare i modelli.",
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",

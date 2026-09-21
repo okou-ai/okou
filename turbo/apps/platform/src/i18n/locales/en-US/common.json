@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Import your own file",
-      "importFileHint": "Reuse your file's design",
+      "importFile": "Import template",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -6907,14 +6906,20 @@
       "preview": "Preview {{title}}",
       "rename": "Rename template"
     },
+    "clearSearch": "Clear search",
     "custom": "Custom",
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}"
     },
     "empty": {
-      "description": "Okou turns your file's design into a template you can reuse."
+      "description": "Import a document, presentation or image to reuse its design.",
+      "document": "No documents yet",
+      "illustration": "No images yet",
+      "presentation": "No presentations yet",
+      "title": "Make it yours"
     },
+    "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",

@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_many": "{{count}} slides",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Importe seu próprio arquivo",
-      "importFileHint": "Reutilize o design do seu arquivo",
+      "importFile": "Importar modelo",
       "multiAccent": "Várias cores de destaque",
       "needPro": "Requer Pro",
       "nextSlide": "Visualizar próximo slide",
@@ -6982,14 +6981,20 @@
       "preview": "Visualizar {{title}}",
       "rename": "Renomear modelo"
     },
+    "clearSearch": "Limpar busca",
     "custom": "Personalizados",
     "detail": {
       "back": "Modelos personalizados",
       "page": "Página {{number}}"
     },
     "empty": {
-      "description": "O Okou transforma o design do seu arquivo em um modelo que você pode reutilizar."
+      "description": "Importe um documento, uma apresentação ou uma imagem para reutilizar seu design.",
+      "document": "Nenhum documento ainda",
+      "illustration": "Nenhuma imagem ainda",
+      "presentation": "Nenhuma apresentação ainda",
+      "title": "Deixe com a sua cara"
     },
+    "importHint": "Importe um documento, uma apresentação ou uma imagem.",
     "loadFailed": "Não foi possível carregar os modelos.",
     "renameFailed": "Não foi possível renomear o modelo.",
     "retry": "Tentar novamente",
