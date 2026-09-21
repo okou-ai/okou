@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositive",
       "importedSlides_many": "{{count}} diapositives",
       "importedSlides_other": "{{count}} diapositives",
-      "importFile": "Importer votre propre fichier",
-      "importFileHint": "Réutilisez le design de votre fichier",
+      "importFile": "Importer un modèle",
       "multiAccent": "Multi-accents",
       "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
@@ -1519,6 +1518,10 @@
         },
         "notEligible": "Non éligible",
         "pendingState": "{{amount}} en attente",
+        "rejected": {
+          "alreadyRedeemed": "Publication déjà utilisée",
+          "postMustMention": "Doit mentionner {{assistantName}}"
+        },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "share": {
           "action": "Partager",
@@ -6982,14 +6985,20 @@
       "preview": "Aperçu de {{title}}",
       "rename": "Renommer le modèle"
     },
+    "clearSearch": "Effacer la recherche",
     "custom": "Personnalisés",
     "detail": {
       "back": "Modèles personnalisés",
       "page": "Page {{number}}"
     },
     "empty": {
-      "description": "Okou transforme le design de votre fichier en un modèle que vous pouvez réutiliser."
+      "description": "Importez un document, une présentation ou une image pour réutiliser sa mise en page.",
+      "document": "Aucun document pour le moment",
+      "illustration": "Aucune image pour le moment",
+      "presentation": "Aucune présentation pour le moment",
+      "title": "Créez votre style"
     },
+    "importHint": "Importez un document, une présentation ou une image.",
     "loadFailed": "Impossible de charger les modèles.",
     "renameFailed": "Impossible de renommer le modèle.",
     "retry": "Réessayer",

@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "自分のファイルをインポート",
-      "importFileHint": "ファイルのデザインを再利用",
+      "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -1494,6 +1493,10 @@
         },
         "notEligible": "対象外",
         "pendingState": "{{amount}} 件承諾待ち",
+        "rejected": {
+          "alreadyRedeemed": "投稿は使用済み",
+          "postMustMention": "{{assistantName}} に触れる必要あり"
+        },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "share": {
           "action": "シェア",
@@ -6897,14 +6900,20 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
+    "clearSearch": "検索をクリア",
     "custom": "カスタム",
     "detail": {
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
     },
     "empty": {
-      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
+      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
+      "document": "ドキュメントはまだありません",
+      "illustration": "画像はまだありません",
+      "presentation": "プレゼンテーションはまだありません",
+      "title": "自分だけのテンプレートに"
     },
+    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",

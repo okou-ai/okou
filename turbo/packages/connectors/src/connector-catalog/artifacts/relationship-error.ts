@@ -25,6 +25,7 @@ export type ConnectorCatalogRelationshipRule =
   | "conflicting-firewall-host-policies"
   | "missing-generated-firewall"
   | "invalid-firewall-fixed-host"
+  | "invalid-firewall-permission"
   | "duplicate-firewall-permission-rule"
   | "noncanonical-firewall-hostname"
   | "firewall-base-secret"

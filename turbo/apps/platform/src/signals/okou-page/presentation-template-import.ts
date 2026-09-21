@@ -2,10 +2,11 @@ import {
   USER_TEMPLATE_KINDS,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { command } from "ccstate";
+import { command, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { onRef } from "../utils.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
 /**
@@ -53,13 +54,28 @@ function acceptList(kinds: readonly UserTemplateKind[]): string {
 export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
 
 /**
- * The Custom pane's tile, which publishes to the user template catalog.
+ * The Custom pane's import action, which publishes to the user template catalog.
  *
  * One entry for every kind rather than one entry per kind: the user picks a
  * file and the file decides what it becomes, so nothing asks them to classify
  * their own document before the analysis has read it.
  */
 export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
+
+const customTemplateImportInput$ = state<HTMLInputElement | null>(null);
+
+export const setCustomTemplateImportInput$ = onRef(
+  command(({ set }, input: HTMLInputElement, signal: AbortSignal) => {
+    set(customTemplateImportInput$, input);
+    signal.addEventListener("abort", () => {
+      set(customTemplateImportInput$, null);
+    });
+  }),
+);
+
+export const openCustomTemplateImport$ = command(({ get }) => {
+  get(customTemplateImportInput$)?.click();
+});
 
 /**
  * The message the deck is sent with.
