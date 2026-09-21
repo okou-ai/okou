@@ -24,6 +24,25 @@ fn codex_restore_rollout_timestamp(
     session.codex_timestamp().unwrap_or(fallback_timestamp)
 }
 
+pub(super) fn fresh_codex_session_target(
+    session: &MaterializedResumeSession,
+) -> crate::executor::RunnerResult<(String, String)> {
+    let thread_id = CodexThreadId::parse(session.cli_agent_session_id())
+        .ok_or_else(|| RunnerError::Internal("invalid codex session_id".into()))?;
+    let session_id = thread_id.as_str().to_string();
+    let timestamp = codex_restore_rollout_timestamp(session, chrono::Utc::now());
+    let physical_suffix = if session.codex_zstd_history().is_some() {
+        ".zst"
+    } else {
+        ""
+    };
+    let relative_path = codex_rollout_relative_path(&thread_id, timestamp);
+    Ok((
+        session_id,
+        format!("{CANONICAL_CODEX_HOME_DIR}/{relative_path}{physical_suffix}"),
+    ))
+}
+
 /// Restore a Codex session history file as canonical JSONL or zstd-compressed
 /// JSONL under
 /// `~/.codex/sessions/YYYY/MM/DD/rollout-YYYY-MM-DDThh-mm-ss-{thread_id}.jsonl[.zst]`.

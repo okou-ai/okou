@@ -100,7 +100,7 @@
 //! # Compatibility boundary
 //!
 //! `complete_action_schema_is_exact_and_unique` constructs the complete list of
-//! 92 action names, checks its order, and checks uniqueness. The binary
+//! 91 action names, checks its order, and checks uniqueness. The binary
 //! attribution tests in
 //! `tests/integration/binary_logging/attribution.rs` cover action ordering,
 //! successful and failed downloads, local-versus-remote emission,
@@ -117,34 +117,6 @@ use guest_telemetry::telemetry::{
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
-
-pub(crate) fn record_history_overlap_shadow(
-    classification: crate::history_overlap_shadow::Classification,
-    duration: Duration,
-) {
-    let (outcome, reason) = match classification {
-        crate::history_overlap_shadow::Classification::EligibleDisjoint => ("eligible", "disjoint"),
-        crate::history_overlap_shadow::Classification::IneligibleLogicalOverlap => {
-            ("ineligible", "logical_overlap")
-        }
-        crate::history_overlap_shadow::Classification::IneligiblePhysicalOverlap => {
-            ("ineligible", "physical_overlap")
-        }
-        crate::history_overlap_shadow::Classification::IneligibleUnresolvedIdentity => {
-            ("ineligible", "unresolved_identity")
-        }
-    };
-    record_sandbox_op_with_dimensions(
-        "guest_storage_history_overlap_shadow",
-        duration,
-        true,
-        None,
-        SandboxOpDimensions {
-            outcome: Some(outcome),
-            reason: Some(reason),
-        },
-    );
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DownloadTaskTelemetry {
@@ -827,8 +799,7 @@ mod tests {
     const COMPRESSED_BYTE_REPRESENTATIVES: [u64; 8] = [
         0, 1, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864,
     ];
-    const EXPECTED_ACTION_SCHEMA: [&str; 92] = [
-        "guest_storage_history_overlap_shadow",
+    const EXPECTED_ACTION_SCHEMA: [&str; 91] = [
         "guest_storage_apply_task_count_0",
         "guest_storage_apply_task_count_1",
         "guest_storage_apply_task_count_2",
@@ -923,7 +894,7 @@ mod tests {
     ];
 
     fn action_schema() -> Vec<&'static str> {
-        let mut actions = vec!["guest_storage_history_overlap_shadow"];
+        let mut actions = Vec::new();
         for metric in COUNT_METRICS {
             actions.extend(COUNT_REPRESENTATIVES.map(|count| metric.actions().action(count)));
         }
@@ -1105,6 +1076,6 @@ mod tests {
         let actions = action_schema();
 
         assert_eq!(actions.as_slice(), EXPECTED_ACTION_SCHEMA.as_slice());
-        assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 92);
+        assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 91);
     }
 }
