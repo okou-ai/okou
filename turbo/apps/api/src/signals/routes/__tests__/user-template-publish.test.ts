@@ -134,6 +134,63 @@ async function publishBody(
   };
 }
 
+const DOCX_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/**
+ * A document publish body carrying whatever the reverse run managed to render.
+ *
+ * Both of the document arm's fields are optional and separately so, which is
+ * the point of taking them separately here: a test that omits one is covering
+ * a run that produced the other and nothing more.
+ */
+async function documentPublishBody(
+  actor: ApiTestUser,
+  fixture: Fixture,
+  rendered: {
+    readonly cover?: { readonly contentType: string };
+    readonly pageCount?: number;
+  } = {},
+): Promise<PublishUserTemplateBody> {
+  const sourceFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "brand-report.docx", contentType: DOCX_CONTENT_TYPE },
+    Buffer.from("PK docx bytes", "utf8"),
+  );
+  const coverFileId =
+    rendered.cover === undefined
+      ? undefined
+      : await uploadTemplateFile(
+          context,
+          actor,
+          fixture,
+          {
+            filename: "cover.png",
+            contentType: rendered.cover.contentType,
+          },
+          Buffer.from("first page", "utf8"),
+        );
+  const packageFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+    tarGz(guidance("document")),
+  );
+  return {
+    title: "Brand report",
+    kind: "document",
+    sourceFileId,
+    ...(coverFileId === undefined ? {} : { coverFileId }),
+    ...(rendered.pageCount === undefined
+      ? {}
+      : { pageCount: rendered.pageCount }),
+    packageFileId,
+  };
+}
+
 beforeEach(() => {
   mockEnv("R2_USER_ARTIFACTS_BUCKET_NAME", "test-user-artifacts");
 });
@@ -239,13 +296,16 @@ describe("POST /api/user-templates", () => {
       [200],
     );
 
-    // A document is its styles, so it has no pages and no cover — null rather
-    // than a zero that would read as an empty template.
+    // A document is its styles, so it has no pages — null rather than a zero
+    // that would read as an empty template. This one was also published
+    // without a rendered first page, so it has no cover either, and nothing
+    // for the catalog to stack behind one.
     expect(response.body).toMatchObject({
       kind: "document",
       sourceFilename: "brand-report.docx",
       pageCount: null,
       coverUrl: null,
+      coverHasMorePages: false,
     });
 
     const listed = await accept(client.list({ headers: webHeaders() }), [200]);
@@ -271,6 +331,111 @@ describe("POST /api/user-templates", () => {
         return key.endsWith(".docx");
       }),
     );
+  });
+
+  it("covers a document with its first page without calling it a page", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, {
+          cover: { contentType: "image/png" },
+          pageCount: 12,
+        }),
+      }),
+      [200],
+    );
+
+    // The picture is a cover and only a cover. `pageCount` stays null because
+    // it answers how many pages this template renders, which is still none;
+    // how long the source was reaches the catalog as the one thing the tile
+    // does with it.
+    expect(response.body).toMatchObject({
+      kind: "document",
+      coverHasMorePages: true,
+      pageCount: null,
+    });
+    expect(response.body.coverUrl).not.toBeNull();
+
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: response.body.id },
+      }),
+      [200],
+    );
+    // Not in `pageUrls`: a reader opening a document is given the file to
+    // read, not one picture of its opening. Putting the cover here is what
+    // would replace the source viewer with a dead end.
+    expect(detail.body.pageUrls).toStrictEqual([]);
+    expect(detail.body.previewAssets).toHaveLength(1);
+  });
+
+  it("leaves a one-page document nothing to stack behind its cover", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, {
+          cover: { contentType: "image/png" },
+          pageCount: 1,
+        }),
+      }),
+      [200],
+    );
+
+    expect(response.body.coverUrl).not.toBeNull();
+    // An invitation is one page. Sheets behind it would claim a second.
+    expect(response.body.coverHasMorePages).toBe(false);
+  });
+
+  it("keeps a page count that arrived without a cover from claiming one", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, { pageCount: 12 }),
+      }),
+      [200],
+    );
+
+    // The count is recorded and the catalog still has nothing to draw, so the
+    // template falls back to being named by its file. A stack with no sheet in
+    // front of it is what pairing the two fields would have had to prevent by
+    // rejecting the publish instead.
+    expect(response.body.coverUrl).toBeNull();
+    expect(response.body.coverHasMorePages).toBe(false);
+  });
+
+  it("refuses a cover the catalog could not paint", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, {
+          cover: { contentType: "image/webp" },
+          pageCount: 12,
+        }),
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toContain("image/png");
   });
 
   it("publishes an illustration template and covers it with its source", async () => {

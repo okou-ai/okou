@@ -31,12 +31,17 @@ export type PublishUserTemplateArgs =
       readonly kind: "presentation";
       readonly pagesDir: string;
     })
-  | (PublishUserTemplateCommon & { readonly kind: "document" })
+  | (PublishUserTemplateCommon & {
+      readonly kind: "document";
+      readonly coverPath?: string;
+      readonly pageCount?: number;
+    })
   | (PublishUserTemplateCommon & { readonly kind: "illustration" });
 
 interface UploadedFileIds {
   readonly sourceFileId: string;
   readonly pageFileIds: string[];
+  readonly coverFileId: string | undefined;
   readonly packageFileId: string;
 }
 
@@ -51,6 +56,24 @@ async function pagePaths(
     case "document":
     case "illustration": {
       return [];
+    }
+  }
+}
+
+/**
+ * The one picture that is a cover without also being a page.
+ *
+ * A deck's cover is the first of the pages it already sends and an
+ * illustration's is its source, so neither has a file to name here.
+ */
+function coverPath(args: PublishUserTemplateArgs): string | undefined {
+  switch (args.kind) {
+    case "document": {
+      return args.coverPath;
+    }
+    case "presentation":
+    case "illustration": {
+      return undefined;
     }
   }
 }
@@ -81,6 +104,10 @@ function publishRequestBody(
         title: args.title,
         kind: "document",
         sourceFileId: uploaded.sourceFileId,
+        ...(uploaded.coverFileId === undefined
+          ? {}
+          : { coverFileId: uploaded.coverFileId }),
+        ...(args.pageCount === undefined ? {} : { pageCount: args.pageCount }),
         packageFileId: uploaded.packageFileId,
       };
     }
@@ -107,6 +134,7 @@ export async function publishUserTemplate(
   args: PublishUserTemplateArgs,
 ): Promise<UserTemplateSummary> {
   const pages = await pagePaths(args);
+  const cover = coverPath(args);
 
   const source = await uploadWebFile(args.sourcePath);
   const pageFileIds: string[] = [];
@@ -116,6 +144,16 @@ export async function publishUserTemplate(
     });
     pageFileIds.push(page.id);
   }
+  // Sent as a page's content type because it is held to a page's limits at
+  // publish and served through the same preview-asset path afterwards.
+  const coverFileId =
+    cover === undefined
+      ? undefined
+      : (
+          await uploadWebFile(cover, {
+            contentType: USER_TEMPLATE_PAGE_CONTENT_TYPE,
+          })
+        ).id;
 
   const packageFileId = await packageArchive(
     args.packageDir,
@@ -133,6 +171,7 @@ export async function publishUserTemplate(
     body: publishRequestBody(args, {
       sourceFileId: source.id,
       pageFileIds,
+      coverFileId,
       packageFileId,
     }),
   });
