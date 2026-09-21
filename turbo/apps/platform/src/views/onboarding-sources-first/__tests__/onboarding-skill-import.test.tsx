@@ -2,10 +2,12 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   SKILL_IMPORT_LIMITS,
   skillImportSessionsContract,
 } from "@okouai/api-contracts/contracts/skill-import";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import {
   workflowsCollectionContract,
   type WorkflowSummary,
@@ -198,6 +200,33 @@ function onboardingEvent(name: string, properties: Record<string, unknown>) {
 }
 
 /**
+ * The step after this one reads its org's Slack and Teams installations, so a
+ * run that continues into it needs both to answer.
+ */
+function mockChatChannelInstalls(): void {
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      installUrl: "https://slack.example.test/oauth/install",
+      connectUrl: null,
+      scopeMismatch: false,
+      reinstallUrl: null,
+      workspaceName: null,
+    });
+  });
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      connectUrl: "/api/teams/oauth/connect?orgId=org_default",
+    });
+  });
+}
+
+/**
  * The skills step belongs to the branch a plan answer opens, so the run walks
  * into it the way a person does.
  */
@@ -205,8 +234,10 @@ async function openSkillsStep(): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
+    isAdmin: true,
   });
   mockConnectedSource();
+  mockChatChannelInstalls();
 
   await setupPage({
     context,

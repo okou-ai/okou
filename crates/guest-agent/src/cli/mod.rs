@@ -94,6 +94,7 @@ const LOG_TAG: &str = "sandbox:guest-agent";
 const AGENT_LOG_BUFFER_BYTES: usize = 8 * 1024;
 const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
+const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
 const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
@@ -386,7 +387,8 @@ impl<'a> CliRuntimeConfig<'a> {
         } else {
             None
         };
-        let disable_builtin_web_search = config.user_env.contains_key(OKOU_AGENT_ID_ENV_KEY);
+        let disable_builtin_web_search = config.user_env.contains_key(OKOU_AGENT_ID_ENV_KEY)
+            && user_env_value(&config.user_env, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY) != "true";
         let disallowed_tools = disallowed_tools_with_builtin_web_search_disabled(
             &config.disallowed_tools,
             disable_builtin_web_search,
@@ -2687,6 +2689,33 @@ mod tests {
                 .codex_startup_config_overrides()
                 .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
         );
+    }
+
+    #[test]
+    fn framework_web_search_requires_exact_positive_opt_in() {
+        for (value, expected_disabled) in [
+            ("true", false),
+            ("false", true),
+            ("TRUE", true),
+            ("1", true),
+            ("", true),
+        ] {
+            let config = guest_config_for_agent_context(HashMap::from([
+                (
+                    super::OKOU_AGENT_ID_ENV_KEY.to_string(),
+                    "agent-test".to_string(),
+                ),
+                (
+                    super::ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY.to_string(),
+                    value.to_string(),
+                ),
+            ]));
+            let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/okou-env-test");
+
+            let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
+
+            assert_eq!(runtime.disable_builtin_web_search, expected_disabled);
+        }
     }
 
     #[test]

@@ -2473,7 +2473,7 @@ PostHog OAuth uses a public client identified by
 `https://app.okou.ai/connectors/posthog/metadata.json`, with PKCE and no
 client secret. Deploy the API support for static public authorization-code
 clients and the updated public metadata before publishing the companion
-`vm0-ai/vm0-connectors` catalog change. Earlier API versions reject the public
+`okou-ai/okou-connectors` catalog change. Earlier API versions reject the public
 client during catalog relationship validation; catalog publication must wait
 until those versions no longer serve traffic. If the API must roll back below
 this support, restore a compatible catalog first through the normal catalog

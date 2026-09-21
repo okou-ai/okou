@@ -3205,8 +3205,15 @@ function ChatThreadEmptyState({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
-  const renderedGroupsReady =
-    useLastResolved(thread.visibleRenderedChatGroupsReady$) ?? false;
+  const initialEventsReady = useGet(thread.initialEventsReady$);
+  const renderedGroupsReady = useLastLoadable(
+    thread.visibleRenderedChatGroupsReady$,
+  );
+  const showTranscript =
+    renderedGroupsReady.state === "hasError" ||
+    (initialEventsReady &&
+      renderedGroupsReady.state === "hasData" &&
+      renderedGroupsReady.data);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
   const sharingPhase = useGet(thread.sharing.phase$);
 
@@ -3217,9 +3224,10 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
         data-message-container
         className={cn(
           CHAT_THREAD_MESSAGE_LIST_CLASS,
+          // Preserve the mounted layout for scroll restoration while loading.
+          !showTranscript && "invisible",
           sharingPhase !== "idle" && "pr-10 lg:pr-0",
         )}
-        style={{ visibility: renderedGroupsReady ? "visible" : "hidden" }}
       >
         <ChatThreadSessionError thread={thread} />
         <ChatThreadEmptyState thread={thread} />
@@ -3689,14 +3697,12 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
     return null;
   }
 
-  // The overlay covers the pane while the transcript loads, so it takes the
-  // canvas fill rather than the page's: over a gradient palette a `--background`
-  // cover is a flat block that snaps to the canvas the moment the first events
-  // arrive.
+  // The transcript hides its content while loading. Keep this placeholder
+  // transparent so the workspace's pane-sized gradient remains continuous.
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-workspace-canvas"
+      className="absolute inset-0 z-10 overflow-hidden pointer-events-none"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div

@@ -4,6 +4,7 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -112,12 +113,29 @@ function mockCodexDeviceAuthStart(): void {
   });
 }
 
+/**
+ * The step after this one names the org's own Slack, and the shared fixture
+ * has one already connected. This run is a workspace that does not.
+ */
+function mockSlackNotInstalled(): void {
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      installUrl: "https://slack.example.test/oauth/install",
+      connectUrl: null,
+    });
+  });
+}
+
 async function openExperienceStep(): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
   mockConnectedSource();
+  mockSlackNotInstalled();
 
   await setupPage({
     context,

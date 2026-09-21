@@ -3,6 +3,8 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -67,12 +69,15 @@ function mockConnectedSource(): void {
 
 /**
  * A channel tile, found by the channel it names. The name stays whatever the
- * state, so the tile is still this one once it reads as added.
+ * state, so the tile is still this one once it reads as added, and a tile that
+ * leaves for an install is a link rather than a button.
  */
 function queryChannelTile(name: string): HTMLElement | undefined {
-  return queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim().startsWith(name) === true;
-  });
+  return [...queryAllByRoleFast("button"), ...queryAllByRoleFast("link")].find(
+    (candidate) => {
+      return candidate.textContent?.trim().startsWith(name) === true;
+    },
+  );
 }
 
 function getChannelTile(name: string): HTMLElement {
@@ -83,12 +88,38 @@ function getChannelTile(name: string): HTMLElement {
   return tile;
 }
 
+/** The org's Slack and Teams installations, which the step's own tiles read. */
+function mockChatChannelInstalls(): void {
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      installUrl: "https://slack.example.test/oauth/install",
+      connectUrl: null,
+      scopeMismatch: false,
+      reinstallUrl: null,
+      workspaceName: null,
+    });
+  });
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: true,
+      connectUrl: "/api/teams/oauth/connect?orgId=org_default",
+    });
+  });
+}
+
 async function openSlackStep(agentPhone: boolean): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
+    isAdmin: true,
   });
   mockConnectedSource();
+  mockChatChannelInstalls();
 
   await setupPage({
     context,

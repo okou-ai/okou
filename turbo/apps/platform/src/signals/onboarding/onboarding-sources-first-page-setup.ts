@@ -24,10 +24,12 @@ import {
   watchAgentPhoneConnection$,
 } from "../okou-page/agentphone.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
+import { watchSlackConnection$ } from "../okou-page/slack.ts";
+import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
-import { settle } from "../utils.ts";
+import { detach, Reason } from "../utils.ts";
 import {
   promptHandoffParams,
   setupOnboardingMakePage$,
@@ -46,9 +48,16 @@ interface SourcesFirstPageConfig {
   readonly title: () => string;
   readonly Page: ComponentType;
   /**
-   * Work the step needs before it is any use: a session to show, a watcher to
-   * keep a tile current. It runs once the run is known to reach this step, and
-   * it owns the route's signal, so leaving the step ends it.
+   * Live subscriptions this step needs, owned by the step's own signal. They
+   * start once the step is known to render, so a redirect never leaves one
+   * listening behind it.
+   */
+  readonly watch?: readonly Command<Promise<void>, [AbortSignal]>[];
+  /**
+   * Finite work the step needs before it is any use, such as opening a
+   * session it has to show. Unlike `watch` it is awaited, so the step's own
+   * events stay in order behind `StepViewed`; it owns the route's signal, and
+   * it reports its own failure rather than keeping the step from opening.
    */
   readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
@@ -140,6 +149,12 @@ function createSourcesFirstPageSetup(
 
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
+    // One integration's status decides what a step offers, never whether the
+    // step opens: a daemon keeps a failing integration out of the flow's way,
+    // and the step says what it could not reach.
+    for (const watch$ of config.watch ?? []) {
+      detach(set(watch$, signal), Reason.Daemon, "onboarding step status");
+    }
     await set(hideAppSkeleton$, signal);
     set(captureSourceOnboardingStepViewed$, config.step);
     // The step is on screen first, so its own work is something the person
@@ -230,11 +245,7 @@ const watchOnboardingAgentPhone$ = command(
       return;
     }
     set(setAgentPhoneConnectDialogOpen$, false);
-    // The watcher only keeps the tile current, and the tile reads the link
-    // status itself: it offers no connect while that read has no answer. So a
-    // failed read costs live updates and stops here, rather than failing a
-    // step that is about Slack.
-    await settle(set(watchAgentPhoneConnection$, signal), signal);
+    await set(watchAgentPhoneConnection$, signal);
   },
 );
 
@@ -246,7 +257,14 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSlackPage,
-  enter: watchOnboardingAgentPhone$,
+  // The install finishes in the provider's own tab, so the step only learns it
+  // happened from the realtime change these watchers subscribe to. AgentPhone
+  // is linked from a phone, which the step never sees either.
+  watch: [
+    watchSlackConnection$,
+    watchTeamsConnection$,
+    watchOnboardingAgentPhone$,
+  ],
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({
