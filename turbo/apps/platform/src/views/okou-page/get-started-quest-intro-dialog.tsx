@@ -122,9 +122,9 @@ function QuestFigure({ art }: { art: keyof typeof QUEST_ART }) {
  * One of the three steps.
  *
  * The order is carried by a number, which is what a number is for. The tiles
- * this replaces used three accents that `ILLUSTRATION_ACCENTS` assigns to
- * different *kinds* of work, so three consecutive steps of one process read as
- * three unrelated categories.
+ * this replaces drew three accents from the start-card palette, where each
+ * colour stands for a different *kind* of work -- so three consecutive steps of
+ * one process read as three unrelated categories.
  */
 function WorkflowStep({
   index,
