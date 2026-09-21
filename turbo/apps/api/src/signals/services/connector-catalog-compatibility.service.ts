@@ -12,7 +12,7 @@ import type {
   ConnectorCatalogCompatibilityFilteredAuthMethod,
 } from "@okouai/db/jsonb-contracts/connector-catalog";
 import { command } from "ccstate";
-import { and, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -29,7 +29,7 @@ import {
 } from "@okouai/connectors/connector-catalog/compatibility";
 import { connectorCatalogSource } from "./connector-catalog-source";
 import {
-  connectorCatalogValidationAuthorityIsCurrentOrNewer,
+  connectorCatalogValidationAuthorityIsCurrent,
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidatorIdentity,
 } from "./connector-catalog-validator-authority";
@@ -114,23 +114,17 @@ async function persistConnectorCatalogCompatibilityEvaluation(args: {
         connectorCatalogCompatibilityEvaluation.catalogDigest,
         connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
       ],
+      // Readers accept an attestation only from their own validator identity,
+      // so the reconciling release always claims the row. Refusing to overwrite
+      // a higher validator version would strand every release that serves after
+      // it — a rollback especially — with an attestation none of its readers
+      // can use and a reconcile that never repairs it.
       set: {
         catalogValidationBackendVersion: args.validator.validatorVersion,
         catalogValidationBuildCommitSha: args.validator.buildCommitSha,
         evaluatedAt: args.evaluatedAt,
         filteredAuthMethods: args.payload,
       },
-      // A draining older API release must not downgrade an attestation written
-      // by a newer release during a rolling deployment.
-      setWhere: or(
-        isNull(
-          connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion,
-        ),
-        lte(
-          sql`string_to_array(${connectorCatalogCompatibilityEvaluation.catalogValidationBackendVersion}, '.')::numeric[]`,
-          sql`string_to_array(${args.validator.validatorVersion}, '.')::numeric[]`,
-        ),
-      ),
     });
 }
 
@@ -263,10 +257,13 @@ async function reconcileCompatibility(args: {
       ),
     )
     .limit(1);
+  // Match the reader's acceptance rule exactly. `readCurrentCatalog` takes the
+  // attested fast path only for its own validator identity, so any other
+  // identity — older or newer — has to be re-validated and rewritten here.
   if (
     existing !== undefined &&
     existing.catalogValidationBackendVersion !== null &&
-    connectorCatalogValidationAuthorityIsCurrentOrNewer({
+    connectorCatalogValidationAuthorityIsCurrent({
       authority: {
         validatorVersion: existing.catalogValidationBackendVersion,
         buildCommitSha: existing.catalogValidationBuildCommitSha,
