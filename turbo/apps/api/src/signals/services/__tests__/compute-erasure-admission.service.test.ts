@@ -181,6 +181,9 @@ describe("actual compute transactions versus the B1 projector", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = api.configureRunnerGroup();
+    // Pin two admitted runs so the queue shapes below stay independent of the
+    // Pro plan's own concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     await api.grantProEntitlement(actor);
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
