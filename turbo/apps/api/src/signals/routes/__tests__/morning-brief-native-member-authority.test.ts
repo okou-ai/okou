@@ -57,6 +57,20 @@ import { createRouteMocks } from "./helpers/route-test";
  * cron route, the same cutover, the same real collection, generation and
  * delivery — and differ only in how many Gmail messages the provider answers
  * with. Anything that scales with that difference is per-item authority work.
+ *
+ * **Stated boundary exception.** The membership resolutions counted here are
+ * crossings of the Clerk provider boundary, which is external and doubled like
+ * any other provider in this suite. The statement counts are not: they are
+ * internal, and `docs/testing/testing-external-behavior.md` allows leaving the
+ * external boundary only for a case the production interface cannot construct,
+ * with the reason recorded at the test. The reason is that no endpoint reports
+ * how much authority work one attempt spent — the brief is delivered either
+ * way, so the defect this covers is invisible in every response the attempt
+ * produces, and a test written at the endpoint would pass while an attempt
+ * re-asked one immutable question once per collected message. The exception is
+ * deliberately narrow: it covers how often the authority path repeats itself,
+ * never what it decided, which every other case in these suites still proves
+ * through the endpoint.
  */
 
 const context = testContext({ connectorCatalog: true });

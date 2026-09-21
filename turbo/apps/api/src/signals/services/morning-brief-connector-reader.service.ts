@@ -853,6 +853,29 @@ async function urlPermission(args: {
 }
 
 /**
+ * Is the member still the exact Clerk membership generation this scope names?
+ *
+ * One definition for every caller. The endpoint authority observes it once per
+ * authorization phase and the unread Chat collection resolves it inline through
+ * {@link morningBriefScopeIsCurrent}, but a removal — and a removal followed by
+ * a rejoin under a new id — has to fail identically for both, so the comparison
+ * itself lives in one place rather than once per caller.
+ *
+ * The membership generation is immutable, so a cache row's presence cannot
+ * answer this: only the live read distinguishes the generation this scope was
+ * admitted under from a new one wearing the same member's name.
+ */
+async function membershipGenerationIsCurrent(
+  clerk: ClerkClient,
+  scope: MorningBriefCollectionScope,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const membershipId = await loadCurrentMembershipId(clerk, scope, signal);
+  signal.throwIfAborted();
+  return membershipId !== null && membershipId === scope.membershipId;
+}
+
+/**
  * Is this frozen scope still the authority it was admitted as?
  *
  * Four facts, none of which a cached request identity answers: the member still
@@ -879,13 +902,9 @@ export async function morningBriefScopeIsCurrent(
 ): Promise<boolean> {
   const { db, scope, deadline } = args;
 
-  // The member's current Clerk membership generation, not a cache row's
-  // presence. A removal, and a removal followed by a rejoin under a new id,
-  // both fail here. This network read deliberately precedes the final local
-  // transaction: no database lock is held while Clerk answers.
-  const membershipId = await loadCurrentMembershipId(args.clerk, scope, signal);
-  signal.throwIfAborted();
-  if (membershipId === null || membershipId !== scope.membershipId) {
+  // This network read deliberately precedes the final local transaction: no
+  // database lock is held while Clerk answers.
+  if (!(await membershipGenerationIsCurrent(args.clerk, scope, signal))) {
     return false;
   }
 
@@ -975,18 +994,14 @@ export function startMorningBriefOwnerAuthority(
 ): MorningBriefOwnerAuthority {
   let pending: Promise<MorningBriefOwnerObservation> | null = null;
   const observe = async (): Promise<MorningBriefOwnerObservation> => {
-    // The member's current Clerk membership generation, not a cache row's
-    // presence. A removal, and a removal followed by a rejoin under a new id,
-    // both fail here. It still precedes every local transaction below, so no
+    // The same comparison `morningBriefScopeIsCurrent` makes, taken once for
+    // this phase. It still precedes every local transaction below, so no
     // database lock is ever held while Clerk answers.
-    const membershipId = await loadCurrentMembershipId(
+    const current = await membershipGenerationIsCurrent(
       args.clerk,
       args.scope,
       phaseSignal,
     );
-    phaseSignal.throwIfAborted();
-    const current =
-      membershipId !== null && membershipId === args.scope.membershipId;
     if (!current) {
       return { current, memberRowObserved: false };
     }
