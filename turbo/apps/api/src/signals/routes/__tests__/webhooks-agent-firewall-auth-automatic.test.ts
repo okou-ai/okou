@@ -315,7 +315,18 @@ describe("builtin Automatic firewall credential destinations", () => {
     },
   );
 
-  it("refreshes labels for the same verified Automatic OAuth principal", async () => {
+  it.each([
+    [
+      "refreshes labels for the same verified principal",
+      "builtin-refresh-user",
+      200,
+    ],
+    [
+      "requires reconnect for a different verified principal",
+      "builtin-other-user",
+      502,
+    ],
+  ] as const)("%s", async (_title, refreshedSubject, expectedStatus) => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -329,7 +340,7 @@ describe("builtin Automatic firewall credential destinations", () => {
         userInfoEmail: "builtin-preserved@example.test",
       },
       refreshIdentity: {
-        subject: "builtin-refresh-user",
+        subject: refreshedSubject,
         userInfoUsername: "builtin-after-refresh",
       },
     });
@@ -431,13 +442,26 @@ describe("builtin Automatic firewall credential destinations", () => {
           routingVariables: {},
         },
       },
-      [200],
+      [200, 502],
     );
-    expect(refreshed.body).toMatchObject({
-      headers: {
-        Authorization: "Bearer automatic-refreshed-access-token",
-      },
-    });
+    expect(refreshed.status).toBe(expectedStatus);
+    if (expectedStatus === 200) {
+      expect(refreshed.body).toMatchObject({
+        headers: {
+          Authorization: "Bearer automatic-refreshed-access-token",
+        },
+      });
+    } else {
+      expect(refreshed.body).toMatchObject({
+        error: {
+          code: "TOKEN_REFRESH_FAILED",
+          failureReason: "reconnect_required",
+        },
+      });
+      expect(JSON.stringify(refreshed.body)).not.toContain(
+        "automatic-refreshed-access-token",
+      );
+    }
     const account = await accept(
       accounts.connection({
         headers,
@@ -448,10 +472,15 @@ describe("builtin Automatic firewall credential destinations", () => {
     );
     expect(account.body).toMatchObject({
       externalId: "builtin-refresh-user",
-      externalUsername: "builtin-after-refresh",
+      externalUsername:
+        expectedStatus === 200
+          ? "builtin-after-refresh"
+          : "builtin-before-refresh",
       externalEmail: "builtin-preserved@example.test",
-      connectionStatus: "connected",
-      reconnectReason: null,
+      connectionStatus:
+        expectedStatus === 200 ? "connected" : "reconnect-required",
+      reconnectReason:
+        expectedStatus === 200 ? null : "authorization_expired_or_revoked",
     });
 
     await runs.requestCancelRun(actor, run.runId, [200]);
