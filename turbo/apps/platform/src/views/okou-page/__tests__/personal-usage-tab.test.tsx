@@ -840,7 +840,7 @@ test("Identify the model used by limited-free runs", async () => {
   });
 });
 
-test("Combine public social data with connector usage by platform", async () => {
+test("Merge every Social Search vendor into one connector-segment row", async () => {
   const user = userEvent.setup();
   mockPersonalUsageStory([
     {
@@ -880,7 +880,7 @@ test("Combine public social data with connector usage by platform", async () => 
               usageKinds: [{ kind: "social", credits: 17 }],
             },
             {
-              provider: "legacy-social",
+              provider: "socialkit",
               credits: 12,
               usageKinds: [{ kind: "social", credits: 12 }],
             },
@@ -911,17 +911,15 @@ test("Combine public social data with connector usage by platform", async () => 
 
   const connectorSegment = screen.getByTestId("usage-kind-segment-connector");
   await user.hover(connectorSegment);
-  const heading = await screen.findByText("Connectors - 68");
+  const heading = await screen.findByText("Connectors - 80");
   const details = heading.parentElement;
   if (!details) {
     throw new Error("Connector usage details not found");
   }
   for (const [label, credits] of [
-    ["X", "17"],
-    ["Instagram", "7"],
-    ["TikTok", "11"],
-    ["YouTube", "13"],
-    ["Facebook", "17"],
+    // The X connector keeps its own row; every kind "social" vendor merges.
+    ["X", "12"],
+    ["Social Search", "65"],
     ["Slack", "3"],
   ]) {
     expect(within(details).getByText(label).parentElement).toHaveTextContent(
@@ -929,18 +927,15 @@ test("Combine public social data with connector usage by platform", async () => 
     );
   }
   expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
-
-  await user.unhover(connectorSegment);
-  await user.hover(screen.getByTestId("usage-kind-segment-other"));
-  const legacyHeading = await screen.findByText("Other - 12");
-  const legacyDetails = legacyHeading.parentElement;
-  if (!legacyDetails) {
-    throw new Error("Legacy usage details not found");
+  expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();
+  for (const platform of ["Instagram", "TikTok", "YouTube", "Facebook"]) {
+    expect(within(details).queryByText(platform)).not.toBeInTheDocument();
   }
+
+  // Every social vendor moved out, so the remaining "other" bucket is empty.
   expect(
-    within(legacyDetails).getByText("Legacy Social").parentElement,
-  ).toHaveTextContent("Legacy Social12");
-  expect(within(legacyDetails).queryByText("X")).not.toBeInTheDocument();
+    screen.queryByTestId("usage-kind-segment-other"),
+  ).not.toBeInTheDocument();
 });
 
 test("Label HeyGen Avatar III usage by the product feature", async () => {

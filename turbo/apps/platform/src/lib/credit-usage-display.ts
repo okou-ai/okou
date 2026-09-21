@@ -2,14 +2,6 @@ import type { UsageRecordKindBreakdown } from "@okouai/api-contracts/contracts/u
 import { getModelDisplayName } from "@okouai/core/model-display-name";
 import { i18n } from "../i18n/index.ts";
 
-const SOCIAL_PLATFORM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  x: "X",
-  instagram: "Instagram",
-  tiktok: "TikTok",
-  youtube: "YouTube",
-  facebook: "Facebook",
-};
-
 interface CreditUsageEntry {
   readonly kind: string;
   readonly provider: string;
@@ -53,6 +45,11 @@ const USAGE_DISPLAY_NAMES = {
       return $.usage.displayNames.seo;
     });
   },
+  socialSearch(): string {
+    return i18n.t(($) => {
+      return $.usage.displayNames.socialSearch;
+    });
+  },
   translation(): string {
     return i18n.t(($) => {
       return $.usage.displayNames.translation;
@@ -82,6 +79,7 @@ const MANAGED_USAGE_KIND_DISPLAY_NAMES: Readonly<Record<string, () => string>> =
     "web-search": USAGE_DISPLAY_NAMES.webSearch,
     "people-search": USAGE_DISPLAY_NAMES.peopleSearch,
     seo: USAGE_DISPLAY_NAMES.seo,
+    social: USAGE_DISPLAY_NAMES.socialSearch,
     finance: USAGE_DISPLAY_NAMES.finance,
     weather: USAGE_DISPLAY_NAMES.weather,
     "image-recognition": USAGE_DISPLAY_NAMES.imageRecognition,
@@ -165,18 +163,17 @@ function usageKindBase(kind: string): string {
   return kind.split("/", 1)[0];
 }
 
-function socialUsagePlatform(kind: string, provider: string): string | null {
+/**
+ * Managed capabilities are one product surface regardless of which vendor
+ * served the request, so their rows merge on the kind alone. The stored
+ * provider identity (for example "socialkit" or "monid/instagram") stays
+ * untouched; only this presentation layer collapses it.
+ */
+function managedUsageRowKey(kind: string): string | null {
   const baseKind = usageKindBase(kind);
-  if (baseKind === "connector" && provider === "x") {
-    return "x";
-  }
-  if (baseKind === "social" && provider.startsWith("monid/")) {
-    const platform = provider.slice("monid/".length);
-    if (Object.hasOwn(SOCIAL_PLATFORM_DISPLAY_NAMES, platform)) {
-      return platform;
-    }
-  }
-  return null;
+  return Object.hasOwn(MANAGED_USAGE_KIND_DISPLAY_NAMES, baseKind)
+    ? baseKind
+    : null;
 }
 
 function getCreditUsageDisplayName(kind: string, provider: string): string {
@@ -233,16 +230,12 @@ export function buildCreditUsageDisplayRows(
   for (const entry of entries) {
     const parsed = parseUsageKind(entry.kind);
     const provider = parsed.provider ?? entry.provider;
-    const platform = socialUsagePlatform(parsed.kind, provider);
-    const key = platform
-      ? `platform:${platform}`
-      : `${parsed.kind}:${provider}`;
+    const managedKey = managedUsageRowKey(parsed.kind);
+    const key = managedKey ? `kind:${managedKey}` : `${parsed.kind}:${provider}`;
     const existing = rows.get(key);
     rows.set(key, {
       key,
-      label: platform
-        ? SOCIAL_PLATFORM_DISPLAY_NAMES[platform]
-        : getCreditUsageDisplayName(parsed.kind, provider),
+      label: getCreditUsageDisplayName(parsed.kind, provider),
       credits: (existing?.credits ?? 0) + entry.credits,
     });
   }
@@ -280,9 +273,11 @@ export function buildCreditUsageDisplaySegments(
           : [{ kind: source.kind, credits: provider.credits }];
       for (const usageKind of usageKinds) {
         const entry = { ...usageKind, provider: provider.provider };
+        // Social Search is one managed capability, so every vendor behind it
+        // contributes to a single segment instead of splitting across the
+        // segment the raw breakdown happens to report.
         const target =
-          source.kind === "other" &&
-          socialUsagePlatform(usageKind.kind, provider.provider)
+          source.kind === "other" && usageKindBase(usageKind.kind) === "social"
             ? getSegment("connector")
             : segment;
         if (target !== segment) {

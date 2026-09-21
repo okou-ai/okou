@@ -141,7 +141,7 @@ test("Credit usage formats unknown image-provider names for people to read", asy
   expect(screen.queryByText("acme/vision/pro")).not.toBeInTheDocument();
 });
 
-test("Credit usage combines social sources by platform and preserves model totals", async () => {
+test("Credit usage merges every Social Search vendor into one row and preserves model totals", async () => {
   await setupUsageChat(
     "b0000000-0000-4000-a000-000000000805",
     "run-credit-social-platforms",
@@ -189,7 +189,7 @@ test("Credit usage combines social sources by platform and preserves model total
         {
           kind: "social",
           credits: 19,
-          providers: [{ provider: "legacy-social", credits: 19 }],
+          providers: [{ provider: "socialkit", credits: 19 }],
         },
       ],
     },
@@ -199,14 +199,11 @@ test("Credit usage combines social sources by platform and preserves model total
 
   const details = screen.getByRole("dialog");
   for (const [label, credits] of [
-    ["X", "20"],
-    ["Instagram", "7"],
-    ["TikTok", "11"],
-    ["YouTube", "13"],
-    ["Facebook", "17"],
+    // The X connector stays its own row; only kind "social" collapses.
+    ["X", "12"],
+    ["Social Search", "75"],
     ["GPT 5.6 Sol", "6"],
     ["GPT 5.6 Luna", "9"],
-    ["Legacy Social", "19"],
   ]) {
     expect(within(details).getByText(label).parentElement).toHaveTextContent(
       `${label}${credits}`,
@@ -214,4 +211,8 @@ test("Credit usage combines social sources by platform and preserves model total
   }
   expect(within(details).getByText("102")).toBeInTheDocument();
   expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
+  expect(within(details).queryByText(/socialkit/iu)).not.toBeInTheDocument();
+  for (const platform of ["Instagram", "TikTok", "YouTube", "Facebook"]) {
+    expect(within(details).queryByText(platform)).not.toBeInTheDocument();
+  }
 });

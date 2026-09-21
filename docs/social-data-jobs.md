@@ -73,11 +73,16 @@ acknowledged can be retried against the same upstream run.
 ## Usage presentation
 
 Persisted events retain `kind=social`, the platform-specific source provider,
-and `category=provider_cost_usd_micros`. Usage APIs keep those identities. The
-chat credit popover and Usage bars group their display rows by platform. For
-X, connector consumption and saved-job consumption share one visible X row;
-only credits are summed. Model rows and incompatible source units stay
-separate. Runless CLI charges are included in Usage records.
+and `category=provider_cost_usd_micros`. Usage APIs keep those identities.
+
+Presentation treats Social Search as one managed capability, the same way
+Web Search covers its own upstream provider. The chat credit popover and the
+Usage bars merge every `kind=social` row — `socialkit` and each `monid/...`
+provider alike — into a single **Social Search** row, and place it in one
+segment. No vendor or platform name is shown. The X connector keeps its own
+row, because connector consumption is a different product surface from Social
+Search. Model rows and incompatible source units stay separate. Runless CLI
+charges are included in Usage records.
 
 ## Activation
 
