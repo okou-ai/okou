@@ -12,6 +12,7 @@ import { publishThreadListChanged } from "../external/realtime";
 import {
   ChatThreadContentOwnershipChangedError,
   type ChatThreadContentIdentity,
+  withChatThreadContentRead,
   withChatThreadContentWrite,
 } from "./chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
@@ -290,15 +291,19 @@ export const createBrowserAuthorizationRequest$ = command(
 );
 
 /**
- * Rechecks every non-key thread identity field and reads the browser flag under
- * the UPDATE lock already acquired by the shared helper's read-only opt-in.
- * Acquiring that mode on the first thread lock is deliberate: browser Apply
- * retains KEY SHARE before its request pin, so delaying UPDATE until this query
- * would let two GETs retain KEY SHARE and deadlock while both upgraded. The
- * repeated UPDATE is same-transaction lock retention, not an upgrade.
+ * Rechecks every non-key thread identity field and reads the browser flag
+ * without locking the thread row.
  *
- * The read never locks a host, so this thread-first lock introduces no inverse
- * with Computer Use lifecycle paths that lock host -> clear thread bindings.
+ * #35311 made this route take the thread `FOR UPDATE` to remove a KEY SHARE ->
+ * UPDATE upgrade cycle between two concurrent GETs. The read path no longer
+ * takes either lock, so there is no cycle left to serialize: two GETs cannot
+ * deadlock on a row neither of them locks, and Apply's KEY SHARE no longer has
+ * a reader to conflict with. The request pin below is unchanged and remains
+ * this projection's ordering barrier.
+ *
+ * The recheck is still required. Without a lock a transfer can commit between
+ * the admitting statement and this one, so an identity that no longer matches
+ * raises rather than projecting another account's browser flag.
  */
 async function retainBrowserAuthorizationReadThread(
   tx: Tx,
@@ -312,8 +317,7 @@ async function retainBrowserAuthorizationReadThread(
     })
     .from(chatThreads)
     .where(eq(chatThreads.id, identity.chatThreadId))
-    .limit(1)
-    .for("update");
+    .limit(1);
   if (
     !thread ||
     thread.userId !== identity.userId ||
@@ -325,10 +329,10 @@ async function retainBrowserAuthorizationReadThread(
 }
 
 /**
- * Pins the fixed request identity after canonical subject, Agent and thread
- * admission, then reads the clock. The transaction retains B1 and both rows
- * through its final cancellation check and COMMIT, which is the database read
- * linearization boundary. HTTP delivery can still happen after that COMMIT.
+ * Pins the fixed request identity after lock-free subject admission and the
+ * thread recheck, then reads the clock. The request pin is retained through
+ * the final cancellation check and COMMIT, which remains the projection's
+ * linearization boundary; HTTP delivery can still happen after that COMMIT.
  */
 async function readAuthorizedBrowserProjection(
   tx: Tx,
@@ -414,7 +418,7 @@ export const readBrowserAuthorizationRequest$ = command(
       return loaded;
     }
 
-    const result = await withChatThreadContentWrite(
+    const result = await withChatThreadContentRead(
       db,
       {
         chatThreadId: loaded.request.chatThreadId,
@@ -425,7 +429,6 @@ export const readBrowserAuthorizationRequest$ = command(
             identity.orgId === args.orgId
           );
         },
-        threadLock: "update",
       },
       async (tx, identity) => {
         if (identity.agentId === null) {

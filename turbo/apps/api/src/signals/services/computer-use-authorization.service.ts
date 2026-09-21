@@ -24,6 +24,7 @@ import { publishThreadListChanged } from "../external/realtime";
 import {
   ChatThreadContentOwnershipChangedError,
   type ChatThreadContentIdentity,
+  withChatThreadContentRead,
   withChatThreadContentWrite,
 } from "./chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
@@ -729,12 +730,18 @@ export const createComputerUseAuthorizationRequest$ = command(
 
 /**
  * Rechecks every non-key canonical thread identity field and reads the selected
- * host under the UPDATE lock already acquired by the shared helper's read-only
- * opt-in. Taking UPDATE as the first thread lock serializes concurrent GETs and
- * every Apply/direct-setting path before either side can retain KEY SHARE and
- * later upgrade around a second business row. This repeated UPDATE is not a
- * lock upgrade. The projection takes no host row lock; host lifecycle's
- * host -> thread order is unchanged.
+ * host without locking the thread row.
+ *
+ * #35311 made this route take the thread `FOR UPDATE` to remove a KEY SHARE ->
+ * UPDATE upgrade cycle between two concurrent GETs. The read path no longer
+ * takes either lock, so no cycle remains: this GET locks no thread row, and it
+ * therefore neither serializes against another GET nor upgrades around a second
+ * business row. The projection still takes no host row lock, so host
+ * lifecycle's host -> thread order is unchanged.
+ *
+ * The recheck is still required. Without a lock a transfer can commit between
+ * the admitting statement and this one, so an identity that no longer matches
+ * raises rather than projecting another account's selected host.
  */
 async function retainComputerUseAuthorizationReadThread(
   tx: Tx,
@@ -748,8 +755,7 @@ async function retainComputerUseAuthorizationReadThread(
     })
     .from(chatThreads)
     .where(eq(chatThreads.id, identity.chatThreadId))
-    .limit(1)
-    .for("update");
+    .limit(1);
   if (
     !thread ||
     thread.userId !== identity.userId ||
@@ -761,17 +767,17 @@ async function retainComputerUseAuthorizationReadThread(
 }
 
 /**
- * Reads one canonical source:chat projection under the same retained B1,
- * Agent, thread and exact request barriers. The final host statement observes
- * every exact actor/org, nonrevoked host in last-seen order inside this
- * transaction; filtering to online happens only after complete serialization.
+ * Reads one canonical source:chat projection under lock-free subject admission
+ * and the retained exact request pin. The final host statement observes every
+ * exact actor/org, nonrevoked host in last-seen order inside this transaction;
+ * filtering to online happens only after that statement.
  *
- * The retained thread prevents a host lifecycle transaction that already owns
- * a host lock from committing its binding clear until this read commits. The
- * final READ COMMITTED host statement therefore provides the projection's
- * database linearization point without adding a thread -> host lock. Heartbeat
- * and grant changes that do not need the thread remain outside this slice's
- * linearization claim.
+ * Dropping the thread lock narrows what this read linearizes against: a host
+ * lifecycle transaction that already owns a host lock can now commit its
+ * binding clear while this read is in flight. The projection's own database
+ * linearization point is still its final READ COMMITTED host statement, and it
+ * still adds no thread -> host lock. Heartbeat and grant changes that do not
+ * need the thread remain outside this slice's linearization claim.
  */
 async function readAuthorizedComputerUseProjection(
   tx: Tx,
@@ -879,7 +885,7 @@ export const readComputerUseAuthorizationRequest$ = command(
 
     if (loaded.request.source === "chat") {
       const chatThreadId = requiredChatThreadId(loaded.request);
-      const result = await withChatThreadContentWrite(
+      const result = await withChatThreadContentRead(
         db,
         {
           chatThreadId,
@@ -890,7 +896,6 @@ export const readComputerUseAuthorizationRequest$ = command(
               identity.orgId === args.orgId
             );
           },
-          threadLock: "update",
         },
         async (tx, identity) => {
           if (identity.agentId === null) {

@@ -15,17 +15,17 @@ interface ComputerUseContentReadBarrier extends TransactionBarrier {
   readonly statements: () => readonly string[];
 }
 
-function firstContentReadSubjectLock(
+/** The read path takes no advisory lock, so its own closure lookup is the
+ * first statement that identifies this transaction. */
+function contentReadClosureLookup(
   queryArgs: unknown[],
   orgId: string,
 ): boolean {
   const text = barrierQueryText(queryArgs);
-  const lockKey = `account-erasure:${JSON.stringify(["organization", orgId])}`;
   return (
     text.startsWith("select") &&
-    text.includes("erasure_isolation_probe") &&
-    text.includes("pg_advisory_xact_lock_shared") &&
-    barrierQueryBinds(queryArgs, lockKey)
+    text.includes('from "account_erasure_jobs"') &&
+    barrierQueryBinds(queryArgs, orgId)
   );
 }
 
@@ -88,13 +88,13 @@ export async function withComputerUseContentReadBarrierFixture<T>(
         }
         if (
           selectedReceiver === undefined &&
-          firstContentReadSubjectLock(queryArgs, args.orgId)
+          contentReadClosureLookup(queryArgs, args.orgId)
         ) {
           selectedReceiver = receiver;
         }
       },
       select: (queryArgs) => {
-        return firstContentReadSubjectLock(queryArgs, args.orgId);
+        return contentReadClosureLookup(queryArgs, args.orgId);
       },
       stopAt: (queryArgs) => {
         const text = barrierQueryText(queryArgs);

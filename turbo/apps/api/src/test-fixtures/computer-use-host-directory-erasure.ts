@@ -7,21 +7,21 @@ import {
 } from "./account-erasure-subject";
 
 interface ComputerUseHostDirectoryBarrier extends TransactionBarrier {
-  /** Actual statements from the folded first B1 lock through the paused phase. */
+  /** Actual statements from the B1 closure lookup through the paused phase. */
   readonly statements: () => readonly string[];
 }
 
-function firstHostDirectorySubjectLock(
+/** The read path takes no advisory lock, so its own closure lookup is the
+ * first statement that identifies this transaction. */
+function hostDirectoryClosureLookup(
   queryArgs: unknown[],
   orgId: string,
 ): boolean {
   const text = barrierQueryText(queryArgs);
-  const lockKey = `account-erasure:${JSON.stringify(["organization", orgId])}`;
   return (
     text.startsWith("select") &&
-    text.includes("erasure_isolation_probe") &&
-    text.includes("pg_advisory_xact_lock_shared") &&
-    barrierQueryBinds(queryArgs, lockKey)
+    text.includes('from "account_erasure_jobs"') &&
+    barrierQueryBinds(queryArgs, orgId)
   );
 }
 
@@ -71,7 +71,7 @@ export async function withComputerUseHostDirectoryBarrierFixture<T>(
   return await withDatabaseTransactionBarrierFixture(
     {
       select: (queryArgs) => {
-        return firstHostDirectorySubjectLock(queryArgs, args.orgId);
+        return hostDirectoryClosureLookup(queryArgs, args.orgId);
       },
       stopAt: (queryArgs, _selectingStatement, transaction) => {
         const text = barrierQueryText(queryArgs);

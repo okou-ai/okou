@@ -144,12 +144,59 @@ export function barrierQueryText(queryArgs: unknown[]): string {
   ).toLowerCase();
 }
 
+/**
+ * Whether a statement binds one exact value.
+ *
+ * Subject admission binds every sorted lock key as one `text[]` parameter, so a
+ * bound array is inspected as well as a scalar bind. Both forms are real driver
+ * parameters; neither is matched against statement text.
+ */
 export function barrierQueryBinds(
   queryArgs: unknown[],
   value: string,
 ): boolean {
   const values = z.array(z.unknown()).safeParse(queryArgs[1]);
-  return values.success && values.data.includes(value);
+  if (!values.success) {
+    return false;
+  }
+  return values.data.some((bound) => {
+    return bound === value || (Array.isArray(bound) && bound.includes(value));
+  });
+}
+
+/** The advisory lock key admission derives from one subject. */
+export function erasureSubjectLockKey(subject: ErasureSubject): string {
+  return `account-erasure:${JSON.stringify([
+    subject.subjectKind,
+    subject.subjectId,
+  ])}`;
+}
+
+/**
+ * The one statement that acquires every named subject's advisory lock.
+ *
+ * Admission folds the whole sorted key set into a single statement, so a route
+ * fixture recognizes its transaction from any one subject it admits rather than
+ * from a per-subject statement that no longer exists.
+ */
+export function isErasureSubjectLockStatement(
+  queryArgs: unknown[],
+  args: {
+    readonly subject: ErasureSubject;
+    readonly mode?: "shared" | "exclusive";
+  },
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes("erasure_isolation_probe") &&
+    text.includes(
+      args.mode === "exclusive"
+        ? "pg_advisory_xact_lock(hashtextextended"
+        : "pg_advisory_xact_lock_shared(hashtextextended",
+    ) &&
+    barrierQueryBinds(queryArgs, erasureSubjectLockKey(args.subject))
+  );
 }
 
 /**

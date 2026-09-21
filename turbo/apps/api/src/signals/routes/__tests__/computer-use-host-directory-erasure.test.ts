@@ -729,20 +729,22 @@ describe("standalone Computer Use host directory account-erasure fence", () => {
                 transactionTimeout: "0",
               });
               const statements = barrier.statements();
-              expect(statements).toHaveLength(5);
-              expect(statements[0]).toContain("erasure_isolation_probe");
-              expect(statements[0]).toContain("pg_advisory_xact_lock_shared");
-              expect(statements[1]).toContain("pg_advisory_xact_lock_shared");
-              expect(statements[2]).toContain('from "account_erasure_jobs"');
-              expect(statements[2]).toContain("limit");
-              expect(statements[3]).toContain('from "computer_use_hosts"');
-              expect(statements[3]).toContain(
+              expect(statements).toHaveLength(3);
+              expect(
+                statements.some((statement) => {
+                  return statement.includes("pg_advisory_xact_lock");
+                }),
+              ).toBeFalsy();
+              expect(statements[0]).toContain('from "account_erasure_jobs"');
+              expect(statements[0]).toContain("limit");
+              expect(statements[1]).toContain('from "computer_use_hosts"');
+              expect(statements[1]).toContain(
                 '"computer_use_hosts"."revoked_at" is null',
               );
-              expect(statements[3]).toContain(
+              expect(statements[1]).toContain(
                 'order by "computer_use_hosts"."last_seen_at" desc',
               );
-              expect(statements[3]).not.toContain(" limit ");
+              expect(statements[1]).not.toContain(" limit ");
               expect(statements[3]).not.toContain(" for ");
               expect(statements[4]).toBe("commit");
 

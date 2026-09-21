@@ -2,7 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
 import {
+  assertErasureSubjectReadable,
   assertErasureSubjectWritable,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import {
@@ -14,7 +16,6 @@ import {
   isNotNull,
   isNull,
   or,
-  sql,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -1257,12 +1258,10 @@ export const startComputerUseHost$ = command(
     );
     const result = await db.transaction(
       async (tx) => {
-        await tx.execute(
-          sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_HOST_START_LOCK_TIMEOUT}, true)`,
-        );
-        await tx.execute(
-          sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT}, true)`,
-        );
+        await setErasureFenceDeadlines(tx, {
+          lockTimeout: COMPUTER_USE_HOST_START_LOCK_TIMEOUT,
+          statementTimeout: COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT,
+        });
         const admitted = await settle(
           assertErasureSubjectWritable(
             tx,
@@ -1553,12 +1552,10 @@ function computerUseCommandSubjects(params: {
 async function setComputerUseCommandDeadlines(
   tx: ComputerUseTx,
 ): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: COMPUTER_USE_COMMAND_LOCK_TIMEOUT,
+    statementTimeout: COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT,
+  });
 }
 
 export const createComputerUseCommand$ = command(
@@ -1792,7 +1789,7 @@ export const getComputerUseCommandScreenshot$ = command(
       async (tx) => {
         await setComputerUseCommandDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+          assertErasureSubjectReadable(tx, computerUseCommandSubjects(params)),
         );
         if (!admitted.ok) {
           if (
@@ -1859,7 +1856,7 @@ export const getComputerUseCommandPluginContent$ = command(
       async (tx) => {
         await setComputerUseCommandDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+          assertErasureSubjectReadable(tx, computerUseCommandSubjects(params)),
         );
         if (!admitted.ok) {
           if (

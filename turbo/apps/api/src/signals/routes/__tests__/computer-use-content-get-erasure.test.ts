@@ -1059,19 +1059,21 @@ describe("Computer Use binary content account-erasure fence", () => {
                 rowCount: null,
               });
               const statements = barrier.statements();
-              expect(statements).toHaveLength(8);
+              expect(statements).toHaveLength(5);
               expect(statements[0]).toContain("begin");
               expect(statements[1]).toContain("set_config('lock_timeout'");
-              expect(statements[2]).toContain("set_config('statement_timeout'");
-              expect(statements[3]).toContain("erasure_isolation_probe");
-              expect(statements[3]).toContain("pg_advisory_xact_lock_shared");
-              expect(statements[4]).toContain("pg_advisory_xact_lock_shared");
-              expect(statements[5]).toContain('from "account_erasure_jobs"');
-              expect(statements[6]).toContain('from "computer_use_commands"');
-              expect(statements[6]).toContain(" limit ");
-              expect(statements[6]).not.toContain(" join ");
-              expect(statements[6]).not.toContain(" for ");
-              expect(statements[7]).toBe("commit");
+              expect(statements[1]).toContain("set_config('statement_timeout'");
+              expect(
+                statements.some((statement) => {
+                  return statement.includes("pg_advisory_xact_lock");
+                }),
+              ).toBeFalsy();
+              expect(statements[2]).toContain('from "account_erasure_jobs"');
+              expect(statements[3]).toContain('from "computer_use_commands"');
+              expect(statements[3]).toContain(" limit ");
+              expect(statements[3]).not.toContain(" join ");
+              expect(statements[3]).not.toContain(" for ");
+              expect(statements[4]).toBe("commit");
               barrier.release();
               expectDownload(valueOf(await reading.settled), fixture);
             });
@@ -1098,9 +1100,9 @@ describe("Computer Use binary content account-erasure fence", () => {
               );
               await waitForBarrierEntry(barrier.entered, reading);
               const statements = barrier.statements();
-              expect(statements).toHaveLength(7);
-              expect(statements[5]).toContain('from "account_erasure_jobs"');
-              expect(statements[6]).toBe("commit");
+              expect(statements).toHaveLength(4);
+              expect(statements[2]).toContain('from "account_erasure_jobs"');
+              expect(statements[3]).toBe("commit");
               expect(
                 statements.some((statement) => {
                   return statement.includes('from "computer_use_commands"');
