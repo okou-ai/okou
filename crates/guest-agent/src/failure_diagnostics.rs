@@ -877,8 +877,11 @@ fn cli_failure_message(
 ///
 /// Only these exact `type` values are recognized. Any other JSON object, and
 /// any line that is not a JSON object, remains user-visible failure output.
-const STRUCTURED_AGENT_DIAGNOSTIC_TYPES: [&str; 2] =
-    ["pi_memory_recall_outcome", "pi_memory_tool_source_use"];
+const STRUCTURED_AGENT_DIAGNOSTIC_TYPES: [&str; 3] = [
+    "pi_memory_recall_outcome",
+    "pi_memory_tool_source_use",
+    "pi_preparation_timing",
+];
 
 fn is_structured_agent_diagnostic_line(line: &str) -> bool {
     let Ok(Value::Object(fields)) = serde_json::from_str::<Value>(line.trim()) else {

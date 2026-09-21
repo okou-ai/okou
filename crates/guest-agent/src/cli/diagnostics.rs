@@ -9,7 +9,33 @@ use guest_contracts::cli_stderr_diagnostics::{
 use std::collections::VecDeque;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
+use super::pi_preparation_timing;
+
 const STDERR_READ_BUFFER_BYTES: usize = 8 * 1024;
+
+/// Structured stderr envelopes a framework's collector recognizes live.
+///
+/// Collection stays bounded and diagnostic-only by default. Pi additionally
+/// carries preparation observations on stderr, and those must be recorded as
+/// they arrive rather than from the retained tail, so their timestamps reflect
+/// when the phase actually finished.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum CliStderrLineObserver {
+    #[default]
+    None,
+    PiPreparationTiming,
+}
+
+impl CliStderrLineObserver {
+    fn observe(self, line: &[u8]) {
+        match self {
+            Self::None => {}
+            Self::PiPreparationTiming => {
+                pi_preparation_timing::record_pi_preparation_timing_line(line);
+            }
+        }
+    }
+}
 
 fn push_stderr_result_line(lines: &mut VecDeque<String>, line: String) {
     if lines.len() == CLI_STDERR_RESULT_MAX_LINES {
@@ -32,6 +58,7 @@ fn finish_stderr_result_line(
     line: &mut Vec<u8>,
     line_omitted: &mut bool,
     strip_trailing_cr: bool,
+    observer: CliStderrLineObserver,
 ) {
     if *line_omitted {
         push_stderr_result_line(lines, CLI_STDERR_OMITTED_LONG_LINE.to_string());
@@ -42,6 +69,7 @@ fn finish_stderr_result_line(
         if line.len() > CLI_STDERR_RESULT_MAX_LINE_BYTES {
             push_stderr_result_line(lines, CLI_STDERR_OMITTED_LONG_LINE.to_string());
         } else {
+            observer.observe(line);
             push_decoded_stderr_result_line(lines, line);
         }
     }
@@ -49,7 +77,18 @@ fn finish_stderr_result_line(
     *line_omitted = false;
 }
 
-pub(super) async fn collect_stderr_result_tail<R>(mut stderr: R) -> Vec<String>
+/// Collect a bounded stderr tail without observing individual lines.
+pub(super) async fn collect_stderr_result_tail<R>(stderr: R) -> Vec<String>
+where
+    R: AsyncRead + Unpin,
+{
+    collect_stderr_result_tail_observed(stderr, CliStderrLineObserver::None).await
+}
+
+pub(super) async fn collect_stderr_result_tail_observed<R>(
+    mut stderr: R,
+    observer: CliStderrLineObserver,
+) -> Vec<String>
 where
     R: AsyncRead + Unpin,
 {
@@ -67,7 +106,7 @@ where
 
         for &byte in buffer.iter().take(read) {
             if byte == b'\n' {
-                finish_stderr_result_line(&mut lines, &mut line, &mut line_omitted, true);
+                finish_stderr_result_line(&mut lines, &mut line, &mut line_omitted, true, observer);
                 continue;
             }
 
@@ -87,7 +126,7 @@ where
     }
 
     if !line.is_empty() || line_omitted {
-        finish_stderr_result_line(&mut lines, &mut line, &mut line_omitted, false);
+        finish_stderr_result_line(&mut lines, &mut line, &mut line_omitted, false, observer);
     }
 
     lines.into_iter().collect()

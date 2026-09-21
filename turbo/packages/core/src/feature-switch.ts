@@ -354,7 +354,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OpenRouterUsRouting]: {
     maintainer: "liangyou@okou.ai",
     description:
-      "Use US routing for supported models with platform-owned OpenRouter keys.",
+      "Use US routing for supported non-DeepSeek models with platform-owned OpenRouter keys.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

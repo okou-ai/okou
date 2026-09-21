@@ -4136,7 +4136,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Kembali",
-        "cancel": "Batal",
         "continue": "Lanjutkan",
         "finish": "Selesaikan penyiapan",
         "notNow": "Nanti saja",
@@ -4208,17 +4207,21 @@
         "title": "Pekerjaan Anda seperti apa?"
       },
       "skills": {
-        "confirm": "Impor dan lanjutkan",
-        "copy": "Impor sebuah SKILL.md dan ia menjadi workflow di Okou, siap dijalankan dengan /.",
-        "import": "Pilih file",
+        "copied": "Tersalin",
+        "copy": "Tempel prompt ini di sesi Codex atau Claude Code Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copyError": "Prompt tidak dapat disalin.",
+        "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
-        "importedTitle": "Workflow Anda siap",
-        "panelCopy": "Dari Codex, Claude Code, atau agent mana pun yang menulisnya.",
-        "panelTitle": "Letakkan SKILL.md di sini",
-        "previewCopy": "Diimpor sebagai workflow Okou. Hanya Anda yang bisa memakainya sampai dibagikan.",
-        "previewTitle": "Tinjau skill Anda",
-        "replace": "Pilih file lain",
-        "title": "Bawa skill yang sudah Anda tulis."
+        "importedLabel": "Skill yang diimpor",
+        "importedTitle": "Skill Anda sudah ada di Okou",
+        "preparing": "Membuka sesi impor Anda…",
+        "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
+        "promptLabel": "Prompt impor skill",
+        "promptTitle": "Jalankan ini di Codex atau Claude Code",
+        "startError": "Sesi impor tidak dapat dibuka.",
+        "title": "Bawa skill yang sudah Anda tulis.",
+        "tryAgain": "Coba lagi",
+        "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
       "slack": {
         "add": "Tambahkan ke Slack",

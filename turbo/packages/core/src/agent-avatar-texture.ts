@@ -14,6 +14,25 @@ import type {
 } from "./agent-avatar";
 
 /**
+ * The flat fills in `DEFAULT_AGENT_AVATAR_URL`, read off the published SVG.
+ *
+ * The organization default agent is not a composer avatar — it is one drawn
+ * file — so it has no `sweater`/`hairColor`/`skin` to run the pairing rule
+ * against. It is also the most-seen avatar in the product: every workspace's
+ * chat home opens on it. Listing what it is actually painted with lets it go
+ * through the same rule as everyone else instead of being left out.
+ *
+ * It wears five of the brand colours at once, which is why only one tile in
+ * the library clears it.
+ */
+const DEFAULT_AGENT_AVATAR_COLORS = [
+  "#3363D3", // hat
+  "#FFA500", // face
+  "#96D82D", // collar
+  "#FFC6E2", // cheeks
+] as const;
+
+/**
  * The eight tiles on the `Texture` page of the Brand assets Figma
  * (`hpAEF2SrEad5PzKnwRz09v`, frame `553:3`), retraced as a flat base rectangle
  * under a single ink path. Four brush motifs, each in a high-contrast and a
@@ -196,6 +215,23 @@ export function admissibleAvatarTextures(
     return (
       blockDistance >= BLOCK_MIN_DELTA_E && skinDistance >= SKIN_MIN_DELTA_E
     );
+  });
+}
+
+/**
+ * Every texture the organization default agent can sit on.
+ *
+ * Same threshold as a composer avatar's garments, applied to the colours that
+ * avatar is drawn in. There is no hash here: one agent, one drawn avatar, one
+ * answer, so the first admissible tile is the tile.
+ */
+export function defaultAgentAvatarTextures(): readonly AvatarTexture[] {
+  return AVATAR_TEXTURES.filter((texture) => {
+    return TEXTURE_COLORS[texture].every((colour) => {
+      return DEFAULT_AGENT_AVATAR_COLORS.every((painted) => {
+        return deltaE2000(painted, colour) >= BLOCK_MIN_DELTA_E;
+      });
+    });
   });
 }
 
