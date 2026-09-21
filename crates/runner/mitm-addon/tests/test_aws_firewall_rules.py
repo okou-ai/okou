@@ -311,22 +311,24 @@ def test_s3_permission_selecting_headers_fail_closed() -> None:
             "PUT /{Bucket}/{Key+} AWS sigv4=s3",
         )
     ]
-    headers = _headers(
-        host="s3.amazonaws.com",
-        service="s3",
-        extra=(("X-Amz-Copy-Source", "/source/key"),),
-    )
+    for header_name, header_value in (
+        ("X-Amz-Copy-Source", "/source/key"),
+        ("X-Amz-Bypass-Governance-Retention", "true"),
+    ):
+        result = _match(
+            base="https://s3.amazonaws.com",
+            permissions=permissions,
+            url="https://s3.amazonaws.com/bucket/key",
+            method="PUT",
+            headers=_headers(
+                host="s3.amazonaws.com",
+                service="s3",
+                extra=((header_name, header_value),),
+            ),
+            allow=("put-object",),
+        )
 
-    result = _match(
-        base="https://s3.amazonaws.com",
-        permissions=permissions,
-        url="https://s3.amazonaws.com/bucket/key",
-        method="PUT",
-        headers=headers,
-        allow=("put-object",),
-    )
-
-    _assert_unknown(result)
+        _assert_unknown(result)
 
 
 def test_aws_rule_requires_matching_valid_sigv4_service() -> None:

@@ -89,6 +89,7 @@ _AWS_PREDICATE_VALUE_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 _AWS_QUERY_KEY_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
 _AWS_QUERY_VALUE_RE = re.compile(r"^[A-Za-z0-9._~:{}-]+$")
 _AWS_S3_COPY_SOURCE_HEADER = "x-amz-copy-source"
+_AWS_S3_ALWAYS_PERMISSION_SELECTING_HEADERS = frozenset(("x-amz-bypass-governance-retention",))
 _AWS_S3_PERMISSION_HEADER_QUERY_KEYS = MappingProxyType(
     {
         "x-amz-acl": frozenset(("acl",)),
@@ -113,6 +114,7 @@ AWS_FIREWALL_REQUEST_HEADER_NAMES = frozenset(
         b"x-amz-copy-source",
         b"x-amz-date",
         b"x-amz-target",
+        *(name.encode() for name in _AWS_S3_ALWAYS_PERMISSION_SELECTING_HEADERS),
         *(name.encode() for name in _AWS_S3_PERMISSION_HEADER_QUERY_KEYS),
     }
 )
@@ -1724,7 +1726,10 @@ def _has_ambiguous_s3_permission_header(
 
     required_query_keys = {key for key, _value in query_requirements}
     for header_name, _value in headers:
-        allowed_query_keys = _AWS_S3_PERMISSION_HEADER_QUERY_KEYS.get(header_name.lower())
+        normalized_name = header_name.lower()
+        if normalized_name in _AWS_S3_ALWAYS_PERMISSION_SELECTING_HEADERS:
+            return True
+        allowed_query_keys = _AWS_S3_PERMISSION_HEADER_QUERY_KEYS.get(normalized_name)
         if allowed_query_keys is not None and allowed_query_keys.isdisjoint(required_query_keys):
             return True
     return False
