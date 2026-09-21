@@ -72,7 +72,7 @@ class Archive:
         self.path = path
         self.db = db
         db.execute("CREATE TABLE files(path TEXT PRIMARY KEY, offset INTEGER, size INTEGER, crc INTEGER, central_seen INTEGER DEFAULT 0)")
-        db.execute("CREATE TABLE expected(path TEXT PRIMARY KEY, size INTEGER, sha TEXT)")
+        db.execute("CREATE TABLE expected(path TEXT PRIMARY KEY, size INTEGER, sha TEXT, meta TEXT)")
         with open(path, "rb") as source:
             size = os.fstat(source.fileno()).st_size
             while True:
@@ -179,7 +179,6 @@ def json_lines(source):
 def verify_archive(archive):
     archive.verify("export-manifest.json")
     manifest = archive.json("export-manifest.json")
-    require(manifest.get("formatVersion") == 3, "Expected export format version 3")
     files = manifest["filesManifest"]
     require(files.get("pageSize") == 100 and
             files.get("pathPattern") == "manifest/files-{pageStart}.jsonl" and
@@ -199,7 +198,7 @@ def verify_archive(archive):
                 size = integer(record["size"], "file size")
                 digest = record["sha256"]
                 require(isinstance(digest, str) and HEX.fullmatch(digest), "Invalid file digest")
-                archive.db.execute("INSERT INTO expected VALUES(?,?,?)", (name, size, digest))
+                archive.db.execute("INSERT INTO expected VALUES(?,?,?,?)", (name, size, digest, json.dumps(record)))
                 entries += 1
             require(0 < entries <= 100 and (page == count - 1 or entries == 100),
                     "Invalid manifest page length")
@@ -251,18 +250,22 @@ def restore_threads(archive, output):
             require(path == "chat-threads/" + thread_id + ".json", "Thread metadata path mismatch")
             write_json_line(threads, thread)
             base = "chat-messages/" + thread_id + "/"
-            index = archive.json(base + "index.json")
-            require(index["threadId"] == thread_id, "Thread index identity mismatch")
-            upper = integer(index["upperSeqId"], "upper chat sequence")
-            coverage = integer(index["snapshotPhysicalCoverage"], "snapshot coverage")
+            record = entry_metadata(archive, path)
+            require(record.get("threadId") == thread_id, "Thread entry identity mismatch")
+            upper = integer(record["upperSeqId"], "upper chat sequence")
             archive.db.execute("DELETE FROM events")
-            snapshot = index["snapshotPath"]
+            # The newest snapshot wins: one may land while the export is paging
+            # a thread, and it supersedes the coverage recorded up to that point.
+            snapshot, coverage = None, 0
+            for (candidate,) in archive.db.execute(
+                    "SELECT path FROM expected WHERE path GLOB ? ORDER BY path", (base + "snapshots/*",)):
+                meta = entry_metadata(archive, candidate)
+                covered = integer(meta["lastSeqId"], "snapshot coverage")
+                if covered >= coverage:
+                    snapshot, coverage = candidate, covered
             if snapshot is not None:
-                require(safe_path(snapshot).startswith(base + "snapshots/"), "Invalid snapshot reference")
                 with archive.open(snapshot) as raw, gzip.GzipFile(fileobj=raw) as source:
                     add_events(archive, source, thread_id, -1, upper)
-            else:
-                require(coverage == 0, "Snapshot coverage has no source")
             for (tail,) in archive.db.execute("SELECT path FROM expected WHERE path GLOB ? ORDER BY path", (base + "tail/*.jsonl",)):
                 with archive.open(tail) as source:
                     add_events(archive, source, thread_id, coverage, upper)
@@ -271,6 +274,13 @@ def restore_threads(archive, output):
                 for (body,) in archive.db.execute("SELECT body FROM events ORDER BY seq"):
                     messages.write((body + "\n").encode("utf-8"))
     archive.db.execute("DROP TABLE events")
+
+
+def entry_metadata(archive, path):
+    """Every entry's manifest record, which carries what the export knows about it."""
+    row = archive.db.execute("SELECT meta FROM expected WHERE path=?", (path,)).fetchone()
+    require(row is not None, "Manifest has no record for: " + path)
+    return json.loads(row[0])
 
 
 def restore_instructions(archive, output, kind):
@@ -460,8 +470,9 @@ restoring any content. Temporary files are removed if verification fails.
 The output contains chat-threads.jsonl, chat-messages/<threadId>.jsonl,
 agents.jsonl, workflows.jsonl, and memory/<orgId>/<originalPath>. Chat events
 preserve their IDs, sequence numbers, payloads and control/revocation records.
-The final per-thread index selects the current snapshot and its captured upper
-sequence bound; earlier snapshot copies and overlapping tail rows are excluded.
+The newest snapshot of each thread supplies its events, and the thread's own
+manifest record supplies the captured upper sequence bound; earlier snapshot
+copies and overlapping tail rows are excluded.
 Sequence gaps are valid. This is a collection over time, not one account-wide
 point-in-time snapshot.
 

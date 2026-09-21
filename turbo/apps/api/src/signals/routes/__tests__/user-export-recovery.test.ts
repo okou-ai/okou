@@ -105,7 +105,7 @@ async function completedZip(
   });
   expect(new Set(names).size).toBe(names.length);
   expect(JSON.parse(readExportText(zip, "export-manifest.json"))).toMatchObject(
-    { formatVersion: 3 },
+    { formatVersion: 4 },
   );
   for (const name of names.filter((path) => {
     return path.startsWith("manifest/files-");
@@ -232,13 +232,18 @@ test("continues the same export across bounded requests after a staged write los
     title: thread.title,
     pinOrder: "a0",
   });
+  // An empty thread contributes exactly one entry: no snapshot, no tail, and
+  // no per-thread index file. Its bound lives on the thread's manifest record.
   expect(
-    JSON.parse(readExportText(zip, `chat-messages/${thread.id}/index.json`)),
-  ).toMatchObject({
-    threadId: thread.id,
-    snapshotPath: null,
-    upperSeqId: 0,
-  });
+    zip
+      .getEntries()
+      .map((entry) => {
+        return entry.entryName;
+      })
+      .filter((path) => {
+        return path.startsWith(`chat-messages/${thread.id}/`);
+      }),
+  ).toStrictEqual([]);
   expect(
     JSON.parse(readExportText(zip, `agents/${agent.agentId}.json`)),
   ).toMatchObject({

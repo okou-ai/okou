@@ -64,24 +64,6 @@ function sources(producer: "guest" | "server" = "guest") {
     ],
     ["chat-threads/empty.json", json({ id: "empty", title: "Empty thread" })],
     [
-      "chat-messages/empty/index.json",
-      json({
-        threadId: "empty",
-        upperSeqId: 0,
-        snapshotPhysicalCoverage: 0,
-        snapshotPath: null,
-      }),
-    ],
-    [
-      "chat-messages/thread-a/index.json",
-      json({
-        threadId: "thread-a",
-        upperSeqId: 10,
-        snapshotPhysicalCoverage: 8,
-        snapshotPath: "chat-messages/thread-a/snapshots/current.ndjson.gz",
-      }),
-    ],
-    [
       "chat-messages/thread-a/snapshots/old.ndjson.gz",
       gzipSync(jsonLines([event(1)])),
     ],
@@ -119,13 +101,35 @@ function sources(producer: "guest" | "server" = "guest") {
       json({ id: `extra-${index}`, instructions: null }),
     );
   }
-  return { files, binary, memoryManifest };
+  // The files manifest carries each entry's metadata, so the restore tool needs
+  // no per-thread index file to find a thread's bound or its newest snapshot.
+  const meta = new Map<string, Record<string, unknown>>([
+    ["chat-threads/thread-a.json", { threadId: "thread-a", upperSeqId: 10 }],
+    ["chat-threads/empty.json", { threadId: "empty", upperSeqId: 0 }],
+    [
+      "chat-messages/thread-a/snapshots/old.ndjson.gz",
+      { threadId: "thread-a", lastSeqId: 1 },
+    ],
+    [
+      "chat-messages/thread-a/snapshots/current.ndjson.gz",
+      { threadId: "thread-a", lastSeqId: 8 },
+    ],
+  ]);
+  return { files, meta, binary, memoryManifest };
 }
 
-function exportZip(files: ReadonlyMap<string, Buffer>): AdmZip {
+function exportZip(
+  files: ReadonlyMap<string, Buffer>,
+  meta: ReadonlyMap<string, Record<string, unknown>> = new Map(),
+): AdmZip {
   const zip = new AdmZip();
   const rows = [...files].map(([path, bytes]) => {
-    return { path, size: bytes.length, sha256: sha256(bytes) };
+    return {
+      path,
+      size: bytes.length,
+      sha256: sha256(bytes),
+      ...meta.get(path),
+    };
   });
   for (const [path, bytes] of files) {
     zip.addFile(path, bytes);
@@ -139,7 +143,7 @@ function exportZip(files: ReadonlyMap<string, Buffer>): AdmZip {
   zip.addFile(
     "export-manifest.json",
     json({
-      formatVersion: 3,
+      formatVersion: 4,
       chatEventSchemaVersion: 7,
       filesManifest: {
         pageCount: Math.ceil(rows.length / 100),
@@ -177,7 +181,7 @@ describe("downloaded export recovery tool", () => {
     "restores verified paged sources, current chat events, instructions and %s binary memory",
     async (producer) => {
       const fixture = sources(producer);
-      const { result, output } = await runRestore(exportZip(fixture.files));
+      const { result, output } = await runRestore(exportZip(fixture.files, fixture.meta));
       expect(result.error).toBeUndefined();
       expect(result.stderr).toBe("");
       expect(result.status).toBe(0);
@@ -217,7 +221,7 @@ describe("downloaded export recovery tool", () => {
           [field]: field === "fileCount" ? 2 : fixture.binary.length + 1,
         }),
       );
-      const { result, output } = await runRestore(exportZip(fixture.files));
+      const { result, output } = await runRestore(exportZip(fixture.files, fixture.meta));
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(
         "Memory manifest totals do not match its files",
@@ -229,7 +233,7 @@ describe("downloaded export recovery tool", () => {
   );
 
   it("rejects changed source bytes even when their ZIP CRC is internally valid", async () => {
-    const zip = exportZip(sources().files);
+    const zip = exportZip(sources().files, sources().meta);
     zip.updateFile(
       "agents/agent-a.json",
       Buffer.from(
@@ -245,11 +249,13 @@ describe("downloaded export recovery tool", () => {
   });
 
   it("verifies the concatenated manifest page digest before trusting its file checksums", async () => {
-    const zip = exportZip(sources().files);
+    const zip = exportZip(sources().files, sources().meta);
     const original = zip.readAsText("manifest/files-100.jsonl");
+    // Rename whichever padding entry leads this page, so the tamper does not
+    // depend on how many real fixture entries precede the page boundary.
     zip.updateFile(
       "manifest/files-100.jsonl",
-      Buffer.from(original.replace("extra-86", "other-86")),
+      Buffer.from(original.replace("agents/extra-", "agents/other-")),
     );
     const { result } = await runRestore(zip);
     expect(result.status).toBe(1);
@@ -257,7 +263,7 @@ describe("downloaded export recovery tool", () => {
   });
 
   it("refuses memory archive links without creating output files", async () => {
-    const { files } = sources();
+    const { files, meta } = sources();
     files.set(
       "memory/org-a/storage-a/archive.tar.gz",
       gzipSync(
@@ -270,7 +276,7 @@ describe("downloaded export recovery tool", () => {
       "memory/org-a/storage-a/manifest.json",
       json({ version: "1", fileCount: 0, totalSize: 0, files: [] }),
     );
-    const { result, output } = await runRestore(exportZip(files));
+    const { result, output } = await runRestore(exportZip(files, meta));
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("link or special file");
     await expect(readFile(join(output, "chat-threads.jsonl"))).rejects.toThrow(
@@ -278,7 +284,7 @@ describe("downloaded export recovery tool", () => {
     );
   });
   it("refuses a memory manifest path that escapes the restored directory", async () => {
-    const { files, binary } = sources();
+    const { files, meta, binary } = sources();
     files.set(
       "memory/org-a/storage-a/manifest.json",
       json({
@@ -290,7 +296,7 @@ describe("downloaded export recovery tool", () => {
         ],
       }),
     );
-    const { result, output } = await runRestore(exportZip(files));
+    const { result, output } = await runRestore(exportZip(files, meta));
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Unsafe archive path");
     await expect(readFile(join(output, "chat-threads.jsonl"))).rejects.toThrow(
@@ -299,7 +305,7 @@ describe("downloaded export recovery tool", () => {
   });
 
   it("refuses ZIP link metadata before processing its contents", async () => {
-    const zip = exportZip(sources().files);
+    const zip = exportZip(sources().files, sources().meta);
     const entry = zip.getEntry("agents/agent-a.json");
     if (entry === null) {
       throw new Error("Expected agent fixture entry");
