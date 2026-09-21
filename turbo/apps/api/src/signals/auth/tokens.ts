@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/capabilities";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import";
 import { z } from "zod";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
@@ -17,11 +18,16 @@ import {
   CliAuth,
   ComposeJobAuth,
   SandboxAuth,
+  SkillImportAuth,
 } from "../../types/auth";
 import { singleton } from "../../lib/singleton";
 
 const SANDBOX_TOKEN_PREFIX = "vm0_sandbox_";
 const PAT_TOKEN_PREFIX = "vm0_pat_";
+// Skill import sessions carry their own prefix so the upload handler is the
+// only code that can accept them. They are never registered as a general auth
+// token type, so no other route can be reached with one.
+const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_";
 // Covers the runner's two-hour execution budget plus claim, startup,
 // finalization, and terminal report time.
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
@@ -107,11 +113,22 @@ const composeJobTokenPayloadSchema = jwtBaseSchema.extend({
   jobId: z.string().min(1),
 });
 
+const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
+  scope: z.literal("skill-import"),
+  orgId: z.string().min(1),
+  agentId: z.string().min(1),
+});
+
+export type SkillImportTokenPayload = z.infer<
+  typeof skillImportTokenPayloadSchema
+>;
+
 type JwtPayloadInput =
   | z.input<typeof sandboxTokenPayloadSchema>
   | z.input<typeof okouTokenPayloadSchema>
   | z.input<typeof cliTokenPayloadSchema>
-  | z.input<typeof composeJobTokenPayloadSchema>;
+  | z.input<typeof composeJobTokenPayloadSchema>
+  | z.input<typeof skillImportTokenPayloadSchema>;
 
 function base64UrlEncode(data: Buffer | string): string {
   const buffer = typeof data === "string" ? Buffer.from(data) : data;
@@ -398,6 +415,45 @@ function signOkouToken(claims: OkouTokenClaims): string {
   return SANDBOX_TOKEN_PREFIX + signJwt(payload);
 }
 
+export function verifySkillImportToken(token: string): SkillImportAuth | null {
+  const parsed = skillImportTokenPayloadSchema.safeParse(
+    verifyPrefixedToken(token, SKILL_IMPORT_TOKEN_PREFIX),
+  );
+
+  if (!parsed.success) {
+    return null;
+  }
+
+  return {
+    userId: parsed.data.userId,
+    orgId: parsed.data.orgId,
+    agentId: parsed.data.agentId,
+    issuedAtSeconds: parsed.data.iat,
+  };
+}
+
+export function generateSkillImportToken(
+  userId: string,
+  orgId: string,
+  agentId: string,
+): { readonly token: string; readonly expiresAt: Date } {
+  const nowSeconds = Math.floor(now() / 1000);
+  const expiresAtSeconds = nowSeconds + SKILL_IMPORT_SESSION_TTL_SECONDS;
+  const payload: z.infer<typeof skillImportTokenPayloadSchema> = {
+    scope: "skill-import",
+    userId,
+    orgId,
+    agentId,
+    iat: nowSeconds,
+    exp: expiresAtSeconds,
+  };
+
+  return {
+    token: SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload),
+    expiresAt: new Date(expiresAtSeconds * 1000),
+  };
+}
+
 export function generateCliToken(
   userId: string,
   orgId: string,
@@ -424,4 +480,10 @@ export function signPatJwtForTests(
   payload: z.infer<typeof cliTokenPayloadSchema>,
 ): string {
   return PAT_TOKEN_PREFIX + signJwt(payload);
+}
+
+export function signSkillImportJwtForTests(
+  payload: SkillImportTokenPayload,
+): string {
+  return SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload);
 }
