@@ -768,6 +768,7 @@ async function resolveBrowserUseValidationControl(
       signal,
     ),
   );
+  signal.throwIfAborted();
   const remote = resolved.ok
     ? browserUseCdpRemoteObjectSchema.safeParse(resolved.value)
     : null;

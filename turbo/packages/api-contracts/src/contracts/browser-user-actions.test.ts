@@ -112,8 +112,8 @@ describe("Browser user-action contracts", () => {
       browserUserActionResponseSchema.safeParse({
         ...safe,
         pageTargetId: "target",
-        backendNodeId: 42,
         value: "secret",
+        fields: [{ ...safe.fields[0], backendNodeId: 42 }],
       }).success,
     ).toBe(false);
   });

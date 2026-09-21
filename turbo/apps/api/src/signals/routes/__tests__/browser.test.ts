@@ -404,7 +404,7 @@ describe("Browser user-action route", () => {
     });
     expect(created.body.action).not.toHaveProperty("selector");
     expect(created.body.action).not.toHaveProperty("pageTargetId");
-    expect(created.body.action).not.toHaveProperty("backendNodeId");
+    expect(JSON.stringify(created.body.action)).not.toContain("backendNodeId");
     expect(providerReadCount).toBe(1);
     expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
     expect(browserControlInspections()).toHaveLength(1);
