@@ -34,7 +34,6 @@ import { connectorCatalogExecutableCapabilityState } from "./connector-catalog-c
 import { connectorCatalogSource } from "./connector-catalog-source";
 import {
   connectorCatalogValidationAuthorityIsCurrent,
-  connectorCatalogValidationAuthorityIsCurrentOrNewer,
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
   type ConnectorCatalogValidatorIdentity,
@@ -462,10 +461,13 @@ export async function reconcileConnectorCatalogRuntimeProjectionInTransaction(
       backendVersion: ready.validationBackendVersion,
       validationRevision: ready.validationBuildCommitSha,
     });
-    // Preserve an attestation from the same or a newer validator package.
+    // `readProjectionIdentity` serves a projection only for its own validator
+    // identity, so keeping one written by a newer validator package would leave
+    // this release permanently on the full fallback. Rebuild unless the stored
+    // attestation is exactly current.
     if (
       authority !== null &&
-      connectorCatalogValidationAuthorityIsCurrentOrNewer({
+      connectorCatalogValidationAuthorityIsCurrent({
         authority,
         validator,
       })
