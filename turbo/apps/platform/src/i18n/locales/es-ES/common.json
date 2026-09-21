@@ -6982,6 +6982,7 @@
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
     "sharedBy": "Compartida por {{owner}}",
+    "sharedByMember": "Compartida por un miembro de la organización",
     "visibility": {
       "change": "Cambiar",
       "organization": "Organización",

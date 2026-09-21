@@ -6914,6 +6914,7 @@
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",
+    "sharedByMember": "Von einem Organisationsmitglied geteilt",
     "visibility": {
       "change": "Ändern",
       "organization": "Organisation",

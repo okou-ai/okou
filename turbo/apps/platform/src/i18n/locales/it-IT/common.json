@@ -6982,6 +6982,7 @@
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",
     "sharedBy": "Condiviso da {{owner}}",
+    "sharedByMember": "Condiviso da un membro dell'organizzazione",
     "visibility": {
       "change": "Modifica",
       "organization": "Organizzazione",
