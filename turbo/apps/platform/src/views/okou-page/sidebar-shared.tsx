@@ -1,9 +1,14 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import {
+  agentAvatarTexture,
+  avatarTextureUrl,
+} from "@okouai/core/agent-avatar-texture";
 import { agents$ } from "../../signals/agent.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
 import { AvatarSvgPreview } from "./avatar-svg-preview.tsx";
+import { isLegacyAvatarSvgConfig } from "./avatar-svg-utils.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
 /**
@@ -109,6 +114,7 @@ export function AgentAvatarImg({
   className,
   size,
   preserveChinBaseline = false,
+  textured = false,
   "data-testid": testId,
 }: {
   name: string;
@@ -116,6 +122,13 @@ export function AgentAvatarImg({
   className: string;
   size?: number;
   preserveChinBaseline?: boolean;
+  /**
+   * Back the avatar with a brand texture. Off everywhere but the chat home
+   * greeting, which is the only surface that shows one agent large enough for
+   * a texture to read. Resolving the avatar here rather than at the call site
+   * keeps one owner for the composer URL.
+   */
+  textured?: boolean;
   "data-testid"?: string;
 }) {
   const { src, rawAvatarUrl } = useAgentAvatarState(name);
@@ -123,11 +136,18 @@ export function AgentAvatarImg({
   // SVG avatar (preset or custom svg:)
   const svgConfig = resolveAvatarSvgConfig(rawAvatarUrl);
   if (svgConfig) {
+    // Legacy configurations carry no sweater or hair colour, so there is
+    // nothing to check a texture against and they stay untextured.
+    const texture =
+      textured && !isLegacyAvatarSvgConfig(svgConfig)
+        ? agentAvatarTexture(name, svgConfig)
+        : null;
     return (
       <AvatarSvgPreview
         config={svgConfig}
         size={size}
         preserveChinBaseline={preserveChinBaseline}
+        textureUrl={texture ? avatarTextureUrl(texture) : undefined}
         className={className}
         alt={alt}
         data-testid={testId}

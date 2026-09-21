@@ -68,6 +68,7 @@ export enum FeatureSwitchKey {
   GradientColorThemes = "gradientColorThemes",
   AvatarNeckSweater = "avatarNeckSweater",
   AvatarFraming = "avatarFraming",
+  AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatThreadArchiving = "chatThreadArchiving",
