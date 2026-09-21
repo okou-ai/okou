@@ -13,6 +13,7 @@ import {
 } from "./agent-run-storage.service";
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
+import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -8366,6 +8367,10 @@ async function persistAtomicLaunchRows(
         ? await persistPendingAtomicLaunch(args, context)
         : await persistQueuedAtomicLaunch(args, context);
     },
+  );
+
+  observePreparedLaunchPersistenceForTest(
+    args.commit.createArgs.agentRunMetadata?.workflowAutomationId,
   );
 
   const chatThreadId = args.commit.createArgs.chatThreadId;
