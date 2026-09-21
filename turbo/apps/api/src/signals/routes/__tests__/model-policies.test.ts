@@ -225,7 +225,8 @@ describe("GET/PUT /api/model-policies", () => {
       client.list({ headers: authHeaders() }),
       [200],
     );
-    expect(unchanged.body.policies).toStrictEqual(initial.body.policies);
+    expect(unchanged.body.revision).toBe(initial.body.revision);
+    expect(toUpdate(unchanged.body)).toStrictEqual(toUpdate(initial.body));
   });
 
   it("fails closed when an active model has no catalog row", async () => {
