@@ -65,7 +65,14 @@ const ONBOARDING_TRANSIENT_PARAMS = [
   "redeemCode",
 ] as const;
 
-function promptHandoffParams(searchParams: URLSearchParams): URLSearchParams {
+/**
+ * The query a prompt handoff carries on, with every parameter that only
+ * belonged to the onboarding step itself dropped. Shared with the source-first
+ * flow so both hand an already-onboarded visitor the same URL.
+ */
+export function promptHandoffParams(
+  searchParams: URLSearchParams,
+): URLSearchParams {
   const next = new URLSearchParams(searchParams);
   for (const key of ONBOARDING_TRANSIENT_PARAMS) {
     next.delete(key);

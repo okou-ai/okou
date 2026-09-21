@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { IndustryId } from "../../views/onboarding-sources-first/onboarding-sources-first-data.ts";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
  * Source-first onboarding draft. The connector step drives the live connector
@@ -45,7 +45,7 @@ export interface SourcesFirstInvite {
 }
 
 export interface SourcesFirstDraft {
-  readonly industry: IndustryId | null;
+  readonly industry: OnboardingIndustry | null;
   /** One entry per address this run tried, with what the API answered. */
   readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
