@@ -44,6 +44,7 @@ end
 unless group_step.dig("env", "SELECTION_KEY") == '${{ needs.detect.outputs.runner-image-job-ref }}' &&
     select_step.dig("env", "EXPECTED_TARGET") == '${{ needs.runner-host-groups.outputs.selected-target }}' &&
     gate_step.dig("env", "IMAGE_VALIDATION_MATRIX") == '${{ needs.runner-host-groups.outputs.validation-matrix }}' &&
+    gate_step.dig("env", "RUNNER_PARTITIONS_NEEDED") == "${{ needs.detect.outputs.runner-changed == 'true' || needs.detect.outputs.ci-changed == 'true' }}" &&
     gate_step.dig("env", "RUNNER_IMAGE_NEEDED") == "${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}"
   raise "planning, validation, and gate must share the original image selection context"
 end
@@ -54,12 +55,13 @@ def run_step(root, env, step, success: true)
   output + error
 end
 
-def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", release: "false", results: {}, success: true)
+def check_gate(root, gate, step, matrix:, needed: "true", partitions_needed: "true", cpu_needed: "true", release: "false", results: {}, success: true)
   values = gate.fetch("needs").to_h { |name| [name, "success"] }.merge(results)
   script = step.fetch("run").gsub(/\$\{\{ needs\.([a-z-]+)\.result \}\}/) { values.fetch(Regexp.last_match(1)) }
   raise "unresolved gate expression" if script.include?("${{")
   env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
          "COVERAGE_NEEDED" => "true", "FIREWALL_CONTRACT_NEEDED" => "false",
+         "RUNNER_PARTITIONS_NEEDED" => partitions_needed,
          "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
   run_step(root, env, script, success: success)
 end
@@ -113,7 +115,7 @@ Dir.mktmpdir("crates-image-waiters") do |dir|
   raise "host-only tests need both targets" unless JSON.parse(outputs.fetch("matrix")).length == 2
 end
 
-%w[runner-host-groups runner-build runner-image-architecture-manifest
+%w[runner-test-partitions runner-host-groups runner-build runner-image-architecture-manifest
    host-cpu-fairness-build host-cpu-fairness-test
    guest-rpc-firecracker-build guest-rpc-firecracker-test].each do |job|
   %w[failure cancelled skipped].each do |result|
@@ -128,6 +130,8 @@ end
 end
 optional_cpu = %w[host-cpu-fairness-build host-cpu-fairness-test].to_h { |name| [name, "skipped"] }
 check_gate(root, gate, gate_step, matrix: "[]", cpu_needed: "false", results: optional_cpu)
+check_gate(root, gate, gate_step, matrix: "[]", partitions_needed: "false", results: {"runner-test-partitions" => "skipped"})
+check_gate(root, gate, gate_step, matrix: "[]", results: {"runner-test-partitions" => "skipped"}, success: false)
 check_gate(root, gate, gate_step, matrix: "[]", results: {"runner-build" => "skipped", "runner-image-architecture-manifest" => "skipped"}, success: false)
 check_gate(root, gate, gate_step, matrix: "", results: {"runner-image-architecture-manifest" => "skipped"}, success: false)
 unselected = %w[runner-host-groups runner-build runner-image-architecture-manifest
