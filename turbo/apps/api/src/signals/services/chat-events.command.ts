@@ -107,6 +107,8 @@ import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import {
   revokeChatEvent,
   insertChatEvent,
+  insertChatEventWithReservedSequence,
+  type ChatEventSequenceReservation,
   type NewChatEvent,
   replaceChatEvent,
 } from "./chat-event.service";
@@ -2121,15 +2123,35 @@ async function resolveLockedMcpSubmission(
  * not narrow which threads the caller could already enqueue into; the thread's
  * Agent is fixed at creation, so it is not re-checked here.
  */
+interface AuthorizedChatThreadForEnqueue {
+  readonly eventSequenceReservation?: ChatEventSequenceReservation;
+}
+
+function shouldReserveEventSequence(
+  params: AppendUnassociatedUserMessageParams,
+): boolean {
+  return (
+    params.triggerSource === "web" &&
+    params.mcpSubmission === undefined &&
+    params.revokesEventId === undefined
+  );
+}
+
 async function authorizeChatThreadForEnqueue(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
-): Promise<boolean> {
+  reserveEventSequence: boolean,
+): Promise<AuthorizedChatThreadForEnqueue | undefined> {
   const [thread] = await tx
     .update(chatThreads)
     .set({
       draftUserMessage: null,
       draftAttachments: null,
+      ...(reserveEventSequence
+        ? {
+            lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
+          }
+        : {}),
     })
     .where(
       and(
@@ -2138,8 +2160,21 @@ async function authorizeChatThreadForEnqueue(
         chatThreadOrganizationCondition(tx, params.orgId),
       ),
     )
-    .returning({ id: chatThreads.id });
-  return thread !== undefined;
+    .returning({
+      id: chatThreads.id,
+      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+    });
+  if (!thread) {
+    return undefined;
+  }
+  return reserveEventSequence
+    ? {
+        eventSequenceReservation: {
+          chatThreadId: thread.id,
+          seqId: thread.lastChatEventSeqId,
+        },
+      }
+    : {};
 }
 
 async function appendUnassociatedUserMessageTransaction(
@@ -2150,12 +2185,13 @@ async function appendUnassociatedUserMessageTransaction(
   if (existing) {
     return existing;
   }
+  const reserveEventSequence = shouldReserveEventSequence(params);
   const authorizedThread = await measureApiDispatchTiming(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
     "nested",
     () => {
-      return authorizeChatThreadForEnqueue(tx, params);
+      return authorizeChatThreadForEnqueue(tx, params, reserveEventSequence);
     },
   );
   if (!authorizedThread) {
@@ -2208,7 +2244,14 @@ async function appendUnassociatedUserMessageTransaction(
     () => {
       return params.revokesEventId
         ? replaceChatEvent(tx, params.revokesEventId, event)
-        : insertChatEvent(tx, event, "id");
+        : authorizedThread.eventSequenceReservation
+          ? insertChatEventWithReservedSequence(
+              tx,
+              event,
+              authorizedThread.eventSequenceReservation,
+              "id",
+            )
+          : insertChatEvent(tx, event, "id");
     },
   );
   if (inserted) {
