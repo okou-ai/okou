@@ -36,9 +36,17 @@ import {
   getSocialStatus,
 } from "../../lib/api/domains/social";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
+import { SocialDataRecoveryError } from "../../lib/api/domains/social-data";
 import { getOkouToken } from "../../lib/okou-env";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import { socialCapabilities } from "./capabilities";
+import {
+  addSocialJobOptions,
+  createSocialJobsCommand,
+  printSocialJob,
+  usesSocialJobs,
+  type SocialJobOptions,
+} from "./jobs";
 import {
   addSocialExportOptions,
   SocialExportError,
@@ -72,12 +80,12 @@ interface OutputOptions {
   readonly json?: boolean;
 }
 
-interface InspectOptions extends SocialExportOptions {
+interface InspectOptions extends SocialJobOptions {
   readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
-interface CollectionOptions extends SocialExportOptions {
+interface CollectionOptions extends SocialJobOptions {
   readonly limit: number;
   readonly stream?: boolean;
   readonly checkpoint?: string;
@@ -100,7 +108,7 @@ interface CommentsOptions extends CollectionOptions {
   readonly sort?: string;
 }
 
-interface TranscriptOptions extends SocialExportOptions {
+interface TranscriptOptions extends SocialJobOptions {
   readonly refresh?: boolean;
 }
 
@@ -353,26 +361,33 @@ function apiErrorRetryable(error: ApiRequestError): boolean {
   );
 }
 
+type SocialErrorRecovery =
+  | { readonly downloadId: string; readonly resumeCommand: string }
+  | SocialDataRecoveryError["recovery"];
+
+function socialErrorRecovery(error: unknown): SocialErrorRecovery | undefined {
+  if (error instanceof SocialDataRecoveryError) return error.recovery;
+  if (error instanceof SocialDownloadPollError) {
+    return {
+      downloadId: error.downloadId,
+      resumeCommand: resumeDownloadCommand(error.downloadId),
+    };
+  }
+  const root = rootError(error);
+  return root instanceof SocialDownloadConflictError
+    ? root.recovery
+    : undefined;
+}
+
 function structuredError(error: unknown): {
   readonly status: "error";
   readonly error: SocialErrorDetails;
   readonly progress?: CollectionProgress;
   readonly download?: SocialKitDownloadResponse;
-  readonly recovery?: {
-    readonly downloadId: string;
-    readonly resumeCommand: string;
-  };
+  readonly recovery?: SocialErrorRecovery;
 } {
   const root = rootError(error);
-  const recovery =
-    error instanceof SocialDownloadPollError
-      ? {
-          downloadId: error.downloadId,
-          resumeCommand: resumeDownloadCommand(error.downloadId),
-        }
-      : root instanceof SocialDownloadConflictError
-        ? root.recovery
-        : undefined;
+  const recovery = socialErrorRecovery(error);
   const progress =
     error instanceof SocialCollectionError ? error.progress : undefined;
   if (root instanceof SocialTransportError) {
@@ -1549,6 +1564,10 @@ const inspectCommand = new Command()
   .option("--json", "Print compact JSON")
   .action(async (url: string, options: InspectOptions) => {
     await runSocialAction(options.json === true, async () => {
+      if (usesSocialJobs(options)) {
+        await printSocialJob("inspect", url, options);
+        return;
+      }
       const target = parseSocialTarget(url);
       await printIntent(
         inspectIntent(target, {
@@ -1567,6 +1586,11 @@ const postsCommand = new Command()
   )
   .argument("<url>", "Public profile, channel, company, or playlist URL")
   .option("--kind <kind>", "Instagram content kind: posts or reels")
+  .option(
+    "--sort <sort>",
+    "Saved jobs only: YouTube newest/popular/oldest; X latest/top",
+  )
+  .option("--type <type>", "Saved YouTube jobs only: video or shorts")
   .option(
     "--full-details",
     "YouTube channel/playlist exact dates and descriptions (slower; --limit at most 30)",
@@ -1587,6 +1611,15 @@ const postsCommand = new Command()
     await runSocialAction(
       options.json === true || options.stream === true,
       async () => {
+        if (usesSocialJobs(options)) {
+          await printSocialJob("posts", url, options);
+          return;
+        }
+        if (options.sort !== undefined || options.type !== undefined) {
+          throw new InvalidArgumentError(
+            "Posts --sort and --type require a saved data job control such as --dry-run or --max-credits",
+          );
+        }
         const target = parseSocialTarget(url);
         await printCollectionIntent(
           postsIntent(target, {
@@ -1606,7 +1639,7 @@ const searchCommand = new Command()
   .argument("<query>", "Search query or hashtag")
   .requiredOption(
     "--platform <platform>",
-    "instagram, tiktok, or youtube",
+    "instagram, tiktok, or youtube; saved jobs also support x and facebook",
     parseSocialPlatform,
   )
   .option("--hashtag", "Treat an Instagram or TikTok query as a hashtag")
@@ -1629,6 +1662,10 @@ const searchCommand = new Command()
     await runSocialAction(
       options.json === true || options.stream === true,
       async () => {
+        if (usesSocialJobs(options)) {
+          await printSocialJob("search", query, options);
+          return;
+        }
         await printCollectionIntent(
           searchIntent(query, {
             platform: options.platform,
@@ -1665,6 +1702,10 @@ const commentsCommand = new Command()
     await runSocialAction(
       options.json === true || options.stream === true,
       async () => {
+        if (usesSocialJobs(options)) {
+          await printSocialJob("comments", url, options);
+          return;
+        }
         const target = parseSocialTarget(url);
         await printCollectionIntent(
           commentsIntent(target, {
@@ -1731,6 +1772,10 @@ const transcriptCommand = new Command()
   .description("Extract the transcript from one public social video")
   .argument("<url>", "Public social video URL")
   .option(
+    "--language <code>",
+    "Two-letter language for supported saved data jobs",
+  )
+  .option(
     "--refresh",
     "Bypass YouTube extraction caches; captions may still be unavailable",
   )
@@ -1741,6 +1786,15 @@ const transcriptCommand = new Command()
   )
   .action(async (url: string, options: TranscriptOptions) => {
     await runSocialAction(options.json === true, async () => {
+      if (usesSocialJobs(options)) {
+        await printSocialJob("transcript", url, options);
+        return;
+      }
+      if (options.language !== undefined) {
+        throw new InvalidArgumentError(
+          "--language requires a saved data job control such as --dry-run or --max-credits",
+        );
+      }
       const target = parseSocialTarget(url);
       await printIntent(
         transcriptIntent(target, { refresh: options.refresh }),
@@ -2042,6 +2096,16 @@ for (const [command, mode] of [
   addSocialExportOptions(command, mode);
 }
 
+for (const command of [
+  inspectCommand,
+  postsCommand,
+  searchCommand,
+  commentsCommand,
+  transcriptCommand,
+]) {
+  addSocialJobOptions(command);
+}
+
 export const socialCommand = new Command()
   .name("social")
   .description("Use Okou Social through intent-oriented public data commands")
@@ -2056,6 +2120,7 @@ export const socialCommand = new Command()
   .addCommand(summarizeCommand)
   .addCommand(downloadCommand)
   .addCommand(downloadsCommand)
+  .addCommand(createSocialJobsCommand(runSocialAction))
   .addHelpText(
     "after",
     `
@@ -2085,6 +2150,9 @@ Examples:
   MP3 audio:   okou social download https://youtu.be/<id> --max-duration 600 --format mp3 --json
   Find tasks:  okou social downloads --status active --json
   Resume:      okou social download --resume <download-id> --json
+  Quote:       okou social comments https://www.facebook.com/<post> --limit 100 --dry-run --json
+  Saved job:   okou social posts https://www.instagram.com/<user>/ --limit 100 --async --json
+  Read job:    okou social jobs get <job-id> --wait --json
 
 Notes:
   - URL commands detect LinkedIn, X, Facebook, Instagram, TikTok, and YouTube automatically

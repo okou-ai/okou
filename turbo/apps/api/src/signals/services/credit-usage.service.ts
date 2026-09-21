@@ -211,7 +211,7 @@ async function deductFromUsagePackCredits(
   return remainingCharge;
 }
 
-interface ProcessOrgUsageEventsResult {
+export interface ProcessOrgUsageEventsResult {
   readonly sharedCreditsCharged: number;
   readonly runIds: readonly string[];
   readonly lowBalanceAlert: CreditLowBalanceAlertArgs | null;
@@ -226,6 +226,9 @@ interface UsageEventRecord {
   readonly provider: string;
   readonly category: string;
   readonly quantity: number;
+  readonly pricingUnitPrice: number | null;
+  readonly pricingUnitSize: number | null;
+  readonly pricingCreditsLimit: number | null;
   readonly createdAt: Date;
 }
 type UsagePricingRecord = typeof usagePricing.$inferSelect;
@@ -253,6 +256,23 @@ function priceUsageEvents(
   );
   const pricedEvents: PricedUsageEvent[] = [];
   for (const record of records) {
+    if (
+      record.pricingUnitPrice !== null &&
+      record.pricingUnitSize !== null &&
+      record.pricingCreditsLimit !== null
+    ) {
+      const numerator =
+        BigInt(record.quantity) * BigInt(record.pricingUnitPrice);
+      const denominator = BigInt(record.pricingUnitSize);
+      const credits = (numerator + denominator - 1n) / denominator;
+      const limit = BigInt(record.pricingCreditsLimit);
+      pricedEvents.push({
+        record,
+        grossCredits: Number(credits < limit ? credits : limit),
+        billingError: null,
+      });
+      continue;
+    }
     const lookupProvider = resolveUsagePricingProvider(
       pricingResolution,
       record.kind,
@@ -353,7 +373,7 @@ async function markUsageEventsProcessed(
     .where(eq(usageEvent.id, sql`settlement.usage_event_id`));
 }
 
-async function processOrgUsageEventsInTransaction(
+export async function processOrgUsageEventsInTransaction(
   tx: WriteTx,
   orgId: string,
   pricingResolution: UsagePricingResolution,
@@ -374,6 +394,9 @@ async function processOrgUsageEventsInTransaction(
       provider: usageEvent.provider,
       category: usageEvent.category,
       quantity: usageEvent.quantity,
+      pricingUnitPrice: usageEvent.pricingUnitPrice,
+      pricingUnitSize: usageEvent.pricingUnitSize,
+      pricingCreditsLimit: usageEvent.pricingCreditsLimit,
       createdAt: usageEvent.createdAt,
     })
     .from(usageEvent)
@@ -477,42 +500,17 @@ async function processOrgUsageEventsInTransaction(
   return { sharedCreditsCharged, runIds, lowBalanceAlert };
 }
 
-/**
- * Atomically process pending usage_event records for an org. Allowance is
- * applied first, then each member's usage pack grants, then shared org credits.
- *
- * Mirrors apps/web's `processOrgUsageEvents`. The transactional invariant
- * is critical: events are marked processed IFF every applicable credit
- * deduction succeeds. If any helper throws, the whole transaction rolls back.
- *
- * Acquires `pg_advisory_xact_lock(hashtext('credit_' || orgId))` —
- * verbatim same key string as web so api and web serialize correctly on
- * the same org during rollout.
- *
- * After the transaction commits and credits are deducted, runs post-billing
- * side effects outside the credit transaction:
- * - `triggerAutoRecharge$` for Stripe top-up when the balance crosses the
- *   recharge threshold.
- * - `enqueueCreditLowBalanceAlert$` when usage crosses the low-credit email
- *   threshold.
- *
- * Both side effects are bounded by the route handler's outer waitUntil
- * envelope. Low-balance alert failures are logged without affecting billing.
- */
-export const processOrgUsageEvents$ = command(
-  async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
-    const writeDb = set(writeDb$);
-    const pricingResolution = get(usagePricingResolution$);
-
-    const { sharedCreditsCharged, runIds, lowBalanceAlert } =
-      await writeDb.transaction((tx) => {
-        return processOrgUsageEventsInTransaction(
-          tx,
-          orgId,
-          pricingResolution,
-          signal,
-        );
-      });
+export const completeProcessedOrgUsage$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly result: ProcessOrgUsageEventsResult;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { orgId, result } = args;
+    const { sharedCreditsCharged, runIds, lowBalanceAlert } = result;
     signal.throwIfAborted();
 
     if (sharedCreditsCharged > 0) {
@@ -547,5 +545,27 @@ export const processOrgUsageEvents$ = command(
       });
       signal.throwIfAborted();
     }
+  },
+);
+
+/**
+ * Atomically settle pending usage, including allowance and member credit packs,
+ * before running recharge, notification, and usage-event delivery effects.
+ * Effects run after COMMIT so callers never retain ledger locks during I/O.
+ */
+export const processOrgUsageEvents$ = command(
+  async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    const writeDb = set(writeDb$);
+    const pricingResolution = get(usagePricingResolution$);
+    const result = await writeDb.transaction((tx) => {
+      return processOrgUsageEventsInTransaction(
+        tx,
+        orgId,
+        pricingResolution,
+        signal,
+      );
+    });
+    signal.throwIfAborted();
+    await set(completeProcessedOrgUsage$, { orgId, result }, signal);
   },
 );

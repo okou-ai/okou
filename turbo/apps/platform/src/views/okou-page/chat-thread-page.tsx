@@ -148,7 +148,7 @@ import {
   captureRecommendedFollowupSelected,
   captureRecommendedFollowupsShown,
 } from "../../lib/posthog.ts";
-import { getCreditUsageDisplayName } from "../../lib/credit-usage-display.ts";
+import { buildCreditUsageDisplayRows } from "../../lib/credit-usage-display.ts";
 import {
   FileAttachmentChip,
   PreviewableAudioAttachmentChip,
@@ -7706,65 +7706,6 @@ function formatCredits(value: number): string {
   return value.toLocaleString(i18n.resolvedLanguage);
 }
 
-interface RunUsageDisplayRow {
-  readonly key: string;
-  readonly label: string;
-  readonly credits: number;
-}
-
-function isUsageModelBackedKind(kind: string): boolean {
-  return kind === "model" || kind === "image" || kind === "video";
-}
-
-function isUsageCategoryPart(part: string): boolean {
-  return part.startsWith("tokens.") || part.startsWith("output_");
-}
-
-function parseUsageKind(kind: string): {
-  readonly kind: string;
-  readonly provider?: string;
-} {
-  const parts = kind.split("/");
-  const parsedKind = parts[0];
-  if (isUsageModelBackedKind(parsedKind) && parts.length >= 2) {
-    const categoryIndex = parts.findIndex((part, index) => {
-      return index > 1 && isUsageCategoryPart(part);
-    });
-    const providerParts =
-      categoryIndex > 1 ? parts.slice(1, categoryIndex) : parts.slice(1);
-    const provider = providerParts.join("/");
-    if (provider) {
-      return { kind: parsedKind, provider };
-    }
-  }
-
-  return { kind };
-}
-
-function buildRunUsageDisplayRows(
-  usage: ChatEventUsagePayload,
-): readonly RunUsageDisplayRow[] {
-  const rows = new Map<string, RunUsageDisplayRow>();
-
-  for (const kindBreakdown of usage.breakdown) {
-    const parsed = parseUsageKind(kindBreakdown.kind);
-    for (const providerBreakdown of kindBreakdown.providers) {
-      const provider = parsed.provider ?? providerBreakdown.provider;
-      const key = `${parsed.kind}:${provider}`;
-      const existing = rows.get(key);
-      const credits = Math.max(0, providerBreakdown.credits);
-      rows.set(key, {
-        key,
-        label:
-          existing?.label ?? getCreditUsageDisplayName(parsed.kind, provider),
-        credits: (existing?.credits ?? 0) + credits,
-      });
-    }
-  }
-
-  return Array.from(rows.values());
-}
-
 function UsageChip({
   usage,
   title,
@@ -7779,7 +7720,17 @@ function UsageChip({
   setOpen: (open: boolean) => void;
 }) {
   const total = formatCredits(usage.totalCredits);
-  const displayRows = buildRunUsageDisplayRows(usage);
+  const displayRows = buildCreditUsageDisplayRows(
+    usage.breakdown.flatMap((kindBreakdown) => {
+      return kindBreakdown.providers.map((providerBreakdown) => {
+        return {
+          kind: kindBreakdown.kind,
+          provider: providerBreakdown.provider,
+          credits: Math.max(0, providerBreakdown.credits),
+        };
+      });
+    }),
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

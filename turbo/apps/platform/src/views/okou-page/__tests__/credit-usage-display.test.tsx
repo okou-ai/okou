@@ -1,5 +1,5 @@
 import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -139,4 +139,79 @@ test("Credit usage formats unknown image-provider names for people to read", asy
 
   expect(screen.getByText("Acme Vision Pro")).toBeInTheDocument();
   expect(screen.queryByText("acme/vision/pro")).not.toBeInTheDocument();
+});
+
+test("Credit usage combines social sources by platform and preserves model totals", async () => {
+  await setupUsageChat(
+    "b0000000-0000-4000-a000-000000000805",
+    "run-credit-social-platforms",
+    {
+      version: 1,
+      totalCredits: 102,
+      settledAt: "2026-08-14T12:00:02.000Z",
+      breakdown: [
+        {
+          kind: "connector",
+          credits: 12,
+          providers: [{ provider: "x", credits: 12 }],
+        },
+        {
+          kind: "social",
+          credits: 51,
+          providers: [
+            { provider: "monid/x", credits: 3 },
+            { provider: "monid/instagram", credits: 7 },
+            { provider: "monid/tiktok", credits: 11 },
+            { provider: "monid/youtube", credits: 13 },
+            { provider: "monid/facebook", credits: 17 },
+          ],
+        },
+        {
+          kind: "social/monid/x/provider_cost_usd_micros",
+          credits: 5,
+          providers: [{ provider: "monid/x", credits: 5 }],
+        },
+        {
+          kind: "model/gpt-5.6-sol/tokens.input",
+          credits: 2,
+          providers: [{ provider: "openai", credits: 2 }],
+        },
+        {
+          kind: "model/gpt-5.6-sol/tokens.output",
+          credits: 4,
+          providers: [{ provider: "openai", credits: 4 }],
+        },
+        {
+          kind: "model/gpt-5.6-luna/tokens.output",
+          credits: 9,
+          providers: [{ provider: "openai", credits: 9 }],
+        },
+        {
+          kind: "social",
+          credits: 19,
+          providers: [{ provider: "legacy-social", credits: 19 }],
+        },
+      ],
+    },
+  );
+
+  await openUsage("102");
+
+  const details = screen.getByRole("dialog");
+  for (const [label, credits] of [
+    ["X", "20"],
+    ["Instagram", "7"],
+    ["TikTok", "11"],
+    ["YouTube", "13"],
+    ["Facebook", "17"],
+    ["GPT 5.6 Sol", "6"],
+    ["GPT 5.6 Luna", "9"],
+    ["Legacy Social", "19"],
+  ]) {
+    expect(within(details).getByText(label).parentElement).toHaveTextContent(
+      `${label}${credits}`,
+    );
+  }
+  expect(within(details).getByText("102")).toBeInTheDocument();
+  expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
 });

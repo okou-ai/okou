@@ -45,6 +45,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SocialDataJobs]: {
+    maintainer: "ethan@okou.ai",
+    description: "Enable bounded public Social data jobs and saved results",
+    enabled: false,
+  },
   [FeatureSwitchKey.DurableUserExport]: {
     maintainer: "ethan@okou.ai",
     description:

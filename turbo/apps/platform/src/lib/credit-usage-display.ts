@@ -1,5 +1,26 @@
+import type { UsageRecordKindBreakdown } from "@okouai/api-contracts/contracts/usage-record";
 import { getModelDisplayName } from "@okouai/core/model-display-name";
 import { i18n } from "../i18n/index.ts";
+
+const SOCIAL_PLATFORM_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  x: "X",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+  facebook: "Facebook",
+};
+
+interface CreditUsageEntry {
+  readonly kind: string;
+  readonly provider: string;
+  readonly credits: number;
+}
+
+interface CreditUsageDisplayRow {
+  readonly key: string;
+  readonly label: string;
+  readonly credits: number;
+}
 
 const USAGE_DISPLAY_NAMES = {
   avatar(): string {
@@ -144,10 +165,21 @@ function usageKindBase(kind: string): string {
   return kind.split("/", 1)[0];
 }
 
-export function getCreditUsageDisplayName(
-  kind: string,
-  provider: string,
-): string {
+function socialUsagePlatform(kind: string, provider: string): string | null {
+  const baseKind = usageKindBase(kind);
+  if (baseKind === "connector" && provider === "x") {
+    return "x";
+  }
+  if (baseKind === "social" && provider.startsWith("monid/")) {
+    const platform = provider.slice("monid/".length);
+    if (Object.hasOwn(SOCIAL_PLATFORM_DISPLAY_NAMES, platform)) {
+      return platform;
+    }
+  }
+  return null;
+}
+
+function getCreditUsageDisplayName(kind: string, provider: string): string {
   const baseKind = usageKindBase(kind);
   const managedKindDisplayName = MANAGED_USAGE_KIND_DISPLAY_NAMES[baseKind];
   if (managedKindDisplayName) {
@@ -164,4 +196,113 @@ export function getCreditUsageDisplayName(
   }
 
   return formatUsageDisplayName(normalizedProvider);
+}
+
+function parseUsageKind(kind: string): {
+  readonly kind: string;
+  readonly provider?: string;
+} {
+  const parts = kind.split("/");
+  const parsedKind = parts[0];
+  if (
+    (parsedKind === "model" ||
+      parsedKind === "image" ||
+      parsedKind === "video") &&
+    parts.length >= 2
+  ) {
+    const categoryIndex = parts.findIndex((part, index) => {
+      return (
+        index > 1 && (part.startsWith("tokens.") || part.startsWith("output_"))
+      );
+    });
+    const providerParts =
+      categoryIndex > 1 ? parts.slice(1, categoryIndex) : parts.slice(1);
+    const provider = providerParts.join("/");
+    if (provider) {
+      return { kind: parsedKind, provider };
+    }
+  }
+
+  return { kind };
+}
+
+export function buildCreditUsageDisplayRows(
+  entries: readonly CreditUsageEntry[],
+): readonly CreditUsageDisplayRow[] {
+  const rows = new Map<string, CreditUsageDisplayRow>();
+  for (const entry of entries) {
+    const parsed = parseUsageKind(entry.kind);
+    const provider = parsed.provider ?? entry.provider;
+    const platform = socialUsagePlatform(parsed.kind, provider);
+    const key = platform
+      ? `platform:${platform}`
+      : `${parsed.kind}:${provider}`;
+    const existing = rows.get(key);
+    rows.set(key, {
+      key,
+      label: platform
+        ? SOCIAL_PLATFORM_DISPLAY_NAMES[platform]
+        : getCreditUsageDisplayName(parsed.kind, provider),
+      credits: (existing?.credits ?? 0) + entry.credits,
+    });
+  }
+  return Array.from(rows.values());
+}
+
+export function buildCreditUsageDisplaySegments(
+  breakdown: readonly UsageRecordKindBreakdown[],
+) {
+  const segments = new Map<
+    UsageRecordKindBreakdown["kind"],
+    {
+      kind: UsageRecordKindBreakdown["kind"];
+      credits: number;
+      entries: CreditUsageEntry[];
+    }
+  >();
+
+  function getSegment(kind: UsageRecordKindBreakdown["kind"]) {
+    let segment = segments.get(kind);
+    if (!segment) {
+      segment = { kind, credits: 0, entries: [] };
+      segments.set(kind, segment);
+    }
+    return segment;
+  }
+
+  for (const source of breakdown) {
+    const segment = getSegment(source.kind);
+    segment.credits += source.credits;
+    for (const provider of source.providers) {
+      const usageKinds =
+        provider.usageKinds.length > 0
+          ? provider.usageKinds
+          : [{ kind: source.kind, credits: provider.credits }];
+      for (const usageKind of usageKinds) {
+        const entry = { ...usageKind, provider: provider.provider };
+        const target =
+          source.kind === "other" &&
+          socialUsagePlatform(usageKind.kind, provider.provider)
+            ? getSegment("connector")
+            : segment;
+        if (target !== segment) {
+          segment.credits -= entry.credits;
+          target.credits += entry.credits;
+        }
+        target.entries.push(entry);
+      }
+    }
+  }
+
+  return Array.from(segments.values())
+    .filter((segment) => {
+      return segment.credits > 0;
+    })
+    .map((segment) => {
+      return {
+        kind: segment.kind,
+        credits: segment.credits,
+        rows: buildCreditUsageDisplayRows(segment.entries),
+      };
+    });
 }

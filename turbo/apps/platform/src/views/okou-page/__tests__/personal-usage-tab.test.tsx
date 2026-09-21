@@ -840,6 +840,109 @@ test("Identify the model used by limited-free runs", async () => {
   });
 });
 
+test("Combine public social data with connector usage by platform", async () => {
+  const user = userEvent.setup();
+  mockPersonalUsageStory([
+    {
+      ...usageRow({
+        title: "Social platform research",
+        credits: 90,
+        runId: "run-social-platform-research",
+      }),
+      breakdown: [
+        {
+          kind: "other",
+          credits: 65,
+          providers: [
+            {
+              provider: "monid/x",
+              credits: 5,
+              usageKinds: [{ kind: "social", credits: 5 }],
+            },
+            {
+              provider: "monid/instagram",
+              credits: 7,
+              usageKinds: [{ kind: "social", credits: 7 }],
+            },
+            {
+              provider: "monid/tiktok",
+              credits: 11,
+              usageKinds: [{ kind: "social", credits: 11 }],
+            },
+            {
+              provider: "monid/youtube",
+              credits: 13,
+              usageKinds: [{ kind: "social", credits: 13 }],
+            },
+            {
+              provider: "monid/facebook",
+              credits: 17,
+              usageKinds: [{ kind: "social", credits: 17 }],
+            },
+            {
+              provider: "legacy-social",
+              credits: 12,
+              usageKinds: [{ kind: "social", credits: 12 }],
+            },
+          ],
+        },
+        {
+          kind: "connector",
+          credits: 15,
+          providers: [
+            { provider: "x", credits: 12, usageKinds: [] },
+            {
+              provider: "slack",
+              credits: 3,
+              usageKinds: [{ kind: "connector", credits: 3 }],
+            },
+          ],
+        },
+        {
+          kind: "model",
+          credits: 10,
+          providers: [{ provider: "gpt-5.6-sol", credits: 10, usageKinds: [] }],
+        },
+      ],
+    },
+  ]);
+  await openUsageSettings("usage-records");
+  await screen.findByText("Social platform research");
+
+  const connectorSegment = screen.getByTestId("usage-kind-segment-connector");
+  await user.hover(connectorSegment);
+  const heading = await screen.findByText("Connectors - 68");
+  const details = heading.parentElement;
+  if (!details) {
+    throw new Error("Connector usage details not found");
+  }
+  for (const [label, credits] of [
+    ["X", "17"],
+    ["Instagram", "7"],
+    ["TikTok", "11"],
+    ["YouTube", "13"],
+    ["Facebook", "17"],
+    ["Slack", "3"],
+  ]) {
+    expect(within(details).getByText(label).parentElement).toHaveTextContent(
+      `${label}${credits}`,
+    );
+  }
+  expect(within(details).queryByText(/monid/iu)).not.toBeInTheDocument();
+
+  await user.unhover(connectorSegment);
+  await user.hover(screen.getByTestId("usage-kind-segment-other"));
+  const legacyHeading = await screen.findByText("Other - 12");
+  const legacyDetails = legacyHeading.parentElement;
+  if (!legacyDetails) {
+    throw new Error("Legacy usage details not found");
+  }
+  expect(
+    within(legacyDetails).getByText("Legacy Social").parentElement,
+  ).toHaveTextContent("Legacy Social12");
+  expect(within(legacyDetails).queryByText("X")).not.toBeInTheDocument();
+});
+
 test("Label HeyGen Avatar III usage by the product feature", async () => {
   const user = userEvent.setup();
   const row = usageRow({
