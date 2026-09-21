@@ -1196,7 +1196,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
     ["computer-use/computer-use", "computer-use", "computer-use"],
     ["mixed", "computer-use", "browser"],
   ] as const)(
-    "serializes %s before the caller-local thread pin without writes",
+    "runs %s concurrently without serializing on a thread lock or writing",
     { timeout: 60_000 },
     async (_label, firstKind, secondKind) => {
       const first = await createAuthorizationReadFixture({ kind: firstKind });
@@ -1226,16 +1226,18 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
             statementTimeout: "5s",
             transactionTimeout: "0",
           });
+          // #35311 had to take the thread row FOR UPDATE to break a KEY
+          // SHARE -> UPDATE upgrade cycle between two of these GETs. Neither
+          // reader locks the thread now, so the second completes while the
+          // first is still paused inside its own transaction.
           const secondRead = scope.start(readAuthorization(second, [200]));
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
+          expectFoundProjection(valueOf(await secondRead), second, false);
+          await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
           await expect(
             readAuthorization(unrelated, [200]),
           ).resolves.toMatchObject({ status: 200 });
           await scope.release();
           expectFoundProjection(valueOf(await firstRead), first, false);
-          expectFoundProjection(valueOf(await secondRead), second, false);
         });
       };
       if (first.kind === "browser") {
