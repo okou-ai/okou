@@ -223,8 +223,9 @@ the complete destination was already published.
 
 CLI command tests enter through Commander, use the real framed child-process
 boundary and real temporary files, and cover no-replay and publication behavior.
-Owner connection UI and real-Agent, multi-client product acceptance remain
-[#34782](https://github.com/vm0-ai/okou/issues/34782).
+The owner connection UI and Agent inventory expose only the exact authentication
+and security pairs supported by the Runner contract. Product acceptance remains
+separate from feature activation.
 
 ## Deployment and verification
 
@@ -243,6 +244,5 @@ authority changes, cancellation and cleanup. The engine's separate TigerVNC
 acceptance evidence does not establish
 complete product acceptance. The CLI requires the matching packaged helper and
 a Runner supporting the VNC methods. Unsupported helpers or Runners fail
-explicitly without a compatibility fallback. The remaining UI and real-Agent,
-multi-client acceptance in [#34782](https://github.com/vm0-ai/okou/issues/34782)
-must finish before activation.
+explicitly without a compatibility fallback. Real-Agent, multi-client
+acceptance must finish before activation.

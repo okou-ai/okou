@@ -1843,6 +1843,30 @@ bundle can still offer Limelight and receive `400` on that one write; every
 other palette, and the member's stored selection, is unaffected. The palette was
 only reachable under the `GradientColorThemes` rollout switch.
 
+### Unchosen Blue horizon palettes withdrawn (2026-09-21)
+
+Migration `1190_reset_unchosen_blue_horizon_color_theme` clears
+`org_members_metadata.color_theme` for every member holding `blue-horizon`
+without a `gradientColorThemes` key in `user_feature_switches`. App bootstrap
+wrote those rows, not the member: between #30051 and #34556 the App's fallback
+palette was `blue-horizon` and bootstrap persisted that fallback whenever the
+column was null, ungated by a switch that stayed `enabled: false` for every
+organization until #35645 released it.
+
+Old App/new data is compatible, but not inert. An App bundle between #34556 and
+this change reads a cleared column as "no palette chosen", renders the default
+palette, and writes `default` back: the member sees the intended interface and
+the column simply stops being null again. The App promoted with this migration
+writes nothing back, so rows cleared after it is served stay null. An App bundle
+from before #34556 would write `blue-horizon` back instead; that write happens
+only during bootstrap, so it needs a session that loaded such a bundle before
+the migration and bootstraps after it, and the member's recovery is to select
+Default once on the current App.
+
+No rollback restores the withdrawn values. A cleared column is indistinguishable
+from one that was never written, which is the state the migration returns those
+members to.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:

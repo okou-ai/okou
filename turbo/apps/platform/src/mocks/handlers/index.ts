@@ -66,6 +66,7 @@ import {
   resetMockUserConnectors,
 } from "./api-agents.ts";
 import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
+import { apiSkillImportHandlers } from "./api-skill-import.ts";
 import { apiRunsHandlers } from "./api-runs.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
 import { apiPaidToolsHandlers, resetMockPaidTools } from "./api-paid-tools.ts";
@@ -133,6 +134,7 @@ export const handlers = [
   ...apiIntegrationsGithubHandlers,
   ...apiAgentsHandlers,
   ...apiWorkflowsHandlers,
+  ...apiSkillImportHandlers,
   ...apiRunsHandlers,
   ...apiUserPreferencesHandlers,
   ...apiPaidToolsHandlers,

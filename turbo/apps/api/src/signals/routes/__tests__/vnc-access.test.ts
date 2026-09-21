@@ -239,7 +239,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
     );
   });
 
-  it("contains X509Plain while returning the supported inventory subset", async () => {
+  it("returns both exact supported pairs without decrypting credentials", async () => {
     const current = await owner();
     const runtime = { ...current, ...(await api.runtime(current)) };
     const kms = useSecretKmsProbe();
@@ -271,13 +271,32 @@ describe("explicit VNC grants and current Agent inventory", () => {
     expect(plain.body.security.type).toBe("x509_plain");
     expect(
       (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
-    ).toStrictEqual({ hosts: [] });
+    ).toStrictEqual({
+      hosts: [
+        {
+          id: plain.body.id,
+          displayName: "Plain desktop",
+          host: "plain.example.com",
+          port: 5900,
+          authMethod: "username_password",
+          securityType: "x509_plain",
+        },
+      ],
+    });
 
     const supported = await createHost("supported.example.com");
     expect(
       (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
     ).toStrictEqual({
       hosts: [
+        {
+          id: plain.body.id,
+          displayName: "Plain desktop",
+          host: "plain.example.com",
+          port: 5900,
+          authMethod: "username_password",
+          securityType: "x509_plain",
+        },
         {
           id: supported.body.id,
           displayName: "VNC desktop",

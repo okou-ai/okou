@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.693.0](https://github.com/okou-ai/okou/compare/core-v8.692.0...core-v8.693.0) (2026-09-21)
+
+
+### Features
+
+* **core:** admit every user export to the durable handler ([#35828](https://github.com/okou-ai/okou/issues/35828)) ([9967f71](https://github.com/okou-ai/okou/commit/9967f7191fdae596ba3d049052a345fe9ffe4b6a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+
 ## [8.692.0](https://github.com/okou-ai/okou/compare/core-v8.691.0...core-v8.692.0) (2026-09-21)
 
 

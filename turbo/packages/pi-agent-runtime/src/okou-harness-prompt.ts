@@ -30,6 +30,19 @@ const CUSTOM_TOOL_NOTE =
   "In addition to the tools above, you may have access to other custom tools depending on the project.";
 
 /**
+ * Harness behaviour that holds for every session, so it belongs in the base
+ * prompt rather than the per-session append channel that carries caller
+ * instructions, recalled memory, and discovered append blocks.
+ */
+const INTERMEDIATE_COMMENTARY = `## Intermediate commentary
+
+As you work, provide brief intermediate text messages to the user. These messages are how you collaborate with the user while working - stating assumptions and sharing updates. Keep them concise and easy to scan. Their purpose is to make your work easy for the user to understand and verify.
+
+If the user's request requires calling tools, start with a brief intermediate message before the first tool call. During longer work, provide additional updates at meaningful points.
+
+Do not put a final response, such as a blocking or clarifying question, in an intermediate message. Intermediate messages are only for partial updates, partial results, or non-blocking context that can provide value while you continue working. An intermediate update does not end the task; continue working when more work remains. The final answer must always be fully self-contained.`;
+
+/**
  * Retained from the official guidelines because the loop activates no
  * dedicated search or listing tool, so the shell is the only way to run them.
  */
@@ -105,5 +118,6 @@ export function buildOkouHarnessSystemPrompt(
     toolsSection(tools),
     CUSTOM_TOOL_NOTE,
     guidelinesSection(tools),
+    INTERMEDIATE_COMMENTARY,
   ].join("\n\n");
 }

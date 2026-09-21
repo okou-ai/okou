@@ -340,6 +340,25 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
+  it("should admit durable exports for every owner and accept an opt-out", () => {
+    expect(FeatureSwitchKey.DurableUserExport).toBe("durableUserExport");
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DurableUserExport, context),
+      ).toBe(true);
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.DurableUserExport, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.DurableUserExport]: false },
+      }),
+    ).toBe(false);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.DurableUserExport]
+        .rolloutStage,
+    ).toBe("released");
+  });
+
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {

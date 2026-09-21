@@ -26,8 +26,8 @@ use super::codex_app_server_events::{
 use super::event_delivery::{EventDeliveryRuntime, EventDeliverySender};
 use super::{
     AgentExecutionDeadline, BestEffortAgentLog, CliEventIngestor, CliExecutionControls,
-    CliExecutionResult, CliRuntimeConfig, HeartbeatMonitor, HeartbeatStatus, LOG_TAG,
-    ParsedEventAction, codex_runtime_config,
+    CliExecutionResult, CliRuntimeConfig, CliStartupTiming, HeartbeatMonitor, HeartbeatStatus,
+    LOG_TAG, ParsedEventAction, codex_runtime_config,
 };
 use crate::active_input::{ActiveInputController, ActiveInputFrame, ActiveInputWriter};
 use guest_contracts::diagnostics::{
@@ -341,12 +341,20 @@ async fn run_codex_app_server(
         mut active_input,
         user_cancellation,
         codex_startup,
+        pi_startup: _,
         workload_containment,
         session_metadata,
     } = controls;
     let mut agent_log = BestEffortAgentLog::open(runtime.agent_log_file.as_ref());
-    let mut ingestor =
-        CliEventIngestor::new_with_session_metadata(runtime, codex_startup, session_metadata, 0);
+    let mut ingestor = CliEventIngestor::new_with_session_metadata(
+        runtime,
+        CliStartupTiming {
+            codex: codex_startup,
+            ..CliStartupTiming::default()
+        },
+        session_metadata,
+        0,
+    );
     let mut output_timing = CodexOutputTiming::default();
     let resume_thread_id = resume_thread_id_from_runtime(runtime)?;
     let can_replay_historical_usage = resume_thread_id.is_some();

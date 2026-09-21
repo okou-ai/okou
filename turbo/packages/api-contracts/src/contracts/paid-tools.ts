@@ -21,6 +21,8 @@ export const paidToolIdSchema = z.enum(PAID_TOOL_IDS);
 export type PaidToolId = z.infer<typeof paidToolIdSchema>;
 
 export const DISABLED_PAID_TOOLS_ENV_VAR = "OKOU_DISABLED_PAID_TOOLS";
+export const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR =
+  "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 
 const c = initContract();
 

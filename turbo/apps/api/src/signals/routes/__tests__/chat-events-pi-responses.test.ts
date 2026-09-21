@@ -213,20 +213,20 @@ describe("CHAT-02: model-first provider policies", () => {
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const modelRequests: unknown[] = [];
+      const providerUrl = selectedModel.startsWith("deepseek")
+        ? "https://openrouter.ai/api/v1/responses"
+        : `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`;
       server.use(
-        http.post(
-          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`,
-          async ({ request }) => {
-            modelRequests.push(await request.json());
-            return new HttpResponse(
-              piResponsesTextSse(
-                `${selectedModel} OpenRouter Responses answer`,
-                modelRequests.length,
-              ),
-              { headers: { "content-type": "text/event-stream" } },
-            );
-          },
-        ),
+        http.post(providerUrl, async ({ request }) => {
+          modelRequests.push(await request.json());
+          return new HttpResponse(
+            piResponsesTextSse(
+              `${selectedModel} OpenRouter Responses answer`,
+              modelRequests.length,
+            ),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }),
       );
 
       const run = await withOpenRouterRoute(async () => {
