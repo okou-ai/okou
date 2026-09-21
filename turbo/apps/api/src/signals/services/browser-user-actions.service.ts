@@ -666,9 +666,10 @@ async function normalizeStuckApplying(
       },
       threadLock: "update",
     },
-    async () => {
+    async (tx) => {
+      const operationDb = tx as Db;
       const now = nowDate();
-      const [updated] = await db
+      const [updated] = await operationDb
         .update(browserUserActionRequests)
         .set({
           status: "uncertain",
@@ -687,7 +688,7 @@ async function normalizeStuckApplying(
           ),
         )
         .returning();
-      return updated ?? (await loadExactRequest(db, row));
+      return updated ?? (await loadExactRequest(operationDb, row));
     },
     signal,
   );
@@ -1034,8 +1035,9 @@ async function mutatePendingRequest(
       },
       threadLock: "update",
     },
-    async (): Promise<ServiceResult<RequestRow>> => {
-      const current = await loadExactRequest(db, args.row);
+    async (tx): Promise<ServiceResult<RequestRow>> => {
+      const operationDb = tx as Db;
+      const current = await loadExactRequest(operationDb, args.row);
       if (!current) {
         return notFound();
       }
@@ -1051,7 +1053,7 @@ async function mutatePendingRequest(
         );
       }
       const now = nowDate();
-      const [updated] = await db
+      const [updated] = await operationDb
         .update(browserUserActionRequests)
         .set({
           status: args.terminal,
@@ -1169,8 +1171,9 @@ export const openBrowserUserAction$ = command(
         },
         threadLock: "update",
       },
-      async (): Promise<ServiceResult<RequestRow>> => {
-        const current = await loadExactRequest(db, row);
+      async (tx): Promise<ServiceResult<RequestRow>> => {
+        const operationDb = tx as Db;
+        const current = await loadExactRequest(operationDb, row);
         if (!current) {
           return notFound();
         }
@@ -1180,7 +1183,7 @@ export const openBrowserUserAction$ = command(
         if (current.status !== "pending") {
           return conflict("Browser direct interaction is no longer pending");
         }
-        if (!(await touchExactProvider(db, current))) {
+        if (!(await touchExactProvider(operationDb, current))) {
           return conflict(
             "The captured managed Browser is no longer live",
             "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
@@ -1210,7 +1213,7 @@ export const openBrowserUserAction$ = command(
         }
         if (activated.value === "stale") {
           const now = nowDate();
-          const [stale] = await db
+          const [stale] = await operationDb
             .update(browserUserActionRequests)
             .set({
               status: "stale",
