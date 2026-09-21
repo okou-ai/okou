@@ -1,4 +1,5 @@
-# Balanced from successful PR run 35555773756 and merge-group run 35555833634.
+# Balanced from successful PR runs 35555773756 and 35558264546, plus
+# merge-group run 35555833634.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
 1 aws-audit-target-setup-test.sh
 1 changed-test.sh
@@ -32,7 +33,6 @@
 2 deploy-desktop-workflow-test.sh
 2 docker-toolchain-workflow-test.sh
 2 implicit-npm-audit-test.sh
-2 kms-production-retirement-test.sh
 2 kms-production-target-test.sh
 2 kms-recovery-snapshot-inspect-test.sh
 2 native-only-ci-test.sh
@@ -90,6 +90,7 @@
 4 dev-runner-test.sh
 4 fetch-okou-app-artifact-test.sh
 4 kms-production-exit-check-test.sh
+4 kms-production-retirement-test.sh
 4 neon-connection-string-ssl-test.sh
 4 provision-runner-kvm-test.sh
 4 prune-runner-idle-test.sh
