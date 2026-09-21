@@ -9,7 +9,6 @@ import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { withChatModelSettings } from "./model-reasoning-effort.ts";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
-  modelAllowedForPlan,
   modelPlanCapabilities$,
   memberModelPolicyAllowedForPlan,
 } from "./model-plan-capabilities.ts";
@@ -125,9 +124,8 @@ export const resolveExplicitModelSelection$ = command(
       return policy.model === selectedModel;
     });
     if (
-      !modelAllowedForPlan(selectedModel, modelCapabilities) ||
-      (selectedPolicy !== undefined &&
-        !memberModelPolicyAllowedForPlan(selectedPolicy, modelCapabilities))
+      selectedPolicy !== undefined &&
+      !memberModelPolicyAllowedForPlan(selectedPolicy, modelCapabilities)
     ) {
       return { kind: "compare-plans" };
     }

@@ -788,10 +788,10 @@ test.each([
   },
 );
 
-test("Limit free workspaces to eligible built-in models", async () => {
+test("Gate free workspaces by route instead of by model", async () => {
   mockAdminOrg();
   mockBillingCapabilities({
-    supportByok: false,
+    supportByok: true,
     restrictedBuiltInModels: true,
   });
   context.mocks.data.orgModelProviders([]);
@@ -808,24 +808,27 @@ test("Limit free workspaces to eligible built-in models", async () => {
   click(buttonByText("Add model"));
   const dialog = screen.getByRole("dialog", { name: "Add model" });
   click(within(dialog).getByRole("combobox"));
-  const deepSeekProOption = await screen.findByRole("option", {
-    name: "DeepSeek V4 Pro",
+  const restrictedModelOption = await screen.findByRole("option", {
+    name: "GPT 6 Astra",
   });
-  expect(
-    screen.getByRole("option", { name: "DeepSeek V4 Flash" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("option", { name: "GPT 6 Astra" }),
-  ).not.toBeInTheDocument();
-  click(deepSeekProOption);
+  expect(within(restrictedModelOption).queryByText("Pro")).toBeNull();
+  click(restrictedModelOption);
 
-  expect(within(dialog).queryByText("Upgrade to Pro")).toBeNull();
+  const builtInRoute = radioByName(/Built-in/u, dialog);
+  expect(within(builtInRoute).getByText("Pro")).toBeVisible();
+  expect(buttonByText("Upgrade to Pro", dialog)).toBeVisible();
+
+  click(radioByName(/API key/u, dialog));
+  expect(screen.queryByRole("heading", { name: "Choose a plan" })).toBeNull();
+  expect(buttonByText("Add model", dialog)).toBeVisible();
+  await fill(screen.getByPlaceholderText("Enter your API key"), "sk-test");
   click(buttonByText("Add model", dialog));
 
-  const deepseekRow = await screen.findByTestId(
-    "org-model-policy-row-deepseek-v4-pro",
+  const astraRow = await screen.findByTestId(
+    "org-model-policy-row-gpt-6-astra",
   );
-  expect(within(deepseekRow).getByText("DeepSeek V4 Pro")).toBeInTheDocument();
+  expect(within(astraRow).getByText("GPT 6 Astra")).toBeInTheDocument();
+  expect(within(astraRow).getByText("OpenAI")).toBeInTheDocument();
 });
 
 test("Keep cloud onboarding hidden while native routes are supported", async () => {
@@ -1041,10 +1044,10 @@ test("Add DeepSeek V4.1 Flash as a built-in model", async () => {
   expect(within(modelRow).getByText("Built-in")).toBeInTheDocument();
 });
 
-test("Offer an upgrade for restricted Pro models", async () => {
+test("Offer an upgrade for restricted built-in routes", async () => {
   mockAdminOrg();
   mockBillingCapabilities({
-    supportByok: false,
+    supportByok: true,
     restrictedBuiltInModels: true,
   });
   context.mocks.data.orgModelProviders([]);
@@ -1094,11 +1097,14 @@ test("Offer an upgrade for restricted Pro models", async () => {
   click(buttonByText("Add model"));
   const addDialog = screen.getByRole("dialog", { name: "Add model" });
   click(within(addDialog).getByRole("combobox"));
-  click(
-    await screen.findByRole("option", {
-      name: /GPT 5\.6 Sol\s+Pro/u,
-    }),
-  );
+  const restrictedModelOption = await screen.findByRole("option", {
+    name: "GPT 5.6 Sol",
+  });
+  expect(within(restrictedModelOption).queryByText("Pro")).toBeNull();
+  click(restrictedModelOption);
+  expect(
+    within(radioByName(/Built-in/u, addDialog)).getByText("Pro"),
+  ).toBeVisible();
   expect(screen.queryByRole("heading", { name: "Choose a plan" })).toBeNull();
   click(buttonByText("Upgrade to Pro", addDialog));
 

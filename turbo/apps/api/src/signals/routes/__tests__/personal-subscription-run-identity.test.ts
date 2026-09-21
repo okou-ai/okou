@@ -216,11 +216,25 @@ async function fixture(
     await runs.heartbeatRunner(runnerGroup);
     return await runs.claimRunnerJob(runId);
   };
+  // Queued admission needs the plan's concurrency filled first. Read the limit
+  // the billing API reports so a plan change cannot silently turn a queued case
+  // into an admitted one.
+  const { concurrencyLimit } = await runs.readBillingStatus(actor);
+  /** Fill the plan's remaining concurrency after `started` admitted runs. */
+  const saturate = async (started = 0) => {
+    const fillers: string[] = [];
+    while (started + fillers.length < concurrencyLimit) {
+      fillers.push(await start());
+    }
+    return fillers;
+  };
   return {
     actor,
     connected,
     start,
     claim,
+    saturate,
+    concurrencyLimit,
     agentId: agent.agentId,
     type,
     model,
@@ -342,7 +356,8 @@ describe("personal subscription run identity", () => {
         }
       });
       await owner.run(async () => {
-        const admissionCount = admissionStatus === "queued" ? 3 : 2;
+        const admissionCount =
+          admissionStatus === "queued" ? f.concurrencyLimit + 1 : 2;
         for (let index = 0; index < admissionCount; index += 1) {
           admitted.push(await f.start());
         }
@@ -982,6 +997,7 @@ describe("personal subscription run identity", () => {
       }
       const first = await f.start();
       const pending = await f.start();
+      const fillers = await f.saturate(2);
       const queued = await f.start();
       expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
       const firstClaim = await f.claim(first);
@@ -1005,6 +1021,9 @@ describe("personal subscription run identity", () => {
       });
       await runs.requestCancelRun(f.actor, pending, [200]);
       await runs.requestCancelRun(f.actor, queued, [200]);
+      for (const filler of fillers) {
+        await runs.requestCancelRun(f.actor, filler, [200]);
+      }
       expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
         captured,
       );
@@ -1074,6 +1093,7 @@ describe("personal subscription run identity", () => {
     await connect(f.actor, f.type, "identity-b");
     const first = await f.start();
     const second = await f.start();
+    await f.saturate(2);
     const queuedAccount = await connect(f.actor, f.type, "identity-a");
     const queued = await f.start();
     expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
@@ -2199,7 +2219,9 @@ describe("historical writer consumer fences", () => {
       const occupied: string[] = [];
       let sessionId: string | undefined;
       if (mode === "queued") {
-        occupied.push(await f.start(), await f.start());
+        // The first run already completed above, so it holds no slot: the
+        // occupying runs have to cover the whole plan concurrency.
+        occupied.push(...(await f.saturate()));
       } else if (mode === "session") {
         sessionId = firstSessionId;
       }

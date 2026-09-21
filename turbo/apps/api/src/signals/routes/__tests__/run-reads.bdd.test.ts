@@ -248,9 +248,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
     expect(queue.body.concurrency).toMatchObject({
       tier: "limited-free-1",
-      limit: 1,
+      limit: 2,
       active: 0,
-      available: 1,
+      available: 2,
       memberUsage: [],
     });
   });
@@ -276,9 +276,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
     expect(queue.body.concurrency).toMatchObject({
       tier: "pro",
-      limit: 2,
+      limit: 3,
       active: 2,
-      available: 0,
+      available: 1,
     });
     expect(queue.body.concurrency.memberUsage).toHaveLength(2);
     expect(queue.body.concurrency.memberUsage).toStrictEqual(
@@ -428,6 +428,8 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
   });
 
   it("lists, reads, and queues direct runs with status, agent, and window filters", async () => {
+    // Keep this queue-behavior scenario independent of the product-tier limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     const target = await createClaudeAgent(actor, "bdd-target");
@@ -778,6 +780,8 @@ describe("RUN-03: cancel through the run cancel route", () => {
   });
 
   it("removes a cancelled queued agent run from the visible queue", async () => {
+    // Two slots keep the third run queued for the cancellation assertion.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, compose } = await cancelFixture();
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
@@ -815,6 +819,8 @@ describe("RUN-03: cancel through the run cancel route", () => {
 
 describe("RUN-03: queue position", () => {
   it("reports queue position for queued, running, and foreign runs", async () => {
+    // Queue-position behavior needs a full two-slot test cap, not a Pro limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     const compose = await createClaudeAgent(actor, "bdd-position");
@@ -1668,9 +1674,13 @@ describe("RUN-01: direct run admission boundaries", () => {
       agentId: compose.agentId,
       prompt: "second concurrent run",
     });
+    const third = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "third concurrent run",
+    });
     const limited = await reads.requestCreateDirectRun(
       actor,
-      { agentId: compose.agentId, prompt: "third concurrent run" },
+      { agentId: compose.agentId, prompt: "fourth concurrent run" },
       [429],
     );
     expectApiError(limited.body);
@@ -1679,7 +1689,7 @@ describe("RUN-01: direct run admission boundaries", () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const uncapped = await reads.requestCreateDirectRun(
       actor,
-      { agentId: compose.agentId, prompt: "uncapped third run" },
+      { agentId: compose.agentId, prompt: "uncapped fourth run" },
       [201],
     );
     if (uncapped.status !== 201) {
@@ -1688,6 +1698,7 @@ describe("RUN-01: direct run admission boundaries", () => {
     await api.requestCancelRun(actor, uncapped.body.runId, [200]);
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
+    await api.requestCancelRun(actor, third.runId, [200]);
   });
 
   it("rejects a foreign agent before admitting a direct run", async () => {

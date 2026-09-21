@@ -58,7 +58,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         concurrencyPurchaseReviewAvailable: false,
         canBuyCredits: false,
         autoRechargeAllowed: false,
-        supportByok: false,
+        supportByok: true,
         restrictedBuiltInModels: true,
         videoGenerationAllowed: false,
         workflowWebhookAutomationAllowed: false,

@@ -4,6 +4,7 @@ import {
   getSecretNameForType,
   getSecretNamesForAuthMethod,
   getRunModelAccess,
+  getRunModelRouteAccess,
   isBuiltInModelProviderType,
   isModelSupportedByProvider,
   isSupportedRunModel,
@@ -457,6 +458,27 @@ async function memberContextForPolicy(
   return { priorityEnabled: true, subscriptions: loaded.subscriptions };
 }
 
+function policyRouteAllowedForPlan(args: {
+  readonly policy: ModelRoutePolicy;
+  readonly providerType: ModelProviderType;
+  readonly capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >;
+}): boolean {
+  return (
+    getRunModelRouteAccess(
+      args.policy.model,
+      args.providerType,
+      args.capabilities.restrictedBuiltInModels,
+    ) === "allowed" &&
+    (args.policy.modelProviderSurfaceId !== null ||
+      isModelSupportedByProvider(args.policy.model, args.providerType)) &&
+    (args.capabilities.supportByok ||
+      isBuiltInModelProviderType(args.providerType))
+  );
+}
+
 /** Shared by runtime model selection and the additive member response. */
 export async function resolveEffectivePolicyRoute(params: {
   readonly db: Db;
@@ -471,10 +493,7 @@ export async function resolveEffectivePolicyRoute(params: {
   const { policy } = params;
   if (
     !isSupportedRunModel(policy.model) ||
-    getRunModelAccess(
-      policy.model,
-      params.capabilities.restrictedBuiltInModels,
-    ) !== "allowed"
+    getRunModelAccess(policy.model) !== "allowed"
   ) {
     return null;
   }
@@ -506,10 +525,11 @@ export async function resolveEffectivePolicyRoute(params: {
     }
   }
   if (
-    (!policy.modelProviderSurfaceId &&
-      !isModelSupportedByProvider(policy.model, providerType)) ||
-    (!params.capabilities.supportByok &&
-      !isBuiltInModelProviderType(providerType))
+    !policyRouteAllowedForPlan({
+      policy,
+      providerType,
+      capabilities: params.capabilities,
+    })
   ) {
     return null;
   }

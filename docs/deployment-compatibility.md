@@ -1586,6 +1586,22 @@ release-asset checks are unchanged. The rollback workflow loads the resolver
 from current `main`, so merging the floor constrains future canonical
 executions without a release or test rollback.
 
+### Plan capability snapshot rollout compatibility
+
+Migration `1187_expand_free_concurrency_byok` backfills only product-managed
+`org_plan_entitlements` rows for the Free concurrency/BYOK and Pro concurrency
+changes. Manual entitlements remain explicit operator overrides, and
+`pro-suspend` and nonstandard product-managed values are left untouched.
+
+The backfill is the only correction. Because the normal production path runs
+migrations before promoting the new API, an outgoing or retained rollback API
+can write its old complete entitlement snapshot over a backfilled row during the
+rollout or a rollback. Such a workspace keeps the old Free/Pro concurrency and
+BYOK capabilities until its next entitlement write from the new API, which
+restores the current values from the tier table. No database object enforces the
+new values, so tier policy stays owned by the API rather than becoming a
+permanent database constraint.
+
 ### Usage pack visibility compatibility retirement
 
 `showUsagePack` has an explicit API writer and billing response starting with

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mockEnv } from "../../../lib/env";
 
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -639,6 +640,9 @@ describe("Usage Allowance", () => {
   });
 
   it("fails an unfunded built-in queue promotion and continues to BYOK", async () => {
+    // Two active runs keep the third queued, independent of the plan's own
+    // concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, agentId } = await builtInAllowanceActor({ credits: 1 });
     const api = createRunsApi(context);
     const first = await createBuiltInRun(actor, agentId, "active built-in one");

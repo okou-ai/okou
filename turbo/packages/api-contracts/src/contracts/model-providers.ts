@@ -218,6 +218,18 @@ export function getRunModelAccess(
     : "allowed";
 }
 
+/** Plan model restrictions apply unless the route is known to be BYOK. */
+export function getRunModelRouteAccess(
+  model: string | null | undefined,
+  providerType: string | null | undefined,
+  restrictedBuiltInModels = false,
+): "allowed" | "pro_required" | "retired" {
+  const knownByokRoute = MODEL_PROVIDER_TYPE_IDS.some((type) => {
+    return type === providerType && !isBuiltInModelProviderType(type);
+  });
+  return getRunModelAccess(model, restrictedBuiltInModels && !knownByokRoute);
+}
+
 export function isActiveRunModel(
   model: string | null | undefined,
 ): model is ActiveRunModel {

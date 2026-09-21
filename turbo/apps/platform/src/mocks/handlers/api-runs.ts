@@ -45,9 +45,9 @@ export const apiRunsHandlers = [
     respond(200, {
       concurrency: {
         tier: "free",
-        limit: 1,
+        limit: 2,
         active: 0,
-        available: 1,
+        available: 2,
         memberUsage: [],
       },
       queue: [],

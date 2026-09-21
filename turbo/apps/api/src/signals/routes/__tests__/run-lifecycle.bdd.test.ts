@@ -5184,6 +5184,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   it.each(["claude-fable-5", "anthropic/claude-fable-5"])(
     "fails a pre-deployment queued %s selection when capacity becomes available",
     async (selectedModel) => {
+      // Two admitted runs keep the next one queued, independent of the plan.
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       const api = createRunsApi(context);
       const { actor, agentId } = await entitledRunActor();
       const first = await api.createRun(actor, {
@@ -5465,6 +5467,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   });
 
   it("queues runs over the concurrency limit and promotes them after cancellation", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const kms = useSecretKmsProbe();
@@ -5539,6 +5543,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   });
 
   it("counts promoted queued runs by promotion heartbeat for admission", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
@@ -5606,6 +5612,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   });
 
   it("keeps a queued launch visible when enqueue telemetry fails", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
@@ -5993,11 +6001,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.modelUsageProvider).toBe("gpt-5.6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
 
-    for (const model of [
-      "gpt-5.6-sol",
-      "gpt-6-astra",
-      "claude-fable-5-1",
-    ] as const) {
+    // Model access follows the configured route. A seeded Built-in route the
+    // plan does not cover reports the upgrade, while a model the workspace
+    // never configured reports that it is unavailable.
+    for (const model of ["gpt-6-astra", "claude-fable-5-1"] as const) {
       const rejectedThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(
         actor,
@@ -6013,6 +6020,23 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
       await chat.requestReadThread(actor, rejectedThreadId, [404]);
     }
+    const unconfiguredThreadId = randomUUID();
+    const unconfigured = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        clientThreadId: unconfiguredThreadId,
+        prompt: "limited-free rejected gpt-5.6-sol run",
+        model: "gpt-5.6-sol",
+      },
+      [400],
+    );
+    expectApiError(unconfigured.body);
+    expect(unconfigured.body.error).toStrictEqual({
+      message: "The selected model is not available in this workspace",
+      code: "BAD_REQUEST",
+    });
+    await chat.requestReadThread(actor, unconfiguredThreadId, [404]);
     const queue = await api.readRunQueue(actor);
     expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
@@ -13327,6 +13351,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it("does not classify queued or pending runs as terminal", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
     const runnerKey = await api.createCliToken(actor);
@@ -14300,6 +14326,8 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
   });
 
   it("promotes queued runs with feature flags and a fresh api start time", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const computerUse = createComputerUseBddApi(context);
     const connectors = createConnectorBddApi(context);
@@ -14831,6 +14859,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
   });
 
   it("returns null claim secretValues for direct compose runs without stored secrets", async () => {
+    // Two active direct runs keep the concurrency rejection below reachable,
+    // independent of the plan's own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
@@ -16076,6 +16107,8 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
   });
 
   it("uses the promoted api start for the runner claim", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -18098,6 +18131,10 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
     const { actor, granted } = await entitledRunActor();
     await failSubscription(granted);
 
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
       id: granted.subscriptionId,
       status: "past_due",
@@ -18161,10 +18198,10 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
       planKey: "limited-free-1",
       source: "stripe_subscription",
       status: "active",
-      baseConcurrencyLimit: 1,
+      baseConcurrencyLimit: 2,
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
-      supportByok: false,
+      supportByok: true,
       restrictedBuiltInModels: true,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: false,
