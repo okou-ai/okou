@@ -4603,9 +4603,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} ist nicht verbunden. Du kannst es erneut versuchen oder später verbinden.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Läuft auf deinem Plan, nicht auf Okou-Credits."
+        "connect": "{{provider}} verbinden",
+        "connected": "Verbunden",
+        "connecting": "Wird verbunden …",
+        "failedNote": "{{provider}} konnte nicht verbunden werden. Versuch es erneut oder verbinde es später.",
+        "retry": "Erneut versuchen",
+        "rowCopy": "Läuft auf deinem Plan, nicht auf Okou-Credits.",
+        "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
         "copy": "Lade jetzt jemanden ein – oder später über das Workspace-Menü.",

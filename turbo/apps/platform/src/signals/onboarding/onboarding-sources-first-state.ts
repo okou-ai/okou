@@ -36,8 +36,11 @@ export interface SourcesFirstDraft {
   readonly invites: readonly string[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
+  /**
+   * The plan the answer names. Whether it is connected is the account's
+   * answer, read from `/api/me/model-providers`, never held here.
+   */
   readonly provider: SubscriptionProvider | null;
-  readonly providerConnected: boolean;
   readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
   readonly slackWorkspace: string;
@@ -55,7 +58,6 @@ function emptyDraft(): SourcesFirstDraft {
     invites: [],
     experienced: null,
     provider: null,
-    providerConnected: false,
     importedWorkflowName: null,
     slackStatus: "disconnected",
     slackWorkspace: "",

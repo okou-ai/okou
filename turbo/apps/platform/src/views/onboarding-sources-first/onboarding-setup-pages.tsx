@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
@@ -7,7 +7,17 @@ import {
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
+  type SubscriptionProvider,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import {
+  connectOnboardingSubscription$,
+  onboardingSubscriptionStatus$,
+  type OnboardingSubscriptionStatus,
+} from "../../signals/onboarding/onboarding-subscription-connect.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { PersonalClaudeCodeDeviceAuthDialog } from "../okou-page/components/settings/claude-code-device-auth-dialog.tsx";
+import { PersonalCodexDeviceAuthDialog } from "../okou-page/components/settings/codex-device-auth-dialog.tsx";
 import {
   INDUSTRY_IDS,
   type IndustryId,
@@ -213,6 +223,161 @@ export function OnboardingTeamPage() {
   );
 }
 
+/** The name of the plan an answer names, for the copy that talks about it. */
+function useProviderName(provider: SubscriptionProvider): string {
+  const { t } = useTranslation();
+  return provider === "codex"
+    ? t(($) => {
+        return $.onboarding.sourcesFirst.subscription.codex;
+      })
+    : t(($) => {
+        return $.onboarding.sourcesFirst.subscription.claudeCode;
+      });
+}
+
+/** The line under the connect, for a state that needs one. */
+function ConnectNoteLine({ children }: { readonly children: string }) {
+  return (
+    <p className="text-xs leading-5 text-muted-foreground" role="status">
+      {children}
+    </p>
+  );
+}
+
+/** What the step says about the account, once an attempt has settled. */
+function SubscriptionConnectNote({
+  status,
+  providerName,
+}: {
+  readonly status: OnboardingSubscriptionStatus;
+  readonly providerName: string;
+}) {
+  const { t } = useTranslation();
+  if (status === "failed") {
+    return (
+      <ConnectNoteLine>
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.subscription.failedNote;
+          },
+          { provider: providerName },
+        )}
+      </ConnectNoteLine>
+    );
+  }
+  if (status === "cancelled") {
+    return (
+      <ConnectNoteLine>
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.subscription.cancelledNote;
+          },
+          { provider: providerName },
+        )}
+      </ConnectNoteLine>
+    );
+  }
+  if (status === "unconfirmed") {
+    return (
+      <ConnectNoteLine>
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.subscription.unconfirmedNote;
+          },
+          { provider: providerName },
+        )}
+      </ConnectNoteLine>
+    );
+  }
+  return null;
+}
+
+/** What the connect itself offers, from the state the account is in. */
+function SubscriptionConnectLabel({
+  status,
+  providerName,
+}: {
+  readonly status: OnboardingSubscriptionStatus;
+  readonly providerName: string;
+}) {
+  const { t } = useTranslation();
+  if (status === "connected") {
+    return t(($) => {
+      return $.onboarding.sourcesFirst.subscription.connected;
+    });
+  }
+  if (status === "connecting") {
+    return t(($) => {
+      return $.onboarding.sourcesFirst.subscription.connecting;
+    });
+  }
+  if (status === "idle") {
+    return t(
+      ($) => {
+        return $.onboarding.sourcesFirst.subscription.connect;
+      },
+      { provider: providerName },
+    );
+  }
+  return t(($) => {
+    return $.onboarding.sourcesFirst.subscription.retry;
+  });
+}
+
+/**
+ * The connect for the chosen plan. Connected is what `/api/me/model-providers`
+ * answers, so an attempt that failed or was called off says so and leaves the
+ * step passable either way.
+ */
+function SubscriptionConnect({
+  provider,
+}: {
+  readonly provider: SubscriptionProvider;
+}) {
+  const pageSignal = useGet(pageSignal$);
+  const connect = useSet(connectOnboardingSubscription$);
+  const statusLoadable = useLastLoadable(onboardingSubscriptionStatus$);
+  // A provider list that cannot be read leaves the account unknown, which is
+  // its own answer: never the connected one.
+  const status: OnboardingSubscriptionStatus =
+    statusLoadable.state === "hasData"
+      ? statusLoadable.data
+      : statusLoadable.state === "hasError"
+        ? "unconfirmed"
+        : "idle";
+  const providerName = useProviderName(provider);
+  const connected = status === "connected";
+  const connecting = status === "connecting";
+
+  return (
+    <div className="mx-auto flex w-full max-w-[600px] flex-col gap-2">
+      <Button
+        type="button"
+        variant={connected ? "outline" : "neutral"}
+        className="w-full gap-2"
+        disabled={connected || connecting}
+        aria-busy={connecting}
+        onClick={() => {
+          detach(connect(provider, pageSignal), Reason.DomCallback);
+        }}
+      >
+        {connected ? (
+          <Check size={16} aria-hidden="true" />
+        ) : (
+          <ProductMark
+            name={provider === "codex" ? "openai" : "anthropic"}
+            alt=""
+            size="mark"
+            invertInDarkMode={provider === "codex"}
+          />
+        )}
+        <SubscriptionConnectLabel status={status} providerName={providerName} />
+      </Button>
+      <SubscriptionConnectNote status={status} providerName={providerName} />
+    </div>
+  );
+}
+
 /**
  * One question for both halves of the same decision: an answer names the plan
  * the work should run on, and whether this person has skills to bring over.
@@ -233,80 +398,90 @@ export function OnboardingExperiencePage() {
   };
 
   return (
-    <OnboardingStepLayout
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={t(($) => {
-        return $.onboarding.sourcesFirst.experience.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.experience.copy;
-      })}
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
-      })}
-      onPrimary={() => {
-        if (provider !== null) {
-          // Frontend pass: the personal model-provider connect flow is wired
-          // in the follow-up that adds the onboarding endpoints.
-          updateDraft({ providerConnected: true });
-        }
-        goNext();
-      }}
-      primaryDisabled={experienced === null}
-      onBack={flow.goBack}
-    >
-      <RadioGroup
-        value={experienced === false ? "no" : (provider ?? "")}
-        onValueChange={(value) => {
-          updateDraft(
-            value === "no"
-              ? { experienced: false, provider: null, providerConnected: false }
-              : {
-                  experienced: true,
-                  provider: value === "codex" ? "codex" : "claudeCode",
-                  providerConnected: false,
-                },
-          );
-        }}
-        className="grid gap-4 sm:grid-cols-3"
+    <>
+      <OnboardingStepLayout
+        currentStep={flow.currentStep}
+        totalSteps={flow.totalSteps}
+        title={t(($) => {
+          return $.onboarding.sourcesFirst.experience.title;
+        })}
+        description={t(($) => {
+          return $.onboarding.sourcesFirst.experience.copy;
+        })}
+        primaryLabel={t(($) => {
+          return $.onboarding.sourcesFirst.common.continue;
+        })}
+        // The connect is its own action: answering the question is what this
+        // step asks for, so the way on never waits on the plan.
+        onPrimary={goNext}
+        primaryDisabled={experienced === null}
+        onBack={flow.goBack}
       >
-        <OnboardingPosterCard
-          value="codex"
-          selected={experienced === true && provider === "codex"}
-          mark={
-            <ProductMark name="openai" alt="" size="choice" invertInDarkMode />
-          }
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.codex;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.rowCopy;
-          })}
-        />
-        <OnboardingPosterCard
-          value="claudeCode"
-          selected={experienced === true && provider === "claudeCode"}
-          mark={<ProductMark name="anthropic" alt="" size="choice" />}
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.claudeCode;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.subscription.rowCopy;
-          })}
-        />
-        <OnboardingPosterCard
-          value="no"
-          selected={experienced === false}
-          mark={<OnboardingIllustration name="new" alt="" size="choice" />}
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.experience.no;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.experience.noCopy;
-          })}
-        />
-      </RadioGroup>
-    </OnboardingStepLayout>
+        <div className="flex flex-col gap-6">
+          <RadioGroup
+            value={experienced === false ? "no" : (provider ?? "")}
+            onValueChange={(value) => {
+              updateDraft(
+                value === "no"
+                  ? { experienced: false, provider: null }
+                  : {
+                      experienced: true,
+                      provider: value === "codex" ? "codex" : "claudeCode",
+                    },
+              );
+            }}
+            className="grid gap-4 sm:grid-cols-3"
+          >
+            <OnboardingPosterCard
+              value="codex"
+              selected={experienced === true && provider === "codex"}
+              mark={
+                <ProductMark
+                  name="openai"
+                  alt=""
+                  size="choice"
+                  invertInDarkMode
+                />
+              }
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.codex;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.rowCopy;
+              })}
+            />
+            <OnboardingPosterCard
+              value="claudeCode"
+              selected={experienced === true && provider === "claudeCode"}
+              mark={<ProductMark name="anthropic" alt="" size="choice" />}
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.claudeCode;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.subscription.rowCopy;
+              })}
+            />
+            <OnboardingPosterCard
+              value="no"
+              selected={experienced === false}
+              mark={<OnboardingIllustration name="new" alt="" size="choice" />}
+              title={t(($) => {
+                return $.onboarding.sourcesFirst.experience.no;
+              })}
+              description={t(($) => {
+                return $.onboarding.sourcesFirst.experience.noCopy;
+              })}
+            />
+          </RadioGroup>
+          {provider === null ? null : (
+            <SubscriptionConnect provider={provider} />
+          )}
+        </div>
+      </OnboardingStepLayout>
+      {/* The same device-auth dialogs Settings uses, so the step connects the
+          account rather than keeping an answer of its own. */}
+      <PersonalCodexDeviceAuthDialog />
+      <PersonalClaudeCodeDeviceAuthDialog />
+    </>
   );
 }
