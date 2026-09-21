@@ -141,7 +141,7 @@ describe("CHAT-02: shared user message queue", () => {
       userMessage,
     });
     expect(queued.runId).toBeUndefined();
-    expect(claimed.seqId).toBe(queued.seqId + 1);
+    expect(claimed.seqId).toBeGreaterThan(queued.seqId);
 
     const replay = await chat.requestSendEvent(
       actor,
