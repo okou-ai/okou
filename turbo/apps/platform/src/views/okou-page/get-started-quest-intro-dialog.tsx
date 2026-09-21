@@ -563,18 +563,21 @@ function ConnectorIntro({
         },
         { assistantName },
       )}
-      // The connectors themselves are the illustration: every one of them
-      // connects in one press, which is the claim the abstract figure was
-      // making and these marks make better.
       reward={reward}
-      figure={<QuestConnectorPicker onNeedsChoice={onNeedsChoice} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
         return $.chat.agentPage.getStarted.intro.connector.confirm;
       })}
       onConfirm={onConfirm}
-    />
+    >
+      {/* The connectors themselves are the illustration: every one of them
+          connects in one press, which is the claim the abstract figure was
+          making and these marks make better. They are body content rather than
+          the figure slot, because that slot is now a full-bleed band above the
+          header -- a scrolling grid does not belong there. */}
+      <QuestConnectorPicker onNeedsChoice={onNeedsChoice} />
+    </IntroLayout>
   );
 }
 
