@@ -398,7 +398,6 @@ impl StoragePlan {
             artifacts: Vec::new(),
             cleanup_paths: Vec::new(),
             instruction_cleanups: Vec::new(),
-            history_overlap_shadow: None,
         };
         let bytes = serde_json::to_vec(&manifest)
             .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?;
@@ -669,7 +668,6 @@ impl StoragePlan {
                     target_filename: entry.target_filename,
                 })
                 .collect(),
-            history_overlap_shadow: None,
         }
     }
 

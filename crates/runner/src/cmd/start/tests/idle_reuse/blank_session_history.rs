@@ -270,10 +270,18 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         assert_ne!(writes[0].path, expected_path);
         assert!(overrides.start_agent_process_calls().is_empty());
         assert!(overrides.finalize_staged_file_calls().is_empty());
-        write_gate.release_one();
+        if framework == "codex" {
+            // The opposite completion order is also safe: storage may finish,
+            // but publication still waits for the admitted staging write.
+            storage_gate.release_one();
+            assert_eq!(overrides.finalize_staged_file_calls().len(), 0);
+            write_gate.release_one();
+        } else {
+            write_gate.release_one();
+            storage_gate.release_one();
+        }
 
-        // Canonical publication is ordered after storage completion.
-        storage_gate.release_one();
+        // Canonical publication is ordered after both operations complete.
         finalize_gate.wait_entered(1, WAIT).await.unwrap();
         let finalizations = overrides.finalize_staged_file_calls();
         assert_eq!(finalizations.len(), 1);

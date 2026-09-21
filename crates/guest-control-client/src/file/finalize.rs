@@ -117,7 +117,7 @@ fn publish_command(staging_path: &str, destination: &str, sibling: &str) -> io::
                if test \"$tmp_owner\" != \"$expected_owner\"; then rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:metadata_failed; exit 0; fi; \
              fi; \
              if mv -fT -- \"$tmp\" \"$dest\" >/dev/null 2>&1; then \
-               if rm -f -- \"$src\" >/dev/null 2>&1; then printf '%s\\n' published_cross; else exit 1; fi; \
+               rm -f -- \"$src\" >/dev/null 2>&1 || true; printf '%s\\n' published_cross; \
              else rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:rename_failed; fi; \
            else rm -f -- \"$tmp\" >/dev/null 2>&1 || true; printf '%s\\n' not_published:copy_failed; fi; \
          fi"
@@ -524,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn cross_device_source_cleanup_failure_is_not_reported_as_published() {
+    fn cross_device_source_cleanup_failure_keeps_proven_publication() {
         let temp = tempfile::tempdir().unwrap();
         let (staging, destination, sibling) = command_paths(temp.path());
         fs::write(&staging, b"history").unwrap();
@@ -534,8 +534,8 @@ mod tests {
 
         let output = run_shell(&command, Some(&fake_bin));
 
-        assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
+        assert!(output.status.success());
+        assert_eq!(output.stdout, PUBLISHED_CROSS);
         assert!(output.stderr.is_empty());
         assert_eq!(fs::read(&destination).unwrap(), b"history");
         assert!(staging.exists());
