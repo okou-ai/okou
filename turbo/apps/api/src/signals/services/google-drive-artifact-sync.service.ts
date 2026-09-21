@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { command, computed, type Command, type Computed } from "ccstate";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
@@ -1095,6 +1093,15 @@ async function ensureArtifactFolder(args: {
   return { type: "ok", value: parentFolderId };
 }
 
+/**
+ * Upload through Drive's resumable protocol.
+ *
+ * Multipart carries the metadata and the bytes in one request, which Drive
+ * documents for files of 5 MB or less; a hosted publication routinely exceeds
+ * that. Resumable declares the metadata first and sends the content against the
+ * session it returns, so the size of the content stops being a property of the
+ * request, and the bytes no longer have to be copied into a combined body.
+ */
 async function uploadDriveFile(args: {
   readonly accessToken: string;
   readonly parentFolderId: string;
@@ -1106,11 +1113,10 @@ async function uploadDriveFile(args: {
   readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
 }): Promise<Response> {
-  const boundary = `multipart-${randomUUID()}`;
   const metadata = JSON.stringify({
     name: args.filename,
     // Naming a Google editor type here is what asks Drive to convert; the
-    // part below still declares the uploaded bytes' own type.
+    // upload headers below still declare the uploaded bytes' own type.
     mimeType: args.targetMimeType ?? args.contentType,
     parents: [args.parentFolderId],
     appProperties: {
@@ -1120,33 +1126,41 @@ async function uploadDriveFile(args: {
       [GOOGLE_DRIVE_FILE_APP_PROPERTY]: args.fileId,
     },
   });
-  const body = Buffer.concat([
-    Buffer.from(
-      [
-        `--${boundary}`,
-        "Content-Type: application/json; charset=UTF-8",
-        "",
-        metadata,
-        `--${boundary}`,
-        `Content-Type: ${args.contentType}`,
-        "",
-        "",
-      ].join("\r\n"),
-      "utf8",
-    ),
-    args.file,
-    Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
-  ]);
 
-  const uploadUrl = new URL(GOOGLE_DRIVE_UPLOAD_URL);
-  uploadUrl.searchParams.set("uploadType", "multipart");
-  uploadUrl.searchParams.set("fields", "id,name,webViewLink");
-
-  return await fetch(uploadUrl, {
+  const sessionUrl = new URL(GOOGLE_DRIVE_UPLOAD_URL);
+  sessionUrl.searchParams.set("uploadType", "resumable");
+  sessionUrl.searchParams.set("fields", "id,name,webViewLink");
+  const session = await fetch(sessionUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${args.accessToken}`,
-      "Content-Type": `multipart/related; boundary=${boundary}`,
+      "Content-Type": "application/json; charset=UTF-8",
+      "X-Upload-Content-Type": args.contentType,
+      "X-Upload-Content-Length": String(args.file.byteLength),
+    },
+    body: metadata,
+  });
+  if (!session.ok) {
+    return session;
+  }
+  const location = session.headers.get("location");
+  if (!location) {
+    throw badRequestMessage("Google Drive did not open an upload session");
+  }
+
+  const body = new Uint8Array(args.file.byteLength);
+  body.set(args.file);
+  return await fetch(location, {
+    method: "PUT",
+    headers: {
+      // Content-Length is forbidden to set explicitly; fetch derives it.
+      "Content-Type": args.contentType,
+      // A zero-length artifact has no byte range to declare, only a total.
+      ...(body.byteLength === 0
+        ? {}
+        : {
+            "Content-Range": `bytes 0-${String(body.byteLength - 1)}/${String(body.byteLength)}`,
+          }),
     },
     body,
   });
