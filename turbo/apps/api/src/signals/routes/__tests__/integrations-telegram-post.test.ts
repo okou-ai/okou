@@ -184,14 +184,32 @@ function expectOk(response: Response, operation: string): void {
   throw new Error(`${operation} failed with ${response.status}`);
 }
 
+// The surface delivery rules render between the integration block and the
+// thread context. `privateArtifacts` is off for this fixture, so the note is
+// its single base line.
+const TELEGRAM_INTEGRATION_NOTE = [
+  "# Integration Note",
+  "",
+  "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--bot-id`; if you do not know which bot to use, ask the user before sending.",
+].join("\n");
+
 function expectExactSystemPromptFragment(
   appendSystemPrompt: string | null | undefined,
   expectedFragment: string,
+  expectedThreadContext?: string,
 ): void {
   if (!appendSystemPrompt) {
     throw new Error("Expected Telegram append system prompt");
   }
-  expect(appendSystemPrompt.split(expectedFragment)).toHaveLength(2);
+  const fragment =
+    expectedThreadContext === undefined
+      ? expectedFragment
+      : [
+          expectedFragment,
+          TELEGRAM_INTEGRATION_NOTE,
+          expectedThreadContext,
+        ].join("\n\n");
+  expect(appendSystemPrompt.split(fragment)).toHaveLength(2);
 }
 
 async function postTelegramStateAction(
@@ -1587,9 +1605,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         "Chat type: private",
         "Message ID: 2202",
         `Root message ID: direct-message:${fixture.composeId}:claude-sonnet-5`,
-        "",
-        queuedThreadContext,
       ].join("\n"),
+      queuedThreadContext,
     );
     await completeCanonicalChatRun({
       runId: queuedRunId,
@@ -2225,9 +2242,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         "Message ID: 2202",
         "Root message ID: 700",
         `Message thread ID: ${messageThreadId}`,
-        "",
-        followUpThreadContext,
       ].join("\n"),
+      followUpThreadContext,
     );
     expect(followUpState.agentRun?.chatThreadId).toBe(
       firstState.agentRun?.chatThreadId,
