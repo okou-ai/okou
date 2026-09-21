@@ -133,4 +133,42 @@ describe("scanStaticSite", () => {
       customRobots,
     );
   });
+  it("rejects an asset whose name does not carry its content hash", async () => {
+    const root = await tempRoot();
+    await mkdir(join(root, "assets"), { recursive: true });
+    await writeFile(
+      join(root, "index.html"),
+      '<link rel="stylesheet" href="/assets/app.css">',
+    );
+    await writeFile(join(root, "assets", "app.css"), "h1{color:green}");
+
+    await expect(scanStaticSite(root)).rejects.toThrow(
+      "Hosted-site asset must carry a content hash in its file name: /assets/app.css",
+    );
+  });
+
+  it("accepts content-hashed assets and fixed protocol paths", async () => {
+    const root = await tempRoot();
+    await mkdir(join(root, "assets"), { recursive: true });
+    await writeFile(
+      join(root, "index.html"),
+      '<link rel="stylesheet" href="/assets/app-4f3a9c12.css">',
+    );
+    await writeFile(join(root, "assets", "app-4f3a9c12.css"), "h1{color:red}");
+    await writeFile(join(root, "favicon.ico"), "icon");
+
+    const result = await scanStaticSite(root);
+
+    expect(
+      result.files
+        .map((file) => {
+          return file.path;
+        })
+        .sort(),
+    ).toStrictEqual([
+      "/assets/app-4f3a9c12.css",
+      "/favicon.ico",
+      "/index.html",
+    ]);
+  });
 });

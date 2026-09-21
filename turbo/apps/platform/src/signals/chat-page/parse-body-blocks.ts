@@ -2,7 +2,6 @@ import { getDefaults, Lexer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
 import {
   parseConnectorAuthorizeUrl,
   type ConnectorActionDescriptor,
@@ -506,13 +505,6 @@ function hostedSiteAttachment(
   url: string,
   title?: string,
 ): ChatAttachmentDescriptor | null {
-  if (privateHostedDeploymentId(url, resolveApiBase())) {
-    return {
-      filename: title?.trim() || "Artifact.html",
-      url,
-      contentType: "text/html",
-    };
-  }
   const host = browserHost();
   const baseUrl = host ? `https://${host}` : "https://relative.invalid";
   const parsed = tryParseUrl(url, baseUrl);
@@ -540,7 +532,6 @@ export function isPreviewableChatUrl(url: string): boolean {
         typeof location === "undefined" ? undefined : location.origin,
       ),
     ) ||
-    Boolean(privateHostedDeploymentId(url, resolveApiBase())) ||
     isOfficialTemplatePreviewUrl(url) ||
     isPlatformFileUrl(url) ||
     isHostedSiteUrl(url)

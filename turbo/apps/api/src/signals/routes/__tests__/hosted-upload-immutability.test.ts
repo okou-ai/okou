@@ -95,3 +95,81 @@ test("rejects uploads that would overwrite the server delivery manifest", async 
     error: { message: "Hosted-site path is reserved: /manifest.json" },
   });
 });
+
+test("rejects an asset whose name does not carry its content hash", async () => {
+  const { actor } = await fixture(false);
+  const response = await api.requestPrepareHostedSite(
+    actor,
+    {
+      site: `unhashed-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [
+        hostedTextFile("/index.html", "<main>Report</main>"),
+        hostedTextFile("/assets/app.css", "h1{color:green}", "text/css"),
+      ],
+    },
+    [400],
+  );
+  expect(response.body).toMatchObject({
+    error: {
+      message: expect.stringContaining(
+        "Hosted-site asset must carry a content hash in its file name: /assets/app.css",
+      ) as unknown as string,
+    },
+  });
+});
+
+test("rejects republishing a published asset path with different bytes", async () => {
+  const { actor } = await fixture(false);
+  const site = `republished-${randomUUID().slice(0, 8)}`;
+  const asset = "/assets/app-4f3a9c12.css";
+  const first = await api.prepareHostedSite(actor, {
+    site,
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files: [
+      hostedTextFile("/index.html", "<main>Report</main>"),
+      hostedTextFile(asset, "h1{color:green}", "text/css"),
+    ],
+  });
+  await api.completeHostedSite(actor, first.deploymentId);
+
+  // The same name must keep its bytes; only documents may change.
+  const response = await api.requestPrepareHostedSite(
+    actor,
+    {
+      site,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [
+        hostedTextFile("/index.html", "<main>Updated</main>"),
+        hostedTextFile(asset, "h1{color:red}", "text/css"),
+      ],
+    },
+    [409],
+  );
+  expect(response.body).toMatchObject({
+    error: {
+      message: expect.stringContaining(
+        `Hosted-site asset changed without a new file name: ${asset}`,
+      ) as unknown as string,
+    },
+  });
+
+  // Unchanged bytes under the same name still redeploy.
+  const redeployed = await api.prepareHostedSite(actor, {
+    site,
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files: [
+      hostedTextFile("/index.html", "<main>Updated</main>"),
+      hostedTextFile(asset, "h1{color:green}", "text/css"),
+    ],
+  });
+  expect(redeployed).toMatchObject({
+    siteId: first.siteId,
+    publicSlug: first.publicSlug,
+    deploymentVersion: 2,
+  });
+});
