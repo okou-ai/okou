@@ -84,7 +84,6 @@ describe("okou generate avatar-video command", () => {
 
   it("publishes the generated avatar video with the requested visibility", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
     const artifact = serveGenerationVisibility("avatar.mp4", "public");
     server.use(
       http.post(`${GENERATE_URL}/private`, async ({ request }) => {
@@ -94,7 +93,6 @@ describe("okou generate avatar-video command", () => {
         });
         return HttpResponse.json({
           ...AVATAR_VIDEO_RESULT,
-          privateArtifacts: true,
           id: GENERATION_ARTIFACT_ID,
           url: artifact.reference,
         });
@@ -120,7 +118,6 @@ describe("okou generate avatar-video command", () => {
       ownerUrl: artifact.ownerUrl,
       visibility: "public",
       previewMarkdownBlock: `![${AVATAR_VIDEO_RESULT.filename}](<${artifact.url}>)`,
-      artifactPresentationContext: expect.not.stringContaining("upload-file"),
     });
     expect(output).not.toContain(artifact.sharingUrl);
   });

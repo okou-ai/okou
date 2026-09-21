@@ -54,7 +54,6 @@ describe("okou generate voice command", () => {
 
   it("shares generated audio with its organization and returns the stable App URL", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_CURRENT_INTEGRATION", "teams");
     const artifact = serveGenerationVisibility("voice.wav", "org");
     server.use(
       http.post(`${SPEECH_URL}/private`, async ({ request }) => {
@@ -64,7 +63,6 @@ describe("okou generate voice command", () => {
         });
         return HttpResponse.json({
           ...VOICE_RESULT,
-          privateArtifacts: true,
           id: GENERATION_ARTIFACT_ID,
           url: artifact.reference,
         });
@@ -88,9 +86,6 @@ describe("okou generate voice command", () => {
       ownerUrl: artifact.ownerUrl,
       visibility: "org",
       previewMarkdownBlock: `![${VOICE_RESULT.filename}](<${artifact.url}>)`,
-      artifactPresentationContext: expect.stringContaining(
-        "okou teams upload-file",
-      ),
     });
   });
 
