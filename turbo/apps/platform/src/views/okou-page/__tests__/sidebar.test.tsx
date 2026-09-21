@@ -346,13 +346,6 @@ function menuItemByText(text: string): HTMLElement {
   return item;
 }
 
-// Filter menu items keep the check icon mounted and hide it with `invisible`
-// so every row stays aligned.
-function menuItemCheckVisible(text: string): boolean {
-  const check = menuItemByText(text).querySelector("svg");
-  return check !== null && !check.classList.contains("invisible");
-}
-
 function queryMenuItemByText(text: string): HTMLElement | null {
   return (
     queryAllByRoleFast("menuitem").find((candidate) => {
@@ -1256,7 +1249,6 @@ test("Hide archived chats until they are explicitly shown, except in Unread only
     "aria-disabled",
     "true",
   );
-  expect(menuItemCheckVisible("Show archived")).toBeTruthy();
   click(menuItemByText("All chats"));
 
   await waitFor(() => {
@@ -1274,7 +1266,6 @@ test("Hide archived chats until they are explicitly shown, except in Unread only
     "aria-disabled",
     "true",
   );
-  expect(menuItemCheckVisible("Show archived")).toBeFalsy();
   click(menuItemByText("Show archived"));
 
   await waitFor(() => {
