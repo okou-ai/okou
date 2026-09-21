@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.651.0](https://github.com/okou-ai/okou/compare/api-v1.650.0...api-v1.651.0) (2026-09-21)
+
+
+### Features
+
+* **models:** gate new workspace model policies ([#35871](https://github.com/okou-ai/okou/issues/35871)) ([f76ce1d](https://github.com/okou-ai/okou/commit/f76ce1dc9789c75c6c23cf70f1d5378e16721d68))
+
+
+### Bug Fixes
+
+* keep deepseek openrouter routes global ([#35852](https://github.com/okou-ai/okou/issues/35852)) ([73d8915](https://github.com/okou-ai/okou/commit/73d891553ec6ba74f4a0786573dc45b01ab5e811))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.486.0
+    * @okouai/connectors bumped to 3.15.1
+    * @okouai/core bumped to 8.694.0
+    * @okouai/db bumped to 1.283.0
+    * @okouai/pi-agent-runtime bumped to 1.34.6
+
 ## [1.650.0](https://github.com/okou-ai/okou/compare/api-v1.649.0...api-v1.650.0) (2026-09-21)
 
 

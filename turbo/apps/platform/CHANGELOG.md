@@ -11,6 +11,25 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.936.0](https://github.com/okou-ai/okou/compare/app-v0.935.0...app-v0.936.0) (2026-09-21)
+
+
+### Features
+
+* **app:** refine custom template browsing and empty states ([#35788](https://github.com/okou-ai/okou/issues/35788)) ([202ace9](https://github.com/okou-ai/okou/commit/202ace9e31a0b5d18b2070aec841ab6f08e82c3f))
+* **models:** gate new workspace model policies ([#35871](https://github.com/okou-ai/okou/issues/35871)) ([f76ce1d](https://github.com/okou-ai/okou/commit/f76ce1dc9789c75c6c23cf70f1d5378e16721d68))
+* **platform:** give the default agent avatar its own texture ([#35901](https://github.com/okou-ai/okou/issues/35901)) ([b503a49](https://github.com/okou-ai/okou/commit/b503a49b709681dae650d0ca46a08243da39c6a2))
+* **platform:** import real skills from the onboarding skills step ([#35843](https://github.com/okou-ai/okou/issues/35843)) ([974f7b4](https://github.com/okou-ai/okou/commit/974f7b4230bddcd07004ee3d0b74a3f23b00636d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.486.0
+    * @okouai/connectors bumped to 3.15.1
+    * @okouai/core bumped to 8.694.0
+
 ## [0.935.0](https://github.com/okou-ai/okou/compare/app-v0.934.0...app-v0.935.0) (2026-09-21)
 
 
