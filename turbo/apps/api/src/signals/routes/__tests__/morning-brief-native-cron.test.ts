@@ -259,6 +259,7 @@ interface ProviderCalls {
 
 type ProviderOutcome =
   | "deliver"
+  | "fenced-deliver"
   | "model-skip"
   | "provider-failure"
   | "transport-failure";
@@ -280,6 +281,30 @@ function scriptProviders(outcome: ProviderOutcome = "deliver"): {
       if (outcome === "transport-failure") {
         return HttpResponse.error();
       }
+      const answer = JSON.stringify(
+        outcome === "model-skip"
+          ? {
+              decision: "skip",
+              language: "en-US",
+              reason: "nothing_actionable",
+            }
+          : {
+              decision: "deliver",
+              language: "en-US",
+              title: "Release readiness",
+              sections: [
+                {
+                  heading: "Decisions",
+                  items: [
+                    {
+                      text: "The release ships today.",
+                      citations: ["c1"],
+                    },
+                  ],
+                },
+              ],
+            },
+      );
       return HttpResponse.json({
         id: "gen-01HNATIVECRON",
         model: "google/gemini-3.8-flash",
@@ -287,30 +312,10 @@ function scriptProviders(outcome: ProviderOutcome = "deliver"): {
           {
             finish_reason: "stop",
             message: {
-              content: JSON.stringify(
-                outcome === "model-skip"
-                  ? {
-                      decision: "skip",
-                      language: "en-US",
-                      reason: "nothing_actionable",
-                    }
-                  : {
-                      decision: "deliver",
-                      language: "en-US",
-                      title: "Release readiness",
-                      sections: [
-                        {
-                          heading: "Decisions",
-                          items: [
-                            {
-                              text: "The release ships today.",
-                              citations: ["c1"],
-                            },
-                          ],
-                        },
-                      ],
-                    },
-              ),
+              content:
+                outcome === "fenced-deliver"
+                  ? `\`\`\`json\n${answer}\n\`\`\``
+                  : answer,
             },
           },
         ],
@@ -481,6 +486,46 @@ describe("native Morning Brief cron", () => {
 
     // Zero Run and zero user-credit footprint.
     await expect(countOrgAgentRuns(f.orgId)).resolves.toBe(0);
+  });
+
+  // Two of the first three production briefs were lost to the framing around
+  // the answer rather than to anything in it. The request now carries the
+  // contract as `response_format`, and a fence that arrives anyway costs the
+  // framing, not the morning.
+  it("sends the response contract and delivers an answer wrapped in a code fence", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders("fenced-deliver");
+
+    await tickUntilNative(f);
+    await makeNativeOccurrenceDue(f);
+    const executed = await accept(tick(f), [200]);
+    expect(executed.body.settled).toBe(1);
+
+    // The contract the provider is asked to enforce travels with the request.
+    expect(calls.generation).toHaveLength(1);
+    const request = JSON.parse(calls.generation[0] ?? "") as {
+      response_format?: {
+        type: string;
+        json_schema: { strict: boolean; schema: { anyOf: unknown[] } };
+      };
+    };
+    expect(request.response_format?.type).toBe("json_schema");
+    expect(request.response_format?.json_schema.strict).toBeTruthy();
+    expect(request.response_format?.json_schema.schema.anyOf).toHaveLength(2);
+
+    // And the fenced answer is a delivered brief, not a lost morning.
+    const generations = await readNativeGenerations(f);
+    expect(generations).toHaveLength(1);
+    expect(generations[0]?.state).toBe("succeeded");
+    expect(generations[0]?.failureReason).toBeNull();
+    const deliveries = await readNativeDeliveries(f);
+    expect(deliveries).toHaveLength(1);
+    await expect(
+      readThreadEventTypes(deliveries[0]?.chatThreadId ?? ""),
+    ).resolves.toStrictEqual(["output.message"]);
+    const occurrences = await readNativeOccurrences(f);
+    expect(occurrences[0]?.outcome).toBe("delivered");
   });
 
   // The crash this covers is the one the durable receipt exists for: Chat and
