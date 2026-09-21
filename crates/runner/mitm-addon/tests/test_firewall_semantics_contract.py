@@ -35,11 +35,13 @@ def _load_cases() -> tuple[
     list[dict[str, object]],
     list[dict[str, object]],
     list[dict[str, object]],
+    list[dict[str, object]],
 ]:
     raw_contract = json.loads(_CONTRACT_PATH.read_text())
     assert isinstance(raw_contract, dict)
 
     return (
+        _contract_cases(raw_contract, "awsRuleValidationCases"),
         _contract_cases(raw_contract, "segmentParseCases"),
         _contract_cases(raw_contract, "pathSplitCases"),
         _contract_cases(raw_contract, "pathMatchCases"),
@@ -96,6 +98,7 @@ def _assert_relative_path_match(
 
 
 (
+    _AWS_RULE_VALIDATION_CASES,
     _SEGMENT_PARSE_CASES,
     _PATH_SPLIT_CASES,
     _PATH_MATCH_CASES,
@@ -104,6 +107,16 @@ def _assert_relative_path_match(
     _BASE_URL_MATCH_CASES,
     _FINAL_DECISION_CASES,
 ) = _load_cases()
+
+
+@pytest.mark.parametrize("case", _AWS_RULE_VALIDATION_CASES, ids=_case_name)
+def test_aws_rule_validation_matches_shared_contract(case: dict[str, object]):
+    rule = case["rule"]
+    assert isinstance(rule, str)
+    valid = case["valid"]
+    assert isinstance(valid, bool)
+
+    assert matching.firewall_rule_is_valid(rule) is valid
 
 
 def _normalize_final_decision(result: object | None) -> dict[str, object]:

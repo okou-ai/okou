@@ -1774,6 +1774,31 @@ describe("findMatchingPermissions", () => {
     );
   });
 
+  it("does not reduce AWS-aware rules to path-only matches", () => {
+    const awsConfig: FirewallConfig = {
+      name: "aws",
+      apis: [
+        {
+          base: "https://ec2.amazonaws.com",
+          auth: {
+            awsSigv4: {
+              accessKeyId: "${{ secrets.AWS_ACCESS_KEY_ID }}",
+              secretAccessKey: "${{ secrets.AWS_SECRET_ACCESS_KEY }}",
+            },
+          },
+          permissions: [
+            {
+              name: "describe-instances",
+              rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(findMatchingPermissions("POST", "/", awsConfig)).toEqual([]);
+  });
+
   it("deduplicates permissions across multiple api entries", () => {
     const multiApi: FirewallConfig = {
       name: "multi",

@@ -18,6 +18,221 @@ const VALID_RULE_METHODS = new Set([
   "OPTIONS",
   "ANY",
 ]);
+const AWS_RULE_SEPARATOR = " AWS ";
+const AWS_PREDICATE_VALUE_RE = /^[A-Za-z0-9._:-]+$/;
+const AWS_QUERY_KEY_RE = /^[A-Za-z0-9._~-]+$/;
+const AWS_QUERY_VALUE_RE = /^[A-Za-z0-9._~:{}-]+$/;
+const VALID_AWS_PREDICATE_KEYS = new Set(["sigv4", "action", "target"]);
+
+interface ParsedRuleRemainder {
+  readonly path: string;
+  readonly queryRequirements?: readonly string[];
+  readonly awsPredicates?: ReadonlyMap<string, string>;
+}
+
+function invalidRule(
+  rule: string,
+  permName: string,
+  serviceName: string,
+  reason: string,
+): Error {
+  return new Error(
+    `Invalid rule "${rule}" in permission "${permName}" of firewall "${serviceName}": ${reason}`,
+  );
+}
+
+function parseAwsPredicates(
+  predicateText: string,
+  rule: string,
+  permName: string,
+  serviceName: string,
+): ReadonlyMap<string, string> {
+  if (predicateText === "") {
+    throw invalidRule(
+      rule,
+      permName,
+      serviceName,
+      'AWS predicates are required after "AWS"',
+    );
+  }
+
+  const predicates = new Map<string, string>();
+  for (const token of predicateText.split(" ")) {
+    if (token === "") {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        "AWS predicates must be separated by a single space",
+      );
+    }
+    const [key, value, extra] = token.split("=");
+    if (extra !== undefined || !key || !value) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `AWS predicate "${token}" must be key=value`,
+      );
+    }
+    if (!VALID_AWS_PREDICATE_KEYS.has(key)) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `unsupported AWS predicate "${key}"`,
+      );
+    }
+    if (predicates.has(key)) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `duplicate AWS predicate "${key}"`,
+      );
+    }
+    if (!AWS_PREDICATE_VALUE_RE.test(value)) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `AWS predicate "${key}" has an invalid value`,
+      );
+    }
+    predicates.set(key, value);
+  }
+
+  if (!predicates.has("sigv4")) {
+    throw invalidRule(
+      rule,
+      permName,
+      serviceName,
+      'AWS predicate "sigv4" is required',
+    );
+  }
+  if (predicates.has("action") && predicates.has("target")) {
+    throw invalidRule(
+      rule,
+      permName,
+      serviceName,
+      'AWS predicates "action" and "target" cannot be combined',
+    );
+  }
+
+  return predicates;
+}
+
+function parseAwsQueryRequirements(
+  rawQuery: string,
+  rule: string,
+  permName: string,
+  serviceName: string,
+): readonly string[] {
+  if (rawQuery === "") {
+    throw invalidRule(
+      rule,
+      permName,
+      serviceName,
+      "AWS query requirements must not be empty",
+    );
+  }
+
+  const keys = new Set<string>();
+  const requirements: string[] = [];
+  for (const token of rawQuery.split("&")) {
+    if (token === "") {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        "AWS query requirements must not contain empty entries",
+      );
+    }
+
+    const [key, value, extra] = token.split("=");
+    if (extra !== undefined || !key || !AWS_QUERY_KEY_RE.test(key)) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `AWS query requirement "${token}" has an invalid key`,
+      );
+    }
+    if (keys.has(key)) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `duplicate AWS query requirement "${key}"`,
+      );
+    }
+    keys.add(key);
+
+    if (
+      value !== undefined &&
+      value !== "*" &&
+      (value === "" || !AWS_QUERY_VALUE_RE.test(value))
+    ) {
+      throw invalidRule(
+        rule,
+        permName,
+        serviceName,
+        `AWS query requirement "${token}" has an invalid value`,
+      );
+    }
+    requirements.push(token);
+  }
+
+  return requirements;
+}
+
+function parseRuleRemainder(
+  rest: string,
+  rule: string,
+  permName: string,
+  serviceName: string,
+): ParsedRuleRemainder {
+  const separatorIndex = rest.indexOf(AWS_RULE_SEPARATOR);
+  if (separatorIndex === -1) {
+    return { path: rest };
+  }
+  if (rest.indexOf(AWS_RULE_SEPARATOR, separatorIndex + 1) !== -1) {
+    throw invalidRule(
+      rule,
+      permName,
+      serviceName,
+      "AWS predicates may appear only once",
+    );
+  }
+
+  const rawPath = rest.slice(0, separatorIndex);
+  const predicateText = rest.slice(separatorIndex + AWS_RULE_SEPARATOR.length);
+  if (!rawPath) {
+    throw invalidRule(rule, permName, serviceName, 'path must start with "/"');
+  }
+
+  const awsPredicates = parseAwsPredicates(
+    predicateText,
+    rule,
+    permName,
+    serviceName,
+  );
+  const queryIndex = rawPath.indexOf("?");
+  if (queryIndex === -1) {
+    return { path: rawPath, awsPredicates };
+  }
+
+  return {
+    path: rawPath.slice(0, queryIndex),
+    queryRequirements: parseAwsQueryRequirements(
+      rawPath.slice(queryIndex + 1),
+      rule,
+      permName,
+      serviceName,
+    ),
+    awsPredicates,
+  };
+}
 
 function validatePathSegments(
   path: string,
@@ -85,6 +300,7 @@ export function validateRule(
   rule: string,
   permName: string,
   serviceName: string,
+  options: { readonly allowAwsPredicates?: boolean } = {},
 ): void {
   const spaceIdx = rule.indexOf(" ");
   if (spaceIdx === -1) {
@@ -105,7 +321,16 @@ export function validateRule(
     );
   }
 
-  validatePathSegments(rest, rule, permName, serviceName);
+  const parsed = parseRuleRemainder(rest, rule, permName, serviceName);
+  if (parsed.awsPredicates && options.allowAwsPredicates !== true) {
+    throw invalidRule(
+      rule,
+      permName,
+      serviceName,
+      "AWS predicates require api.auth.awsSigv4",
+    );
+  }
+  validatePathSegments(parsed.path, rule, permName, serviceName);
 }
 
 /**
@@ -161,7 +386,9 @@ export function collectAndValidatePermissions(
         );
       }
       for (const rule of perm.rules) {
-        validateRule(rule, perm.name, serviceConfig.name);
+        validateRule(rule, perm.name, serviceConfig.name, {
+          allowAwsPredicates: api.auth.awsSigv4 !== undefined,
+        });
       }
       seen.add(perm.name);
       available.add(perm.name);

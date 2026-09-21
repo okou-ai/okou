@@ -484,6 +484,102 @@ describe("validateRule", () => {
     }).not.toThrow();
   });
 
+  it("accepts bounded AWS-aware action, target, and REST query rules", () => {
+    const options = { allowAwsPredicates: true } as const;
+
+    expect(() => {
+      return validateRule(
+        "POST / AWS sigv4=ec2 action=DescribeInstances",
+        "describe-instances",
+        "aws",
+        options,
+      );
+    }).not.toThrow();
+    expect(() => {
+      return validateRule(
+        "POST / AWS sigv4=dynamodb target=DynamoDB_20120810.GetItem",
+        "get-item",
+        "aws",
+        options,
+      );
+    }).not.toThrow();
+    expect(() => {
+      return validateRule(
+        "GET /{Bucket}/{Key+}?versionId=* AWS sigv4=s3",
+        "get-object-version",
+        "aws",
+        options,
+      );
+    }).not.toThrow();
+  });
+
+  it("rejects malformed or misplaced AWS-aware rules", () => {
+    expect(() => {
+      return validateRule(
+        "POST / AWS sigv4=ec2 action=DescribeInstances",
+        "describe-instances",
+        "aws",
+      );
+    }).toThrow("AWS predicates require api.auth.awsSigv4");
+    expect(() => {
+      return validateRule(
+        "POST / AWS action=DescribeInstances",
+        "describe-instances",
+        "aws",
+        { allowAwsPredicates: true },
+      );
+    }).toThrow('AWS predicate "sigv4" is required');
+    expect(() => {
+      return validateRule(
+        "POST / AWS sigv4=ec2 action=DescribeInstances target=Service.Operation",
+        "describe-instances",
+        "aws",
+        { allowAwsPredicates: true },
+      );
+    }).toThrow('"action" and "target" cannot be combined');
+    expect(() => {
+      return validateRule("GET /?acl&acl AWS sigv4=s3", "get-acl", "aws", {
+        allowAwsPredicates: true,
+      });
+    }).toThrow('duplicate AWS query requirement "acl"');
+  });
+
+  it("accepts AWS-aware rules only on SigV4 API entries", () => {
+    const awsAuth = {
+      awsSigv4: {
+        accessKeyId: "${{ secrets.AWS_ACCESS_KEY_ID }}",
+        secretAccessKey: "${{ secrets.AWS_SECRET_ACCESS_KEY }}",
+      },
+    };
+    const permissions = [
+      {
+        name: "describe-instances",
+        rules: ["POST / AWS sigv4=ec2 action=DescribeInstances"],
+      },
+    ];
+
+    expect(() => {
+      return collectAndValidatePermissions({
+        name: "aws",
+        apis: [
+          { base: "https://ec2.amazonaws.com", auth: awsAuth, permissions },
+        ],
+      });
+    }).not.toThrow();
+    expect(() => {
+      return collectAndValidatePermissions({
+        name: "not-aws",
+        apis: [
+          {
+            base: "https://api.example.com",
+            auth: { headers: {} },
+            permissions,
+          },
+        ],
+      });
+    }).toThrow("AWS predicates require api.auth.awsSigv4");
+  });
+
   it("should reject missing path", () => {
     expect(() => {
       return validateRule("GET", "read", "github");
