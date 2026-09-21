@@ -15,6 +15,107 @@ import {
   type SocialPlatform,
 } from "@okouai/api-contracts/contracts/social-discovery";
 import { socialExportCapabilities } from "./output";
+import {
+  SOCIAL_DATA_MAX_RESULTS,
+  type SocialDataOperation,
+} from "@okouai/api-contracts/contracts/social-data";
+
+interface JobCapability {
+  readonly operation: SocialDataOperation;
+  readonly targets: readonly string[];
+  readonly inputs?: Readonly<Record<string, readonly string[]>>;
+  readonly maxResults?: number;
+  readonly note?: string;
+}
+
+const jobCapabilities: Partial<
+  Record<SocialPlatform, readonly JobCapability[]>
+> = {
+  instagram: [
+    { operation: "inspect", targets: ["profile", "post", "reel"] },
+    {
+      operation: "posts",
+      targets: ["profile"],
+      inputs: { "--kind": ["posts", "reels"] },
+      maxResults: 12,
+      note: "One profile request returns the most recent items of the selected kind",
+    },
+    {
+      operation: "comments",
+      targets: ["post", "reel"],
+      note: "Returns one bounded batch; the requested limit does not guarantee that many available comments",
+    },
+  ],
+  tiktok: [
+    { operation: "inspect", targets: ["video", "photo"] },
+    { operation: "posts", targets: ["profile"] },
+    { operation: "search", targets: ["query"] },
+    {
+      operation: "comments",
+      targets: ["video", "photo"],
+      note: "Returns one bounded batch; the requested limit does not guarantee that many available comments",
+    },
+  ],
+  youtube: [
+    { operation: "inspect", targets: ["video", "short"] },
+    {
+      operation: "posts",
+      targets: ["channel"],
+      inputs: {
+        "--sort": ["newest", "popular", "oldest"],
+        "--type": ["video", "shorts"],
+      },
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: {
+        "--sort": ["relevance", "rating", "date", "views"],
+        "--date": ["hour", "today", "week", "month", "year"],
+        "--type": ["video", "shorts"],
+      },
+    },
+    {
+      operation: "comments",
+      targets: ["video", "short"],
+      inputs: { "--sort": ["top", "newest"] },
+    },
+    {
+      operation: "transcript",
+      targets: ["video", "short"],
+      note: "--language accepts a two-letter language code; availability depends on the source",
+    },
+  ],
+  facebook: [
+    { operation: "inspect", targets: ["public_page"] },
+    { operation: "posts", targets: ["public_profile"] },
+    { operation: "search", targets: ["query"] },
+    {
+      operation: "comments",
+      targets: ["post", "video", "reel", "photo"],
+      inputs: { "--sort": ["newest", "relevant", "all"] },
+      note: "Nested replies are excluded",
+    },
+  ],
+  twitter: [
+    { operation: "inspect", targets: ["post"] },
+    {
+      operation: "posts",
+      targets: ["profile"],
+      inputs: { "--sort": ["latest", "top"] },
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: { "--sort": ["latest", "top"] },
+    },
+    {
+      operation: "comments",
+      targets: ["conversation"],
+      inputs: { "--sort": ["latest", "top"] },
+    },
+  ],
+};
 
 const SUMMARY_FIELDS_NOTE =
   'Summarize accepts --fields JSON or --fields-file PATH, e.g. {"audience":"Who this video helps"}, plus optional --prompt guidance (not strict JSON Schema)';
@@ -241,6 +342,14 @@ export function socialCapabilities(platform?: SocialPlatform) {
         ].sort(),
         ...(notes[selected] ? { notes: notes[selected] } : {}),
         details: entries.map(detailsFor),
+        jobs: {
+          platform: selected === "twitter" ? "x" : selected,
+          controls: ["--dry-run", "--max-credits", "--async", "--request-id"],
+          maxResults: SOCIAL_DATA_MAX_RESULTS,
+          details: jobCapabilities[selected] ?? [],
+          note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
+          recovery: "okou social jobs get <job-id> --wait --json",
+        },
       };
     },
   );

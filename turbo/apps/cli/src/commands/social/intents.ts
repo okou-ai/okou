@@ -502,6 +502,12 @@ export function parseSocialTarget(input: string): SocialUrlTarget {
   };
 }
 
+/**
+ * Xiaohongshu is served only by saved data jobs, so it is accepted here but
+ * has no SocialKit tool binding.
+ */
+export type SocialCommandPlatform = SocialPlatform | "xiaohongshu";
+
 export function parseSocialPlatform(value: string): SocialPlatform {
   const lower = value.toLowerCase();
   const normalized = lower === "x" ? "twitter" : lower;
@@ -514,6 +520,37 @@ export function parseSocialPlatform(value: string): SocialPlatform {
     );
   }
   return platform;
+}
+
+/**
+ * Search is the only command that names a platform without a URL, so it is
+ * the only place Xiaohongshu can be selected by name.
+ */
+export function parseSearchPlatform(value: string): SocialCommandPlatform {
+  const lower = value.toLowerCase();
+  if (lower === "xiaohongshu" || lower === "rednote") {
+    return "xiaohongshu";
+  }
+  return parseSocialPlatform(value);
+}
+
+const XIAOHONGSHU_HOSTS: ReadonlySet<string> = new Set([
+  "xiaohongshu.com",
+  "www.xiaohongshu.com",
+  "xhslink.com",
+  "xhslink.cn",
+]);
+
+/**
+ * Returns the URL when it belongs to Xiaohongshu. SocialKit target parsing
+ * does not recognise the platform, so job commands check it first.
+ */
+export function parseXiaohongshuTarget(input: string): string | undefined {
+  const url = URL.parse(input);
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    return undefined;
+  }
+  return XIAOHONGSHU_HOSTS.has(url.hostname) ? url.href : undefined;
 }
 
 function urlIntent(

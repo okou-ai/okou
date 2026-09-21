@@ -4,6 +4,7 @@ import { z } from "zod";
 const transcriptSchema = z.object({
   transcript: z.string().optional(),
   transcriptSegments: z.array(z.unknown()).optional(),
+  segments: z.array(z.unknown()).optional(),
   language: z.string().optional(),
 });
 const textSegmentSchema = z.object({ text: z.string() });
@@ -14,7 +15,7 @@ const timedSegmentSchema = textSegmentSchema.extend({
 
 function plainText(data: z.infer<typeof transcriptSchema>): string {
   if (data.transcript?.trim()) return data.transcript;
-  const text = (data.transcriptSegments ?? [])
+  const text = (data.transcriptSegments ?? data.segments ?? [])
     .map((segment, index) => {
       const parsed = textSegmentSchema.safeParse(segment);
       if (!parsed.success) {
@@ -124,7 +125,10 @@ export function formatTranscript(
   const contents =
     format === "text"
       ? plainText(parsed.data)
-      : subtitles(parsed.data.transcriptSegments, format);
+      : subtitles(
+          parsed.data.transcriptSegments ?? parsed.data.segments,
+          format,
+        );
   return {
     contents: contents.endsWith("\n") ? contents : `${contents}\n`,
     ...(parsed.data.language === undefined

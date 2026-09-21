@@ -10,7 +10,7 @@ import {
 
 import { i18n } from "../../../i18n/index.ts";
 import { formatLocalizedNumber } from "../../../i18n/format.ts";
-import { getCreditUsageDisplayName } from "../../../lib/credit-usage-display.ts";
+import { buildCreditUsageDisplaySegments } from "../../../lib/credit-usage-display.ts";
 
 export const USAGE_KIND_META = {
   model: {
@@ -71,9 +71,7 @@ export function UsageBreakdownBar({
   max: number;
   testIdPrefix?: string;
 }) {
-  const segments = breakdown.filter((segment) => {
-    return segment.credits > 0;
-  });
+  const segments = buildCreditUsageDisplaySegments(breakdown);
   if (credits <= 0 || segments.length === 0) {
     return null;
   }
@@ -112,29 +110,18 @@ export function UsageBreakdownBar({
                   {formatLocalizedNumber(segment.credits)}
                 </div>
                 <div className="mt-1 flex flex-col gap-0.5">
-                  {segment.providers.flatMap((provider) => {
-                    const usageKinds =
-                      provider.usageKinds.length > 0
-                        ? provider.usageKinds
-                        : [{ kind: segment.kind, credits: provider.credits }];
-                    return usageKinds.map((usageKind) => {
-                      return (
-                        <div
-                          key={`${provider.provider}:${usageKind.kind}`}
-                          className="flex min-w-0 justify-between gap-3 text-xs text-muted-foreground"
-                        >
-                          <span className="truncate">
-                            {getCreditUsageDisplayName(
-                              usageKind.kind,
-                              provider.provider,
-                            )}
-                          </span>
-                          <span className="shrink-0 tabular-nums">
-                            {formatLocalizedNumber(usageKind.credits)}
-                          </span>
-                        </div>
-                      );
-                    });
+                  {segment.rows.map((row) => {
+                    return (
+                      <div
+                        key={row.key}
+                        className="flex min-w-0 justify-between gap-3 text-xs text-muted-foreground"
+                      >
+                        <span className="truncate">{row.label}</span>
+                        <span className="shrink-0 tabular-nums">
+                          {formatLocalizedNumber(row.credits)}
+                        </span>
+                      </div>
+                    );
                   })}
                 </div>
               </TooltipContent>

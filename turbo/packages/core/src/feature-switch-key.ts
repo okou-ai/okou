@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  SocialDataJobs = "socialDataJobs",
   DurableUserExport = "_durableUserExport",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",

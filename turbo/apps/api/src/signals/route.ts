@@ -143,6 +143,7 @@ import { scrapeRoutes } from "./routes/scrape";
 import { peopleSearchRoutes } from "./routes/people-search";
 import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
+import { socialDataRoutes } from "./routes/social-data";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
 import { vncAccessRoutes } from "./routes/vnc-access";
@@ -348,6 +349,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...peopleSearchRoutes,
   ...webSearchRoutes,
   ...socialRoutes,
+  ...socialDataRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
   ...vncAccessRoutes,
