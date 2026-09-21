@@ -100,6 +100,10 @@ export const avatarFramingEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.AvatarFraming] ?? false;
 });
 
+export const avatarTextureEnabled$ = computed((get): boolean => {
+  return get(featureSwitch$)[FeatureSwitchKey.AvatarTexture] ?? false;
+});
+
 export const applyFeatureSwitches$ = command(
   ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);

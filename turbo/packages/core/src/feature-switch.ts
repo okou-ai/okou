@@ -373,6 +373,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AvatarTexture]: {
+    maintainer: "tongx@okou.ai",
+    description:
+      "Back the chat home greeting avatar with a brand texture chosen to stay clear of the avatar's own colours, sit it on the frame's bottom edge, and drop the frame's hairline.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
