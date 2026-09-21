@@ -221,8 +221,10 @@ describe("X resource read retention", () => {
     const gate = await holdProductionXResourceAdmissionForTest(context.signal);
     const completion = Promise.allSettled([gate.done]);
     const pending = Promise.allSettled([
-      withXResourceAdmissionScopeFixture(undefined, async () => {
-        return await fixture.cleanup(clock);
+      gate.withAcquisitionAttemptTracking(async () => {
+        return await withXResourceAdmissionScopeFixture(undefined, async () => {
+          return await fixture.cleanup(clock);
+        });
       }),
     ]);
     onTestFinished(async () => {
@@ -230,10 +232,11 @@ describe("X resource read retention", () => {
       await completion;
       await pending;
     });
-    await expect.poll(gate.waiterCount).toBe(1);
+    await Promise.race([gate.acquisitionAttempted, pending]);
 
-    // The production waiter and holder remain active. Shared setup must have
-    // restored this test's scope for its second owned cleanup to finish.
+    // The production holder remains active after this operation reaches
+    // admission. Shared setup must have restored this test's scope for its
+    // second owned cleanup to finish.
     expect((await other.cleanup(clock)).deleted).toBe(1);
     expect((await other.read()).rows).toStrictEqual([]);
     gate.release();
