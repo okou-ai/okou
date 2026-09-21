@@ -1039,9 +1039,9 @@ function registerSearchAndStatusTools(
     "get_chat_status",
     {
       description:
-        "Observe derived lifecycle {phase,outcome,output}. Pass the complete send_chat_message " +
-        "inputRef to observe that input, or pass only threadId for the latest run. waitMs is " +
-        "available only with inputRef, clamps to 8 seconds and 5 observations, and returns ready, deadline, or status; " +
+        "Observe derived lifecycle {phase,outcome,output}. Pass complete send_chat_message inputRef " +
+        "for that input, or only threadId for the latest run. waitMs requires inputRef, clamps to " +
+        "8 seconds and 5 observations, and returns ready, deadline, or status; " +
         "deadline or capacity is current state, not a run outcome. Missing associations never select " +
         "another run. queued proves neither delivery, provenance, nor model compliance. Private " +
         "observations may map several inputs to one run and output. Terminal runs may remain " +

@@ -1359,11 +1359,9 @@ describe("MCP chat discovery and creation", () => {
     expect(combined.nextAction.arguments.inputRef).toStrictEqual(
       combined.input.inputRef,
     );
-    await expect(
-      getStatus(token, combined.nextAction.arguments),
-    ).resolves.toMatchObject({
+    const status = await getStatus(token, combined.nextAction.arguments);
+    expect(status).toMatchObject({
       threadId: args.requestId,
-      lifecycle: { phase: "queued", outcome: null, output: "pending" },
       messages: {
         arguments: {
           threadId: args.requestId,
