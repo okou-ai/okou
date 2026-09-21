@@ -2,7 +2,13 @@ import {
   Check,
   ChevronRight,
   MoreHorizontal,
-  Plus,
+  FileText,
+  Image as ImageIcon,
+  Layers,
+  Lock,
+  Presentation,
+  Upload,
+  Users,
   Search,
   Trash2,
   User,
@@ -20,11 +26,15 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   cn,
 } from "@okouai/ui";
 import type {
   UserTemplateCatalogEntry,
   UserTemplateVisibility,
+  UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import {
@@ -37,20 +47,22 @@ import {
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
-import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import {
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
   setCustomTemplateSearchQuery$,
-  projectVisibleCustomTemplates$,
+  projectCustomTemplatePicker$,
+  setCustomTemplateKindFilter$,
   updateCustomTemplate$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   CUSTOM_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
+  openCustomTemplateImport$,
+  setCustomTemplateImportInput$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -159,18 +171,36 @@ function CustomTemplateMeta({
 }: {
   readonly template: UserTemplateCatalogEntry;
 }) {
-  return (
-    <div className="min-w-0 text-xs text-muted-foreground">
-      {template.canManage ? (
-        <VisibilityLabel visibility={template.visibility} />
-      ) : (
-        <span className="inline-flex items-center gap-1.5">
-          <User size={13} className="shrink-0" aria-hidden />
-          <SharedByLabel ownerDisplayName={template.ownerDisplayName} />
-        </span>
-      )}
-    </div>
+  const label = template.canManage ? (
+    <VisibilityLabel visibility={template.visibility} />
+  ) : (
+    <span className="inline-flex items-center gap-1.5">
+      <User size={13} className="shrink-0" aria-hidden />
+      <SharedByLabel ownerDisplayName={template.ownerDisplayName} />
+    </span>
   );
+  if (template.kind === "illustration") {
+    const Icon = !template.canManage
+      ? User
+      : template.visibility === "private"
+        ? Lock
+        : Users;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            className="shrink-0 rounded-sm text-muted-foreground"
+          >
+            <Icon size={13} aria-hidden />
+            <span className="sr-only">{label}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return <div className="min-w-0 text-xs text-muted-foreground">{label}</div>;
 }
 
 function CustomTemplateActions({
@@ -186,7 +216,7 @@ function CustomTemplateActions({
   return (
     // Revealed on hover like the picker's own tile controls, but kept visible
     // where hover does not exist and whenever it takes focus.
-    <div className="absolute right-2 top-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:has-[:focus-visible]:opacity-100">
+    <div className="absolute right-2 top-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -267,11 +297,22 @@ function CustomTemplateCard({
     openTemplate({ templateId: template.id, kind: template.kind });
   };
   return (
-    <div className="group/tile flex min-w-0 flex-col">
+    <div
+      className={cn(
+        "group/tile flex min-w-0 flex-col",
+        template.kind === "illustration" && "mb-6 break-inside-avoid",
+      )}
+    >
       <div className="relative">
         <button
           type="button"
-          className={cn(CARD_MEDIA, "cursor-pointer")}
+          className={cn(
+            CARD_MEDIA,
+            "cursor-pointer",
+            template.kind === "illustration" &&
+              template.coverUrl &&
+              "aspect-auto",
+          )}
           aria-label={t(
             ($) => {
               return $.templates.actions.preview;
@@ -286,16 +327,15 @@ function CustomTemplateCard({
               coverUrl={template.coverUrl}
             />
           ) : template.coverUrl ? (
-            // A deck and an illustration fill the tile: both are pictures made
-            // to be seen whole, and this tile is close enough to their shape
-            // that covering it loses nothing. Cropped from the top rather than
-            // the middle: a cover taller than this tile is a page, and a page
-            // is recognised by its head.
             <img
               src={template.coverUrl}
               alt=""
               loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover object-top"
+              className={
+                template.kind === "illustration"
+                  ? "block h-auto w-full"
+                  : "absolute inset-0 h-full w-full object-cover object-top"
+              }
             />
           ) : (
             // A template with no rendered cover is named by its file instead.
@@ -315,7 +355,7 @@ function CustomTemplateCard({
             template, and using it is a different decision from looking at
             it. Revealed on hover like the actions menu above, and kept
             reachable where hover does not exist. */}
-        <div className="absolute bottom-2 right-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:has-[:focus-visible]:opacity-100">
+        <div className="absolute bottom-2 right-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
           <Button
             type="button"
             size="sm"
@@ -349,7 +389,14 @@ function CustomTemplateCard({
           />
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-col gap-1 px-0.5 pb-1 pt-2">
+      <div
+        className={cn(
+          "flex min-w-0 gap-1 px-0.5 pb-1 pt-2",
+          template.kind === "illustration"
+            ? "items-center justify-between gap-2"
+            : "flex-col",
+        )}
+      >
         <p
           className="min-w-0 truncate text-sm font-medium leading-5 text-foreground"
           title={template.title}
@@ -362,157 +409,219 @@ function CustomTemplateCard({
   );
 }
 
-/**
- * The choice itself, shared by the two surfaces that offer it.
- *
- * One entry for every kind of template, not one per kind: the file the user
- * picked decides what it becomes, so the prompt that is sent — and with it the
- * command that publishes the result — follows the file rather than a choice
- * made before the analysis has read it. Keeping the input in one place is what
- * holds the tile and the empty catalog's drop zone to the same set of files.
- */
-function CustomTemplateFileInput({
+/** The imported file decides its kind, independently of the active filter. */
+function CustomTemplateImportButton({
   signals,
-  label,
   onImported,
 }: {
   readonly signals: ComposerSignals;
-  readonly label: string;
   readonly onImported: () => void;
 }) {
+  const { t } = useTranslation();
+  const setInput = useSet(setCustomTemplateImportInput$);
+  const openImport = useSet(openCustomTemplateImport$);
   const rootSignal = useGet(rootSignal$);
   const importDeck = useSet(importPresentationTemplateDeck$);
-  return (
-    <input
-      type="file"
-      className="sr-only"
-      accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
-      aria-label={label}
-      onChange={(event) => {
-        const file = event.currentTarget.files?.[0];
-        // Clear the input so choosing the same file again still fires.
-        event.currentTarget.value = "";
-        if (!file) {
-          return;
-        }
-        // The import attaches the file and sends, so the member is answered in
-        // the thread rather than here; a picker left over that thread hides
-        // the run they were just handed.
-        onImported();
-        detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
-      }}
-    />
-  );
-}
-
-/**
- * The upload entry a populated catalog leads its grid with.
- *
- * Rendering its own tile rather than reusing the composer's is deliberate: the
- * composer already imports this pane, so importing the tile back would close a
- * cycle.
- */
-function CustomTemplateUploadCard({
-  signals,
-  onImported,
-}: {
-  readonly signals: ComposerSignals;
-  readonly onImported: () => void;
-}) {
-  const { t } = useTranslation();
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
-  // What the entry produces, not which extensions it takes. This line sits
-  // where every other tile carries its meta, so it is read down a column of
-  // "who can see this"; the accept list read as prose was both a different
-  // kind of line and longer than the tile, and it grew by one extension every
-  // time the import learned a format. Which files are allowed stays with the
-  // input's `accept`, which is where the file chooser reads it.
-  const hint = t(($) => {
-    return $.artifacts.templates.importFileHint;
-  });
   return (
-    <label className="group/tile flex cursor-pointer flex-col gap-2">
-      <span
-        className={cn(
-          CARD_MEDIA,
-          "bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
-        )}
-      >
-        <Plus
-          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
-        <CustomTemplateFileInput
-          signals={signals}
-          label={label}
-          onImported={onImported}
-        />
-      </span>
-      <span className="flex flex-col gap-0.5">
-        <span className="truncate text-sm font-medium text-foreground">
-          {label}
-        </span>
-        <span className="truncate text-xs text-muted-foreground">{hint}</span>
-      </span>
-    </label>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="max-[374px]:px-2 max-[374px]:text-xs"
+            onClick={openImport}
+          >
+            <Upload aria-hidden />
+            {label}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t(($) => {
+            return $.templates.importHint;
+          })}
+        </TooltipContent>
+      </Tooltip>
+      <input
+        ref={setInput}
+        type="file"
+        className="hidden"
+        accept={CUSTOM_TEMPLATE_IMPORT_ACCEPT}
+        aria-label={label}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (!file) {
+            return;
+          }
+          onImported();
+          detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
+        }}
+      />
+    </>
   );
 }
 
-/**
- * The upload entry an empty catalog leads with.
- *
- * A pane with nothing in it should hold one object, not two. The tile-sized
- * entry sitting under a card that only reported the catalog was empty gave the
- * eye two blocks and no obvious target, so the entry becomes the surface and
- * carries the line that card was carrying.
- */
+function CustomTemplateKindFilters({
+  kind,
+}: {
+  readonly kind: UserTemplateKind;
+}) {
+  const { t } = useTranslation();
+  const setKind = useSet(setCustomTemplateKindFilter$);
+  const options = [
+    {
+      value: "document",
+      label: t(($) => {
+        return $.artifacts.kinds.document;
+      }),
+    },
+    {
+      value: "presentation",
+      label: t(($) => {
+        return $.artifacts.kinds.presentation;
+      }),
+    },
+    {
+      value: "illustration",
+      label: t(($) => {
+        return $.artifacts.kinds.image;
+      }),
+    },
+  ] as const;
+  return (
+    <div
+      role="group"
+      aria-label={t(($) => {
+        return $.artifacts.templates.categories;
+      })}
+      className="flex w-full items-center gap-1 lg:w-auto"
+    >
+      {options.map(({ value, label }) => {
+        return (
+          <Button
+            key={value}
+            type="button"
+            variant="quiet"
+            size="sm"
+            aria-pressed={value === kind}
+            className={cn(
+              "flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none",
+              value === kind && "bg-gray-50 text-foreground",
+            )}
+            onClick={() => {
+              setKind(value);
+            }}
+          >
+            {label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
 function CustomTemplatesEmpty({
+  kind,
+  isEmptyCatalog,
+  hasQuery,
   signals,
   onImported,
 }: {
+  readonly kind: UserTemplateKind;
+  readonly isEmptyCatalog: boolean;
+  readonly hasQuery: boolean;
   readonly signals: ComposerSignals;
   readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
-  const label = t(($) => {
-    return $.artifacts.templates.importFile;
-  });
+  const setQuery = useSet(setCustomTemplateSearchQuery$);
+  const titles = {
+    document: t(($) => {
+      return $.templates.empty.document;
+    }),
+    presentation: t(($) => {
+      return $.templates.empty.presentation;
+    }),
+    illustration: t(($) => {
+      return $.templates.empty.illustration;
+    }),
+  };
+  const Icon = hasQuery
+    ? Search
+    : isEmptyCatalog
+      ? Layers
+      : kind === "document"
+        ? FileText
+        : kind === "presentation"
+          ? Presentation
+          : ImageIcon;
   return (
-    // `border-2` is the weight a dashed drop target takes: at the shared
-    // hairline a dashed edge reads as speckling rather than as a boundary.
-    <label className="group/zone flex min-h-80 cursor-pointer flex-col items-center justify-center gap-3 rounded-[22px] border-2 border-dashed border-border bg-muted/40 px-6 py-10 text-center transition-colors duration-150 hover:bg-muted/60 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring">
-      <Plus
-        className="size-10 text-muted-foreground transition-colors duration-150 group-hover/zone:text-foreground"
-        strokeWidth={1.5}
+    <div className="flex min-h-64 flex-1 flex-col items-center justify-center px-5 py-7 text-center">
+      <div
+        className="relative mb-6 h-16 w-20 text-muted-foreground"
         aria-hidden
-      />
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {/* The tile's caption is absent here on purpose: it says the entry
-          reuses the file's design, which is the sentence below said short,
-          and a zone with room for the whole sentence should not say it
-          twice. */}
-      <span className="max-w-md text-xs text-muted-foreground">
-        {t(($) => {
-          return $.templates.empty.description;
-        })}
-      </span>
-      <CustomTemplateFileInput
-        signals={signals}
-        label={label}
-        onImported={onImported}
-      />
-    </label>
+      >
+        <span className="absolute left-2 top-1 h-14 w-11 -rotate-12 rounded-lg border border-border bg-gray-50" />
+        <span className="absolute right-2 top-0 flex h-14 w-11 rotate-6 items-center justify-center rounded-lg border border-border bg-background">
+          <Icon size={24} strokeWidth={1.5} />
+        </span>
+      </div>
+      <h2 className="text-base font-medium text-foreground">
+        {hasQuery
+          ? t(($) => {
+              return $.artifacts.templates.noMatches;
+            })
+          : isEmptyCatalog
+            ? t(($) => {
+                return $.templates.empty.title;
+              })
+            : titles[kind]}
+      </h2>
+      <p className="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">
+        {hasQuery
+          ? t(($) => {
+              return $.artifacts.templates.tryDifferentSearch;
+            })
+          : isEmptyCatalog
+            ? t(($) => {
+                return $.templates.empty.description;
+              })
+            : t(($) => {
+                return $.templates.importHint;
+              })}
+      </p>
+      {hasQuery ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          className="mt-6"
+          onClick={() => {
+            setQuery("");
+          }}
+        >
+          {t(($) => {
+            return $.templates.clearSearch;
+          })}
+        </Button>
+      ) : !isEmptyCatalog ? (
+        <div className="mt-6">
+          <CustomTemplateImportButton
+            signals={signals}
+            onImported={onImported}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-/**
- * The Custom panel of the template picker. It sits above the rule in the
- * category rail because it answers "who made it", while the seven below it
- * answer "what am I making".
- */
+/** Custom templates retain their loaded cards while a catalog refresh runs. */
 export function CustomTemplatePickerPane({
   signals,
   onSelect,
@@ -525,69 +634,93 @@ export function CustomTemplatePickerPane({
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
-  const templatesLoadable = useLastLoadable(customTemplateCatalog$);
-  const projectTemplates = useGet(projectVisibleCustomTemplates$);
-
+  const catalog = useLastLoadable(customTemplateCatalog$);
+  const projectPicker = useGet(projectCustomTemplatePicker$);
+  const view = catalog.state === "hasData" ? projectPicker(catalog.data) : null;
   const hasQuery = query.trim().length > 0;
-  const templates =
-    templatesLoadable.state === "hasData"
-      ? projectTemplates(templatesLoadable.data)
-      : null;
-  // A box for narrowing a catalog belongs to a catalog there is something to
-  // narrow. It also waits for the catalog to resolve rather than assuming one:
-  // showing it while the answer is still in flight would take it away again the
-  // moment that answer turns out to be an empty catalog.
-  const showSearch = templates !== null && (templates.length > 0 || hasQuery);
-
-  const body =
-    templatesLoadable.state === "hasError" ? (
-      <CustomTemplatesLoadError />
-    ) : templates === null ? null : templates.length === 0 ? (
-      // A query that matches nothing is a different event from having no
-      // templates at all, and the picker already ships the panel that says so.
-      // Uploading cannot answer a failed search, so the drop zone only leads
-      // the empty catalog.
-      hasQuery ? (
-        <TemplateEmptyPanel />
-      ) : (
-        <CustomTemplatesEmpty signals={signals} onImported={onImported} />
-      )
-    ) : (
-      <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-        <CustomTemplateUploadCard signals={signals} onImported={onImported} />
-        {templates.map((template) => {
-          return (
-            <CustomTemplateCard
-              key={template.id}
-              template={template}
-              onSelect={onSelect}
-            />
-          );
-        })}
-      </div>
-    );
+  const showToolbar = view !== null && (view.templates.length > 0 || hasQuery);
+  const showHeaderImport = showToolbar || view?.isEmptyCatalog === true;
 
   return (
-    <div className="flex flex-col gap-4">
-      {showSearch ? (
-        <div className="relative w-56 shrink-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label={t(($) => {
-              return $.artifacts.templates.searchConnectors;
-            })}
-            className="h-9 pl-9 text-sm"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            placeholder={t(($) => {
-              return $.artifacts.templates.searchConnector;
-            })}
-          />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {showHeaderImport ? (
+        <div
+          className={cn(
+            "relative shrink-0 pb-5 sm:pt-[68px] lg:flex lg:min-h-[68px] lg:items-center lg:gap-4 lg:py-4 lg:pr-9",
+            !showToolbar && "pb-0",
+          )}
+        >
+          {showToolbar && view ? (
+            <>
+              <div className="mb-3.5 w-full min-w-0 lg:mb-0 lg:w-56 lg:shrink">
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <Input
+                    aria-label={t(($) => {
+                      return $.artifacts.templates.searchConnectors;
+                    })}
+                    placeholder={t(($) => {
+                      return $.artifacts.templates.searchConnector;
+                    })}
+                    className="h-9 pl-9 text-sm"
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                    }}
+                  />
+                </div>
+              </div>
+              <CustomTemplateKindFilters kind={view.kind} />
+            </>
+          ) : null}
+          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px] lg:static lg:ml-auto">
+            <CustomTemplateImportButton
+              signals={signals}
+              onImported={onImported}
+            />
+          </div>
         </div>
       ) : null}
-      {body}
+      <div
+        role="region"
+        aria-label={t(($) => {
+          return $.templates.detail.back;
+        })}
+        className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+      >
+        {catalog.state === "hasError" ? (
+          <CustomTemplatesLoadError />
+        ) : view === null ? null : view.templates.length === 0 ? (
+          <CustomTemplatesEmpty
+            kind={view.kind}
+            isEmptyCatalog={view.isEmptyCatalog}
+            hasQuery={hasQuery}
+            signals={signals}
+            onImported={onImported}
+          />
+        ) : (
+          <div
+            className={
+              view.kind === "illustration"
+                ? "columns-[244px] gap-5"
+                : "grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3"
+            }
+          >
+            {view.templates.map((template) => {
+              return (
+                <CustomTemplateCard
+                  key={template.id}
+                  template={template}
+                  onSelect={onSelect}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
     </div>
   );

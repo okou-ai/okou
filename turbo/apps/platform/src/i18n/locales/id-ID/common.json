@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
-      "importFile": "Impor file Anda sendiri",
-      "importFileHint": "Pakai lagi desain file Anda",
+      "importFile": "Impor template",
       "multiAccent": "Multi-aksen",
       "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
@@ -6884,6 +6883,7 @@
       "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
+    "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
     "detail": {
       "back": "Templat kustom",
@@ -6891,8 +6891,13 @@
       "sourceFile": "Dari {{filename}}"
     },
     "empty": {
-      "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
+      "description": "Impor dokumen, presentasi, atau gambar untuk menggunakan kembali desainnya.",
+      "document": "Belum ada dokumen",
+      "illustration": "Belum ada gambar",
+      "presentation": "Belum ada presentasi",
+      "title": "Buat sesuai gaya Anda"
     },
+    "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",

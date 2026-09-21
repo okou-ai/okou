@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "自分のファイルをインポート",
-      "importFileHint": "ファイルのデザインを再利用",
+      "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -6884,6 +6883,7 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
+    "clearSearch": "検索をクリア",
     "custom": "カスタム",
     "detail": {
       "back": "カスタムテンプレート",
@@ -6891,8 +6891,13 @@
       "sourceFile": "{{filename}} から"
     },
     "empty": {
-      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
+      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
+      "document": "ドキュメントはまだありません",
+      "illustration": "画像はまだありません",
+      "presentation": "プレゼンテーションはまだありません",
+      "title": "自分だけのテンプレートに"
     },
+    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",

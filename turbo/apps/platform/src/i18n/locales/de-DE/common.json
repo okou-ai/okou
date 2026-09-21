@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
-      "importFile": "Eigene Datei importieren",
-      "importFileHint": "Design Ihrer Datei wiederverwenden",
+      "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
@@ -6903,6 +6902,7 @@
       "preview": "{{title}} in der Vorschau anzeigen",
       "rename": "Vorlage umbenennen"
     },
+    "clearSearch": "Suche löschen",
     "custom": "Eigene",
     "detail": {
       "back": "Eigene Vorlagen",
@@ -6910,8 +6910,13 @@
       "sourceFile": "Aus {{filename}}"
     },
     "empty": {
-      "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
+      "description": "Importiere ein Dokument, eine Präsentation oder ein Bild, um das Design wiederzuverwenden.",
+      "document": "Noch keine Dokumente",
+      "illustration": "Noch keine Bilder",
+      "presentation": "Noch keine Präsentationen",
+      "title": "Mach es zu deiner Vorlage"
     },
+    "importHint": "Importiere ein Dokument, eine Präsentation oder ein Bild.",
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",

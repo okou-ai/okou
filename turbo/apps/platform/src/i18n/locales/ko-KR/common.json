@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
-      "importFile": "내 파일 가져오기",
-      "importFileHint": "파일의 디자인을 재사용",
+      "importFile": "템플릿 가져오기",
       "multiAccent": "다중 악센트",
       "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
@@ -6884,6 +6883,7 @@
       "preview": "{{title}} 미리보기",
       "rename": "템플릿 이름 바꾸기"
     },
+    "clearSearch": "검색 지우기",
     "custom": "커스텀",
     "detail": {
       "back": "커스텀 템플릿",
@@ -6891,8 +6891,13 @@
       "sourceFile": "{{filename}}에서"
     },
     "empty": {
-      "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
+      "description": "문서, 프레젠테이션 또는 이미지를 가져와 디자인을 재사용하세요.",
+      "document": "아직 문서가 없어요",
+      "illustration": "아직 이미지가 없어요",
+      "presentation": "아직 프레젠테이션이 없어요",
+      "title": "나만의 템플릿 만들기"
     },
+    "importHint": "문서, 프레젠테이션 또는 이미지를 가져오세요.",
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "retry": "다시 시도",

@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
-      "importFile": "Importa tu propio archivo",
-      "importFileHint": "Reutiliza el diseño de tu archivo",
+      "importFile": "Importar plantilla",
       "multiAccent": "Multiacentos",
       "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
@@ -6971,6 +6970,7 @@
       "preview": "Vista previa de {{title}}",
       "rename": "Cambiar nombre de la plantilla"
     },
+    "clearSearch": "Borrar búsqueda",
     "custom": "Personalizadas",
     "detail": {
       "back": "Plantillas personalizadas",
@@ -6978,8 +6978,13 @@
       "sourceFile": "De {{filename}}"
     },
     "empty": {
-      "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."
+      "description": "Importa un documento, una presentación o una imagen para reutilizar su diseño.",
+      "document": "Aún no hay documentos",
+      "illustration": "Aún no hay imágenes",
+      "presentation": "Aún no hay presentaciones",
+      "title": "Hazlo tuyo"
     },
+    "importHint": "Importa un documento, una presentación o una imagen.",
     "loadFailed": "No se pudieron cargar las plantillas.",
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
