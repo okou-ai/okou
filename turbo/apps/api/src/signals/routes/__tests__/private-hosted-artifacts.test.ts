@@ -36,9 +36,9 @@ async function fixture(enabled = true) {
     files: [
       hostedTextFile(
         "/index.html",
-        '<link rel="stylesheet" href="/assets/site.css"><main>Private report</main>',
+        '<link rel="stylesheet" href="/assets/site-1a9b3c57.css"><main>Private report</main>',
       ),
-      hostedTextFile("/assets/site.css", "main { color: green }"),
+      hostedTextFile("/assets/site-1a9b3c57.css", "main { color: green }"),
     ],
   };
   return { actor, capture, body };

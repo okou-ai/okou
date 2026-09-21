@@ -934,15 +934,15 @@ test("copies a complete fixed site and rewrites its managed private dependencies
   const site = await f.site([
     {
       path: "/index.html",
-      content: `<h1>Version one</h1><a href="${asset.url}">Download</a><link href="assets/style.css" rel="stylesheet">`,
+      content: `<h1>Version one</h1><a href="${asset.url}">Download</a><link href="assets/style-5e0c7a94.css" rel="stylesheet">`,
     },
     {
-      path: "/assets/style.css",
+      path: "/assets/style-5e0c7a94.css",
       content: "body{color:red}",
       contentType: "text/css",
     },
     {
-      path: "/assets/app.js",
+      path: "/assets/app-4f3a9c12.js",
       content: `const asset = "${signedAsset}";`,
       contentType: "application/javascript",
     },
@@ -960,10 +960,10 @@ test("copies a complete fixed site and rewrites its managed private dependencies
   expect(f.objects.get(`${prefix}/index.html`)?.toString()).toMatch(
     /https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf/u,
   );
-  expect(f.objects.get(`${prefix}/assets/style.css`)?.toString()).toBe(
+  expect(f.objects.get(`${prefix}/assets/style-5e0c7a94.css`)?.toString()).toBe(
     "body{color:red}",
   );
-  expect(f.objects.get(`${prefix}/assets/app.js`)?.toString()).toMatch(
+  expect(f.objects.get(`${prefix}/assets/app-4f3a9c12.js`)?.toString()).toMatch(
     /^const asset = "https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf";$/u,
   );
   expect(
@@ -993,7 +993,7 @@ test("downloads and clones a complete conversation site snapshot independently o
     },
     { path: "/pages/report.html", content: "<h1>Shared version one</h1>" },
     {
-      path: "/assets/style.css",
+      path: "/assets/style-5e0c7a94.css",
       content: "body{color:green}",
       contentType: "text/css",
     },
@@ -1054,7 +1054,7 @@ test("downloads and clones a complete conversation site snapshot independently o
         return file.path;
       })
       .sort(),
-  ).toStrictEqual(["/assets/style.css", "/index.html", "/pages/report.html"]);
+  ).toStrictEqual(["/assets/style-5e0c7a94.css", "/index.html", "/pages/report.html"]);
   const prefix = `test-hosted-sites/shared-artifacts/okou/${created.body.id}/${site.deploymentId}`;
   for (const file of first.body.files) {
     const key = decodeURIComponent(new URL(file.downloadUrl).pathname.slice(1));
@@ -1115,9 +1115,11 @@ test("downloads and clones a complete conversation site snapshot independently o
     const retainedDownload = await accept(download(), [200]);
     expect(retainedDownload.body).toStrictEqual(downloaded.body);
   }
-  expect(second.deploymentVersion).toBe(1);
-  expect(second.siteId).not.toBe(site.siteId);
-  expect(second.publicSlug).not.toBe(site.publicSlug);
+  // Redeploying the original name moves the live site forward; the shared
+  // conversation snapshot keeps its own copied bytes.
+  expect(second.deploymentVersion).toBe(2);
+  expect(second.siteId).toBe(site.siteId);
+  expect(second.publicSlug).toBe(site.publicSlug);
   const wrongVersion = await accept(clone(2), [404]);
   expect(wrongVersion.body).not.toHaveProperty("files");
 
@@ -1174,8 +1176,8 @@ test.each([
     downloadedText: null,
   },
   {
-    path: "/reports/results.csv",
-    filename: "results.csv",
+    path: "/reports/results-9a4d1e72.csv",
+    filename: "results-9a4d1e72.csv",
     contentType: "text/csv",
     extension: ".csv",
     downloadKind: "file",
@@ -1204,7 +1206,7 @@ test.each([
       { path: "/index.html", content: "<h1>Home</h1>" },
       { path: "/reports/overview.html", content: "<h1>Overview</h1>" },
       {
-        path: "/reports/results.csv",
+        path: "/reports/results-9a4d1e72.csv",
         content: "name,value\nresult,42",
         contentType: "text/csv",
       },
@@ -1275,7 +1277,7 @@ test.each([
       ).toStrictEqual([
         "/index.html",
         "/reports/overview.html",
-        "/reports/results.csv",
+        "/reports/results-9a4d1e72.csv",
         "/reports/source.html",
       ]);
       const cloned = await accept(
@@ -1718,7 +1720,7 @@ test.each([false, true])(
           content: '<h1>Report</h1><a href="https://example.com">External</a>',
         },
         {
-          path: "/style.css",
+          path: "/style-7f21b8e3.css",
           content: "body { color: red }",
           contentType: "text/css",
         },
@@ -1906,7 +1908,7 @@ test("starts queued copies while an earlier copy is still pending", async () => 
     { path: "/index.html", content: "<h1>Large bundle</h1>" },
     ...Array.from({ length: 11 }, (_, index) => {
       return {
-        path: `/asset-${index}.bin`,
+        path: `/asset-0000000${index}.bin`,
         content: `Asset ${index}`,
         contentType: "application/octet-stream",
       };
@@ -2115,7 +2117,7 @@ test("bounds dependency indexing by actual bytes when historical upload sizes ar
       { path: "/index.html", content: "Original upload" },
       ...Array.from({ length: 9 }, (_, index) => {
         return {
-          path: `/chunk-${index}.js`,
+          path: `/chunk-0000000${index}.js`,
           content: "x",
           contentType: "text/javascript",
         };
@@ -2127,7 +2129,7 @@ test("bounds dependency indexing by actual bytes when historical upload sizes ar
   const chunk = Buffer.from("x".repeat(4 * 1024 * 1024));
   for (let index = 0; index < 9; index += 1) {
     f.objects.set(
-      `test-hosted-sites/private-sites/okou/${site.deploymentId}/chunk-${index}.js`,
+      `test-hosted-sites/private-sites/okou/${site.deploymentId}/chunk-0000000${index}.js`,
       chunk,
     );
   }

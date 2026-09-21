@@ -14,6 +14,7 @@ import {
   type ArtifactVisibility,
 } from "../shared/artifact-visibility";
 import { cloneHostedSiteCommand } from "./clone";
+import { versionsHostedSiteCommand } from "./versions";
 
 interface HostOptions {
   readonly site?: string;
@@ -36,7 +37,7 @@ function formatBytes(bytes: number): string {
 
 export const hostCommand = new Command()
   .name("host")
-  .description("Publish and clone static hosted sites")
+  .description("Publish, redeploy, inspect, and clone static hosted sites")
   .argument("<dir>", "Static build directory, for example ./dist")
   .option(
     "--site <slug>",
@@ -52,12 +53,14 @@ export const hostCommand = new Command()
   .option("--json", "Output the result and Markdown return forms as JSON")
   .addOption(createArtifactVisibilityOption())
   .addCommand(cloneHostedSiteCommand)
+  .addCommand(versionsHostedSiteCommand)
   .addHelpText(
     "after",
     `
 Examples:
   Publish a Vite build:  okou host ./dist --site my-product-demo --spa
-  Publish another copy:  okou host ./dist --site my-product-demo --spa
+  Redeploy the same URL: okou host ./dist --site my-product-demo --spa
+  List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Machine readable:     okou host ./dist --site my-product-demo --spa --json
   Share publicly:       okou host ./dist --site my-product-demo --visibility public
@@ -69,10 +72,12 @@ Notes:
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - With private artifacts enabled, the result is an authenticated preview URL
-  - Every publication creates a new site; reusing --site automatically adds a suffix when the name is taken
-  - Return the new URL after each publication; previous URLs keep their original content and cannot be redeployed
-  - Use the returned Site slug or artifact URL with host clone to download that publication
-  - With privateArtifacts enabled, new sites default to only-me; --visibility org or public explicitly shares the new site
+  - Reusing --site redeploys that site when you own it: the hosted URL and artifact address stay the same and serve the new version
+  - A name owned by another chat or another user is rejected; choose a different --site value
+  - HTML files may change on every redeploy; every other file must carry a content hash in its name, such as /assets/app-4f3a9c12.js
+  - A published non-HTML path keeps its bytes forever. Rename a changed asset with its new content hash instead of republishing the same name
+  - Use the returned Site slug with versions or clone to inspect a publication
+  - With privateArtifacts enabled, new sites default to only-me; --visibility org or public explicitly shares the new publication
   - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
   - The directory must include index.html
   - Local HTML/CSS asset references must point at files inside the directory`,
@@ -122,11 +127,19 @@ Notes:
 
       console.log(chalk.green("✓ Hosted site deployed"));
       console.log(chalk.dim(`  Site: ${result.publicSlug}`));
+      if (result.deploymentVersion !== undefined) {
+        console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
+      }
       if (result.artifactUrl) {
         console.log(`  Artifact: ${result.artifactUrl}`);
       }
       if (result.aliasUrl) {
-        console.log(`  Alias: ${result.aliasUrl}`);
+        const target =
+          result.isActive === false &&
+          result.activeDeploymentVersion !== undefined
+            ? `remains on v${result.activeDeploymentVersion}`
+            : `v${result.deploymentVersion ?? "?"}`;
+        console.log(`  Alias: ${result.aliasUrl} → ${target}`);
       }
       console.log(chalk.dim(`  Deployment: ${result.deploymentId}`));
       console.log(chalk.dim(`  Files: ${result.fileCount.toLocaleString()}`));

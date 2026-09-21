@@ -120,9 +120,9 @@ async function rejectDownload(actor: ApiTestUser, url: string) {
 const siteFiles = Object.freeze([
   hostedTextFile("/index.html", '<a href="pages/report.html">Report</a>'),
   hostedTextFile("/pages/report.html", "<main>Report details</main>"),
-  hostedTextFile("/assets/site.css", "main { color: green }", "text/css"),
-  hostedTextFile("/assets/site.js", "console.log('report')", "text/javascript"),
-  hostedTextFile("/assets/chart.svg", "<svg></svg>", "image/svg+xml"),
+  hostedTextFile("/assets/site-1a9b3c57.css", "main { color: green }", "text/css"),
+  hostedTextFile("/assets/site-6d2e8f31.js", "console.log('report')", "text/javascript"),
+  hostedTextFile("/assets/chart-2b7e10d4.svg", "<svg></svg>", "image/svg+xml"),
 ]);
 
 async function fixture(privateArtifacts = true) {

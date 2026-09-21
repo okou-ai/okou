@@ -271,8 +271,11 @@ test("revoking the parent denies network requests with warm Worker caches, inclu
     for (const method of ["GET", "GET", "HEAD"]) {
       const response = await fetchWorker(new Request(url, { method }), f.env);
       expect(response.status).toBe(200);
+      // HTML documents are always fetched; their assets stay cacheable.
       expect(response.headers.get("cache-control")).toBe(
-        "private, max-age=31536000, immutable",
+        url === f.siteUrl
+          ? "private, no-store"
+          : "private, max-age=31536000, immutable",
       );
     }
   }

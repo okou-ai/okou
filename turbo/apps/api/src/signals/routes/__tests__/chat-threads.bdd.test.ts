@@ -4079,7 +4079,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         "https://r2.example.com/hosted-upload?sig=test",
       );
       const index =
-        '<!doctype html><link rel="stylesheet" href="/assets/style.css"><h1>Private report</h1>';
+        '<!doctype html><link rel="stylesheet" href="/assets/style-5e0c7a94.css"><h1>Private report</h1>';
       const css = "h1 { color: green }";
       const bearer = okouCapabilityHeaders(actor, run.runId, [
         "host:write",
@@ -4090,12 +4090,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         spaFallback: false,
         files: [
           hostedTextFile("/index.html", index),
-          hostedTextFile("/assets/style.css", css),
+          hostedTextFile("/assets/style-5e0c7a94.css", css),
         ],
       });
       for (const [path, body] of [
         ["/index.html", index],
-        ["/assets/style.css", css],
+        ["/assets/style-5e0c7a94.css", css],
       ] as const) {
         objectStore.addObject({
           bucket: "test-hosted-sites",
@@ -4152,9 +4152,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
             return entry.entryName;
           })
           .sort(),
-      ).toStrictEqual(["assets/style.css", "index.html"]);
+      ).toStrictEqual(["assets/style-5e0c7a94.css", "index.html"]);
       expect(zip.readAsText("index.html")).toBe(index);
-      expect(zip.readAsText("assets/style.css")).toBe(css);
+      expect(zip.readAsText("assets/style-5e0c7a94.css")).toBe(css);
       expect(
         objectStore.puts.filter((put) => {
           return put.key.startsWith("artifacts/");
@@ -4179,7 +4179,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "https://r2.example.com/hosted-upload?sig=test",
     );
     const index =
-      '<!doctype html><link rel="stylesheet" href="/assets/deck.css"><h1>Deck</h1>';
+      '<!doctype html><link rel="stylesheet" href="/assets/deck-8c4a2f60.css"><h1>Deck</h1>';
     const css = "h1 { color: teal }";
     const bearer = okouCapabilityHeaders(actor, run.runId, [
       "host:write",
@@ -4190,12 +4190,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       spaFallback: false,
       files: [
         hostedTextFile("/index.html", index),
-        hostedTextFile("/assets/deck.css", css),
+        hostedTextFile("/assets/deck-8c4a2f60.css", css),
       ],
     });
     for (const [path, body] of [
       ["/index.html", index],
-      ["/assets/deck.css", css],
+      ["/assets/deck-8c4a2f60.css", css],
     ] as const) {
       objectStore.addObject({
         bucket: "test-hosted-sites",
@@ -4258,9 +4258,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           return entry.entryName;
         })
         .sort(),
-    ).toStrictEqual(["assets/deck.css", "index.html"]);
+    ).toStrictEqual(["assets/deck-8c4a2f60.css", "index.html"]);
     expect(zip.readAsText("index.html")).toBe(index);
-    expect(zip.readAsText("assets/deck.css")).toBe(css);
+    expect(zip.readAsText("assets/deck-8c4a2f60.css")).toBe(css);
   });
 
   it("exports a self-contained hosted page to Google Drive as that page", async () => {

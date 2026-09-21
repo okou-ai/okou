@@ -163,7 +163,11 @@ function createDeployment(db: ApiDb, args: ReturnType<typeof deploymentArgs>) {
   return createHostedSiteDeployment(db, args, {
     now: nowDate(),
     deploymentId: randomUUID(),
-    privateReference: args.privateArtifacts ? "scope12345" : null,
+    privateReference: args.privateArtifacts
+      ? () => {
+          return Promise.resolve("scope12345");
+        }
+      : null,
   });
 }
 
@@ -474,7 +478,7 @@ describe.each([true, false])(
       ).rejects.toThrow("Hosted site not found for deployment");
     });
 
-    it("creates independent publications within and across chat and organization scopes", async () => {
+    it("redeploys one site per scope within and across chat and organization scopes", async () => {
       const owner = randomUUID();
       const firstRun = await seedRun(harness.db, owner);
       const sameChatRun = await seedRun(harness.db, owner);
@@ -489,33 +493,24 @@ describe.each([true, false])(
         ...args,
         runId: otherRun,
       });
-      expect(new Set([first.site.id, second.site.id, other.site.id]).size).toBe(
-        3,
-      );
-      expect(
-        new Set([
-          first.site.publicSlug,
-          second.site.publicSlug,
-          other.site.publicSlug,
-        ]).size,
-      ).toBe(3);
+      // The same preferred name in one chat redeploys its site; another chat
+      // owns a separate site under a suffixed name.
+      expect(second.site.id).toBe(first.site.id);
+      expect(second.deployment.manifest.deploymentVersion).toBe(2);
+      expect(other.site.id).not.toBe(first.site.id);
+      expect(other.site.publicSlug).not.toBe(first.site.publicSlug);
       expect(second.site.chatThreadId).toBe(owner);
       const unscoped = deploymentArgs();
       const organizationSite = await requireDeployment(harness.db, unscoped);
-      const chatSite = await requireDeployment(harness.db, {
-        ...unscoped,
-        runId: firstRun,
-      });
-      expect(chatSite.site.id).not.toBe(organizationSite.site.id);
-      expect(chatSite.site.publicSlug).not.toBe(
-        organizationSite.site.publicSlug,
-      );
-      expect(chatSite.site.chatThreadId).toBe(owner);
       expect(organizationSite.site.chatThreadId).toBeNull();
+      // A chat cannot take over a name the organization already owns.
+      await expect(
+        createDeployment(harness.db, { ...unscoped, runId: firstRun }),
+      ).resolves.toMatchObject({ kind: "scope_conflict" });
     });
 
     it.each([false, true])(
-      "allocates independent sites for concurrent publications and other owners (private=%s)",
+      "serializes concurrent redeploys of one site and gates other owners (private=%s)",
       async (privateArtifacts) => {
         const runId = await seedRun(harness.db, randomUUID());
         const args = { ...deploymentArgs(runId), privateArtifacts };
@@ -530,25 +525,28 @@ describe.each([true, false])(
               return result.site.id;
             }),
           ).size,
-        ).toBe(3);
+        ).toBe(1);
+        // Each concurrent publication still owns a distinct version.
         expect(
           new Set(
             created.map((result) => {
-              return result.site.publicSlug;
+              return result.deployment.manifest.deploymentVersion;
             }),
-          ).size,
-        ).toBe(3);
-        const otherUser = await requireDeployment(harness.db, {
-          ...args,
-          userId: `user_${randomUUID()}`,
-        });
-        expect(
-          created.map((result) => {
-            return result.site.id;
-          }),
-        ).not.toContain(otherUser.site.id);
-        expect(otherUser.site.userId).not.toBe(args.userId);
-        expect(otherUser.deployment.userId).toBe(otherUser.site.userId);
+          ),
+        ).toStrictEqual(new Set([1, 2, 3]));
+        const otherUser = { ...args, userId: `user_${randomUUID()}` };
+        if (privateArtifacts) {
+          await expect(
+            createDeployment(harness.db, otherUser),
+          ).resolves.toMatchObject({ kind: "owner_conflict" });
+          return;
+        }
+        // Without private ownership the chat's site accepts the redeploy, and
+        // the publication records the user who produced its bytes.
+        const redeployed = await requireDeployment(harness.db, otherUser);
+        expect(redeployed.site.id).toBe(created[0]?.site.id);
+        expect(redeployed.site.userId).toBe(args.userId);
+        expect(redeployed.deployment.userId).toBe(otherUser.userId);
       },
     );
 
@@ -571,7 +569,7 @@ describe.each([true, false])(
             ...args.body,
             files: [
               ...args.body.files,
-              { ...args.body.files[0]!, path: "/style.css" },
+              { ...args.body.files[0]!, path: "/style-7f21b8e3.css" },
             ],
           },
         };
@@ -697,12 +695,13 @@ describe.each([true, false])(
       },
     );
 
-    it("creates a separate site while an outgoing allocator holds the previous site's lock", async () => {
+    it("waits for an outgoing allocator before redeploying the same site", async () => {
       const runId = await seedRun(harness.db, randomUUID());
       const args = deploymentArgs(runId);
       const first = await requireDeployment(harness.db, args);
       const ready = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
+      const pidReady = createDeferredPromise<number>(context.signal);
       const outgoing = harness.db.transaction(async (tx) => {
         await tx
           .select({ id: hostedSites.id })
@@ -713,14 +712,29 @@ describe.each([true, false])(
         await release.promise;
       });
       await Promise.race([ready.promise, outgoing]);
-      const created = await settle(requireDeployment(harness.db, args));
+      const contender = harness.db.transaction(async (tx) => {
+        pidReady.resolve(await backendPid(tx));
+        return await createDeployment(tx, args);
+      });
+      const completed = settle(contender);
+      const verified = await settle(
+        pidReady.promise.then(async (pid) => {
+          await expectBlocked(harness.db, pid);
+        }),
+      );
       release.resolve();
       await outgoing;
+      const created = await completed;
+      if (!verified.ok) {
+        throw verified.error;
+      }
       if (!created.ok) {
         throw created.error;
       }
-      expect(created.value.site.id).not.toBe(first.site.id);
-      expect(created.value.site.publicSlug).not.toBe(first.site.publicSlug);
+      expect(created.value).toMatchObject({
+        kind: "ok",
+        site: { id: first.site.id, publicSlug: first.site.publicSlug },
+      });
     });
 
     it("allocates a suffix while keeping a deleted site's slug reserved", async () => {
@@ -738,7 +752,7 @@ describe.each([true, false])(
       );
     });
 
-    it("respects historical requested names even when their public slug differs", async () => {
+    it("redeploys a historical requested name even when its public slug differs", async () => {
       const args = deploymentArgs();
       const legacy = await requireDeployment(harness.db, args);
       const legacySlug = `${args.body.site}-legacy`;
@@ -747,9 +761,10 @@ describe.each([true, false])(
         .set({ slug: legacySlug, publicSlug: legacySlug })
         .where(eq(hostedSites.id, legacy.site.id));
       const replacement = await requireDeployment(harness.db, args);
-      expect(replacement.site.publicSlug).not.toBe(args.body.site);
-      expect(replacement.site.id).not.toBe(legacy.site.id);
-      expect(replacement.site.requestedSlug).toBe(replacement.site.publicSlug);
+      expect(replacement.site.id).toBe(legacy.site.id);
+      expect(replacement.site.publicSlug).toBe(legacySlug);
+      expect(replacement.site.requestedSlug).toBe(args.body.site);
+      expect(replacement.deployment.manifest.deploymentVersion).toBe(2);
     });
   },
 );

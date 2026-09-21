@@ -848,7 +848,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
       files: [
         hostedTextFile("/index.html", "<main>BDD hosted site</main>"),
         hostedTextFile(
-          "/assets/app.js",
+          "/assets/app-4f3a9c12.js",
           "console.log('bdd');",
           "application/javascript",
         ),

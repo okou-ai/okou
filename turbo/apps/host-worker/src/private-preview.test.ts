@@ -103,8 +103,11 @@ describe("private HTML preview gateway", () => {
       const response = await fetchWorker(new Request(`${origin}${path}`), env);
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe(contentType);
+      // Documents follow their site's newest publication; assets never change.
       expect(response.headers.get("Cache-Control")).toBe(
-        "private, max-age=31536000, must-revalidate",
+        contentType === "text/html"
+          ? "private, no-store"
+          : "private, max-age=31536000, must-revalidate",
       );
       expect(response.headers.get("Referrer-Policy")).toBe("same-origin");
       expect(response.headers.get("Content-Security-Policy")).toContain(
@@ -133,9 +136,7 @@ describe("private HTML preview gateway", () => {
       env,
     );
     expect(head.status).toBe(200);
-    expect(head.headers.get("Cache-Control")).toBe(
-      "private, max-age=31536000, must-revalidate",
-    );
+    expect(head.headers.get("Cache-Control")).toBe("private, no-store");
     expect(await head.text()).toBe("");
   });
 
@@ -171,10 +172,16 @@ describe("private HTML preview gateway", () => {
     expect(response.headers.get("Content-Type")).toBe("text/html");
     expect(response.headers.has("Content-Encoding")).toBe(false);
     expect(response.headers.has("Content-Disposition")).toBe(false);
-    expect(response.headers.get("Cache-Control")).toBe(
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(await response.text()).toBe(files["/index.html"][0]);
+    const asset = await fetchWorker(
+      new Request(`${origin}/assets/site.css`),
+      env,
+    );
+    expect(asset.headers.has("Content-Encoding")).toBe(false);
+    expect(asset.headers.get("Cache-Control")).toBe(
       "private, max-age=31536000, must-revalidate",
     );
-    expect(await response.text()).toBe(files["/index.html"][0]);
   });
 
   it("does not cache a missing object from an immutable manifest", async () => {

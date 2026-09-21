@@ -24,7 +24,7 @@ const surfaces = [
     preparePath: "/api/uploads/prepare",
     completePath: "/api/uploads/complete",
     args: (dir: string) => {
-      return ["-f", join(dir, "report.txt")];
+      return ["-f", join(dir, "report-b7f3c91a.txt")];
     },
   },
   {
@@ -52,7 +52,7 @@ describe.each(surfaces)("$label visibility", (surface) => {
     vi.stubEnv("OKOU_API_BACKEND_URL", API);
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     dir = mkdtempSync(join(tmpdir(), "cli-visibility-"));
-    writeFileSync(join(dir, "report.txt"), "Private report");
+    writeFileSync(join(dir, "report-b7f3c91a.txt"), "Private report");
     writeFileSync(join(dir, "index.html"), "<h1>Private report</h1>");
     surface.command.setOptionValue("visibility", undefined);
     surface.command.setOptionValue("json", false);
@@ -108,7 +108,7 @@ describe.each(surfaces)("$label visibility", (surface) => {
                   ...deployment,
                   uploads: [
                     { path: "/index.html", uploadUrl: PUT_URL },
-                    { path: "/report.txt", uploadUrl: PUT_URL },
+                    { path: "/report-b7f3c91a.txt", uploadUrl: PUT_URL },
                     { path: "/robots.txt", uploadUrl: PUT_URL },
                   ],
                 },

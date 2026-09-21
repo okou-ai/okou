@@ -307,32 +307,56 @@ switching it to Only me; recipients lose access.
 
 #### Hosted-site publication identity
 
-Every hosted-site prepare creates an independent site. `--site` is a preferred
-name: the allocator tries that name first, then adds a four-character hash when
-it is reserved, including by a deleted site. Each publication's deployment ID
-seeds its suffix candidates, so repeated publications do not exhaust one fixed
-set of names. Atomic inserts and the existing unique indexes arbitrate concurrent
-requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
+`--site` names a site, and a site accepts repeated publications. A prepare first
+looks for a live site in the caller's organization, chat scope and publication
+brand whose `requestedSlug` matches, and redeploys it. Private publications also
+require the original owner; another owner receives an actionable `409 CONFLICT`
+instead of taking the name. A name owned at organization scope stays unavailable
+to a chat, as before.
 
-New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
-while the manifest retains the caller's preferred name. This preserves the
-existing database constraints and keeps each publication addressable by older
-readers. The catalog displays the allocated name; `host clone` uses the returned
-site slug or immutable URL to inspect that publication. Historical rows and their
-requested-name reservations stay intact. No database migration or historical data
-rewrite runs here.
+Without a match the allocator creates a site: the first candidate keeps the
+preferred name in `slug`, `publicSlug` and `requestedSlug`, and later candidates
+add a four-character hash and own that resolved name. A conflicting insert is
+re-read by requested name and then by resolved name, so the retry adopts the
+site this scope already owns instead of creating another one. A name reserved by
+a deleted site therefore resolves to one stable suffixed site rather than a new
+site per publication. Atomic inserts and the existing unique indexes arbitrate
+concurrent requests; an exhausted bounded retry returns an actionable
+`409 CONFLICT`. No database migration or historical data rewrite runs here.
 
-Completion retries for the same deployment remain idempotent. Previous URLs,
-content, historical version listings and share policies remain unchanged when
-another publication uses the same preferred name, including across chat scopes.
-Existing authorization checks still govern reads and completion; name allocation
-never adopts an existing site.
+Each publication is still immutable. It owns its deployment ID, its
+`dpl-<deployment-id>` URL, its storage prefix and its share policy, and it
+allocates the site's next `manifest.deploymentVersion` under the locked site
+row — the version columns retired by #35240 are not reintroduced. The site alias
+and the catalog follow the newest ready publication, so uploads that complete out
+of order never replace newer content. Completion retries for the same deployment
+remain idempotent, and existing authorization checks still govern reads and
+completion.
+
+Private publications share one hostless `/artifacts/<reference>` address per
+site, seeded by the site ID rather than a deployment ID. Prepare only creates
+that record, so a publication that never finishes uploading leaves the address on
+the last ready publication; completion rebinds it to the newest ready publication
+of the site. The reference record gains an optional `siteId`, which existing
+version-2 readers ignore; records written before this change stay immutable, so a
+site published by an older API moves to its site-owned address on its first
+redeploy.
+
+Delivery caches accordingly. HTML documents are served `no-store` on public
+aliases, private previews and shared snapshots, because a redeploy replaces them
+under one address. Every other path keeps its existing policy, so prepare rejects
+a non-HTML file whose name carries no content hash, and rejects a path that an
+earlier publication of the same site published with different bytes. Both
+rejections return the rename instructions in their message. Protocol-fixed root
+paths such as `/robots.txt`, `/favicon.ico` and `/.well-known/*` are exempt from
+the name rule. Historical publications are not revalidated; the rules apply to
+new prepares.
 
 Older pinned CLIs can consume the allocated `publicSlug` and URL through the
 unchanged response shape. The CLI retains the legacy `--slug-suffix` request field
-for older API servers; the new API assigns suffixes automatically. Older API
-instances must leave serving and supported rollback targets before no-redeploy
-behavior is universal. Issue
+for older API servers; the new API assigns suffixes automatically. An older API
+serving beside this one publishes new sites for a reused name instead of
+redeploying, which produces extra sites but never replaces existing bytes. Issue
 [#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
 site-version model after preserving existing links and metadata.
 

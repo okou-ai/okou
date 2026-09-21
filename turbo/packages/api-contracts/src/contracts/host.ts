@@ -54,6 +54,69 @@ export const hostedSiteFileSchema = z.object({
   immutable: z.boolean().optional(),
 });
 
+/**
+ * HTML documents are a publication's mutable entry points: a redeploy replaces
+ * them in place under the same address, so delivery never caches them and their
+ * bytes may differ between publications of one site.
+ */
+export function isHostedSiteDocument(file: {
+  readonly path: string;
+  readonly contentType: string;
+}): boolean {
+  return (
+    /\.html?$/iu.test(file.path) ||
+    file.contentType.toLowerCase().startsWith("text/html")
+  );
+}
+
+/**
+ * Protocol-fixed URLs cannot carry a content hash. They keep the ordinary
+ * revalidating cache policy instead of the immutable one.
+ */
+const HOSTED_SITE_FIXED_PATHS: ReadonlySet<string> = new Set([
+  "/robots.txt",
+  "/favicon.ico",
+  "/sitemap.xml",
+  "/site.webmanifest",
+  "/manifest.webmanifest",
+]);
+
+function hasFixedHostedSitePath(path: string): boolean {
+  return (
+    HOSTED_SITE_FIXED_PATHS.has(path.toLowerCase()) ||
+    path.toLowerCase().startsWith("/.well-known/")
+  );
+}
+
+/** `app-4f3a9c12.js` and `app.4f3a9c12.css` both name their own content. */
+function hasContentHashedName(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u.test(name);
+}
+
+/**
+ * Every cacheable asset must name its own content, so one published path always
+ * means one byte string across every publication of a site.
+ */
+export function hostedSiteAssetNameError(file: {
+  readonly path: string;
+  readonly contentType: string;
+}): string | null {
+  if (
+    isHostedSiteDocument(file) ||
+    hasFixedHostedSitePath(file.path) ||
+    hasContentHashedName(file.path)
+  ) {
+    return null;
+  }
+  return `Hosted-site asset must carry a content hash in its file name: ${file.path}. Rename non-HTML files as <name>-<contenthash>.<ext>, for example /assets/app-4f3a9c12.js, and update every HTML/CSS reference to the new name.`;
+}
+
+/** A path that already exists in this site must keep serving the same bytes. */
+export function hostedSiteAssetContentError(path: string): string {
+  return `Hosted-site asset changed without a new file name: ${path}. A published path keeps its original bytes forever. Rename the changed file with its new content hash, update every reference to it, and publish again.`;
+}
+
 export const hostedSiteDownloadFileSchema = hostedSiteFileSchema.extend({
   downloadUrl: z.string().url(),
 });

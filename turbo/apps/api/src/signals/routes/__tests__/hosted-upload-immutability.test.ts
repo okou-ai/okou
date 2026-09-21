@@ -28,7 +28,7 @@ test.each([true, false])(
     const files = [
       hostedTextFile("/index.html", "<main>Immutable report</main>"),
       hostedTextFile(
-        "/assets/manifest.json",
+        "/assets/manifest-3f8c2d91.json",
         '{"name":"Report"}',
         "application/json",
       ),
@@ -72,7 +72,7 @@ test.each([true, false])(
       downloaded.files.map((file) => {
         return file.path;
       }),
-    ).toContain("/assets/manifest.json");
+    ).toContain("/assets/manifest-3f8c2d91.json");
   },
 );
 
