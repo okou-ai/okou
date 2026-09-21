@@ -221,7 +221,7 @@ async function fixture(
   // into an admitted one.
   const { concurrencyLimit } = await runs.readBillingStatus(actor);
   /** Fill the plan's remaining concurrency after `started` admitted runs. */
-  const saturate = async (started: number) => {
+  const saturate = async (started = 0) => {
     const fillers: string[] = [];
     while (started + fillers.length < concurrencyLimit) {
       fillers.push(await start());
@@ -2219,7 +2219,9 @@ describe("historical writer consumer fences", () => {
       const occupied: string[] = [];
       let sessionId: string | undefined;
       if (mode === "queued") {
-        occupied.push(...(await f.saturate(1)));
+        // The first run already completed above, so it holds no slot: the
+        // occupying runs have to cover the whole plan concurrency.
+        occupied.push(...(await f.saturate()));
       } else if (mode === "session") {
         sessionId = firstSessionId;
       }
