@@ -1,6 +1,60 @@
 import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import { schema } from "@okouai/db";
+import * as agentRunCallbackSchema from "@okouai/db/schema/agent-run-callback";
+import * as agentVncAccessSchema from "@okouai/db/schema/agent-vnc-access";
+import * as agentphoneConnectionCodeSchema from "@okouai/db/schema/agentphone-connection-code";
+import * as archivedTaskRunsSchema from "@okouai/db/schema/archived-task-runs";
+import * as creditExpiresRecordSchema from "@okouai/db/schema/credit-expires-record";
+import * as emailOutboxSchema from "@okouai/db/schema/email-outbox";
+import * as imageArtifactEditSnapshotSchema from "@okouai/db/schema/image-artifact-edit-snapshot";
+import * as morningBriefCollectionOccurrenceSchema from "@okouai/db/schema/morning-brief-collection-occurrence";
+import * as morningBriefDeliverySchema from "@okouai/db/schema/morning-brief-delivery";
+import * as morningBriefEnrollmentSchema from "@okouai/db/schema/morning-brief-enrollment";
+import * as morningBriefGenerationSchema from "@okouai/db/schema/morning-brief-generation";
+import * as morningBriefInstalledPreferenceSchema from "@okouai/db/schema/morning-brief-installed-preference";
+import * as morningBriefNativeScheduleSchema from "@okouai/db/schema/morning-brief-native-schedule";
+import * as morningBriefScheduleClaimSchema from "@okouai/db/schema/morning-brief-schedule-claim";
+import * as officialAutomationResultEmailClaimSchema from "@okouai/db/schema/official-automation-result-email-claim";
+import * as orgPromoRedemptionSchema from "@okouai/db/schema/org-promo-redemption";
+import * as piMemoryStage1ScheduleSchema from "@okouai/db/schema/pi-memory-stage1-schedule";
+import * as pushSubscriptionSchema from "@okouai/db/schema/push-subscription";
+import * as sshConnectionObservationSchema from "@okouai/db/schema/ssh-connection-observation";
+import * as userConnectorSchema from "@okouai/db/schema/user-connector";
+import * as userCustomConnectorSchema from "@okouai/db/schema/user-custom-connector";
+
+/** Schema modules the `@okouai/db` barrel does not re-export.
+ *
+ * That barrel is a hand-maintained spread, so it is not a complete view of the
+ * database: 26 tables, 18 of them account-owned, are declared with `pgTable`
+ * and never spread into it. Enumerating only the barrel would let the guard
+ * report full coverage over 90% of the schema, which is the defect it exists
+ * to prevent. The suite's migration-ledger case is what keeps this list honest:
+ * a table created outside both the barrel and this list fails there.
+ */
+const UNBARRELLED_SCHEMA_MODULES = [
+  agentRunCallbackSchema,
+  agentVncAccessSchema,
+  agentphoneConnectionCodeSchema,
+  archivedTaskRunsSchema,
+  creditExpiresRecordSchema,
+  emailOutboxSchema,
+  imageArtifactEditSnapshotSchema,
+  morningBriefCollectionOccurrenceSchema,
+  morningBriefDeliverySchema,
+  morningBriefEnrollmentSchema,
+  morningBriefGenerationSchema,
+  morningBriefInstalledPreferenceSchema,
+  morningBriefNativeScheduleSchema,
+  morningBriefScheduleClaimSchema,
+  officialAutomationResultEmailClaimSchema,
+  orgPromoRedemptionSchema,
+  piMemoryStage1ScheduleSchema,
+  pushSubscriptionSchema,
+  sshConnectionObservationSchema,
+  userConnectorSchema,
+  userCustomConnectorSchema,
+] as const;
 
 /** Columns whose value is an Okou account identity, or a link row owned by one.
  *
@@ -41,7 +95,10 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  *   not the agent or organization it hangs under, so a thread the deleted
  *   account created inside somebody else's Agent is still a root here.
  * - `user_descendant`: rows carry no account identity and are removed with the
- *   named root, by foreign-key cascade or by the root's own deletion.
+ *   named roots, by foreign-key cascade or by a root's own deletion. Several
+ *   roots can reach the same table — `email_outbox` rows arrive from a run, a
+ *   workflow automation or a Morning Brief delivery — and a collector owes a
+ *   sweep from every one of them, so the list is plural.
  * - `billing_preserved`: rows are platform billing records. Erasure keeps them
  *   and the minimum identifiers that reconcile them.
  * - `organization_owned`: rows belong to a surviving organization. Erasure
@@ -51,7 +108,10 @@ const ACCOUNT_OWNERSHIP_COLUMNS = [
  */
 export type AccountOwnershipEntry =
   | { readonly coverage: "user_root"; readonly ownership: readonly string[] }
-  | { readonly coverage: "user_descendant"; readonly parent: string }
+  | {
+      readonly coverage: "user_descendant";
+      readonly parents: readonly string[];
+    }
   | {
       readonly coverage: "billing_preserved";
       readonly ownership: readonly string[];
@@ -79,24 +139,30 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   account_erasure_work: { coverage: "not_account_scoped" },
   active_input_deliveries: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   active_input_delivery_items: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   agent_drafts: { coverage: "user_root", ownership: ["user_id"] },
+  agent_run_callbacks: { coverage: "user_descendant", parents: ["agent_runs"] },
   agent_run_connector_diagnostic_registrations: {
     coverage: "user_descendant",
-    parent: "agent_runs",
+    parents: ["agent_runs"],
   },
   agent_run_queue: { coverage: "user_root", ownership: ["user_id"] },
   agent_runs: { coverage: "user_root", ownership: ["user_id"] },
   agent_sessions: { coverage: "user_root", ownership: ["user_id"] },
   agent_ssh_access: { coverage: "user_root", ownership: ["user_id"] },
+  agent_vnc_access: { coverage: "user_root", ownership: ["user_id"] },
   agentphone_chat_thread_routes: {
     coverage: "user_root",
     ownership: ["agentphone_user_link_id"],
+  },
+  agentphone_connection_codes: {
+    coverage: "user_root",
+    ownership: ["user_id"],
   },
   agentphone_messages: {
     coverage: "user_root",
@@ -109,6 +175,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   agentphone_user_links: { coverage: "user_root", ownership: ["user_id"] },
   agentphone_verification_send_cooldowns: { coverage: "not_account_scoped" },
   agents: { coverage: "user_root", ownership: ["owner"] },
+  archived_task_runs: { coverage: "user_root", ownership: ["user_id"] },
   artifact_catalog_pending_files: {
     coverage: "user_root",
     ownership: ["author_user_id"],
@@ -141,23 +208,23 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   browser_profiles: { coverage: "user_root", ownership: ["user_id"] },
   browser_session_instances: {
     coverage: "user_descendant",
-    parent: "browser_sessions",
+    parents: ["browser_sessions"],
   },
   browser_session_resize_states: {
     coverage: "user_descendant",
-    parent: "browser_sessions",
+    parents: ["browser_sessions"],
   },
   browser_session_screenshot_deletions: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   browser_session_screenshots: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   browser_session_tab_snapshots: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   browser_sessions: { coverage: "user_root", ownership: ["user_id"] },
   browser_thread_profiles: { coverage: "user_root", ownership: ["user_id"] },
@@ -167,7 +234,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   canonical_asset_deliveries: { coverage: "not_account_scoped" },
   chat_agent_run_context: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   chat_agentphone_context: {
     coverage: "user_root",
@@ -175,21 +242,30 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   chat_automation_context: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   chat_event_search_message_watermarks: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   chat_event_search_messages: { coverage: "user_root", ownership: ["user_id"] },
   chat_event_snapshot_scan_state: { coverage: "not_account_scoped" },
-  chat_event_snapshots: { coverage: "user_descendant", parent: "chat_threads" },
-  chat_events: { coverage: "user_descendant", parent: "chat_threads" },
-  chat_feishu_context: { coverage: "user_descendant", parent: "chat_threads" },
-  chat_github_context: { coverage: "user_descendant", parent: "chat_threads" },
+  chat_event_snapshots: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
+  chat_events: { coverage: "user_descendant", parents: ["chat_threads"] },
+  chat_feishu_context: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
+  chat_github_context: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
   chat_output_materializations: {
     coverage: "user_descendant",
-    parent: "agent_runs",
+    parents: ["agent_runs"],
   },
   chat_slack_context: { coverage: "user_root", ownership: ["sender_user_id"] },
   chat_teams_context: { coverage: "user_root", ownership: ["sender_user_id"] },
@@ -199,7 +275,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   chat_thread_connector_selections: {
     coverage: "user_descendant",
-    parent: "chat_threads",
+    parents: ["chat_threads"],
   },
   chat_thread_event_sequences: {
     coverage: "user_root",
@@ -208,7 +284,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   chat_thread_events: { coverage: "user_root", ownership: ["user_id"] },
   chat_thread_snapshots: { coverage: "user_root", ownership: ["user_id"] },
   chat_threads: { coverage: "user_root", ownership: ["user_id"] },
-  checkpoints: { coverage: "user_descendant", parent: "agent_runs" },
+  checkpoints: { coverage: "user_descendant", parents: ["agent_runs"] },
   cli_tokens: { coverage: "user_root", ownership: ["user_id"] },
   cloudflare_access_configs: { coverage: "user_root", ownership: ["user_id"] },
   compose_jobs: { coverage: "user_root", ownership: ["user_id"] },
@@ -251,24 +327,29 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   connector_oauth_states: { coverage: "user_root", ownership: ["user_id"] },
   connectors: { coverage: "user_root", ownership: ["user_id"] },
-  conversations: { coverage: "user_descendant", parent: "agent_runs" },
+  conversations: { coverage: "user_descendant", parents: ["agent_runs"] },
+  credit_expires_record: { coverage: "billing_preserved", ownership: [] },
   custom_connector_account_oauth_bindings: {
     coverage: "user_descendant",
-    parent: "connectors",
+    parents: ["connectors"],
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
+  email_outbox: {
+    coverage: "user_descendant",
+    parents: ["agent_runs", "workflow_automations", "morning_brief_deliveries"],
+  },
   email_suppressions: { coverage: "not_account_scoped" },
   export_jobs: { coverage: "user_root", ownership: ["user_id"] },
   feishu_chat_ingress: {
     coverage: "user_descendant",
-    parent: "feishu_org_connections",
+    parents: ["feishu_org_connections"],
   },
   feishu_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
   feishu_org_connections: { coverage: "user_root", ownership: ["user_id"] },
   feishu_org_events: {
     coverage: "user_descendant",
-    parent: "feishu_org_connections",
+    parents: ["feishu_org_connections"],
   },
   feishu_org_installations: {
     coverage: "organization_owned",
@@ -291,16 +372,16 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   github_user_links: { coverage: "user_root", ownership: ["user_id"] },
   gmail_processed_events: {
     coverage: "user_descendant",
-    parent: "gmail_watch_states",
+    parents: ["gmail_watch_states"],
   },
   gmail_watch_states: { coverage: "user_root", ownership: ["user_id"] },
   google_calendar_event_snapshots: {
     coverage: "user_descendant",
-    parent: "google_calendar_watch_states",
+    parents: ["google_calendar_watch_states"],
   },
   google_calendar_processed_events: {
     coverage: "user_descendant",
-    parent: "google_calendar_watch_states",
+    parents: ["google_calendar_watch_states"],
   },
   google_calendar_watch_states: {
     coverage: "user_root",
@@ -308,11 +389,11 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   google_forms_automation_cursors: {
     coverage: "user_descendant",
-    parent: "google_forms_watch_states",
+    parents: ["google_forms_watch_states"],
   },
   google_forms_processed_events: {
     coverage: "user_descendant",
-    parent: "google_forms_watch_states",
+    parents: ["google_forms_watch_states"],
   },
   google_forms_watch_states: { coverage: "user_root", ownership: ["user_id"] },
   google_workspace_event_subscription_states: {
@@ -321,19 +402,23 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   google_workspace_processed_events: {
     coverage: "user_descendant",
-    parent: "google_workspace_event_subscription_states",
+    parents: ["google_workspace_event_subscription_states"],
   },
   hosted_deployments: { coverage: "user_root", ownership: ["user_id"] },
   hosted_sites: { coverage: "user_root", ownership: ["user_id"] },
+  image_artifact_edit_snapshots: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
   image_artifacts: {
     coverage: "user_descendant",
-    parent: "built_in_generation_jobs",
+    parents: ["built_in_generation_jobs"],
   },
-  mail_drafts: { coverage: "user_descendant", parent: "chat_threads" },
+  mail_drafts: { coverage: "user_descendant", parents: ["chat_threads"] },
   memory_summary_projections: { coverage: "user_root", ownership: ["user_id"] },
   model_provider_account_secrets: {
     coverage: "user_descendant",
-    parent: "model_provider_accounts",
+    parents: ["model_provider_accounts"],
   },
   model_provider_accounts: { coverage: "user_root", ownership: ["user_id"] },
   model_provider_auth_sessions: {
@@ -346,21 +431,53 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   model_provider_surfaces: { coverage: "organization_owned", association: [] },
   model_providers: { coverage: "user_root", ownership: ["user_id"] },
+  morning_brief_collection_occurrences: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
+  morning_brief_deliveries: { coverage: "user_root", ownership: ["user_id"] },
+  morning_brief_enrollments: { coverage: "user_root", ownership: ["user_id"] },
+  morning_brief_generations: { coverage: "user_root", ownership: ["user_id"] },
+  morning_brief_installed_preferences: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
+  morning_brief_native_occurrences: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
+  morning_brief_native_schedules: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
+  morning_brief_platform_generation_receipts: {
+    coverage: "user_descendant",
+    parents: ["morning_brief_generations"],
+  },
+  morning_brief_rollout: { coverage: "not_account_scoped" },
+  morning_brief_schedule_claims: {
+    coverage: "user_root",
+    ownership: ["owner_user_id"],
+  },
   notion_webhook_events: { coverage: "not_account_scoped" },
   notion_webhook_secrets: { coverage: "not_account_scoped" },
   notion_workflow_pending_events: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
+  },
+  official_automation_result_email_claims: {
+    coverage: "user_descendant",
+    parents: ["workflow_automations", "agent_runs"],
   },
   official_workflow_automation_identities: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
   },
   official_workflow_catalog_releases: { coverage: "not_account_scoped" },
   official_workflow_catalog_state: { coverage: "not_account_scoped" },
   official_workflow_definition_revisions: {
     coverage: "user_descendant",
-    parent: "storages",
+    parents: ["storages"],
   },
   official_workflow_reconciliation_work: { coverage: "not_account_scoped" },
   org_cache: { coverage: "organization_owned", association: ["created_by"] },
@@ -398,6 +515,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     association: ["created_by_user_id", "updated_by_user_id"],
   },
   org_plan_entitlements: { coverage: "organization_owned", association: [] },
+  org_promo_redemption: { coverage: "billing_preserved", ownership: [] },
   org_usage_allowance_entitlements: {
     coverage: "billing_preserved",
     ownership: [],
@@ -416,14 +534,23 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_root",
     ownership: ["user_id"],
   },
+  pi_memory_stage1_days: { coverage: "user_root", ownership: ["user_id"] },
+  pi_memory_stage1_selections: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
+  pi_memory_stage1_watermarks: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
   pi_resource_snapshots: { coverage: "not_account_scoped" },
   pi_resource_version_indexes: {
     coverage: "user_descendant",
-    parent: "storages",
+    parents: ["storages"],
   },
   pi_stable_context_artifact_resources: {
     coverage: "user_descendant",
-    parent: "storages",
+    parents: ["storages"],
   },
   pi_stable_context_artifacts: {
     coverage: "user_root",
@@ -441,37 +568,41 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   presentation_artifacts: {
     coverage: "user_descendant",
-    parent: "built_in_generation_jobs",
+    parents: ["built_in_generation_jobs"],
   },
   presentation_templates: {
     coverage: "user_root",
     ownership: ["owner_user_id", "created_by"],
   },
   private_hosted_deployments: { coverage: "user_root", ownership: ["user_id"] },
-  run_activity_snapshots: { coverage: "user_descendant", parent: "agent_runs" },
+  push_subscriptions: { coverage: "user_root", ownership: ["user_id"] },
+  run_activity_snapshots: {
+    coverage: "user_descendant",
+    parents: ["agent_runs"],
+  },
   run_built_in_admissions: {
     coverage: "user_descendant",
-    parent: "agent_runs",
+    parents: ["agent_runs"],
   },
   run_model_catalog: { coverage: "not_account_scoped" },
   run_output_legacy_pi_events: {
     coverage: "user_descendant",
-    parent: "agent_runs",
+    parents: ["agent_runs"],
   },
   run_output_memory_citations: {
     coverage: "user_descendant",
-    parent: "agent_runs",
+    parents: ["agent_runs"],
   },
   run_uploaded_files: { coverage: "user_root", ownership: ["user_id"] },
-  runner_job_queue: { coverage: "user_descendant", parent: "agent_runs" },
+  runner_job_queue: { coverage: "user_descendant", parents: ["agent_runs"] },
   runner_state: { coverage: "not_account_scoped" },
-  sandbox_telemetry: { coverage: "user_descendant", parent: "agent_runs" },
+  sandbox_telemetry: { coverage: "user_descendant", parents: ["agent_runs"] },
   secrets: { coverage: "user_root", ownership: ["user_id"] },
   shared_threads: { coverage: "user_root", ownership: ["user_id"] },
-  skills: { coverage: "user_descendant", parent: "storages" },
+  skills: { coverage: "user_descendant", parents: ["storages"] },
   slack_chat_ingress: {
     coverage: "user_descendant",
-    parent: "slack_chat_thread_routes",
+    parents: ["slack_chat_thread_routes"],
   },
   slack_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
   slack_org_connections: { coverage: "user_root", ownership: ["user_id"] },
@@ -485,18 +616,25 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   social_data_jobs: { coverage: "user_root", ownership: ["user_id"] },
   socialkit_download_jobs: { coverage: "user_root", ownership: ["user_id"] },
+  ssh_connection_observations: {
+    coverage: "user_descendant",
+    parents: ["ssh_connections"],
+  },
   ssh_connections: { coverage: "user_root", ownership: ["user_id"] },
   ssh_credentials: { coverage: "user_root", ownership: ["user_id"] },
-  storage_version_lineage: { coverage: "user_descendant", parent: "storages" },
+  storage_version_lineage: {
+    coverage: "user_descendant",
+    parents: ["storages"],
+  },
   storage_versions: { coverage: "user_root", ownership: ["created_by"] },
   storages: { coverage: "user_root", ownership: ["user_id"] },
   stripe_workflow_automation_health: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
   },
   stripe_workflow_deliveries: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
   },
   system_storage_presigned_url_cache: { coverage: "not_account_scoped" },
   teams_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
@@ -578,9 +716,14 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   user_artifact_favorites: { coverage: "user_root", ownership: ["user_id"] },
   user_behavior_count: { coverage: "user_root", ownership: ["user_id"] },
   user_cache: { coverage: "user_root", ownership: ["user_id"] },
+  user_connectors: { coverage: "user_root", ownership: ["user_id"] },
+  user_custom_connectors: { coverage: "user_root", ownership: ["user_id"] },
   user_disabled_paid_tools: { coverage: "user_root", ownership: ["user_id"] },
-  user_export_entries: { coverage: "user_descendant", parent: "export_jobs" },
-  user_export_parts: { coverage: "user_descendant", parent: "export_jobs" },
+  user_export_entries: {
+    coverage: "user_descendant",
+    parents: ["export_jobs"],
+  },
+  user_export_parts: { coverage: "user_descendant", parents: ["export_jobs"] },
   user_feature_switches: { coverage: "user_root", ownership: ["user_id"] },
   user_permission_grants: { coverage: "user_root", ownership: ["user_id"] },
   user_templates: {
@@ -591,14 +734,14 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   variables: { coverage: "user_root", ownership: ["user_id"] },
   video_artifacts: {
     coverage: "user_descendant",
-    parent: "built_in_generation_jobs",
+    parents: ["built_in_generation_jobs"],
   },
   vnc_connections: { coverage: "user_root", ownership: ["user_id"] },
   vnc_credentials: { coverage: "user_root", ownership: ["user_id"] },
   workflow_automations: { coverage: "user_root", ownership: ["owner_user_id"] },
   workflow_github_processed_events: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
   },
   workflow_user_automation_threads: {
     coverage: "user_root",
@@ -606,17 +749,17 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   workflow_webhook_automations: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
   },
   workflow_webhook_deliveries: {
     coverage: "user_descendant",
-    parent: "workflow_automations",
+    parents: ["workflow_automations"],
   },
   workflows: {
     coverage: "user_root",
     ownership: ["owner_user_id", "created_by"],
   },
-  x_resource_reads: { coverage: "user_descendant", parent: "agent_runs" },
+  x_resource_reads: { coverage: "user_descendant", parents: ["agent_runs"] },
 };
 
 export interface OwnershipTable {
@@ -669,12 +812,13 @@ export function assertOwnershipInventoryCoverage(
     const carried = ACCOUNT_OWNERSHIP_COLUMNS.filter((column) => {
       return columns.has(column);
     });
-    if (carried.length > 0) {
+    const [first] = carried;
+    if (first !== undefined) {
       if (entry.coverage === "not_account_scoped") {
-        fail("unclassified_ownership", `${table.name}.${carried[0]}`);
+        fail("unclassified_ownership", `${table.name}.${first}`);
       }
       if (entry.coverage === "user_descendant") {
-        fail("root_declared_as_descendant", `${table.name}.${carried[0]}`);
+        fail("root_declared_as_descendant", `${table.name}.${first}`);
       }
       for (const column of carried) {
         if (!declaredColumns(entry).includes(column)) {
@@ -693,27 +837,39 @@ export function assertOwnershipInventoryCoverage(
     if (entry.coverage !== "user_descendant") {
       continue;
     }
-    const parent = ACCOUNT_OWNERSHIP_INVENTORY[entry.parent];
-    if (parent?.coverage !== "user_root") {
-      fail("unknown_parent", `${name}->${entry.parent}`);
+    if (entry.parents.length === 0) {
+      fail("descendant_unanchored", name);
+    }
+    for (const parent of entry.parents) {
+      if (ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage !== "user_root") {
+        fail("unknown_parent", `${name}->${parent}`);
+      }
     }
   }
 }
 
-/** The application schema as the guard sees it. */
+/** The application schema as the guard sees it: the barrel plus the modules it
+ * omits. The suite's migration-ledger case owns the completeness of this set.
+ */
 export function applicationOwnershipTables(): OwnershipTable[] {
   const tables: OwnershipTable[] = [];
-  for (const value of Object.values(schema)) {
-    if (!is(value, PgTable)) {
-      continue;
+  const sources: readonly Record<string, unknown>[] = [
+    schema,
+    ...UNBARRELLED_SCHEMA_MODULES,
+  ];
+  for (const source of sources) {
+    for (const value of Object.values(source)) {
+      if (!is(value, PgTable)) {
+        continue;
+      }
+      const config = getTableConfig(value);
+      tables.push({
+        name: config.name,
+        columns: config.columns.map((column) => {
+          return column.name;
+        }),
+      });
     }
-    const config = getTableConfig(value);
-    tables.push({
-      name: config.name,
-      columns: config.columns.map((column) => {
-        return column.name;
-      }),
-    });
   }
   return tables;
 }

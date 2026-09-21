@@ -629,6 +629,12 @@ export default [
       // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
       // sessions exercise first closure, lease recovery, and selector retirement.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // D2's ownership coverage guard reads a schema and returns a verdict. Its
+      // negative cases describe schemas this repository does not have — a new
+      // uncovered table, an account identity appearing on an account-free one —
+      // so no endpoint, and no database, can construct the states that prove
+      // the guard fails closed.
+      "src/signals/services/__tests__/account-erasure-ownership-inventory.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",

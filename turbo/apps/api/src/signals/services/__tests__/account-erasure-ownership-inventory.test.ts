@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -13,6 +15,55 @@ import {
 // and the contract under test is the guard's verdict on a schema. The negative
 // cases feed the guard a schema the repository does not currently have, which
 // is the only way to prove it turns red before that schema exists.
+
+const MIGRATIONS = fileURLToPath(
+  new URL("../../../../../../packages/db/src/migrations/", import.meta.url),
+);
+
+/** The tables the checked-in migrations actually leave behind.
+ *
+ * This is the guard's ground truth rather than any TypeScript export, because
+ * a table reaches production through a migration whether or not a barrel, a
+ * schema module or this repository's conventions ever mention it.
+ */
+function migrationLedgerTables(): Set<string> {
+  const files = readdirSync(MIGRATIONS)
+    .filter((name) => {
+      return name.endsWith(".sql");
+    })
+    .sort((left, right) => {
+      return Number.parseInt(left, 10) - Number.parseInt(right, 10);
+    });
+  const table = String.raw`"?(?:public"?\."?)?([a-z0-9_]+)"?`;
+  const created = new RegExp(
+    String.raw`create\s+table\s+(?:if\s+not\s+exists\s+)?${table}`,
+    "gi",
+  );
+  const dropped = new RegExp(
+    String.raw`drop\s+table\s+(?:if\s+exists\s+)?${table}`,
+    "gi",
+  );
+  const renamed = new RegExp(
+    String.raw`alter\s+table\s+(?:if\s+exists\s+)?${table}\s+rename\s+to\s+"?([a-z0-9_]+)"?`,
+    "gi",
+  );
+  const tables = new Set<string>();
+  for (const file of files) {
+    const sql = readFileSync(`${MIGRATIONS}${file}`, "utf8");
+    for (const match of sql.matchAll(created)) {
+      tables.add(match[1] ?? "");
+    }
+    for (const match of sql.matchAll(renamed)) {
+      tables.delete(match[1] ?? "");
+      tables.add(match[2] ?? "");
+    }
+    for (const match of sql.matchAll(dropped)) {
+      tables.delete(match[1] ?? "");
+    }
+  }
+  return tables;
+}
+
 describe("account erasure ownership coverage guard", () => {
   const schemaTables = applicationOwnershipTables();
   const withTable = (extra: OwnershipTable) => {
@@ -24,6 +75,35 @@ describe("account erasure ownership coverage guard", () => {
       return assertOwnershipInventoryCoverage(schemaTables);
     }).not.toThrow();
     expect(schemaTables.length).toBeGreaterThan(0);
+  });
+
+  it("covers every table the migrations leave behind", () => {
+    // The `@okouai/db` barrel is a hand-maintained spread and omits 26 tables,
+    // 18 of them account-owned. Anchoring to the migrations means a table
+    // added outside the barrel cannot slip past the guard as it once did.
+    const ledger = [...migrationLedgerTables()].sort();
+    expect(ledger.length).toBeGreaterThan(200);
+
+    const enumerated = new Set(
+      schemaTables.map((table) => {
+        return table.name;
+      }),
+    );
+    expect(
+      ledger.filter((name) => {
+        return !enumerated.has(name);
+      }),
+    ).toStrictEqual([]);
+    expect(
+      ledger.filter((name) => {
+        return !(name in ACCOUNT_OWNERSHIP_INVENTORY);
+      }),
+    ).toStrictEqual([]);
+    expect(
+      Object.keys(ACCOUNT_OWNERSHIP_INVENTORY).filter((name) => {
+        return !ledger.includes(name);
+      }),
+    ).toStrictEqual([]);
   });
 
   it("reports the account-owned roots erasure must delete", () => {
@@ -40,6 +120,10 @@ describe("account erasure ownership coverage guard", () => {
     expect(tables).toContain("hosted_sites");
     expect(tables).toContain("run_uploaded_files");
     expect(tables).toContain("chat_event_search_messages");
+    // Account-owned tables the barrel omits are roots too.
+    expect(tables).toContain("push_subscriptions");
+    expect(tables).toContain("user_connectors");
+    expect(tables).toContain("archived_task_runs");
     expect(roots).toContainEqual({ table: "agents", ownership: ["owner"] });
   });
 
@@ -71,10 +155,6 @@ describe("account erasure ownership coverage guard", () => {
   it("fails when an existing table starts carrying an account identity", () => {
     // `blobs` is content-addressed and deliberately account-free today. Adding
     // an owner to it must reopen the classification rather than inherit one.
-    const blobs = schemaTables.find((table) => {
-      return table.name === "blobs";
-    });
-    expect(blobs).toBeDefined();
     const owned = schemaTables.map((table) => {
       return table.name === "blobs"
         ? { name: table.name, columns: [...table.columns, "user_id"] }
@@ -85,6 +165,22 @@ describe("account erasure ownership coverage guard", () => {
       return assertOwnershipInventoryCoverage(owned);
     }).toThrow(
       "account_erasure_inventory:unclassified_ownership:blobs.user_id",
+    );
+  });
+
+  it("fails when a descendant starts carrying its own account identity", () => {
+    // A row that names its own owner must be deleted directly. Leaving it
+    // filed under a parent is how a cross-owner root goes missing.
+    const promoted = schemaTables.map((table) => {
+      return table.name === "chat_events"
+        ? { name: table.name, columns: [...table.columns, "user_id"] }
+        : table;
+    });
+
+    expect(() => {
+      return assertOwnershipInventoryCoverage(promoted);
+    }).toThrow(
+      "account_erasure_inventory:root_declared_as_descendant:chat_events.user_id",
     );
   });
 
@@ -131,20 +227,31 @@ describe("account erasure ownership coverage guard", () => {
     }).toThrow("account_erasure_inventory:unknown_table:chat_threads");
   });
 
-  it("anchors every descendant to a root that still deletes it", () => {
+  it("anchors every descendant to roots that still delete it", () => {
     const descendants = Object.entries(ACCOUNT_OWNERSHIP_INVENTORY).flatMap(
       ([table, entry]) => {
         return entry.coverage === "user_descendant"
-          ? [{ table, parent: entry.parent }]
+          ? [{ table, parents: entry.parents }]
           : [];
       },
     );
     expect(descendants.length).toBeGreaterThan(0);
 
     for (const descendant of descendants) {
-      expect(ACCOUNT_OWNERSHIP_INVENTORY[descendant.parent]?.coverage).toBe(
-        "user_root",
-      );
+      expect(descendant.parents.length).toBeGreaterThan(0);
+      for (const parent of descendant.parents) {
+        expect(ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage).toBe("user_root");
+      }
     }
+    // Mail arrives from a run, an automation and a Morning Brief delivery, so
+    // a collector sweeping only one of them would leave the rest behind.
+    expect(ACCOUNT_OWNERSHIP_INVENTORY.email_outbox).toStrictEqual({
+      coverage: "user_descendant",
+      parents: [
+        "agent_runs",
+        "workflow_automations",
+        "morning_brief_deliveries",
+      ],
+    });
   });
 });
