@@ -1,6 +1,6 @@
 import { valueModelUsage } from "@okouai/core/model-usage-cost";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import { PI_MEMORY_STAGE1_MODEL } from "@okouai/pi-agent-runtime/api";
+import type { PiMemoryStage1Model } from "@okouai/pi-agent-runtime/api";
 import { and, eq, sql } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
@@ -33,7 +33,7 @@ export async function observePiMemoryStage1Cost(
     (async () => {
       const observedAt = nowDate().toISOString();
       const entries = safeSync(() => {
-        return piMemoryStage1UsageEntries(args.usage);
+        return piMemoryStage1UsageEntries(args.model, args.usage);
       });
       const base = {
         operation: "pi_memory_stage1",
@@ -42,7 +42,7 @@ export async function observePiMemoryStage1Cost(
         accountingAt: receipt?.accountingAt ?? null,
         observedAt,
         billingMode: args.billing.mode,
-        model: PI_MEMORY_STAGE1_MODEL,
+        model: args.model,
         usageStatus: "ok" in entries ? "valid" : "invalid",
         ledgerStatus: receipt?.disposition ?? "persistence_error",
         inputTokens: "ok" in entries ? args.usage.input : null,
@@ -68,7 +68,7 @@ export async function observePiMemoryStage1Cost(
       const pricingProvider = resolveUsagePricingProvider(
         pricingResolution,
         "model",
-        PI_MEMORY_STAGE1_MODEL,
+        args.model,
       );
       const prices = await settleIncludingAbort(
         db.transaction(async (tx) => {
@@ -124,13 +124,14 @@ export async function observePiMemoryStage1Cost(
 /** No usable response usage: unknown vendor cost, never a zero-valued response. */
 export async function observePiMemoryStage1MissingUsage(
   billingMode: "builtin" | "byok",
+  model: PiMemoryStage1Model,
 ): Promise<void> {
   await settleIncludingAbort(() => {
     log.info("Pi memory Stage 1 cost observed", {
       operation: "pi_memory_stage1",
       costVersion: 1,
       billingMode,
-      model: PI_MEMORY_STAGE1_MODEL,
+      model,
       usageStatus: "missing",
       ledgerStatus: "not_recorded",
       pricingStatus: "missing_usage",

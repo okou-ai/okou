@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     super::{VncRuntime, network::Network},
-    peer::Peer,
+    peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
 };
 use crate::{
     guest_rpc::{Run as RpcRun, Runtime},
@@ -303,6 +303,10 @@ impl Harness {
         Self::with_authority(Peer::new().await, None).await
     }
 
+    pub(super) async fn new_plain() -> Self {
+        Self::with_authority(Peer::plain().await, None).await
+    }
+
     pub(super) async fn with_authority(peer: Peer, api_url: Option<String>) -> Self {
         let api = MockServer::start_async().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();
@@ -351,10 +355,32 @@ impl Harness {
             let when = match run { Some(run) => when.path(format!("/api/runners/runs/{run}/vnc/resolve")), None => when.path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$") };
             when
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc"}]}));
+                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc"},{"authMethod":"username_password","securityType":"x509_plain"}]}));
             then.status(200).json_body(json!({"outcome":"resolved","host":"vnc.example.test","port":5900,"generation":7,
                 "authentication":{"method":"vnc_password","password":" secret "},
                 "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":self.peer.ca}}}));
+        }).await
+    }
+
+    pub(super) async fn resolve_plain(&self) -> Mock<'_> {
+        self.api.mock_async(|when, then| {
+            when.method("POST")
+                .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc"},{"authMethod":"username_password","securityType":"x509_plain"}]}));
+            then.status(200).json_body(json!({"outcome":"resolved","host":"vnc.example.test","port":5900,"generation":7,
+                "authentication":{"method":"username_password","username":PLAIN_USERNAME,"password":PLAIN_PASSWORD},
+                "security":{"type":"x509_plain","trust":{"mode":"custom_ca","caBundle":self.peer.ca}}}));
+        }).await
+    }
+
+    pub(super) async fn resolve_response(&self, response: Value) -> Mock<'_> {
+        self.api.mock_async(|when, then| {
+            when.method("POST")
+                .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
+                .header("authorization", format!("Bearer {TOKEN}"))
+                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc"},{"authMethod":"username_password","securityType":"x509_plain"}]}));
+            then.status(200).json_body(response);
         }).await
     }
 

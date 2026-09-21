@@ -1,13 +1,14 @@
 import {
   barrierQueryBinds,
   barrierQueryText,
+  isErasureSubjectClosureLookup,
   withDatabaseTransactionBarrierFixture,
   type SelectedTransaction,
   type TransactionBarrier,
 } from "./account-erasure-subject";
 
 interface ComputerUseAuditEventsBarrier extends TransactionBarrier {
-  /** Actual statements from the folded first B1 lock through the paused phase. */
+  /** Actual statements from the B1 closure lookup through the paused phase. */
   readonly statements: () => readonly string[];
 }
 
@@ -17,20 +18,6 @@ interface AuditEventProjectionIdentity {
   readonly commandId?: string;
   readonly hostId?: string;
   readonly runId?: string;
-}
-
-function firstAuditEventSubjectLock(
-  queryArgs: unknown[],
-  orgId: string,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  const lockKey = `account-erasure:${JSON.stringify(["organization", orgId])}`;
-  return (
-    text.startsWith("select") &&
-    text.includes("erasure_isolation_probe") &&
-    text.includes("pg_advisory_xact_lock_shared") &&
-    barrierQueryBinds(queryArgs, lockKey)
-  );
 }
 
 function isAuditEventProjection(
@@ -84,7 +71,9 @@ export async function withComputerUseAuditEventsBarrierFixture<T>(
   return await withDatabaseTransactionBarrierFixture(
     {
       select: (queryArgs) => {
-        return firstAuditEventSubjectLock(queryArgs, args.orgId);
+        return isErasureSubjectClosureLookup(queryArgs, {
+          subjectId: args.orgId,
+        });
       },
       stopAt: (queryArgs, _selectingStatement, transaction) => {
         const text = barrierQueryText(queryArgs);

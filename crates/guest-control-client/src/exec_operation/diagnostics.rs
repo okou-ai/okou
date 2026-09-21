@@ -1,5 +1,6 @@
 use std::io;
 
+use guest_contracts::oom_evidence::ContainmentRejection;
 use guest_control_proto::{
     ExecCapturedOutput, ExecLifecyclePolicy, ExecProcessRole, ExecTermination,
 };
@@ -205,17 +206,32 @@ impl ExecOperationDiagnostic {
         let evidence_has_proof = split.has_proof();
         let evidence_malformed = split.malformed_lines > 0;
         let oom_evidence = split.evidence.is_some();
-        let contained_tool_oom = self.process_class == ExecProcessRole::Agent.process_class()
-            && lifecycle == ExecTerminalLogLifecycle::Supervised
-            && split.evidence.as_ref().is_some_and(|evidence| {
-                evidence.operation_sequence() == Some(self.seq)
-                    && evidence.proves_contained_tool_oom()
-            });
+        // Report which guard refused, including the conditions this caller
+        // applies on top of the evidence itself. An unproven record without a
+        // reason cannot be attributed to a cause.
+        let containment_rejection = if self.process_class != ExecProcessRole::Agent.process_class()
+        {
+            Some(ContainmentRejection::ProcessClassNotAgent)
+        } else if lifecycle != ExecTerminalLogLifecycle::Supervised {
+            Some(ContainmentRejection::LifecycleNotSupervised)
+        } else {
+            match split.evidence.as_ref() {
+                None => Some(ContainmentRejection::EvidenceAbsent),
+                Some(evidence) if evidence.operation_sequence() != Some(self.seq) => {
+                    Some(ContainmentRejection::OperationSequenceMismatch)
+                }
+                Some(evidence) => evidence.containment_rejection(),
+            }
+        };
+        let contained_tool_oom = containment_rejection.is_none();
         let oom_classification = if contained_tool_oom {
             "contained_tool_oom"
         } else {
             "unproven_containment"
         };
+        // A plain string keeps the field groupable; `?` formatting would emit
+        // `Some(...)` and break equality matching in the log backend.
+        let oom_unproven_reason = containment_rejection.map_or("", ContainmentRejection::as_str);
         // Parse identity before logging so malformed payload text never becomes
         // an unbounded log field. The owning Runner supplies run_id separately.
         let operation_id = split
@@ -276,6 +292,7 @@ impl ExecOperationDiagnostic {
                     oom_evidence,
                     operation_id = ?operation_id,
                     oom_classification,
+                    oom_unproven_reason,
                     oom_evidence_proof = evidence_has_proof,
                     oom_evidence_malformed = evidence_malformed,
                     oom_incidents,

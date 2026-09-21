@@ -42,6 +42,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import {
   failPiMemoryPhase2Job,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
@@ -133,7 +134,9 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       tier: "pro",
       credits: 100_000,
     });
-    await seedBuiltInModelKey(testContext(), "gpt-5.6-terra");
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     await insertPhase2Candidates(scope, [
       {
         piSessionId: randomUUID(),
@@ -236,7 +239,9 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       tier: "pro",
       credits: 100_000,
     });
-    await seedBuiltInModelKey(testContext(), "gpt-5.6-terra");
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     const sessionId = randomUUID();
     await insertPhase2Candidates(scope, [
       {
@@ -376,7 +381,9 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     onTestFinished(async () => {
       await deleteRunSessionsForScope(scope);
     });
-    await seedBuiltInModelKey(testContext(), "gpt-5.6-terra");
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     await insertPhase2Candidates(scope, [
       {
         piSessionId: randomUUID(),
@@ -498,7 +505,9 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       await deleteRunSessionsForScope(scope);
       await db().delete(agents).where(eq(agents.id, agentId));
     });
-    await seedBuiltInModelKey(testContext(), "gpt-5.6-terra");
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     const sessionId = randomUUID();
     const [sourceHistoryHash] = await insertPhase2Candidates(scope, [
       {
@@ -795,7 +804,9 @@ async function createPhase2WorkerFixture(label: string, emptyBase = true) {
   const scope = await createPhase2TestScope(label, { emptyBase });
   await enablePiMemoryForScope(scope);
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  await seedBuiltInModelKey(testContext(), "gpt-5.6-terra");
+  await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+  // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+  configureNativeCliArtifact();
   await insertPendingPhase2Job(scope, {
     updatedAt: new Date("2026-09-05T02:00:00Z"),
   });

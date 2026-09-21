@@ -761,8 +761,22 @@
     {
       "idx": 1186,
       "version": "7",
-      "when": 1789950426452,
-      "tag": "1186_social_data_jobs",
+      "when": 1789961234792,
+      "tag": "1186_move_imported_deck_to_user_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1187,
+      "version": "7",
+      "when": 1789963624893,
+      "tag": "1187_expand_free_concurrency_byok",
+      "breakpoints": true
+    },
+    {
+      "idx": 1188,
+      "version": "7",
+      "when": 1789974568475,
+      "tag": "1188_social_data_jobs",
       "breakpoints": true
     }
   ]

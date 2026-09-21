@@ -1388,8 +1388,8 @@ const storedExecutionContextObjectSchema = z.object({
   apiStartTime: apiStartTimeSchema.optional(),
   // User's timezone preference (IANA format, e.g., "Asia/Shanghai")
   userTimezone: z.string().optional(),
-  // Firewall entries for proxy-side token replacement. HTTP built-ins stay
-  // compact; builtin MCP and org custom connectors use inline bodies.
+  // Firewall entries for proxy-side token replacement. Built-ins stay compact;
+  // org custom connectors use inline firewall bodies.
   firewalls: executionFirewallsSchema.optional(),
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),

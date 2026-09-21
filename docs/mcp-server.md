@@ -43,6 +43,15 @@ The CLI never automatically retries a tool call. A timeout, connection failure,
 or error result does not prove that a remote side effect did not happen; follow
 the tool's documented idempotency and inspection guidance before retrying.
 
+The catalog publishes `idempotentHint: false` for creation, metadata updates and
+message sends because their request identities are retained for a bounded time,
+not permanently. Each still supports an identical replay within 24 hours. After
+a successful response, use its `retryUntil` as the deadline; after a lost
+response, retry the identical request immediately within that documented window.
+The positive hints on queued-input revocation and run cancellation instead
+describe target-state mutations whose repeated calls do not recreate missing
+work.
+
 ## Starting a conversation
 
 Call `list_agents` and `list_models` before `create_chat_thread` when selecting
@@ -110,7 +119,7 @@ The thread and canonical input event commit in one transaction. Only after that
 commit does the shared scheduler attempt to start, queue, or steer execution.
 The response therefore reports the durable `input` receipt and its current
 `disposition`; it does not claim delivery or run success. Its `nextAction`
-points to `get_chat_status` with the complete stable `inputRef`. Use that handoff
+points to `get_chat_status` with only the complete stable `inputRef`. Use that handoff
 and then `get_chat_messages` to observe output.
 
 Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
@@ -129,10 +138,15 @@ is a conflict. Replay returns current stored thread settings without undoing
 later edits. An originally omitted model follows current defaults while the
 thread is still unpinned; after run admission persists the resolved model,
 replay reports that thread pin. Deleted conversations, expired retries, or
-missing canonical evidence return an error. There is no permanent request-ID ledger. Never
-automatically retry an uncertain old request after the window; inspect the
-original thread before intentionally creating new work. No new table or schema
-migration is introduced.
+missing canonical evidence return an error while either half of the retained
+identity remains. Thread events become eligible for snapshot-backed pruning
+after seven days. If the thread remains after its creation event is pruned, the
+missing evidence still conflicts; if the thread was also deleted, the same old
+arguments can create new work because neither identity remains. There is no
+permanent request-ID ledger. This complete lifecycle is why the catalog does not
+mark creation as generally idempotent. Never automatically retry an uncertain
+old request after the window; inspect the original thread before intentionally
+creating new work. No new table or schema migration is introduced.
 
 Creation checks current Agent visibility and account-content admission in its
 transaction, including the Agent owner's account. It uses the existing creation
@@ -180,9 +194,13 @@ cannot restore A. Reusing the key with a different patch conflicts.
 
 After the retry window, inspect `get_chat_thread` before making a new intended
 change. Do not automatically retry an uncertain old request. Deduplication is not
-promised beyond retained mutation identity. As with other MCP mutations, admitted
-finite work remains server-owned after HTTP disconnection, and thread-list
-invalidation is published only after a new commit.
+promised beyond retained mutation identity. Thread mutation events become
+eligible for snapshot-backed pruning after seven days; once those event IDs are
+gone, reusing an old request ID is a new update and can restore its old patch.
+The catalog therefore does not mark updates as generally idempotent. As with
+other MCP mutations, admitted finite work remains server-owned after HTTP
+disconnection, and thread-list invalidation is published only after a new
+commit.
 
 ## Conversation discovery
 
@@ -426,6 +444,7 @@ or reserve it for delivery to an active run. The response returns:
 | `disposition`              | Current bounded observation: `queued`, `reserved`, `associated`, `rejected`, `revoked`, or `unavailable`. |
 | `runId`                    | Known associated/reserving run, or null.                                                                  |
 | `url`                      | Authenticated conversation URL.                                                                           |
+| `nextAction`               | Ready-to-use `get_chat_status` call containing the complete `inputRef`.                                   |
 
 Acceptance means an input was persisted. It does not guarantee model admission,
 delivery, compliance, completion, or a new run. `reserved` does not prove the
@@ -455,7 +474,9 @@ There is no deduplication guarantee after 24 hours. A retained original input
 past that window is rejected as expired. Once its live event has been removed
 by retention, its old request ID may be treated as a new submission. Inspect
 the conversation before intentionally submitting new work after the window;
-do not retry an uncertain old request automatically.
+do not retry an uncertain old request automatically. The catalog therefore does
+not mark sends as generally idempotent even though exact replay remains safe
+before the returned `retryUntil`.
 
 Retry protection covers input creation and dispatch. Ordinary send preparation
 can reconcile obsolete model settings with current policy before a later
@@ -474,13 +495,14 @@ unchanged.
 
 ### Input, execution and output status
 
-Call `get_chat_status` with `threadId` and the complete original `inputRef`
-returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
-match. With no input reference, the service observes the latest authorized run
-by creation time, with run ID as a deterministic tie breaker. With an input
-reference, it observes only that input's associated or reserved run. A queued,
-revoked, missing or inaccessible association never falls back to another run
-in the conversation.
+Call `get_chat_status` with the complete original `inputRef` returned by send
+(`threadId`, `eventId`, `seqId`) to observe only that input's associated or
+reserved run. Execute the send or combined-creation `nextAction.arguments`
+unchanged; do not repeat the thread identity outside the reference. To observe
+the latest authorized run instead, call status with exactly `threadId`. Latest
+selection uses creation time with run ID as a deterministic tie breaker. A
+queued, revoked, missing or inaccessible exact-input association never falls
+back to another run in the conversation.
 
 The result exposes lifecycle as its complete public status model. Internal
 input, delivery, run, cancellation-recovery and output observations are used to
@@ -507,7 +529,7 @@ missing or inaccessible input is unavailable, rejected and revoked
 inputs are settled with no output, and queued or reserved inputs remain queued
 without inheriting output from a shared run. With no selected run, the phase is
 idle and output is none; this means no work was selected by that observation,
-not that the conversation has no queued input when `inputRef` was omitted.
+not that the conversation has no queued input in latest-thread mode.
 
 For a selected run, queued and pending run states map to the queued phase, and
 running maps to the running phase. A terminal run with pending or partial output
@@ -548,7 +570,8 @@ non-null retry delay: continue tracking that original input instead of
 submitting it again.
 
 Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
-single immediate observation above. A positive value is a client preference up
+exact-input observation immediate; latest-thread `{threadId}` status is always
+immediate. A positive value is a client preference up
 to 60 seconds and is currently clamped to an 8-second server dwell after the
 initial observation. Each fresh observation keeps its independent 15-second
 history budget, so total request time also includes the initial and final
@@ -598,8 +621,9 @@ output → `get_chat_messages`, then repeat with an active steer, queued revoke
 and cancellation recovery. Also verify that a missing reference does not show
 an unrelated latest run. ChatGPT acceptance remains deferred.
 
-`revoke_queued_message` takes `threadId` and the original `inputId` (the
-`inputRef.eventId`). It returns those identifiers, a nullable `runId`, and
+`revoke_queued_message` takes the complete original `inputRef` unchanged. It
+validates `threadId`, `eventId`, and `seqId` under the canonical queue lock
+before mutation and returns that reference, a nullable `runId`, and
 `outcome`: `revoked`, `already_revoked`, `not_revocable`, or `unavailable`.
 Withdrawal uses the canonical queue lock and appends a revocation event; it
 does not delete history or cancel a run. Only a pending, unreserved input can be
@@ -617,6 +641,10 @@ return a tool error. The response confirms canonical cancellation, not that the
 executor has physically stopped or that callback/queue recovery has finished.
 Cancelling a run can allow queued input to proceed; use `revoke_queued_message`
 to withdraw a specific input that has not been reserved or associated.
+
+Both target-state tools retain `idempotentHint: true`: repeating revocation or
+cancellation converges on the retained target state, and an unavailable target
+is not recreated by either operation.
 
 After a mutation is admitted, its finite business operation and cancellation
 effects are tracked independently of the HTTP response. Disconnecting stops

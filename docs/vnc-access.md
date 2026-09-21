@@ -4,8 +4,8 @@ VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
-The base X509Vnc Runner, CLI and UI path is delivered. X509Plain Runner
-execution and owner-facing exposure remain #35620 and #35621.
+The Runner executes both X509Vnc and X509Plain. The owner-facing X509Plain
+exposure and full-path product acceptance remain #35621.
 
 ## Owner API
 
@@ -178,10 +178,12 @@ and grants. A protocol with different credential bounds gets a new method value
 even when its UI also looks like username/password; it does not broaden
 `username_password`.
 
-X509Plain is persisted control-plane state in this slice, but current Run host
-inventory returns only the X509Vnc subset. Private resolve reports X509Plain as
-unsupported and check fails closed before KMS. #35620 owns private authority and
-Runner execution; #35621 owns owner UI exposure and full-path acceptance.
+Run host inventory remains limited to X509Vnc until #35621. The private resolve
+path can execute X509Plain for an already-authorized connection ID when the
+requesting Runner advertises that exact pair. An older Runner advertises only
+X509Vnc, so resolve reports a saved X509Plain connection as unsupported and
+fails closed before KMS. #35621 owns inventory/UI exposure and full-path
+acceptance.
 
 The authentication roadmap is tracked in
 [#35041](https://github.com/vm0-ai/okou/issues/35041), with separate work for
@@ -190,12 +192,11 @@ SASL and vendor-specific compatibility research. Each implementation must record
 the exact server versions tested and distinguish client authentication, server
 identity verification and full-session encryption.
 
-The Rust protocol engine supports the policy-selected X509Vnc and X509Plain
-authentication flows, but the private Runner contract remains X509Vnc-only until
-#35620. SSH authentication belongs to an outer
-transport and does not become a VNC password method. Shared/exclusive mode is a
-per-session Agent choice, independent of authentication. The VNC server decides
-how to admit clients; shared sessions can interact with the same desktop.
+The Rust protocol engine and private Runner contract support the policy-selected
+X509Vnc and X509Plain authentication flows. SSH authentication belongs to an
+outer transport and does not become a VNC password method. Shared/exclusive mode
+is a per-session Agent choice, independent of authentication. The VNC server
+decides how to admit clients; shared sessions can interact with the same desktop.
 
 ## Deployment and rollback
 
@@ -217,7 +218,7 @@ VNC-aware cleanup and the runtime/UI slices required for the selected activation
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
 that floor requires a separately verified disablement, drain and VNC erasure.
-Runtime activation requires #35620 and UI/full-path activation requires #35621.
+Owner-facing X509Plain activation and full-path acceptance require #35621.
 
 ## Verification
 

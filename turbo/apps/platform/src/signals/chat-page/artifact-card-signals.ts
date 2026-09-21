@@ -10,6 +10,7 @@ import {
 import {
   artifactReferenceLookupKey,
   createAttachmentPreviewSignals,
+  createAttachmentPreviewSlot,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import {
@@ -58,6 +59,11 @@ export function createArtifactSignals(
     contentType: descriptor.contentType,
   });
   const previewImageLoad = createImageLoadSignals();
+  // The screenshot or poster is only known once the artifact list resolves,
+  // and reloading that list reports the same image again. The card keeps the
+  // graph it resolved, so a reload reuses those credentials instead of signing
+  // the image again and replacing the URL the browser already loaded.
+  const previewImageSlot = createAttachmentPreviewSlot();
   const previewImageUrl$ = computed(async (get) => {
     if (descriptor.kind !== "html" && descriptor.kind !== "video") {
       return undefined;
@@ -66,9 +72,7 @@ export function createArtifactSignals(
     const url =
       previewImageUrlsByUrl.get(artifactReferenceLookupKey(descriptor.url)) ??
       (await get(preview.presignedToken$))?.previewImageUrl;
-    return url
-      ? await get(createAttachmentPreviewSignals(url).thumbnailUrl$)
-      : undefined;
+    return url ? await get(previewImageSlot(url).thumbnailUrl$) : undefined;
   });
   return {
     ...descriptor,

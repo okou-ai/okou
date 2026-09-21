@@ -159,7 +159,6 @@ function mockBillingStatus(
       tier,
       ...billingPlanCapabilities(tier),
       showUsagePack,
-      supportByok: tier !== "limited-free-1",
       restrictedBuiltInModels: tier === "limited-free-1",
       credits: 12_500,
       onboardingPaymentPending: false,

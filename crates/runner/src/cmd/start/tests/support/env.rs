@@ -268,6 +268,7 @@ fn build_mock_run_config_with_runtime(
             log_paths: crate::paths::LogPaths::new(log_dir),
             network_log_manager: NetworkLogManager::new(),
             network_log_drain: NetworkLogDrainCoordinator::noop(),
+            network_log_upload_health: crate::network_logs::NetworkLogUploadHealthTracker::new(),
             mitm_jsonl_flush: None,
             connector_runtime_sync: None,
             guest_rpc: None,

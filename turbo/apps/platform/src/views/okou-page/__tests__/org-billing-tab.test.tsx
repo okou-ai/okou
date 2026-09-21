@@ -113,7 +113,7 @@ function activeProBillingStatus(): BillingStatusResponse {
       },
     ],
     creditGrants: [],
-    concurrencyLimit: 2,
+    concurrencyLimit: 3,
     concurrencySubscriptions: [],
     concurrencyUnitAmountCents: 10_000,
   };
@@ -496,7 +496,7 @@ test("Show the included Pro usage-pack plan features", async () => {
   // Pro carries the whole list.
   expect(within(proPlan).getByText("Included")).toBeInTheDocument();
   for (const item of [
-    "2 agents running at once",
+    "3 agents running at once",
     "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
     "Bring your own LLM keys",
     "Scheduled and event automations",
@@ -537,7 +537,7 @@ test("Show the additional Team usage-pack plan features", async () => {
     expect(within(teamPlan).getByText(item)).toBeInTheDocument();
   }
   for (const item of [
-    "2 agents running at once",
+    "3 agents running at once",
     "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
     "Bring your own LLM keys",
     "Scheduled and event automations",
@@ -2668,7 +2668,7 @@ test("Compare the initial Pro-to-Team plan, slots and monthly total", async () =
   ).toBeInTheDocument();
   expect(
     within(comparison).getByRole("row", {
-      name: /Concurrent slots 2 10/u,
+      name: /Concurrent slots 3 10/u,
     }),
   ).toBeInTheDocument();
   expect(

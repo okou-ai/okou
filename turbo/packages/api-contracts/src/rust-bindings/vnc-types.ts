@@ -1,5 +1,5 @@
 import { runnerVncContract } from "../contracts/runner-vnc";
-import { VNC_PASSWORD_MAX_LENGTH } from "../contracts/vnc-credentials";
+import { VNC_USERNAME_PASSWORD_MAX_BYTES } from "../contracts/vnc-credentials";
 import type { RustTypeBinding, RustTypeDeclarationDoc } from "./types";
 
 function identityDocs(name: string): RustTypeDeclarationDoc {
@@ -42,6 +42,22 @@ export const vncTypeBindings = [
           securityType: ["Supported security policy."],
         },
       },
+      {
+        rustTypeName: "ResolveRequestSupportedProfileAuthMethod",
+        rustDoc: ["Authentication method advertised by this Runner."],
+        variants: {
+          vnc_password: ["Classic VNC password authentication."],
+          username_password: ["Plain username/password authentication."],
+        },
+      },
+      {
+        rustTypeName: "ResolveRequestSupportedProfileSecurityType",
+        rustDoc: ["Security profile advertised by this Runner."],
+        variants: {
+          x509_vnc: ["VeNCrypt X509Vnc."],
+          x509_plain: ["VeNCrypt X509Plain."],
+        },
+      },
     ],
   },
   {
@@ -51,7 +67,7 @@ export const vncTypeBindings = [
     direction: "response",
     sensitive: true,
     fieldTypeOverrides: {
-      password: `crate::SecretText<${VNC_PASSWORD_MAX_LENGTH}>`,
+      password: `crate::SecretUtf8Text<${VNC_USERNAME_PASSWORD_MAX_BYTES}>`,
     },
     declarations: [
       {
@@ -84,12 +100,16 @@ export const vncTypeBindings = [
         rustTypeName: "ResolveResponseResolvedAuthentication",
         rustDoc: ["Typed private VNC credential."],
         fields: {
+          username: ["Bounded Plain username, preserving exact UTF-8 bytes."],
           password: [
-            "Bounded zeroizing classic VNC password, preserving spaces.",
+            "Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.",
           ],
         },
         variants: {
           vnc_password: ["Classic VNC password challenge response."],
+          username_password: [
+            "Username/password authentication inside verified TLS.",
+          ],
         },
       },
       {
@@ -98,7 +118,10 @@ export const vncTypeBindings = [
           "Saved security policy, independent of future engine capabilities.",
         ],
         fields: { trust: ["Required verified TLS trust policy."] },
-        variants: { x509_vnc: ["VeNCrypt X509Vnc with verified TLS."] },
+        variants: {
+          x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
+          x509_plain: ["VeNCrypt X509Plain with verified TLS."],
+        },
       },
       {
         rustTypeName: "ResolveResponseResolvedSecurityX509VncTrust",

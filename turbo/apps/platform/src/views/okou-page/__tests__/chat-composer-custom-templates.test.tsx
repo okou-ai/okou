@@ -49,9 +49,11 @@ function customTemplate(
     sourceFilename: "q3-board-final-v4.pptx",
     kind: "presentation",
     coverUrl: "https://example.test/cover.png",
+    coverHasMorePages: true,
     pageCount: 18,
     visibility: "private",
     ownerUserId: "user_self",
+    ownerDisplayName: "Dana Self",
     canManage: true,
     createdAt: "2026-01-02T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
@@ -205,13 +207,18 @@ function menuItemByName(name: string): HTMLElement {
   return item;
 }
 
-async function openCustomPanel(enabled = true) {
+async function openCustomPanel(enabled = true, chipCover = false) {
   const user = userEvent.setup({ delay: null });
   const capture = mockTemplateChat();
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: enabled },
+    featureSwitches: {
+      [FeatureSwitchKey.CustomTemplates]: enabled,
+      // Off by default, as in production. The two tests that turn it on are
+      // the ones asking which covers reach the chip once it draws any.
+      [FeatureSwitchKey.ComposerTemplateChipCover]: chipCover,
+    },
   });
   const dialog = await openTemplatePicker(user);
   return { user, dialog, capture };
@@ -283,6 +290,7 @@ test("The Custom category lists every reachable template", async () => {
       sourceFilename: "partner-qbr-q3.pptx",
       visibility: "organization",
       ownerUserId: "user_colleague",
+      ownerDisplayName: "Robin Ito",
       canManage: false,
     }),
   ]);
@@ -357,6 +365,31 @@ test("A colleague's template names its owner and offers no management", async ()
       id: "22222222-2222-4222-8222-222222222222",
       title: "Theirs",
       ownerUserId: "user_colleague",
+      ownerDisplayName: "Robin Ito",
+      canManage: false,
+    }),
+  ]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await expect(
+    within(dialog).findByText("Theirs"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByText("Shared by Robin Ito")).toBeInTheDocument();
+  // The identity-provider handle is what the row used to show in its place.
+  expect(within(dialog).queryByText(/user_colleague/u)).not.toBeInTheDocument();
+  expect(buttonByName("Actions for Theirs", dialog)).toBeUndefined();
+  expect(buttonByName("Actions for Mine", dialog)).toBeTruthy();
+});
+
+test("An owner the provider cannot name still reads as a person", async () => {
+  mockCustomTemplates([
+    customTemplate({
+      id: "22222222-2222-4222-8222-222222222222",
+      title: "Theirs",
+      ownerUserId: "user_colleague",
+      ownerDisplayName: null,
       canManage: false,
     }),
   ]);
@@ -368,10 +401,9 @@ test("A colleague's template names its owner and offers no management", async ()
     within(dialog).findByText("Theirs"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(dialog).getByText("Shared by user_colleague"),
+    within(dialog).getByText("Shared by an organization member"),
   ).toBeInTheDocument();
-  expect(buttonByName("Actions for Theirs", dialog)).toBeUndefined();
-  expect(buttonByName("Actions for Mine", dialog)).toBeTruthy();
+  expect(within(dialog).queryByText(/user_colleague/u)).not.toBeInTheDocument();
 });
 
 test("Search matches the source file name, not only the title", async () => {
@@ -467,7 +499,7 @@ test("Opening a deck shows its pages and management controls", async () => {
   expect(dialog).toHaveAttribute("data-nested-dialog-open");
   expect(preview).not.toHaveAttribute("data-nested-dialog-open");
   expect(
-    within(preview).getByText("18 pages · from q3-board-final-v4.pptx"),
+    within(preview).getByText("From q3-board-final-v4.pptx"),
   ).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
@@ -479,7 +511,7 @@ test("Opening a deck shows its pages and management controls", async () => {
 test("Using a custom template sends the row id and nothing about its kind", async () => {
   mockCustomTemplateStore([customTemplate()]);
 
-  const { dialog } = await openCustomPanel();
+  const { dialog } = await openCustomPanel(true, true);
 
   click(tabByText("Custom"));
   await within(dialog).findByText("Q3 board review");
@@ -495,6 +527,36 @@ test("Using a custom template sends the row id and nothing about its kind", asyn
   // knew `custom`, Use resolved to nothing and this never appeared; before the
   // node guard knew it, rendering the chip threw.
   await expect(screen.findByText("Q3 board review")).resolves.toBeVisible();
+  // A deck's cover reaches the chip, which is what makes the document case
+  // below a difference rather than a chip that never draws covers at all.
+  await waitFor(() => {
+    expect(
+      document.querySelector('img[src="https://example.test/cover.png"]'),
+    ).not.toBeNull();
+  });
+});
+
+test("A document's cover stays in the catalog and off the composer chip", async () => {
+  mockCustomTemplateStore([
+    documentTemplate({ coverUrl: DOCUMENT_COVER_URL, coverHasMorePages: true }),
+  ]);
+
+  const { dialog } = await openCustomPanel(true, true);
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Brand report");
+  // The same picture the tile is showing, to make the absence below about the
+  // chip rather than about a template that has no cover.
+  expect(within(dialog).getByTestId("document-cover-page")).toHaveAttribute(
+    "src",
+    DOCUMENT_COVER_URL,
+  );
+  click(buttonByName("Use", dialog)!);
+
+  await expect(screen.findByText("Brand report")).resolves.toBeVisible();
+  // The chip draws a cover into a twenty-pixel square, cropped from the
+  // middle, where a page of prose resolves to flat grey. The file glyph says
+  // more, so the page is not handed over.
+  expect(document.querySelector(`img[src="${DOCUMENT_COVER_URL}"]`)).toBeNull();
 });
 
 const DOCUMENT_SOURCE_URL =
@@ -509,6 +571,7 @@ function documentTemplate(
     sourceFilename: "brand-report.docx",
     kind: "document",
     coverUrl: null,
+    coverHasMorePages: false,
     pageCount: null,
     pageUrls: [],
     sourceUrl: DOCUMENT_SOURCE_URL,
@@ -538,6 +601,54 @@ test("A document template with no cover is tiled by its format", async () => {
   // Nothing was rendered for it, so the tile carries the format it was
   // compiled from rather than an empty frame.
   expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
+  expect(
+    within(dialog).queryByTestId("document-cover-page"),
+  ).not.toBeInTheDocument();
+});
+
+const DOCUMENT_COVER_URL =
+  "https://storage.example.test/private-artifacts/brand-report-page-1.png?signature=abc";
+
+test("A document template with a cover is tiled by its first page over a stack", async () => {
+  mockCustomTemplates([
+    documentTemplate({
+      coverUrl: DOCUMENT_COVER_URL,
+      coverHasMorePages: true,
+    }),
+  ]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  const page = await within(dialog).findByTestId("document-cover-page");
+  expect(page).toHaveAttribute("src", DOCUMENT_COVER_URL);
+  // The page was rendered, so the format glyph steps aside for it.
+  expect(within(dialog).queryByText("DOCX")).not.toBeInTheDocument();
+  // Two sheets for a source that continued, whether it continued for one more
+  // page or three hundred: they carry no image, so there is nothing for a
+  // third to add.
+  expect(within(dialog).getAllByTestId("document-cover-sheet")).toHaveLength(2);
+});
+
+test("A single-page document is tiled by one sheet with nothing behind it", async () => {
+  mockCustomTemplates([
+    documentTemplate({
+      title: "Party invitation",
+      sourceFilename: "invitation.docx",
+      coverUrl: DOCUMENT_COVER_URL,
+      coverHasMorePages: false,
+    }),
+  ]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await within(dialog).findByTestId("document-cover-page");
+  // A stack behind a one-page invitation would claim pages the file does not
+  // have, so the tile draws what is there and stops.
+  expect(within(dialog).queryAllByTestId("document-cover-sheet")).toHaveLength(
+    0,
+  );
 });
 
 test("Opening a Word template hands the source file to the Office viewer", async () => {
@@ -601,6 +712,7 @@ function illustrationTemplate(
     // The source is the cover, so unlike a document this kind has one without
     // anything having been rendered for it.
     coverUrl: ILLUSTRATION_SOURCE_URL,
+    coverHasMorePages: false,
     pageCount: null,
     pageUrls: [],
     sourceUrl: ILLUSTRATION_SOURCE_URL,

@@ -1,5 +1,60 @@
 # Changelog
 
+## [9.349.1](https://github.com/okou-ai/okou/compare/cli-v9.349.0...cli-v9.349.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** stop adding private artifact delivery prompts to generation output ([#35720](https://github.com/okou-ai/okou/issues/35720)) ([b0b9997](https://github.com/okou-ai/okou/commit/b0b99976690882c00e27b411fb701eed774002c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.482.0
+    * @okouai/core bumped to 8.689.2
+    * @okouai/pi-agent-runtime bumped to 1.34.0
+
+## [9.349.0](https://github.com/okou-ai/okou/compare/cli-v9.348.8...cli-v9.349.0) (2026-09-21)
+
+
+### Features
+
+* **templates:** show a document template's first page in the catalog ([#35723](https://github.com/okou-ai/okou/issues/35723)) ([0d07c92](https://github.com/okou-ai/okou/commit/0d07c92b8719a472b61be04574ba87a9527cf5ba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.481.0
+    * @okouai/core bumped to 8.689.1
+    * @okouai/pi-agent-runtime bumped to 1.33.33
+
+## [9.348.8](https://github.com/okou-ai/okou/compare/cli-v9.348.7...cli-v9.348.8) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** repair presentation convert layout, tables, and hosted decks ([#35713](https://github.com/okou-ai/okou/issues/35713)) ([0e8ed9e](https://github.com/okou-ai/okou/commit/0e8ed9ee764b480d8c5dee1d45e272a7f97987ba))
+
+## [9.348.7](https://github.com/okou-ai/okou/compare/cli-v9.348.6...cli-v9.348.7) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.689.0
+
+## [9.348.6](https://github.com/okou-ai/okou/compare/cli-v9.348.5...cli-v9.348.6) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** limit callback prompts to keep action urls concise ([#35681](https://github.com/okou-ai/okou/issues/35681)) ([2ea078e](https://github.com/okou-ai/okou/commit/2ea078e04b5941c484045e6ec9021ed7829cde4a))
+
 ## [9.348.5](https://github.com/okou-ai/okou/compare/cli-v9.348.4...cli-v9.348.5) (2026-09-20)
 
 

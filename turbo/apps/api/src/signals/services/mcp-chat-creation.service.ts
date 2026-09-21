@@ -513,7 +513,7 @@ async function createInTransaction(
             },
             nextAction: {
               tool: "get_chat_status" as const,
-              arguments: { threadId: thread.id, inputRef },
+              arguments: { inputRef },
             },
           };
         })()
@@ -637,7 +637,7 @@ async function finishCombinedCreation(
       },
       nextAction: {
         tool: "get_chat_status",
-        arguments: { threadId: args.output.threadId, inputRef },
+        arguments: { inputRef },
       },
     },
   };

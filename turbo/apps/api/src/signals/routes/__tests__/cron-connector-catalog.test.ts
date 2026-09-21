@@ -1812,18 +1812,15 @@ describe("connector catalog valid lifecycle", () => {
       readApiTestConnectorCatalogRuntimeProjectionAuthority(),
     ).resolves.toStrictEqual(apiTestConnectorCatalogValidationAuthority());
 
-    const newerProjectionAuthority = {
+    await setApiTestConnectorCatalogRuntimeProjectionAuthority({
       validatorVersion: "999.0.0",
       buildCommitSha: null,
-    };
-    await setApiTestConnectorCatalogRuntimeProjectionAuthority(
-      newerProjectionAuthority,
-    );
+    });
     mockNow(new Date("2026-07-15T08:03:00.000Z"));
     expect((await syncCatalog()).body.outcome).toBe("unchanged");
     await expect(
       readApiTestConnectorCatalogRuntimeProjectionAuthority(),
-    ).resolves.toStrictEqual(newerProjectionAuthority);
+    ).resolves.toStrictEqual(apiTestConnectorCatalogValidationAuthority());
 
     serveObjects(catalogObjects([first, second], second));
     expect((await syncCatalog()).body).toMatchObject({
@@ -5567,7 +5564,7 @@ describe("connector catalog executable compatibility", () => {
     });
   });
 
-  it("repairs missing and preserves newer validator package authorities", async () => {
+  it("repairs missing and newer validator package authorities", async () => {
     configureSource();
     const release = buildRelease({
       version: "2026-07-27.validation-authority-repair",
@@ -5586,16 +5583,19 @@ describe("connector catalog executable compatibility", () => {
       readApiTestConnectorCatalogValidationAuthority(),
     ).resolves.toStrictEqual(currentAuthority);
 
-    const newerAuthority = {
+    // A release that serves after a newer one — a rollback, for example — must
+    // reclaim the attestation. Its readers accept only their own validator
+    // identity, so leaving the newer one behind would strand them on the full
+    // fallback for as long as that release serves.
+    await setApiTestConnectorCatalogValidationAuthority({
       ...currentAuthority,
       validatorVersion: "999999.0.0",
-    };
-    await setApiTestConnectorCatalogValidationAuthority(newerAuthority);
+    });
     mockNow(new Date("2026-07-27T08:02:00.000Z"));
     expect((await syncCatalog()).body.outcome).toBe("unchanged");
     await expect(
       readApiTestConnectorCatalogValidationAuthority(),
-    ).resolves.toStrictEqual(newerAuthority);
+    ).resolves.toStrictEqual(currentAuthority);
   });
 
   it("preserves accepted authority across an API-only release", async () => {

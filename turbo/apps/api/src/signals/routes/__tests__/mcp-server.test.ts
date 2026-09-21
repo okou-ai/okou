@@ -4,31 +4,55 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
-import type { JsonSchemaType } from "@modelcontextprotocol/server";
+import type {
+  JsonSchemaType,
+  StandardSchemaWithJSON,
+} from "@modelcontextprotocol/server";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
+  mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
+  mcpListChatThreadsInputSchema,
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
-import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
-import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
-import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import {
+  mcpGetChatMessagesInputSchema,
+  mcpGetChatMessagesOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import type { McpChatInputRef } from "@okouai/api-contracts/contracts/mcp-chat-references";
+import {
+  mcpSearchChatMessagesInputSchema,
+  mcpSearchChatMessagesOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-search";
+import {
+  mcpGetChatStatusInputSchema,
+  mcpGetChatStatusOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-status";
+import {
+  mcpListAgentsInputSchema,
   mcpListAgentsOutputSchema,
+  mcpListModelsInputSchema,
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import {
+  mcpCreateChatThreadInputSchema,
   mcpCreateChatThreadOutputSchema,
   mcpCreateChatWithMessageOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
-import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
+import {
+  mcpUpdateChatThreadInputSchema,
+  mcpUpdateChatThreadOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
+  mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
+  mcpRevokeQueuedMessageInputSchema,
   mcpRevokeQueuedMessageOutputSchema,
+  mcpCancelRunInputSchema,
   mcpCancelRunOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
@@ -83,6 +107,7 @@ import {
   updateChatSearchSourceThreadFixture,
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -107,13 +132,393 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
-// Full-scope tools/list before this optimization on main at 20ac28bd53.
-const fullCatalogBaselineBytes = 47_144;
-const fullCatalogMaximumBytes = Math.floor(fullCatalogBaselineBytes * 0.8);
+const fullCatalogToolNames = [
+  "get_chat_messages",
+  "search_chat_messages",
+  "get_chat_status",
+  "list_agents",
+  "list_models",
+  "list_chat_threads",
+  "get_chat_thread",
+  "create_chat_thread",
+  "update_chat_thread",
+  "send_chat_message",
+  "revoke_queued_message",
+  "cancel_run",
+] as const;
+
+type FullCatalogToolName = (typeof fullCatalogToolNames)[number];
+type CatalogSchemaContract = {
+  readonly input: StandardSchemaWithJSON;
+  readonly output: StandardSchemaWithJSON;
+};
+type CatalogBudget = {
+  readonly description: number;
+  readonly inputSchema: number;
+  readonly outputSchema: number;
+  readonly annotations: number;
+  readonly total: number;
+};
+
+function standardSchema(schema: z.ZodType): StandardSchemaWithJSON {
+  return schema as unknown as StandardSchemaWithJSON;
+}
+
+const catalogContracts = {
+  get_chat_messages: {
+    input: standardSchema(mcpGetChatMessagesInputSchema),
+    output: standardSchema(mcpGetChatMessagesOutputSchema),
+  },
+  search_chat_messages: {
+    input: standardSchema(mcpSearchChatMessagesInputSchema),
+    output: standardSchema(mcpSearchChatMessagesOutputSchema),
+  },
+  get_chat_status: {
+    input: standardSchema(mcpGetChatStatusInputSchema),
+    output: standardSchema(mcpGetChatStatusOutputSchema),
+  },
+  list_agents: {
+    input: standardSchema(mcpListAgentsInputSchema),
+    output: standardSchema(mcpListAgentsOutputSchema),
+  },
+  list_models: {
+    input: standardSchema(mcpListModelsInputSchema),
+    output: standardSchema(mcpListModelsOutputSchema),
+  },
+  list_chat_threads: {
+    input: standardSchema(mcpListChatThreadsInputSchema),
+    output: standardSchema(mcpListChatThreadsOutputSchema),
+  },
+  get_chat_thread: {
+    input: standardSchema(mcpGetChatThreadInputSchema),
+    output: standardSchema(mcpGetChatThreadOutputSchema),
+  },
+  create_chat_thread: {
+    input: standardSchema(mcpCreateChatThreadInputSchema),
+    output: standardSchema(mcpCreateChatThreadOutputSchema),
+  },
+  update_chat_thread: {
+    input: standardSchema(mcpUpdateChatThreadInputSchema),
+    output: standardSchema(mcpUpdateChatThreadOutputSchema),
+  },
+  send_chat_message: {
+    input: standardSchema(mcpSendChatMessageInputSchema),
+    output: standardSchema(mcpSendChatMessageOutputSchema),
+  },
+  revoke_queued_message: {
+    input: standardSchema(mcpRevokeQueuedMessageInputSchema),
+    output: standardSchema(mcpRevokeQueuedMessageOutputSchema),
+  },
+  cancel_run: {
+    input: standardSchema(mcpCancelRunInputSchema),
+    output: standardSchema(mcpCancelRunOutputSchema),
+  },
+} satisfies Record<FullCatalogToolName, CatalogSchemaContract>;
+
+const fullCatalogBudgets = {
+  get_chat_messages: {
+    description: 520,
+    inputSchema: 749,
+    outputSchema: 1851,
+    annotations: 89,
+    total: 3298,
+  },
+  search_chat_messages: {
+    description: 561,
+    inputSchema: 1102,
+    outputSchema: 1989,
+    annotations: 89,
+    total: 3833,
+  },
+  get_chat_status: {
+    description: 1064,
+    inputSchema: 836,
+    outputSchema: 5309,
+    annotations: 89,
+    total: 7378,
+  },
+  list_agents: {
+    description: 321,
+    inputSchema: 241,
+    outputSchema: 832,
+    annotations: 89,
+    total: 1566,
+  },
+  list_models: {
+    description: 368,
+    inputSchema: 119,
+    outputSchema: 1026,
+    annotations: 89,
+    total: 1685,
+  },
+  list_chat_threads: {
+    description: 421,
+    inputSchema: 1060,
+    outputSchema: 2202,
+    annotations: 89,
+    total: 3861,
+  },
+  get_chat_thread: {
+    description: 321,
+    inputSchema: 366,
+    outputSchema: 2108,
+    annotations: 89,
+    total: 2971,
+  },
+  create_chat_thread: {
+    description: 701,
+    inputSchema: 649,
+    outputSchema: 2934,
+    annotations: 90,
+    total: 4464,
+  },
+  update_chat_thread: {
+    description: 484,
+    inputSchema: 723,
+    outputSchema: 1653,
+    annotations: 91,
+    total: 3041,
+  },
+  send_chat_message: {
+    description: 578,
+    inputSchema: 521,
+    outputSchema: 1691,
+    annotations: 90,
+    total: 2969,
+  },
+  revoke_queued_message: {
+    description: 293,
+    inputSchema: 631,
+    outputSchema: 878,
+    annotations: 89,
+    total: 1984,
+  },
+  cancel_run: {
+    description: 274,
+    inputSchema: 360,
+    outputSchema: 473,
+    annotations: 88,
+    total: 1277,
+  },
+} satisfies Record<FullCatalogToolName, CatalogBudget>;
+
+const representativeSchemaValues: readonly unknown[] = [
+  null,
+  [],
+  {},
+  { unexpected: true },
+  { limit: 1 },
+  { threadId: "00000000-0000-4000-8000-000000000000" },
+  { query: "chat" },
+  { runId: "00000000-0000-4000-8000-000000000000" },
+  {
+    inputRef: {
+      threadId: "00000000-0000-4000-8000-000000000000",
+      eventId: "00000000-0000-4000-8000-000000000001",
+      seqId: 1,
+    },
+  },
+  {
+    threadId: "00000000-0000-4000-8000-000000000000",
+    text: "Continue",
+    requestId: "00000000-0000-4000-8000-000000000000",
+  },
+  { agents: [], nextCursor: null },
+  {
+    models: [],
+    defaultModel: { model: null, source: null },
+    admission: "checked_on_send",
+  },
+  {
+    threads: [],
+    nextCursor: null,
+    unreadCoverage: "retained_terminal_events_and_native_deliveries",
+  },
+  { messages: [], olderCursor: null, newerCursor: null },
+  { matches: [], nextCursor: null, scanLimited: false },
+  {
+    inputRef: {
+      threadId: "00000000-0000-4000-8000-000000000000",
+      eventId: "00000000-0000-4000-8000-000000000001",
+      seqId: 1,
+    },
+    outcome: "not_revocable",
+    runId: null,
+    reason: "not_queued",
+  },
+  {
+    runId: "00000000-0000-4000-8000-000000000000",
+    status: "cancelled",
+    alreadyCancelled: false,
+  },
+];
 
 function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProvablyObjectShapedRoot(schema: Record<string, unknown>): boolean {
+  if (
+    "properties" in schema ||
+    "patternProperties" in schema ||
+    "additionalProperties" in schema ||
+    "required" in schema
+  ) {
+    return true;
+  }
+  for (const keyword of ["oneOf", "anyOf", "allOf"] as const) {
+    const members = schema[keyword];
+    if (
+      Array.isArray(members) &&
+      members.length > 0 &&
+      members.every((member) => {
+        return (
+          isJsonObject(member) &&
+          (member.type === "object" || isProvablyObjectShapedRoot(member))
+        );
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function canonicalJsonSchema(
+  schema: StandardSchemaWithJSON,
+  io: "input" | "output",
+): Record<string, unknown> {
+  const converted = schema["~standard"].jsonSchema[io]({
+    target: "draft-2020-12",
+  });
+  if (io === "input") {
+    if (converted.type !== undefined && converted.type !== "object") {
+      throw new Error("MCP input schema root must be an object");
+    }
+    return { type: "object", ...converted };
+  }
+  return converted.type === undefined && isProvablyObjectShapedRoot(converted)
+    ? { type: "object", ...converted }
+    : converted;
+}
+
+function jsonPointerValue(root: unknown, reference: string): unknown {
+  if (!reference.startsWith("#/")) {
+    throw new Error(`Expected a local JSON Pointer, received ${reference}`);
+  }
+  let value = root;
+  for (const encodedSegment of reference.slice(2).split("/")) {
+    const segment = encodedSegment.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (Array.isArray(value)) {
+      const index = Number(segment);
+      if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
+        throw new Error(`Unresolved JSON Pointer ${reference}`);
+      }
+      value = value.at(index);
+      continue;
+    }
+    if (!isJsonObject(value)) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    const entry = Object.entries(value).find(([key]) => {
+      return key === segment;
+    });
+    if (!entry) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    value = entry[1];
+  }
+  return value;
+}
+
+function resolveLocalJsonSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  function resolve(
+    value: unknown,
+    activeReferences: ReadonlySet<string>,
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => {
+        return resolve(item, activeReferences);
+      });
+    }
+    if (!isJsonObject(value)) {
+      return value;
+    }
+    if (typeof value.$ref === "string") {
+      if (
+        Object.keys(value).some((key) => {
+          return key !== "$ref";
+        })
+      ) {
+        throw new Error(`Unsupported sibling next to $ref ${value.$ref}`);
+      }
+      if (activeReferences.has(value.$ref)) {
+        throw new Error(`Cyclic local JSON Pointer ${value.$ref}`);
+      }
+      return resolve(
+        jsonPointerValue(schema, value.$ref),
+        new Set(activeReferences).add(value.$ref),
+      );
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => {
+          return key !== "$defs";
+        })
+        .map(([key, child]) => {
+          return [key, resolve(child, activeReferences)];
+        }),
+    );
+  }
+
+  const resolved = resolve(schema, new Set());
+  if (!isJsonObject(resolved)) {
+    throw new Error("Resolved JSON Schema root must be an object");
+  }
+  return resolved;
+}
+
+function measureCatalogTool(tool: {
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+  readonly outputSchema: Record<string, unknown>;
+  readonly annotations: Record<string, unknown>;
+}): CatalogBudget {
+  return {
+    description: jsonBytes(tool.description),
+    inputSchema: jsonBytes(tool.inputSchema),
+    outputSchema: jsonBytes(tool.outputSchema),
+    annotations: jsonBytes(tool.annotations),
+    total: jsonBytes(tool),
+  };
+}
+
+function catalogArrayOverhead(toolCount: number): number {
+  return toolCount === 0 ? 2 : toolCount + 1;
+}
+
+describe("MCP schema interoperability", () => {
+  it("compiles exact-input and latest-thread status with the SDK AJV validator", () => {
+    const validate = new AjvJsonSchemaValidator().getValidator(
+      z.toJSONSchema(mcpGetChatStatusInputSchema) as JsonSchemaType,
+    );
+    const threadId = randomUUID();
+
+    expect(
+      validate({
+        inputRef: { threadId, eventId: randomUUID(), seqId: 1 },
+        waitMs: 1000,
+      }),
+    ).toMatchObject({ valid: true });
+    expect(validate({ threadId })).toMatchObject({ valid: true });
+  });
+});
 
 function measureCompactSuccess(result: unknown): {
   readonly baselineBytes: number;
@@ -399,10 +804,9 @@ async function sendMessage(token: string, args: Record<string, unknown>) {
   return mcpSendChatMessageOutputSchema.parse(result.structuredContent);
 }
 
-async function revokeMessage(token: string, threadId: string, inputId: string) {
+async function revokeMessage(token: string, inputRef: McpChatInputRef) {
   const result = await callTool(token, "revoke_queued_message", {
-    threadId,
-    inputId,
+    inputRef,
   });
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpRevokeQueuedMessageOutputSchema.parse(result.structuredContent);
@@ -644,7 +1048,7 @@ describe("MCP chat discovery and creation", () => {
   });
 
   it.each([false, true])(
-    "reports pending model setup after a plan downgrade with personal priority %s",
+    "keeps a member subscription route selectable after a plan downgrade with personal priority %s",
     async (personalSubscriptionPriority) => {
       const f = await threadFixture();
       const runs = createRunsApi(context);
@@ -683,25 +1087,8 @@ describe("MCP chat discovery and creation", () => {
         [200],
       );
 
-      const pending = await callTool(token, "list_models");
-      expect(pending.isError).toBeTruthy();
-      structuredToolError(pending);
-      expect(pending.content).toContainEqual({
-        type: "text",
-        text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
-      });
-      await expect(callTool(token, "list_models")).resolves.toStrictEqual(
-        pending,
-      );
-
-      createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
-      const settings = await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+      // Every runnable plan supports BYOK, so the member subscription route
+      // survives the downgrade and the policies need no synchronization.
       const models = await listModels(token);
       expect(models.defaultModel).toStrictEqual({
         model: "gpt-5.6-luna",
@@ -722,6 +1109,59 @@ describe("MCP chat discovery and creation", () => {
       ).toStrictEqual([]);
     },
   );
+
+  it("reports pending model setup when a restricted plan keeps a Pro-only built-in default", async () => {
+    const f = await threadFixture();
+    const runs = createRunsApi(context);
+    await runs.grantProEntitlement(f.actor);
+    await runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const token = f.auth.token({ scope: defaultScopes });
+    const billing = await runs.readBillingStatus(f.actor);
+    if (!f.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    // "limited-free-1" is the only plan that still restricts Built-in models,
+    // and it is assigned by the org-creation bootstrap rather than any product
+    // API, so seed the tier directly while keeping the balance.
+    await seedOrgMetadata({
+      orgId: f.actor.orgId,
+      tier: "limited-free-1",
+      credits: billing.credits,
+    });
+
+    const pending = await callTool(token, "list_models");
+    expect(pending.isError).toBeTruthy();
+    structuredToolError(pending);
+    expect(pending.content).toContainEqual({
+      type: "text",
+      text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+    });
+    await expect(callTool(token, "list_models")).resolves.toStrictEqual(
+      pending,
+    );
+
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    const settings = await accept(
+      setupApp({ context, routes: modelPoliciesRoutes })(
+        modelPoliciesMainContract,
+      ).list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    const models = await listModels(token);
+    expect(models.defaultModel).toStrictEqual({
+      model: "gpt-5.6-luna",
+      source: "org_default",
+    });
+  });
 
   it("distinguishes configured models, missing member credentials and the member default", async () => {
     const f = await creationFixture();
@@ -954,7 +1394,6 @@ describe("MCP chat discovery and creation", () => {
       nextAction: {
         tool: "get_chat_status",
         arguments: {
-          threadId: args.requestId,
           inputRef: expect.objectContaining({ threadId: args.requestId }),
         },
       },
@@ -963,6 +1402,17 @@ describe("MCP chat discovery and creation", () => {
     expect(combined.nextAction.arguments.inputRef).toStrictEqual(
       combined.input.inputRef,
     );
+    const status = await getStatus(token, combined.nextAction.arguments);
+    expect(status).toMatchObject({
+      threadId: args.requestId,
+      messages: {
+        arguments: {
+          threadId: args.requestId,
+          runId: combined.input.runId,
+          limit: 20,
+        },
+      },
+    });
     expect(
       Date.parse(combined.input.retryUntil) -
         Date.parse(combined.input.acceptedAt),
@@ -1833,7 +2283,6 @@ describe("MCP chat status", () => {
     const before = await f.chat.readThread(f.actor, thread.id);
     const status = await getStatus(f.auth.token(), {
       threadId: thread.id,
-      waitMs: 0,
     });
     expect(status).toMatchObject({
       threadId: thread.id,
@@ -1872,7 +2321,7 @@ describe("MCP chat status", () => {
     onTestFinished(async () => {
       await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
     });
-    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const args = { inputRef: sent.inputRef };
     const pending = await getStatus(token, args);
     expect(pending).toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
@@ -1986,9 +2435,7 @@ describe("MCP chat status", () => {
       if (!inputRef) {
         throw new Error("Expected a visible replacement reference");
       }
-      await expect(
-        getStatus(token, { threadId: thread.id, inputRef }),
-      ).resolves.toMatchObject({
+      await expect(getStatus(token, { inputRef })).resolves.toMatchObject({
         lifecycle: {
           phase: "unavailable",
           outcome: null,
@@ -1999,7 +2446,6 @@ describe("MCP chat status", () => {
     }
     await expect(
       getStatus(token, {
-        threadId: thread.id.toUpperCase(),
         inputRef: {
           ...sent.inputRef,
           threadId: thread.id.toUpperCase(),
@@ -2071,7 +2517,6 @@ describe("MCP chat status", () => {
     );
 
     const status = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 5000,
     });
@@ -2142,7 +2587,6 @@ describe("MCP chat status", () => {
     );
 
     const deadline = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 5000,
     });
@@ -2186,7 +2630,6 @@ describe("MCP chat status", () => {
     });
     await flushWaitUntilForTest();
     const late = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 5000,
     });
@@ -2239,7 +2682,6 @@ describe("MCP chat status", () => {
       return Promise.resolve();
     });
     const args = {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 8000,
     };
@@ -2339,7 +2781,6 @@ describe("MCP chat status", () => {
               requestBody("tools/call", true, {
                 name: "get_chat_status",
                 arguments: {
-                  threadId: thread.id,
                   inputRef: sent.inputRef,
                   waitMs: 8000,
                 },
@@ -2358,7 +2799,6 @@ describe("MCP chat status", () => {
     await pending;
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const after = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 8000,
     });
@@ -2474,7 +2914,6 @@ describe("MCP chat status", () => {
     );
     await flushWaitUntilForTest();
     const status = await getStatus(token, {
-      threadId: thread.id,
       inputRef: sent.inputRef,
       waitMs: 8000,
     });
@@ -2537,7 +2976,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Start a new run when the previous one completes",
     });
-    const args = { threadId: active.threadId, inputRef: submitted.inputRef };
+    const args = { inputRef: submitted.inputRef };
     await expect(getStatus(token, args)).resolves.toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
       messages: null,
@@ -2648,7 +3087,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Retain my original input reference",
     });
-    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const args = { inputRef: sent.inputRef };
     const before = await getStatus(token, args);
     // Infrastructure exception: public sends cannot backdate acceptance past
     // the database-clock retention cutoff. Archive, retention and all status
@@ -2679,24 +3118,32 @@ describe("MCP chat status", () => {
     expect(failure.content[0]?.text).toContain("could not be read completely");
   });
 
-  it("rejects cross-thread references and unsupported status controls", async () => {
+  it("rejects malformed canonical status selectors without mutation", async () => {
     const f = await threadFixture();
     const thread = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
     });
     const token = f.auth.token();
     const before = await f.chat.readThread(f.actor, thread.id);
+    const inputRef = {
+      threadId: thread.id,
+      eventId: randomUUID(),
+      seqId: 1,
+    };
     for (const args of [
-      { threadId: thread.id, waitMs: 30_000 },
-      { threadId: thread.id, runId: randomUUID() },
+      { threadId: thread.id, inputRef },
+      { threadId: thread.id, waitMs: 0 },
       {
-        threadId: thread.id,
-        inputRef: { threadId: randomUUID(), eventId: randomUUID(), seqId: 1 },
+        inputRef: {
+          threadId: "not-a-uuid",
+          eventId: randomUUID(),
+          seqId: 1,
+        },
       },
       {
-        threadId: thread.id,
         inputRef: { threadId: thread.id, eventId: randomUUID(), seqId: 0 },
       },
+      { threadId: "not-a-uuid" },
     ]) {
       expect(
         (await callTool(token, "get_chat_status", args)).isError,
@@ -2773,7 +3220,6 @@ describe("MCP chat mutations", () => {
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text, eventType: "input.rejected", runId: null }]);
     const status = await getStatus(token, {
-      threadId: thread.id,
       inputRef: result.inputRef,
     });
     expect(status).toMatchObject({
@@ -3309,20 +3755,18 @@ describe("MCP chat mutations", () => {
       expect(failure.isError).toBeTruthy();
       expect(JSON.stringify(failure)).not.toContain("PRIVATE_MCP_RECEIPT");
       const hiddenStatus = await callTool(foreignToken, "get_chat_status", {
-        threadId: thread.id,
         inputRef: submitted.inputRef,
       });
       const missingThreadId = randomUUID();
       await expect(
         callTool(foreignToken, "get_chat_status", {
-          threadId: missingThreadId,
           inputRef: { ...submitted.inputRef, threadId: missingThreadId },
         }),
       ).resolves.toStrictEqual(hiddenStatus);
       expect(hiddenStatus.isError).toBeTruthy();
       structuredToolError(hiddenStatus);
       await expect(
-        revokeMessage(foreignToken, thread.id, args.requestId),
+        revokeMessage(foreignToken, submitted.inputRef),
       ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
     }
     await f.chat.deleteThread(f.actor, thread.id);
@@ -3332,7 +3776,6 @@ describe("MCP chat mutations", () => {
     expect(
       (
         await callTool(token, "get_chat_status", {
-          threadId: thread.id,
           inputRef: submitted.inputRef,
         })
       ).isError,
@@ -3371,7 +3814,13 @@ describe("MCP chat mutations", () => {
     {
       name: "revoke_queued_message",
       scope: "okou:run:cancel",
-      args: { threadId: randomUUID(), inputId: randomUUID() },
+      args: {
+        inputRef: {
+          threadId: randomUUID(),
+          eventId: randomUUID(),
+          seqId: 1,
+        },
+      },
     },
     {
       name: "cancel_run",
@@ -3479,7 +3928,7 @@ describe("MCP chat mutations", () => {
       const sent = await sendMessage(token, args);
       expect(sent).toMatchObject({ disposition: "queued", runId: null });
       await expect(
-        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+        getStatus(token, { inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
         lifecycle: { phase: "queued", outcome: null, output: "pending" },
         messages: null,
@@ -3487,20 +3936,20 @@ describe("MCP chat mutations", () => {
       const revoked = await revokeMessage(
         token,
         letterCase === "uppercase"
-          ? args.threadId.toUpperCase()
-          : args.threadId,
-        letterCase === "uppercase"
-          ? args.requestId.toUpperCase()
-          : args.requestId,
+          ? {
+              ...sent.inputRef,
+              threadId: sent.inputRef.threadId.toUpperCase(),
+              eventId: sent.inputRef.eventId.toUpperCase(),
+            }
+          : sent.inputRef,
       );
       expect(revoked).toMatchObject({
-        threadId: args.threadId,
-        inputId: args.requestId,
+        inputRef: sent.inputRef,
         outcome: "revoked",
       });
-      await expect(
-        revokeMessage(token, args.threadId, args.requestId),
-      ).resolves.toMatchObject({ outcome: "already_revoked" });
+      await expect(revokeMessage(token, sent.inputRef)).resolves.toMatchObject({
+        outcome: "already_revoked",
+      });
       await expect(sendMessage(token, args)).resolves.toMatchObject({
         inputRef: sent.inputRef,
         replayed: true,
@@ -3508,7 +3957,7 @@ describe("MCP chat mutations", () => {
         runId: null,
       });
       await expect(
-        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+        getStatus(token, { inputRef: sent.inputRef }),
       ).resolves.toMatchObject({
         lifecycle: { phase: "settled", outcome: "revoked", output: "none" },
         messages: null,
@@ -3536,7 +3985,16 @@ describe("MCP chat mutations", () => {
       ).toHaveLength(1);
       const before = await f.chat.listThreadEvents(f.actor, args.threadId);
       await expect(
-        revokeMessage(token, args.threadId, randomUUID()),
+        revokeMessage(token, {
+          ...sent.inputRef,
+          eventId: randomUUID(),
+        }),
+      ).resolves.toMatchObject({ outcome: "unavailable" });
+      await expect(
+        revokeMessage(token, {
+          ...sent.inputRef,
+          seqId: sent.inputRef.seqId + 1,
+        }),
       ).resolves.toMatchObject({ outcome: "unavailable" });
       await expect(
         f.chat.listThreadEvents(f.actor, args.threadId),
@@ -3650,7 +4108,7 @@ describe("MCP chat mutations", () => {
       throw new Error("Expected the runner to reserve MCP input");
     }
     expect(reserved.eventIds).toStrictEqual([args.requestId]);
-    const recall = await revokeMessage(token, args.threadId, args.requestId);
+    const recall = await revokeMessage(token, sent.inputRef);
     expect(recall).toMatchObject({
       outcome: "not_revocable",
       reason: "reserved_or_associated",
@@ -3662,7 +4120,7 @@ describe("MCP chat mutations", () => {
       runId: active.runId,
     });
     await expect(
-      getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+      getStatus(token, { inputRef: sent.inputRef }),
     ).resolves.toMatchObject({
       lifecycle: { phase: "queued", outcome: null, output: "pending" },
       messages: {
@@ -3687,7 +4145,6 @@ describe("MCP chat mutations", () => {
       runId: active.runId,
     });
     const delivered = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: sent.inputRef,
     });
     expect(delivered).toMatchObject({
@@ -3700,9 +4157,7 @@ describe("MCP chat mutations", () => {
         },
       },
     });
-    await expect(
-      revokeMessage(token, args.threadId, args.requestId),
-    ).resolves.toMatchObject({
+    await expect(revokeMessage(token, sent.inputRef)).resolves.toMatchObject({
       outcome: "not_revocable",
       reason: "reserved_or_associated",
       runId: active.runId,
@@ -3737,11 +4192,9 @@ describe("MCP chat mutations", () => {
       [200],
     );
     const steered = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: sent.inputRef,
     });
     const launched = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: initial.inputRef,
     });
     expect(launched.lifecycle).toStrictEqual({
@@ -3779,7 +4232,6 @@ describe("MCP chat mutations", () => {
     );
     expect(retained.body.deleted).toBe(1);
     const archived = await getStatus(token, {
-      threadId: args.threadId,
       inputRef: sent.inputRef,
     });
     expect(archived.lifecycle).toStrictEqual(steered.lifecycle);
@@ -5994,6 +6446,7 @@ describe("external MCP entry", () => {
                 description: z.string(),
                 inputSchema: z.record(z.string(), z.unknown()),
                 outputSchema: z.record(z.string(), z.unknown()),
+                annotations: z.record(z.string(), z.unknown()),
               }),
             ),
           }),
@@ -6051,7 +6504,7 @@ describe("external MCP entry", () => {
                     },
                     annotations: {
                       readOnlyHint: false,
-                      idempotentHint: true,
+                      idempotentHint: false,
                       openWorldHint: true,
                     },
                   },
@@ -6077,7 +6530,7 @@ describe("external MCP entry", () => {
                         },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: { readOnlyHint: false, idempotentHint: false },
                   },
                   {
                     name: "send_chat_message",
@@ -6086,7 +6539,7 @@ describe("external MCP entry", () => {
                         text: { maxLength: 32_000, pattern: "\\S" },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: { readOnlyHint: false, idempotentHint: false },
                   },
                   {
                     name: "revoke_queued_message",
@@ -6117,10 +6570,80 @@ describe("external MCP entry", () => {
         }).not.toThrow();
       }
       if (scopes === defaultScopes) {
-        expect(listedTools).toHaveLength(12);
-        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(
-          fullCatalogMaximumBytes,
+        const listedNames = listedTools.map((tool) => {
+          return tool.name;
+        });
+        expect(listedNames).toStrictEqual(fullCatalogToolNames);
+        expect(Object.keys(catalogContracts)).toStrictEqual(
+          fullCatalogToolNames,
         );
+        expect(Object.keys(fullCatalogBudgets)).toStrictEqual(
+          fullCatalogToolNames,
+        );
+
+        for (const tool of listedTools) {
+          if (!(tool.name in fullCatalogBudgets)) {
+            throw new Error(`Missing catalog budget for ${tool.name}`);
+          }
+          const toolName = tool.name as FullCatalogToolName;
+          const measured = measureCatalogTool(tool);
+          const budget = fullCatalogBudgets[toolName];
+          for (const component of [
+            "description",
+            "inputSchema",
+            "outputSchema",
+            "annotations",
+            "total",
+          ] as const) {
+            expect(
+              measured[component],
+              `${toolName}.${component} exceeds its reviewed budget`,
+            ).toBeLessThanOrEqual(budget[component]);
+          }
+
+          const contract = catalogContracts[toolName];
+          for (const [schemaName, advertised, canonical] of [
+            [
+              "inputSchema",
+              tool.inputSchema,
+              canonicalJsonSchema(contract.input, "input"),
+            ],
+            [
+              "outputSchema",
+              tool.outputSchema,
+              canonicalJsonSchema(contract.output, "output"),
+            ],
+          ] as const) {
+            expect(
+              jsonBytes(advertised),
+              `${toolName}.${schemaName} compaction must be byte-nonincreasing`,
+            ).toBeLessThanOrEqual(jsonBytes(canonical));
+            expect(
+              resolveLocalJsonSchema(advertised),
+              `${toolName}.${schemaName} must preserve the canonical contract`,
+            ).toStrictEqual(resolveLocalJsonSchema(canonical));
+            const advertisedValidator = schemaValidator.getValidator(
+              advertised as JsonSchemaType,
+            );
+            const canonicalValidator = schemaValidator.getValidator(
+              canonical as JsonSchemaType,
+            );
+            for (const value of representativeSchemaValues) {
+              expect(
+                advertisedValidator(value).valid,
+                `${toolName}.${schemaName} must validate representative values equivalently`,
+              ).toBe(canonicalValidator(value).valid);
+            }
+          }
+        }
+        const catalogBudget =
+          catalogArrayOverhead(listedTools.length) +
+          listedTools.reduce((total, tool) => {
+            return (
+              total + fullCatalogBudgets[tool.name as FullCatalogToolName].total
+            );
+          }, 0);
+        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(catalogBudget);
         expect(JSON.stringify(listedTools)).toContain('"$ref":"#/$defs/');
         const safetyTerms = {
           get_chat_messages: [
@@ -6151,12 +6674,32 @@ describe("external MCP entry", () => {
             /neither reads messages nor marks read/iu,
             /not prove/iu,
           ],
-          create_chat_thread: [/24 hours/iu, /retry only/iu, /admission/iu],
-          update_chat_thread: [/24 hours/iu, /retry only/iu, /active run/iu],
-          send_chat_message: [/24 hours/iu, /not proof/iu, /get_chat_status/iu],
+          create_chat_thread: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /admission/iu,
+          ],
+          update_chat_thread: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /active run/iu,
+          ],
+          send_chat_message: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /not proof/iu,
+            /get_chat_status/iu,
+          ],
           revoke_queued_message: [/never cancels a run/iu, /not_revocable/iu],
           cancel_run: [/neither revokes/iu, /prior effects/iu],
         } as const;
+        expect(Object.keys(safetyTerms)).toStrictEqual(fullCatalogToolNames);
         for (const tool of listedTools) {
           const terms = safetyTerms[tool.name as keyof typeof safetyTerms];
           expect(terms, `Unexpected tool ${tool.name}`).toBeDefined();
@@ -6232,26 +6775,24 @@ describe("external MCP entry", () => {
         tools.tools.map((tool) => {
           return tool.name;
         }),
-      ).toStrictEqual([
-        "get_chat_messages",
-        "search_chat_messages",
-        "get_chat_status",
-        "list_agents",
-        "list_models",
-        "list_chat_threads",
-        "get_chat_thread",
-        "create_chat_thread",
-        "update_chat_thread",
-        "send_chat_message",
-        "revoke_queued_message",
-        "cancel_run",
-      ]);
+      ).toStrictEqual(fullCatalogToolNames);
       const advertisedOutputValidators = new Map(
         tools.tools.map((tool) => {
           const validator = new AjvJsonSchemaValidator().getValidator(
             tool.outputSchema as JsonSchemaType,
           );
           return [tool.name, validator] as const;
+        }),
+      );
+      const canonicalOutputValidators = new Map(
+        fullCatalogToolNames.map((toolName) => {
+          const validator = new AjvJsonSchemaValidator().getValidator(
+            canonicalJsonSchema(
+              catalogContracts[toolName].output,
+              "output",
+            ) as JsonSchemaType,
+          );
+          return [toolName, validator] as const;
         }),
       );
       const result = await sdk.callTool({
@@ -6318,10 +6859,7 @@ describe("external MCP entry", () => {
       });
       const status = await sdk.callTool({
         name: "get_chat_status",
-        arguments: {
-          threadId: sent.threadId,
-          inputRef: receipt.inputRef,
-        },
+        arguments: receipt.nextAction.arguments,
       });
       expect(status).toMatchObject({
         structuredContent: {
@@ -6348,9 +6886,22 @@ describe("external MCP entry", () => {
           if (!validateOutput) {
             throw new Error(`Missing output validator for ${toolName}`);
           }
-          expect(validateOutput(toolResult.structuredContent)).toMatchObject({
-            valid: true,
-          });
+          const validateCanonicalOutput =
+            canonicalOutputValidators.get(toolName);
+          if (!validateCanonicalOutput) {
+            throw new Error(
+              `Missing canonical output validator for ${toolName}`,
+            );
+          }
+          const advertisedValidation = validateOutput(
+            toolResult.structuredContent,
+          );
+          const canonicalValidation = validateCanonicalOutput(
+            toolResult.structuredContent,
+          );
+          expect(advertisedValidation).toMatchObject({ valid: true });
+          expect(canonicalValidation).toMatchObject({ valid: true });
+          expect(advertisedValidation.valid).toBe(canonicalValidation.valid);
           return measureCompactSuccess(toolResult);
         },
       );

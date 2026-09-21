@@ -32,6 +32,8 @@ interface PublishedBody {
   readonly kind: string;
   readonly sourceFileId: string;
   readonly pageFileIds?: readonly string[];
+  readonly coverFileId?: string;
+  readonly pageCount?: number;
   readonly packageFileId: string;
 }
 
@@ -271,12 +273,137 @@ describe("okou user-template publish", () => {
     ]);
 
     // The document arm carries no page ids at all, rather than an empty array
-    // the endpoint would have to interpret.
+    // the endpoint would have to interpret. The same holds for a run that
+    // rendered nothing: the two optional fields are left out rather than sent
+    // as nulls the endpoint would have to read as "no cover".
     expect(published?.kind).toBe("document");
     expect(published?.pageFileIds).toBeUndefined();
+    expect(published?.coverFileId).toBeUndefined();
+    expect(published?.pageCount).toBeUndefined();
     expect(mockConsoleLog).toHaveBeenCalledWith(
       `Published Brand report (${TEMPLATE_ID})`,
     );
+  });
+
+  it("uploads a document's cover as a page image and names its length", async () => {
+    const uploads = installUploadRoutes();
+    const docxPath = join(tempDir, "brand-report.docx");
+    writeFileSync(docxPath, Buffer.from("docx bytes"));
+    const coverPath = join(tempDir, "cover.png");
+    writeFileSync(coverPath, Buffer.from("first page"));
+
+    let published: PublishedBody | undefined;
+    server.use(
+      http.post(PUBLISH_URL, async ({ request }) => {
+        published = (await request.json()) as PublishedBody;
+        return HttpResponse.json({
+          id: TEMPLATE_ID,
+          title: published.title,
+          sourceFilename: "brand-report.docx",
+          kind: "document",
+          coverUrl: "https://cdn.example.test/cover.png",
+          coverHasMorePages: true,
+          pageCount: null,
+          visibility: "private",
+          ownerUserId: "user_1",
+          canManage: true,
+          createdAt: "2026-09-17T00:00:00.000Z",
+          updatedAt: "2026-09-17T00:00:00.000Z",
+        });
+      }),
+    );
+
+    await userTemplateCommand.parseAsync([
+      "node",
+      "okou",
+      "publish",
+      "--kind",
+      "document",
+      "--title",
+      "Brand report",
+      "--source",
+      docxPath,
+      "--cover",
+      coverPath,
+      "--page-count",
+      "12",
+      "--package",
+      packageDir,
+    ]);
+
+    expect(published?.coverFileId).toBeDefined();
+    expect(published?.pageCount).toBe(12);
+    // Sent as a page image because that is what it is held to at publish: the
+    // endpoint checks the cover against the page content type and the page
+    // size ceiling, and serves it through the preview-asset path afterwards.
+    expect(uploads.contentTypeOf(published?.coverFileId ?? "")).toBe(
+      "image/png",
+    );
+    // Still not a page: the document arm has no page ids to put it in.
+    expect(published?.pageFileIds).toBeUndefined();
+    // The line stays the summary's, and a document renders no pages, so the
+    // count the caller passed is not echoed back as one.
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      `Published Brand report (${TEMPLATE_ID})`,
+    );
+  });
+
+  it("refuses a page count that is not a whole number of pages", async () => {
+    const uploads = installUploadRoutes();
+    const docxPath = join(tempDir, "brand-report.docx");
+    writeFileSync(docxPath, Buffer.from("docx bytes"));
+
+    await expect(
+      userTemplateCommand.parseAsync([
+        "node",
+        "okou",
+        "publish",
+        "--kind",
+        "document",
+        "--title",
+        "Brand report",
+        "--source",
+        docxPath,
+        "--page-count",
+        "twelve",
+        "--package",
+        packageDir,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    const errors = mockConsoleError.mock.calls.flat().join("\n");
+    // Refused here rather than forwarded: as `NaN` it would come back from the
+    // endpoint as a schema error about a field the user never named.
+    expect(errors).toContain("--page-count must be a whole number");
+    expect(uploads.uploadCount()).toBe(0);
+  });
+
+  it("refuses a cover on a kind whose catalog would never show it", async () => {
+    const uploads = installUploadRoutes();
+    const coverPath = join(tempDir, "cover.png");
+    writeFileSync(coverPath, Buffer.from("first page"));
+
+    await expect(
+      userTemplateCommand.parseAsync([
+        "node",
+        "okou",
+        "publish",
+        "--title",
+        "Brand system",
+        "--source",
+        sourcePath,
+        "--pages",
+        pagesDir,
+        "--cover",
+        coverPath,
+        "--package",
+        packageDir,
+      ]),
+    ).rejects.toThrow("process.exit called");
+    const errors = mockConsoleError.mock.calls.flat().join("\n");
+    // Ignoring it silently is what would let a deck be published with a cover
+    // nothing shows, and leave the caller believing it had one.
+    expect(errors).toContain("--cover is only for a document template");
+    expect(uploads.uploadCount()).toBe(0);
   });
 
   it("publishes an illustration template from the reference picture", async () => {

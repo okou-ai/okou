@@ -6973,9 +6973,6 @@
     "detail": {
       "back": "Plantillas personalizadas",
       "page": "Página {{number}}",
-      "source_one": "{{count}} página · de {{filename}}",
-      "source_many": "{{count}} páginas · de {{filename}}",
-      "source_other": "{{count}} páginas · de {{filename}}",
       "sourceFile": "De {{filename}}"
     },
     "empty": {
@@ -6985,6 +6982,7 @@
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
     "sharedBy": "Compartida por {{owner}}",
+    "sharedByMember": "Compartida por un miembro de la organización",
     "visibility": {
       "change": "Cambiar",
       "organization": "Organización",

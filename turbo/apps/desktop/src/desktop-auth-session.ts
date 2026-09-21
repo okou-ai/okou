@@ -230,6 +230,16 @@ export class DesktopAuthSession {
     this.onChange();
   }
 
+  /**
+   * The app is closing, so the window teardown that follows is expected and
+   * must not be reported as a failed restore. Ending the lifetime is the whole
+   * job: clearing session state here, as `signOut` does, would sign the user
+   * out on every quit for an update.
+   */
+  abortForQuit(): void {
+    this.lifetime.abort();
+  }
+
   async consumeCode(
     code: string,
     handoffId: string | null = null,

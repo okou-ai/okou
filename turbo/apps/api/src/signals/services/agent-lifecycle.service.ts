@@ -36,6 +36,7 @@ export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
 interface ClerkAgentLifecycleHooks {
   readonly beforeAgentLock?: (tx: Tx, agentId: string) => Promise<void>;
+  readonly beforeInstructionsStorageLocks?: (tx: Tx) => Promise<void>;
   readonly afterInstructionsStorageLocks?: (
     tx: Tx,
     storageIds: readonly string[],
@@ -231,6 +232,7 @@ async function lockClerkAgentInstructionsStorages(
   if (scope.kind !== "user") {
     return [];
   }
+  await clerkAgentLifecycleHooks.get().beforeInstructionsStorageLocks?.(tx);
   const locked = await lockAgentInstructionsStoragesInTransaction(
     tx,
     ownedAgents.map((agent) => {

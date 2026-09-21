@@ -64,13 +64,11 @@ def _apply_source_id(firewall: dict, source_id: str | None) -> None:
             api["sourceId"] = source_id
 
 
-def _connector_runtime_target_ids(
-    sandbox: dict,
-) -> tuple[dict[str, str | None], set[str]]:
+def _connector_runtime_target_ids(sandbox: dict) -> tuple[set[str], set[str]]:
     raw_targets = sandbox.get("connectorRuntimeTargets", [])
     if not isinstance(raw_targets, list):
         raise FirewallEntryResolutionError("connectorRuntimeTargets must be a list")
-    builtin_slugs: dict[str, str | None] = {}
+    builtin_slugs: set[str] = set()
     custom_connector_ids: set[str] = set()
     for target in raw_targets:
         if not isinstance(target, dict):
@@ -86,7 +84,7 @@ def _connector_runtime_target_ids(
                 raise FirewallEntryResolutionError(
                     "builtin connector runtime targets must be unique"
                 )
-            builtin_slugs[connector_slug] = _source_id(target)
+            builtin_slugs.add(connector_slug)
             continue
         if kind == "custom":
             custom_connector_id = target.get("customConnectorId")
@@ -290,24 +288,6 @@ def _resolve_builtin_firewall_entry(
     )
 
 
-def _mark_connector_runtime_kind(
-    firewall: dict,
-    raw_apis: list,
-    kind: connector_runtime_metadata.ConnectorRuntimeKind,
-) -> None:
-    connector_runtime_metadata.mark_connector_runtime_kind(firewall, kind)
-    for api in raw_apis:
-        if isinstance(api, dict):
-            connector_runtime_metadata.mark_connector_runtime_kind(api, kind)
-
-
-def _clear_connector_runtime_kind(firewall: dict, raw_apis: list) -> None:
-    connector_runtime_metadata.clear_connector_runtime_kind(firewall)
-    for api in raw_apis:
-        if isinstance(api, dict):
-            connector_runtime_metadata.clear_connector_runtime_kind(api)
-
-
 def _assign_firewall_api_ids(firewalls: list[dict], run_id: str) -> None:
     index = 0
     for firewall in firewalls:
@@ -356,12 +336,10 @@ def resolve_firewall_entries(
 
     Runtime ownership metadata is assigned by the registry rather than trusted
     from source firewall data. Resolution clears any source-provided
-    `_connectorRuntimeKind` marker, marks a resolved named builtin as `builtin`
-    only when its name is registered in `connectorRuntimeTargets`, marks an inline
-    builtin only when its name and source ID exactly match a registered builtin
-    target, and marks an inline custom firewall as `custom` only when its UUID is
-    registered there. Unregistered or absent connector identities remain
-    unclassified.
+    `_connectorRuntimeKind` marker, marks a resolved builtin as `builtin` only
+    when its name is registered in `connectorRuntimeTargets`, and marks an inline
+    custom firewall as `custom` only when its UUID is registered there. Unregistered
+    or absent connector identities remain unclassified.
 
     Optional entry `sourceId` values must be UUID strings and are copied to the
     resolved firewall and each dictionary API entry. An optional inline
@@ -420,11 +398,12 @@ def resolve_firewall_entries(
             if resolved_builtin is None:
                 omitted_builtin_names.add(raw_name)
                 continue
-            builtin_apis = resolved_builtin.firewall["apis"]
-            _clear_connector_runtime_kind(resolved_builtin.firewall, builtin_apis)
+            connector_runtime_metadata.clear_connector_runtime_kind(resolved_builtin.firewall)
             _apply_source_id(resolved_builtin.firewall, source_id)
             if raw_name in builtin_target_slugs:
-                _mark_connector_runtime_kind(resolved_builtin.firewall, builtin_apis, "builtin")
+                connector_runtime_metadata.mark_connector_runtime_kind(
+                    resolved_builtin.firewall, "builtin"
+                )
             resolved.append(resolved_builtin.firewall)
             builtin_cache_keys.append(resolved_builtin.cache_key)
             continue
@@ -438,26 +417,18 @@ def resolve_firewall_entries(
             raw_apis = resolved_firewall.get("apis")
             if not isinstance(raw_apis, list):
                 raise FirewallEntryResolutionError("inline firewall apis must be a list")
-            _clear_connector_runtime_kind(resolved_firewall, raw_apis)
-            source_id = _source_id(entry)
-            _apply_source_id(resolved_firewall, source_id)
+            connector_runtime_metadata.clear_connector_runtime_kind(resolved_firewall)
+            _apply_source_id(resolved_firewall, _source_id(entry))
             custom_connector_id = _custom_connector_id(entry)
             if custom_connector_id is not None:
                 resolved_firewall["customConnectorId"] = custom_connector_id
                 if custom_connector_id in custom_target_ids:
-                    _mark_connector_runtime_kind(resolved_firewall, raw_apis, "custom")
+                    connector_runtime_metadata.mark_connector_runtime_kind(
+                        resolved_firewall, "custom"
+                    )
                 for api in raw_apis:
                     if isinstance(api, dict):
                         api["customConnectorId"] = custom_connector_id
-            else:
-                raw_name = resolved_firewall.get("name")
-                if isinstance(raw_name, str) and raw_name in builtin_target_slugs:
-                    expected_source_id = builtin_target_slugs[raw_name]
-                    if expected_source_id is None or source_id != expected_source_id:
-                        raise FirewallEntryResolutionError(
-                            "inline builtin firewall must match its registered sourceId"
-                        )
-                    _mark_connector_runtime_kind(resolved_firewall, raw_apis, "builtin")
             resolved.append(resolved_firewall)
             builtin_cache_keys.append(None)
             continue

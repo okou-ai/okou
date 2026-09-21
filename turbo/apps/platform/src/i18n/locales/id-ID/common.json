@@ -6886,7 +6886,6 @@
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}",
-      "source_other": "{{count}} halaman · dari {{filename}}",
       "sourceFile": "Dari {{filename}}"
     },
     "empty": {
@@ -6896,6 +6895,7 @@
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
+    "sharedByMember": "Dibagikan oleh anggota organisasi",
     "visibility": {
       "change": "Ubah",
       "organization": "Organisasi",

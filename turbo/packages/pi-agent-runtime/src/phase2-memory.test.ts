@@ -628,6 +628,59 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     });
   });
 
+  it("raises maintenance effort for a model that publishes no medium step", async () => {
+    // DeepSeek V4.1 Flash maps `medium` to nothing, so the built-in binding
+    // must consolidate at that model's documented default instead.
+    const provider = await startProvider([
+      {
+        type: "tool",
+        name: "phase2_write",
+        arguments: {
+          path: "memory/MEMORY.md",
+          content: "# Task Group: updated by maintenance\n",
+        },
+      },
+      {
+        type: "tool",
+        name: "phase2_write",
+        arguments: {
+          path: "memory/memory_summary.md",
+          content: "v1\n## User Profile\n- updated by maintenance\n",
+        },
+      },
+      { type: "text", text: "MODEL_TEXT_SECRET_31243 completed" },
+    ]);
+    const sessions: PiMemoryPhase2SessionSnapshot[] = [];
+    const result = await runPiMemoryPhase2LocalConsolidation(
+      args(provider.baseUrl, {
+        model: {
+          provider: "deepseek",
+          baseUrl: provider.baseUrl,
+          apiKey: "PROVIDER_KEY_SECRET_31243",
+          model: "deepseek-flash",
+          dialect: "openai-responses",
+          transport: "sse",
+        },
+      }),
+      new AbortController().signal,
+      {
+        onSessionCreated(snapshot) {
+          sessions.push(snapshot);
+        },
+      },
+    );
+
+    expect(result.status).toBe("prepared");
+    expect(sessions[0]?.thinkingLevel).toBe("high");
+    expect(provider.requests).not.toHaveLength(0);
+    for (const request of provider.requests) {
+      expect(request.body).toMatchObject({
+        model: "deepseek-flash",
+        reasoning: { effort: "high" },
+      });
+    }
+  });
+
   it("uses one restricted official AgentSession and returns exact prepared usage", async () => {
     const credentialDir = await mkdtemp(
       join(tmpdir(), "pi-phase2-credentials-"),

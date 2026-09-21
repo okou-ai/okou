@@ -26,6 +26,7 @@ import {
   isCodexFastModeModel,
   isSupportedRunModel,
   getRunModelAccess,
+  getRunModelRouteAccess,
   normalizeRunModelId,
   getAuthMethodsForType,
   getSecretNameForType,
@@ -331,6 +332,24 @@ describe("model-first canonical catalog", () => {
       expect(getProvidersForModel(model)).toEqual([]);
     },
   );
+
+  it("restricts paid models only on the built-in route", () => {
+    expect(getRunModelRouteAccess("gpt-6-astra", "built-in", true)).toBe(
+      "pro_required",
+    );
+    expect(getRunModelRouteAccess("gpt-6-astra", "openai-api-key", true)).toBe(
+      "allowed",
+    );
+    expect(getRunModelRouteAccess("gpt-6-astra", null, true)).toBe(
+      "pro_required",
+    );
+    expect(getRunModelRouteAccess("gpt-6-astra", "unknown", true)).toBe(
+      "pro_required",
+    );
+    expect(getRunModelRouteAccess("gpt-5.5", "openai-api-key", true)).toBe(
+      "retired",
+    );
+  });
 
   it("returns compatible provider types for canonical models", () => {
     expect(getProvidersForModel("claude-fable-5-1")).toEqual([

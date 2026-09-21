@@ -10,7 +10,7 @@ import { pathParamsOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { notFound } from "../../lib/error";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
-import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
+import { withChatThreadContentRead } from "../services/chat-thread-content-erasure-admission.service";
 import type { RouteEntry } from "../route-entry";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -18,14 +18,13 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(pathParamsOf(chatThreadMetadataContract.get));
   signal.throwIfAborted();
 
-  const result = await withChatThreadContentWrite(
+  const result = await withChatThreadContentRead(
     set(writeDb$),
     {
       chatThreadId: params.id,
       authorize: (identity) => {
         return identity.userId === auth.userId && identity.agentId !== null;
       },
-      threadLock: "update",
     },
     async (tx, identity) => {
       if (identity.agentId === null) {

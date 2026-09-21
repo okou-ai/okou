@@ -444,27 +444,6 @@ capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to
 the new CLI remain active.
 
-#### Generated private artifact delivery hints
-
-Generation results add optional `privateArtifacts` metadata describing the
-storage mode used at creation. New CLIs use it with the requested visibility
-(defaulting to `only-me`) to add delivery guidance for non-public files. Older
-CLIs ignore the metadata; results from older APIs or persisted jobs without it
-retain their previous output. Hosted sites and HTML presentations keep their
-existing link presentation.
-
-Completed generation jobs survive run deletion and have no read-time age cutoff;
-successful batch directories also remain readable. These are existing public
-generation contracts. Requiring the new metadata would need an explicit
-migration or retirement of those retained results, plus compatible serving and
-rollback APIs; draining active runs alone is insufficient.
-
-New run contexts include `OKOU_CURRENT_INTEGRATION` in the existing trusted
-`platformEnvironment` map. Existing Runners already transport this map, so no
-Runner protocol change or database migration is required. Older contexts without
-the key receive a generic private-link notice, with no guessed integration
-command. Existing pinned CLIs ignore the key.
-
 #### Private attachment uploads
 
 Private artifact URL fields and API creation responses use the configured
@@ -1607,6 +1586,22 @@ release-asset checks are unchanged. The rollback workflow loads the resolver
 from current `main`, so merging the floor constrains future canonical
 executions without a release or test rollback.
 
+### Plan capability snapshot rollout compatibility
+
+Migration `1187_expand_free_concurrency_byok` backfills only product-managed
+`org_plan_entitlements` rows for the Free concurrency/BYOK and Pro concurrency
+changes. Manual entitlements remain explicit operator overrides, and
+`pro-suspend` and nonstandard product-managed values are left untouched.
+
+The backfill is the only correction. Because the normal production path runs
+migrations before promoting the new API, an outgoing or retained rollback API
+can write its old complete entitlement snapshot over a backfilled row during the
+rollout or a rollback. Such a workspace keeps the old Free/Pro concurrency and
+BYOK capabilities until its next entitlement write from the new API, which
+restores the current values from the tier table. No database object enforces the
+new values, so tier policy stays owned by the API rather than becoming a
+permanent database constraint.
+
 ### Usage pack visibility compatibility retirement
 
 `showUsagePack` has an explicit API writer and billing response starting with
@@ -2232,6 +2227,28 @@ collide. Slack retains its existing user/file-ID identity, including existing
 canonical asset rows. This does not deduplicate equal bytes under distinct
 upstream resource identities.
 
+## VNC X509Plain Runner authority
+
+The private VNC resolve request now accepts two exact Runner capabilities:
+`vnc_password` / `x509_vnc` and `username_password` / `x509_plain`. Deploy the
+widened API before the Runner. Old Runners continue advertising only X509Vnc and
+the new API returns their existing response shape. New Runners against an older
+API fail closed; they do not retry a saved X509Plain connection as X509Vnc.
+
+The Runner response decoder remains strict and rejects unknown fields and tags.
+The Runner then rejects cross-paired authentication and security variants before
+DNS or socket creation. The common generated secret wrapper enforces the largest
+wire bound and zeroizes its value; the selected engine authentication type
+enforces the profile-specific bound.
+Future authentication support adds another explicit method/profile pair and its
+typed fields rather than widening an existing discriminator's meaning.
+
+This change requires no migration, stored-data rewrite, guest/CLI protocol
+change or feature-switch activation. Existing saved rows keep their exact
+discriminators. Roll back the Runner before the API; once a Runner can advertise
+X509Plain, retain the widened API request/response contract for the lifetime of
+that process.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment
@@ -2396,34 +2413,30 @@ v3 readers; current code performs no data deletion or rewrite.
 
 ### Builtin MCP execution
 
-Explicit `mcp` metadata is the builtin MCP protocol discriminator and its fixed
-endpoint is the runtime routing authority. New APIs ignore the artifact
-firewall for MCP and create one run-scoped inline firewall for the exact
-admitted account. The entry carries the connector slug and account `sourceId`,
-uses the fixed MCP endpoint, has no HTTP path permissions, and keeps unknown
-transport access allowed. Its auth is empty for a `none` grant or an Automatic
-account resolved to no authentication, uses the platform-owned bearer template
-for Automatic OAuth, and uses that same Bearer shape with the admitted
-manual/static method's single connector-secret binding. Other auth shapes fail
-closed. Producer firewall contents cannot change this shape.
+Builtin MCP uses the current App, CLI and Runner contract directly. There is no
+MCP-specific request-header negotiation, old-client HTTP projection, upgrade
+response or Runner claim capability flag. Agent connector replacement applies
+to the complete submitted list, including MCP grants. The CLI is kept current;
+its package URL does not need to match the serving API commit for MCP admission.
+Custom and builtin MCP use the same typed discovery response.
 
-Queued Runs retain their captured CLI package, inline firewall and exact account
-mapping. Builtin MCP admission requires the Run's Okou token for authenticated
-MCP discovery. Agent connector replacement applies to the complete submitted
-list, including MCP grants. Custom and builtin MCP use the same typed discovery
-response. The addon assigns builtin ownership only when an inline entry's slug
-and `sourceId` exactly match its registered runtime target, and it never injects
-another owner's credentials when builtin and custom destinations overlap.
+Queued Runs retain their captured CLI package and exact account mapping.
+Builtin MCP admission requires the Run's Okou token for authenticated MCP
+discovery. None/manual and Automatic methods are executable. Plaud's Automatic
+method defaults off in auth-method discovery through `plaudConnector`; this
+switch does not gate existing account callbacks or execution. The addon honors explicit
+owner intent and never injects another owner's credentials when the requested
+owner is absent, including overlapping builtin/custom destinations.
 
-No-auth builtin and custom MCP requests stay on the proxy fast path and make no
-firewall-auth request. Builtin no-auth admission is therefore a Run-start
-account/catalog snapshot: deletion, reconnect or catalog changes affect the
-next Run, not an active no-auth Run. Credentialed builtin MCP remains a
-network-boundary operation. The API revalidates the current endpoint, auth
-method and exact account, and its `expiresAt` response caps cached account
-authorization at 30 seconds; this also bounds static-token cache reuse. After
-resolution, the addon rechecks the current owner before forwarding. Expiry does
-not interrupt an in-flight request or stream.
+No-auth builtin and custom MCP requests skip credential validity checks and
+proxy auth resolution, including Automatic builtin and custom MCP resolved to no
+authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
+field to cap cached account authorization at 30 seconds from validation; this
+also bounds static-token cache reuse. Discovery immediately removes deleted
+accounts, while subsequent proxy requests may reuse an existing lease until
+expiry. Expiry does not interrupt an in-flight request or stream. After
+resolution, the addon rechecks the current owner before forwarding. No new
+HTTP/custom cache policy is introduced.
 
 Automatic authentication adds separate builtin OAuth bindings and DCR
 registrations, plus a nullable account auth-resolution field. Apply this
@@ -2432,33 +2445,25 @@ CIMD/DCR, PKCE, exact issuer/resource binding and optional refresh tokens.
 Builtin callbacks are owned by the API and completion receipts identify the
 exact account and attempt. Stored catalog method IDs remain unchanged.
 
-Automatic discovery records whether the selected account resolved to OAuth or
-no authentication. The addon sends `matchedFirewall.base` and `sourceId` when
-resolving credentialed builtin MCP auth. Missing, stale or mismatched
-destinations, auth shapes and accounts fail closed. Builtin runtime sync remains
-policy/status-only and cannot authorize credentials for a changed endpoint. A
-rollback after Automatic accounts exist must retain their schema and credential
-readers.
+Automatic accounts receive the same compact builtin firewall reference used by
+builtin HTTP connectors. The Runner resolves its definition, including auth, from
+the accepted catalog; account state does not replace or override that firewall.
+An OAuth catalog firewall uses the proxy-only
+`Bearer ${{ secrets.MCP_ACCESS_TOKEN }}` template, resolved outside the sandbox.
+Automatic discovery still records whether the selected account resolved to OAuth
+or no-auth. A mismatch fails at its natural boundary: an OAuth catalog firewall
+cannot resolve its required secret from a no-auth account, while a no-auth catalog
+firewall sends an OAuth account's request without credentials and lets the upstream
+reject it. Builtin runtime-sync updates remain policy-only. There is no MCP-specific
+client or Runner capability negotiation. A rollback after Automatic accounts exist
+must retain their schema and credential readers.
+The addon sends `matchedFirewall.base` when resolving builtin credentials.
+Automatic OAuth resolution requires this destination to match the current
+catalog and the locked account binding. Missing or stale destinations fail closed;
+HTTP/custom and no-auth resolution do not require this field. Best-effort runtime
+sync cannot authorize credentials for a changed endpoint.
 
-Deploy this boundary in separate PRs. First deploy #35630, which teaches Runner
-to assign builtin ownership to exact source-bound inline firewalls while
-retaining the existing named catalog path. The currently deployed API continues
-creating name-based contexts, so both the old and new Runner remain compatible
-during that rollout. Only after the compatible Runner is live across the fleet
-that can claim new work may #35671 deploy the API writer for inline-MCP Runs.
-No Runner capability header, stored execution-context marker or poll/claim
-filter is part of this protocol; deployment order is the compatibility gate.
-
-After the API activation, wait for pre-inline queued and claimed Runs to drain
-before publishing the companion firewall-free catalog from
-`vm0-ai/vm0-connectors#4646`; otherwise a still-active legacy Run can lose its
-named MCP firewall on catalog refresh. For rollback below inline support,
-restore a legacy generated-MCP catalog before rolling back the API/Runner. After
-the firewall-free catalog is live, pre-inline Runs have drained, and retained
-rollback targets are inline-capable, remove legacy generated-MCP decoding and
-named Runner catalog resolution together under #35654.
-
-The current connector catalog reader remains v4-only as described above. This
+The current connector catalog reader is v4-only as described above. This
 execution change adds no environment variable, release workflow change or
 per-service skill.
 

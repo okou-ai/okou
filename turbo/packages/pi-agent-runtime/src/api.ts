@@ -46,7 +46,11 @@ import {
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
 } from "./errors";
-import { PI_MEMORY_STAGE1_MODEL } from "./memory-background-config";
+import {
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_BYOK_MODEL,
+} from "./memory-background-config";
+import type { PiMemoryStage1Model } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
 import { createPiApiFirstTurnOwnership } from "./provider-ownership";
 import type {
@@ -72,7 +76,8 @@ export {
   piMemoryPhase2SelectionDigest,
   classifyPiApiProviderFailure,
   PiApiModelRequestError,
-  PI_MEMORY_STAGE1_MODEL,
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_BYOK_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
@@ -114,6 +119,7 @@ export type {
   PiSessionInspection,
   PiApiFirstTurnOwnership,
   PiApiFirstTurnOwnershipStage,
+  PiMemoryStage1Model,
   PiMemoryStage1ProviderResult,
   PiMemoryStage1Evidence,
   PiMemoryStage1ProviderUsage,

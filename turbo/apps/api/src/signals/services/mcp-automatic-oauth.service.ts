@@ -30,6 +30,10 @@ import {
   mcpOAuthSafeFetch,
   validateMcpOAuthPublicUrl,
 } from "./mcp-oauth-safe-fetch.service";
+import {
+  discoverMcpAutomaticOAuthUserInfo,
+  type McpAutomaticOAuthUserInfo,
+} from "./mcp-oauth-identity.service";
 
 export interface McpAutomaticOAuthDcrRegistration {
   readonly id: string;
@@ -1081,6 +1085,7 @@ export interface McpAutomaticOAuthTokenResult {
   readonly idToken: string | null;
   readonly expiresAt: Date | null;
   readonly scopes: readonly string[] | null;
+  readonly userInfo: McpAutomaticOAuthUserInfo | null;
 }
 
 function automaticOAuthTokenResult(
@@ -1096,6 +1101,7 @@ function automaticOAuthTokenResult(
         ? null
         : new Date(nowDate().getTime() + expiresIn * 1000),
     scopes: tokens.scope === undefined ? null : scopeTokens(tokens.scope),
+    userInfo: null,
   };
 }
 
@@ -1139,7 +1145,18 @@ export async function exchangeMcpAutomaticOAuthCode(
       exchanged.error,
     );
   }
-  return automaticOAuthTokenResult(exchanged.value);
+  const result = automaticOAuthTokenResult(exchanged.value);
+  return {
+    ...result,
+    userInfo: await discoverMcpAutomaticOAuthUserInfo(
+      {
+        context: args.context,
+        accessToken: result.accessToken,
+        idToken: exchanged.value.id_token,
+      },
+      signal,
+    ),
+  };
 }
 
 export function validateMcpAutomaticOAuthCallbackIssuer(

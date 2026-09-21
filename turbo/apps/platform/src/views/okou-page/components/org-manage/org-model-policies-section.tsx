@@ -1049,11 +1049,17 @@ function buildPolicyUpdate(params: {
   };
 }
 
-function modelRequiresProUpgrade(
-  model: SupportedRunModel | null,
-  modelCapabilities: ModelPlanCapabilities,
-): boolean {
-  return model !== null && !modelAllowedForPlan(model, modelCapabilities);
+function modelRouteRequiresProUpgrade(params: {
+  model: SupportedRunModel | null;
+  routeKind: ModelPolicyRouteKind;
+  modelCapabilities: ModelPlanCapabilities;
+}): boolean {
+  if (params.model === null) {
+    return false;
+  }
+  return params.routeKind === "built-in"
+    ? !modelAllowedForPlan(params.model, params.modelCapabilities)
+    : !params.modelCapabilities.supportByok;
 }
 
 function getDialogPrimaryLabel(params: {
@@ -1150,13 +1156,11 @@ function getSelectedRouteProvider(params: {
 function ModelSelectionField({
   selectedModel,
   addableModels,
-  modelCapabilities,
   disabled,
   onChange,
 }: {
   selectedModel: SupportedRunModel | null;
   addableModels: SupportedRunModel[];
-  modelCapabilities: ModelPlanCapabilities;
   disabled: boolean;
   onChange: (model: SupportedRunModel) => void;
 }) {
@@ -1197,7 +1201,6 @@ function ModelSelectionField({
         <SelectContent>
           {addableModels.map((model) => {
             const iconType = getModelIconType(model);
-            const restricted = !modelAllowedForPlan(model, modelCapabilities);
             return (
               <SelectItem key={model} value={model}>
                 <div className="flex w-full min-w-0 items-center gap-2">
@@ -1205,7 +1208,6 @@ function ModelSelectionField({
                   <span className="min-w-0 flex-1 truncate">
                     {getCanonicalModelDisplayName(model)}
                   </span>
-                  {restricted && <ProBadge />}
                 </div>
               </SelectItem>
             );
@@ -1222,6 +1224,7 @@ function ProviderRouteChoices({
   oauthTypes,
   gatewayCount,
   supportByok,
+  builtInRequiresPro,
   onChoose,
 }: {
   routeKind: ModelPolicyRouteKind;
@@ -1229,6 +1232,7 @@ function ProviderRouteChoices({
   oauthTypes: ModelProviderType[];
   gatewayCount: number;
   supportByok: boolean;
+  builtInRequiresPro: boolean;
   onChoose: (routeKind: ModelPolicyRouteKind) => void;
 }) {
   const { t } = useTranslation();
@@ -1249,6 +1253,7 @@ function ProviderRouteChoices({
       >
         <RouteChoiceButton
           active={routeKind === "built-in"}
+          pro={builtInRequiresPro}
           title={t(($) => {
             return $.settings.models.policies.builtIn;
           })}
@@ -1419,15 +1424,12 @@ function ModelPolicyRouteDialog({
   const inlineSaving = inlineSaveLoadable.state === "loading";
   const checkoutLoading = checkoutLoadable.state === "loading";
   const busy = saving || inlineSaving || checkoutLoading;
-  const firstAllowedModel =
-    addableModels.find((model) => {
-      return modelAllowedForPlan(model, modelCapabilities);
-    }) ?? null;
-  const selectedModel = dialog.model ?? firstAllowedModel ?? null;
-  const upgradeRequired = modelRequiresProUpgrade(
-    selectedModel,
+  const selectedModel = dialog.model ?? addableModels[0] ?? null;
+  const upgradeRequired = modelRouteRequiresProUpgrade({
+    model: selectedModel,
+    routeKind: dialog.routeKind,
     modelCapabilities,
-  );
+  });
   const apiTypes = selectedModel ? getApiProviderTypes(selectedModel) : [];
   const oauthTypes = selectedModel ? getOAuthProviderTypes(selectedModel) : [];
   const gatewayOptions = selectedModel
@@ -1612,7 +1614,6 @@ function ModelPolicyRouteDialog({
           <ModelSelectionField
             selectedModel={selectedModel}
             addableModels={addableModels}
-            modelCapabilities={modelCapabilities}
             disabled={dialog.mode === "edit"}
             onChange={handleModelChange}
           />
@@ -1622,6 +1623,10 @@ function ModelPolicyRouteDialog({
             oauthTypes={oauthTypes}
             gatewayCount={gatewayOptions.length}
             supportByok={modelCapabilities.supportByok}
+            builtInRequiresPro={
+              selectedModel !== null &&
+              !modelAllowedForPlan(selectedModel, modelCapabilities)
+            }
             onChoose={chooseRoute}
           />
           <ProviderRouteConfiguration
@@ -1802,13 +1807,7 @@ export function OrgModelPoliciesSection() {
     if (saving) {
       return;
     }
-    const initialModel =
-      addableModels.find((model) => {
-        return modelAllowedForPlan(model, modelCapabilities);
-      }) ??
-      addableModels[0] ??
-      null;
-    openAddModelDialog(initialModel);
+    openAddModelDialog(addableModels[0] ?? null);
   };
   const handleEditPolicy = (policy: OrgModelPolicy) => {
     if (saving) {

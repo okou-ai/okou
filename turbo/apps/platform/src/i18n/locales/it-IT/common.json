@@ -6973,9 +6973,6 @@
     "detail": {
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}",
-      "source_one": "{{count}} pagina · da {{filename}}",
-      "source_many": "{{count}} pagine · da {{filename}}",
-      "source_other": "{{count}} pagine · da {{filename}}",
       "sourceFile": "Da {{filename}}"
     },
     "empty": {
@@ -6985,6 +6982,7 @@
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",
     "sharedBy": "Condiviso da {{owner}}",
+    "sharedByMember": "Condiviso da un membro dell'organizzazione",
     "visibility": {
       "change": "Modifica",
       "organization": "Organizzazione",

@@ -6897,8 +6897,6 @@
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}",
-      "source_one": "{{count}} page · from {{filename}}",
-      "source_other": "{{count}} pages · from {{filename}}",
       "sourceFile": "From {{filename}}"
     },
     "empty": {
@@ -6908,6 +6906,7 @@
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",
+    "sharedByMember": "Shared by an organization member",
     "visibility": {
       "change": "Change",
       "organization": "Organization",

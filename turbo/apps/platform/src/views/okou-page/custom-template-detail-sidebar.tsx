@@ -59,6 +59,37 @@ export function VisibilityLabel({
   );
 }
 
+/**
+ * Whose template this is, for a reader who cannot manage it.
+ *
+ * The name comes resolved from the catalog because the browser holds no
+ * directory: `ownerUserId` is an identity-provider handle, and rendering it is
+ * what put a raw `user_…` string on a tile. When the provider has no name for
+ * the owner the row still belongs to someone reachable, so the line says that
+ * much rather than falling back to the handle.
+ */
+export function SharedByLabel({
+  ownerDisplayName,
+}: {
+  readonly ownerDisplayName: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {ownerDisplayName === null
+        ? t(($) => {
+            return $.templates.sharedByMember;
+          })
+        : t(
+            ($) => {
+              return $.templates.sharedBy;
+            },
+            { owner: ownerDisplayName },
+          )}
+    </>
+  );
+}
+
 function VisibilityOptionList({
   visibility,
   onChange,
@@ -281,25 +312,20 @@ export function CustomTemplateDetailSidebar({
           </h3>
         )}
         {/*
-         * The source line drops the page count for a kind that has none, so a
-         * document is described by the file it came from rather than by an
-         * emptiness it does not have. It is asked for here because the tile
-         * that used to answer it carries only visibility now.
+         * The file it came from, and only that. A page count told the reader
+         * how long the original was, which is a fact about that file rather
+         * than about what the template will produce from it: a template
+         * reversed from a two-page memo writes a ten-page report just as
+         * readily. It was also answerable for one kind and not the others, so
+         * the line changed shape depending on what had been imported.
          */}
         <p className="mt-2 text-xs text-muted-foreground">
-          {detail.pageCount === null
-            ? t(
-                ($) => {
-                  return $.templates.detail.sourceFile;
-                },
-                { filename: detail.sourceFilename },
-              )
-            : t(
-                ($) => {
-                  return $.templates.detail.source;
-                },
-                { count: detail.pageCount, filename: detail.sourceFilename },
-              )}
+          {t(
+            ($) => {
+              return $.templates.detail.sourceFile;
+            },
+            { filename: detail.sourceFilename },
+          )}
         </p>
         <div className="my-5 border-t border-border" />
         {detail.canManage ? (
@@ -307,12 +333,7 @@ export function CustomTemplateDetailSidebar({
         ) : (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <User size={14} className="shrink-0" aria-hidden />
-            {t(
-              ($) => {
-                return $.templates.sharedBy;
-              },
-              { owner: detail.ownerUserId },
-            )}
+            <SharedByLabel ownerDisplayName={detail.ownerDisplayName} />
           </p>
         )}
         <Button

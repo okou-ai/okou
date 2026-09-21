@@ -67,6 +67,7 @@ import {
   deleteUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { useSecretKmsProbe } from "../../routes/__tests__/helpers/secret-kms-probe";
 import {
   updateFeatureSwitchesForUser,
@@ -181,6 +182,9 @@ describe("actual compute transactions versus the B1 projector", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     const runnerGroup = api.configureRunnerGroup();
+    // Pin two admitted runs so the queue shapes below stay independent of the
+    // Pro plan's own concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     await api.grantProEntitlement(actor);
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
@@ -344,7 +348,9 @@ describe("actual compute transactions versus the B1 projector", () => {
       tier: "pro",
       credits: 100_000,
     });
-    await seedBuiltInModelKey(context, "gpt-5.6-terra");
+    await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
+    // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
+    configureNativeCliArtifact();
     await insertPhase2CandidatesWithSources(
       scope,
       ["first", "second"].map((name) => {

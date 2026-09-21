@@ -78,7 +78,7 @@ function checkPages(pages: readonly ResolvedUpload[]): string | null {
 }
 
 /**
- * The three places a kind decides something, each naming every kind rather
+ * The four places a kind decides something, each naming every kind rather
  * than letting one be what the others fall through to. A kind added to
  * `USER_TEMPLATE_KINDS` fails these switches until someone says what it
  * carries, checks and stores.
@@ -93,6 +93,27 @@ function publishedPageFileIds(
     case "document":
     case "illustration": {
       return [];
+    }
+  }
+}
+
+/**
+ * The separately uploaded cover, for the one kind that has one.
+ *
+ * A deck's cover is already the first of its pages and an illustration's is
+ * its source, so both are covered by what they send; only a document uploads a
+ * picture that is neither.
+ */
+function publishedCoverFileId(
+  body: PublishUserTemplateBody,
+): string | undefined {
+  switch (body.kind) {
+    case "document": {
+      return body.coverFileId;
+    }
+    case "presentation":
+    case "illustration": {
+      return undefined;
     }
   }
 }
@@ -114,11 +135,29 @@ function checkPagesFor(
   }
 }
 
+/**
+ * A cover is held to what a page is held to.
+ *
+ * It is drawn in the same grid as a deck's first slide and served through the
+ * same preview-asset path, so a format the catalog cannot paint or a file too
+ * large to send would fail there in exactly the way a page would.
+ */
+function checkCover(cover: ResolvedUpload): string | null {
+  if (cover.contentType !== USER_TEMPLATE_PAGE_CONTENT_TYPE) {
+    return `The cover must be a ${USER_TEMPLATE_PAGE_CONTENT_TYPE}`;
+  }
+  if (cover.sizeBytes > MAX_USER_TEMPLATE_PAGE_BYTES) {
+    return `The cover must be no larger than ${MAX_USER_TEMPLATE_PAGE_BYTES.toString()} bytes`;
+  }
+  return null;
+}
+
 function publishedManifest(
-  kind: PublishUserTemplateBody["kind"],
+  body: PublishUserTemplateBody,
   pages: readonly ResolvedUpload[],
+  cover: ResolvedUpload | undefined,
 ): UserTemplateManifest {
-  switch (kind) {
+  switch (body.kind) {
     case "presentation": {
       return {
         kind: "presentation",
@@ -128,7 +167,15 @@ function publishedManifest(
       };
     }
     case "document": {
-      return { kind: "document" };
+      // Each is written only when it arrived. A count without a cover is kept
+      // rather than dropped: it is what the reverse run read out of the file,
+      // and the catalog's own rule already declines to draw a stack behind a
+      // cover that is not there.
+      return {
+        kind: "document",
+        ...(cover === undefined ? {} : { coverKey: cover.storageKey }),
+        ...(body.pageCount === undefined ? {} : { pageCount: body.pageCount }),
+      };
     }
     case "illustration": {
       return { kind: "illustration" };
@@ -167,7 +214,13 @@ export const publishUserTemplate$ = command(
     const db = set(writeDb$);
     const { body } = args;
     const pageFileIds = publishedPageFileIds(body);
-    const ids = [body.sourceFileId, ...pageFileIds, body.packageFileId];
+    const coverFileId = publishedCoverFileId(body);
+    const ids = [
+      body.sourceFileId,
+      ...pageFileIds,
+      ...(coverFileId === undefined ? [] : [coverFileId]),
+      body.packageFileId,
+    ];
     const uploads = await set(
       resolveTemplateUploads$,
       { ownerUserId: args.ownerUserId, orgId: args.orgId, ids },
@@ -187,6 +240,8 @@ export const publishUserTemplate$ = command(
     const pages = pageFileIds.map((id) => {
       return uploads.get(id)!;
     });
+    const cover =
+      coverFileId === undefined ? undefined : uploads.get(coverFileId)!;
 
     const sourceError = checkSource(body.kind, source);
     if (sourceError) {
@@ -195,6 +250,10 @@ export const publishUserTemplate$ = command(
     const pageError = checkPagesFor(body.kind, pages);
     if (pageError) {
       return rejected(pageError);
+    }
+    const coverError = cover === undefined ? null : checkCover(cover);
+    if (coverError) {
+      return rejected(coverError);
     }
 
     const packageResult = await set(
@@ -216,7 +275,7 @@ export const publishUserTemplate$ = command(
         title: body.title,
         sourceStorageKey: source.storageKey,
         sourceFilename: source.filename,
-        manifest: publishedManifest(body.kind, pages),
+        manifest: publishedManifest(body, pages, cover),
         createdBy: args.ownerUserId,
         updatedBy: args.ownerUserId,
         createdAt: currentTime,

@@ -1823,7 +1823,11 @@ function renderSensitiveTaggedEnum(
       }
       const rustName = toRustFieldName(wireName);
       const existing = fields.get(wireName);
-      if (existing && !isDeepStrictEqual(existing.schema, schema)) {
+      if (
+        existing &&
+        !isDeepStrictEqual(existing.schema, schema) &&
+        context.fieldTypeOverrides[wireName] === undefined
+      ) {
         throw new Error(
           `${context.label}: sensitive shared field ${wireName} has incompatible schemas`,
         );

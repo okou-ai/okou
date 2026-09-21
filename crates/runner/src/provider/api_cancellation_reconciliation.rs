@@ -17,9 +17,13 @@ use reqwest::StatusCode;
 use tokio::sync::{Semaphore, watch};
 use tokio::time::{Instant, sleep_until, timeout};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
-use tracing::{info, warn};
+use tracing::{Level, info};
 
-use crate::http::HttpClient;
+use crate::duration::duration_ms;
+use crate::error::{
+    ApiFailureKind, ApiRequestContext, ApiTransportCause, ApiTransportError, RunnerError,
+};
+use crate::http::{HttpClient, api_transport_cause};
 use crate::ids::RunId;
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationMode as Mode};
 use crate::runner_process_identity::RunnerProcessIdentity;
@@ -47,14 +51,222 @@ struct ReadClient {
 /// diagnostics, including errors returned by an old API or a proxy.
 #[derive(Debug, Eq, PartialEq)]
 enum ReadError {
-    Transport,
+    Prepare,
+    Send,
+    Transport(Box<ApiTransportError>),
     Status(StatusCode),
-    Body,
+    Body(ApiTransportCause),
     Oversized,
     Contract,
     Identity,
     Redirect,
-    Deadline,
+    Deadline(Box<ApiRequestContext>),
+}
+
+#[derive(Default)]
+struct ReadFailures {
+    episode: Option<ReadFailureEpisode>,
+}
+
+struct ReadFailureEpisode {
+    started_at: Instant,
+    consecutive_failures: u64,
+    warned: bool,
+}
+
+struct ReadFailureDiagnostic<'a> {
+    endpoint: &'a str,
+    method: &'a str,
+    host: &'a str,
+    path: &'a str,
+    client_request_id: &'a str,
+    client_session_id: &'a str,
+    client_version: &'a str,
+    status: u16,
+    stage: &'static str,
+    kind: &'static str,
+    cause: &'static str,
+}
+
+impl ReadError {
+    fn is_transient(&self) -> bool {
+        match self {
+            Self::Deadline(_) => true,
+            Self::Transport(error) => matches!(
+                error.failure_cause,
+                ApiTransportCause::Timeout | ApiTransportCause::ConnectionReset
+            ),
+            _ => false,
+        }
+    }
+
+    fn diagnostic(&self) -> ReadFailureDiagnostic<'_> {
+        match self {
+            Self::Deadline(context) => ReadFailureDiagnostic {
+                endpoint: context.endpoint_label,
+                method: &context.method,
+                host: &context.host,
+                path: &context.path,
+                client_request_id: &context.client_request_id,
+                client_session_id: &context.client_session_id,
+                client_version: &context.client_version,
+                status: 0,
+                stage: "deadline",
+                kind: ApiFailureKind::Timeout.as_str(),
+                cause: ApiTransportCause::Timeout.as_str(),
+            },
+            Self::Transport(error) => ReadFailureDiagnostic {
+                endpoint: error.request.endpoint_label,
+                method: &error.request.method,
+                host: &error.request.host,
+                path: &error.request.path,
+                client_request_id: &error.request.client_request_id,
+                client_session_id: &error.request.client_session_id,
+                client_version: &error.request.client_version,
+                status: 0,
+                stage: "send",
+                kind: error.failure_kind.as_str(),
+                cause: error.failure_cause.as_str(),
+            },
+            Self::Status(status) => ReadFailureDiagnostic {
+                status: status.as_u16(),
+                stage: "status",
+                kind: "http_status",
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Body(cause) => ReadFailureDiagnostic {
+                status: StatusCode::OK.as_u16(),
+                stage: "body",
+                kind: ApiFailureKind::Body.as_str(),
+                cause: cause.as_str(),
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Prepare => ReadFailureDiagnostic {
+                stage: "prepare",
+                kind: "local",
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Send => ReadFailureDiagnostic {
+                stage: "send",
+                kind: "local",
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Oversized => ReadFailureDiagnostic {
+                stage: "body",
+                kind: "oversized",
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Contract => ReadFailureDiagnostic {
+                stage: "decode",
+                kind: "contract",
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Identity => ReadFailureDiagnostic {
+                stage: "decode",
+                kind: "identity",
+                ..ReadFailureDiagnostic::empty()
+            },
+            Self::Redirect => ReadFailureDiagnostic {
+                stage: "response",
+                kind: "redirect",
+                ..ReadFailureDiagnostic::empty()
+            },
+        }
+    }
+}
+
+impl ReadFailureDiagnostic<'_> {
+    fn empty() -> Self {
+        Self {
+            endpoint: "",
+            method: "",
+            host: "",
+            path: "",
+            client_request_id: "",
+            client_session_id: "",
+            client_version: "",
+            status: 0,
+            stage: "",
+            kind: "",
+            cause: "",
+        }
+    }
+}
+
+impl ReadFailures {
+    fn record(&mut self, run_id: RunId, error: &ReadError) {
+        let episode = self.episode.get_or_insert_with(|| ReadFailureEpisode {
+            started_at: Instant::now(),
+            consecutive_failures: 0,
+            warned: false,
+        });
+        episode.consecutive_failures = episode.consecutive_failures.saturating_add(1);
+        let elapsed = episode.started_at.elapsed();
+        let transient = error.is_transient();
+        let warn = !episode.warned && (!transient || elapsed >= INTERVAL);
+        if episode.consecutive_failures > 1 && !warn {
+            return;
+        }
+        episode.warned |= warn;
+        let diagnostic = error.diagnostic();
+
+        macro_rules! emit {
+            ($level:expr, $message:literal) => {
+                tracing::event!(
+                    target: "runner::provider::api_cancellation_reconciliation",
+                    $level,
+                    run_id = %run_id,
+                    endpoint = diagnostic.endpoint,
+                    method = diagnostic.method,
+                    host = diagnostic.host,
+                    path = diagnostic.path,
+                    client_request_id = diagnostic.client_request_id,
+                    client_session_id = diagnostic.client_session_id,
+                    client_version = diagnostic.client_version,
+                    status = diagnostic.status,
+                    failure_stage = diagnostic.stage,
+                    failure_kind = diagnostic.kind,
+                    failure_cause = diagnostic.cause,
+                    consecutive_failures = episode.consecutive_failures,
+                    failure_elapsed_ms = duration_ms(elapsed),
+                    degraded = episode.warned,
+                    will_retry = true,
+                    $message
+                )
+            };
+        }
+
+        if warn && transient {
+            emit!(
+                Level::WARN,
+                "cancellation reconciliation reads degraded; will retry"
+            );
+        } else if warn {
+            emit!(
+                Level::WARN,
+                "cancellation reconciliation read failed; will retry"
+            );
+        } else {
+            emit!(
+                Level::INFO,
+                "cancellation reconciliation read failed; will retry"
+            );
+        }
+    }
+
+    fn recover(&mut self, run_id: RunId) {
+        let Some(episode) = self.episode.take() else {
+            return;
+        };
+        info!(
+            target: "runner::provider::api_cancellation_reconciliation",
+            run_id = %run_id,
+            recovered_after_failures = episode.consecutive_failures,
+            failure_elapsed_ms = duration_ms(episode.started_at.elapsed()),
+            was_degraded = episode.warned,
+            "cancellation reconciliation read recovered"
+        );
+    }
 }
 
 impl CancellationReconciliation {
@@ -133,6 +345,7 @@ async fn read_loop(
     intent: watch::Sender<Option<Mode>>,
 ) {
     let mut due = Instant::now();
+    let mut failures = ReadFailures::default();
     loop {
         sleep_until(due).await;
         // Semaphore acquisitions retain FIFO position, including under new
@@ -143,29 +356,31 @@ async fn read_loop(
         let dispatched = Instant::now();
         let queue_wait = dispatched.saturating_duration_since(due);
         due = dispatched + INTERVAL;
-        let result = timeout(REQUEST_DEADLINE, client.read(run_id, &sandbox_token))
-            .await
-            .unwrap_or(Err(ReadError::Deadline));
+        let result = client.read(run_id, &sandbox_token).await;
         drop(permit);
-        match result {
-            Ok(Some(mode)) => {
-                let changed = intent.send_if_modified(|pending| {
-                    if pending.is_none_or(|previous| mode > previous) {
-                        *pending = Some(mode);
-                        true
-                    } else {
-                        false
-                    }
-                });
-                if changed {
-                    info!(%run_id, ?mode, queue_wait_ms = queue_wait.as_millis(),
+        let mode = match result {
+            Ok(mode) => {
+                failures.recover(run_id);
+                mode
+            }
+            Err(error) => {
+                failures.record(run_id, &error);
+                continue;
+            }
+        };
+        if let Some(mode) = mode {
+            let changed = intent.send_if_modified(|pending| {
+                if pending.is_none_or(|previous| mode > previous) {
+                    *pending = Some(mode);
+                    true
+                } else {
+                    false
+                }
+            });
+            if changed {
+                info!(%run_id, ?mode, queue_wait_ms = queue_wait.as_millis(),
                         observation_ms = dispatched.elapsed().as_millis(),
                         "cancellation reconciliation observed stop intent");
-                }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                warn!(%run_id, ?error, "cancellation reconciliation inconclusive");
             }
         }
     }
@@ -220,34 +435,59 @@ impl ReadClient {
             )
             .timeout(REQUEST_DEADLINE)
             .prepare("run cancellation reconciliation")
-            .map_err(|_| ReadError::Transport)?
+            .map_err(|_| ReadError::Prepare)?
             .query(&[
                 ("runnerGroup", &self.group),
                 ("runnerId", &runner_id),
                 ("heartbeatGeneration", &generation),
             ]);
+        let request_context = request.context().clone();
         let requested_url = request.url().clone();
-        let mut response = request.send().await.map_err(|_| ReadError::Transport)?;
-        if response.url() != &requested_url {
-            return Err(ReadError::Redirect);
-        }
-        if response.status() != StatusCode::OK {
-            return Err(ReadError::Status(response.status()));
-        }
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
-        {
-            return Err(ReadError::Oversized);
-        }
-        let mut body = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| ReadError::Body)? {
-            if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
+        let read = timeout(REQUEST_DEADLINE, async move {
+            let mut response = request.send().await.map_err(|error| match error {
+                RunnerError::ApiTransport(error) => ReadError::Transport(error),
+                _ => ReadError::Send,
+            })?;
+            if response.url() != &requested_url {
+                return Err(ReadError::Redirect);
+            }
+            if response.status() != StatusCode::OK {
+                return Err(ReadError::Status(response.status()));
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+            {
                 return Err(ReadError::Oversized);
             }
-            body.extend_from_slice(&chunk);
+            let mut body = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|error| ReadError::Body(api_transport_cause(&error)))?
+            {
+                if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
+                    return Err(ReadError::Oversized);
+                }
+                body.extend_from_slice(&chunk);
+            }
+            decode(&body, &expected_run_id)
+        })
+        .await;
+
+        match read {
+            Err(_) => Err(ReadError::Deadline(Box::new(request_context))),
+            Ok(Err(ReadError::Transport(error)))
+                if error.failure_kind == ApiFailureKind::Timeout
+                    || error.failure_cause == ApiTransportCause::Timeout =>
+            {
+                Err(ReadError::Deadline(Box::new(request_context)))
+            }
+            Ok(Err(ReadError::Body(ApiTransportCause::Timeout))) => {
+                Err(ReadError::Deadline(Box::new(request_context)))
+            }
+            Ok(result) => result,
         }
-        decode(&body, &expected_run_id)
     }
 }
 

@@ -2564,6 +2564,9 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     it("replies when a connected Teams run is queued", async () => {
+      // Two active runs keep the third queued, independent of the plan's own
+      // concurrency limit.
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       const { fixture, actor, outboundRequests } = prepared;
       const firstActivityId = teamsFixtureExternalId(
         fixture,

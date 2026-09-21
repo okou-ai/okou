@@ -195,7 +195,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     showUsagePack: false,
     tier: "limited-free-1",
     ...billingPlanCapabilities("limited-free-1"),
-    supportByok: false,
+    supportByok: true,
     restrictedBuiltInModels: true,
     credits: 0,
     onboardingPaymentPending: false,
@@ -208,7 +208,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 0,
+    concurrencyLimit: 2,
     concurrencySubscriptions: [],
   };
 }
@@ -618,9 +618,20 @@ test("Explain model availability by plan and provider", async () => {
   expect(
     screen.getByRole("option", { name: /^GPT 6 Astra.*Pro/iu }),
   ).toBeVisible();
-  expect(screen.getAllByText("Pro")).toHaveLength(4);
+  expect(screen.getAllByText("Pro")).toHaveLength(3);
   expect(screen.getByText("BYOK")).toBeVisible();
 
+  const byokOption = screen.getByRole("option", {
+    name: /^Claude Sonnet 4\.6/iu,
+  });
+  expect(within(byokOption).queryByText("Pro")).toBeNull();
+  await user.click(byokOption);
+  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
+  expect(
+    screen.queryByRole("dialog", { name: "Choose a plan" }),
+  ).not.toBeInTheDocument();
+
+  await user.click(await modelPicker("Claude Sonnet 4.6"));
   await user.click(
     screen.getByRole("option", { name: /^Claude Fable 5\.1/iu }),
   );
@@ -639,7 +650,7 @@ test("Explain model availability by plan and provider", async () => {
   expect(
     screen.queryByRole("dialog", { name: "Settings" }),
   ).not.toBeInTheDocument();
-  await expect(modelPicker("DeepSeek V4 Flash")).resolves.toBeVisible();
+  await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
 });
 
 test("Let an existing thread send while model availability is reconciling", async () => {

@@ -8,6 +8,83 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.646.0](https://github.com/okou-ai/okou/compare/api-v1.645.0...api-v1.646.0) (2026-09-21)
+
+
+### Features
+
+* **api:** run built-in pi memory stages on deepseek flash models ([#35759](https://github.com/okou-ai/okou/issues/35759)) ([218259b](https://github.com/okou-ai/okou/commit/218259b3c99ecacb15fbd1bd63577096957ebf87))
+* **connectors:** capture oauth account identity ([#35746](https://github.com/okou-ai/okou/issues/35746)) ([becd915](https://github.com/okou-ai/okou/commit/becd9152a006649a6810a291e6f91f40fa454d5b))
+* expand free byok and plan concurrency ([#35610](https://github.com/okou-ai/okou/issues/35610)) ([5430b89](https://github.com/okou-ai/okou/commit/5430b89a8c88a976e4ca90bd1d9b8ee67c526466))
+* **vnc:** execute x509plain runner sessions ([#35751](https://github.com/okou-ai/okou/issues/35751)) ([2bd8dde](https://github.com/okou-ai/okou/commit/2bd8dde2379f54ac53a7af5ca53a678af439f304))
+
+
+### Performance Improvements
+
+* **api:** fold account-erasure admission and drop read-path locks ([#35743](https://github.com/okou-ai/okou/issues/35743)) ([1508239](https://github.com/okou-ai/okou/commit/1508239ac9df904bec8c01a981d535651a87c128))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.0
+    * @okouai/core bumped to 8.689.2
+    * @okouai/db bumped to 1.281.0
+    * @okouai/pi-agent-runtime bumped to 1.34.0
+
+## [1.645.0](https://github.com/okou-ai/okou/compare/api-v1.644.2...api-v1.645.0) (2026-09-21)
+
+
+### Features
+
+* **templates:** show a document template's first page in the catalog ([#35723](https://github.com/okou-ai/okou/issues/35723)) ([0d07c92](https://github.com/okou-ai/okou/commit/0d07c92b8719a472b61be04574ba87a9527cf5ba))
+
+
+### Bug Fixes
+
+* **api:** reclaim connector catalog attestations from newer validators ([#35761](https://github.com/okou-ai/okou/issues/35761)) ([bb23e71](https://github.com/okou-ai/okou/commit/bb23e710380ec7298360fb813a6da5d0e84f85b9)), closes [#35755](https://github.com/okou-ai/okou/issues/35755)
+* **api:** stop heavy morning brief sources by their own clock ([#35760](https://github.com/okou-ai/okou/issues/35760)) ([3803719](https://github.com/okou-ai/okou/commit/3803719742feee3495464b7ee3557a677f92ae45))
+
+
+### Performance Improvements
+
+* **api:** observe morning brief membership once per phase ([#35750](https://github.com/okou-ai/okou/issues/35750)) ([32123a7](https://github.com/okou-ai/okou/commit/32123a7fb4d91678a5ece8b7f2265703e48c7c16))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.481.0
+    * @okouai/core bumped to 8.689.1
+    * @okouai/db bumped to 1.280.0
+    * @okouai/pi-agent-runtime bumped to 1.33.33
+
+## [1.644.2](https://github.com/okou-ai/okou/compare/api-v1.644.1...api-v1.644.2) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.279.12
+
+## [1.644.1](https://github.com/okou-ai/okou/compare/api-v1.644.0...api-v1.644.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* refresh api, platform, and runner release markers ([#35702](https://github.com/okou-ai/okou/issues/35702)) ([8f8e88a](https://github.com/okou-ai/okou/commit/8f8e88a73d84e449e46befc07d74f8ee340a73f7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.689.0
+    * @okouai/db bumped to 1.279.11
+
 ## [1.644.0](https://github.com/okou-ai/okou/compare/api-v1.643.0...api-v1.644.0) (2026-09-20)
 
 

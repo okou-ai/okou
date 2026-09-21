@@ -15,7 +15,7 @@ import {
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { allVisibleWorkflows$ } from "../workflows-page/workflows-signals.ts";
-import { chatListQuery$ } from "./sidebar-state.ts";
+import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 
 const MAX_RESOURCE_SEARCH_RESULTS = 25;
 const SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX = 64;
@@ -87,9 +87,11 @@ export const threeColumnWorkflowSearchResults$ = computed(
   },
 );
 
+// Artifacts are searched on the server, so this waits for the typing to
+// settle the way the message search does.
 export const threeColumnArtifactSearchResults$ = computed(
   async (get): Promise<ThreeColumnArtifactSearchResult> => {
-    const query = get(chatListQuery$).trim().toLowerCase();
+    const query = await get(debouncedChatListQuery$);
     if (!query) {
       return { query, artifacts: [] };
     }
@@ -103,19 +105,21 @@ export const threeColumnArtifactSearchResults$ = computed(
     return {
       query,
       artifacts: result.body.artifacts.map((artifact) => {
+        // One preview graph per result, resolved with the row rather than
+        // inside its thumbnail computed, so re-reading a row reuses the
+        // credentials it already signed.
+        const thumbnail = artifact.thumbnail
+          ? createAttachmentPreviewSignals(artifact.thumbnail.url, {
+              thumbnailSize: {
+                width: SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX,
+              },
+            })
+          : null;
         return {
           ...artifact,
           thumbnailLoad: createImageLoadSignals(),
           thumbnailUrl$: computed(async (get) => {
-            return artifact.thumbnail
-              ? await get(
-                  createAttachmentPreviewSignals(artifact.thumbnail.url, {
-                    thumbnailSize: {
-                      width: SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX,
-                    },
-                  }).thumbnailUrl$,
-                )
-              : null;
+            return thumbnail ? await get(thumbnail.thumbnailUrl$) : null;
           }),
         };
       }),

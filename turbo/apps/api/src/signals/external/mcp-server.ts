@@ -768,13 +768,13 @@ function registerManageTools(
     "create_chat_thread",
     {
       description:
-        "Create a conversation, optionally accepting its first message atomically. Only requestId is required. Omitted agentId uses the visible organization default; omitted model leaves the thread unpinned so current member/workspace defaults apply at run admission; omitted title stays null until the first text run generates one. Without message, use the send_chat_message handoff. With message, dispatch is attempted after acceptance; follow get_chat_status because acceptance is not delivery or run success. Use one UUID requestId per intent; within 24 hours, retry only with the identical mode, values, and field presence. threadId equals requestId and inputRef is stable. Deleted, expired, or conflicting requests fail; inspect uncertain old work before retrying.",
+        "Create a conversation and optionally its first message atomically. requestId is required. Omitted agentId uses the visible organization default; omitted model leaves the thread unpinned for current defaults at run admission; omitted title remains null until the first text run names it. Without message, use send_chat_message. With message, dispatch follows acceptance; use get_chat_status because acceptance is not delivery or success. Use one UUID requestId per intent. Within 24 hours, retry only the identical mode, values, and field presence; retryUntil is the deadline. Creation is not generally idempotent after expiry, so inspect current state. threadId equals requestId; inputRef is stable.",
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: true,
       },
     },
@@ -801,13 +801,13 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Atomically update a conversation title and/or future-run model; omitted fields and unrelated settings remain unchanged. model:null clears the thread pin. A title update suppresses later automatic naming; model changes affect later runs, not an active run. Use one UUID requestId per intended patch; within 24 hours retry only the identical threadId and exact field presence/values. Replay returns current state without restoring older settings; inspect before a new intent after uncertainty.",
+        "Atomically update a conversation title and/or future-run model; omitted fields stay unchanged. model:null clears the pin. A title update suppresses automatic naming; model changes affect future runs, not an active run. Use one UUID requestId per patch. Within 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry, so inspect current state. Replay returns current state without restoring older settings.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },
@@ -845,13 +845,13 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message; within 24 hours retry only the identical threadId and exact text. After uncertainty or expiry, inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Pass threadId/inputRef to get_chat_status, then follow its message handoff.",
+          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message. Within 24 hours, retry only the identical threadId and exact text; retryUntil is the deadline. Sends are not generally idempotent after expiry, so inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Execute nextAction unchanged to observe this input with get_chat_status, then follow its message handoff.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
           readOnlyHint: false,
           destructiveHint: false,
-          idempotentHint: true,
+          idempotentHint: false,
           openWorldHint: true,
         },
       },
@@ -881,7 +881,7 @@ function registerMutationTools(
       "revoke_queued_message",
       {
         description:
-          "Withdraw an unclaimed queued input using threadId and send_chat_message inputRef.eventId. Repeating a revocation is safe. Reserved or associated input is not revocable here, and not_revocable does not prove delivery. This never cancels a run; use cancel_run with the reported runId when appropriate.",
+          "Withdraw an unclaimed queued input using the complete send_chat_message inputRef. Repeating a revocation is safe. Reserved or associated input is not revocable here, and not_revocable does not prove delivery. This never cancels a run; use cancel_run with the reported runId when appropriate.",
         inputSchema: mcpRevokeQueuedMessageInputSchema,
         outputSchema: mcpRevokeQueuedMessageOutputSchema,
         annotations: {
@@ -902,7 +902,7 @@ function registerMutationTools(
           {
             summarize(data) {
               const run = data.runId ? `; run ${data.runId}` : "";
-              return `Queued input ${data.inputId}: ${data.outcome}${run}.`;
+              return `Queued input ${data.inputRef.eventId}: ${data.outcome}${run}.`;
             },
           },
         );
@@ -1039,9 +1039,9 @@ function registerSearchAndStatusTools(
     "get_chat_status",
     {
       description:
-        "Observe derived lifecycle {phase,outcome,output}. Pass threadId and complete " +
-        "send_chat_message inputRef, or omit inputRef for the latest run. Positive waitMs requires " +
-        "inputRef, clamps to 8 seconds and 5 observations, and returns ready, deadline, or status; " +
+        "Observe derived lifecycle {phase,outcome,output}. Pass complete send_chat_message inputRef " +
+        "for that input, or only threadId for the latest run. waitMs requires inputRef, clamps to " +
+        "8 seconds and 5 observations, and returns ready, deadline, or status; " +
         "deadline or capacity is current state, not a run outcome. Missing associations never select " +
         "another run. queued proves neither delivery, provenance, nor model compliance. Private " +
         "observations may map several inputs to one run and output. Terminal runs may remain " +

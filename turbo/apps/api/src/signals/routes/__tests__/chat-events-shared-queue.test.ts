@@ -372,6 +372,17 @@ describe("CHAT-02: shared user message queue", () => {
     });
     expect(firstInput?.runId).toBeUndefined();
     await chat.renameThread(actor, source.threadId, "Delegation source");
+    // The source run and the first delegated run are already active. Fill the
+    // remaining plan concurrency, read from the billing API, so the next
+    // delegated prompt has to queue.
+    const { concurrencyLimit } = await api.readBillingStatus(actor);
+    for (let index = 2; index < concurrencyLimit; index += 1) {
+      await sendChatRun(actor, {
+        agentId,
+        prompt: `occupy concurrency slot ${index}`,
+      });
+    }
+
     const secondEventId = randomUUID();
     const secondSend = await requestSendEventWithBearer(
       sourceToken,

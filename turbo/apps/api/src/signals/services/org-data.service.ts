@@ -5,7 +5,6 @@ import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { userCache } from "@okouai/db/schema/user-cache";
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
@@ -24,7 +23,6 @@ import {
   clerk$,
   createClerkReadContext,
   type ClerkReadContext,
-  type ClerkUser,
 } from "../external/clerk";
 import {
   listAllOrganizationMemberships,
@@ -43,6 +41,7 @@ import {
   reserveUsagePackMemberRemoval,
   removeUsagePackMemberAllocation,
 } from "./usage-pack-allocation-change.service";
+import { fetchUserProfileMap } from "./user-profile-directory.service";
 
 const clerkOrgIdentitySchema = z.object({
   name: z.string().nullable().optional(),
@@ -55,8 +54,6 @@ interface OrgIdentity {
 }
 
 const CACHE_TTL_MS = 60_000;
-const USER_PROFILE_CACHE_TTL_MS = 15 * 60 * 1000;
-const CLERK_USER_LIST_BATCH_SIZE = 100;
 
 const forbiddenAccess = Object.freeze({
   status: 403 as const,
@@ -643,13 +640,6 @@ interface OrgMembersListArgs {
   readonly includeManagement: boolean;
 }
 
-interface ClerkUserProfile {
-  readonly email: string;
-  readonly firstName: string | null;
-  readonly lastName: string | null;
-  readonly imageUrl: string;
-}
-
 function mapClerkOrgRole(clerkRole: string): OrgRole {
   return clerkRole === "org:admin" ? "admin" : "member";
 }
@@ -661,112 +651,6 @@ function requiredClerkMembershipUserId(
     throw new Error("Clerk organization membership is missing its user ID");
   }
   return userId;
-}
-
-function userPrimaryEmail(user: ClerkUser): string {
-  const primary = user.emailAddresses.find((e) => {
-    return e.id === user.primaryEmailAddressId;
-  });
-  return primary?.emailAddress ?? "";
-}
-
-async function fetchUserProfileMap(
-  db: Db,
-  client: ReturnType<typeof clerk$.read>,
-  userIds: readonly string[],
-  context: ClerkReadContext,
-  signal: AbortSignal,
-): Promise<Map<string, ClerkUserProfile>> {
-  const map = new Map<string, ClerkUserProfile>();
-  const uniqueUserIds = [...new Set(userIds)];
-  if (uniqueUserIds.length === 0) {
-    return map;
-  }
-
-  const currentTime = now();
-  const cachedUsers = await db
-    .select({
-      userId: userCache.userId,
-      email: userCache.email,
-      name: userCache.name,
-      imageUrl: userCache.imageUrl,
-      cachedAt: userCache.cachedAt,
-    })
-    .from(userCache)
-    .where(inArray(userCache.userId, uniqueUserIds));
-  signal.throwIfAborted();
-  const missingUserIds = new Set(uniqueUserIds);
-  for (const cached of cachedUsers) {
-    if (currentTime - cached.cachedAt.getTime() >= USER_PROFILE_CACHE_TTL_MS) {
-      continue;
-    }
-    const [firstName = null, ...rest] = (cached.name ?? "").split(/\s+/);
-    map.set(cached.userId, {
-      email: cached.email,
-      firstName: firstName || null,
-      lastName: rest.join(" ") || null,
-      imageUrl: cached.imageUrl ?? "",
-    });
-    missingUserIds.delete(cached.userId);
-  }
-
-  if (missingUserIds.size === 0) {
-    return map;
-  }
-
-  const refreshedAt = nowDate();
-  const userIdsToFetch = [...missingUserIds];
-  for (
-    let offset = 0;
-    offset < userIdsToFetch.length;
-    offset += CLERK_USER_LIST_BATCH_SIZE
-  ) {
-    const users = await client.users.getUserList(
-      {
-        userId: userIdsToFetch.slice(
-          offset,
-          offset + CLERK_USER_LIST_BATCH_SIZE,
-        ),
-        limit: CLERK_USER_LIST_BATCH_SIZE,
-      },
-      context,
-      signal,
-    );
-    for (const user of users.data) {
-      const email = userPrimaryEmail(user);
-      const name =
-        [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
-      const imageUrl = user.imageUrl || null;
-      map.set(user.id, {
-        email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        imageUrl: imageUrl ?? "",
-      });
-      if (email) {
-        await db
-          .insert(userCache)
-          .values({
-            userId: user.id,
-            email,
-            name,
-            imageUrl,
-            cachedAt: refreshedAt,
-          })
-          .onConflictDoUpdate({
-            target: userCache.userId,
-            set: {
-              email,
-              name,
-              imageUrl,
-              cachedAt: refreshedAt,
-            },
-          });
-        signal.throwIfAborted();
-      }
-    }
-  }
-  return map;
 }
 
 async function fetchOrgMemberDirectory(

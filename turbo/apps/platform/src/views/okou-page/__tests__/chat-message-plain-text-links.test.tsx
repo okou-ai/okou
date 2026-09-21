@@ -128,6 +128,46 @@ test("A sentence typed onto the end of a link stays outside it", async () => {
   }
 });
 
+test("An ordinal written without a space still leaves a link", async () => {
+  const url = "https://example.com/brief";
+  const prompt = `1.${url} and 2. ${url}?second=1`;
+  installPrompt(prompt);
+
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
+  });
+
+  const message = await waitFor(() => {
+    const element = userMessage();
+    expect(element).toHaveTextContent(prompt);
+    return element;
+  });
+  // `1.` cannot continue a word, so the scheme behind it still starts a URL.
+  expect(linkTo(url, message)).toHaveTextContent(url);
+  expect(linkTo(`${url}?second=1`, message)).toBeInTheDocument();
+});
+
+test("A link glued to a word or a digit stays plain text", async () => {
+  const prompt =
+    "ahttps://example.com/one and 3https://example.com/two stay text.";
+  installPrompt(prompt);
+
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
+  });
+
+  const message = await waitFor(() => {
+    const element = userMessage();
+    expect(element).toHaveTextContent(prompt);
+    return element;
+  });
+  expect(queryAllByRoleFast("link", message)).toHaveLength(0);
+});
+
 test("Text that only looks like a link stays plain text", async () => {
   const prompt = [
     "Bare example.com and mail user@example.com stay text,",

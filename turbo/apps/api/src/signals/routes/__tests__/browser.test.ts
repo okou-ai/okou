@@ -988,6 +988,9 @@ describe("okou browser route", () => {
   }, 120_000);
 
   it("reclaims the earliest idle lease before starting past org concurrency", async () => {
+    // Two managed browsers keep the third start past the limit, independent of
+    // the Pro plan's own concurrency.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     const first = await createClaimedChatRun(
       chat,

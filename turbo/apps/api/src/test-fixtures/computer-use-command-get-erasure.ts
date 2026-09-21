@@ -22,6 +22,7 @@ import {
 import {
   barrierQueryBinds,
   barrierQueryText,
+  isErasureSubjectLockStatement,
   withDatabaseTransactionBarrierFixture,
   type TransactionBarrier,
 } from "./account-erasure-subject";
@@ -48,20 +49,6 @@ interface ComputerUseCommandGetBarrier extends TransactionBarrier {
 }
 
 type CommandGetStop = "maintenance" | "audit" | "projection" | "commit";
-
-function firstCommandGetSubjectLock(
-  queryArgs: unknown[],
-  orgId: string,
-): boolean {
-  const text = barrierQueryText(queryArgs);
-  const lockKey = `account-erasure:${JSON.stringify(["organization", orgId])}`;
-  return (
-    text.startsWith("select") &&
-    text.includes("erasure_isolation_probe") &&
-    text.includes("pg_advisory_xact_lock_shared") &&
-    barrierQueryBinds(queryArgs, lockKey)
-  );
-}
 
 function isCommandMaintenance(
   queryArgs: unknown[],
@@ -148,13 +135,17 @@ export async function withComputerUseCommandGetBarrierFixture<T>(
         }
         if (
           selectedReceiver === undefined &&
-          firstCommandGetSubjectLock(queryArgs, args.orgId)
+          isErasureSubjectLockStatement(queryArgs, {
+            subject: { subjectKind: "organization", subjectId: args.orgId },
+          })
         ) {
           selectedReceiver = receiver;
         }
       },
       select: (queryArgs) => {
-        return firstCommandGetSubjectLock(queryArgs, args.orgId);
+        return isErasureSubjectLockStatement(queryArgs, {
+          subject: { subjectKind: "organization", subjectId: args.orgId },
+        });
       },
       stopAt: (queryArgs) => {
         const text = barrierQueryText(queryArgs);

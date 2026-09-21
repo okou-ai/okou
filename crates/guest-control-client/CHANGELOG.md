@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.1](https://github.com/okou-ai/okou/compare/guest-control-client-v0.22.0...guest-control-client-v0.22.1) (2026-09-21)
+
+## [0.22.0](https://github.com/okou-ai/okou/compare/guest-control-client-v0.21.13...guest-control-client-v0.22.0) (2026-09-21)
+
+
+### Features
+
+* **runner:** report which guard rejected oom containment ([#35745](https://github.com/okou-ai/okou/issues/35745)) ([764e859](https://github.com/okou-ai/okou/commit/764e8598cf83dc1750a3a1b9fc6dbac35be2e362)), closes [#35725](https://github.com/okou-ai/okou/issues/35725)
+
 ## [0.21.13](https://github.com/okou-ai/okou/compare/guest-control-client-v0.21.12...guest-control-client-v0.21.13) (2026-09-20)
 
 ## [0.21.12](https://github.com/okou-ai/okou/compare/guest-control-client-v0.21.11...guest-control-client-v0.21.12) (2026-09-20)

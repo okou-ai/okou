@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.206.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.3...runner-rs-v0.206.0) (2026-09-21)
+
+
+### Features
+
+* **vnc:** execute x509plain runner sessions ([#35751](https://github.com/okou-ai/okou/issues/35751)) ([2bd8dde](https://github.com/okou-ai/okou/commit/2bd8dde2379f54ac53a7af5ca53a678af439f304))
+
+
+### Bug Fixes
+
+* **runner:** aggregate network-log transport failures ([#35758](https://github.com/okou-ai/okou/issues/35758)) ([9ef05a4](https://github.com/okou-ai/okou/commit/9ef05a4a1a397980590fc74e6e5188cc5f3fcfca))
+* **runner:** make cancellation reconciliation failures observable ([#35754](https://github.com/okou-ai/okou/issues/35754)) ([e83b568](https://github.com/okou-ai/okou/commit/e83b568a0dea7e944ad14a628e766a9a04dee1e1))
+
+
+### Performance Improvements
+
+* **ci:** virtualize long ssh coverage wait ([#35765](https://github.com/okou-ai/okou/issues/35765)) ([ea2d49c](https://github.com/okou-ai/okou/commit/ea2d49cae145a34b95d3b6cfc1fde7ad7155cf14))
+
+## [0.205.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.2...runner-rs-v0.205.3) (2026-09-21)
+
+## [0.205.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.1...runner-rs-v0.205.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* refresh api, platform, and runner release markers ([#35702](https://github.com/okou-ai/okou/issues/35702)) ([8f8e88a](https://github.com/okou-ai/okou/commit/8f8e88a73d84e449e46befc07d74f8ee340a73f7))
+
 ## [0.205.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.0...runner-rs-v0.205.1) (2026-09-20)
 
 

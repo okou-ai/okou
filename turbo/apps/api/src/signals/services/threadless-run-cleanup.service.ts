@@ -41,7 +41,7 @@ import {
   loadPiMemoryPhase2UsageBinding,
   piMemoryPhase2ProviderCondition,
   PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
-  PI_MEMORY_PHASE2_MODEL,
+  PI_MEMORY_PHASE2_MODELS,
 } from "./pi-memory-phase2-usage.service";
 
 import {
@@ -183,7 +183,7 @@ async function loadThreadlessRunCandidates(
                 ),
                 eq(agentRuns.triggerSource, "agent"),
                 piMemoryPhase2ProviderCondition(),
-                eq(agentRuns.selectedModel, PI_MEMORY_PHASE2_MODEL),
+                inArray(agentRuns.selectedModel, [...PI_MEMORY_PHASE2_MODELS]),
                 eq(sql`${agentRuns.launchSnapshot}->>'framework'`, "pi"),
                 gt(agentRuns.completedAt, usageQuietBefore),
               ),

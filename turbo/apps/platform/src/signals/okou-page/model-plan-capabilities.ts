@@ -1,5 +1,6 @@
 import { computed } from "ccstate";
 import {
+  getRunModelRouteAccess,
   isLimitedFree1RestrictedRunModel,
   isBuiltInModelProviderType,
   type ModelProviderType,
@@ -48,13 +49,28 @@ function modelProviderAllowedForPlan(
   return capabilities.supportByok || isBuiltInModelProviderType(providerType);
 }
 
+export function modelRouteAllowedForPlan(
+  model: string | null | undefined,
+  providerType: ModelProviderType,
+  capabilities: ModelPlanCapabilities,
+): boolean {
+  return (
+    getRunModelRouteAccess(
+      model,
+      providerType,
+      capabilities.restrictedBuiltInModels,
+    ) === "allowed" && modelProviderAllowedForPlan(providerType, capabilities)
+  );
+}
+
 export function modelPolicyAllowedForPlan(
   policy: Pick<OrgModelPolicy, "model" | "defaultProviderType">,
   capabilities: ModelPlanCapabilities,
 ): boolean {
-  return (
-    modelAllowedForPlan(policy.model, capabilities) &&
-    modelProviderAllowedForPlan(policy.defaultProviderType, capabilities)
+  return modelRouteAllowedForPlan(
+    policy.model,
+    policy.defaultProviderType,
+    capabilities,
   );
 }
 
@@ -66,7 +82,6 @@ export function memberModelPolicyAllowedForPlan(
   const route = getMemberModelPolicyRoute(policy);
   return (
     route.availability !== "plan_restricted" &&
-    modelAllowedForPlan(policy.model, capabilities) &&
-    modelProviderAllowedForPlan(route.providerType, capabilities)
+    modelRouteAllowedForPlan(policy.model, route.providerType, capabilities)
   );
 }

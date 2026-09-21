@@ -182,6 +182,10 @@ function setPassageSelection(
   selection.addRange(range);
   if (interaction === "mouse") {
     fireEvent.mouseUp(target, { button: 0 });
+    // A drag that selects a passage ends in a click, and the browser dispatches
+    // it after the mouseup that captures the passage. Omitting it hides every
+    // way the toolbar can be dismissed by the gesture that created it.
+    fireEvent.click(target, { button: 0 });
   } else {
     fireEvent(document, new Event("selectionchange"));
   }

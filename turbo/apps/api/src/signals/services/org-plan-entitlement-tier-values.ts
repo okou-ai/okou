@@ -23,7 +23,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
 > = {
   free: {
     planRank: 0,
-    baseConcurrencyLimit: 1,
+    baseConcurrencyLimit: 2,
     canBuyConcurrency: false,
     canBuyCredits: true,
     autoRechargeAllowed: false,
@@ -37,11 +37,11 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
   },
   "limited-free-1": {
     planRank: 0,
-    baseConcurrencyLimit: 1,
+    baseConcurrencyLimit: 2,
     canBuyConcurrency: false,
     canBuyCredits: false,
     autoRechargeAllowed: false,
-    supportByok: false,
+    supportByok: true,
     restrictedBuiltInModels: true,
     videoGenerationAllowed: false,
     workflowWebhookAutomationAllowed: false,
@@ -51,7 +51,7 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
   },
   pro: {
     planRank: 1,
-    baseConcurrencyLimit: 2,
+    baseConcurrencyLimit: 3,
     canBuyConcurrency: false,
     canBuyCredits: true,
     autoRechargeAllowed: true,

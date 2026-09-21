@@ -35,4 +35,4 @@ mod secret_text;
 
 pub use decode_path::{DecodePathCursor, DecodePathMapSegment, DecodePathSchema};
 pub use route::{Method, ResolvedRoute, Route, RouteTemplate};
-pub use secret_text::SecretText;
+pub use secret_text::{SecretText, SecretUtf8Text};

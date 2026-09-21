@@ -129,6 +129,20 @@ const userTemplateSummarySchema = z.object({
   kind: userTemplateKindSchema,
   coverUrl: z.url().nullable(),
   /**
+   * Whether the file this cover was rendered from has pages after it.
+   *
+   * A boolean rather than a count because the catalog draws exactly two
+   * states: one sheet, or one sheet with a stack behind it. The sheets behind
+   * are decoration — a document template uploads its first page and no others
+   * — so a tile that knew the number would have nothing more to do with it.
+   *
+   * Separate from `pageCount` because the two mean different things and a
+   * document answers them differently: `pageCount` is how many pages this
+   * template renders, which for a document is none, while this is how long the
+   * file it was compiled from was.
+   */
+  coverHasMorePages: z.boolean(),
+  /**
    * Null for a kind that has no pages. A document template is its styles and
    * an illustration template is one picture, not a sequence of rendered pages,
    * so counting them would report a zero that reads as "empty" rather than
@@ -143,6 +157,21 @@ const userTemplateSummarySchema = z.object({
    * has to say whose it is.
    */
   ownerUserId: z.string(),
+  /**
+   * That owner's name, as a colleague would recognise it.
+   *
+   * Resolved here rather than by the reader, because `ownerUserId` is an
+   * identity-provider handle and nothing in the browser can turn one into a
+   * person: the catalog shipped rendering the raw `user_…` handle where a name
+   * belonged.
+   *
+   * Null when the provider has no name and no address to fall back to — an
+   * account removed since the upload, or one reachable only while the provider
+   * is. The row is still listed: who owns a template decides nothing about who
+   * may read it, so a surface words the missing name instead of hiding the
+   * template behind it.
+   */
+  ownerDisplayName: z.string().nullable(),
   canManage: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -211,13 +240,28 @@ const publishUserTemplateBaseSchema = z.object({
  * Page images are a presentation's requirement, not a template's.
  *
  * A deck's cover is its first slide, so the pages are how it is recognised and
- * previewed. A document's identity is its styles, and rendering it to images
- * would add a dependency that buys nothing, so the document arm does not carry
- * them and cannot be sent them by mistake.
+ * previewed. A document's identity is its styles, and it is read as a file
+ * rather than scrolled as a sequence of pictures, so its arm carries one
+ * rendered first page to be recognised by in the catalog and still no page
+ * sequence.
  *
- * An illustration carries none either, for the opposite reason: its source is
+ * `pageCount` here is the source file's length, not this template's: a
+ * document renders no pages. It is carried because the catalog draws a stack
+ * of sheets behind a cover that had more pages after it, and because a
+ * reverse run that already opened the file is the only place that number is
+ * free to read.
+ *
+ * Both are optional, and separately so. Rendering the first page needs a
+ * converter the reverse run installs while it runs, so a run that cannot
+ * render one still publishes a usable template and the catalog names it by its
+ * file instead. A cover that arrives without a count is drawn as a single
+ * sheet, and a count that arrives without a cover has nothing to draw. Pairing
+ * them into one object would make each of those a rejection rather than the
+ * appearance it already has.
+ *
+ * An illustration carries neither, for the opposite reason: its source is
  * already a picture, so the catalog shows that file rather than a rendering of
- * it. Sending pages would be sending a second copy of the cover.
+ * it. Sending a cover would be sending a second copy of the one it has.
  */
 const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   publishUserTemplateBaseSchema.extend({
@@ -226,6 +270,12 @@ const publishUserTemplateBodySchema = z.discriminatedUnion("kind", [
   }),
   publishUserTemplateBaseSchema.extend({
     kind: z.literal("document"),
+    coverFileId: z.uuid().optional(),
+    // No ceiling: the number is only ever compared against one, and a source
+    // file's length has no bound that `MAX_USER_TEMPLATE_PAGES` — a limit on
+    // how many images may be uploaded — could stand in for. Capping it there
+    // would refuse a three-hundred-page manual that uploads one picture.
+    pageCount: z.number().int().positive().optional(),
   }),
   publishUserTemplateBaseSchema.extend({
     kind: z.literal("illustration"),

@@ -10,8 +10,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { ClerkRateLimitError } from "../../external/clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -77,6 +79,21 @@ function guidance(
   }
 }
 
+/** A directory entry with a name of its own, to tell two members apart. */
+function clerkProfile(userId: string, firstName: string, lastName: string) {
+  const emailId = `email_${userId}`;
+  return {
+    id: userId,
+    emailAddresses: [{ id: emailId, emailAddress: `${userId}@example.test` }],
+    primaryEmailAddressId: emailId,
+    firstName,
+    lastName,
+    username: null,
+    imageUrl: "",
+    privateMetadata: {},
+  };
+}
+
 /** Signs a member in and turns the switch on for them. */
 async function enableFor(actor: ApiTestUser) {
   if (!actor.orgId) {
@@ -130,6 +147,63 @@ async function publishBody(
     kind: "presentation",
     sourceFileId,
     pageFileIds,
+    packageFileId,
+  };
+}
+
+const DOCX_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/**
+ * A document publish body carrying whatever the reverse run managed to render.
+ *
+ * Both of the document arm's fields are optional and separately so, which is
+ * the point of taking them separately here: a test that omits one is covering
+ * a run that produced the other and nothing more.
+ */
+async function documentPublishBody(
+  actor: ApiTestUser,
+  fixture: Fixture,
+  rendered: {
+    readonly cover?: { readonly contentType: string };
+    readonly pageCount?: number;
+  } = {},
+): Promise<PublishUserTemplateBody> {
+  const sourceFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "brand-report.docx", contentType: DOCX_CONTENT_TYPE },
+    Buffer.from("PK docx bytes", "utf8"),
+  );
+  const coverFileId =
+    rendered.cover === undefined
+      ? undefined
+      : await uploadTemplateFile(
+          context,
+          actor,
+          fixture,
+          {
+            filename: "cover.png",
+            contentType: rendered.cover.contentType,
+          },
+          Buffer.from("first page", "utf8"),
+        );
+  const packageFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+    tarGz(guidance("document")),
+  );
+  return {
+    title: "Brand report",
+    kind: "document",
+    sourceFileId,
+    ...(coverFileId === undefined ? {} : { coverFileId }),
+    ...(rendered.pageCount === undefined
+      ? {}
+      : { pageCount: rendered.pageCount }),
     packageFileId,
   };
 }
@@ -239,13 +313,16 @@ describe("POST /api/user-templates", () => {
       [200],
     );
 
-    // A document is its styles, so it has no pages and no cover — null rather
-    // than a zero that would read as an empty template.
+    // A document is its styles, so it has no pages — null rather than a zero
+    // that would read as an empty template. This one was also published
+    // without a rendered first page, so it has no cover either, and nothing
+    // for the catalog to stack behind one.
     expect(response.body).toMatchObject({
       kind: "document",
       sourceFilename: "brand-report.docx",
       pageCount: null,
       coverUrl: null,
+      coverHasMorePages: false,
     });
 
     const listed = await accept(client.list({ headers: webHeaders() }), [200]);
@@ -271,6 +348,113 @@ describe("POST /api/user-templates", () => {
         return key.endsWith(".docx");
       }),
     );
+  });
+
+  it("covers a document with its first page without calling it a page", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, {
+          cover: { contentType: "image/png" },
+          pageCount: 12,
+        }),
+      }),
+      [200],
+    );
+
+    // The picture is a cover and only a cover. `pageCount` stays null because
+    // it answers how many pages this template renders, which is still none;
+    // how long the source was reaches the catalog as the one thing the tile
+    // does with it.
+    expect(response.body).toMatchObject({
+      kind: "document",
+      coverHasMorePages: true,
+      pageCount: null,
+    });
+    expect(response.body.coverUrl).not.toBeNull();
+
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: response.body.id },
+      }),
+      [200],
+    );
+    // Not in `pageUrls`: a reader opening a document is given the file to
+    // read, not one picture of its opening. Putting the cover here is what
+    // would replace the source viewer with a dead end.
+    expect(detail.body.pageUrls).toStrictEqual([]);
+    expect(detail.body.previewAssets).toHaveLength(1);
+  });
+
+  it("leaves a one-page document nothing to stack behind its cover", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, {
+          cover: { contentType: "image/png" },
+          pageCount: 1,
+        }),
+      }),
+      [200],
+    );
+
+    expect(response.body.coverUrl).not.toBeNull();
+    // An invitation is one page. Sheets behind it would claim a second.
+    // `toMatchObject` rather than `toBeFalsy`, which would also accept the
+    // `undefined` an absent field would produce.
+    expect(response.body).toMatchObject({ coverHasMorePages: false });
+  });
+
+  it("keeps a page count that arrived without a cover from claiming one", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, { pageCount: 12 }),
+      }),
+      [200],
+    );
+
+    // The count is recorded and the catalog still has nothing to draw, so the
+    // template falls back to being named by its file. A stack with no sheet in
+    // front of it is what pairing the two fields would have had to prevent by
+    // rejecting the publish instead.
+    expect(response.body.coverUrl).toBeNull();
+    expect(response.body).toMatchObject({ coverHasMorePages: false });
+  });
+
+  it("refuses a cover the catalog could not paint", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await documentPublishBody(actor, fixture, {
+          cover: { contentType: "image/webp" },
+          pageCount: 12,
+        }),
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toContain("image/png");
   });
 
   it("publishes an illustration template and covers it with its source", async () => {
@@ -799,5 +983,89 @@ describe("POST /api/user-templates", () => {
       }),
       [404],
     );
+  });
+
+  it("names a colleague's template after the person, not the account id", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    // Two members with different names, so the answer has to be the owner's
+    // rather than whichever profile the directory happened to return.
+    mockClerkUsers(context, [
+      clerkProfile(owner.userId, "Mina", "Okafor"),
+      clerkProfile(colleague.userId, "Sam", "Reader"),
+    ]);
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body[0]).toMatchObject({
+      ownerUserId: owner.userId,
+      ownerDisplayName: "Mina Okafor",
+    });
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+    expect(detail.body).toMatchObject({ ownerDisplayName: "Mina Okafor" });
+  });
+
+  it("still lists a template whose owner the provider cannot name", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    // Who owns a template decides nothing about who may read it, so a provider
+    // that cannot answer costs the name and not the row.
+    context.mocks.clerk.users.getUserList.mockRejectedValue(
+      new ClerkRateLimitError("Clerk is rate limiting reads", 30),
+    );
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body).toHaveLength(1);
+    expect(listed.body[0]).toMatchObject({
+      id: published.body.id,
+      ownerUserId: owner.userId,
+      ownerDisplayName: null,
+      canManage: false,
+    });
   });
 });

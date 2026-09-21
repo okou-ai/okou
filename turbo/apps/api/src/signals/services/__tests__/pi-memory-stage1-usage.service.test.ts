@@ -11,7 +11,12 @@ import {
   recordPiMemoryStage1Usage,
   piMemoryStage1UsageEntries,
   piMemoryStage1AccountingId,
+  type RecordPiMemoryStage1UsageArgs,
 } from "../pi-memory-stage1-usage.service";
+import {
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_BYOK_MODEL,
+} from "@okouai/pi-agent-runtime/api";
 import { compactUsageEvents$ } from "../cron-compact-usage-events.service";
 
 // D infrastructure exception: immutable historical billing rows, physical
@@ -37,9 +42,10 @@ function harness() {
     piSessionId: randomUUID(),
     sourceHistoryHash: "a".repeat(64),
     responseSourceId: randomUUID(),
+    model: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
     billing: { mode: "builtin" as const, orgId, userId },
     usage: { input: 10, output: 8, cacheRead: 2, cacheWrite: 3 },
-  };
+  } satisfies RecordPiMemoryStage1UsageArgs;
   onTestFinished(async () => {
     await pool.query("DELETE FROM usage_event WHERE org_id=$1", [orgId]);
     await pool.query("DELETE FROM usage_event_hourly_rollup WHERE org_id=$1", [
@@ -204,7 +210,7 @@ describe("Stage 1 durable usage boundary", () => {
 
   it("uses all cache-inclusive tier quantities at the inclusive long-context boundary", () => {
     expect(
-      piMemoryStage1UsageEntries({
+      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BYOK_MODEL, {
         input: 270_000,
         output: 1,
         cacheRead: 2000,
@@ -219,7 +225,7 @@ describe("Stage 1 durable usage boundary", () => {
       "tokens.cache_creation",
     ]);
     expect(
-      piMemoryStage1UsageEntries({
+      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BYOK_MODEL, {
         input: 270_000,
         output: 1,
         cacheRead: 2000,
@@ -232,6 +238,22 @@ describe("Stage 1 durable usage boundary", () => {
       "tokens.output.long_context",
       "tokens.cache_read.long_context",
       "tokens.cache_creation.long_context",
+    ]);
+  });
+
+  it("keeps the built-in model on base categories past the GPT long-context boundary", () => {
+    expect(
+      piMemoryStage1UsageEntries(PI_MEMORY_STAGE1_BUILT_IN_MODEL, {
+        input: 900_000,
+        output: 1,
+        cacheRead: 2000,
+        cacheWrite: 1,
+      }),
+    ).toStrictEqual([
+      { category: "tokens.input", quantity: 900_000 },
+      { category: "tokens.output", quantity: 1 },
+      { category: "tokens.cache_read", quantity: 2000 },
+      { category: "tokens.cache_creation", quantity: 1 },
     ]);
   });
 
@@ -285,9 +307,11 @@ describe("Stage 1 durable usage boundary", () => {
       { billing_context: "runless", q: "5" },
     ]);
     await h.store.set(compactUsageEvents$, h.orgId, context.signal);
+    // Late raw usage for the same built-in extraction model, so it reconciles
+    // into the existing Stage 1 groups instead of opening a new provider group.
     await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model','gpt-5.6-luna','tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
-      [h.orgId, h.userId, original],
+      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,'pi_memory_stage1')",
+      [h.orgId, h.userId, original, PI_MEMORY_STAGE1_BUILT_IN_MODEL],
     );
     const late = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
       .rows[0].report;

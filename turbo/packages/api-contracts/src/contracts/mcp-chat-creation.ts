@@ -6,7 +6,7 @@ import {
   mcpChatInputReceiptSchema,
   mcpChatMessageTextSchema,
 } from "./mcp-chat-mutations";
-import { mcpChatMessageSchema } from "./mcp-chat-messages";
+import { mcpGetChatStatusNextActionSchema } from "./mcp-chat-references";
 import { mcpChatThreadSchema } from "./mcp-chat-threads";
 
 const requestIdSchema = z.uuid().toLowerCase();
@@ -72,21 +72,13 @@ const sendMessageNextActionSchema = z.strictObject({
   tool: z.literal("send_chat_message"),
   arguments: z.strictObject({ threadId: z.uuid() }),
 });
-const getStatusNextActionSchema = z.strictObject({
-  tool: z.literal("get_chat_status"),
-  arguments: z.strictObject({
-    threadId: z.uuid(),
-    inputRef: mcpChatMessageSchema.shape.ref,
-  }),
-});
-
 export const mcpCreateEmptyChatThreadOutputSchema =
   createOutputBaseSchema.extend({ nextAction: sendMessageNextActionSchema });
 
 export const mcpCreateChatWithMessageOutputSchema =
   createOutputBaseSchema.extend({
     input: mcpChatInputReceiptSchema,
-    nextAction: getStatusNextActionSchema,
+    nextAction: mcpGetChatStatusNextActionSchema,
   });
 
 export type McpCreateEmptyChatThreadOutput = z.infer<
@@ -104,7 +96,7 @@ export const mcpCreateChatThreadOutputSchema = createOutputBaseSchema
     input: mcpChatInputReceiptSchema.optional(),
     nextAction: z.union([
       sendMessageNextActionSchema,
-      getStatusNextActionSchema,
+      mcpGetChatStatusNextActionSchema,
     ]),
   })
   .refine(

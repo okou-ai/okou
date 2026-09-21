@@ -1,4 +1,5 @@
 import { settleIncludingAbort } from "../../signals/utils";
+import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -181,7 +182,8 @@ test("transports one priced Stage 1 observation and an unpriced replay at the or
   ].map((category) => {
     return {
       kind: "model",
-      provider: "gpt-5.6-luna",
+      // Built-in extraction is the billing mode this observation records.
+      provider: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
       category,
       unitPrice: 1000,
       unitSize: 1_000_000,

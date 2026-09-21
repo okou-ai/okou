@@ -9,7 +9,30 @@ import { and, eq, isNull, isNotNull, inArray, or } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 
-export const PI_MEMORY_PHASE2_MODEL = "gpt-5.6-terra";
+export const PI_MEMORY_PHASE2_BUILT_IN_MODEL = "deepseek-v4.1-flash";
+export const PI_MEMORY_PHASE2_BYOK_MODEL = "gpt-5.6-terra";
+
+/**
+ * Every model a private maintenance run may legitimately carry.
+ *
+ * Both entries are permanent, not a migration window: consolidation pins to the
+ * source run's own binding, so BYOK bindings keep dispatching the GPT model for
+ * as long as they exist. Narrowing any lookup back to a single value would make
+ * the other binding class unreconcilable and would leak its threadless runs.
+ */
+export const PI_MEMORY_PHASE2_MODELS = [
+  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  PI_MEMORY_PHASE2_BYOK_MODEL,
+] as const;
+
+/** The binding chooses the model; there is no fallback between them. */
+export function piMemoryPhase2Model(
+  modelProvider: string,
+): (typeof PI_MEMORY_PHASE2_MODELS)[number] {
+  return modelProvider === "built-in"
+    ? PI_MEMORY_PHASE2_BUILT_IN_MODEL
+    : PI_MEMORY_PHASE2_BYOK_MODEL;
+}
 
 // A terminal callback can precede the runner's final proxy flush. Keep the
 // private binding for a full runner lifetime plus finalization, including
@@ -87,7 +110,7 @@ export async function loadPiMemoryPhase2UsageBinding(
         eq(agentRuns.triggerSource, "agent"),
         isNull(agentRuns.chatThreadId),
         piMemoryPhase2ProviderCondition(),
-        eq(agentRuns.selectedModel, PI_MEMORY_PHASE2_MODEL),
+        inArray(agentRuns.selectedModel, [...PI_MEMORY_PHASE2_MODELS]),
       ),
     )
     .limit(1);

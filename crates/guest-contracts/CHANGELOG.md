@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.15.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.0...guest-contracts-v0.15.1) (2026-09-21)
+
+## [0.15.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.24...guest-contracts-v0.15.0) (2026-09-21)
+
+
+### Features
+
+* **runner:** report which guard rejected oom containment ([#35745](https://github.com/okou-ai/okou/issues/35745)) ([764e859](https://github.com/okou-ai/okou/commit/764e8598cf83dc1750a3a1b9fc6dbac35be2e362)), closes [#35725](https://github.com/okou-ai/okou/issues/35725)
+
 ## [0.14.24](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.23...guest-contracts-v0.14.24) (2026-09-20)
 
 

@@ -11,6 +11,7 @@ import {
   isCodexFastModeModel,
   isBuiltInModelProviderType,
   getRunModelAccess,
+  getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
   isSupportedRunModel,
   isModelSupportedByProvider,
@@ -134,25 +135,22 @@ function modelRouteCapabilities(
   };
 }
 
-function modelAllowedForOrgPlan(args: {
-  readonly capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">;
+function modelRouteAllowedForOrgPlan(args: {
+  readonly capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >;
   readonly selectedModel: string | null | undefined;
-}): boolean {
-  return (
-    getRunModelAccess(
-      args.selectedModel,
-      args.capabilities.restrictedBuiltInModels,
-    ) === "allowed"
-  );
-}
-
-function modelProviderAllowedForOrgPlan(args: {
-  readonly capabilities: Pick<OrgPlanCapabilities, "supportByok">;
   readonly modelProviderType: string | null | undefined;
 }): boolean {
   return (
-    args.capabilities.supportByok ||
-    isBuiltInModelProviderType(args.modelProviderType)
+    getRunModelRouteAccess(
+      args.selectedModel,
+      args.modelProviderType,
+      args.capabilities.restrictedBuiltInModels,
+    ) === "allowed" &&
+    (args.capabilities.supportByok ||
+      isBuiltInModelProviderType(args.modelProviderType))
   );
 }
 
@@ -379,14 +377,6 @@ export async function resolveModelSelectionPin(params: {
   }
   const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
   const capabilities = modelRouteCapabilities(orgPlanCapabilities);
-  if (
-    !modelAllowedForOrgPlan({
-      capabilities,
-      selectedModel: modelSelection.selectedModel,
-    })
-  ) {
-    return insufficientCredits();
-  }
   if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
     const provider = await loadAvailableModelProviderPin({
       db,
@@ -398,8 +388,9 @@ export async function resolveModelSelectionPin(params: {
       return badRequestMessage("Unknown model provider for this workspace");
     }
     if (
-      !modelProviderAllowedForOrgPlan({
+      !modelRouteAllowedForOrgPlan({
         capabilities,
+        selectedModel: modelSelection.selectedModel,
         modelProviderType: provider.type,
       })
     ) {
@@ -430,16 +421,41 @@ export async function resolveModelSelectionPin(params: {
     selectedModel: modelSelection.selectedModel,
     featureSwitchContext: params.featureSwitchContext,
   });
+  // Resolve the configured route without plan filtering first. Model access is
+  // decided from that route so BYOK never inherits a built-in-only model gate.
   const route = await resolveValidPolicyRoute({
     facts,
-    capabilities: modelRouteCapabilities(facts.orgPlanCapabilities),
+    capabilities: {
+      restrictedBuiltInModels: false,
+      supportByok: true,
+    },
     selectedModel: modelSelection.selectedModel,
   });
-  return route
-    ? modelFirstPinFromRoute(route)
-    : badRequestMessage(
-        "The selected model is not available in this workspace",
-      );
+  if (!route) {
+    return badRequestMessage(
+      "The selected model is not available in this workspace",
+    );
+  }
+  const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
+  if (
+    modelRouteAllowedForOrgPlan({
+      capabilities: planCapabilities,
+      selectedModel: route.selectedModel,
+      modelProviderType: route.modelProviderType,
+    })
+  ) {
+    return modelFirstPinFromRoute(route);
+  }
+  // The unfiltered route is the member's own route and the plan cannot use it.
+  // Resolving again under the plan restores the workspace route the member
+  // falls back to, so a personal subscription the plan does not cover keeps
+  // reporting its own availability instead of failing the whole selection.
+  const planRoute = await resolveValidPolicyRoute({
+    facts,
+    capabilities: planCapabilities,
+    selectedModel: modelSelection.selectedModel,
+  });
+  return planRoute ? modelFirstPinFromRoute(planRoute) : insufficientCredits();
 }
 
 async function resolveEffectiveModelProviderType(params: {
