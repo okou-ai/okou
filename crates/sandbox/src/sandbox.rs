@@ -39,6 +39,87 @@ pub struct FileWriteMeasurements {
     pub publication_elapsed: Duration,
 }
 
+/// Requested terminal disposition for one completed guest staging file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedFileDisposition<'a> {
+    /// Publish the staging file at the supplied final guest path.
+    Publish { destination: &'a str },
+    /// Remove the staging file without publishing it.
+    Discard,
+}
+
+/// Request to finalize one guest staging file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StagedFileFinalizeRequest<'a> {
+    /// Absolute guest path of the completed staging file.
+    pub staging_path: &'a str,
+    /// Terminal action to perform for the staging file.
+    pub disposition: StagedFileDisposition<'a>,
+}
+
+/// Filesystem path used to publish a completed staging file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedFilePublicationMode {
+    /// Source and destination parent share a device, so publication renamed the source inode.
+    SameDeviceRename,
+    /// Publication copied to a destination sibling before the final atomic rename.
+    CrossDeviceCopyRename,
+}
+
+/// Bounded reason why a terminal finalizer did not publish the destination.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedFileNotPublishedReason {
+    /// The staging path did not resolve to a regular file.
+    InvalidSource,
+    /// The destination parent could not be prepared or safely resolved.
+    InvalidDestinationParent,
+    /// The destination resolved to an unsupported entry type.
+    InvalidDestination,
+    /// Existing destination metadata could not be preserved safely.
+    MetadataPreparationFailed,
+    /// A same-device rename failed before publication.
+    RenameFailed,
+    /// A cross-device copy failed before publication.
+    CopyFailed,
+    /// Discard cleanup failed without publishing a destination.
+    DiscardFailed,
+    /// The helper returned a bounded but otherwise unclassified pre-publication failure.
+    Other,
+}
+
+/// Host-observed timing for one terminal staged-file finalizer operation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct StagedFileFinalizeMeasurements {
+    /// Complete finalizer duration, including validation performed in the guest helper.
+    pub elapsed: Duration,
+    /// Cross-device copy duration when reported by the helper.
+    pub copy_elapsed: Duration,
+    /// Final atomic rename duration when reported by the helper.
+    pub publication_elapsed: Duration,
+}
+
+/// Terminal, trustworthy result of finalizing one guest staging file.
+///
+/// An outer [`SandboxError`] does not prove whether publication happened and
+/// must not be treated as [`NotPublished`](Self::NotPublished).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedFileFinalizeOutcome {
+    /// The complete staging file was published at its final destination.
+    Published {
+        mode: StagedFilePublicationMode,
+        measurements: StagedFileFinalizeMeasurements,
+    },
+    /// The staging file was discarded without publishing a destination.
+    Discarded {
+        measurements: StagedFileFinalizeMeasurements,
+    },
+    /// A terminal helper result proved that final publication did not occur.
+    NotPublished {
+        reason: StagedFileNotPublishedReason,
+        measurements: StagedFileFinalizeMeasurements,
+    },
+}
+
 /// Eligibility result after a sandbox successfully reaches the parked state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SandboxParkOutcome {
@@ -989,6 +1070,22 @@ pub trait Sandbox: Send + Sync + Any {
         content: &[u8],
         compression: FileCompression,
     ) -> Result<Option<FileWriteMeasurements>>;
+
+    /// Publish or discard one completed guest staging file.
+    ///
+    /// A successful [`StagedFileFinalizeOutcome::NotPublished`] is the only
+    /// failure result that proves no destination was published. An outer error
+    /// is ambiguous and callers must not retry publication blindly.
+    async fn finalize_staged_file(
+        &self,
+        _request: &StagedFileFinalizeRequest<'_>,
+    ) -> Result<StagedFileFinalizeOutcome> {
+        Err(SandboxError::Operation {
+            operation: crate::SandboxOperation::FinalizeStagedFile,
+            reason: crate::SandboxOperationReason::Other,
+            message: "staged-file finalization is not supported by this sandbox provider".into(),
+        })
+    }
 
     /// Write multiple ordinary files inside the guest.
     ///
