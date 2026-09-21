@@ -408,3 +408,6 @@ incremental compilation is more useful.
 cargo test --profile local
 cargo clippy --profile local --all-targets
 ```
+
+For affected-crate commands and serialized execution, see
+[memory-constrained Rust testing](../docs/testing/rust-testing.md#memory-constrained-environments).
