@@ -121,6 +121,9 @@ AGENT_BROWSER_VERSION="0.33.0-vm0.1"
 AGENT_BROWSER_LINUX_X64_SHA256="a9e3fbe24c537960b9ac0d1f358224a10eb70d87a619aec7bcb1175222a46a18"
 AGENT_BROWSER_LINUX_ARM64_SHA256="6a74dba04c299a69d564eae5aff67adc2ffc6fda5ddf672994ff75b73d64a9fe"
 PNPM_VERSION="12.5.1"
+UV_VERSION="0.12.17"
+UV_LINUX_X64_SHA256="fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63"
+UV_LINUX_ARM64_SHA256="d636d1b678e9e7f367ecb22b46bd1cabbed234d6bc3b4d96365d2b507f72f86c"
 CHROMIUM_VERSION="153.0.8010.52-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20260920T022435Z"
 
@@ -439,6 +442,33 @@ install_runtimes() {
     ln -s /usr/local/go/bin/go /usr/local/bin/go
     ln -s /usr/local/go/bin/gofmt /usr/local/bin/gofmt
     echo 'export PATH=\$PATH:\$HOME/go/bin' > /etc/profile.d/golang.sh
+  "
+
+  # uv (official standalone release)
+  sudo chroot "$ROOTFS_DIR" bash -c "
+    ARCH=\$(dpkg --print-architecture)
+    case \"\$ARCH\" in
+      amd64)
+        TARGET=\"x86_64-unknown-linux-gnu\"
+        CHECKSUM=\"${UV_LINUX_X64_SHA256}\"
+        ;;
+      arm64)
+        TARGET=\"aarch64-unknown-linux-gnu\"
+        CHECKSUM=\"${UV_LINUX_ARM64_SHA256}\"
+        ;;
+      *) echo \"Unsupported architecture: \$ARCH\" >&2; exit 1 ;;
+    esac
+    ARCHIVE=\"uv-\${TARGET}.tar.gz\"
+    DOWNLOAD_URL=\"https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/\${ARCHIVE}\"
+    curl -fsSL \"\${DOWNLOAD_URL}\" -o /tmp/uv.tar.gz
+    echo \"\${CHECKSUM}  /tmp/uv.tar.gz\" | sha256sum -c -
+    tar -xzf /tmp/uv.tar.gz -C /tmp
+    install -m 0755 \"/tmp/uv-\${TARGET}/uv\" /usr/local/bin/uv
+    install -m 0755 \"/tmp/uv-\${TARGET}/uvx\" /usr/local/bin/uvx
+    rm -f /tmp/uv.tar.gz \"/tmp/uv-\${TARGET}/uv\" \"/tmp/uv-\${TARGET}/uvx\"
+    rmdir \"/tmp/uv-\${TARGET}\"
+    test \"\$(/usr/local/bin/uv --version)\" = \"uv ${UV_VERSION} (\${TARGET})\"
+    test \"\$(/usr/local/bin/uvx --version)\" = \"uvx ${UV_VERSION} (\${TARGET})\"
   "
 
   # Rust (stable toolchain via rustup)

@@ -641,6 +641,77 @@ exit 18
     }
 
     #[test]
+    fn template_installs_pinned_uv_for_each_guest_architecture() {
+        let uv_version = shell_quoted_var(TEMPLATE_BUILD_SCRIPT, "UV_VERSION")
+            .expect("build-template.sh should declare UV_VERSION");
+        assert!(
+            is_numeric_semver(uv_version),
+            "build-template.sh should pin UV_VERSION to an exact numeric semver so template \
+             cache inputs are deterministic"
+        );
+
+        for checksum_var in ["UV_LINUX_X64_SHA256", "UV_LINUX_ARM64_SHA256"] {
+            let checksum = shell_quoted_var(TEMPLATE_BUILD_SCRIPT, checksum_var)
+                .unwrap_or_else(|| panic!("build-template.sh should declare {checksum_var}"));
+            assert!(
+                is_lowercase_sha256(checksum),
+                "build-template.sh should pin {checksum_var} to a lowercase SHA-256"
+            );
+        }
+
+        assert!(
+            TEMPLATE_BUILD_SCRIPT.contains(
+                r#"amd64)
+        TARGET=\"x86_64-unknown-linux-gnu\"
+        CHECKSUM=\"${UV_LINUX_X64_SHA256}\""#
+            ) && TEMPLATE_BUILD_SCRIPT.contains(
+                r#"arm64)
+        TARGET=\"aarch64-unknown-linux-gnu\"
+        CHECKSUM=\"${UV_LINUX_ARM64_SHA256}\""#
+            ),
+            "build-template.sh should map Debian guest architectures to uv release targets"
+        );
+        assert!(
+            TEMPLATE_BUILD_SCRIPT.contains(
+                r#"DOWNLOAD_URL=\"https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/\${ARCHIVE}\""#
+            ),
+            "build-template.sh should download the pinned official uv release archive"
+        );
+
+        let checksum_index = TEMPLATE_BUILD_SCRIPT
+            .find(r#"echo \"\${CHECKSUM}  /tmp/uv.tar.gz\" | sha256sum -c -"#)
+            .expect("build-template.sh should verify the uv archive checksum");
+        let extract_index = TEMPLATE_BUILD_SCRIPT
+            .find("tar -xzf /tmp/uv.tar.gz -C /tmp")
+            .expect("build-template.sh should extract the verified uv archive");
+        assert!(
+            checksum_index < extract_index,
+            "build-template.sh should verify the uv archive before extracting it"
+        );
+
+        for command in ["uv", "uvx"] {
+            assert!(
+                TEMPLATE_BUILD_SCRIPT.contains(&format!(
+                    r#"install -m 0755 \"/tmp/uv-\${{TARGET}}/{command}\" /usr/local/bin/{command}"#
+                )),
+                "build-template.sh should install {command} into /usr/local/bin"
+            );
+            assert!(
+                TEMPLATE_BUILD_SCRIPT.contains(&format!(
+                    r#"test \"\$(/usr/local/bin/{command} --version)\" = \"{command} ${{UV_VERSION}} (\${{TARGET}})\""#
+                )),
+                "build-template.sh should verify the installed {command} version and target"
+            );
+            assert!(
+                VERIFY_SCRIPT.contains(&format!(
+                    r#"check_required_executable "/usr/local/bin/{command}" "{command}""#
+                )),
+                "verify-rootfs.sh should verify {command} is present in sandbox images"
+            );
+        }
+    }
+
+    #[test]
     fn template_installs_vm0_agent_browser_for_each_guest_architecture() {
         let agent_browser_version =
             shell_quoted_var(TEMPLATE_BUILD_SCRIPT, "AGENT_BROWSER_VERSION")
