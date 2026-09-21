@@ -48,6 +48,7 @@ mod pi_session_output;
 mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
+mod record_labels;
 mod termination;
 
 pub use codex_setup::setup_codex_for_config;
@@ -1766,11 +1767,18 @@ async fn execute_cli_inner(
                         active_input_controller.close_terminal();
                         let error = match error {
                             line_reader::BoundedLineError::Io(error) => AgentError::Io(error),
-                            line_reader::BoundedLineError::TooLong => AgentError::Execution(
-                                format!(
-                                    "CLI stdout line exceeded {ORDINARY_CLI_STDOUT_MAX_LINE_BYTES} bytes"
-                                ),
-                            ),
+                            line_reader::BoundedLineError::TooLong => {
+                                // The retained prefix is one record truncated
+                                // mid-serialisation, so its type is recovered
+                                // from a bounded leading window, never parsed.
+                                let labels = record_labels::prefix_labels(&stdout_partial_line);
+                                AgentError::Execution(format!(
+                                    "CLI stdout line exceeded {ORDINARY_CLI_STDOUT_MAX_LINE_BYTES} bytes: event_type={} item_type={} size_bucket={}",
+                                    labels.event_type,
+                                    labels.item_type,
+                                    record_labels::size_bucket(stdout_partial_line.len()),
+                                ))
+                            }
                             line_reader::BoundedLineError::InvalidUtf8 {
                                 valid_up_to,
                                 error_len,
