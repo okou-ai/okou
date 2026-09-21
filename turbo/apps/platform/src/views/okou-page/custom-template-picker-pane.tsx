@@ -59,6 +59,91 @@ const CARD_MEDIA =
   "relative block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
 
 /**
+ * One sheet of paper lying in a tile.
+ *
+ * The two percentages are what set how much of the page shows. The tile is
+ * `aspect-video`, so its height is its own width times 9/16 and both values
+ * resolve against that same width: a page 61% of the tile wide is 86.3% of it
+ * tall, 8% of the tile's height above it leaves 51.8% of the tile below, and
+ * 51.8/86.3 is 60% of the page. Any tile size, the same 60%.
+ *
+ * Centred with a negative margin rather than `-translate-x-1/2` because the
+ * sheets behind are offset with `translate`, and one transform utility cannot
+ * hold both. A margin percentage resolves against the tile and a translate
+ * percentage against the sheet, which is why the two are written against
+ * different denominators.
+ *
+ * The literal `#ffffff` rather than `bg-white` or a surface token: this is
+ * paper, and it stays paper-coloured in Dark. `--color-white` is theme-flipped
+ * and resolves to Ink there, so `bg-white` would paint these sheets near-black
+ * behind a white page image — a hole rather than the next sheet down. A
+ * `bg-card` sheet does the same thing.
+ */
+const DOCUMENT_SHEET =
+  "absolute left-1/2 top-[8%] ml-[-30.5%] aspect-[210/297] w-[61%] " +
+  "overflow-hidden rounded-[2px] bg-[#ffffff] " +
+  "shadow-[0_1px_2px_hsl(220_12%_50%/0.16),0_7px_18px_hsl(220_12%_50%/0.07)]";
+
+/**
+ * A document template's cover: the source's first page, over the sheets that
+ * say it had more.
+ *
+ * Drawn larger than the tile and cropped by its bottom edge rather than fitted
+ * inside it. A whole page scaled into this tile puts its title at about five
+ * pixels — below what any script reads at — so fitting it buys a smaller
+ * smudge, not a legible one. What the crop keeps is the head of the page,
+ * where the format lives: how many columns, how much white space, whether it
+ * opens with a masthead or a row of form fields. The title is the line
+ * underneath the tile, and stays there.
+ *
+ * The sheets behind carry no image because there is none to carry: a document
+ * template uploads its first page and no others. They are the claim that the
+ * file continued, not a preview of what it continued into, which is why two of
+ * them stand for three pages and for three hundred alike.
+ */
+function DocumentTemplateCover({
+  template,
+  coverUrl,
+}: {
+  readonly template: UserTemplateCatalogEntry;
+  readonly coverUrl: string;
+}) {
+  return (
+    <>
+      {template.coverHasMorePages ? (
+        <>
+          <span
+            data-testid="document-cover-sheet"
+            className={cn(
+              DOCUMENT_SHEET,
+              "translate-x-[6.4%] translate-y-[3.8%]",
+            )}
+          />
+          <span
+            data-testid="document-cover-sheet"
+            className={cn(
+              DOCUMENT_SHEET,
+              "translate-x-[3.2%] translate-y-[1.9%]",
+            )}
+          />
+        </>
+      ) : null}
+      {/* No z-index: the sheets are positioned siblings at `z-index: auto`, so
+          tree order already paints this one over them. */}
+      <span className={DOCUMENT_SHEET}>
+        <img
+          src={coverUrl}
+          alt=""
+          loading="lazy"
+          data-testid="document-cover-page"
+          className="h-full w-full object-cover object-top"
+        />
+      </span>
+    </>
+  );
+}
+
+/**
  * One meta line: who can see it — or, for a colleague's template, whose it is,
  * because a visibility the reader cannot change is not worth the row.
  *
@@ -206,9 +291,17 @@ function CustomTemplateCard({
           )}
           onClick={open}
         >
-          {template.coverUrl ? (
-            // Cropped from the top rather than the middle: a cover taller than
-            // this tile is a page, and a page is recognised by its head.
+          {template.coverUrl && template.kind === "document" ? (
+            <DocumentTemplateCover
+              template={template}
+              coverUrl={template.coverUrl}
+            />
+          ) : template.coverUrl ? (
+            // A deck and an illustration fill the tile: both are pictures made
+            // to be seen whole, and this tile is close enough to their shape
+            // that covering it loses nothing. Cropped from the top rather than
+            // the middle: a cover taller than this tile is a page, and a page
+            // is recognised by its head.
             <img
               src={template.coverUrl}
               alt=""

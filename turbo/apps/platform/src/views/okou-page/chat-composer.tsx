@@ -6098,6 +6098,13 @@ function TemplatePickerCategoryContent({
  *
  * The catalog is the only place its title and cover exist, so a selection
  * whose row has not loaded produces no chip rather than an unnamed one.
+ *
+ * A document's cover stays behind. The chip draws it into a twenty-pixel
+ * square, centred rather than top-aligned, which on a page of running prose
+ * crops to a patch of body text and resolves to flat grey — less recognisable
+ * than the file glyph it would replace. The catalog's tile can afford a page
+ * because it shows the head of one at sixty times the area; the chip cannot,
+ * so it keeps the glyph and the title carries the rest.
  */
 function customTemplateAttachment(
   userTemplateId: string,
@@ -6113,7 +6120,7 @@ function customTemplateAttachment(
     type: "custom",
     title: template.title,
     category: "custom",
-    ...(template.coverUrl === null
+    ...(template.coverUrl === null || template.kind === "document"
       ? {}
       : { previewImageUrl: template.coverUrl }),
   };

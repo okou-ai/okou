@@ -20,12 +20,27 @@ export interface UserTemplatePresentationManifest {
 
 /**
  * A document template is the styles the reverse run extracted into its
- * package. It renders no pages, so it stores none: the arm carries the
- * discriminant alone rather than an empty array that would read as a template
- * whose pages went missing.
+ * package. It renders no pages, so it stores none — there is no `pageKeys`
+ * here, and an empty array would read as a template whose pages went missing.
+ *
+ * What it does store is one picture of the source's first page, so the catalog
+ * can show the document rather than the icon of its file format, and how long
+ * that source was.
+ *
+ * Both are optional and independently so, because a reverse run that cannot
+ * render the first page still publishes a usable template: the catalog names
+ * that row by its file, which is what it does for every template with no
+ * cover. A row with a cover and no count is one the run could draw but not
+ * count. Storing the count rather than the "has more pages" boolean the
+ * catalog reads keeps the answer to a question nobody has asked yet — how long
+ * was it — out of a second reverse run.
  */
 export interface UserTemplateDocumentManifest {
   readonly kind: "document";
+  /** Private artifact object key for the rendered first page. */
+  readonly coverKey?: string;
+  /** How many pages the source file had, not how many this template renders. */
+  readonly pageCount?: number;
 }
 
 /**

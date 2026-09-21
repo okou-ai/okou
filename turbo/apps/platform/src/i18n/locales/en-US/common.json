@@ -6897,8 +6897,6 @@
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}",
-      "source_one": "{{count}} page · from {{filename}}",
-      "source_other": "{{count}} pages · from {{filename}}",
       "sourceFile": "From {{filename}}"
     },
     "empty": {

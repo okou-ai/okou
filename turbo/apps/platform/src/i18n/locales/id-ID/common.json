@@ -6886,7 +6886,6 @@
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}",
-      "source_other": "{{count}} halaman · dari {{filename}}",
       "sourceFile": "Dari {{filename}}"
     },
     "empty": {

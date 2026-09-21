@@ -6973,9 +6973,6 @@
     "detail": {
       "back": "Modèles personnalisés",
       "page": "Page {{number}}",
-      "source_one": "{{count}} page · à partir de {{filename}}",
-      "source_many": "{{count}} pages · à partir de {{filename}}",
-      "source_other": "{{count}} pages · à partir de {{filename}}",
       "sourceFile": "À partir de {{filename}}"
     },
     "empty": {

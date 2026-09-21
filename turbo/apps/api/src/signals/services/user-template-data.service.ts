@@ -113,10 +113,40 @@ export function userTemplateCoverKeys(row: UserTemplateRow): readonly string[] {
       return row.manifest.pageKeys;
     }
     case "document": {
-      return [];
+      // One picture of the source's first page, or none for a row published
+      // before a reverse run rendered one. Not a page: it stays out of
+      // `userTemplatePageKeys` so the detail keeps offering the source file to
+      // read rather than a single picture of its opening.
+      const { coverKey } = row.manifest;
+      return coverKey === undefined ? [] : [coverKey];
     }
     case "illustration": {
       return [row.sourceStorageKey];
+    }
+  }
+}
+
+/**
+ * Whether the file the cover was rendered from has pages after it.
+ *
+ * What the catalog draws from this is a stack of sheets behind the cover, so
+ * every kind answers the question its own cover asks. A deck's cover is its
+ * first slide and the rest are beside it; an illustration is one picture and
+ * there is no second one; a document uploaded one page out of however many the
+ * source had, which is the only case where the answer is not already implied
+ * by what was stored.
+ */
+function userTemplateCoverHasMorePages(row: UserTemplateRow): boolean {
+  switch (row.manifest.kind) {
+    case "presentation": {
+      return row.manifest.pageKeys.length > 1;
+    }
+    case "document": {
+      const { coverKey, pageCount } = row.manifest;
+      return coverKey !== undefined && pageCount !== undefined && pageCount > 1;
+    }
+    case "illustration": {
+      return false;
     }
   }
 }
@@ -155,6 +185,7 @@ export function userTemplateSummary(
     sourceFilename: row.sourceFilename,
     kind: userTemplateKind(row),
     coverUrl,
+    coverHasMorePages: userTemplateCoverHasMorePages(row),
     pageCount: userTemplatePageCount(row),
     visibility: row.visibility,
     ownerUserId: row.ownerUserId,
