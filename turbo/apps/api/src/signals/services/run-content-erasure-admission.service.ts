@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/runs";
 import {
   assertErasureSubjectWritable,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -163,14 +164,10 @@ async function setContentDeadlines(
   tx: Tx,
   profile?: ContentDeadlineProfile,
 ): Promise<void> {
-  const lockTimeout = profile === "activity" ? "250ms" : "1s";
-  const statementTimeout = profile === "activity" ? "3s" : "5s";
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${lockTimeout}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${statementTimeout}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: profile === "activity" ? "250ms" : "1s",
+    statementTimeout: profile === "activity" ? "3s" : "5s",
+  });
 }
 
 async function readOwnership(tx: Tx, runId: string) {

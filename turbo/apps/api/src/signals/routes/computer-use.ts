@@ -156,6 +156,9 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.status === "invalid_token") {
     return invalidComputerUseToken;
   }
+  if (result.status === "subject_closed") {
+    return forbidden("Account unavailable");
+  }
   return {
     status: 200 as const,
     body: { ok: true as const, hostId: result.hostId },
@@ -180,6 +183,9 @@ const hostStopInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (result.status === "invalid_token") {
     return invalidComputerUseToken;
+  }
+  if (result.status === "subject_closed") {
+    return forbidden("Account unavailable");
   }
   return {
     status: 200 as const,
@@ -540,6 +546,9 @@ const hostCommandNextInner$ = command(
     if (result.status === "invalid_token") {
       return invalidComputerUseToken;
     }
+    if (result.status === "subject_closed") {
+      return forbidden("Account unavailable");
+    }
     if (result.status === "idle") {
       return { status: 200 as const, body: { status: "idle" as const } };
     }
@@ -594,6 +603,9 @@ const hostCommandCompleteInner$ = command(
 
     if (result.status === "invalid_token") {
       return invalidComputerUseToken;
+    }
+    if (result.status === "subject_closed") {
+      return forbidden("Account unavailable");
     }
     if (result.status === "not_found") {
       return notFound("Computer-use command not found");
