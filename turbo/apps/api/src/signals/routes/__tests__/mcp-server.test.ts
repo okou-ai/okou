@@ -6679,6 +6679,9 @@ describe("external MCP entry", () => {
               ? [
                   {
                     name: "create_chat_thread",
+                    description: expect.stringContaining(
+                      "Omitted model pins the then-current default at first run admission",
+                    ),
                     inputSchema: {
                       properties: {
                         title: { pattern: "\\S" },
@@ -6701,6 +6704,9 @@ describe("external MCP entry", () => {
                   },
                   {
                     name: "update_chat_thread",
+                    description: expect.stringContaining(
+                      "model:null clears the pin; next run admission pins the then-current default",
+                    ),
                     inputSchema: {
                       properties: {
                         patch: {
