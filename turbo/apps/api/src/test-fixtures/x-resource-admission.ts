@@ -8,6 +8,7 @@ import type { Tx } from "../lib/db-types";
 import {
   lockXResourceAdmission,
   setXResourceTransactionTimeouts,
+  withXResourceAdmissionAttemptTrackingForTest,
   withXResourceAdmissionScopeForTest,
   withXResourceClockForTest,
 } from "../signals/services/x-resource-usage-lifecycle";
@@ -59,6 +60,7 @@ async function holdXResourceAdmission(
 ) {
   const started = createDeferredPromise<number>(signal);
   const released = createDeferredPromise<void>(signal);
+  const acquisitionAttempted = createDeferredPromise<void>(signal);
   const done = db().transaction(async (tx) => {
     await acquire(tx);
     signal.throwIfAborted();
@@ -85,6 +87,16 @@ async function holdXResourceAdmission(
       if (!released.settled()) {
         released.resolve(undefined);
       }
+    },
+    acquisitionAttempted: acquisitionAttempted.promise,
+    withAcquisitionAttemptTracking: async <T>(
+      work: () => Promise<T>,
+    ): Promise<T> => {
+      return await withXResourceAdmissionAttemptTrackingForTest(() => {
+        if (!acquisitionAttempted.settled()) {
+          acquisitionAttempted.resolve(undefined);
+        }
+      }, work);
     },
     waiterCount: async () => {
       const rows = await executeRawRows(

@@ -4675,6 +4675,7 @@
         "invited": "Invité",
         "label": "E-mail du collègue",
         "note": "Ils rejoignent cet espace ; leurs comptes restent les leurs.",
+        "notSent": "Non envoyée",
         "panelTitle": "Inviter un collègue",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4682,6 +4683,7 @@
           "workflows": "Tout le monde ici peut lancer les workflows déjà présents dans cet espace.",
           "workspace": "Ils arrivent dans cet espace, avec les sources que vous venez de connecter."
         },
+        "sending": "Envoi…",
         "title": "Amenez les personnes qui font ce travail avec vous."
       },
       "welcome": {
