@@ -1761,8 +1761,6 @@
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
         "make": "Erstellen",
-        "templateCount_one": "{{count}} Vorlage",
-        "templateCount_other": "{{count}} Vorlagen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",

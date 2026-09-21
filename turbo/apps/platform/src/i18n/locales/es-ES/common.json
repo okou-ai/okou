@@ -1790,9 +1790,6 @@
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
         "make": "Crear",
-        "templateCount_one": "{{count}} plantilla",
-        "templateCount_many": "{{count}} plantillas",
-        "templateCount_other": "{{count}} plantillas",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",

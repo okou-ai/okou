@@ -1758,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
         "make": "만들기",
-        "templateCount_other": "템플릿 {{count}}개",
         "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
