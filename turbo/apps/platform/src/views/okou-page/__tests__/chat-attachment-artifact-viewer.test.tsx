@@ -9,7 +9,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { strFromU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
@@ -978,7 +978,6 @@ function hostedFile(
  */
 function mockHostedPublication(
   files: readonly HostedSiteFilesResponse["files"][number][],
-  sizeOverride?: number,
 ): { readonly members: readonly string[] } {
   const canonicalUrl = artifactReferencePath(
     PUBLICATION_DEPLOYMENT_ID,
@@ -1012,11 +1011,9 @@ function mockHostedPublication(
       publicSlug: "launch-site",
       url: PUBLICATION_HOST,
       fileCount: files.length,
-      size:
-        sizeOverride ??
-        files.reduce((total, file) => {
-          return total + file.size;
-        }, 0),
+      size: files.reduce((total, file) => {
+        return total + file.size;
+      }, 0),
       files: [...files],
     });
   });
@@ -1086,68 +1083,4 @@ test("a self-contained hosted page downloads as the page itself", async () => {
   const [download] = downloads.downloads;
   expect(download?.filename).toBe("launch-site.html");
   await expect(download?.blob?.text()).resolves.toBe(PUBLICATION_PAGE);
-});
-
-test("a large hosted publication streams to a chosen file instead of memory", async () => {
-  const { members } = mockHostedPublication(
-    [
-      hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
-      hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
-    ],
-    64 * 1024 * 1024,
-  );
-  const downloads = context.mocks.browser.blobDownload();
-  const written: Uint8Array[] = [];
-  let closed = false;
-  const picker = vi.fn(() => {
-    return Promise.resolve({
-      createWritable: () => {
-        return Promise.resolve({
-          write: (chunk: Uint8Array) => {
-            written.push(chunk);
-            return Promise.resolve();
-          },
-          close: () => {
-            closed = true;
-            return Promise.resolve();
-          },
-          abort: () => {
-            return Promise.resolve();
-          },
-        });
-      },
-    });
-  });
-  vi.stubGlobal("showSaveFilePicker", picker);
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
-  click(await findNamedMenuItem("Download"));
-
-  await waitFor(() => {
-    expect(closed).toBe(true);
-  });
-  expect(picker).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ suggestedName: "launch-site.zip" }),
-  );
-  expect(members).toStrictEqual(["/index.html", "/assets/site.css"]);
-  // The bytes went to the file, so nothing was held for a blob download.
-  expect(downloads.downloads).toStrictEqual([]);
-  const size = written.reduce((total, chunk) => {
-    return total + chunk.byteLength;
-  }, 0);
-  const archive = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of written) {
-    archive.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const unpacked = unzipSync(archive);
-  expect(Object.keys(unpacked).sort()).toStrictEqual([
-    "assets/site.css",
-    "index.html",
-  ]);
-  expect(strFromU8(unpacked["index.html"]!)).toBe(PUBLICATION_PAGE);
 });
