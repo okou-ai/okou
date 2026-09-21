@@ -114,9 +114,11 @@ the variable, and prepared jobs retain their commit-addressed CLI package.
 The BYOK native-search fallback is also additive. A new Guest paired with an
 old API sees no positive marker and keeps native search disabled; an old Guest
 paired with a new API ignores the marker and also keeps native search disabled.
-The fallback activates only after both surfaces are current. Prepared jobs keep
-their captured decision, so changing the personal preference affects later
-Runs rather than already prepared, queued, deferred, or running work.
+The fallback activates only after both surfaces are current. Prepared
+Claude/Codex jobs keep their captured decision, so changing the personal
+preference affects later preparations rather than already prepared, queued, or
+running work. Deferred Pi keeps its existing materialization-time snapshot and
+does not receive the native-search fallback.
 
 The media catalog extension needs no database migration. Deploy the expanded
 API and select a CLI that enforces the new IDs before deploying the App's media
