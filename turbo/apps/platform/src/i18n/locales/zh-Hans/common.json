@@ -484,7 +484,6 @@
       "open": "标注",
       "redo": "重做",
       "removeMark": "删除标注",
-      "subtitle_one": "{{count}} 处标注",
       "subtitle_other": "{{count}} 处标注",
       "textPlaceholder": "在这里输入",
       "tools": {
@@ -1570,7 +1569,6 @@
       "previewFile": "预览 {{filename}}",
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上传后才能发送。",
-      "unavailableCount_one": "有 {{count}} 个附件已不可用。重新上传后才能发送。",
       "unavailableCount_other": "有 {{count}} 个附件已不可用。重新上传后才能发送。",
       "uploadFailed": "{{filename}} 上传失败",
       "uploadFailedRetry": "{{filename}} 上传失败，请重试。",
@@ -1676,7 +1674,6 @@
     "banking": {
       "accountFallback": "银行账户",
       "actionFailed": "银行操作失败",
-      "active_one": "已对 {{count}} 个账户开通访问",
       "active_other": "已对 {{count}} 个账户开通访问",
       "automationOff": "自动化运行无法使用只读访问权限。",
       "cancel": "取消",
@@ -1761,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "浏览全部模板",
         "make": "制作",
-        "templateCount_one": "{{count}} 个模板",
         "templateCount_other": "{{count}} 个模板",
         "useTemplate": "使用模板 {{title}}"
       },
@@ -1835,9 +1831,7 @@
         "detailPermissions": "权限",
         "emptyCustomBody": "用任意 HTTP API 或 MCP 服务器搭一个，Okou 就能像用其他连接器一样使用它。",
         "emptyCustomTitle": "还没有自定义连接器",
-        "matchCount_one": "{{count}} 个匹配",
         "matchCount_other": "{{count}} 个匹配",
-        "moreAccounts_one": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "需要处理",
         "nextCategories": "下一组分类",
@@ -1845,10 +1839,8 @@
         "noResultsTitle": "没有找到匹配「{{query}}」的连接器",
         "openDetailAria": "打开 {{connector}} 详情",
         "otherCategory": "其他",
-        "permissionCount_one": "{{count}} 项权限",
         "permissionCount_other": "{{count}} 项权限",
         "previousCategories": "上一组分类",
-        "showAll_one": "显示全部 {{count}} 个",
         "showAll_other": "显示全部 {{count}} 个",
         "tabCustom": "自定义",
         "tabDiscover": "发现"
@@ -2096,7 +2088,6 @@
       "deselectGroup": "取消选择该组消息",
       "linkCopied": "链接已复制",
       "publicDescription": "选中的消息及其附件将公开可见。",
-      "selectedCount_one": "已选{{count}}条",
       "selectedCount_other": "已选{{count}}条",
       "selectGroup": "选择该组消息",
       "shareLink": "分享对话链接",
@@ -2936,6 +2927,7 @@
       "disconnectAccount": "断开账号连接",
       "disconnectDescription": "这会把该账号与 Okou 断开。使用它的会话将回到默认继承。对方平台上的账号不会被删除。",
       "disconnectDescriptionWithCount": "这会把该账号与 Okou 断开。{{value}} 个会话将回到默认继承。对方平台上的账号不会被删除。",
+      "disconnectDescriptionWithCount_other": "",
       "disconnectTitle": "断开{{account}}的连接？",
       "fallbackByMethod": {
         "api": "API密钥",
@@ -2958,8 +2950,11 @@
       "rename": "重命名",
       "skipName": "跳过",
       "summaryMany": "{{value}} 个账号",
+      "summaryMany_other": "",
       "summaryOne": "{{value}} 个账号",
-      "summaryWithAttention": "{{value}}/{{total}} 需要处理"
+      "summaryOne_other": "",
+      "summaryWithAttention": "{{value}}/{{total}} 需要处理",
+      "summaryWithAttention_other": ""
     },
     "actions": {
       "apply": "应用",
@@ -6241,7 +6236,6 @@
         "remaining_other": "还剩{{value}}次重置",
         "remainingUnavailable": "剩余重置次数不可用",
         "remainingUnknown": "重置 —",
-        "remainingWithExpiry_one": "还剩{{value}}次重置 · {{expiry}}过期",
         "remainingWithExpiry_other": "还剩{{value}}次重置 · {{expiry}}过期",
         "title": "重置Codex用量？"
       },
@@ -6777,19 +6771,16 @@
       "replace": "替换Service Token",
       "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
       "select": "选择Cloudflare Access",
-      "summary_one": "已配置{{count}}个Cloudflare Access",
       "summary_other": "已配置{{count}}个Cloudflare Access",
       "title": "Cloudflare Access",
       "tokenHelp": "请使用SSH应用的Service Auth策略允许的Service Token。它与你的SSH登录信息相互独立。",
       "unavailable": "该账号无法使用Cloudflare Access。",
-      "usedBy_one": "正在被{{count}}台主机使用：",
       "usedBy_other": "正在被{{count}}台主机使用："
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access未能建立SSH隧道。请检查对外发布的主机名和Tunnel路由。",
       "accessRejected": "Cloudflare Access拒绝了此次连接。请检查Service Token和该应用的Service Auth策略。",
       "accessTlsFailure": "无法验证到Cloudflare Access的安全连接。请检查主机名和TLS证书。",
-      "attention_one": "{{count}}台SSH主机需要处理",
       "attention_other": "{{count}}台SSH主机需要处理",
       "authenticationFailed": "SSH认证失败。请检查所选凭据的用户名、私钥或密码，以及服务器的授权设置。你可以编辑该凭据，或为该主机选择其他凭据。",
       "credentialResourceLimit": "该私钥超出了支持的处理上限。请用受支持的加密设置重新导出，然后替换凭据。",
@@ -6819,9 +6810,7 @@
       "password": "密码",
       "replaceAuthentication": "替换认证信息",
       "select": "选择凭据",
-      "sharedHelp_one": "登录信息的更改会应用到{{count}}台主机：",
       "sharedHelp_other": "登录信息的更改会应用到全部{{count}}台主机：",
-      "summary_one": "已配置{{count}}个凭据",
       "summary_other": "已配置{{count}}个凭据",
       "unused": "未被任何主机使用"
     },
@@ -6998,7 +6987,6 @@
       "select": "选择凭据",
       "sharedHelp_one": "有{{count}}台主机正在使用。修改密码会影响这台主机。",
       "sharedHelp_other": "有{{count}}台主机正在使用。修改密码会影响所有这些主机。",
-      "summary_one": "已配置{{count}}条凭据",
       "summary_other": "已配置{{count}}条凭据",
       "unused": "没有已保存的主机在使用。"
     },

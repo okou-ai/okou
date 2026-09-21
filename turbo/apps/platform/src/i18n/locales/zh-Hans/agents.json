@@ -614,7 +614,6 @@
     "pinned": "已固定",
     "pinnedAgents": "已固定的智能体",
     "pinSuccess": "已固定{{agentName}}",
-    "resultCount_one": "{{count}}条结果",
     "resultCount_other": "{{count}}条结果",
     "searchAgents": "搜索智能体…",
     "searching": "搜索中…",
