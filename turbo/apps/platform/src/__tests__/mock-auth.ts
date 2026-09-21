@@ -66,7 +66,7 @@ interface MockedUser {
   fullName: string;
   firstName?: string;
   imageUrl?: string;
-  createdAt?: Date;
+  createdAt?: Date | null;
   primaryEmailAddress: { emailAddress: string } | null;
   createOrganizationEnabled: boolean;
   createOrganizationsLimit: number | null;
@@ -124,7 +124,7 @@ export function mockUser(
     email?: string;
     firstName?: string;
     imageUrl?: string;
-    createdAt?: Date;
+    createdAt?: Date | null;
     createOrganizationEnabled?: boolean;
     createOrganizationsLimit?: number | null;
     clientSessions?: MockedClientSession[];
@@ -134,6 +134,12 @@ export function mockUser(
   if (user) {
     internalMockedUser = {
       ...user,
+      // Clerk supplies the account creation time. The standard fixture is an
+      // existing account; cohort tests can provide another timestamp or null.
+      createdAt:
+        user.createdAt === undefined
+          ? new Date("2026-01-01T00:00:00.000Z")
+          : user.createdAt,
       imageUrl: user.imageUrl,
       primaryEmailAddress: user.email ? { emailAddress: user.email } : null,
       createOrganizationEnabled: user.createOrganizationEnabled ?? false,

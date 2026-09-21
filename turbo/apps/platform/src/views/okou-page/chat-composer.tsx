@@ -307,6 +307,7 @@ import {
   userModelPreference$,
 } from "../../signals/external/user-model-preference.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { videoPickersVisible$ } from "../../signals/okou-page/video-picker-visibility.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   selectedComputerUseHostId,
@@ -3583,16 +3584,19 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
+  videoPickersVisible: boolean,
 ): string {
   switch (category) {
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
     }
+    case "video":
+    case "avatar": {
+      return videoPickersVisible ? category : "slides";
+    }
     case "slides":
     case "website":
     case "illustration":
-    case "video":
-    case "avatar":
     case "workflow": {
       return category;
     }
@@ -3607,10 +3611,12 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
+  videoPickersVisible,
   onChange,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
+  videoPickersVisible: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -3654,20 +3660,24 @@ function TemplatePickerCategoryNav({
       }),
       Icon: ImageIcon,
     },
-    {
-      value: "video",
-      label: t(($) => {
-        return $.artifacts.kinds.video;
-      }),
-      Icon: Video,
-    },
-    {
-      value: "avatar",
-      label: t(($) => {
-        return $.artifacts.templates.avatar;
-      }),
-      Icon: User,
-    },
+    ...(videoPickersVisible
+      ? [
+          {
+            value: "video",
+            label: t(($) => {
+              return $.artifacts.kinds.video;
+            }),
+            Icon: Video,
+          },
+          {
+            value: "avatar",
+            label: t(($) => {
+              return $.artifacts.templates.avatar;
+            }),
+            Icon: User,
+          },
+        ]
+      : []),
     {
       value: "workflow",
       label: t(($) => {
@@ -5495,9 +5505,13 @@ function TemplatePickerDialog({
   const features = useGet(featureSwitch$);
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
+  const videoPickers = useLoadable(videoPickersVisible$);
+  const videoPickersVisible =
+    videoPickers.state === "hasData" && videoPickers.data;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
+    videoPickersVisible,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
   const showAvatarPickerToolbar = selectedCategory === "avatar";
@@ -5794,6 +5808,7 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
+                videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6216,6 +6231,7 @@ function selectedComposerTemplateAttachment(
  */
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
+  const videoPickers = useLoadable(videoPickersVisible$);
   const category = useGet(signals.template.templatePickerCategory$);
   const pickerFeatures = useGet(featureSwitch$);
   const customTemplatesEnabled =
@@ -6242,11 +6258,11 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
         : t(($) => {
             return $.artifacts.templates.template;
           });
-  const selectedCategory =
-    templateMode === "presentation"
-      ? "slides"
-      : (templateMode ??
-        resolveTemplatePickerCategory(category, customTemplatesEnabled));
+  const selectedCategory = resolveTemplatePickerCategory(
+    templateMode === "presentation" ? "slides" : (templateMode ?? category),
+    customTemplatesEnabled,
+    videoPickers.state === "hasData" && videoPickers.data,
+  );
   const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
@@ -9435,6 +9451,7 @@ function ComposerModelPickerControls({
   videoModel: ComposerResolvedVideoModelPickerState | undefined;
 }) {
   const { t } = useTranslation();
+  const videoPickers = useLoadable(videoPickersVisible$);
   const desktopLayout = useGet(signals.model.desktopModelPickerLayout$);
   const category = useGet(signals.model.mediaModelCategory$);
   const setCategory = useSet(signals.model.setMediaModelCategory$);
@@ -9453,7 +9470,7 @@ function ComposerModelPickerControls({
       }),
     );
   }
-  if (videoModel) {
+  if (videoModel && videoPickers.state === "hasData" && videoPickers.data) {
     categories.push(
       composerVideoModelPanelCategory({
         selectedModel: videoModel.selectedModel,
@@ -9679,10 +9696,16 @@ function ComposerExistingMediaModelPickerSlot({
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const createMode = useGet(signals.create.mode$);
   const creativeVideo = useGet(signals.create.creativeVideo$);
+  const videoPickers = useLoadable(videoPickersVisible$);
   if (createMode === "image" && signals.imageModel) {
     return <ComposerCreateImageModelPicker model={signals.imageModel} />;
   }
-  if (creativeVideo && signals.videoModel) {
+  if (
+    creativeVideo &&
+    signals.videoModel &&
+    videoPickers.state === "hasData" &&
+    videoPickers.data
+  ) {
     return (
       <ComposerCreateVideoModelPicker
         model={signals.videoModel}
