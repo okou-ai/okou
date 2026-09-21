@@ -1758,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
         "make": "製作",
-        "templateCount_other": "{{count}} 個模板",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",
@@ -4590,9 +4589,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}}還沒有連線。你可以重試，也可以先繼續，稍後再連線。",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "用你自己的套餐執行，不消耗Okou積分。"
+        "connect": "連線{{provider}}",
+        "connected": "已連線",
+        "connecting": "連線中…",
+        "failedNote": "無法連線{{provider}}。你可以重試，也可以先繼續，稍後再連線。",
+        "retry": "重試",
+        "rowCopy": "用你自己的套餐執行，不消耗Okou積分。",
+        "unconfirmedNote": "無法確認{{provider}}的連線狀態。你可以重試，也可以先繼續，稍後再連線。"
       },
       "team": {
         "copy": "現在就邀請同事，也可以稍後從工作區選單邀請。",
@@ -4600,6 +4606,7 @@
         "invited": "已邀請",
         "label": "同事的郵箱",
         "note": "他們會加入這個工作區，各自的帳號仍歸自己所有。",
+        "notSent": "未傳送",
         "panelTitle": "邀請同事",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4607,6 +4614,7 @@
           "workflows": "這裡的每個人都能執行工作區裡已有的工作流。",
           "workspace": "他們會直接進入這個工作區，用上你剛剛連線的資料來源。"
         },
+        "sending": "傳送中…",
         "title": "把一起做這些事的同事帶進來。"
       },
       "welcome": {

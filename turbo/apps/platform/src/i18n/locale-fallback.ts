@@ -36,7 +36,9 @@ function readOkouLocaleCookie(cookieHeader: string): SupportedLocale | null {
 // separated by script rather than by region. Matching on the primary subtag
 // alone would hand every zh-TW and zh-HK reader the Simplified bundle, so the
 // script is read first and the region only decides when no script is declared.
-const TRADITIONAL_CHINESE_REGIONS = ["tw", "hk", "mo"];
+function isTraditionalChineseRegion(subtag: string): boolean {
+  return subtag === "tw" || subtag === "hk" || subtag === "mo";
+}
 
 function chineseLocaleForSubtags(subtags: readonly string[]): SupportedLocale {
   if (subtags.includes("hant")) {
@@ -45,11 +47,7 @@ function chineseLocaleForSubtags(subtags: readonly string[]): SupportedLocale {
   if (subtags.includes("hans")) {
     return "zh-Hans";
   }
-  return subtags.some((subtag) => {
-    return TRADITIONAL_CHINESE_REGIONS.includes(subtag);
-  })
-    ? "zh-Hant"
-    : "zh-Hans";
+  return subtags.some(isTraditionalChineseRegion) ? "zh-Hant" : "zh-Hans";
 }
 
 function localeForBrowserLanguage(language: string): SupportedLocale | null {
