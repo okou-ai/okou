@@ -145,12 +145,15 @@ crate-wide unused-code allowance or duplicate production source in a test root.
 
 Run the static ownership/target-registry check after changing Runner test
 organization. Add `--list` to compile the partitions and verify the exact-once
-3,999-test inventory:
+4,006-test inventory:
 
 ```bash
 .github/scripts/check-runner-test-partitions.py
 .github/scripts/check-runner-test-partitions.py --list
 ```
+
+Crates CI runs the exact `--list` form in its own serialized
+`runner-test-partitions` job whenever Runner or its CI configuration changes.
 
 ## Patterns
 

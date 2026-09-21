@@ -425,6 +425,35 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
 
+  runner-test-partitions:
+    runs-on: ubuntu-latest-8-cores
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
+    needs: [detect]
+    if: |
+      needs.detect.outputs.runner-changed == 'true' ||
+      needs.detect.outputs.ci-changed == 'true'
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates -> target
+          shared-key: runner-test-partitions-local
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check exact Runner test partitions
+        run: .github/scripts/check-runner-test-partitions.py --list
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
   coverage:
     runs-on: ubuntu-latest-8-cores
     timeout-minutes: 20
@@ -1312,6 +1341,7 @@ jobs:
       - detect-release
       - detect
       - check
+      - runner-test-partitions
       - coverage
       - api-contracts-rust-bindings
       - runner-firewall-contract-test
@@ -1338,6 +1368,7 @@ jobs:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           COVERAGE_NEEDED: ${{ needs.detect.outputs.any-changed == 'true' }}
           FIREWALL_CONTRACT_NEEDED: ${{ needs.detect.outputs.runner-firewall-contract-inputs-changed == 'true' }}
+          RUNNER_PARTITIONS_NEEDED: ${{ needs.detect.outputs.runner-changed == 'true' || needs.detect.outputs.ci-changed == 'true' }}
           RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
           CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
           IMAGE_VALIDATION_MATRIX: ${{ needs.runner-host-groups.outputs.validation-matrix }}
@@ -1391,6 +1422,11 @@ jobs:
 
           # May-skip only when the corresponding work was not selected.
           check_result "check" "${{ needs.check.result }}" "true"
+          RUNNER_PARTITIONS_ALLOW_SKIP=true
+          if [ "$RUNNER_PARTITIONS_NEEDED" = "true" ]; then
+            RUNNER_PARTITIONS_ALLOW_SKIP=""
+          fi
+          check_result "runner-test-partitions" "${{ needs.runner-test-partitions.result }}" "$RUNNER_PARTITIONS_ALLOW_SKIP"
           check_result "coverage" "${{ needs.coverage.result }}" "$COVERAGE_ALLOW_SKIP"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "$FIREWALL_CONTRACT_ALLOW_SKIP"

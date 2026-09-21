@@ -309,10 +309,10 @@ pub(crate) struct Run {
 }
 
 impl Run {
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) fn ssh(&self) -> Option<Arc<ssh::Run>> {
         self.ssh.clone()
-    }
+    });
 
     fn close(&self) {
         self.cancel.cancel();

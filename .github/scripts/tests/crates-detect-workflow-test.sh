@@ -21,6 +21,7 @@ jq -e '
       select(startswith(".github/scripts/runner-behavior-"))];
   .jobs.detect as $detect |
   .jobs.check as $check |
+  .jobs["runner-test-partitions"] as $runner_partitions |
   .jobs["api-contracts-rust-bindings"] as $bindings |
   .jobs["runner-behavior-lane-a"] as $lane_a |
   .jobs["runner-behavior-lane-b"] as $lane_b |
@@ -76,6 +77,19 @@ jq -e '
   any($check.steps[]?;
     .name == "Check Runner test partitions" and
     .run == ".github/scripts/check-runner-test-partitions.py"
+  ) and
+  $runner_partitions["runs-on"] == "ubuntu-latest-8-cores" and
+  $runner_partitions.needs == ["detect"] and
+  $runner_partitions.container.image == $check.container.image and
+  ($runner_partitions.if | contains("needs.detect.outputs.runner-changed")) and
+  ($runner_partitions.if | contains("needs.detect.outputs.ci-changed")) and
+  any($runner_partitions.steps[]?;
+    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
+    .with["shared-key"] == "runner-test-partitions-local"
+  ) and
+  any($runner_partitions.steps[]?;
+    .name == "Check exact Runner test partitions" and
+    .run == ".github/scripts/check-runner-test-partitions.py --list"
   ) and
   $bindings.container.image == $check.container.image and
   any($bindings.steps[]?;
@@ -162,8 +176,12 @@ jq -e '
     (.run | contains("runner-host-architecture-groups.sh"))
   ) and
   ($gate.needs | index("runner-rootfs-process-test")) != null and
+  ($gate.needs | index("runner-test-partitions")) != null and
   any($gate.steps[]?;
     .name == "Validate CI results" and
+    (.env.RUNNER_PARTITIONS_NEEDED | contains("needs.detect.outputs.runner-changed")) and
+    (.env.RUNNER_PARTITIONS_NEEDED | contains("needs.detect.outputs.ci-changed")) and
+    (.run | contains("check_result \"runner-test-partitions\"")) and
     (.run | contains("needs.host-cpu-fairness-test.result")) and
     (.run | contains("needs.runner-behavior-lane-d.result")) and
     (.run | contains("needs.runner-rootfs-process-test.result"))

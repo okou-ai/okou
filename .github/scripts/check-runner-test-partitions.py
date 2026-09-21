@@ -148,8 +148,8 @@ def load_snapshot() -> list[str]:
     names = SNAPSHOT.read_text().splitlines()
     if names != sorted(names):
         fail("exact-name snapshot is not sorted")
-    if len(names) != 3_999 or len(set(names)) != len(names):
-        fail("exact-name snapshot must contain 3,999 unique names")
+    if len(names) != 4_006 or len(set(names)) != len(names):
+        fail("exact-name snapshot must contain 4,006 unique names")
     return names
 
 
