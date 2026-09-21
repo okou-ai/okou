@@ -18,9 +18,12 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { connectorCatalogStatus$ } from "../external/connectors.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
+import { watchSlackConnection$ } from "../okou-page/slack.ts";
+import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
+import { detach, Reason } from "../utils.ts";
 import { setupOnboardingMakePage$ } from "./onboarding-page-setup.ts";
 import {
   setSourcesFirstFlow$,
@@ -33,6 +36,12 @@ interface SourcesFirstPageConfig {
   readonly step: SourcesFirstStep;
   readonly title: () => string;
   readonly Page: ComponentType;
+  /**
+   * Live subscriptions this step needs, owned by the step's own signal. They
+   * start once the step is known to render, so a redirect never leaves one
+   * listening behind it.
+   */
+  readonly watch?: readonly Command<Promise<void>, [AbortSignal]>[];
 }
 
 const sourcesFirstEnabled$ = command(
@@ -96,6 +105,12 @@ function createSourcesFirstPageSetup(
 
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
+    // One integration's status decides what a step offers, never whether the
+    // step opens: a daemon keeps a failing integration out of the flow's way,
+    // and the step says what it could not reach.
+    for (const watch$ of config.watch ?? []) {
+      detach(set(watch$, signal), Reason.Daemon, "onboarding step status");
+    }
     await set(hideAppSkeleton$, signal);
   });
 }
@@ -174,6 +189,9 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSlackPage,
+  // The install finishes in the provider's own tab, so the step only learns it
+  // happened from the realtime change these watchers subscribe to.
+  watch: [watchSlackConnection$, watchTeamsConnection$],
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({

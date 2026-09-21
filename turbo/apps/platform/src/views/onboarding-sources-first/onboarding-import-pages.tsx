@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { useGet, useSet } from "ccstate-react";
+import type { ComponentProps, ReactNode } from "react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, FileText } from "lucide-react";
 import {
@@ -17,12 +17,17 @@ import {
   updateSourcesFirstUi$,
   type ChatChannelId,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
+import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import {
   OnboardingIllustration,
   ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
+import { Link } from "../router/link.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const SKILL_FILE_ACCEPT = ".md,text/markdown";
@@ -485,8 +490,233 @@ function SlackPreview() {
 }
 
 /**
+ * What a chat channel offers right now. The install itself happens in the
+ * provider's own tab, so the step reads the org's installation rather than
+ * remembering the click that started it.
+ */
+type ChannelState =
+  | { readonly kind: "pending" }
+  | { readonly kind: "connected" }
+  | { readonly kind: "install"; readonly url: string }
+  | { readonly kind: "connect"; readonly url: string }
+  | { readonly kind: "adminRequired" }
+  | { readonly kind: "unavailable" };
+
+interface ChannelStatus {
+  readonly isConnected: boolean;
+  readonly isInstalled: boolean;
+  readonly isAdmin: boolean;
+  /** Where an admin adds the app to the whole workspace. */
+  readonly installUrl: string | null | undefined;
+  /** Where one person links their own account to an existing install. */
+  readonly connectUrl: string | null | undefined;
+}
+
+function channelState(status: ChannelStatus): ChannelState {
+  if (status.isConnected) {
+    return { kind: "connected" };
+  }
+  if (status.isInstalled) {
+    return status.connectUrl
+      ? { kind: "connect", url: status.connectUrl }
+      : { kind: "unavailable" };
+  }
+  if (!status.isAdmin) {
+    return { kind: "adminRequired" };
+  }
+  return status.installUrl
+    ? { kind: "install", url: status.installUrl }
+    : { kind: "unavailable" };
+}
+
+/**
+ * A status the step cannot read offers nothing, which the step says rather
+ * than leaving a button that does nothing.
+ */
+function loadedChannelState<Status>(
+  loadable: Loadable<Status>,
+  read: (status: Awaited<Status>) => ChannelStatus,
+): ChannelState {
+  if (loadable.state === "hasData") {
+    return channelState(read(loadable.data));
+  }
+  return loadable.state === "hasError"
+    ? { kind: "unavailable" }
+    : { kind: "pending" };
+}
+
+function channelActionUrl(state: ChannelState): string | null {
+  return state.kind === "install" || state.kind === "connect"
+    ? state.url
+    : null;
+}
+
+/**
+ * Why a channel has nothing to offer, named rather than left as a control that
+ * does nothing: someone else has to add it, or there is nothing here to add.
+ */
+function ChannelNote({
+  state,
+  channel,
+}: {
+  readonly state: ChannelState;
+  readonly channel: string;
+}) {
+  const { t } = useTranslation();
+
+  if (state.kind !== "adminRequired" && state.kind !== "unavailable") {
+    return null;
+  }
+
+  return (
+    <p className="text-xs leading-5 text-muted-foreground">
+      {state.kind === "adminRequired"
+        ? t(
+            ($) => {
+              return $.onboarding.sourcesFirst.slack.channelAdminRequired;
+            },
+            { channel },
+          )
+        : t(
+            ($) => {
+              return $.onboarding.sourcesFirst.slack.channelUnavailable;
+            },
+            { channel },
+          )}
+    </p>
+  );
+}
+
+/**
+ * Slack's own button: the one way the step is meant to be answered. It adds
+ * the app to the workspace, or links the account once the app is already in.
+ */
+function SlackChannelButton({ state }: { readonly state: ChannelState }) {
+  const { t } = useTranslation();
+  const connected = state.kind === "connected";
+  const actionUrl = channelActionUrl(state);
+
+  return (
+    <Button
+      type="button"
+      variant={connected ? "outline" : "neutral"}
+      disabled={actionUrl === null}
+      className="w-full gap-2"
+      onClick={() => {
+        if (actionUrl) {
+          openFreshOAuth(actionUrl);
+        }
+      }}
+    >
+      {connected ? (
+        <Check size={16} aria-hidden="true" />
+      ) : (
+        <ProductMark name="slack" alt="" />
+      )}
+      {connected
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.slack.connectedStatus;
+          })
+        : state.kind === "connect"
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.slack.connectAction;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.slack.add;
+            })}
+    </Button>
+  );
+}
+
+const CHAT_CHANNEL_TILE_CLASS = "flex-1 gap-2";
+
+/** What a tile in the row under Slack reads: the channel, then its state. */
+function ChatChannelTileContent({
+  label,
+  mark,
+  added,
+}: {
+  readonly label: string;
+  readonly mark: ComponentProps<typeof ProductMark>["name"];
+  readonly added: boolean;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {/* The name stays whatever the state: a tile reading only "Added" no
+          longer says which channel was added. */}
+      {label}
+      {added ? (
+        <>
+          <span className="sr-only">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.slack.otherAdded;
+            })}
+          </span>
+          <Check size={16} aria-hidden="true" />
+        </>
+      ) : (
+        <ProductMark name={mark} alt="" size="mark" />
+      )}
+    </>
+  );
+}
+
+/** A tile that acts here: it toggles an answer, or opens an install. */
+function ChatChannelTile({
+  label,
+  mark,
+  added,
+  ...props
+}: {
+  readonly label: string;
+  readonly mark: ComponentProps<typeof ProductMark>["name"];
+  readonly added: boolean;
+} & Pick<
+  ComponentProps<typeof Button>,
+  "aria-pressed" | "disabled" | "onClick"
+>) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className={CHAT_CHANNEL_TILE_CLASS}
+      {...props}
+    >
+      <ChatChannelTileContent label={label} mark={mark} added={added} />
+    </Button>
+  );
+}
+
+/**
+ * Telegram's setup asks for a bot token and which agent answers it, which is
+ * more than a tile can hold, so this one hands over to the settings page that
+ * already asks. It navigates in-app, so the answers given so far are still
+ * here when the browser comes back to the step.
+ */
+function TelegramTile() {
+  const { t } = useTranslation();
+
+  return (
+    <Button asChild variant="outline" className={CHAT_CHANNEL_TILE_CLASS}>
+      <Link pathname={ROUTES.settingsTelegram}>
+        <ChatChannelTileContent
+          label={t(($) => {
+            return $.onboarding.sourcesFirst.slack.otherTelegram;
+          })}
+          mark="telegram"
+          added={false}
+        />
+      </Link>
+    </Button>
+  );
+}
+
+/**
  * The same mention works in Telegram, iMessage and Teams. They sit under
- * Slack's own button, each with its mark beside the name.
+ * Slack's own button, each with its mark beside the name, and Teams installs
+ * the way Slack does.
  */
 function OtherChatChannels({
   picked,
@@ -496,29 +726,21 @@ function OtherChatChannels({
   readonly onPick: (channel: ChatChannelId) => void;
 }) {
   const { t } = useTranslation();
-  const channels = [
-    {
-      id: "telegram",
-      mark: "telegram",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherTelegram;
-      }),
-    },
-    {
-      id: "imessage",
-      mark: "imessage",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherImessage;
-      }),
-    },
-    {
-      id: "teams",
-      mark: "teams",
-      label: t(($) => {
-        return $.onboarding.sourcesFirst.slack.otherTeams;
-      }),
-    },
-  ] as const;
+  const teams = loadedChannelState(useLastLoadable(teamsOrgData$), (status) => {
+    return {
+      isConnected: status.isConnected,
+      isInstalled: status.isInstalled,
+      isAdmin: status.isAdmin,
+      // Teams' own OAuth adds the app while it connects the account, so the
+      // connect URL is also how an admin installs it.
+      installUrl: status.connectUrl ?? status.installUrl,
+      connectUrl: status.connectUrl,
+    };
+  });
+  const teamsName = t(($) => {
+    return $.onboarding.sourcesFirst.slack.otherTeams;
+  });
+  const teamsUrl = channelActionUrl(teams);
 
   return (
     <div>
@@ -528,38 +750,31 @@ function OtherChatChannels({
         })}
       </p>
       <div className="flex gap-2">
-        {channels.map((channel) => {
-          const added = picked.includes(channel.id);
-          return (
-            <Button
-              key={channel.id}
-              type="button"
-              variant="outline"
-              className="flex-1 gap-2"
-              aria-pressed={added}
-              onClick={() => {
-                onPick(channel.id);
-              }}
-            >
-              {/* The name stays whatever the state: a button reading only
-                  "Added" no longer says which channel was added. */}
-              {channel.label}
-              {added ? (
-                <>
-                  <span className="sr-only">
-                    {t(($) => {
-                      return $.onboarding.sourcesFirst.slack.otherAdded;
-                    })}
-                  </span>
-                  <Check size={16} aria-hidden="true" />
-                </>
-              ) : (
-                <ProductMark name={channel.mark} alt="" size="mark" />
-              )}
-            </Button>
-          );
-        })}
+        <TelegramTile />
+        <ChatChannelTile
+          label={t(($) => {
+            return $.onboarding.sourcesFirst.slack.otherImessage;
+          })}
+          mark="imessage"
+          added={picked.includes("imessage")}
+          aria-pressed={picked.includes("imessage")}
+          onClick={() => {
+            onPick("imessage");
+          }}
+        />
+        <ChatChannelTile
+          label={teamsName}
+          mark="teams"
+          added={teams.kind === "connected"}
+          disabled={teamsUrl === null}
+          onClick={() => {
+            if (teamsUrl) {
+              openFreshOAuth(teamsUrl);
+            }
+          }}
+        />
       </div>
+      <ChannelNote state={teams} channel={teamsName} />
     </div>
   );
 }
@@ -568,7 +783,17 @@ export function OnboardingSlackPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const flow = useSourcesFirstFlow("slack");
-  const connected = flow.draft.slackStatus === "connected";
+  const slack = loadedChannelState(useLastLoadable(slackOrgData$), (status) => {
+    return {
+      isConnected: status.isConnected,
+      // An older status leaves `isInstalled` out; a connection proves it.
+      isInstalled: status.isInstalled ?? status.isConnected,
+      isAdmin: status.isAdmin,
+      installUrl: status.installUrl,
+      connectUrl: status.connectUrl,
+    };
+  });
+  const connected = slack.kind === "connected";
 
   return (
     <OnboardingStepLayout
@@ -618,35 +843,20 @@ export function OnboardingSlackPage() {
           </p>
         </div>
         <SlackPreview />
-        <Button
-          type="button"
-          variant={connected ? "outline" : "neutral"}
-          disabled={connected}
-          className="w-full gap-2"
-          onClick={() => {
-            // Frontend pass: the Slack install round trip replaces this once
-            // the integration step is wired.
-            updateDraft({ slackStatus: "connected" });
-          }}
-        >
-          {connected ? (
-            <Check size={16} aria-hidden="true" />
-          ) : (
-            <ProductMark name="slack" alt="" />
-          )}
-          {connected
-            ? t(($) => {
-                return $.onboarding.sourcesFirst.slack.connectedStatus;
-              })
-            : t(($) => {
-                return $.onboarding.sourcesFirst.slack.add;
-              })}
-        </Button>
+        <div className="flex flex-col gap-2">
+          <SlackChannelButton state={slack} />
+          <ChannelNote
+            state={slack}
+            channel={t(($) => {
+              return $.onboarding.sourcesFirst.slack.name;
+            })}
+          />
+        </div>
         <OtherChatChannels
           picked={flow.draft.chatChannels}
           onPick={(channel) => {
-            // Frontend pass, as with Slack above: each channel keeps its own
-            // install once those integrations are wired.
+            // iMessage is still answered here, until it becomes the
+            // AgentPhone tile with a link flow of its own.
             updateDraft({
               chatChannels: flow.draft.chatChannels.includes(channel)
                 ? flow.draft.chatChannels.filter((picked) => {
