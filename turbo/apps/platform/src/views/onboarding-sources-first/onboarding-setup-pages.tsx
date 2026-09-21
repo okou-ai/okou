@@ -3,6 +3,11 @@ import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import {
+  captureSourceOnboardingExperienceAnswered$,
+  captureSourceOnboardingIndustrySelected$,
+  captureSourceOnboardingInviteAdded$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import {
   nextSourcesFirstStep,
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
@@ -35,6 +40,9 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const captureIndustrySelected = useSet(
+    captureSourceOnboardingIndustrySelected$,
+  );
   const flow = useSourcesFirstFlow("industry");
 
   return (
@@ -57,7 +65,9 @@ export function OnboardingIndustryPage() {
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
-          updateDraft({ industry: value as IndustryId });
+          const industry = value as IndustryId;
+          updateDraft({ industry });
+          captureIndustrySelected(industry);
         }}
         className="grid gap-3 sm:grid-cols-2"
       >
@@ -143,6 +153,7 @@ function InvitedList({ invites }: { readonly invites: readonly string[] }) {
 export function OnboardingTeamPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const captureInviteAdded = useSet(captureSourceOnboardingInviteAdded$);
   const flow = useSourcesFirstFlow("team");
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
@@ -152,8 +163,11 @@ export function OnboardingTeamPage() {
     if (!value || flow.draft.invites.includes(value)) {
       return;
     }
-    updateDraft({ invites: [...flow.draft.invites, value] });
+    const invites = [...flow.draft.invites, value];
+    updateDraft({ invites });
     updateUi({ inviteEmail: "" });
+    // The funnel counts invitees; the addresses themselves stay in the draft.
+    captureInviteAdded(invites.length);
   };
 
   return (
@@ -173,7 +187,7 @@ export function OnboardingTeamPage() {
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.notNow;
       })}
-      onSecondary={flow.goNext}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       <OnboardingPanel
@@ -385,6 +399,9 @@ function SubscriptionConnect({
 export function OnboardingExperiencePage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const captureExperienceAnswered = useSet(
+    captureSourceOnboardingExperienceAnswered$,
+  );
   const flow = useSourcesFirstFlow("experience");
   const { experienced, provider } = flow.draft;
 
@@ -421,14 +438,18 @@ export function OnboardingExperiencePage() {
           <RadioGroup
             value={experienced === false ? "no" : (provider ?? "")}
             onValueChange={(value) => {
-              updateDraft(
+              const answer =
                 value === "no"
                   ? { experienced: false, provider: null }
                   : {
                       experienced: true,
-                      provider: value === "codex" ? "codex" : "claudeCode",
-                    },
-              );
+                      provider:
+                        value === "codex"
+                          ? ("codex" as const)
+                          : ("claudeCode" as const),
+                    };
+              updateDraft(answer);
+              captureExperienceAnswered(answer.experienced, answer.provider);
             }}
             className="grid gap-4 sm:grid-cols-3"
           >

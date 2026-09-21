@@ -474,8 +474,10 @@ body {
 #root {
   box-sizing: border-box;
   /* Base UI appends top-level portals after #root and nests descendant portals
-     under their owning portal. Isolating the app lets that DOM order define
-     floating-layer priority without global z-index values on every primitive. */
+     under their owning portal. Fixed positioning already isolates the app in
+     browser tabs; isolation preserves that stacking boundary when standalone
+     mode switches to absolute positioning below. Keep app layers inside this
+     boundary so portal order can place floating surfaces above them. */
   isolation: isolate;
   position: fixed;
   top: 0;

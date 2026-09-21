@@ -12,6 +12,10 @@ import {
   cn,
 } from "@okouai/ui";
 import {
+  captureSourceOnboardingChannelClicked$,
+  captureSourceOnboardingSlackInstallStarted$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import {
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
@@ -217,7 +221,7 @@ export function OnboardingSkillsPage() {
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.skip;
       })}
-      onSecondary={flow.goNext}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       <SkillDropCard imported={imported} />
@@ -572,6 +576,10 @@ function OtherChatChannels({
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const captureInstallStarted = useSet(
+    captureSourceOnboardingSlackInstallStarted$,
+  );
+  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
   const flow = useSourcesFirstFlow("slack");
   const connected = flow.draft.slackStatus === "connected";
 
@@ -604,7 +612,7 @@ export function OnboardingSlackPage() {
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.skip;
       })}
-      onSecondary={flow.goNext}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       {/* One column on the step's own sheet: what it looks like in a channel,
@@ -629,6 +637,7 @@ export function OnboardingSlackPage() {
           disabled={connected}
           className="w-full gap-2"
           onClick={() => {
+            captureInstallStarted();
             // Frontend pass: the Slack install round trip replaces this once
             // the integration step is wired.
             updateDraft({ slackStatus: "connected" });
@@ -650,14 +659,16 @@ export function OnboardingSlackPage() {
         <OtherChatChannels
           picked={flow.draft.chatChannels}
           onPick={(channel) => {
+            const added = !flow.draft.chatChannels.includes(channel);
+            captureChannelClicked(channel, added);
             // Frontend pass, as with Slack above: each channel keeps its own
             // install once those integrations are wired.
             updateDraft({
-              chatChannels: flow.draft.chatChannels.includes(channel)
-                ? flow.draft.chatChannels.filter((picked) => {
+              chatChannels: added
+                ? [...flow.draft.chatChannels, channel]
+                : flow.draft.chatChannels.filter((picked) => {
                     return picked !== channel;
-                  })
-                : [...flow.draft.chatChannels, channel],
+                  }),
             });
           }}
         />
