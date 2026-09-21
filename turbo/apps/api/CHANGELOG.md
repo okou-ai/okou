@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.646.1](https://github.com/okou-ai/okou/compare/api-v1.646.0...api-v1.646.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **templates:** name a shared template's owner instead of their account id ([#35774](https://github.com/okou-ai/okou/issues/35774)) ([2372dfd](https://github.com/okou-ai/okou/commit/2372dfdc21e8c2220571d43e5c56f9c7c5130c3f))
+
+
+### Refactoring
+
+* **mcp:** standardize chat input references ([#35739](https://github.com/okou-ai/okou/issues/35739)) ([8787ed6](https://github.com/okou-ai/okou/commit/8787ed6c473d57f5301f034fbb2fd7f6b0005ccb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.1
+    * @okouai/core bumped to 8.689.3
+    * @okouai/db bumped to 1.281.1
+    * @okouai/pi-agent-runtime bumped to 1.34.1
+
 ## [1.646.0](https://github.com/okou-ai/okou/compare/api-v1.645.0...api-v1.646.0) (2026-09-21)
 
 

@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.932.0](https://github.com/okou-ai/okou/compare/app-v0.931.0...app-v0.932.0) (2026-09-21)
+
+
+### Features
+
+* **platform:** move the get started reward onto its own line and give the row a button ([#35778](https://github.com/okou-ai/okou/issues/35778)) ([3da8d1d](https://github.com/okou-ai/okou/commit/3da8d1d05db00a7409a8999b4c860949fdc091a4))
+
+
+### Bug Fixes
+
+* **app:** remove rename from custom template menu ([#35776](https://github.com/okou-ai/okou/issues/35776)) ([bd8c1c6](https://github.com/okou-ai/okou/commit/bd8c1c6715a2af9375d26b37c126f3a99f61fc89))
+* **templates:** name a shared template's owner instead of their account id ([#35774](https://github.com/okou-ai/okou/issues/35774)) ([2372dfd](https://github.com/okou-ai/okou/commit/2372dfdc21e8c2220571d43e5c56f9c7c5130c3f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.1
+    * @okouai/core bumped to 8.689.3
+
 ## [0.931.0](https://github.com/okou-ai/okou/compare/app-v0.930.0...app-v0.931.0) (2026-09-21)
 
 
