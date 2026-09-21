@@ -298,8 +298,8 @@ test("An admin sees every step and what each one pays", async () => {
   const workflow = within(workflowRow);
   expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
   // The reward leads the description line, so the two read as one sentence.
-  expect(normalizedText(workflowRow)).toContain("Build a workflow1,000");
-  expect(workflow.getByText("1,000")).toBeInTheDocument();
+  expect(normalizedText(workflowRow)).toContain("Build a workflow+1,000Build");
+  expect(workflow.getByText("+1,000")).toBeInTheDocument();
   // An unfinished quest names what pressing the row does.
 
   // A reward that keeps paying names its unit next to the amount.
@@ -636,7 +636,7 @@ test("Daily rewards are claimed by selecting check in and menu reopening refresh
   ).resolves.toBeInTheDocument();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
   expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
-  expect(normalizedText(checkinRow)).toContain("Check in100");
+  expect(normalizedText(checkinRow)).toContain("Check in daily+100Check in");
 
   click(checkinRow);
   await expect(
