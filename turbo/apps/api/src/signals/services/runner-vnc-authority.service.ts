@@ -30,8 +30,6 @@ export async function currentRunnerVncAuthority(
       host: vncConnections.host,
       port: vncConnections.port,
       transportType: vncConnections.transportType,
-      sshConnectionId: vncConnections.sshConnectionId,
-      x509ServerName: vncConnections.x509ServerName,
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
       caBundle: vncConnections.caBundle,
