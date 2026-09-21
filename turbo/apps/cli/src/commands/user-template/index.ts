@@ -65,8 +65,13 @@ function requireDocumentKind(options: PublishOptions): void {
     return (flag === "cover" ? options.cover : options.pageCount) !== undefined;
   });
   if (misplaced.length > 0 && options.kind !== "document") {
+    const named = misplaced
+      .map((flag) => {
+        return `--${flag}`;
+      })
+      .join(" and ");
     throw new ApiRequestError(
-      `${misplaced.map((flag) => `--${flag}`).join(" and ")} ${misplaced.length === 1 ? "is" : "are"} only for a document template`,
+      `${named} ${misplaced.length === 1 ? "is" : "are"} only for a document template`,
       "UNSUPPORTED_KIND",
       400,
     );
