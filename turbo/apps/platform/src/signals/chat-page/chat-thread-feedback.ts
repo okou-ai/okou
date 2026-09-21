@@ -693,11 +693,28 @@ function createListenersRef({
         { signal },
       );
       doc.addEventListener(
+        "pointerup",
+        (event) => {
+          // A press released away from the toolbar never delivers the click
+          // that releases this guard, and a guard outliving its gesture
+          // suppresses every later selectionchange capture.
+          if (!isSelectionInteractionTarget(event.target)) {
+            selectionInteractionInProgress = false;
+          }
+        },
+        { capture: true, signal },
+      );
+      doc.addEventListener(
         "pointercancel",
         () => {
           selectionInteractionInProgress = false;
+          const cancelledMouseSelection = mouseSelectionInProgress;
           mouseSelectionInProgress = false;
-          if (get(selection$) !== null) {
+          // A cancelled pointer still ends the selection the gesture already
+          // made, and mouseup reads the flag this handler just cleared. A
+          // finished drag emits no further selectionchange, so capturing here
+          // is the only chance this passage gets.
+          if (cancelledMouseSelection || get(selection$) !== null) {
             set(capture$, signal);
           }
         },

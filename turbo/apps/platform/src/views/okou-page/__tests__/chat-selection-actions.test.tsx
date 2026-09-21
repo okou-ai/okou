@@ -15,6 +15,8 @@ import {
   readyChat,
   RUN_PATH,
   selectPassage,
+  selectPassageWithCancelledPointer,
+  selectPassageWithoutPointer,
 } from "./chat-capability-test-helpers.ts";
 
 const PASSAGE = "The launch plan has three careful stages.";
@@ -28,12 +30,16 @@ function queryQuoteButton(): HTMLElement | null {
   );
 }
 
-async function openSelection(): Promise<void> {
+async function mountConversation(): Promise<void> {
   installCapabilityChat({
     events: completedConversation(`${PASSAGE}\n\n${NEXT_PASSAGE}`),
   });
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
+}
+
+async function openSelection(): Promise<void> {
+  await mountConversation();
   await selectPassage(PASSAGE);
 }
 
@@ -229,6 +235,44 @@ test("Release a cancelled toolbar gesture and accept the next keyboard action", 
     expect(queryQuoteButton()).not.toBeInTheDocument();
   });
   await selectPassage(NEXT_PASSAGE);
+  fireEvent.keyDown(document, { key: "q" });
+
+  await expect(
+    screen.findByRole("textbox", { name: "Ask or comment on this quote" }),
+  ).resolves.toBeInTheDocument();
+  expect(feedbackItems()[0]).toHaveTextContent(NEXT_PASSAGE);
+});
+
+test("Quote a passage whose drag ended in a cancelled pointer", async () => {
+  await mountConversation();
+
+  await selectPassageWithCancelledPointer(PASSAGE);
+  fireEvent.keyDown(document, { key: "q" });
+
+  await expect(
+    screen.findByRole("textbox", { name: "Ask or comment on this quote" }),
+  ).resolves.toBeInTheDocument();
+  expect(feedbackItems()[0]).toHaveTextContent(PASSAGE);
+});
+
+test("Capture a selection made after a toolbar press released outside it", async () => {
+  await openSelection();
+  const button = await findButton("Quote");
+
+  fireEvent.pointerDown(button, {
+    button: 0,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
+  clearPassageSelection();
+  // The press leaves the toolbar, so its click never reaches the document.
+  fireEvent.pointerUp(document.body, {
+    button: 0,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
+
+  await selectPassageWithoutPointer(NEXT_PASSAGE);
   fireEvent.keyDown(document, { key: "q" });
 
   await expect(

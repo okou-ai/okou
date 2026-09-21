@@ -157,7 +157,7 @@ function visibleSelectionRange(
 function setPassageSelection(
   passage: string,
   occurrence = 0,
-  interaction: "mouse" | "native" = "mouse",
+  interaction: "mouse" | "cancelled-mouse" | "native" = "mouse",
 ): void {
   const node = textNodeContaining(passage, occurrence);
   const start = node.data.indexOf(passage);
@@ -165,7 +165,8 @@ function setPassageSelection(
   if (!target) {
     throw new Error("Selectable passage has no element target");
   }
-  if (interaction === "mouse") {
+  const usesMouse = interaction !== "native";
+  if (usesMouse) {
     fireEvent.mouseDown(target, { button: 0 });
   }
   const range = visibleSelectionRange(
@@ -180,7 +181,10 @@ function setPassageSelection(
   }
   selection.removeAllRanges();
   selection.addRange(range);
-  if (interaction === "mouse") {
+  if (interaction === "cancelled-mouse") {
+    fireEvent.pointerCancel(target, { pointerId: 1, pointerType: "mouse" });
+  }
+  if (usesMouse) {
     fireEvent.mouseUp(target, { button: 0 });
   } else {
     fireEvent(document, new Event("selectionchange"));
@@ -192,6 +196,22 @@ export async function selectPassage(
   occurrence = 0,
 ): Promise<void> {
   setPassageSelection(passage, occurrence);
+  await findButton("Quote");
+}
+
+export async function selectPassageWithCancelledPointer(
+  passage: string,
+  occurrence = 0,
+): Promise<void> {
+  setPassageSelection(passage, occurrence, "cancelled-mouse");
+  await findButton("Quote");
+}
+
+export async function selectPassageWithoutPointer(
+  passage: string,
+  occurrence = 0,
+): Promise<void> {
+  setPassageSelection(passage, occurrence, "native");
   await findButton("Quote");
 }
 
