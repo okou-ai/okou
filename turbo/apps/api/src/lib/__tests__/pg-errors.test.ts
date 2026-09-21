@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   isForeignKeyViolation,
   isLockNotAvailable,
+  isStatementTimeout,
   isUniqueViolation,
   safeSqlStateCode,
 } from "../pg-errors";
@@ -60,5 +61,45 @@ describe("safeSqlStateCode", () => {
     ["an over-long code", driverError("55P030")],
   ])("drops %s", (_label, error) => {
     expect(safeSqlStateCode(error)).toBeUndefined();
+  });
+});
+
+describe("isStatementTimeout", () => {
+  it("recognizes the server deadline in the Drizzle cause", () => {
+    expect(
+      isStatementTimeout(
+        new Error("query failed", {
+          cause: {
+            code: "57014",
+            message: "canceling statement due to statement timeout",
+          },
+        }),
+      ),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ["57014", "canceling statement due to user request"],
+    ["57014", "unknown cancellation"],
+    ["55P03", "canceling statement due to statement timeout"],
+    ["57014", undefined],
+  ])("does not retry %s / %s", (code, message) => {
+    expect(
+      isStatementTimeout(
+        new Error("query failed", { cause: { code, message } }),
+      ),
+    ).toBeFalsy();
+  });
+
+  it("preserves caller cancellation and unwrapped errors", () => {
+    expect(
+      isStatementTimeout(new DOMException("cancelled", "AbortError")),
+    ).toBeFalsy();
+    expect(
+      isStatementTimeout({
+        code: "57014",
+        message: "canceling statement due to statement timeout",
+      }),
+    ).toBeFalsy();
   });
 });

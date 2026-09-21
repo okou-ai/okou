@@ -217,7 +217,7 @@ describe("entitlement transaction integrity", () => {
       harness.db.transaction(async (tx) => {
         await upsertOrgPlanEntitlement(tx, {
           orgId,
-          tier: "pro-suspend",
+          tier: "limited-free-1",
           source: "stripe_subscription",
         });
         throw new Error("later operation failed");

@@ -16,6 +16,7 @@ from body_limits import BODY_CAPTURE_LIMIT, STREAM_BUFFER_LIMIT
 from tests.body_decode_helpers import (
     pseudo_random_ascii,
     track_brotli_decompressor,
+    track_zlib_decompressor,
     track_zstd_reader,
 )
 from tests.flow_helpers import response_stream
@@ -243,19 +244,46 @@ class TestDecompression:
         assert set(entry["response_body"]) == {"x"}  # partial 'x' run, never gzip framing
         assert len(entry["response_body"]) > 1024  # meaningfully more than just the header
 
-    def test_gzip_zip_bomb_capped(self, real_flow):
-        """Decompressed output should not exceed buffer limit (zip bomb protection)."""
-        # 1MB of zeros compresses very small
-        original = b"\x00" * (1024 * 1024)
-        compressed = gzip.compress(original)
-        # Compressed data fits in buffer limit
-        assert len(compressed) < BODY_CAPTURE_LIMIT
-        flow = self._make_flow_with_compressed_buffer(real_flow, compressed, "gzip", "text/plain")
+    @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+    @pytest.mark.parametrize(
+        "plaintext_size",
+        [
+            pytest.param(BODY_CAPTURE_LIMIT, id="exact-limit"),
+            pytest.param(BODY_CAPTURE_LIMIT * 4, id="over-limit"),
+        ],
+    )
+    def test_zlib_stream_capture_bounds_decoded_output(
+        self, real_flow, monkeypatch, encoding, plaintext_size
+    ):
+        original = b"x" * plaintext_size
+        compressed = gzip.compress(original) if encoding == "gzip" else zlib.compress(original)
+        assert len(compressed) < STREAM_BUFFER_LIMIT
+        flow = real_flow(
+            method="POST",
+            host="api.example.com",
+            response_content_type="text/plain",
+            response_encoding=encoding,
+        )
+        flow.metadata[metadata_keys.CAPTURE_BODY] = True
+        mitm_addon.responseheaders(flow)
+        assert response_stream(flow)(compressed) == compressed
+
+        # Capture decodes one extra byte so it can distinguish an exact-limit
+        # body from an over-limit body without unbounded zlib output.
+        max_output = BODY_CAPTURE_LIMIT + 1
+        stats = track_zlib_decompressor(monkeypatch, max_output=max_output)
         entry = {}
         add_capture_fields(flow, entry)
-        # Body should be capped, not 1MB
-        assert entry["response_body_truncated"] is True
-        assert len(entry["response_body"]) == BODY_CAPTURE_LIMIT
+
+        assert entry["response_body"] == original[:BODY_CAPTURE_LIMIT].decode("ascii")
+        assert entry["response_body_encoding"] == "utf-8"
+        if plaintext_size > BODY_CAPTURE_LIMIT:
+            assert entry["response_body_truncated"] is True
+            assert stats["output_bytes"] == max_output
+        else:
+            assert "response_body_truncated" not in entry
+            assert stats["output_bytes"] == BODY_CAPTURE_LIMIT
+        assert 0 < stats["max_output_request"] <= max_output
 
     @pytest.mark.parametrize("encoding", ["br", "zstd"])
     def test_truncated_compressed_stream_captures_plaintext_prefix(self, real_flow, encoding):

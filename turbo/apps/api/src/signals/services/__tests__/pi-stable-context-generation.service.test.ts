@@ -1190,10 +1190,12 @@ describe("Pi stable context generation fences", () => {
     const semantic = {
       promptInputs: {
         privateArtifactsEnabled: false,
+        runUsageEnabled: false,
         bankingEnabled: false,
         vncEnabled: false,
         larkEnabled: false,
         deliveryFormatGuidanceEnabled: false,
+        presentationConvertEnabled: false,
         customConnectorMcpEnabled: false,
         triggerSource: "web" as const,
         cloudBrowserEnabled: undefined,
@@ -1392,10 +1394,12 @@ describe("Pi stable context generation fences", () => {
     const semantic = {
       promptInputs: {
         privateArtifactsEnabled: false,
+        runUsageEnabled: false,
         bankingEnabled: false,
         vncEnabled: false,
         larkEnabled: false,
         deliveryFormatGuidanceEnabled: false,
+        presentationConvertEnabled: false,
         customConnectorMcpEnabled: false,
         triggerSource: "web" as const,
         cloudBrowserEnabled: undefined,

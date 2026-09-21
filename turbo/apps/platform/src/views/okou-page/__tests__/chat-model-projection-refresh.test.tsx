@@ -111,68 +111,102 @@ function notice(scope: "user" | "org"): void {
   });
 }
 
-test("Refresh member source after personal, organization, billing and reconnect notices", async () => {
-  let personal = false;
-  let restricted = false;
-  installRunChat({ selectedModel: MODEL });
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-    return respond(200, {
-      revision: "revision-1",
-      writePreconditionRequired: false,
-      policies: [modelPolicy(personal, restricted)],
-      workspaceDefaultModel: MODEL,
-      workspaceDefaultPolicyId: POLICY_ID,
+test.each([
+  {
+    notice: "personal policy" as const,
+    initialPersonal: false,
+    initialRestricted: false,
+    nextPersonal: true,
+    nextRestricted: false,
+  },
+  {
+    notice: "organization policy" as const,
+    initialPersonal: true,
+    initialRestricted: false,
+    nextPersonal: false,
+    nextRestricted: false,
+  },
+  {
+    notice: "reconnect" as const,
+    initialPersonal: false,
+    initialRestricted: false,
+    nextPersonal: true,
+    nextRestricted: false,
+  },
+  {
+    notice: "billing restriction" as const,
+    initialPersonal: true,
+    initialRestricted: false,
+    nextPersonal: true,
+    nextRestricted: true,
+  },
+  {
+    notice: "billing recovery" as const,
+    initialPersonal: true,
+    initialRestricted: true,
+    nextPersonal: true,
+    nextRestricted: false,
+  },
+])(
+  "Refresh member source after a $notice notice",
+  async ({
+    notice: refreshNotice,
+    initialPersonal,
+    initialRestricted,
+    nextPersonal,
+    nextRestricted,
+  }) => {
+    let personal = initialPersonal;
+    let restricted = initialRestricted;
+    installRunChat({ selectedModel: MODEL });
+    context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+      return respond(200, {
+        revision: "revision-1",
+        writePreconditionRequired: false,
+        policies: [modelPolicy(personal, restricted)],
+        workspaceDefaultModel: MODEL,
+        workspaceDefaultPolicyId: POLICY_ID,
+      });
     });
-  });
-  // Continuity callbacks belong to the real MessagePort protocol; the direct
-  // page transport intentionally forwards named events only.
-  await openChat("message-port");
-  click(await findButton("GPT 5.6 Sol"));
-  const initial = await screen.findByRole("option", { name: /GPT 5\.6 Sol/u });
-  expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
-
-  personal = true;
-  notice("user");
-  await personalOption();
-
-  personal = false;
-  notice("org");
-  await waitFor(() => {
-    const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
-    expect(within(option).queryByText("BYOK")).not.toBeInTheDocument();
-  });
-
-  personal = true;
-  act(() => {
-    context.mocks.ably.triggerSharedWorkerConnectionState("suspended", {
-      code: 80_003,
-      message: "Network unavailable",
+    // Reconnect callbacks belong to the real MessagePort protocol; the direct
+    // page transport intentionally forwards named events only.
+    await openChat("message-port");
+    click(await findButton("GPT 5.6 Sol"));
+    const initial = await screen.findByRole("option", {
+      name: /GPT 5\.6 Sol/u,
     });
-    context.mocks.ably.triggerSharedWorkerConnectionState("connected");
-  });
-  await personalOption();
+    expect(within(initial).queryByText("BYOK") !== null).toBe(initialPersonal);
+    expect(within(initial).queryByText("Pro") !== null).toBe(initialRestricted);
 
-  restricted = true;
-  act(() => {
-    context.mocks.ably.trigger("billing:changed");
-  });
-  await waitFor(() => {
-    const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
-    expect(within(option).getByText("BYOK")).toBeInTheDocument();
-    expect(within(option).getByText("Pro")).toBeInTheDocument();
-  });
+    personal = nextPersonal;
+    restricted = nextRestricted;
+    if (refreshNotice === "personal policy") {
+      notice("user");
+    } else if (refreshNotice === "organization policy") {
+      notice("org");
+    } else if (refreshNotice === "reconnect") {
+      act(() => {
+        context.mocks.ably.triggerSharedWorkerConnectionState("suspended", {
+          code: 80_003,
+          message: "Network unavailable",
+        });
+        context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+      });
+    } else {
+      act(() => {
+        context.mocks.ably.trigger("billing:changed");
+      });
+    }
 
-  restricted = false;
-  act(() => {
-    context.mocks.ably.trigger("billing:changed");
-  });
-  await waitFor(() => {
-    const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
-    expect(within(option).queryByText("Pro")).not.toBeInTheDocument();
-  });
-});
+    await waitFor(() => {
+      const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
+      expect(within(option).queryByText("BYOK") !== null).toBe(nextPersonal);
+      expect(within(option).queryByText("Pro") !== null).toBe(nextRestricted);
+    });
+  },
+);
 
-test("Keep choices, draft, effort and Fast through a held and failed projection refresh", async () => {
+async function setupHeldProjectionRefresh() {
   let failRefresh = false;
   const started = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
@@ -217,17 +251,42 @@ test("Keep choices, draft, effort and Fast through a held and failed projection 
   failRefresh = true;
   notice("user");
   await started.promise;
-  await personalOption();
-  expect(composer).toHaveTextContent("Keep this unsent draft");
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+  return { composer, release, user };
+}
 
+async function finishFailedProjectionRefresh(release: {
+  readonly resolve: () => void;
+}): Promise<void> {
   release.resolve();
   await expect(
     screen.findByText("Routing refresh unavailable"),
   ).resolves.toBeInTheDocument();
-  await personalOption();
+}
+
+test("Keep provider choices through a held and failed projection refresh", async () => {
+  const { release } = await setupHeldProjectionRefresh();
+  await expect(personalOption()).resolves.toBeInTheDocument();
+  await finishFailedProjectionRefresh(release);
+  await expect(personalOption()).resolves.toBeInTheDocument();
+});
+
+test("Keep the draft through a held and failed projection refresh", async () => {
+  const { composer, release } = await setupHeldProjectionRefresh();
   expect(composer).toHaveTextContent("Keep this unsent draft");
+  await finishFailedProjectionRefresh(release);
+  expect(composer).toHaveTextContent("Keep this unsent draft");
+});
+
+test("Keep effort through a held and failed projection refresh", async () => {
+  const { release } = await setupHeldProjectionRefresh();
   await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+  await finishFailedProjectionRefresh(release);
+  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+});
+
+test("Keep Fast through a failed projection refresh", async () => {
+  const { release, user } = await setupHeldProjectionRefresh();
+  await finishFailedProjectionRefresh(release);
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
   click(await findButton("Effort, Low"));

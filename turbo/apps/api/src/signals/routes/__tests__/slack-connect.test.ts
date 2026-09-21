@@ -16,7 +16,7 @@ import { slackConnectRoutes } from "../slack-connect";
 
 const TEST_APP_ROUTES = Object.freeze([...slackConnectRoutes]);
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const SLACK_CONNECT_PATH = "/api/integrations/slack/connect";

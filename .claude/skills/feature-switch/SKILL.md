@@ -117,7 +117,7 @@ const labEnabled = features?.[FeatureSwitchKey.Lab] ?? false;
 
 #### Connector gating
 
-Connector definitions live in `vm0-ai/vm0-connectors`, but the platform owns
+Connector definitions live in `okou-ai/vm0-connectors`, but the platform owns
 the rollout association. Add an entry to `FEATURE_SWITCH_BY_AUTH_METHOD` in
 `turbo/apps/api/src/signals/services/connector-auth-method-feature-switches.ts`,
 keyed by `` `${connectorSlug}\0${authMethodId}` ``:
@@ -166,8 +166,8 @@ Evaluation has two layers (lowest to highest priority):
    `user_feature_switches` keyed by `(orgId, userId)`. Some switches are
    org-scoped and stored under the org sentinel user id (`ORG_SENTINEL_USER_ID`,
    `"__org__"`); `ORG_SCOPED_FEATURE_SWITCH_KEYS` currently holds
-   `PersonalSubscriptionPriority`, `PiLoop`, `PiDeferredSandbox` and
-   `LarkIntegration`. Written
+   `PersonalSubscriptionPriority`, `PiDeferredSandbox` and `LarkIntegration`.
+   Written
    via `POST /api/feature-switches` and cleared via
    `DELETE /api/feature-switches`. The Lab page lets users update or reset these
    overrides and groups the registry into Released, Beta, Alpha, and Internal

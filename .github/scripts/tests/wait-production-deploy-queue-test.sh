@@ -56,7 +56,7 @@ run_queue() {
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     GITHUB_RUN_ID=200 \
     MOCK_GH_LOG="${tmp_dir}/gh.log" \
     MOCK_SLEEP_LOG="${tmp_dir}/sleep.log" \

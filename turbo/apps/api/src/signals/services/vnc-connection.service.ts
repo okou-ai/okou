@@ -4,16 +4,21 @@ import type {
   VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { agents } from "@okouai/db/schema/agent";
+import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { visibleJoinedAgentCondition } from "./agent-data.service";
 import {
   canonicalizeVncHost,
+  isVncProfileCompatible,
   prepareVncSecurity,
   vncFailure,
   type VncResult,
+  type VncTransaction,
 } from "./vnc-configuration.utils";
 import {
   checkVncCreationId,
@@ -32,6 +37,7 @@ const metadata = Object.freeze({
   host: vncConnections.host,
   port: vncConnections.port,
   credentialId: vncConnections.credentialId,
+  authMethod: vncConnections.authMethod,
   securityType: vncConnections.securityType,
   trustMode: vncConnections.trustMode,
   caBundle: vncConnections.caBundle,
@@ -40,6 +46,9 @@ const metadata = Object.freeze({
   updatedAt: vncConnections.updatedAt,
 });
 type Metadata = Pick<typeof vncConnections.$inferSelect, keyof typeof metadata>;
+type CredentialMetadata = NonNullable<
+  Awaited<ReturnType<typeof findVncCredential>>
+>;
 
 function ownedConnections(owner: VncOwner) {
   return and(
@@ -62,6 +71,17 @@ function response(
   ) {
     throw new Error("VNC connection has an invalid trust configuration");
   }
+  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
+    throw new Error("VNC connection has an invalid stored profile");
+  }
+  const trust =
+    row.trustMode === "custom_ca" && row.caBundle !== null
+      ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
+      : ({ mode: "system" } as const);
+  const security =
+    row.securityType === "x509_plain"
+      ? ({ type: "x509_plain", trust } as const)
+      : ({ type: "x509_vnc", trust } as const);
   return {
     id: row.id,
     displayName: row.displayName,
@@ -69,13 +89,7 @@ function response(
     port: row.port,
     credentialId: row.credentialId,
     credentialName: credential.name,
-    security: {
-      type: row.securityType,
-      trust:
-        row.trustMode === "custom_ca" && row.caBundle !== null
-          ? { mode: "custom_ca", caBundle: row.caBundle }
-          : { mode: "system" },
-    },
+    security,
     generation: row.generation,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -121,6 +135,39 @@ export async function summarizeVncConnections(
   return row;
 }
 
+async function selectUpdateVncCredential(args: {
+  readonly tx: VncTransaction;
+  readonly owner: VncOwner;
+  readonly prepared: Awaited<
+    ReturnType<typeof prepareVncCredentialSelection>
+  > | null;
+  readonly currentCredentialId: string;
+  readonly securityType: Metadata["securityType"];
+}): Promise<VncResult<CredentialMetadata>> {
+  if (
+    args.prepared?.create !== undefined &&
+    !isVncProfileCompatible(args.prepared.create.authMethod, args.securityType)
+  ) {
+    return vncFailure("profileMismatch");
+  }
+  const selected =
+    args.prepared === null
+      ? undefined
+      : await selectVncCredential(args.tx, args.owner, args.prepared);
+  if (selected && !selected.ok) {
+    return selected;
+  }
+  const credential =
+    selected?.value ??
+    (await findVncCredential(args.tx, args.owner, args.currentCredentialId));
+  if (!credential) {
+    throw new Error("VNC connection credential is missing");
+  }
+  return isVncProfileCompatible(credential.authMethod, args.securityType)
+    ? { ok: true, value: credential }
+    : vncFailure("profileMismatch");
+}
+
 export async function createVncConnection(args: {
   readonly db: Db;
   readonly owner: VncOwner;
@@ -147,6 +194,15 @@ export async function createVncConnection(args: {
   if (!security.ok) {
     return security;
   }
+  if (
+    "create" in args.body.credential &&
+    !isVncProfileCompatible(
+      args.body.credential.create.authentication.method,
+      security.value.securityType,
+    )
+  ) {
+    return vncFailure("profileMismatch");
+  }
   const preparedCredential = await prepareVncCredentialSelection(
     args.body.credential,
     args.featureContext,
@@ -172,6 +228,31 @@ export async function createVncConnection(args: {
     if (!credential.ok) {
       return credential;
     }
+    if (
+      !isVncProfileCompatible(
+        credential.value.authMethod,
+        security.value.securityType,
+      )
+    ) {
+      return vncFailure("profileMismatch");
+    }
+    // Match SSH's zero-to-one host transition, including re-adding after all
+    // hosts were deleted. enterVncWrite serializes concurrent owner writes.
+    const firstHost =
+      (await summarizeVncConnections(tx, owner)).configuredCount === 0;
+    const visibleAgents = firstHost
+      ? await tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.orgId, owner.orgId),
+              visibleJoinedAgentCondition(owner.userId),
+            ),
+          )
+          .orderBy(asc(agents.id))
+          .for("update")
+      : [];
     const [created] = await tx
       .insert(vncConnections)
       .values({
@@ -181,11 +262,22 @@ export async function createVncConnection(args: {
         host: host.value,
         port: args.body.port,
         credentialId: credential.value.id,
+        authMethod: credential.value.authMethod,
         ...security.value,
       })
       .returning(metadata);
     if (!created) {
       throw new Error("VNC connection insert returned no row");
+    }
+    if (visibleAgents.length > 0) {
+      await tx
+        .insert(agentVncAccess)
+        .values(
+          visibleAgents.map((agent) => {
+            return { ...owner, agentId: agent.id };
+          }),
+        )
+        .onConflictDoNothing();
     }
     return { ok: true as const, value: response(created, credential.value) };
   });
@@ -250,18 +342,16 @@ export async function updateVncConnection(args: {
     }
     const newHost = host?.value ?? current.host;
     const newPort = args.body.port ?? current.port;
-    const selected =
-      preparedCredential === undefined
-        ? undefined
-        : await selectVncCredential(tx, owner, preparedCredential);
-    if (selected && !selected.ok) {
-      return selected;
-    }
-    const credential =
-      selected?.value ??
-      (await findVncCredential(tx, owner, current.credentialId));
-    if (!credential) {
-      throw new Error("VNC connection credential is missing");
+    const securityType = security?.value.securityType ?? current.securityType;
+    const credential = await selectUpdateVncCredential({
+      tx,
+      owner,
+      prepared: preparedCredential ?? null,
+      currentCredentialId: current.credentialId,
+      securityType,
+    });
+    if (!credential.ok) {
+      return credential;
     }
     const [updated] = await tx
       .update(vncConnections)
@@ -269,7 +359,8 @@ export async function updateVncConnection(args: {
         displayName: args.body.displayName,
         host: newHost,
         port: newPort,
-        credentialId: credential.id,
+        credentialId: credential.value.id,
+        authMethod: credential.value.authMethod,
         ...security?.value,
         generation: current.generation + 1,
         updatedAt: nowDate(),
@@ -279,7 +370,7 @@ export async function updateVncConnection(args: {
     if (!updated) {
       throw new Error("VNC connection update returned no row");
     }
-    return { ok: true as const, value: response(updated, credential) };
+    return { ok: true as const, value: response(updated, credential.value) };
   });
 }
 

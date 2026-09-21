@@ -1,5 +1,117 @@
 # Changelog
 
+## [8.688.3](https://github.com/okou-ai/okou/compare/core-v8.688.2...core-v8.688.3) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.480.0
+
+## [8.688.2](https://github.com/okou-ai/okou/compare/core-v8.688.1...core-v8.688.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.479.0
+
+## [8.688.1](https://github.com/okou-ai/okou/compare/core-v8.688.0...core-v8.688.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+
+## [8.688.0](https://github.com/okou-ai/okou/compare/core-v8.687.1...core-v8.688.0) (2026-09-20)
+
+
+### Features
+
+* **core:** enable run usage for staff ([#35631](https://github.com/okou-ai/okou/issues/35631)) ([cce6b0f](https://github.com/okou-ai/okou/commit/cce6b0f68412f17acf67db685671a0cdbef7a32d))
+* **platform:** link plain urls in user messages ([#35564](https://github.com/okou-ai/okou/issues/35564)) ([3d8a17a](https://github.com/okou-ai/okou/commit/3d8a17a1633ece078a943ae0ad99c39cf5b4e62a))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+* remove the stripe marketplace oauth feature switch ([#35623](https://github.com/okou-ai/okou/issues/35623)) ([cc48fcf](https://github.com/okou-ai/okou/commit/cc48fcf04b8972204e619837915a59316d4b2326))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+
+## [8.687.1](https://github.com/okou-ai/okou/compare/core-v8.687.0...core-v8.687.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+
+## [8.687.0](https://github.com/okou-ai/okou/compare/core-v8.686.0...core-v8.687.0) (2026-09-20)
+
+
+### Features
+
+* **core:** enable Monday connector for staff ([#35578](https://github.com/okou-ai/okou/issues/35578)) ([3858c60](https://github.com/okou-ai/okou/commit/3858c60deb3c05e8e2e3fba0f746aeb7f82f5598))
+* **core:** enable Plaud connector for staff ([#35580](https://github.com/okou-ai/okou/issues/35580)) ([8b421f5](https://github.com/okou-ai/okou/commit/8b421f5f28cdeea74da038cfc066b844c98e588c))
+* **core:** enable presentation convert for staff ([#35557](https://github.com/okou-ai/okou/issues/35557)) ([94b826c](https://github.com/okou-ai/okou/commit/94b826c0fd7b5649b16e9fe3d0f256b3382cb432))
+* **core:** release the welcome thread to every workspace ([#35586](https://github.com/okou-ai/okou/issues/35586)) ([6bb62d1](https://github.com/okou-ai/okou/commit/6bb62d1157a83b416d91f77705bb448182196f64))
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### CI
+
+* prepare runtime references for okou-ai rename ([#35352](https://github.com/okou-ai/okou/issues/35352)) ([e0445aa](https://github.com/okou-ai/okou/commit/e0445aa875eae424817d932886e6de38895ce986))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+
+## [8.686.0](https://github.com/vm0-ai/okou/compare/core-v8.685.0...core-v8.686.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+
+## [8.685.0](https://github.com/vm0-ai/okou/compare/core-v8.684.1...core-v8.685.0) (2026-09-20)
+
+
+### Features
+
+* **connectors:** gate monday mcp discovery ([#35525](https://github.com/vm0-ai/okou/issues/35525)) ([a7384c6](https://github.com/vm0-ai/okou/commit/a7384c6f34b5841a424676418e5f57178b21da06))
+* **platform:** gate AgentPhone entry behind feature switch ([#35488](https://github.com/vm0-ai/okou/issues/35488)) ([37f2fa4](https://github.com/vm0-ai/okou/commit/37f2fa4a63c075cf895061d5138edb1a437d0f40))
+
 ## [8.684.1](https://github.com/vm0-ai/okou/compare/core-v8.684.0...core-v8.684.1) (2026-09-20)
 
 

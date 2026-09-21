@@ -1,7 +1,3 @@
-import {
-  readPiInferenceLifecycle,
-  assertPiInferencePublication,
-} from "./pi-inference-lifecycle.service";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -65,7 +61,6 @@ type PrepareHistoryBody = z.infer<
 >;
 
 export interface AgentCheckpointInput {
-  readonly inferenceOwnerEpoch?: number;
   readonly auth: SandboxAuth;
   readonly body: AgentCheckpointBody;
 }
@@ -226,26 +221,6 @@ async function lockCheckpointRunContext(
     )
     .for("update", { of: agentRuns })
     .limit(1);
-
-  if (run) {
-    const lifecycle = await readPiInferenceLifecycle(
-      tx,
-      input.body.runId,
-      run.launchSnapshot,
-    );
-    if (
-      input.auth.piSandbox &&
-      (lifecycle?.inference.phase !== "sandbox_running" ||
-        lifecycle.intent?.generation !== input.auth.piSandbox.generation ||
-        lifecycle.lease?.state !== "claimed")
-    ) {
-      throw new Error("Stale Pi Sandbox publication");
-    }
-    assertPiInferencePublication(
-      lifecycle,
-      input.inferenceOwnerEpoch ?? input.auth.piSandbox?.ownerEpoch,
-    );
-  }
 
   return run
     ? { ...run, status: runStatusSchema.parse(run.status) }

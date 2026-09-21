@@ -32,7 +32,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
@@ -136,18 +136,6 @@ describe("POST /api/welcome-chat-threads", () => {
       [401],
     );
     expect(response.status).toBe(401);
-  });
-
-  it("requires the persisted welcome-thread switch", async () => {
-    const clientThreadId = randomUUID();
-    const response = await accept(
-      welcomeClient().create({
-        headers: headers(bdd.user()),
-        body: { clientThreadId },
-      }),
-      [403],
-    );
-    expect(response.status).toBe(403);
   });
 
   it("does not create a thread while the persisted switch is disabled", async () => {
@@ -474,7 +462,7 @@ describe("POST /api/welcome-chat-threads", () => {
           selectedModel: MODEL,
           serviceTier: null,
           selectedVideoModel: "MiniMax-H3",
-          selectedImageModel: "fal-ai/qwen-image",
+          selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
       [200],
@@ -490,7 +478,7 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
       selectedVideoModel: "MiniMax-H3",
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
   });
 });

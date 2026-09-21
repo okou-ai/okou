@@ -15,9 +15,9 @@ const TEST_APP_ROUTES = Object.freeze([...desktopUpdateRoutes]);
 
 const context = testContext();
 const OKOU_DESKTOP_UPDATE_MANIFEST_URL =
-  "https://github.com/vm0-ai/vm0/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
+  "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
 const LEGACY_OKOU_DESKTOP_UPDATE_MANIFEST_URL =
-  "https://github.com/vm0-ai/vm0/releases/download/okou-desktop-updates/okou-desktop-update-manifest.json";
+  "https://github.com/okou-ai/okou/releases/download/okou-desktop-updates/okou-desktop-update-manifest.json";
 
 interface DesktopUpdateRelease {
   readonly version: string;
@@ -99,7 +99,7 @@ function darwinArm64Release(version: string, url: string) {
 }
 
 function okouZipUrl(version: string): string {
-  return `https://github.com/vm0-ai/vm0/releases/download/okou-desktop-v${version}/Okou-darwin-arm64-${version}.zip`;
+  return `https://github.com/okou-ai/okou/releases/download/okou-desktop-v${version}/Okou-darwin-arm64-${version}.zip`;
 }
 
 describe("desktop update routes", () => {
@@ -147,7 +147,7 @@ describe("desktop update routes", () => {
 
     expect(releaseResponse.status).toBe(302);
     expect(releaseResponse.headers.get("Location")).toBe(
-      "https://github.com/vm0-ai/vm0/releases/tag/okou-desktop-v1.2.3",
+      "https://github.com/okou-ai/okou/releases/tag/okou-desktop-v1.2.3",
     );
     expect(releaseResponse.headers.get("Cache-Control")).toBe("no-store");
 
@@ -157,7 +157,7 @@ describe("desktop update routes", () => {
 
     expect(dmgResponse.status).toBe(302);
     expect(dmgResponse.headers.get("Location")).toBe(
-      "https://github.com/vm0-ai/vm0/releases/download/okou-desktop-v1.2.3/Okou-darwin-arm64-1.2.3.dmg",
+      "https://github.com/okou-ai/okou/releases/download/okou-desktop-v1.2.3/Okou-darwin-arm64-1.2.3.dmg",
     );
     expect(dmgResponse.headers.get("Cache-Control")).toBe("no-store");
   });
@@ -271,7 +271,7 @@ describe("desktop update routes", () => {
     );
     expect(releaseResponse.status).toBe(302);
     expect(releaseResponse.headers.get("Location")).toBe(
-      "https://github.com/vm0-ai/vm0/releases/tag/okou-desktop-v1.2.3",
+      "https://github.com/okou-ai/okou/releases/tag/okou-desktop-v1.2.3",
     );
 
     const dmgResponse = await appRequest(
@@ -279,7 +279,7 @@ describe("desktop update routes", () => {
     );
     expect(dmgResponse.status).toBe(302);
     expect(dmgResponse.headers.get("Location")).toBe(
-      "https://github.com/vm0-ai/vm0/releases/download/okou-desktop-v1.2.3/Okou-darwin-arm64-1.2.3.dmg",
+      "https://github.com/okou-ai/okou/releases/download/okou-desktop-v1.2.3/Okou-darwin-arm64-1.2.3.dmg",
     );
   });
 
@@ -288,7 +288,7 @@ describe("desktop update routes", () => {
       stableManifest("1.2.3", {
         "1.2.3": darwinArm64Release(
           "1.2.3",
-          "https://github.com/vm0-ai/vm0/releases/download/desktop-v1.2.3/Zero-darwin-arm64-1.2.3.zip",
+          "https://github.com/okou-ai/okou/releases/download/desktop-v1.2.3/Zero-darwin-arm64-1.2.3.zip",
         ),
       }),
     );

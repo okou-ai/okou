@@ -15,7 +15,7 @@ import { resolveApiBaseForTarget } from "../api-base.ts";
 import { apiClientRuntime$ } from "../api-client-runtime.ts";
 import { clerk$ } from "../auth.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { setDaemon } from "../utils.ts";
+import { detach, Reason } from "../utils.ts";
 
 const postEvent$ = command(
   async ({ get }, tag: MarketingEventRequest["tag"], signal: AbortSignal) => {
@@ -66,8 +66,7 @@ const postEvent$ = command(
 /** Root-owned fire-and-forget events never delay navigation or retry. */
 export const sendEvent$ = command(
   ({ get, set }, tag: MarketingEventRequest["tag"]): void => {
-    setDaemon((signal) => {
-      return set(postEvent$, tag, signal);
-    }, get(rootSignal$));
+    const signal = get(rootSignal$);
+    detach(set(postEvent$, tag, signal), Reason.Daemon, "marketing event");
   },
 );

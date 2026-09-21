@@ -2,26 +2,16 @@
 // workflows you have; the right pane previews a type independently of selection.
 // Kept beside the flat menu in slash-workflow.tsx so both can render from the
 // same suggestion state while the feature switch decides which one is shown.
-import {
-  ChevronRight,
-  Globe,
-  Image,
-  Plus,
-  Presentation,
-  Route,
-} from "lucide-react";
-import { cn } from "@okouai/ui";
+import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
+import { cn, Popover, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { i18n } from "../../i18n/index.ts";
-import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
-  isSlashTemplateDetailCategory,
   isSlashTemplateNativeAspectCategory,
   slashTemplatePreviews,
   type SlashTemplateCategory,
-  type SlashTemplateDetailCategory,
   type SlashTemplatePreview,
 } from "./composer-template-catalog.ts";
 
@@ -32,7 +22,6 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
   slides: Presentation,
   illustration: Image,
   website: Globe,
-  workflow: Route,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
 interface SlashTemplatePanelProps {
@@ -48,9 +37,8 @@ interface SlashTemplatePanelProps {
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplateDetailCategory,
+    category: SlashTemplateCategory,
   ) => void;
-  readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
@@ -76,11 +64,6 @@ export function slashTemplateCategoryLabel(
         return $.artifacts.templates.website;
       });
     }
-    case "workflow": {
-      return i18n.t(($) => {
-        return $.artifacts.templates.workflow;
-      });
-    }
   }
 }
 
@@ -89,66 +72,6 @@ function SectionLabel({ children }: { readonly children: string }) {
     <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
       {children}
     </div>
-  );
-}
-
-/**
- * Leads the Presentation covers, because a deck the user already owns is the
- * fastest template of all. It shares the picker dialog's command and accepted
- * formats; only the tile geometry is this pane's own, since these cards are
- * 139px rather than the dialog's full-width tiles.
- */
-function SlashTemplateImportCard({
-  onImportDeck,
-}: {
-  readonly onImportDeck: (file: File) => void;
-}) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.artifacts.templates.importDeck;
-  });
-  return (
-    <label
-      className="group min-w-0 cursor-pointer text-left"
-      data-slot="slash-template-import"
-      onMouseDown={(event) => {
-        // The panel is mounted off the editor's slash range, so letting the
-        // file input take focus clears the range and unmounts this input
-        // before the file dialog can return. Label activation still forwards
-        // the click, so the dialog opens with the caret left where it was.
-        event.preventDefault();
-      }}
-    >
-      <span className="flex aspect-video flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg bg-muted/50 ring-1 ring-border/60 transition-colors group-hover:bg-muted has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-        <Plus
-          className="size-5 text-muted-foreground"
-          strokeWidth={1.5}
-          aria-hidden
-        />
-        <span className="text-[10px] text-muted-foreground">
-          {t(($) => {
-            return $.artifacts.templates.importDeckHint;
-          })}
-        </span>
-        <input
-          type="file"
-          className="sr-only"
-          accept={PRESENTATION_TEMPLATE_IMPORT_ACCEPT}
-          aria-label={label}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            // Clear the input so choosing the same deck again still fires.
-            event.currentTarget.value = "";
-            if (file) {
-              onImportDeck(file);
-            }
-          }}
-        />
-      </span>
-      <span className="mt-1 block truncate text-[12px] text-muted-foreground">
-        {label}
-      </span>
-    </label>
   );
 }
 
@@ -216,14 +139,12 @@ function SlashTemplateCover({
 function SlashTemplateDetailPane({
   category,
   onSelectTemplate,
-  onImportDeck,
 }: {
-  readonly category: SlashTemplateDetailCategory;
+  readonly category: SlashTemplateCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplateDetailCategory,
+    category: SlashTemplateCategory,
   ) => void;
-  readonly onImportDeck: (file: File) => void;
 }) {
   const { t } = useTranslation();
   const previews = slashTemplatePreviews(category);
@@ -231,7 +152,11 @@ function SlashTemplateDetailPane({
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
   return (
     <div
-      className="w-[320px] shrink-0"
+      // The flyout's own surface: it floats beside the index rather than inside
+      // it, so it restates the popover's hairline, radius and drop shadow the
+      // same way the model picker's flyout panel does — `shadow-lg` reproduces
+      // the shadow the shared popover applies as an inline style.
+      className="h-full w-[320px] overflow-hidden rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg"
       data-slot="slash-template-detail"
       data-category={category}
     >
@@ -301,9 +226,6 @@ function SlashTemplateDetailPane({
                 : "grid grid-cols-2 gap-2.5 pb-4",
             )}
           >
-            {category === "slides" && (
-              <SlashTemplateImportCard onImportDeck={onImportDeck} />
-            )}
             {previews.map((preview) => {
               return (
                 <SlashTemplateCover
@@ -321,6 +243,82 @@ function SlashTemplateDetailPane({
     </div>
   );
 }
+
+/** The index popup this panel fills. The flyout hangs off it. */
+function slashPanelAnchor(): Element | null {
+  return document.querySelector('[data-slot="slash-panel"]');
+}
+
+/**
+ * True while the pointer is over either card. The flyout is portalled, so
+ * crossing between the two is a real `mouseleave` on the one being left even
+ * though, to the user, the pointer never left the menu.
+ */
+function insideSlashPanel(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      '[data-slot="slash-panel"],[data-slot="slash-template-flyout"]',
+    ) !== null
+  );
+}
+
+/**
+ * The detail pane, floating beside the index instead of sharing its box. Base
+ * UI anchors it to the index and flips it to the index's other side when the
+ * caret leaves no room, so the pane always opens into the space there is while
+ * the index itself never moves. A pane inside the box made the popover
+ * content-width, and a popover that changes width re-pins itself against the
+ * viewport edge — which slid the whole index out from under the pointer.
+ */
+function SlashTemplateDetailFlyout({
+  category,
+  onSelectTemplate,
+  onPreview,
+}: {
+  readonly category: SlashTemplateCategory;
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplateCategory,
+  ) => void;
+  readonly onPreview: (index: number | null) => void;
+}) {
+  return (
+    <Popover open>
+      <PopoverContent
+        anchor={slashPanelAnchor}
+        side="right"
+        align="start"
+        sideOffset={0}
+        updatePositionStrategy="always"
+        // The menu's keyboard navigation stays in the editor, and the row that
+        // opened this flyout keeps its focus.
+        initialFocus={false}
+        finalFocus={false}
+        // A bare positioning box: the pane paints its own surface, and the gap
+        // that reads as air between the two cards is padding on the index's
+        // side, so a pointer crossing it never leaves the flyout.
+        className="h-[min(380px,var(--available-height))] w-auto border-0 bg-transparent p-0 data-[side=left]:pr-1.5 data-[side=right]:pl-1.5"
+        style={FLYOUT_BOX_STYLE}
+        data-slot="slash-template-flyout"
+        onMouseLeave={(event) => {
+          if (insideSlashPanel(event.relatedTarget)) {
+            return;
+          }
+          onPreview(null);
+        }}
+      >
+        <SlashTemplateDetailPane
+          category={category}
+          onSelectTemplate={onSelectTemplate}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** The shared popover paints its shadow inline, so only a style can clear it. */
+const FLYOUT_BOX_STYLE = { boxShadow: "none" } as const;
 
 function SlashPanelWorkflowList({
   workflows,
@@ -405,7 +403,6 @@ export function SlashTemplatePanel({
   onPreview,
   onSelectCategory,
   onSelectTemplate,
-  onImportDeck,
   onSelectWorkflow,
   onBrowseAll,
   workflowOptionId,
@@ -420,33 +417,23 @@ export function SlashTemplatePanel({
   // Each row publishes the result as `data-active`, so which row is marked is
   // readable without depending on the utility class that paints it.
   const markedIndex = previewIndex === null ? selectedIndex : -1;
-  const previewCategory = categories[previewIndex ?? selectedIndex] ?? null;
-  // Narrowed here rather than inside the pane, so the pane has no unreachable
-  // branch for a category that can never reach it.
-  const detailCategory =
-    previewCategory !== null && isSlashTemplateDetailCategory(previewCategory)
-      ? previewCategory
-      : null;
+  // A workflow row indexes past the categories, so it previews nothing and the
+  // flyout closes.
+  const detailCategory = categories[previewIndex ?? selectedIndex] ?? null;
   return (
     <div
-      className="flex h-[380px] overflow-hidden"
+      className="flex h-full w-full flex-col overflow-hidden"
       data-slot="slash-panel"
-      onMouseLeave={() => {
-        // A closed pane means the row under the pointer just narrowed the
-        // panel by the cover pane's width. The popover is content-width, so
-        // when the viewport edge has collision-shifted it, that narrowing
-        // re-pins it and the left column slides out from under a pointer that
-        // never moved — which the browser reports here as a leave. Restoring
-        // the keyboard preview would reopen the covers the pointer just
-        // closed and widen the panel back over it, so the row would stay
-        // hovered while another type kept the pane.
-        if (detailCategory === null) {
+      onMouseLeave={(event) => {
+        // Moving into the flyout is not leaving the menu, even though the two
+        // cards are separate elements.
+        if (insideSlashPanel(event.relatedTarget)) {
           return;
         }
         onPreview(null);
       }}
     >
-      <div className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-border/60">
+      <div className="flex min-h-0 flex-1 flex-col">
         {/*
           Make and Workflows scroll as one list. Scrolling only the workflows
           left a row sliced in half under a pinned section label, and hid that
@@ -532,10 +519,10 @@ export function SlashTemplatePanel({
         </div>
       </div>
       {detailCategory !== null && (
-        <SlashTemplateDetailPane
+        <SlashTemplateDetailFlyout
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
-          onImportDeck={onImportDeck}
+          onPreview={onPreview}
         />
       )}
     </div>

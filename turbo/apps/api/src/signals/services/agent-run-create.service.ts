@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { readDisabledPaidTools } from "./paid-tools.service";
 import {
@@ -12,17 +11,9 @@ import {
   type StorageManifestSource,
   resolveCapturedAgentRunStorage,
 } from "./agent-run-storage.service";
-import {
-  type PiDeferredConfiguration,
-  piDeferredConfigurationSchema,
-  piDeferredContextSchema,
-  piDeferredSecretsSchema,
-} from "./pi-deferred-sandbox-contract";
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
-  createPiSessionJsonl,
-  inspectPiSessionJsonl,
   measurePiPreparation,
   measurePiPreparationSync,
   startPiPreparationObservation,
@@ -45,28 +36,23 @@ import {
   OPENROUTER_US_ORIGIN,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { PiInferenceInput } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
 import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { createHash, randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
-  CANONICAL_WORKING_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   DEFAULT_PROFILE,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type PiMemoryRecallSelection,
   type PiMemoryPhase2Maintenance,
-  type PiResourceSnapshot,
   type PiLaunchConfig,
   type PiApiFirstTurnConfig,
   type PiModelConfig,
-  type PiDeferredSandboxConfig,
   type PiModelConfigLegacy,
   type ConnectorRuntimeTargetRegistration,
-  PI_API_FIRST_TURN_SESSION_MAX_BYTES,
   PI_MEMORY_ROOT,
   piMemoryRecallSelectionSchema,
   PI_SKILLS_ROOT,
@@ -118,6 +104,7 @@ import {
   connectorAuthMethodRuntimeMetadata,
   type ConnectorRuntimeBindingEntry,
 } from "@okouai/connectors/connector-auth-method";
+import { AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type {
   ConnectorServerFirewallExecutionMetadata,
   ConnectorServerFirewallPermissionIndex,
@@ -192,7 +179,6 @@ import type {
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { conversations } from "@okouai/db/schema/conversation";
-import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
 import { blobs } from "@okouai/db/schema/blob";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
@@ -214,7 +200,6 @@ import {
   count,
   desc,
   eq,
-  gt,
   inArray,
   isNotNull,
   or,
@@ -225,6 +210,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { env, optionalEnv } from "../../lib/env";
+import { testOverride } from "../../lib/singleton";
 import {
   nullableDriverValueDecoder,
   pgInt8ToBigIntDecoder,
@@ -246,10 +232,7 @@ import {
   type SystemSkillStorageResolution,
 } from "../context/system-skill-storage-resolution";
 import { writeDb$, type Db } from "../external/db";
-import {
-  downloadS3BufferWithMaxBytes,
-  generatePresignedGetUrl,
-} from "../external/s3";
+import { generatePresignedGetUrl } from "../external/s3";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
@@ -317,17 +300,12 @@ import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
   piResourceDiscoveryMounts,
   piResourceSnapshotDigest,
-  preparePiResourceSnapshot,
-  PiResourceSnapshotPreparationError,
-  UnsupportedPiResourceError,
 } from "./pi-resource-snapshot.service";
-import { preparePiStableContext } from "./pi-stable-context.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
 import {
   PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
-  type PiApiFirstTurnActivation,
 } from "./pi-api-first-turn-config";
 import {
   activePersonalModelProviderAccount,
@@ -416,37 +394,18 @@ import {
 import {
   isCompressedSessionHistoryBlobEncoding,
   normalizeSessionHistoryBlobEncoding,
-  resumeSessionHistoryBlobKey,
-  SESSION_HISTORY_ENCODING_GZIP,
-  SESSION_HISTORY_ENCODING_IDENTITY,
-  SESSION_HISTORY_ENCODING_ZSTD,
   type CompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
-import {
-  gunzipSessionHistoryBufferWithMaxBytes,
-  unzstdSessionHistoryBufferWithMaxBytes,
-} from "./session-history-decompression";
 import type { Tx } from "../../lib/db-types";
-import type {
-  PiApiFirstTurnPreparation,
-  PiPreparationDiscardReason,
-} from "./pi-api-first-turn-preparation";
+import type { PiPreparationDiscardReason } from "./pi-api-first-turn-preparation";
 import { waitUntil } from "../context/wait-until";
-import {
-  dispatchConfiguredPiApiFirstTurn$,
-  prepareConfiguredPiApiFirstTurn$,
-} from "./pi-api-first-turn-dispatch.service";
+import { prepareConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
   normalizeRunMetadata,
   type RunMetadataValues,
 } from "./agent-run-metadata-write.service";
-import {
-  piInferenceObjectHash,
-  publishPiInferenceObject,
-  retainPiInferenceObjects,
-} from "./pi-inference-object.service";
 import {
   isBuiltInModelRuntimeRoutePermitted,
   resolveBuiltInModelRuntimeRoute,
@@ -503,17 +462,6 @@ type DbTransaction = Tx;
 
 const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
   "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
-const MERCURY_NOT_A_BANK_DISCLOSURE =
-  "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.";
-const MERCURY_RESPONSE_DISCLOSURE_PROMPT = [
-  "# Mercury Account Data Disclosure",
-  "",
-  "When a response displays or summarizes any data retrieved through the Mercury connector, including account details, balances, or transactions, include both of the following:",
-  "- [Powered by Mercury](https://mercury.com)",
-  `- ${MERCURY_NOT_A_BANK_DISCLOSURE}`,
-  "",
-  "Do not include this disclosure when the response does not present Mercury-sourced data.",
-].join("\n");
 const IMAGE_RECOGNITION_PROMPT =
   '# Image Recognition Fallback\n\nThis run\'s selected model cannot inspect images directly. To inspect one local PNG, JPEG, or WebP image up to 20 MB, run `okou image-recognition --file <image-path> --prompt "<instruction>"`.';
 const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
@@ -614,7 +562,6 @@ function withFinalRunAppendSystemPrompt(args: {
   readonly framework: SupportedFramework;
   readonly chatThreadId: string | undefined;
   readonly imageRecognitionAvailable: boolean;
-  readonly connectorSlugs: readonly ConnectorSlug[];
   readonly mcpConnectorSlugs: readonly string[];
   readonly selectedImageModel: ImageModel | null;
   readonly cliAvailable: boolean;
@@ -625,9 +572,6 @@ function withFinalRunAppendSystemPrompt(args: {
     if (mcpConnectorPrompt) {
       appendedParts.push(mcpConnectorPrompt);
     }
-  }
-  if (args.connectorSlugs.includes("mercury")) {
-    appendedParts.push(MERCURY_RESPONSE_DISCLOSURE_PROMPT);
   }
   if (args.imageRecognitionAvailable) {
     appendedParts.push(IMAGE_RECOGNITION_PROMPT);
@@ -734,9 +678,18 @@ interface ProductResolutionOptions {
   readonly timing?: ApiDispatchTimingCollector;
 }
 
+interface AgentExecutionRequestObservation {
+  readonly requestUserId: string;
+  readonly requestOrgId: string;
+  readonly agentId: string;
+  readonly ownerUserId: string;
+  readonly agentOrgId: string;
+}
+
 interface ResolveAgentExecutionOptions {
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
   readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
+  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
 }
 
@@ -1112,6 +1065,16 @@ export type DispatchFailedRunCallbacks = (
   error: string,
 ) => Promise<void>;
 
+interface PiStableContextCacheIdentity {
+  readonly owner: PiStableContextOwner;
+  readonly variantDigest: string;
+  readonly semantic: PiStableContextSemanticInput;
+  readonly source: Omit<
+    PiStableContextSourceVector,
+    "agentGeneration" | "userGeneration" | "extractorVersion"
+  >;
+}
+
 export interface CreateAgentRunArgs {
   readonly retainedRunId?: string;
   readonly userId: string;
@@ -1120,17 +1083,12 @@ export interface CreateAgentRunArgs {
   readonly apiStartTime: number;
   /** Stable, nonsecret source bindings captured by the product entry point. */
   readonly piStableContext?: {
-    readonly owner: PiStableContextOwner;
-    readonly variantDigest: string;
     /** Built only for a miss/dynamic path; ready artifacts supply this text. */
     readonly buildPrompt: () => PiStableContextPromptProjection;
+    /** Built only by the durable stable-context consumer from captured input. */
+    readonly buildCacheIdentity: () => PiStableContextCacheIdentity;
     /** Dynamic profile/channel text and explicit caller appendage, bound later. */
     readonly dynamicAppendSystemPrompt: string;
-    readonly semantic: PiStableContextSemanticInput;
-    readonly source: Omit<
-      PiStableContextSourceVector,
-      "agentGeneration" | "userGeneration" | "extractorVersion"
-    >;
   };
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
@@ -1145,6 +1103,13 @@ export interface CreateAgentRunArgs {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly includeOkouTokenSecret?: boolean;
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
+  /**
+   * Request-scoped Agent identity facts from an already authorized product
+   * entry point. This can replace the equivalent preparation lookup only; the
+   * launch transaction still locks and validates the current Agent owner,
+   * organization, and erasure state before committing a Run.
+   */
+  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   /**
    * Retired direct-run test support. Production callers must supply a canonical
    * productAgentExecutionPlan; keeping legacy reads in the test fixture
@@ -1215,6 +1180,9 @@ interface BuiltinConnectorRuntimeContext {
     | undefined;
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly mcpConnectorSlugs: readonly ConnectorSlug[];
+  readonly mcpFirewallAuthBySlug: Readonly<
+    Record<string, Firewall["apis"][number]["auth"]>
+  >;
   readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
   readonly storedEnvironment: Record<string, string> | undefined;
 }
@@ -1296,19 +1264,6 @@ function concurrentRunLimit(): ApiErrorResponse<429, "CONCURRENT_RUN_LIMIT"> {
       error: {
         message: "Concurrent run limit reached",
         code: "CONCURRENT_RUN_LIMIT",
-      },
-    },
-  };
-}
-
-function piInferenceBusy(): ApiErrorResponse<429, "PI_INFERENCE_BUSY"> {
-  return {
-    status: 429,
-    body: {
-      error: {
-        message:
-          "Direct inference is temporarily busy. Retry this input after an earlier inference settles.",
-        code: "PI_INFERENCE_BUSY",
       },
     },
   };
@@ -3583,6 +3538,7 @@ function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
     secretConnectorMetadataMap: undefined,
     connectorSlugs: [],
     mcpConnectorSlugs: [],
+    mcpFirewallAuthBySlug: {},
     connectorSourceIdBySlug: {},
     storedEnvironment: undefined,
   };
@@ -3887,6 +3843,61 @@ function connectorSourceIdsBySlug(
   );
 }
 
+function mcpFirewallAuthBySlug(
+  rows: readonly StoredConnectorRuntimeRow[],
+): Readonly<Record<string, Firewall["apis"][number]["auth"]>> {
+  return Object.fromEntries(
+    rows.flatMap((row) => {
+      if (!row.isMcp) {
+        return [];
+      }
+      const grantKind = row.runtimeMethod.method.grant.kind;
+      if (grantKind === "none") {
+        return [[row.connectorSlug, {}]];
+      }
+      if (grantKind === "automatic") {
+        if (row.automaticAuthType === "none") {
+          return [[row.connectorSlug, {}]];
+        }
+        if (row.automaticAuthType !== "oauth") {
+          throw new Error("Missing built-in MCP Automatic auth outcome");
+        }
+        return [[row.connectorSlug, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH]];
+      }
+      if (
+        grantKind !== "manual" ||
+        row.runtimeMethod.method.access.kind !== "static"
+      ) {
+        throw new Error("Unsupported built-in MCP credential auth method");
+      }
+      const secretBindings = connectorAuthMethodRuntimeMetadata(
+        row.runtimeMethod.method,
+      ).runtimeBindings.filter((binding) => {
+        return binding.source.kind === "connector-secret";
+      });
+      const [binding] = secretBindings;
+      if (binding === undefined || secretBindings.length !== 1) {
+        throw new Error(
+          "Built-in MCP credential auth requires exactly one secret binding",
+        );
+      }
+      return [
+        [
+          row.connectorSlug,
+          {
+            headers: {
+              Authorization: [
+                "Bearer $",
+                `{{ secrets.${binding.envName} }}`,
+              ].join(""),
+            },
+          },
+        ],
+      ];
+    }),
+  );
+}
+
 function resolveStoredConnectorSecrets(
   bindingSets: readonly ConnectorEnvBindingSet[],
   connectorSecrets: Record<string, string>,
@@ -3995,6 +4006,7 @@ function storedConnectorContextFromSnapshot(
     mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
       return row.isMcp ? [row.connectorSlug] : [];
     }),
+    mcpFirewallAuthBySlug: mcpFirewallAuthBySlug(snapshot.allowedConnectorRows),
     connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
     storedEnvironment: undefined,
   };
@@ -4076,6 +4088,9 @@ async function materializeStoredConnectorContext(
         mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
           return row.isMcp ? [row.connectorSlug] : [];
         }),
+        mcpFirewallAuthBySlug: mcpFirewallAuthBySlug(
+          snapshot.allowedConnectorRows,
+        ),
         connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
         storedEnvironment: compactRecord(resolved.environment),
       });
@@ -5483,6 +5498,32 @@ function inlineFirewallEntry(
   return { kind: "inline", firewall: runtimeFirewall(firewall) };
 }
 
+function builtinMcpInlineFirewallEntry(args: {
+  readonly metadata: ConnectorServerFirewallExecutionMetadata;
+  readonly sourceId: string;
+  readonly auth: Firewall["apis"][number]["auth"];
+}): ExecutionFirewallEntry {
+  const [base] = args.metadata.fixedBaseUrls;
+  if (base === undefined || args.metadata.fixedBaseUrls.length !== 1) {
+    throw new Error("Built-in MCP connector must have one fixed endpoint");
+  }
+  return {
+    kind: "inline",
+    sourceId: args.sourceId,
+    firewall: {
+      name: args.metadata.connectorSlug,
+      apis: [
+        {
+          id: `${args.metadata.connectorSlug}:0`,
+          base,
+          auth: args.auth,
+          permissions: [],
+        },
+      ],
+    },
+  };
+}
+
 function customConnectorInlineFirewallEntry(
   firewall: ExpandedFirewallConfig,
   customConnectorIdByFirewallName: Readonly<Record<string, string>>,
@@ -5631,6 +5672,9 @@ function applyBuiltinConnectorMetadataPolicies(
   policies: FirewallPolicies | undefined,
   vars: Record<string, string> | undefined,
   connectorSourceIdBySlug: Readonly<Record<string, string>>,
+  mcpFirewallAuthBySlug: Readonly<
+    Record<string, Firewall["apis"][number]["auth"]>
+  >,
 ): PermissionManifest {
   const firewalls: ExecutionFirewalls = [];
   const networkPolicies: NetworkPolicies = {};
@@ -5648,9 +5692,23 @@ function applyBuiltinConnectorMetadataPolicies(
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
-    firewalls.push(
-      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
-    );
+    if (source.isMcp) {
+      const auth = mcpFirewallAuthBySlug[name];
+      if (auth === undefined) {
+        throw new Error("Missing built-in MCP connector account auth");
+      }
+      firewalls.push(
+        builtinMcpInlineFirewallEntry({
+          metadata: source.metadata,
+          sourceId,
+          auth,
+        }),
+      );
+    } else {
+      firewalls.push(
+        builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
+      );
+    }
     if (!source.isMcp) {
       Object.assign(
         environmentSecretPlaceholders,
@@ -5679,8 +5737,18 @@ function applyBuiltinConnectorMetadataPolicies(
 function builtinRuntimeTargetRegistration(
   firewall: ExecutionFirewallEntry,
 ): BuiltinRuntimeTargetRegistration {
-  if (firewall.kind !== "builtin") {
-    throw new Error("Builtin connector manifest contains an inline firewall");
+  if (firewall.kind === "inline") {
+    if (
+      firewall.customConnectorId !== undefined ||
+      firewall.sourceId === undefined
+    ) {
+      throw new Error("Built-in inline firewall is missing source identity");
+    }
+    return {
+      kind: "builtin",
+      connectorSlug: connectorSlugSchema.parse(firewall.firewall.name),
+      sourceId: firewall.sourceId,
+    };
   }
   return {
     kind: "builtin",
@@ -5758,6 +5826,9 @@ interface BuildPermissionManifestArgs {
   readonly connectorVars?: Record<string, string>;
   readonly connectorSlugs?: readonly ConnectorSlug[];
   readonly connectorSourceIdBySlug?: Readonly<Record<string, string>>;
+  readonly mcpFirewallAuthBySlug?: Readonly<
+    Record<string, Firewall["apis"][number]["auth"]>
+  >;
   readonly customConnectorFirewalls?: readonly ExpandedFirewallConfig[];
   readonly customConnectorPermissionPolicies?: FirewallPolicies;
   readonly customConnectorIdByFirewallName?: Readonly<Record<string, string>>;
@@ -5818,6 +5889,7 @@ async function buildPermissionManifest(
           args.permissionPolicies,
           connectorBaseUrlVars,
           args.connectorSourceIdBySlug ?? {},
+          args.mcpFirewallAuthBySlug ?? {},
         ),
       );
     },
@@ -5880,11 +5952,8 @@ async function buildPermissionManifest(
 
 /**
  * Caller owns the organization capacity advisory lock. Each older eligible
- * Sandbox demand reserves one currently free slot in the same documented
- * `(enqueuedAt, runId)` order that queued promotion and the deferred consumer
- * already respect. Fresh direct work may use spare capacity, but cannot take a
- * reserved last slot. The outcome stays the existing capacity outcome, so a
- * queue-enabled caller queues and a nonqueue caller keeps its current error.
+ * The outcome stays the existing capacity outcome, so a queue-enabled caller
+ * queues and a nonqueue caller keeps its current error.
  */
 async function checkRunConcurrencyLimit(
   tx: DbTransaction,
@@ -5903,9 +5972,7 @@ async function checkRunConcurrencyLimit(
   if (limit === 0) {
     return null;
   }
-  return state.activeRunCount + state.earlierDeferredDemand >= limit
-    ? concurrentRunLimit()
-    : null;
+  return state.activeRunCount >= limit ? concurrentRunLimit() : null;
 }
 
 async function checkFinalRunAdmission(
@@ -6294,6 +6361,22 @@ function resolveAgentExecution(
         return badRequestMessage("Missing agentId or sessionId");
       }
       const agentId = body.agentId;
+      const preloadedAgent = options.preloadedAgentExecutionObservation;
+      if (
+        preloadedAgent &&
+        preloadedAgent.requestUserId === userId &&
+        preloadedAgent.requestOrgId === orgId &&
+        preloadedAgent.agentId === agentId &&
+        preloadedAgent.agentOrgId === orgId
+      ) {
+        return {
+          agentId,
+          ownerUserId: preloadedAgent.ownerUserId,
+          orgId: preloadedAgent.agentOrgId,
+          content: productAgentExecutionPlan.content,
+          artifacts: [],
+        };
+      }
       return await measureApiDispatchTiming(
         options.timing,
         "api_dispatch_resolve_agent_execution_by_agent_id",
@@ -9636,6 +9719,10 @@ async function resolvePreparedUserTimezone(input: {
   readonly timing: ApiDispatchTimingCollector;
   readonly preloadedUserTimezone: string | null | undefined;
 }): Promise<string | undefined> {
+  const testHold = observeRunContextParallelStage("user-timezone", input.args);
+  if (testHold) {
+    await testHold;
+  }
   return await input.timing.measure(
     "api_dispatch_prepare_context_load_user_timezone",
     "nested",
@@ -9726,35 +9813,6 @@ async function loadRunConnectorContexts(
       storedConnectorSnapshot,
     ),
     customConnectorContext,
-  };
-}
-
-function buildDeferredPiRunBody(args: {
-  readonly initialBody: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
-  readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
-  readonly canonicalOkouRuntime: boolean;
-}): CreateRunBody {
-  const runVars =
-    args.initialBody.vars !== undefined
-      ? args.initialBody.vars
-      : args.resolved.vars;
-  const mergedVars = buildMergedVariables({
-    persistedEnvironment: args.persistedEnvironment,
-    runVars,
-  });
-  return {
-    ...args.initialBody,
-    vars: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(mergedVars)
-      : mergedVars,
-    secrets: args.canonicalOkouRuntime
-      ? withoutLegacyAgentRunEnvironmentEntries(args.initialBody.secrets)
-      : args.initialBody.secrets,
-    volumeVersions:
-      args.initialBody.volumeVersions !== undefined
-        ? args.initialBody.volumeVersions
-        : args.resolved.volumeVersions,
   };
 }
 
@@ -9855,6 +9913,8 @@ async function buildPreparedPermissionManifest(args: {
       connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
       connectorSourceIdBySlug:
         args.storedConnectorMetadataContext.connectorSourceIdBySlug,
+      mcpFirewallAuthBySlug:
+        args.storedConnectorMetadataContext.mcpFirewallAuthBySlug,
       customConnectorFirewalls: args.customConnectorContext.firewalls,
       customConnectorPermissionPolicies:
         args.customConnectorContext.permissionPolicies,
@@ -10001,7 +10061,9 @@ function agentRunResolutionOptions(
   args: CreateAgentRunArgs,
 ): Pick<
   ResolveAgentExecutionOptions,
-  "productAgentExecutionPlan" | "testOnlyResolveDirectRun"
+  | "productAgentExecutionPlan"
+  | "testOnlyResolveDirectRun"
+  | "preloadedAgentExecutionObservation"
 > {
   const productAgentExecutionPlan = args.productAgentExecutionPlan;
   const testOnlyResolveDirectRun = args.testOnlyResolveDirectRun;
@@ -10048,7 +10110,48 @@ function agentRunResolutionOptions(
   return {
     productAgentExecutionPlan,
     testOnlyResolveDirectRun,
+    preloadedAgentExecutionObservation: args.preloadedAgentExecutionObservation,
   };
+}
+
+export type RunContextParallelStage =
+  | "connector-contexts"
+  | "model-provider"
+  | "user-timezone"
+  | "media-models"
+  | "official-workflow";
+
+type RunContextParallelHook = (args: {
+  readonly stage: RunContextParallelStage;
+  readonly userId: string;
+  readonly orgId: string;
+}) => Promise<void>;
+
+const runContextParallelHook = testOverride<RunContextParallelHook | undefined>(
+  () => {
+    return undefined;
+  },
+);
+
+export function setRunContextParallelHookForTest(
+  hook: RunContextParallelHook,
+): void {
+  runContextParallelHook.set(hook);
+}
+
+export function clearRunContextParallelHookForTest(): void {
+  runContextParallelHook.clear();
+}
+
+function observeRunContextParallelStage(
+  stage: RunContextParallelStage,
+  args: Pick<CreateAgentRunArgs, "userId" | "orgId">,
+): Promise<void> | undefined {
+  return runContextParallelHook.get()?.({
+    stage,
+    userId: args.userId,
+    orgId: args.orgId,
+  });
 }
 
 function prepareRunBodyContext(
@@ -10058,7 +10161,6 @@ function prepareRunBodyContext(
     readonly preloadedFeatureSwitchContext: FeatureSwitchContext | undefined;
     readonly timing: ApiDispatchTimingCollector;
     readonly initialBody: CreateRunBody;
-    readonly deferPersistedSecrets?: boolean;
   },
   signal: AbortSignal,
 ): Computed<Promise<PreparedRunBodyContext | CreateRunErrorResult>> {
@@ -10119,14 +10221,6 @@ function prepareRunBodyContext(
       "api_dispatch_prepare_context_build_resolved_body",
       "nested",
       async () => {
-        if (args.deferPersistedSecrets) {
-          return buildDeferredPiRunBody({
-            initialBody: args.initialBody,
-            resolved,
-            persistedEnvironment,
-            canonicalOkouRuntime,
-          });
-        }
         return await buildResolvedRunBody(
           {
             initialBody: args.initialBody,
@@ -10187,6 +10281,13 @@ async function prepareRunConnectorContexts(
 ): Promise<
   Awaited<ReturnType<typeof loadRunConnectorContexts>> | CreateRunErrorResult
 > {
+  const testHold = observeRunContextParallelStage(
+    "connector-contexts",
+    args.createArgs,
+  );
+  if (testHold) {
+    await testHold;
+  }
   const result = await settle(
     args.timing.measure(
       "api_dispatch_prepare_context_load_connector_contexts",
@@ -10275,6 +10376,13 @@ async function resolvePreparedRunModelProvider(
 ): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const { resolved, requestedFramework, featureSwitchContext } =
     args.bodyContext;
+  const testHold = observeRunContextParallelStage(
+    "model-provider",
+    args.createArgs,
+  );
+  if (testHold) {
+    await testHold;
+  }
   return await args.timing.measure(
     "api_dispatch_prepare_context_resolve_model_provider",
     "nested",
@@ -10360,6 +10468,116 @@ async function materializeResolvedPiProvider(
   return materializedProvider.value;
 }
 
+type SettledPreparedModelProvider = PromiseSettledResult<
+  Awaited<ReturnType<typeof resolvePreparedRunModelProvider>>
+>;
+
+async function settlePreparedRunModelProvider(
+  args: Parameters<typeof resolvePreparedRunModelProvider>[0],
+  signal: AbortSignal,
+): Promise<SettledPreparedModelProvider> {
+  const [result] = await Promise.allSettled([
+    resolvePreparedRunModelProvider(args, signal),
+  ]);
+  return result;
+}
+
+async function resolvePreparedConnectorSelections(
+  args: {
+    readonly db: Db;
+    readonly createArgs: CreateAgentRunArgs;
+    readonly connectorScope: EffectiveConnectorScope;
+    readonly preloadedConnectorCatalogSnapshot?: ConnectorRuntimeSelection;
+    readonly timing: ApiDispatchTimingCollector;
+  },
+  modelProviderResolution: Promise<SettledPreparedModelProvider>,
+  signal: AbortSignal,
+): Promise<
+  | CreateRunErrorResult
+  | {
+      readonly connectorCatalogSelection: RunConnectorCatalogSelection;
+      readonly threadConnectorSelectionIds:
+        | ThreadConnectorSelectionIds
+        | undefined;
+    }
+> {
+  const [connectorCatalogSelectionResult, threadConnectorSelectionIdsResult] =
+    await Promise.allSettled([
+      connectorCatalogSelectionForRun({
+        ...args,
+        orgId: args.createArgs.orgId,
+      }),
+      args.timing.measure(
+        "api_dispatch_prepare_context_resolve_thread_connector_selections",
+        "nested",
+        () => {
+          return resolvePreparedThreadConnectorSelections(
+            {
+              db: args.db,
+              createArgs: args.createArgs,
+              connectorScope: args.connectorScope,
+            },
+            signal,
+          );
+        },
+      ),
+    ]);
+  if (connectorCatalogSelectionResult.status === "rejected") {
+    await modelProviderResolution;
+    throw connectorCatalogSelectionResult.reason;
+  }
+  if (signal.aborted) {
+    await modelProviderResolution;
+    signal.throwIfAborted();
+  }
+  if (threadConnectorSelectionIdsResult.status === "rejected") {
+    await modelProviderResolution;
+    throw threadConnectorSelectionIdsResult.reason;
+  }
+  const threadConnectorSelectionIds = threadConnectorSelectionIdsResult.value;
+  if (isRouteError(threadConnectorSelectionIds)) {
+    await modelProviderResolution;
+    return threadConnectorSelectionIds;
+  }
+  return {
+    connectorCatalogSelection: connectorCatalogSelectionResult.value,
+    threadConnectorSelectionIds,
+  };
+}
+
+async function joinPreparedRunRuntimeBranches(
+  modelProviderPromise: ReturnType<typeof materializeResolvedPiProvider>,
+  connectorContextsPromise: ReturnType<typeof prepareRunConnectorContexts>,
+  signal: AbortSignal,
+): Promise<
+  | CreateRunErrorResult
+  | {
+      readonly modelProvider: ResolvedModelProviderEnvironment | null;
+      readonly connectorContexts: Awaited<
+        ReturnType<typeof loadRunConnectorContexts>
+      >;
+    }
+> {
+  const [modelProviderResult, connectorContextsResult] =
+    await Promise.allSettled([modelProviderPromise, connectorContextsPromise]);
+  if (modelProviderResult.status === "rejected") {
+    throw modelProviderResult.reason;
+  }
+  const modelProvider = modelProviderResult.value;
+  if (isRouteError(modelProvider)) {
+    return modelProvider;
+  }
+  if (connectorContextsResult.status === "rejected") {
+    throw connectorContextsResult.reason;
+  }
+  const connectorContexts = connectorContextsResult.value;
+  if (isRouteError(connectorContexts)) {
+    return connectorContexts;
+  }
+  signal.throwIfAborted();
+  return { modelProvider, connectorContexts };
+}
+
 async function prepareRunRuntimeContext(
   args: {
     readonly db: Db;
@@ -10373,43 +10591,17 @@ async function prepareRunRuntimeContext(
 ): Promise<PreparedRuntimeContext | CreateRunErrorResult> {
   const { body, resolved, requestedFramework, featureSwitchContext } =
     args.bodyContext;
-  const [
-    connectorCatalogSelectionResult,
-    threadConnectorSelectionIdsResult,
-    modelProviderResult,
-  ] = await Promise.allSettled([
-    connectorCatalogSelectionForRun({
-      ...args,
-      orgId: args.createArgs.orgId,
-    }),
-    args.timing.measure(
-      "api_dispatch_prepare_context_resolve_thread_connector_selections",
-      "nested",
-      () => {
-        return resolvePreparedThreadConnectorSelections(
-          {
-            db: args.db,
-            createArgs: args.createArgs,
-            connectorScope: args.connectorScope,
-          },
-          signal,
-        );
-      },
-    ),
-    resolvePreparedRunModelProvider(args, signal),
-  ]);
-  if (connectorCatalogSelectionResult.status === "rejected") {
-    throw connectorCatalogSelectionResult.reason;
+  const modelProviderResolution = settlePreparedRunModelProvider(args, signal);
+  const connectorSelections = await resolvePreparedConnectorSelections(
+    args,
+    modelProviderResolution,
+    signal,
+  );
+  if (isRouteError(connectorSelections)) {
+    return connectorSelections;
   }
-  const connectorCatalogSelection = connectorCatalogSelectionResult.value;
-  signal.throwIfAborted();
-  if (threadConnectorSelectionIdsResult.status === "rejected") {
-    throw threadConnectorSelectionIdsResult.reason;
-  }
-  const threadConnectorSelectionIds = threadConnectorSelectionIdsResult.value;
-  if (isRouteError(threadConnectorSelectionIds)) {
-    return threadConnectorSelectionIds;
-  }
+  const { connectorCatalogSelection, threadConnectorSelectionIds } =
+    connectorSelections;
   const connectorScope =
     connectorCatalogSelection.kind === "scoped"
       ? connectorScopeForRuntimeSnapshot(
@@ -10417,18 +10609,7 @@ async function prepareRunRuntimeContext(
           connectorCatalogSelection.selection,
         )
       : args.connectorScope;
-  const modelProvider = await materializeResolvedPiProvider(
-    args.createArgs,
-    modelProviderResult,
-    signal,
-  );
-  if (isRouteError(modelProvider)) {
-    return modelProvider;
-  }
-  const framework = modelProvider
-    ? modelProviderFramework(modelProvider)
-    : requestedFramework;
-  const connectorContexts = await prepareRunConnectorContexts(
+  const connectorContextsPromise = prepareRunConnectorContexts(
     {
       ...args,
       connectorScope,
@@ -10438,15 +10619,34 @@ async function prepareRunRuntimeContext(
     },
     signal,
   );
-  if (isRouteError(connectorContexts)) {
-    return connectorContexts;
+  const modelProviderPromise = (async () => {
+    const modelProviderResult = await modelProviderResolution;
+    return await materializeResolvedPiProvider(
+      args.createArgs,
+      modelProviderResult,
+      signal,
+    );
+  })();
+  // Provider resolution keeps its historical error precedence, while connector
+  // metadata is independently owned and always settled before either result is
+  // surfaced.
+  const runtimeBranches = await joinPreparedRunRuntimeBranches(
+    modelProviderPromise,
+    connectorContextsPromise,
+    signal,
+  );
+  if (isRouteError(runtimeBranches)) {
+    return runtimeBranches;
   }
+  const { modelProvider, connectorContexts } = runtimeBranches;
+  const framework = modelProvider
+    ? modelProviderFramework(modelProvider)
+    : requestedFramework;
   const {
     storedConnectorSnapshot,
     storedConnectorMetadataContext,
     customConnectorContext,
   } = connectorContexts;
-  signal.throwIfAborted();
   const preparedConnectorContext = await materializePreparedConnectorContext({
     db: args.db,
     connectorScope,
@@ -10664,259 +10864,6 @@ interface PrepareRunContextInput {
     | undefined;
 }
 
-function shouldPrepareDurablePiInference(
-  input: PrepareRunContextInput,
-): boolean {
-  return (
-    input.args.piExecution === true &&
-    input.args.chatThreadId !== undefined &&
-    input.args.body.triggerSource !== "goal" &&
-    input.args.piMemoryPhase2Maintenance === undefined &&
-    input.args.productAgentExecutionPlan?.identity === "agent" &&
-    input.preloadedFeatureSwitchContext !== undefined &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PiDeferredSandbox,
-      input.preloadedFeatureSwitchContext,
-    )
-  );
-}
-
-function finalizeDurablePiRunContext(
-  input: PrepareRunContextInput,
-  selection: {
-    readonly bodyContext: PreparedRunBodyContext;
-    readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-    readonly threadConnectorSelectionIds:
-      | ThreadConnectorSelectionIds
-      | undefined;
-    readonly modelProvider: ResolvedModelProviderEnvironment;
-    readonly piSandbox: PiModelConfig;
-  },
-  signal: AbortSignal,
-): Computed<Promise<PreparedRunContext | CreateRunErrorResult>> {
-  return computed(async (get) => {
-    const {
-      bodyContext,
-      connectorCatalogSelection,
-      threadConnectorSelectionIds,
-      modelProvider,
-      piSandbox,
-    } = selection;
-    const framework = modelProviderFramework(modelProvider);
-    const connectorScope =
-      connectorCatalogSelection.kind === "scoped"
-        ? connectorScopeForRuntimeSnapshot(
-            bodyContext.connectorScope,
-            connectorCatalogSelection.selection,
-          )
-        : bodyContext.connectorScope;
-    const connectorContexts = await prepareRunConnectorContexts(
-      {
-        db: input.db,
-        createArgs: input.args,
-        connectorScope,
-        threadConnectorSelectionIds,
-        featureSwitchContext: bodyContext.featureSwitchContext,
-        connectorCatalogSelection,
-        timing: input.timing,
-      },
-      signal,
-    );
-    if (isRouteError(connectorContexts)) {
-      return connectorContexts;
-    }
-    signal.throwIfAborted();
-    const permissionManifest = await buildPreparedPermissionManifest({
-      connectorCatalogSelection,
-      body: bodyContext.body,
-      modelProvider,
-      storedConnectorMetadataContext:
-        connectorContexts.storedConnectorMetadataContext,
-      customConnectorContext: connectorContexts.customConnectorContext,
-      timing: input.timing,
-    });
-    if (isRouteError(permissionManifest)) {
-      return permissionManifest;
-    }
-    const modelUsageContext = prepareModelUsageContext({
-      modelProvider,
-      permissionManifest,
-    });
-    if (isRouteError(modelUsageContext)) {
-      return modelUsageContext;
-    }
-    const resolved = resolveCompatibleDirectResumeSession({
-      resolved: bodyContext.resolved,
-      next: {
-        selectedModel: modelProvider.selectedModel ?? null,
-        cliAgentType: "pi",
-      },
-    });
-    const [userTimezone, mediaModels, officialWorkflowRun] = await Promise.all([
-      resolvePreparedUserTimezone(input),
-      resolvePreparedMediaModels(input.db, input.args, signal),
-      resolvePreparedOfficialWorkflowRun(
-        input.db,
-        input.args,
-        framework,
-        piSandbox,
-        signal,
-      ),
-    ]);
-    signal.throwIfAborted();
-    if (isRouteError(officialWorkflowRun)) {
-      return officialWorkflowRun;
-    }
-    const outputMetadata = prepareRunOutputMetadata({
-      createArgs: input.args,
-      systemSkillStorageResolution: get(systemSkillStorageResolution$),
-      connectorScope,
-      connectorCatalogSelection,
-      customConnectorContext: connectorContexts.customConnectorContext,
-      framework,
-      piSandbox,
-      featureSwitchContext: bodyContext.featureSwitchContext,
-      body: bodyContext.body,
-      resolved,
-      officialWorkflowRun,
-    });
-    return {
-      body: bodyContext.body,
-      resolved,
-      framework,
-      piSandbox,
-      modelProvider,
-      connectorContext: connectorContexts.storedConnectorMetadataContext,
-      customConnectorContext: connectorContexts.customConnectorContext,
-      permissionManifest,
-      billableFirewalls: modelUsageContext.billableFirewalls,
-      modelUsageProvider: modelUsageContext.modelUsageProvider,
-      connectorScope,
-      artifacts: outputMetadata.artifacts,
-      additionalVolumes: outputMetadata.additionalVolumes,
-      additionalVolumeSources: outputMetadata.additionalVolumeSources,
-      officialWorkflowRun,
-      userTimezone,
-      featureSwitchContext: bodyContext.featureSwitchContext,
-      selectedVideoModel: mediaModels.selectedVideoModel,
-      selectedImageModel: mediaModels.selectedImageModel,
-      imageRecognitionAvailable: isImageRecognitionAvailableForRun({
-        includeOkouTokenSecret: input.args.includeOkouTokenSecret,
-        selectedModel:
-          modelProvider.selectedModel ?? input.args.selectedModelOverride,
-        providerType: modelProvider.concreteType ?? modelProvider.type,
-      }),
-    };
-  });
-}
-
-function prepareDurablePiRunContext(
-  input: PrepareRunContextInput,
-  signal: AbortSignal,
-): Computed<Promise<PreparedRunContext | CreateRunErrorResult | null>> {
-  return computed(async (get) => {
-    if (!shouldPrepareDurablePiInference(input)) {
-      return null;
-    }
-    const initialBody = initialRunBody(input.args);
-    const captureGate = enforceCaptureNetworkBodiesGate(
-      input.args.orgId,
-      initialBody.captureNetworkBodies,
-    );
-    if (captureGate) {
-      return captureGate;
-    }
-    const bodyContext = await get(
-      prepareRunBodyContext(
-        {
-          db: input.db,
-          createArgs: input.args,
-          preloadedFeatureSwitchContext: input.preloadedFeatureSwitchContext,
-          timing: input.timing,
-          initialBody,
-          deferPersistedSecrets: true,
-        },
-        signal,
-      ),
-    );
-    if (isRouteError(bodyContext)) {
-      return bodyContext;
-    }
-    const [catalogResult, threadSelectionResult, providerResult] =
-      await Promise.allSettled([
-        connectorCatalogSelectionForRun({
-          db: input.db,
-          orgId: input.args.orgId,
-          preloadedConnectorCatalogSnapshot:
-            input.preloadedConnectorCatalogSnapshot,
-          connectorScope: bodyContext.connectorScope,
-          timing: input.timing,
-        }),
-        resolvePreparedThreadConnectorSelections(
-          {
-            db: input.db,
-            createArgs: input.args,
-            connectorScope: bodyContext.connectorScope,
-          },
-          signal,
-        ),
-        resolvePreparedRunModelProvider(
-          {
-            db: input.db,
-            createArgs: input.args,
-            timing: input.timing,
-            bodyContext,
-          },
-          signal,
-        ),
-      ]);
-    signal.throwIfAborted();
-    if (catalogResult.status === "rejected") {
-      throw catalogResult.reason;
-    }
-    if (threadSelectionResult.status === "rejected") {
-      throw threadSelectionResult.reason;
-    }
-    if (isRouteError(threadSelectionResult.value)) {
-      return threadSelectionResult.value;
-    }
-    const modelProvider = await materializeResolvedPiProvider(
-      input.args,
-      providerResult,
-      signal,
-    );
-    if (isRouteError(modelProvider)) {
-      return modelProvider;
-    }
-    if (!modelProvider) {
-      return null;
-    }
-    const piSandbox = resolvePreparedPiModelConfig({
-      createArgs: input.args,
-      modelProvider,
-    });
-    if (!piSandbox) {
-      return null;
-    }
-    assertNativeCredentialOverrides(modelProvider, bodyContext.body.secrets);
-    // Full connector secret and environment materialization remains behind
-    // actual Sandbox demand; this early path captures metadata only.
-    return await get(
-      finalizeDurablePiRunContext(
-        input,
-        {
-          bodyContext,
-          connectorCatalogSelection: catalogResult.value,
-          threadConnectorSelectionIds: threadSelectionResult.value,
-          modelProvider,
-          piSandbox,
-        },
-        signal,
-      ),
-    );
-  });
-}
-
 function prepareRunContexts(
   input: PrepareRunContextInput,
   initialBody: CreateRunBody,
@@ -10982,6 +10929,10 @@ async function resolvePreparedOfficialWorkflowRun(
   piSandbox: PiModelConfig | undefined,
   signal: AbortSignal,
 ): Promise<OfficialWorkflowRunObservation | CreateRunErrorResult | undefined> {
+  const testHold = observeRunContextParallelStage("official-workflow", args);
+  if (testHold) {
+    await testHold;
+  }
   const candidates = safeSync(() => {
     return officialWorkflowRunCandidates(
       args.injectSkillVolumes?.workflows ?? [],
@@ -11015,6 +10966,10 @@ async function resolvePreparedMediaModels(
   args: CreateAgentRunArgs,
   signal: AbortSignal,
 ) {
+  const testHold = observeRunContextParallelStage("media-models", args);
+  if (testHold) {
+    await testHold;
+  }
   const models = await resolveMediaModelsForRun({
     db,
     orgId: args.orgId,
@@ -11025,11 +10980,74 @@ async function resolvePreparedMediaModels(
   return models;
 }
 
+async function prepareRunIndependentObservations(
+  input: PrepareRunContextInput,
+  framework: SupportedFramework,
+  piSandbox: PiModelConfig | undefined,
+  signal: AbortSignal,
+) {
+  // Preserve the historical timezone -> cancellation -> media -> workflow
+  // precedence while settling every branch started under this request owner.
+  const [userTimezoneResult, mediaModelsResult, officialWorkflowRunResult] =
+    await Promise.allSettled([
+      resolvePreparedUserTimezone(input),
+      resolvePreparedMediaModels(input.db, input.args, signal),
+      resolvePreparedOfficialWorkflowRun(
+        input.db,
+        input.args,
+        framework,
+        piSandbox,
+        signal,
+      ),
+    ]);
+  if (userTimezoneResult.status === "rejected") {
+    throw userTimezoneResult.reason;
+  }
+  signal.throwIfAborted();
+  if (mediaModelsResult.status === "rejected") {
+    throw mediaModelsResult.reason;
+  }
+  if (officialWorkflowRunResult.status === "rejected") {
+    throw officialWorkflowRunResult.reason;
+  }
+  signal.throwIfAborted();
+  return {
+    userTimezone: userTimezoneResult.value,
+    mediaModels: mediaModelsResult.value,
+    officialWorkflowRun: officialWorkflowRunResult.value,
+  };
+}
+
+async function joinRunValidationAndObservations(
+  validationPromise: Promise<CreateRunErrorResult | null | undefined>,
+  observationsPromise: ReturnType<typeof prepareRunIndependentObservations>,
+  signal: AbortSignal,
+): Promise<
+  | CreateRunErrorResult
+  | Awaited<ReturnType<typeof prepareRunIndependentObservations>>
+> {
+  const [validationResult, observationsResult] = await Promise.allSettled([
+    validationPromise,
+    observationsPromise,
+  ]);
+  if (validationResult.status === "rejected") {
+    throw validationResult.reason;
+  }
+  if (validationResult.value) {
+    return validationResult.value;
+  }
+  if (observationsResult.status === "rejected") {
+    throw observationsResult.reason;
+  }
+  signal.throwIfAborted();
+  return observationsResult.value;
+}
+
 function prepareRunContext(
   input: PrepareRunContextInput,
   signal: AbortSignal,
 ): Computed<Promise<PreparedRunContext | CreateRunErrorResult>> {
-  const { db, args, timing } = input;
+  const { args, timing } = input;
   return computed(
     async (get): Promise<PreparedRunContext | CreateRunErrorResult> => {
       const initialBody = initialRunBody(args);
@@ -11061,41 +11079,40 @@ function prepareRunContext(
         },
       });
 
-      const validation = await timing.measure(
-        "api_dispatch_prepare_context_validate_environment",
-        "nested",
-        async () => {
-          return await Promise.resolve(
-            validateRunEnvironmentReferences({
-              resolved,
-              body,
-              modelProvider: runtimeContext.modelProvider,
-              connectorContext: runtimeContext.connectorContext,
-              customConnectorContext: runtimeContext.customConnectorContext,
-              permissionManifest: runtimeContext.permissionManifest,
-              validateEnvironmentReferences: args.validateEnvironmentReferences,
-            }),
-          );
-        },
-      );
-      if (validation) {
-        return validation;
-      }
-
-      const userTimezone = await resolvePreparedUserTimezone(input);
-      signal.throwIfAborted();
-
-      const { selectedVideoModel, selectedImageModel } =
-        await resolvePreparedMediaModels(db, args, signal);
-
-      const officialWorkflowRun = await resolvePreparedOfficialWorkflowRun(
-        db,
-        args,
+      const observationsPromise = prepareRunIndependentObservations(
+        input,
         runtimeContext.framework,
         piSandbox,
         signal,
       );
-      signal.throwIfAborted();
+      const validationAndObservations = await joinRunValidationAndObservations(
+        timing.measure(
+          "api_dispatch_prepare_context_validate_environment",
+          "nested",
+          async () => {
+            return await Promise.resolve(
+              validateRunEnvironmentReferences({
+                resolved,
+                body,
+                modelProvider: runtimeContext.modelProvider,
+                connectorContext: runtimeContext.connectorContext,
+                customConnectorContext: runtimeContext.customConnectorContext,
+                permissionManifest: runtimeContext.permissionManifest,
+                validateEnvironmentReferences:
+                  args.validateEnvironmentReferences,
+              }),
+            );
+          },
+        ),
+        observationsPromise,
+        signal,
+      );
+      if (isRouteError(validationAndObservations)) {
+        return validationAndObservations;
+      }
+      const { userTimezone, mediaModels, officialWorkflowRun } =
+        validationAndObservations;
+      const { selectedVideoModel, selectedImageModel } = mediaModels;
       if (isRouteError(officialWorkflowRun)) {
         return officialWorkflowRun;
       }
@@ -11238,7 +11255,6 @@ function committedAtomicLaunchResponse(args: {
     !args.committed.runnerJobPayload.executionContext.piLaunchConfig.maintenance
       ? {
           piApiFirstTurn: {
-            executionMode: "legacy-sandbox-race",
             runId: args.committed.run.id,
             runnerGroup: args.committed.runnerJobPayload.runnerGroup,
             userId: args.createArgs.userId,
@@ -11305,426 +11321,6 @@ interface AtomicLaunchRunInput {
   readonly phaseTiming: ApiDispatchPhaseCollector;
 }
 
-interface DurablePiH0Capture {
-  readonly baseSession: PiApiFirstTurnConfig["baseSession"];
-  readonly h0SessionHistory: string;
-  readonly inputH0:
-    | { readonly kind: "empty" }
-    | {
-        readonly kind: "history";
-        readonly conversationId: string;
-        readonly historyHash: string;
-      };
-  readonly sourceConversationId: string | null;
-}
-
-interface CapturedDurablePiInference {
-  readonly appendSystemPrompt: string | null;
-  readonly callbackRows: readonly AgentRunCallbackInsert[];
-  readonly configuration: PiDeferredConfiguration;
-  readonly context: z.infer<typeof piDeferredContextSchema>;
-  readonly h0: DurablePiH0Capture;
-  readonly identity: LaunchRunIdentity;
-  readonly persistedStorageMounts: readonly PersistedStorageMount[];
-}
-
-interface PublishedDurablePiInference {
-  readonly configurationHash: string;
-  readonly contextHash: string;
-  readonly deferredSecretEnvelope: z.infer<typeof piDeferredSecretsSchema>;
-  readonly deferredSecrets: PiInferenceInput["deferredSecrets"];
-  readonly encryptedModelSecrets: string | null;
-  readonly platformEnvironment: Readonly<Record<string, string>>;
-}
-
-interface PreparedDurablePiInference {
-  readonly activation: Extract<
-    PiApiFirstTurnActivation,
-    { readonly executionMode: "durable-inference" }
-  >;
-  readonly callbackRows: readonly AgentRunCallbackInsert[];
-  readonly configuration: PiDeferredConfiguration;
-  readonly configurationHash: string;
-  readonly context: z.infer<typeof piDeferredContextSchema>;
-  readonly contextHash: string;
-  readonly deferredSecrets: PiInferenceInput["deferredSecrets"];
-  readonly identity: LaunchRunIdentity;
-  readonly inputH0: DurablePiH0Capture["inputH0"];
-  readonly persistedStorageMounts: readonly PersistedStorageMount[];
-  readonly sessionStorageMounts: readonly PersistedStorageMount[];
-  readonly sourceConversationId: string | null;
-  readonly publication: PublishedDurablePiInference;
-}
-
-type DurablePiInferenceCommit =
-  | {
-      readonly kind: "committed";
-      readonly run: RunRecord;
-      readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
-      readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
-    }
-  | QueueFirstRunClaimLost
-  | ThreadSessionSnapshotStale
-  | CreateRunErrorResult;
-
-function isDurablePiInferenceEligible(input: AtomicLaunchRunInput): boolean {
-  return (
-    isFeatureEnabled(
-      FeatureSwitchKey.PiDeferredSandbox,
-      input.context.featureSwitchContext,
-    ) &&
-    input.context.piSandbox !== undefined &&
-    input.args.chatThreadId !== undefined &&
-    input.context.body.triggerSource !== "goal" &&
-    input.args.piMemoryPhase2Maintenance === undefined &&
-    input.args.productAgentExecutionPlan?.identity === "agent"
-  );
-}
-
-async function decodeDurablePiHistory(args: {
-  readonly encoded: Buffer;
-  readonly encoding: string;
-  readonly key: string;
-}): Promise<Buffer> {
-  switch (args.encoding) {
-    case SESSION_HISTORY_ENCODING_GZIP: {
-      return await gunzipSessionHistoryBufferWithMaxBytes(
-        args.key,
-        args.encoded,
-        PI_API_FIRST_TURN_SESSION_MAX_BYTES,
-      );
-    }
-    case SESSION_HISTORY_ENCODING_ZSTD: {
-      return await unzstdSessionHistoryBufferWithMaxBytes(
-        args.key,
-        args.encoded,
-        PI_API_FIRST_TURN_SESSION_MAX_BYTES,
-      );
-    }
-    case SESSION_HISTORY_ENCODING_IDENTITY: {
-      return args.encoded;
-    }
-    default: {
-      throw new Error("Durable Pi H0 uses an unsupported encoding");
-    }
-  }
-}
-
-function captureDurablePiH0(
-  db: Db,
-  args: {
-    readonly apiStartTime: number;
-    readonly chatThreadId: string;
-    readonly agentSessionId: string;
-  },
-  signal: AbortSignal,
-): Computed<Promise<DurablePiH0Capture | null>> {
-  return computed(async (get) => {
-    const [snapshot] = await db
-      .select({
-        conversationId: conversations.id,
-        runId: conversations.runId,
-        cliAgentSessionId: conversations.cliAgentSessionId,
-        cliAgentSessionHistory: conversations.cliAgentSessionHistory,
-        cliAgentSessionHistoryHash: conversations.cliAgentSessionHistoryHash,
-        sessionHistoryBlobEncoding: blobs.encoding,
-        rawSize: blobs.rawSize,
-        encodedSize: blobs.encodedSize,
-      })
-      .from(conversations)
-      .innerJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-      .leftJoin(blobs, eq(conversations.cliAgentSessionHistoryHash, blobs.hash))
-      .where(
-        and(
-          eq(agentRuns.chatThreadId, args.chatThreadId),
-          eq(agentRuns.sessionId, args.agentSessionId),
-          eq(agentRuns.status, "completed"),
-          isNotNull(agentRuns.triggerSource),
-          eq(conversations.cliAgentType, "pi"),
-          eq(conversations.cliAgentSessionId, args.chatThreadId),
-          or(
-            isNotNull(conversations.cliAgentSessionHistoryHash),
-            isNotNull(conversations.cliAgentSessionHistory),
-          ),
-        ),
-      )
-      .orderBy(desc(conversations.createdAt))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!snapshot) {
-      const h0SessionHistory = createPiSessionJsonl({
-        cwd: CANONICAL_WORKING_DIR,
-        sessionId: args.chatThreadId,
-        timestamp: new Date(args.apiStartTime).toISOString(),
-      });
-      return {
-        baseSession: { sessionId: args.chatThreadId, sha256: null },
-        h0SessionHistory,
-        inputH0: { kind: "empty" as const },
-        sourceConversationId: null,
-      };
-    }
-    const historyHash = snapshot.cliAgentSessionHistoryHash;
-    // Historical inline checkpoints have no normalized retention edge. They
-    // remain on the compatible legacy launch path rather than being rewritten.
-    if (
-      !historyHash ||
-      !snapshot.rawSize ||
-      !snapshot.encodedSize ||
-      snapshot.rawSize > PI_API_FIRST_TURN_SESSION_MAX_BYTES ||
-      snapshot.encodedSize > PI_API_FIRST_TURN_SESSION_MAX_BYTES
-    ) {
-      return null;
-    }
-    const encoding = normalizeSessionHistoryBlobEncoding(
-      snapshot.sessionHistoryBlobEncoding,
-    );
-    const key = resumeSessionHistoryBlobKey(historyHash, encoding);
-    const encoded = await get(
-      downloadS3BufferWithMaxBytes(
-        env("R2_USER_STORAGES_BUCKET_NAME"),
-        key,
-        snapshot.encodedSize,
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (encoded.length !== snapshot.encodedSize) {
-      throw new Error("Durable Pi H0 encoded size mismatch");
-    }
-    const bytes = await decodeDurablePiHistory({ encoded, encoding, key });
-    if (
-      bytes.length !== snapshot.rawSize ||
-      createHash("sha256").update(bytes).digest("hex") !== historyHash
-    ) {
-      throw new Error("Durable Pi H0 failed its captured integrity check");
-    }
-    const h0SessionHistory = new TextDecoder("utf-8", { fatal: true }).decode(
-      bytes,
-    );
-    const inspection = inspectPiSessionJsonl(h0SessionHistory);
-    if (inspection.sessionId !== args.chatThreadId) {
-      throw new Error("Durable Pi H0 session identity mismatch");
-    }
-    return {
-      baseSession: { sessionId: args.chatThreadId, sha256: historyHash },
-      h0SessionHistory,
-      inputH0: {
-        kind: "history" as const,
-        conversationId: snapshot.conversationId,
-        historyHash,
-      },
-      sourceConversationId: snapshot.conversationId,
-    };
-  });
-}
-
-function deferredModelCredentialScope(
-  input: AtomicLaunchRunInput,
-): ModelProviderCredentialScope | null {
-  const pinned = input.args.agentRunModelPin?.modelProviderCredentialScope;
-  if (pinned !== undefined) {
-    return pinned;
-  }
-  switch (input.context.modelProvider?.credentialOwner) {
-    case "organization": {
-      return "org";
-    }
-    case "member": {
-      return "member";
-    }
-    default: {
-      return null;
-    }
-  }
-}
-
-async function captureDeferredGateway(
-  db: Db,
-  modelProviderId: string | null,
-  modelProviderType: string,
-) {
-  if (!modelProviderType.startsWith("custom-")) {
-    return undefined;
-  }
-  if (!modelProviderId) {
-    throw new Error("Custom Pi gateway capture is missing its surface");
-  }
-  const [row] = await db
-    .select({
-      connectionId: modelProviderConnections.id,
-      secretId: modelProviderConnections.secretId,
-      protocol: modelProviderSurfaces.protocol,
-      apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
-      authHeaderName: modelProviderSurfaces.authHeaderName,
-      authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
-      modelMappings: modelProviderSurfaces.modelMappings,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(eq(modelProviderSurfaces.id, modelProviderId))
-    .limit(1);
-  if (!row) {
-    throw new Error("Custom Pi gateway capture is unavailable");
-  }
-  return row;
-}
-
-function durablePiConfigurationOptions(
-  input: AtomicLaunchRunInput,
-  gateway: PiDeferredConfiguration["gateway"],
-) {
-  const modelProvider = input.context.modelProvider;
-  return {
-    ...(gateway ? { gateway } : {}),
-    ...(modelProvider?.builtInModelRuntimeRoute
-      ? { builtInModelRuntimeRoute: modelProvider.builtInModelRuntimeRoute }
-      : {}),
-    ...(input.args.codexServiceTier
-      ? { codexServiceTier: input.args.codexServiceTier }
-      : {}),
-    ...(input.args.okouTokenComputerUseHostId
-      ? { okouTokenComputerUseHostId: input.args.okouTokenComputerUseHostId }
-      : {}),
-    ...(input.args.okouTokenCloudBrowserEnabled === undefined
-      ? {}
-      : {
-          okouTokenCloudBrowserEnabled: input.args.okouTokenCloudBrowserEnabled,
-        }),
-    ...(input.args.injectSkillVolumes
-      ? { injectSkillVolumes: input.args.injectSkillVolumes }
-      : {}),
-    ...(input.args.requiredOfficialWorkflowIds
-      ? { requiredOfficialWorkflowIds: input.args.requiredOfficialWorkflowIds }
-      : {}),
-  };
-}
-
-function durablePiGatewayProtocol(
-  protocol: string,
-): "anthropic-messages" | "openai-responses" {
-  if (protocol === "anthropic-messages" || protocol === "openai-responses") {
-    return protocol;
-  }
-  throw new Error("Custom Pi gateway uses an unsupported protocol");
-}
-
-async function durablePiConfiguration(
-  db: Db,
-  input: AtomicLaunchRunInput,
-): Promise<PiDeferredConfiguration> {
-  const modelProvider = input.context.modelProvider;
-  const modelConfig = input.context.piSandbox;
-  const executionPlan = input.args.productAgentExecutionPlan;
-  if (!modelProvider || !modelConfig || executionPlan?.identity !== "agent") {
-    throw new Error("Durable Pi inference requires one captured model route");
-  }
-  const route = normalizePiExecutionRoute(modelConfig);
-  const modelProviderType = modelProvider.type;
-  const modelProviderId = modelProvider.id;
-  const gatewayRow = await captureDeferredGateway(
-    db,
-    modelProviderId,
-    modelProviderType,
-  );
-  const selectedModel = modelProvider.selectedModel;
-  if (!selectedModel) {
-    throw new Error("Durable Pi inference is missing its selected model");
-  }
-  const {
-    secrets: _secrets,
-    sessionId: _sessionId,
-    conversationId: _conversationId,
-    ...capturedBody
-  } = input.context.body;
-  const upstreamModel = gatewayRow?.modelMappings[selectedModel];
-  if (gatewayRow && !upstreamModel) {
-    throw new Error("Custom Pi gateway lost its selected model mapping");
-  }
-  const gateway =
-    gatewayRow && upstreamModel
-      ? {
-          connectionId: gatewayRow.connectionId,
-          secretId: gatewayRow.secretId,
-          protocol: durablePiGatewayProtocol(gatewayRow.protocol),
-          apiBaseUrl: gatewayRow.apiBaseUrl,
-          authHeaderName: gatewayRow.authHeaderName,
-          authHeaderTemplate: gatewayRow.authHeaderTemplate,
-          upstreamModel,
-        }
-      : undefined;
-  const options = durablePiConfigurationOptions(input, gateway);
-  return piDeferredConfigurationSchema.parse({
-    schemaVersion: 1,
-    resourceOwner: {
-      userId: input.context.resolved.ownerUserId,
-      orgId: input.context.resolved.orgId,
-    },
-    body: capturedBody,
-    productAgentExecutionPlan: executionPlan,
-    connectorScope: {
-      allowedConnectorSlugs: input.context.connectorScope.allowedConnectorSlugs,
-      allowedCustomConnectorIds:
-        input.context.connectorScope.allowedCustomConnectorIds,
-      ...(input.context.connectorScope.customConnectorGrants
-        ? {
-            customConnectorGrants:
-              input.context.connectorScope.customConnectorGrants,
-          }
-        : {}),
-      ...(input.context.connectorScope.source === "empty"
-        ? {}
-        : { source: input.context.connectorScope.source }),
-    },
-    modelProviderId,
-    modelProviderCredentialScope: deferredModelCredentialScope(input),
-    modelProviderType,
-    selectedModel,
-    modelConfig,
-    runtimeProvider: route.provider,
-    runtimeModel: route.model,
-    apiInferenceBilling: {
-      billableFirewalls: [...input.context.billableFirewalls],
-      ...(input.context.modelUsageProvider
-        ? { modelUsageProvider: input.context.modelUsageProvider }
-        : {}),
-    },
-    ...options,
-    reasoningEffort: input.args.agentRunMetadata?.reasoningEffort ?? null,
-    includeOkouTokenSecret: input.args.includeOkouTokenSecret === true,
-  });
-}
-
-async function captureDurablePiResource(
-  resource: Promise<{
-    readonly digest: string;
-    readonly snapshot: PiResourceSnapshot;
-    readonly prompt?: PiStableContextPromptProjection;
-  }>,
-  signal: AbortSignal,
-): Promise<{
-  readonly digest: string;
-  readonly snapshot: PiResourceSnapshot;
-  readonly prompt?: PiStableContextPromptProjection;
-} | null> {
-  const prepared = await settle(resource, signal);
-  signal.throwIfAborted();
-  if (prepared.ok) {
-    return prepared.value;
-  }
-  if (
-    prepared.error instanceof UnsupportedPiResourceError ||
-    prepared.error instanceof PiResourceSnapshotPreparationError
-  ) {
-    // Preserve the established pre-provider Sandbox-first recovery policy.
-    return null;
-  }
-  throw prepared.error;
-}
-
 function bindStableAppendSystemPrompt(
   prompt: PiStableContextPromptProjection,
   dynamicAppendSystemPrompt: string,
@@ -11740,943 +11336,6 @@ function bindStableAppendSystemPrompt(
     })
     .join("\n\n");
 }
-
-function bindPublishedStableAppendSystemPrompt(args: {
-  readonly publishedPrompt: PiStableContextPromptProjection;
-  readonly dynamicAppendSystemPrompt: string;
-  readonly finalAppendSystemPrompt: string | undefined;
-}): string {
-  const finalPrompt = args.finalAppendSystemPrompt ?? "";
-  if (!finalPrompt.startsWith(args.dynamicAppendSystemPrompt)) {
-    throw new Error("Pi stable prompt lost its canonical final binding");
-  }
-  return [bindStableAppendSystemPrompt(args.publishedPrompt, ""), finalPrompt]
-    .filter((part) => {
-      return Boolean(part);
-    })
-    .join("\n\n");
-}
-
-function bindDurablePiAppendSystemPrompt(
-  input: AtomicLaunchRunInput,
-  publishedPrompt: PiStableContextPromptProjection | undefined,
-): string | null {
-  const stableContext = input.args.piStableContext;
-  return publishedPrompt && stableContext
-    ? bindPublishedStableAppendSystemPrompt({
-        publishedPrompt,
-        dynamicAppendSystemPrompt: stableContext.dynamicAppendSystemPrompt,
-        finalAppendSystemPrompt: input.context.body.appendSystemPrompt,
-      })
-    : (input.context.body.appendSystemPrompt ?? null);
-}
-
-function prepareDurablePiResource(
-  args: {
-    readonly input: AtomicLaunchRunInput;
-    readonly storagePlan: ResolvedAgentRunStorage;
-    readonly persistedStorageMounts: readonly PersistedStorageMount[];
-    readonly memoryRecall: PiMemoryRecallSelection | undefined;
-    readonly runId: string;
-  },
-  signal: AbortSignal,
-) {
-  const stableContext = args.input.args.piStableContext;
-  const stableContextEligible =
-    stableContext !== undefined &&
-    (args.input.context.body.additionalVolumes?.length ?? 0) === 0 &&
-    !piResourceDiscoveryMounts(args.storagePlan.metadata.storageMounts).some(
-      (mount) => {
-        return mount.writeback === true;
-      },
-    );
-  return stableContext
-    ? preparePiStableContext(
-        {
-          db: args.input.db,
-          owner: stableContext.owner,
-          variantDigest: stableContext.variantDigest,
-          buildPrompt: stableContext.buildPrompt,
-          semantic: stableContext.semantic,
-          source: stableContext.source,
-          mounts: args.storagePlan.metadata.storageMounts,
-          persistedStorageMounts: args.persistedStorageMounts,
-          ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
-          eligible: stableContextEligible,
-          checkedAt: new Date(args.input.args.apiStartTime),
-          runId: args.runId,
-        },
-        signal,
-      )
-    : preparePiResourceSnapshot(
-        {
-          db: args.input.db,
-          mounts: args.storagePlan.metadata.storageMounts,
-          ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
-          runId: args.runId,
-        },
-        signal,
-      );
-}
-
-async function captureDurablePiMemoryRecall(
-  input: AtomicLaunchRunInput,
-  storagePlanPromise: Promise<ResolvedAgentRunStorage>,
-  signal: AbortSignal,
-): Promise<PiMemoryRecallSelection | undefined> {
-  const storagePlan = await storagePlanPromise;
-  signal.throwIfAborted();
-  return await resolvePiMemoryRecall(
-    {
-      db: input.db,
-      orgId: input.args.orgId,
-      userId: input.args.userId,
-      piMemoryEnabled: isFeatureEnabled(
-        FeatureSwitchKey.PiMemory,
-        input.context.featureSwitchContext,
-      ),
-      storageMounts: storagePlan.metadata.storageMounts,
-      persistedStorageMounts: storagePlan.metadata.persistedStorageMounts,
-      previousRunStorageMounts: input.context.resolved.previousRunStorageMounts,
-    },
-    signal,
-  );
-}
-
-function captureDurablePiInference(
-  input: AtomicLaunchRunInput,
-  signal: AbortSignal,
-): Computed<Promise<CapturedDurablePiInference | null>> {
-  return computed(async (get) => {
-    const chatThreadId = input.args.chatThreadId;
-    if (!input.context.piSandbox || !chatThreadId) {
-      return null;
-    }
-    assertCurrentPiCliArtifact();
-    const resolved = input.context.resolved;
-    const identity = prepareLaunchRunIdentity({ resolved });
-    const callbackRowsPromise = prepareRunCallbackRows({
-      runId: identity.runId,
-      callbacks: input.args.callbacks,
-      featureSwitchContext: input.context.featureSwitchContext,
-      timing: input.timing,
-    });
-    const storageStats = new StorageManifestBuildStats();
-    const storagePlanPromise = get(
-      resolveAgentRunStorage({
-        db: input.db,
-        content: input.context.resolved.content,
-        vars: input.context.body.vars,
-        agentOrgId: input.context.resolved.orgId,
-        runtimeOrgId: input.args.orgId,
-        userId: input.args.userId,
-        artifacts: input.context.artifacts,
-        volumeVersionOverrides: input.context.body.volumeVersions,
-        additionalVolumes: input.context.additionalVolumes,
-        additionalVolumeSources: input.context.additionalVolumeSources,
-        framework: "pi",
-        persistedStorageMounts: input.context.resolved.persistedStorageMounts,
-        timing: input.timing,
-        stats: storageStats,
-      }),
-    );
-    const h0Promise = get(
-      captureDurablePiH0(
-        input.db,
-        {
-          apiStartTime: input.args.apiStartTime,
-          chatThreadId,
-          agentSessionId: identity.sessionId,
-        },
-        signal,
-      ),
-    );
-    const memoryRecallPromise = captureDurablePiMemoryRecall(
-      input,
-      storagePlanPromise,
-      signal,
-    );
-    const [callbackRows, storagePlan, h0, memoryRecall, configuration] =
-      await Promise.all([
-        callbackRowsPromise,
-        storagePlanPromise,
-        h0Promise,
-        memoryRecallPromise,
-        durablePiConfiguration(input.db, input),
-      ]);
-    signal.throwIfAborted();
-    if (!h0) {
-      return null;
-    }
-    const persistedStorageMounts = withPiMemoryRecallEpoch(
-      storagePlan.metadata.persistedStorageMounts,
-      memoryRecall,
-    );
-    const resource = await captureDurablePiResource(
-      get(
-        prepareDurablePiResource(
-          {
-            input,
-            storagePlan,
-            persistedStorageMounts,
-            memoryRecall,
-            runId: identity.runId,
-          },
-          signal,
-        ),
-      ),
-      signal,
-    );
-    if (!resource) {
-      return null;
-    }
-    const storageMounts = piDeferredContextSchema.shape.storageMounts.safeParse(
-      persistedStorageMounts,
-    );
-    if (!storageMounts.success) {
-      // Historical Storage shapes remain fully supported by the legacy launch.
-      return null;
-    }
-    const context = piDeferredContextSchema.parse({
-      schemaVersion: 1,
-      baseSession: h0.baseSession,
-      resourceSnapshot: resource.snapshot,
-      resourceSnapshotDigest: resource.digest,
-      storageMounts: storageMounts.data,
-      ...(memoryRecall ? { memoryRecall } : {}),
-      h0SessionHistory: h0.h0SessionHistory,
-    });
-    const appendSystemPrompt = bindDurablePiAppendSystemPrompt(
-      input,
-      resource.prompt,
-    );
-    const boundConfiguration = piDeferredConfigurationSchema.parse({
-      ...configuration,
-      body:
-        appendSystemPrompt === null
-          ? configuration.body
-          : { ...configuration.body, appendSystemPrompt },
-    });
-    return {
-      appendSystemPrompt,
-      callbackRows,
-      configuration: boundConfiguration,
-      context,
-      h0,
-      identity,
-      persistedStorageMounts,
-    };
-  });
-}
-
-async function prepareDurablePiInferenceInputs(
-  input: AtomicLaunchRunInput,
-  captured: CapturedDurablePiInference,
-  signal: AbortSignal,
-): Promise<PublishedDurablePiInference> {
-  const provider = input.context.modelProvider;
-  if (!provider) {
-    throw new Error("Durable Pi inference lost its selected model provider");
-  }
-  const platformEnvironment =
-    piLangfuseExecutionEnvironment({
-      featureSwitchContext: input.context.featureSwitchContext,
-      includeOkouTokenSecret: input.args.includeOkouTokenSecret,
-      piSandbox: input.context.piSandbox,
-      userId: input.args.userId,
-    }).platformEnvironment ?? {};
-  const [deferredSecrets, encryptedModelSecrets, encryptedPlatformEnvironment] =
-    await Promise.all([
-      encryptPersistentSecretsMap(
-        input.context.body.secrets,
-        input.context.featureSwitchContext,
-      ),
-      encryptPersistentSecretsMap(
-        provider.secrets,
-        input.context.featureSwitchContext,
-      ),
-      encryptPersistentSecretsMap(
-        Object.keys(platformEnvironment).length > 0
-          ? platformEnvironment
-          : null,
-        input.context.featureSwitchContext,
-      ),
-    ]);
-  signal.throwIfAborted();
-  const deferredSecretEnvelope = piDeferredSecretsSchema.parse({
-    schemaVersion: 1,
-    ciphertext: deferredSecrets,
-    apiInference: {
-      encryptedModelSecrets,
-      encryptedPlatformEnvironment,
-      secretConnectorMap: provider.secretConnectorMap ?? null,
-      secretConnectorMetadataMap: provider.secretConnectorMetadataMap ?? null,
-    },
-  });
-  const owner = { userId: input.args.userId, orgId: input.args.orgId };
-  const configurationHash = piInferenceObjectHash(
-    owner,
-    "configuration",
-    piDeferredConfigurationSchema,
-    captured.configuration,
-  );
-  const contextHash = piInferenceObjectHash(
-    owner,
-    "context",
-    piDeferredContextSchema,
-    captured.context,
-  );
-  const secretsHash = piInferenceObjectHash(
-    owner,
-    "secrets",
-    piDeferredSecretsSchema,
-    deferredSecretEnvelope,
-  );
-  return {
-    configurationHash,
-    contextHash,
-    deferredSecretEnvelope,
-    deferredSecrets: {
-      kind: "encrypted",
-      objectHash: secretsHash,
-      expiresAt: new Date(
-        input.args.apiStartTime + 2 * 60 * 60 * 1000,
-      ).toISOString(),
-    },
-    encryptedModelSecrets,
-    platformEnvironment,
-  };
-}
-
-async function publishDurablePiInferenceInputs(
-  input: AtomicLaunchRunInput,
-  captured: Pick<CapturedDurablePiInference, "configuration" | "context">,
-  publication: PublishedDurablePiInference,
-  signal: AbortSignal,
-): Promise<void> {
-  const owner = { userId: input.args.userId, orgId: input.args.orgId };
-  const [configurationHash, contextHash, secretsHash] = await Promise.all([
-    publishPiInferenceObject(
-      input.db,
-      owner,
-      "configuration",
-      piDeferredConfigurationSchema,
-      captured.configuration,
-    ),
-    publishPiInferenceObject(
-      input.db,
-      owner,
-      "context",
-      piDeferredContextSchema,
-      captured.context,
-    ),
-    publishPiInferenceObject(
-      input.db,
-      owner,
-      "secrets",
-      piDeferredSecretsSchema,
-      publication.deferredSecretEnvelope,
-    ),
-  ]);
-  signal.throwIfAborted();
-  if (
-    configurationHash !== publication.configurationHash ||
-    contextHash !== publication.contextHash ||
-    publication.deferredSecrets.kind !== "encrypted" ||
-    secretsHash !== publication.deferredSecrets.objectHash
-  ) {
-    throw new Error("Durable Pi inference object identity changed");
-  }
-}
-
-function durablePiInferenceActivation(
-  input: AtomicLaunchRunInput,
-  captured: CapturedDurablePiInference,
-  published: PublishedDurablePiInference,
-): Extract<
-  PiApiFirstTurnActivation,
-  { readonly executionMode: "durable-inference" }
-> {
-  const provider = input.context.modelProvider;
-  const piModelConfig = input.context.piSandbox;
-  const chatThreadId = input.args.chatThreadId;
-  if (!provider || !piModelConfig || !chatThreadId) {
-    throw new Error("Durable Pi inference lost its captured runtime route");
-  }
-  const deadlineAt =
-    input.args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS;
-  const resourceSnapshotDigest = captured.context.resourceSnapshotDigest;
-  if (!resourceSnapshotDigest) {
-    throw new Error("Durable Pi inference lost its resource snapshot digest");
-  }
-  return {
-    executionMode: "durable-inference",
-    runId: captured.identity.runId,
-    userId: input.args.userId,
-    orgId: input.args.orgId,
-    prompt: input.context.body.prompt,
-    appendSystemPrompt: captured.appendSystemPrompt,
-    inference: {
-      ownerEpoch: 1,
-      providerAttemptId: randomUUID(),
-      configurationHash: published.configurationHash,
-      contextHash: published.contextHash,
-    },
-    executionContext: {
-      apiStartTime: input.args.apiStartTime,
-      billableFirewalls: [...input.context.billableFirewalls],
-      encryptedSecrets: published.encryptedModelSecrets,
-      modelUsageProvider: input.context.modelUsageProvider,
-      platformEnvironment: published.platformEnvironment,
-      secretConnectorMap: provider.secretConnectorMap ?? null,
-      secretConnectorMetadataMap: provider.secretConnectorMetadataMap ?? null,
-      piLaunchConfig: {
-        schemaVersion: 2,
-        ...(captured.context.memoryRecall
-          ? { memoryRecall: captured.context.memoryRecall }
-          : {}),
-        apiFirstTurn: {
-          schemaVersion: 1,
-          resourceSnapshotDigest,
-          deadlineAt,
-          baseSession: captured.h0.baseSession,
-          sandboxEventSequenceStart: 1,
-        },
-      },
-      piModelConfig,
-      piSessionId: chatThreadId,
-      resourceSnapshot: captured.context.resourceSnapshot,
-      h0SessionHistory: captured.h0.h0SessionHistory,
-    },
-  };
-}
-
-async function prepareDurablePiInferenceSubscription(
-  input: AtomicLaunchRunInput,
-  signal: AbortSignal,
-): Promise<PreparedPersonalSubscriptionAdmission | null> {
-  const modelProvider = input.context.modelProvider;
-  return modelProvider?.id &&
-    isPersonalSubscriptionProviderType(modelProvider.type) &&
-    modelProvider.credentialOwner === "member"
-    ? await preparePersonalSubscriptionAdmission(
-        {
-          db: input.db,
-          orgId: input.args.orgId,
-          userId: input.args.userId,
-          type: modelProvider.type,
-          sourceId: modelProvider.id,
-          featureSwitchContext: input.context.featureSwitchContext,
-          timing: input.timing,
-        },
-        signal,
-      )
-    : null;
-}
-
-function prepareDurablePiInference(
-  input: AtomicLaunchRunInput,
-  signal: AbortSignal,
-): Computed<Promise<PreparedDurablePiInference | null>> {
-  return computed(async (get) => {
-    const captured = await get(captureDurablePiInference(input, signal));
-    signal.throwIfAborted();
-    if (!captured) {
-      return null;
-    }
-    const publication = await prepareDurablePiInferenceInputs(
-      input,
-      captured,
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      activation: durablePiInferenceActivation(input, captured, publication),
-      callbackRows: captured.callbackRows,
-      configuration: captured.configuration,
-      configurationHash: publication.configurationHash,
-      context: captured.context,
-      contextHash: publication.contextHash,
-      deferredSecrets: publication.deferredSecrets,
-      identity: captured.identity,
-      inputH0: captured.h0.inputH0,
-      persistedStorageMounts: captured.persistedStorageMounts,
-      sessionStorageMounts: sessionStorageMountsForPersistence({
-        resolvedMounts: captured.persistedStorageMounts,
-        artifacts: input.context.artifacts,
-      }),
-      sourceConversationId: captured.h0.sourceConversationId,
-      publication,
-    };
-  });
-}
-
-async function validateDurablePiSubscription(
-  tx: Tx,
-  input: AtomicLaunchRunInput,
-  prepared: PreparedDurablePiInference,
-  args: {
-    readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
-    readonly subscriptionAdmission: PreparedPersonalSubscriptionAdmission | null;
-  },
-): Promise<string | null | CreateRunErrorResult> {
-  const provider = input.context.modelProvider;
-  if (
-    !provider ||
-    !isPersonalSubscriptionProviderType(provider.type) ||
-    provider.credentialOwner !== "member"
-  ) {
-    return null;
-  }
-  if (
-    !prepared.identity.shouldCreateSession &&
-    (!args.validatedThreadSession ||
-      input.args.threadSessionResolution?.expected.sessionId !==
-        prepared.identity.sessionId)
-  ) {
-    await tx
-      .select({ id: agentSessions.id })
-      .from(agentSessions)
-      .where(eq(agentSessions.id, prepared.identity.sessionId))
-      .for("key share");
-  }
-  const account = await validatePersonalSubscriptionAdmission(
-    {
-      db: tx,
-      orgId: input.args.orgId,
-      userId: input.args.userId,
-      type: provider.type,
-      sourceId: provider.id ?? undefined,
-      featureSwitchContext: input.context.featureSwitchContext,
-    },
-    args.subscriptionAdmission,
-  );
-  return account
-    ? personalSubscriptionAccountIdentity(account)
-    : conflict(
-        "The selected subscription account was disconnected. Reconnect it before starting another run.",
-      );
-}
-
-async function admitDurablePiInferenceProtection(
-  tx: Tx,
-  input: AtomicLaunchRunInput,
-  runtimeProvider: string,
-): Promise<CreateRunErrorResult | null> {
-  const providerLock = `pi_inference_provider:${runtimeProvider}`;
-  const orgLock = `pi_inference_org:${input.args.orgId}`;
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${providerLock}, 0))`,
-  );
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${orgLock}, 0))`,
-  );
-  const activePhases = ["admitted", "ready", "provider", "publishing"] as const;
-  // A local abort or usage observation does not prove the remote HTTP effect
-  // stopped. Retain terminal uncertainty for one bounded coordination window.
-  const uncertainReleaseCutoff = new Date(
-    now() - PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
-  );
-  const protectedOwnership = or(
-    inArray(agentRunInference.phase, activePhases),
-    and(
-      eq(agentRunInference.phase, "terminal"),
-      eq(agentRunInference.providerAttemptState, "may-have-started"),
-      gt(agentRunInference.deadlineAt, uncertainReleaseCutoff),
-    ),
-  );
-  const [[provider], [organization]] = await Promise.all([
-    tx
-      .select({ total: count() })
-      .from(agentRunInference)
-      .innerJoin(agentRuns, eq(agentRuns.id, agentRunInference.runId))
-      .where(
-        and(
-          eq(agentRuns.modelRuntimeProvider, runtimeProvider),
-          protectedOwnership,
-        ),
-      ),
-    tx
-      .select({ total: count() })
-      .from(agentRunInference)
-      .innerJoin(agentRuns, eq(agentRuns.id, agentRunInference.runId))
-      .where(and(eq(agentRuns.orgId, input.args.orgId), protectedOwnership)),
-  ]);
-  if (!provider || !organization) {
-    throw new Error("Pi inference protection aggregate is unavailable");
-  }
-  if (
-    Number(provider.total) >= env("PI_INFERENCE_PROVIDER_MAX_IN_FLIGHT") ||
-    Number(organization.total) >= env("PI_INFERENCE_ORG_MAX_IN_FLIGHT")
-  ) {
-    return piInferenceBusy();
-  }
-  return null;
-}
-
-interface DurablePiCommitAdmission {
-  readonly kind: "admitted";
-  readonly capturedAccount: string | null;
-  readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
-}
-
-type DurablePiAdmissionResult =
-  | DurablePiCommitAdmission
-  | Exclude<DurablePiInferenceCommit, { readonly kind: "committed" }>;
-
-async function rejectStaleDurablePiAdmission(
-  tx: Tx,
-  input: AtomicLaunchRunInput,
-  prepared: PreparedDurablePiInference,
-  stale: ThreadSessionSnapshotStale,
-): Promise<ThreadSessionSnapshotStale | QueueFirstRunClaimLost> {
-  const queueAdmission = await resolveQueueFirstAdmissionForLaunch({
-    tx,
-    createArgs: input.args,
-    sessionSnapshotState: stale.reason,
-    threadAlreadyLocked: true,
-    timing: input.timing,
-  });
-  if (!queueAdmission || queueAdmission.kind === "idle") {
-    return stale;
-  }
-  const lost = await claimQueueFirstAssociationForLaunch({
-    tx,
-    admission: queueAdmission,
-    createArgs: input.args,
-    identity: prepared.identity,
-    timing: input.timing,
-  });
-  if (lost?.kind !== "lost") {
-    throw new Error("Blocked durable Pi admission must lose its claim");
-  }
-  return { kind: "queue-first-claim-lost" };
-}
-
-async function validateDurablePiH0Source(
-  tx: Tx,
-  input: AtomicLaunchRunInput,
-  prepared: PreparedDurablePiInference,
-): Promise<CreateRunErrorResult | null> {
-  if (prepared.inputH0.kind === "empty") {
-    return prepared.sourceConversationId === null
-      ? null
-      : conflict("Run history changed during admission");
-  }
-  if (
-    prepared.sourceConversationId !== prepared.inputH0.conversationId ||
-    !input.args.chatThreadId
-  ) {
-    return conflict("Run history changed during admission");
-  }
-  const [source] = await tx
-    .select({ id: conversations.id })
-    .from(conversations)
-    .innerJoin(agentRuns, eq(conversations.runId, agentRuns.id))
-    .where(
-      and(
-        eq(conversations.id, prepared.inputH0.conversationId),
-        eq(
-          conversations.cliAgentSessionHistoryHash,
-          prepared.inputH0.historyHash,
-        ),
-        eq(conversations.cliAgentType, "pi"),
-        eq(conversations.cliAgentSessionId, input.args.chatThreadId),
-        eq(agentRuns.chatThreadId, input.args.chatThreadId),
-        eq(agentRuns.sessionId, prepared.identity.sessionId),
-        eq(agentRuns.userId, input.args.userId),
-        eq(agentRuns.orgId, input.args.orgId),
-        eq(agentRuns.status, "completed"),
-      ),
-    )
-    .for("key share")
-    .limit(1);
-  return source ? null : conflict("Run history changed during admission");
-}
-
-async function admitDurablePiInference(
-  tx: Tx,
-  input: AtomicLaunchRunInput,
-  prepared: PreparedDurablePiInference,
-  subscriptionAdmission: PreparedPersonalSubscriptionAdmission | null,
-): Promise<DurablePiAdmissionResult> {
-  if (
-    !(await admitNewComputeRun(tx, {
-      userId: input.args.userId,
-      orgId: input.args.orgId,
-      agentId: input.context.resolved.agentId,
-      ownerUserId: input.context.resolved.ownerUserId,
-      agentOrgId: input.context.resolved.orgId,
-      existingSessionId: prepared.identity.shouldCreateSession
-        ? undefined
-        : prepared.identity.sessionId,
-    }))
-  ) {
-    return conflict("Run admission is unavailable");
-  }
-  await acquireOfficialWorkflowRunCatalogAdmissionLock(
-    tx,
-    input.context.officialWorkflowRun,
-  );
-  const protection = await admitDurablePiInferenceProtection(
-    tx,
-    input,
-    prepared.configuration.runtimeProvider,
-  );
-  if (protection) {
-    return protection;
-  }
-  const officialFailure = await validateOfficialWorkflowRunForInsert(tx, {
-    observation: input.context.officialWorkflowRun,
-    orgId: input.args.orgId,
-    userId: input.args.userId,
-    agentId: input.context.resolved.agentId,
-    automationId: input.args.agentRunMetadata?.workflowAutomationId,
-    runStorageMounts: prepared.persistedStorageMounts,
-    allowMissingMountsForFailedRun: false,
-  });
-  if (officialFailure) {
-    return conflict(officialFailure.message);
-  }
-  const threadSessionValidation = await validateThreadSessionSnapshot(tx, {
-    createArgs: input.args,
-    identity: prepared.identity,
-    timing: input.timing,
-  });
-  if (threadSessionValidation?.kind === "thread-session-snapshot-stale") {
-    return await rejectStaleDurablePiAdmission(
-      tx,
-      input,
-      prepared,
-      threadSessionValidation,
-    );
-  }
-  if (
-    !(await validateNewComputeSession(
-      tx,
-      {
-        userId: input.args.userId,
-        orgId: input.args.orgId,
-        agentId: input.context.resolved.agentId,
-        existingSessionId: prepared.identity.shouldCreateSession
-          ? undefined
-          : prepared.identity.sessionId,
-      },
-      threadSessionValidation?.lockedSession,
-    ))
-  ) {
-    return conflict("Run admission is unavailable");
-  }
-  const h0Failure = await validateDurablePiH0Source(tx, input, prepared);
-  if (h0Failure) {
-    return h0Failure;
-  }
-  const capturedAccount = await validateDurablePiSubscription(
-    tx,
-    input,
-    prepared,
-    {
-      validatedThreadSession: threadSessionValidation,
-      subscriptionAdmission,
-    },
-  );
-  if (capturedAccount && typeof capturedAccount !== "string") {
-    return capturedAccount;
-  }
-  const queueAdmission = await resolveQueueFirstAdmissionForLaunch({
-    tx,
-    createArgs: input.args,
-    sessionSnapshotState: threadSessionValidation ? "current" : "unvalidated",
-    ...(threadSessionValidation ? { threadAlreadyLocked: true } : {}),
-    timing: input.timing,
-  });
-  const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
-    tx,
-    admission: queueAdmission,
-    createArgs: input.args,
-    identity: prepared.identity,
-    timing: input.timing,
-  });
-  if (queueFirstClaim?.kind === "lost") {
-    return { kind: "queue-first-claim-lost" };
-  }
-  return {
-    kind: "admitted",
-    capturedAccount,
-    queueFirstClaim:
-      queueFirstClaim?.kind === "claimed" ? queueFirstClaim : undefined,
-    validatedThreadSession: threadSessionValidation,
-  };
-}
-
-async function persistDurablePiInference(
-  tx: Tx,
-  input: AtomicLaunchRunInput,
-  prepared: PreparedDurablePiInference,
-  admission: DurablePiCommitAdmission,
-): Promise<Extract<DurablePiInferenceCommit, { readonly kind: "committed" }>> {
-  const { createdAt } = await insertLaunchRunRows(tx, {
-    userId: input.args.userId,
-    orgId: input.args.orgId,
-    identity: prepared.identity,
-    status: "pending",
-    resolved: input.context.resolved,
-    body: {
-      ...input.context.body,
-      appendSystemPrompt: prepared.activation.appendSystemPrompt ?? undefined,
-    },
-    runStorageMounts: prepared.persistedStorageMounts,
-    sessionStorageMounts: prepared.sessionStorageMounts,
-    modelProvider: input.context.modelProvider,
-    agentRunModelPin: input.args.agentRunModelPin,
-    selectedVideoModel: input.context.selectedVideoModel,
-    selectedImageModel: input.context.selectedImageModel,
-    callbackRows: prepared.callbackRows,
-    chatThreadId: input.args.chatThreadId,
-    agentRunMetadata: input.args.agentRunMetadata,
-    apiStartTime: input.args.apiStartTime,
-    runnerGroup: undefined,
-    launchSnapshot: {
-      schemaVersion: 4,
-      framework: "pi",
-      executionMode: "api-inference",
-      inferenceContractVersion: 1,
-    },
-    langfuseTraceEnabled: isPiLangfuseDebugRunEnvironment(
-      prepared.activation.executionContext.platformEnvironment,
-    ),
-    officialWorkflowProvenance: input.context.officialWorkflowRun?.provenance,
-    error: undefined,
-    creditAdmitted: input.creditAdmitted,
-    capturedRuntimeRoute: {
-      provider: prepared.configuration.runtimeProvider,
-      model: prepared.configuration.runtimeModel,
-    },
-    validatedAccountIdentity: admission.capturedAccount,
-  });
-  await tx.insert(agentRunInference).values({
-    runId: prepared.identity.runId,
-    sourceConversationId: prepared.sourceConversationId,
-    input: {
-      schemaVersion: 1,
-      inputEventId: input.args.queueFirstAssociation?.eventId ?? null,
-      inputGeneration: 0,
-      configurationHash: prepared.configurationHash,
-      contextHash: prepared.contextHash,
-      h0: prepared.inputH0,
-      deferredSecrets: prepared.deferredSecrets,
-    },
-    phase: "ready",
-    ownerEpoch: prepared.activation.inference.ownerEpoch,
-    deadlineAt: new Date(
-      input.args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
-    ),
-    activationReady: true,
-    providerAttemptId: prepared.activation.inference.providerAttemptId,
-    providerAttemptState: "not-started",
-  });
-  await retainPiInferenceObjects(tx, {
-    runId: prepared.identity.runId,
-    userId: input.args.userId,
-    orgId: input.args.orgId,
-    references: [
-      { kind: "configuration", hash: prepared.configurationHash },
-      { kind: "context", hash: prepared.contextHash },
-      ...(prepared.deferredSecrets.kind === "encrypted"
-        ? [
-            {
-              kind: "secrets" as const,
-              hash: prepared.deferredSecrets.objectHash,
-            },
-          ]
-        : []),
-    ],
-  });
-  const threadSessionBinding = input.args.chatThreadId
-    ? await persistThreadSessionBinding(tx, {
-        chatThreadId: input.args.chatThreadId,
-        identity: prepared.identity,
-        resolution: input.args.threadSessionResolution,
-        timing: input.timing,
-        validatedThreadSession: admission.validatedThreadSession,
-      })
-    : undefined;
-  if (isBuiltInModelProviderType(input.context.modelProvider?.type)) {
-    await activateUsageAllowanceWindowsForRun(tx, {
-      orgId: input.args.orgId,
-      runId: prepared.identity.runId,
-      runCreatedAt: createdAt,
-    });
-  }
-  const run = runRecordFromLaunchIdentity(
-    prepared.identity,
-    "pending",
-    createdAt,
-  );
-  await requestPiMemoryStage1Day(tx, {
-    ...run,
-    userId: input.args.userId,
-    orgId: input.args.orgId,
-    chatThreadId: input.args.chatThreadId ?? null,
-    triggerSource: input.context.body.triggerSource,
-    launchSnapshot: {
-      schemaVersion: 4,
-      framework: "pi",
-      executionMode: "api-inference",
-      inferenceContractVersion: 1,
-    },
-    completedAt: null,
-  });
-  return {
-    kind: "committed",
-    run,
-    queueFirstClaim: admission.queueFirstClaim,
-    threadSessionBinding,
-  };
-}
-
-async function commitDurablePiInference(
-  input: AtomicLaunchRunInput,
-  prepared: PreparedDurablePiInference,
-  subscriptionAdmission: PreparedPersonalSubscriptionAdmission | null,
-): Promise<DurablePiInferenceCommit> {
-  return await withComputeOwnershipRetry(() => {
-    return input.db.transaction(
-      async (tx): Promise<DurablePiInferenceCommit> => {
-        const admission = await admitDurablePiInference(
-          tx,
-          input,
-          prepared,
-          subscriptionAdmission,
-        );
-        if (isRouteError(admission) || admission.kind !== "admitted") {
-          return admission;
-        }
-        return await persistDurablePiInference(tx, input, prepared, admission);
-      },
-    );
-  });
-}
-
-const dispatchDurablePiInference$ = command(
-  async (
-    { set },
-    activation: Extract<
-      PiApiFirstTurnActivation,
-      { readonly executionMode: "durable-inference" }
-    >,
-    preparation: PiApiFirstTurnPreparation | undefined,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
-      dispatchConfiguredPiApiFirstTurn$,
-      activation,
-      preparation,
-      signal,
-    );
-  },
-);
 
 function isQueuePayloadRequiredResult(
   result: unknown,
@@ -12830,7 +11489,6 @@ const commitAndActivateAtomicLaunch$ = command(
             [piPreparationAuthority]: true,
             triggerSource: input.context.body.triggerSource,
             activation: {
-              executionMode: "legacy-sandbox-race",
               runId: identity.runId,
               runnerGroup: launch.runnerJobPayload.runnerGroup,
               userId: input.args.userId,
@@ -12916,130 +11574,6 @@ const commitAndActivateAtomicLaunch$ = command(
       if (!transferred && preparation) {
         // Discard immediately; waitUntil joins late SDK initialization without
         // delaying queued responses or making another attempt reuse this one.
-        waitUntil(preparation.dispose(discardReason));
-      }
-    });
-  },
-);
-
-const createDurablePiInferenceRun$ = command(
-  async (
-    { get, set },
-    input: AtomicLaunchRunInput,
-    signal: AbortSignal,
-  ): Promise<QueueFirstAgentRunResult | null> => {
-    const prepared = await input.timing.measure(
-      "api_dispatch_prepare_durable_pi_inference",
-      "top_level",
-      async () => {
-        return await get(prepareDurablePiInference(input, signal));
-      },
-    );
-    signal.throwIfAborted();
-    if (!prepared) {
-      return null;
-    }
-    const preparation = set(prepareConfiguredPiApiFirstTurn$, {
-      [piPreparationAuthority]: true,
-      triggerSource: input.context.body.triggerSource,
-      activation: prepared.activation,
-    });
-    let transferred = false;
-    let discardReason: PiPreparationDiscardReason = "admission-failed";
-    return await (async () => {
-      const [, subscriptionAdmission] = await input.timing.measure(
-        "api_dispatch_publish_durable_pi_inputs",
-        "top_level",
-        async () => {
-          return await Promise.all([
-            publishDurablePiInferenceInputs(
-              input,
-              {
-                configuration: prepared.configuration,
-                context: prepared.context,
-              },
-              prepared.publication,
-              signal,
-            ),
-            prepareDurablePiInferenceSubscription(input, signal),
-          ]);
-        },
-      );
-      signal.throwIfAborted();
-      const committed = await input.timing.measure(
-        "api_dispatch_commit_durable_pi_inference",
-        "top_level",
-        async () => {
-          return await commitDurablePiInference(
-            input,
-            prepared,
-            subscriptionAdmission,
-          );
-        },
-      );
-      if (isRouteError(committed)) {
-        return committed;
-      }
-      if (committed.kind === "queue-first-claim-lost") {
-        discardReason = "claim-lost";
-        return committed;
-      }
-      if (committed.kind === "thread-session-snapshot-stale") {
-        discardReason = "stale";
-        return committed;
-      }
-      // Once the transaction commits, request cancellation no longer owns this
-      // attempt. Schedule the durable owner before any response-side telemetry.
-      transferred = true;
-      waitUntil(
-        set(
-          dispatchDurablePiInference$,
-          prepared.activation,
-          preparation,
-          AbortSignal.timeout(
-            Math.max(
-              1,
-              prepared.activation.executionContext.piLaunchConfig.apiFirstTurn
-                .deadlineAt - now(),
-            ),
-          ),
-        ),
-      );
-      input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
-      input.phaseTiming.appendTo(input.timing);
-      input.timing.flush({
-        runId: committed.run.id,
-        runnerGroup: "api-inference",
-        profile: runnerProfile(input.context.resolved.content),
-        dispatchPath: "direct",
-        dimensions: {
-          ...timingDimensionsForCreateArgs(input.args),
-          pi_execution_mode: "durable_inference",
-        },
-        ...(input.context.body.triggerSource
-          ? { triggerSource: input.context.body.triggerSource }
-          : {}),
-      });
-      if (committed.threadSessionBinding) {
-        recordThreadSessionBindingTelemetry({
-          binding: committed.threadSessionBinding,
-          runStatus: "pending",
-        });
-      }
-      if (input.args.chatThreadId) {
-        recordFirstAssistantEventEligibility({
-          runId: prepared.activation.runId,
-          apiStartedAt: input.args.apiStartTime,
-        });
-      }
-      const response = createdRunResponse(committed.run, {
-        status: "pending",
-      });
-      return committed.queueFirstClaim
-        ? { ...response, queueFirstClaim: committed.queueFirstClaim }
-        : response;
-    })().finally(() => {
-      if (!transferred) {
         waitUntil(preparation.dispose(discardReason));
       }
     });
@@ -13135,7 +11669,6 @@ const createAtomicLaunchRun$ = command(
 interface PreparedAgentRun {
   readonly args: CreateAgentRunArgs;
   readonly context: PreparedRunContext;
-  readonly preparationMode: "legacy" | "durable-pi-inference";
   readonly contextInput: PrepareRunContextInput;
   readonly timing: ApiDispatchTimingCollector;
   readonly phaseTiming: ApiDispatchPhaseCollector;
@@ -13179,7 +11712,6 @@ function finalizePreparedRunContext(
       framework: prepared.context.framework,
       chatThreadId: prepared.args.chatThreadId,
       imageRecognitionAvailable: prepared.context.imageRecognitionAvailable,
-      connectorSlugs: prepared.context.connectorContext.connectorSlugs,
       mcpConnectorSlugs: [
         ...prepared.context.connectorContext.mcpConnectorSlugs,
         ...prepared.context.customConnectorContext.mcpConnectorSlugs,
@@ -13242,29 +11774,6 @@ export const prepareAgentRun$ = command(
       preloadedConnectorCatalogSnapshot:
         input.preloadedConnectorCatalogSnapshot,
     };
-    const durableContext = await timing.measure(
-      "api_dispatch_prepare_durable_pi_context",
-      "top_level",
-      async () => {
-        return await get(prepareDurablePiRunContext(contextInput, signal));
-      },
-    );
-    signal.throwIfAborted();
-    if (isRouteError(durableContext)) {
-      return durableContext;
-    }
-    if (durableContext) {
-      input.phaseTiming.checkpoint("api_dispatch_phase_prepare_context", now());
-      return {
-        args,
-        context: durableContext,
-        preparationMode: "durable-pi-inference",
-        contextInput,
-        timing,
-        phaseTiming: input.phaseTiming,
-      };
-    }
-
     const context = await timing.measure(
       "api_dispatch_prepare_run_context",
       "top_level",
@@ -13281,7 +11790,6 @@ export const prepareAgentRun$ = command(
     return {
       args,
       context,
-      preparationMode: "legacy",
       contextInput,
       timing,
       phaseTiming: input.phaseTiming,
@@ -13291,7 +11799,7 @@ export const prepareAgentRun$ = command(
 
 export const completeAgentRun$ = command(
   async (
-    { get, set },
+    { set },
     input: CompleteAgentRunArgs,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
@@ -13342,61 +11850,8 @@ export const completeAgentRun$ = command(
       return admissionGate;
     }
 
-    if (
-      input.prepared.preparationMode === "durable-pi-inference" &&
-      isDurablePiInferenceEligible({
-        db,
-        args,
-        creditAdmitted,
-        context,
-        timing,
-        phaseTiming: input.prepared.phaseTiming,
-      })
-    ) {
-      const durable = await set(
-        createDurablePiInferenceRun$,
-        {
-          db,
-          args,
-          creditAdmitted,
-          context,
-          timing,
-          phaseTiming: input.prepared.phaseTiming,
-        },
-        signal,
-      );
-      if (durable !== null) {
-        return durable;
-      }
-    }
-
     let launchContext = context;
-    if (input.prepared.preparationMode === "durable-pi-inference") {
-      const legacyContext = await timing.measure(
-        "api_dispatch_prepare_run_context",
-        "top_level",
-        async () => {
-          return await get(
-            prepareRunContext(input.prepared.contextInput, signal),
-          );
-        },
-      );
-      signal.throwIfAborted();
-      if (isRouteError(legacyContext)) {
-        return legacyContext;
-      }
-      const legacyAppendSystemPrompt = input.prepared.args.piStableContext
-        ? bindStableAppendSystemPrompt(
-            input.prepared.args.piStableContext.buildPrompt(),
-            input.finalAppendSystemPrompt ??
-              input.prepared.args.piStableContext.dynamicAppendSystemPrompt,
-          )
-        : input.finalAppendSystemPrompt;
-      launchContext = finalizePreparedRunContext(
-        { ...input.prepared, context: legacyContext },
-        legacyAppendSystemPrompt,
-      );
-    } else if (args.piExecution && args.piStableContext) {
+    if (args.piExecution && args.piStableContext) {
       // API-first Pi can still take the established legacy launch when durable
       // preparation is disabled or unavailable. Its eager body intentionally
       // omitted the stable prefix, so bind the canonical prompt before launch.
@@ -13472,367 +11927,3 @@ export const createAgentRun$ = command(
 
 /** Post-reservation materializer. This never inserts a Run, promotes the legacy
  * queue, or invokes the API first turn. Publication owns a fresh admission. */
-interface DeferredPiMaterializationInput {
-  readonly run: {
-    readonly id: string;
-    readonly sessionId: string;
-    readonly userId: string;
-    readonly orgId: string;
-    readonly chatThreadId: string | null;
-    readonly apiStartedAt: Date;
-  };
-  readonly configuration: PiDeferredConfiguration;
-  readonly context: z.infer<typeof piDeferredContextSchema>;
-  readonly handoff: PiDeferredSandboxConfig;
-  readonly secrets: Record<string, string> | undefined;
-}
-
-export const materializeDeferredPiRun$ = command(
-  async (
-    { get, set },
-    input: DeferredPiMaterializationInput,
-    signal: AbortSignal,
-  ): Promise<PreparedDeferredPiLaunch> => {
-    const db = set(writeDb$);
-    const configuration = input.configuration;
-    const args: CreateAgentRunArgs = {
-      ...configuration,
-      userId: input.run.userId,
-      orgId: input.run.orgId,
-      retainedRunId: input.run.id,
-      body: { ...configuration.body, secrets: input.secrets },
-      apiStartTime: input.run.apiStartedAt.getTime(),
-      modelProviderId: configuration.modelProviderId ?? undefined,
-      modelProviderCredentialScope:
-        configuration.modelProviderCredentialScope ?? undefined,
-      selectedModelOverride: configuration.selectedModel,
-      agentRunMetadata: {
-        reasoningEffort: configuration.reasoningEffort,
-        codexServiceTier: configuration.codexServiceTier,
-      },
-      chatThreadId: input.run.chatThreadId ?? undefined,
-      piExecution: true,
-    };
-    const timing = new ApiDispatchTimingCollector();
-    const prepared = await get(
-      prepareRunContext(
-        {
-          db,
-          args,
-          timing,
-          preloadedFeatureSwitchContext: undefined,
-          preloadedUserTimezone: undefined,
-          preloadedConnectorCatalogSnapshot: undefined,
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (isRouteError(prepared)) {
-      throw new Error(
-        `Deferred Pi preparation rejected (${prepared.status}): ${prepared.body.error.message}`,
-      );
-    }
-    if (
-      !prepared.piSandbox ||
-      !isDeepStrictEqual(prepared.piSandbox, configuration.modelConfig)
-    ) {
-      throw new Error(
-        "Deferred Pi preparation changed the captured model configuration",
-      );
-    }
-    assertCurrentPiCliArtifact();
-    const context: FinalizedPreparedRunContext = {
-      ...prepared,
-      body: args.body,
-      resolved: { ...prepared.resolved, resumeSession: undefined },
-      launchSnapshot: {
-        schemaVersion: 3,
-        framework: "pi",
-        runnerProfile: runnerProfile(
-          configuration.productAgentExecutionPlan.content,
-        ),
-      },
-    };
-    const launch = await get(
-      buildAtomicLaunchPayload(
-        db,
-        {
-          createArgs: args,
-          context,
-          timing,
-          capturedStorageMounts: input.context.storageMounts,
-          run: {
-            id: input.run.id,
-            sessionId: input.run.sessionId,
-            shouldCreateSession: false,
-          },
-          deferredPiResources: {
-            modelConfig: prepared.piSandbox,
-            launchConfig: {
-              schemaVersion: 2,
-              apiFirstTurn: input.handoff,
-              ...(configuration.piMemoryPhase2Maintenance
-                ? { maintenance: configuration.piMemoryPhase2Maintenance }
-                : {}),
-              ...(input.context.memoryRecall
-                ? { memoryRecall: input.context.memoryRecall }
-                : {}),
-            },
-            memoryRecall: input.context.memoryRecall,
-            resumeSession: undefined,
-            sessionId: input.context.baseSession.sessionId,
-          },
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    const admission = await prepareDeferredPiClaimAdmission(
-      db,
-      input.run,
-      configuration,
-      signal,
-    );
-    signal.throwIfAborted();
-    return {
-      ...launch,
-      runnerJobPayload: { ...launch.runnerJobPayload, reuseKey: null },
-      admission: {
-        ...admission,
-        officialWorkflowRun: prepared.officialWorkflowRun,
-      },
-    };
-  },
-);
-
-interface PreparedDeferredPiLaunch extends PreparedRunnerLaunch {
-  readonly admission: DeferredPiMaterializationAdmission;
-}
-export interface DeferredPiMaterializationAdmission {
-  readonly configuration: PiDeferredConfiguration;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly personal:
-    | {
-        readonly orgId: string;
-        readonly userId: string;
-        readonly type: Parameters<
-          typeof preparePersonalSubscriptionAdmission
-        >[0]["type"];
-        readonly sourceId: string;
-        readonly runId: string;
-        readonly featureSwitchContext: FeatureSwitchContext;
-      }
-    | undefined;
-  readonly subscription: PreparedPersonalSubscriptionAdmission | null;
-}
-export async function lockDeferredPiCatalog(
-  tx: Tx,
-  admission: DeferredPiMaterializationAdmission,
-): Promise<void> {
-  await acquireOfficialWorkflowRunCatalogAdmissionLock(
-    tx,
-    admission.officialWorkflowRun,
-  );
-}
-export class DeferredPiAdmissionChangedError extends Error {}
-
-function isCapturedPersonalSubscriptionSource(
-  configuration: PiDeferredConfiguration,
-): boolean {
-  return (
-    configuration.modelProviderId !== null &&
-    configuration.modelProviderCredentialScope !== "org" &&
-    isPersonalSubscriptionProviderType(configuration.modelProviderType)
-  );
-}
-
-async function validateCapturedPiStaticModelSourceTx(
-  tx: Tx,
-  run: { readonly orgId: string },
-  configuration: PiDeferredConfiguration,
-): Promise<void> {
-  if (configuration.gateway) {
-    const [current] = await tx
-      .select({
-        connectionId: modelProviderConnections.id,
-        secretId: modelProviderConnections.secretId,
-        protocol: modelProviderSurfaces.protocol,
-        apiBaseUrl: modelProviderSurfaces.apiBaseUrl,
-        authHeaderName: modelProviderSurfaces.authHeaderName,
-        authHeaderTemplate: modelProviderSurfaces.authHeaderTemplate,
-        modelMappings: modelProviderSurfaces.modelMappings,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-      )
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, configuration.modelProviderId ?? ""),
-          eq(modelProviderConnections.orgId, run.orgId),
-        ),
-      )
-      .for("share");
-    if (!current) {
-      throw new DeferredPiAdmissionChangedError(
-        "Deferred Pi gateway source disappeared",
-      );
-    }
-    const { modelMappings, ...route } = current;
-    if (
-      !isDeepStrictEqual(
-        { ...route, upstreamModel: modelMappings[configuration.selectedModel] },
-        configuration.gateway,
-      )
-    ) {
-      throw new DeferredPiAdmissionChangedError(
-        "Deferred Pi gateway route or credential source changed",
-      );
-    }
-    return;
-  }
-  if (configuration.builtInModelRuntimeRoute) {
-    const [key] = await tx
-      .select({ id: builtInModelKeys.id })
-      .from(builtInModelKeys)
-      .where(
-        eq(
-          builtInModelKeys.id,
-          configuration.builtInModelRuntimeRoute.modelKeyId,
-        ),
-      )
-      .for("share");
-    if (!key) {
-      throw new DeferredPiAdmissionChangedError(
-        "Deferred Pi captured model key disappeared",
-      );
-    }
-    return;
-  }
-  if (
-    configuration.modelProviderId &&
-    !isCapturedPersonalSubscriptionSource(configuration)
-  ) {
-    const [provider] = await tx
-      .select({ id: modelProviders.id })
-      .from(modelProviders)
-      .where(
-        and(
-          eq(modelProviders.id, configuration.modelProviderId),
-          eq(modelProviders.orgId, run.orgId),
-          eq(modelProviders.type, configuration.modelProviderType),
-        ),
-      )
-      .for("share");
-    if (!provider) {
-      throw new DeferredPiAdmissionChangedError(
-        "Deferred Pi captured provider disappeared",
-      );
-    }
-  }
-}
-
-/** Revalidate the captured provider/key/gateway without preparing Runner state. */
-export async function validateCapturedPiStaticModelSource(
-  db: Db,
-  run: { readonly orgId: string },
-  configuration: PiDeferredConfiguration,
-  signal: AbortSignal,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await validateCapturedPiStaticModelSourceTx(tx, run, configuration);
-  });
-  signal.throwIfAborted();
-}
-
-export async function validateDeferredPiMaterialization(
-  tx: Tx,
-  args: {
-    readonly admission: DeferredPiMaterializationAdmission;
-    readonly run: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly sessionId: string;
-    };
-    readonly mounts: readonly PersistedStorageMount[];
-  },
-): Promise<void> {
-  const [session] = await tx
-    .select({ agentId: agentSessions.agentId })
-    .from(agentSessions)
-    .where(eq(agentSessions.id, args.run.sessionId));
-  if (!session) {
-    throw new DeferredPiAdmissionChangedError(
-      "Deferred Pi session disappeared",
-    );
-  }
-  const error = await validateOfficialWorkflowRunForInsert(tx, {
-    observation: args.admission.officialWorkflowRun,
-    ...args.run,
-    agentId: session.agentId,
-    automationId: undefined,
-    runStorageMounts: args.mounts,
-    allowMissingMountsForFailedRun: false,
-  });
-  if (error) {
-    throw new DeferredPiAdmissionChangedError(error.message);
-  }
-  await validateCapturedPiStaticModelSourceTx(
-    tx,
-    args.run,
-    args.admission.configuration,
-  );
-  if (args.admission.personal) {
-    if (
-      !(await validatePersonalSubscriptionAdmission(
-        { ...args.admission.personal, db: tx },
-        args.admission.subscription,
-      ))
-    ) {
-      throw new DeferredPiAdmissionChangedError(
-        "Deferred Pi credential snapshot changed before publication",
-      );
-    }
-  }
-}
-
-/** Claim repeats current catalog and credential observation outside all business
- * locks. Its database-only validator runs again inside the actual claim commit. */
-export async function prepareDeferredPiClaimAdmission(
-  db: Db,
-  run: { readonly id: string; readonly orgId: string; readonly userId: string },
-  configuration: PiDeferredConfiguration,
-  signal: AbortSignal,
-): Promise<DeferredPiMaterializationAdmission> {
-  const officialWorkflowRun = await resolveOfficialWorkflowRunObservation(
-    db,
-    officialWorkflowRunCandidates(
-      configuration.injectSkillVolumes?.workflows ?? [],
-      PI_SKILLS_ROOT,
-      configuration.requiredOfficialWorkflowIds ?? [],
-    ),
-    signal,
-  );
-  const personal =
-    configuration.modelProviderId &&
-    configuration.modelProviderCredentialScope !== "org" &&
-    isPersonalSubscriptionProviderType(configuration.modelProviderType)
-      ? {
-          orgId: run.orgId,
-          userId: run.userId,
-          type: configuration.modelProviderType,
-          sourceId: configuration.modelProviderId,
-          runId: run.id,
-          featureSwitchContext: { orgId: run.orgId, userId: run.userId },
-        }
-      : undefined;
-  const subscription = personal
-    ? await preparePersonalSubscriptionAdmission(
-        { ...personal, db, timing: new ApiDispatchTimingCollector() },
-        signal,
-      )
-    : null;
-  return { configuration, officialWorkflowRun, personal, subscription };
-}

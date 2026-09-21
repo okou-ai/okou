@@ -31,7 +31,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { settle } from "../../utils";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -121,31 +121,21 @@ function mcpConnector(slug = "plaud-mcp") {
         revoke: { kind: "none" },
       },
     ],
-    firewall: {
-      kind: "generated",
-      billable: false,
-      config: {
-        description: "Notes",
-        apis: [
-          { base: "https://notes.example.com/mcp", auth: {}, permissions: [] },
-        ],
-      },
-      categories: null,
-      defaultAllowed: null,
-      defaultUnknownPolicy: "allow",
-    },
+    firewall: { kind: "none" },
   };
 }
 
-function runtimeMcpConnector(
+function runtimeBuiltinConnector(
+  protocol: "http" | "mcp",
   authKind: "none" | "manual" | "automatic",
   endpoint: string,
   updated = false,
 ) {
   const connector = mcpConnector("catalog-mcp");
+  const { mcp, ...baseConnector } = connector;
   return {
-    ...connector,
-    mcp: { ...connector.mcp, endpoint },
+    ...baseConnector,
+    ...(protocol === "mcp" ? { mcp: { ...mcp, endpoint } } : {}),
     authMethods:
       authKind === "automatic"
         ? connector.authMethods
@@ -163,27 +153,34 @@ function runtimeMcpConnector(
                 revoke: { kind: "none" },
               },
             ],
-    firewall: {
-      ...connector.firewall,
-      config: {
-        description: "Notes",
-        apis: [
-          {
-            base: endpoint,
-            auth:
-              authKind === "manual"
-                ? {
-                    headers: {
-                      [updated ? "X-Api-Key" : "Authorization"]:
-                        `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
-                    },
-                  }
-                : {},
-            permissions: [],
+    firewall:
+      protocol === "mcp"
+        ? { kind: "none" }
+        : {
+            kind: "generated",
+            billable: false,
+            config: {
+              description: "Notes",
+              apis: [
+                {
+                  base: endpoint,
+                  auth:
+                    authKind === "manual"
+                      ? {
+                          headers: {
+                            [updated ? "X-Api-Key" : "Authorization"]:
+                              `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
+                          },
+                        }
+                      : {},
+                  permissions: [],
+                },
+              ],
+            },
+            categories: null,
+            defaultAllowed: null,
+            defaultUnknownPolicy: "allow",
           },
-        ],
-      },
-    },
   };
 }
 
@@ -297,13 +294,20 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
-  it.each(["none", "manual", "automatic"] as const)(
-    "refreshes a running %s builtin MCP when its catalog configuration changes or disappears",
-    async (authKind) => {
+  it.each([
+    ["mcp", "none"],
+    ["mcp", "manual"],
+    ["mcp", "automatic"],
+    ["http", "manual"],
+  ] as const)(
+    "refreshes a running %s %s builtin when its catalog configuration changes, disappears, or is restored",
+    async (protocol, authKind) => {
       const endpoint = "https://automatic-mcp.example.test/server";
       const initial = release({
         mutate(catalog) {
-          catalog.connectors = [runtimeMcpConnector(authKind, endpoint)];
+          catalog.connectors = [
+            runtimeBuiltinConnector(protocol, authKind, endpoint),
+          ];
         },
       });
       serveObjects(initial.objects);
@@ -317,7 +321,7 @@ describe("connector catalog v4 preparation", () => {
       await runs.grantProEntitlement(actor);
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
-        displayName: "Builtin MCP catalog changes",
+        displayName: "Builtin catalog changes",
         visibility: "private",
       });
       const created: { runId?: string; connectionId?: string } = {};
@@ -396,7 +400,7 @@ describe("connector catalog v4 preparation", () => {
           });
           expect(initialRuntime).toMatchObject({ state: "available" });
 
-          for (const change of ["updated", "removed"] as const) {
+          for (const change of ["updated", "removed", "restored"] as const) {
             const nextEndpoint = "https://updated.example.test/mcp";
             serveObjects(
               release({
@@ -410,7 +414,14 @@ describe("connector catalog v4 preparation", () => {
                             "Unrelated service",
                           ),
                         ]
-                      : [runtimeMcpConnector(authKind, nextEndpoint, true)];
+                      : [
+                          runtimeBuiltinConnector(
+                            protocol,
+                            authKind,
+                            change === "updated" ? nextEndpoint : endpoint,
+                            change === "updated",
+                          ),
+                        ];
                 },
               }).objects,
             );
@@ -433,7 +444,7 @@ describe("connector catalog v4 preparation", () => {
               change === "removed"
                 ? {
                     target,
-                    state: "unresolved",
+                    state: "absent",
                     reason: "connector-unavailable",
                   }
                 : {
@@ -449,7 +460,9 @@ describe("connector catalog v4 preparation", () => {
         release({
           version: `${CATALOG_VERSION}.cleanup`,
           mutate(catalog) {
-            catalog.connectors = [runtimeMcpConnector(authKind, endpoint)];
+            catalog.connectors = [
+              runtimeBuiltinConnector(protocol, authKind, endpoint),
+            ];
           },
         }).objects,
       );
@@ -510,47 +523,53 @@ describe("connector catalog v4 preparation", () => {
     });
   });
 
-  it("uses the Plaud auth-method switch for discovery while accepting its catalog", async () => {
-    serveObjects(release({}).objects);
-    expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      filtering: { filteredAuthMethods: [] },
-    });
-    expect(
-      (await publicCatalog()).body.connectors.map((connector) => {
-        return connector.slug;
-      }),
-    ).toStrictEqual(["catalog-service"]);
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.PlaudConnector]: true } },
-      }),
-      [200],
-    );
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.PlaudConnector]: false } },
-      }),
-      [200],
-    );
-    expect(
-      (await publicCatalog()).body.connectors.map((connector) => {
-        return connector.slug;
-      }),
-    ).toStrictEqual(["catalog-service"]);
-  });
+  it.each([
+    ["Plaud", "plaud-mcp", FeatureSwitchKey.PlaudConnector],
+    ["Monday.com", "monday-mcp", FeatureSwitchKey.MondayConnector],
+  ] as const)(
+    "uses the %s auth-method switch for discovery while accepting its catalog",
+    async (_label, connectorSlug, featureSwitch) => {
+      serveObjects(release({ mcpSlug: connectorSlug }).objects);
+      expect((await sync()).body).toMatchObject({
+        outcome: "accepted",
+        filtering: { filteredAuthMethods: [] },
+      });
+      expect(
+        (await publicCatalog()).body.connectors.map((connector) => {
+          return connector.slug;
+        }),
+      ).toStrictEqual(["catalog-service"]);
+      const features = setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      );
+      await accept(
+        features.update({
+          headers: sessionHeaders,
+          body: { switches: { [featureSwitch]: true } },
+        }),
+        [200],
+      );
+      expect((await publicCatalog()).body.connectors).toMatchObject([
+        { slug: "catalog-service" },
+        {
+          slug: connectorSlug,
+          authMethods: [{ id: "automatic", grantKind: "automatic" }],
+        },
+      ]);
+      await accept(
+        features.update({
+          headers: sessionHeaders,
+          body: { switches: { [featureSwitch]: false } },
+        }),
+        [200],
+      );
+      expect(
+        (await publicCatalog()).body.connectors.map((connector) => {
+          return connector.slug;
+        }),
+      ).toStrictEqual(["catalog-service"]);
+    },
+  );
 
   it("reports a cold catalog as unavailable until v4 is accepted", async () => {
     serveObjects(new Map());

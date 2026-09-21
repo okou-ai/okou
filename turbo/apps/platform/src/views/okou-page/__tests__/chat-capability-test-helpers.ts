@@ -1,10 +1,5 @@
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  fireEvent,
-  screen,
-  waitFor,
-  waitForElementToBeRemoved,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 
 import { click } from "../../../__tests__/page-helper.ts";
 import {
@@ -206,7 +201,11 @@ export async function selectPassageWithoutActions(
 ): Promise<void> {
   const existingQuoteAction = await findButton("Quote");
   setPassageSelection(passage, occurrence, "native");
-  await waitForElementToBeRemoved(existingQuoteAction);
+  await waitFor(() => {
+    if (existingQuoteAction.isConnected) {
+      throw new Error("The invalid selection still exposes passage actions");
+    }
+  });
 }
 
 export async function selectAcrossPassages(

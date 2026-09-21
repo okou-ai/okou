@@ -104,6 +104,57 @@ async function fillHost(dialog: HTMLElement) {
   );
 }
 
+test("The VNC connector page omits the redundant refresh action", async () => {
+  mockSettings();
+  await page();
+  await screen.findByText(host.displayName);
+  expect(
+    screen.getByRole("heading", { name: "VNC remote access" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("Let your agents view and control remote desktops."),
+  ).toBeInTheDocument();
+  expect(queryAction("button", "Refresh")).toBeNull();
+  expect(getAction("radio", "Hosts")).toHaveAttribute("aria-checked", "true");
+  expect(getAction("radio", "Credentials")).toBeInTheDocument();
+});
+
+test("The VNC hosts tab shows only its configured count above the host list", async () => {
+  mockSettings();
+  await page();
+  await screen.findByText("1 host configured");
+  expect(
+    screen.queryByText(
+      "Saving a host does not test its connection. Agents choose shared or exclusive mode when starting a session; the VNC server controls admission.",
+    ),
+  ).toBeNull();
+});
+
+test.each([
+  { count: 0, label: "0 credentials configured" },
+  { count: 1, label: "1 credential configured" },
+  { count: 2, label: "2 credentials configured" },
+])(
+  "Shows the configured credential count independently of hosts for $count credentials",
+  async ({ count, label }) => {
+    const credentials = Array.from({ length: count }, (_, index) => {
+      return {
+        ...credential,
+        id: `d0000000-0000-4000-8000-00000000000${index}`,
+        name: `Login ${index}`,
+        hosts: [],
+      };
+    });
+    mockSettings({ connections: [], credentials });
+    await page();
+    await screen.findByText("0 hosts configured");
+    click(getAction("radio", "Credentials"));
+    await expect(screen.findByText(label)).resolves.toBeInTheDocument();
+    expect(getAction("button", "Add credential")).toBeEnabled();
+    expect(screen.queryByText("0 hosts configured")).toBeNull();
+  },
+);
+
 test("An owner reuses a VNC credential without exposing its password", async () => {
   mockSettings({ connections: [] });
   const requests: unknown[] = [];

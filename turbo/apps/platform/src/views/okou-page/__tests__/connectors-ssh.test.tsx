@@ -344,7 +344,7 @@ test.each([0, 1, 2])(
     await page();
     const label =
       count === 0
-        ? "Configure SSH hosts for your Agents to execute remote commands."
+        ? "Let your agents run commands on remote machines."
         : `${count} ${count === 1 ? "host" : "hosts"} configured`;
     await screen.findByText(label);
     const entry = getConnectorAction("link", "Manage SSH hosts");
@@ -358,7 +358,7 @@ test.each([0, 1, 2])(
     const card = screen.getByTestId("connector-category-remote-access");
     expect(
       within(card).queryByText(
-        "Configure SSH hosts for your Agents to execute remote commands.",
+        "Let your agents run commands on remote machines.",
       ) !== null,
     ).toBe(count === 0);
     expect(
@@ -374,7 +374,10 @@ test.each([0, 1, 2])(
       screen.getByText("Connect 1 services for your agents to use."),
     ).toBeInTheDocument();
     click(entry);
-    await screen.findByRole("heading", { name: "SSH hosts" });
+    await screen.findByRole("heading", { name: "SSH remote access" });
+    expect(
+      screen.getByText("Let your agents run commands on remote machines."),
+    ).toBeInTheDocument();
     if (count !== 0) {
       click(getConnectorAction("button", "Add host"));
     }
@@ -423,9 +426,7 @@ test("An empty SSH inventory matches Not connected but not Connected", async () 
     return respond(200, { configuredCount: 0 });
   });
   await page("/connectors?keywords=ssh&connection=not-connected");
-  await screen.findByText(
-    "Configure SSH hosts for your Agents to execute remote commands.",
-  );
+  await screen.findByText("Let your agents run commands on remote machines.");
   click(getConnectorAction("button", "Filter connectors"));
   click(
     await waitFor(() => {
@@ -599,7 +600,7 @@ test.each([true, false])(
     await page(`/connectors?keywords=ssh&connection=agent:${agentId}`);
     await screen.findByText(
       enabled
-        ? "Configure SSH hosts for your Agents to execute remote commands."
+        ? "Let your agents run commands on remote machines."
         : /No connectors for this agent/,
     );
     expect(queryConnectorAction("link", "Manage SSH hosts") !== null).toBe(
@@ -659,8 +660,6 @@ test("Returning from host management refreshes the SSH card after deleting the l
   click(getConnectorAction("button", "Delete host", dialog));
   await screen.findByText(/No SSH hosts configured/);
   click(getConnectorAction("link", "Connectors"));
-  await screen.findByText(
-    "Configure SSH hosts for your Agents to execute remote commands.",
-  );
+  await screen.findByText("Let your agents run commands on remote machines.");
   expect(getConnectorAction("link", "Manage SSH hosts")).toBeInTheDocument();
 });

@@ -32,7 +32,7 @@ import {
 import { mapsRoutes } from "../maps";
 import { usageRecordRoutes } from "../usage-record";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const billing = createBillingMediaApi(context);

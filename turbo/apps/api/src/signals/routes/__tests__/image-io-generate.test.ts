@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -15,6 +16,7 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { mockEnv } from "../../../lib/env";
 import {
   buildArtifactKeyV2,
@@ -27,6 +29,7 @@ import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise } from "../../utils";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
+import { artifactCatalogRoutes } from "../artifact-catalog";
 import { billingStatusRoutes } from "../billing-status";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
@@ -38,6 +41,7 @@ import {
   type UsagePricingKey,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedCompose$, seedRun$ } from "./helpers/usage-state";
 import {
@@ -91,8 +95,9 @@ const FAL_INVALID_ASPECT_RATIO_MESSAGE =
 const OPENAI_PRIVATE_PROVIDER_REQUEST_ID =
   "req_private0openai0request0identifier";
 const OPENAI_PRIVATE_PROVIDER_MESSAGE = `Invalid image file or mode for image 1, please check your image file. If you believe this is an error, contact us at help.openai.com and include the request ID ${OPENAI_PRIVATE_PROVIDER_REQUEST_ID}.`;
-const FAL_QWEN_IMAGE_URL = "https://queue.fal.run/fal-ai/qwen-image";
-const FAL_MEDIA_URL = "https://fal.media/files/test/qwen.jpg";
+const FAL_FLUX_PRO_11_URL = "https://queue.fal.run/fal-ai/flux-pro/v1.1";
+const FAL_FLUX_PRO_11_MEDIA_URL =
+  "https://fal.media/files/test/flux-pro-1-1.jpg";
 const FAL_FLUX_REDUX_URL = "https://queue.fal.run/fal-ai/flux-pro/v1.1/redux";
 const FAL_FLUX_MEDIA_URL = "https://fal.media/files/test/flux-redux.jpg";
 const FAL_FLUX_2_PRO_URL = "https://queue.fal.run/fal-ai/flux-2-pro";
@@ -416,16 +421,6 @@ const GPT_IMAGE_1_PRICING = [
     provider: IMAGE_IO_MODEL,
     category: "output_image.high.large",
     unitPrice: 300,
-    unitSize: 1,
-  },
-] satisfies readonly UsagePricingRow[];
-
-const QWEN_IMAGE_PRICING = [
-  {
-    kind: "image",
-    provider: "fal-ai/qwen-image",
-    category: "output_megapixel",
-    unitPrice: 24,
     unitSize: 1,
   },
 ] satisfies readonly UsagePricingRow[];
@@ -1270,15 +1265,15 @@ describe("POST /api/image-io/generate", () => {
   it("uses the stable run snapshot for omitted and blank models", async () => {
     const fixture = await seedImageFixture({});
     const pricingFixture = await createScopedImagePricing({
-      configured: QWEN_IMAGE_PRICING,
+      configured: FLUX_IMAGE_PRICING,
     });
     const { runId } = await seedImageRun(fixture, {
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
 
     let falCalls = 0;
     server.use(
-      http.post(FAL_QWEN_IMAGE_URL, () => {
+      http.post(FAL_FLUX_PRO_11_URL, () => {
         falCalls += 1;
         return HttpResponse.json(falQueueHandle(`run-default-${falCalls}`));
       }),
@@ -1309,21 +1304,21 @@ describe("POST /api/image-io/generate", () => {
   it("preserves a valid explicit model and rejects an invalid explicit model", async () => {
     const fixture = await seedImageFixture({});
     const pricingFixture = await createScopedImagePricing({
-      configured: [...GPT_IMAGE_1_PRICING, ...QWEN_IMAGE_PRICING],
+      configured: [...GPT_IMAGE_1_PRICING, ...FLUX_IMAGE_PRICING],
     });
     const { runId } = await seedImageRun(fixture, {
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
     let gptCalls = 0;
-    let qwenCalls = 0;
+    let fluxCalls = 0;
     server.use(
       http.post(FAL_GPT_IMAGE_1_URL, () => {
         gptCalls += 1;
         return HttpResponse.json(falQueueHandle("explicit-gpt-image-1"));
       }),
-      http.post(FAL_QWEN_IMAGE_URL, () => {
-        qwenCalls += 1;
-        return HttpResponse.json(falQueueHandle("unexpected-qwen"));
+      http.post(FAL_FLUX_PRO_11_URL, () => {
+        fluxCalls += 1;
+        return HttpResponse.json(falQueueHandle("unexpected-flux"));
       }),
     );
     const token = okouToken({
@@ -1345,7 +1340,7 @@ describe("POST /api/image-io/generate", () => {
     });
     expect(explicitResponse.status).toBe(202);
     expect(gptCalls).toBe(1);
-    expect(qwenCalls).toBe(0);
+    expect(fluxCalls).toBe(0);
 
     const unsupportedModels = [
       "not-a-real-image-model",
@@ -1401,7 +1396,7 @@ describe("POST /api/image-io/generate", () => {
       },
     ]);
     expect(gptCalls).toBe(1);
-    expect(qwenCalls).toBe(0);
+    expect(fluxCalls).toBe(0);
   });
 
   it("keeps the global default for null, old, and session paths", async () => {
@@ -1409,14 +1404,14 @@ describe("POST /api/image-io/generate", () => {
       configured: GPT_IMAGE_1_PRICING,
     });
     let gptCalls = 0;
-    let qwenCalls = 0;
+    let fluxCalls = 0;
     server.use(
       http.post(FAL_GPT_IMAGE_1_URL, () => {
         gptCalls += 1;
         return HttpResponse.json(falQueueHandle(`global-default-${gptCalls}`));
       }),
-      http.post(FAL_QWEN_IMAGE_URL, () => {
-        qwenCalls += 1;
+      http.post(FAL_FLUX_PRO_11_URL, () => {
+        fluxCalls += 1;
         return HttpResponse.json(falQueueHandle("unexpected-run-default"));
       }),
     );
@@ -1458,7 +1453,7 @@ describe("POST /api/image-io/generate", () => {
     expect(sessionResponse.status).toBe(202);
 
     expect(gptCalls).toBe(3);
-    expect(qwenCalls).toBe(0);
+    expect(fluxCalls).toBe(0);
   });
 
   it("returns 402 when the org has no spendable credits", async () => {
@@ -1667,6 +1662,65 @@ describe("POST /api/image-io/generate", () => {
         }) ?? [],
       ),
     ).toStrictEqual({ short: 50, weekly: 50 });
+  });
+
+  it("keeps a run-less private generation in the artifact catalog", async () => {
+    const fixture = await seedImageFixture({ credits: 1000 });
+    const pricingFixture = await createScopedImagePricing({
+      configured: GPT_IMAGE_1_PRICING,
+    });
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    let observedRequestUrl: string | null = null;
+    server.use(
+      http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+        observedRequestUrl = request.url;
+        return HttpResponse.json(falQueueHandle("catalog-image-request"));
+      }),
+      http.get(FAL_GPT_MEDIA_URL, () => {
+        return new HttpResponse(IMAGE_BYTES, {
+          headers: { "Content-Type": "image/png" },
+        });
+      }),
+    );
+
+    // No run produces this generation, so its private ownership record is the
+    // only stored file. It is still an artifact the user paid for.
+    const app = createImageIoTestApp(pricingFixture.resolution);
+    const response = await app.request("/api/image-io/generate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ prompt: "a cat for the catalog" }),
+    });
+    expect(response.status).toBe(202);
+    await postFalWebhook(app, observedRequestUrl, {
+      images: [
+        {
+          url: FAL_GPT_MEDIA_URL,
+          width: 1024,
+          height: 1024,
+          content_type: "image/png",
+        },
+      ],
+      prompt: "A cat for the catalog.",
+    });
+    await flushWaitUntilForTest();
+
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const catalog = await accept(
+      setupApp({ context, routes: artifactCatalogRoutes })(
+        artifactCatalogContract,
+      ).list({ headers: authHeaders(), query: { limit: 20 } }),
+      [200],
+    );
+    expect(catalog.body.artifacts).toStrictEqual([
+      expect.objectContaining({
+        kind: "file",
+        title: expect.stringMatching(/^image-[0-9a-f]{8}\.png$/u),
+      }),
+    ]);
   });
 
   it("returns 503 when image pricing is not configured", async () => {
@@ -3237,7 +3291,7 @@ describe("POST /api/image-io/generate", () => {
   it("generates fal image files and settles megapixel usage asynchronously", async () => {
     const fixture = await seedImageFixture({ credits: 1000 });
     const pricingFixture = await createScopedImagePricing({
-      configured: QWEN_IMAGE_PRICING,
+      configured: FLUX_IMAGE_PRICING,
     });
     const { composeId } = await store.set(
       seedCompose$,
@@ -3259,14 +3313,14 @@ describe("POST /api/image-io/generate", () => {
     let observedBody: unknown = null;
     let observedRequestUrl: string | null = null;
     server.use(
-      http.post(FAL_QWEN_IMAGE_URL, async ({ request }) => {
+      http.post(FAL_FLUX_PRO_11_URL, async ({ request }) => {
         falCalls += 1;
         observedAuthorization = request.headers.get("authorization");
         observedRequestUrl = request.url;
         observedBody = await request.json();
-        return HttpResponse.json(falQueueHandle("qwen-image-request"));
+        return HttpResponse.json(falQueueHandle("flux-pro-1-1-request"));
       }),
-      http.get(FAL_MEDIA_URL, () => {
+      http.get(FAL_FLUX_PRO_11_MEDIA_URL, () => {
         return new HttpResponse(IMAGE_BYTES, {
           headers: { "Content-Type": "image/jpeg" },
         });
@@ -3284,7 +3338,7 @@ describe("POST /api/image-io/generate", () => {
       headers: { authorization: `Bearer ${token}` },
       body: JSON.stringify({
         prompt: "a precise product render",
-        model: "qwen-image",
+        model: "flux-pro-1.1",
         size: "1536x1024",
         outputFormat: "jpeg",
         seed: 99,
@@ -3301,7 +3355,7 @@ describe("POST /api/image-io/generate", () => {
     await postFalWebhook(app, observedRequestUrl, {
       images: [
         {
-          url: FAL_MEDIA_URL,
+          url: FAL_FLUX_PRO_11_MEDIA_URL,
           width: 1536,
           height: 1024,
           content_type: "image/jpeg",
@@ -3321,8 +3375,8 @@ describe("POST /api/image-io/generate", () => {
     expect(body).toMatchObject({
       contentType: "image/jpeg",
       size: IMAGE_BYTES.byteLength,
-      creditsCharged: 48,
-      model: "fal-ai/qwen-image",
+      creditsCharged: 96,
+      model: "fal-ai/flux-pro/v1.1",
       provider: "fal",
       imageSize: "1536x1024",
       quality: "model-default",
@@ -3330,7 +3384,7 @@ describe("POST /api/image-io/generate", () => {
       outputFormat: "jpeg",
       billingCategory: "output_megapixel",
       billingQuantity: 2,
-      sourceUrl: FAL_MEDIA_URL,
+      sourceUrl: FAL_FLUX_PRO_11_MEDIA_URL,
       seed: 99,
     });
     expect(body).not.toHaveProperty("usage");
@@ -3342,6 +3396,8 @@ describe("POST /api/image-io/generate", () => {
       num_images: 1,
       output_format: "jpeg",
       seed: 99,
+      safety_tolerance: "4",
+      enhance_prompt: false,
     });
 
     if (
@@ -3368,7 +3424,7 @@ describe("POST /api/image-io/generate", () => {
 
     // The megapixel category/quantity are asserted in the result body above;
     // the single settled charge is observable as the exact balance drop.
-    await expect(orgCredits(fixture)).resolves.toBe(952);
+    await expect(orgCredits(fixture)).resolves.toBe(904);
   });
 
   it("generates image-to-image through fal with 20 percent markup pricing", async () => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.3](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.2...sandbox-v0.23.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* **runner:** use fresh memory evidence for balloon grace ([#35509](https://github.com/vm0-ai/okou/issues/35509)) ([961efe6](https://github.com/vm0-ai/okou/commit/961efe6ab002c6414844e65309e2df75fce4dba7))
+
 ## [0.23.2](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.1...sandbox-v0.23.2) (2026-09-18)
 
 

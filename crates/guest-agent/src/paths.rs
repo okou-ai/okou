@@ -29,7 +29,6 @@ pub struct GuestPaths {
     failure_diagnostic_file: String,
     claude_append_system_prompt_file: String,
     pi_launch_payload_file: String,
-    pi_deferred_handoff_file: String,
     system_log_file: String,
     agent_log_file: String,
     metrics_log_file: String,
@@ -61,9 +60,6 @@ impl GuestPaths {
             ),
             pi_launch_payload_file: path_to_string(
                 guest_contracts::runtime_paths::pi_launch_payload_file(&runtime_dir),
-            ),
-            pi_deferred_handoff_file: path_to_string(
-                guest_contracts::runtime_paths::pi_deferred_handoff_file(&runtime_dir),
             ),
             system_log_file: path_to_string(guest_contracts::runtime_paths::system_log_file(
                 &runtime_dir,
@@ -210,10 +206,6 @@ impl GuestPaths {
     ///
     /// The guest writes authenticated handoff bytes here before spawning a
     /// deferred Pi CLI. The accessor only returns the captured path.
-    pub fn pi_deferred_handoff_file(&self) -> &str {
-        &self.pi_deferred_handoff_file
-    }
-
     /// Return the `logs/system.log` path.
     ///
     /// This stream contains structured guest system-log text, one line per
@@ -239,7 +231,7 @@ impl GuestPaths {
     /// does not create, validate, or otherwise access the file. See the canonical
     /// [agent log path helper][agent_log_file] for the shared runtime layout.
     ///
-    /// [Codex normalization policy]: https://github.com/vm0-ai/vm0/blob/main/crates/guest-agent/src/cli/codex_app_server_events.rs
+    /// [Codex normalization policy]: https://github.com/okou-ai/okou/blob/main/crates/guest-agent/src/cli/codex_app_server_events.rs
     /// [agent_log_file]: guest_contracts::runtime_paths::agent_log_file
     pub fn agent_log_file(&self) -> &str {
         &self.agent_log_file
@@ -351,11 +343,6 @@ mod tests {
         assert_eq!(
             paths.pi_launch_payload_file(),
             guest_contracts::runtime_paths::pi_launch_payload_file(&runtime_dir).to_string_lossy()
-        );
-        assert_eq!(
-            paths.pi_deferred_handoff_file(),
-            guest_contracts::runtime_paths::pi_deferred_handoff_file(&runtime_dir)
-                .to_string_lossy()
         );
         assert_eq!(
             paths.system_log_file(),

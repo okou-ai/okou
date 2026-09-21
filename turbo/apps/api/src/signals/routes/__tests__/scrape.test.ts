@@ -17,6 +17,7 @@ import {
   seedOrgMetadata,
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createDeferredPromise } from "../../utils";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
@@ -689,8 +690,12 @@ describe("okou scrape route", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     let firecrawlRequests = 0;
     server.use(

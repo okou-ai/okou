@@ -57,6 +57,7 @@ impl GuestRpcAcceptor for Acceptor {
 }
 
 struct Harness {
+    run_id: crate::ids::RunId,
     run: Option<Run>,
     incoming: mpsc::Sender<AcceptedGuestRpc>,
     cancelled: CancellationToken,
@@ -65,19 +66,31 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        Self::start(false)
+    }
+
+    fn with_usage() -> Self {
+        Self::start(true)
+    }
+
+    fn start(with_usage: bool) -> Self {
         let (incoming, receiver) = mpsc::channel(16);
         let cancelled = CancellationToken::new();
-        let run = Runtime {
+        let run_id = crate::ids::RunId::new_v4();
+        let runtime = Runtime {
             ssh: None,
             vnc: None,
-        }
-        .start(
+            usage: None,
+        };
+        let run = runtime.start_with_usage(
             Arc::new(Acceptor(Mutex::new(receiver))),
             "assigned-sandbox".into(),
-            crate::ids::RunId::new_v4(),
+            run_id,
             &cancelled,
+            with_usage.then(|| crate::run_usage::test_run(run_id)),
         );
         Self {
+            run_id,
             run: Some(run),
             incoming,
             cancelled,
@@ -153,6 +166,8 @@ async fn dispatch_without_consumers_rejects_known_unavailable_and_unknown_method
         ("vnc.input", "unavailable"),
         ("vnc.session.reconnect", "unknown_method"),
         ("vnc.capture.extra", "unknown_method"),
+        ("run.usage", "unavailable"),
+        ("run.usage.extra", "unknown_method"),
         ("unrelated.query", "unknown_method"),
     ] {
         let mut guest = h.open("assigned-sandbox").await;
@@ -169,6 +184,49 @@ async fn dispatch_without_consumers_rejects_known_unavailable_and_unknown_method
 }
 
 #[tokio::test]
+async fn usage_dispatches_without_ssh_and_rejects_guest_selected_params() {
+    let h = Harness::with_usage();
+    let mut guest = h.open("assigned-sandbox").await;
+    send(
+        &mut guest,
+        br#"{"version":1,"method":"run.usage","remaining_ms":60000,"params":{}}"#,
+    )
+    .await;
+    let result = frames(guest).await;
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0]["type"], "result");
+    assert_eq!(result[0]["data"]["schemaVersion"], 1);
+    assert_eq!(result[0]["data"]["runId"], h.run_id.to_string());
+    assert_eq!(result[0]["data"]["combined"]["state"], "observed");
+    assert_eq!(result[0]["data"]["combined"]["coverage"], "partial");
+    assert_eq!(
+        result[0]["data"]["sources"]["apiFirstTurn"]["state"],
+        "no-inference"
+    );
+    assert_eq!(
+        result[0]["data"]["sources"]["sandboxProxy"],
+        json!({"state":"unavailable","reason":"launch-unavailable"})
+    );
+
+    for params in [
+        json!({"runId":"guest-authority"}),
+        json!({"generation":"guest-generation"}),
+        json!({"totals":{"input":1}}),
+    ] {
+        let mut guest = h.open("assigned-sandbox").await;
+        send(
+            &mut guest,
+            json!({"version":1,"method":"run.usage","remaining_ms":60000,"params":params})
+                .to_string()
+                .as_bytes(),
+        )
+        .await;
+        assert_eq!(frames(guest).await, error("invalid_request"));
+    }
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn malformed_requests_are_rejected_before_consumer_availability() {
     let h = Harness::new();
     for request in [
@@ -178,6 +236,8 @@ async fn malformed_requests_are_rejected_before_consumer_availability() {
         br#"{"version":1,"method":"vnc.session.start","params":null}"#,
         br#"{"version":1,"method":"vnc.capture","params":{},"runId":"guest-authority"}"#,
         br#"{"version":1,"method":"vnc.input","params":{}}{}"#,
+        br#"{"version":1,"method":"run.usage","params":null}"#,
+        br#"{"version":1,"method":"run.usage","params":{},"runId":"guest-authority"}"#,
     ] {
         let mut guest = h.open("assigned-sandbox").await;
         send(&mut guest, request).await;

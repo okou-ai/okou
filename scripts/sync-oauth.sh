@@ -201,26 +201,26 @@ echo ""
 echo "=== Syncing to GitHub ==="
 
 # Dev: repo-level variable + secret (uses base name, not _PROD)
-echo "$dev_id" | gh variable --repo vm0-ai/vm0 set "${VAR_ID}"
+echo "$dev_id" | gh variable --repo okou-ai/okou set "${VAR_ID}"
 echo "  Set repo variable: ${VAR_ID}"
 
-echo "$dev_secret" | gh secret --repo vm0-ai/vm0 set "${VAR_SECRET}"
+echo "$dev_secret" | gh secret --repo okou-ai/okou set "${VAR_SECRET}"
 echo "  Set repo secret:   ${VAR_SECRET}"
 
 if [[ -n "$dev_slug" ]]; then
-  echo "$dev_slug" | gh variable --repo vm0-ai/vm0 set "${VAR_SLUG}"
+  echo "$dev_slug" | gh variable --repo okou-ai/okou set "${VAR_SLUG}"
   echo "  Set repo variable: ${VAR_SLUG}"
 fi
 
 # Prod: production environment variable + secret
-echo "$prod_id" | gh variable --repo vm0-ai/vm0 set "${VAR_ID}" -e production
+echo "$prod_id" | gh variable --repo okou-ai/okou set "${VAR_ID}" -e production
 echo "  Set production variable: ${VAR_ID}"
 
-echo "$prod_secret" | gh secret --repo vm0-ai/vm0 set "${VAR_SECRET}" -e production
+echo "$prod_secret" | gh secret --repo okou-ai/okou set "${VAR_SECRET}" -e production
 echo "  Set production secret:   ${VAR_SECRET}"
 
 if [[ -n "$prod_slug" ]]; then
-  echo "$prod_slug" | gh variable --repo vm0-ai/vm0 set "${VAR_SLUG}" -e production
+  echo "$prod_slug" | gh variable --repo okou-ai/okou set "${VAR_SLUG}" -e production
   echo "  Set production variable: ${VAR_SLUG}"
 fi
 

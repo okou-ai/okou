@@ -31,7 +31,7 @@ import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { featureSwitchesRoutes } from "../feature-switches";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -1300,35 +1300,9 @@ describe("GET /api/connector-catalog", () => {
     ).toStrictEqual(["oauth"]);
   });
 
-  it("hides only Stripe OAuth when the Marketplace OAuth feature is disabled", async () => {
+  it("shows Stripe OAuth alongside the API token and CLI methods", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: connectorCatalogRoutes })(
-      connectorCatalogContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "stripe" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(
-      response.body.connector.authMethods.map((authMethod) => {
-        return authMethod.id;
-      }),
-    ).toStrictEqual(["api-token", "cli"]);
-  });
-
-  it("shows Stripe OAuth when the Marketplace OAuth feature is enabled", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await enableConnectorFeatureSwitches(orgId, userId, {
-      [FeatureSwitchKey.StripeMarketplaceOAuthConnector]: true,
-    });
     mocks.clerk.session(userId, orgId);
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(

@@ -4,8 +4,8 @@ import type {
   RunnerVncResolveRequest,
   RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import { vncAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { vncSecuritySchema } from "@okouai/api-contracts/contracts/vnc-connections";
+import { vncPasswordAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
+import { vncX509VncSecuritySchema } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -20,7 +20,12 @@ export async function checkRunnerVnc(
   signal: AbortSignal,
 ): Promise<RunnerVncCheckResponse> {
   const row = await currentRunnerVncAuthority(db, input, signal);
-  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+  if (
+    !row ||
+    row.authMethod !== "vnc_password" ||
+    row.securityType !== "x509_vnc" ||
+    !(await hasCurrentVncMembership(clerk, row, signal))
+  ) {
     return { outcome: "unavailable" };
   }
   return {
@@ -42,6 +47,8 @@ export async function resolveRunnerVnc(
     return { outcome: "unavailable" };
   }
   if (
+    row.authMethod !== "vnc_password" ||
+    row.securityType !== "x509_vnc" ||
     !input.supportedProfiles.some((profile) => {
       return (
         profile.authMethod === row.authMethod &&
@@ -57,7 +64,7 @@ export async function resolveRunnerVnc(
   ) {
     throw new Error("VNC connection has an invalid stored trust configuration");
   }
-  const security = vncSecuritySchema.safeParse({
+  const security = vncX509VncSecuritySchema.safeParse({
     type: row.securityType,
     trust:
       row.trustMode === "system"
@@ -78,7 +85,7 @@ export async function resolveRunnerVnc(
     throw new Error("VNC credential decryption failed");
   }
   signal.throwIfAborted();
-  const authentication = vncAuthenticationSchema.safeParse({
+  const authentication = vncPasswordAuthenticationSchema.safeParse({
     method: row.authMethod,
     password: decrypted.value,
   });

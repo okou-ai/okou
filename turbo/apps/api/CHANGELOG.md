@@ -8,6 +8,244 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.644.0](https://github.com/okou-ai/okou/compare/api-v1.643.0...api-v1.644.0) (2026-09-20)
+
+
+### Features
+
+* **api:** create chat with initial message ([#35628](https://github.com/okou-ai/okou/issues/35628)) ([03784da](https://github.com/okou-ai/okou/commit/03784da089fb913321cd7637a236ba59547ee8a3))
+
+
+### Bug Fixes
+
+* **api:** disarm departed members' workflow automations ([#35692](https://github.com/okou-ai/okou/issues/35692)) ([023c234](https://github.com/okou-ai/okou/commit/023c2346455420c38f4f7e38c36f2698e8755be9))
+* **api:** remove mercury response disclosure prompt ([#35679](https://github.com/okou-ai/okou/issues/35679)) ([430b0c9](https://github.com/okou-ai/okou/commit/430b0c98ede23e39ac9b415f61cd7f89c7f5a4c3))
+* **artifacts:** keep chat attachments out of the artifact catalog ([#35655](https://github.com/okou-ai/okou/issues/35655)) ([670a649](https://github.com/okou-ai/okou/commit/670a6496664335866abc0ea78b47975054c8c1ff))
+
+
+### Refactoring
+
+* **api:** derive run-scoped builtin mcp firewalls ([#35673](https://github.com/okou-ai/okou/issues/35673)) ([ccee77f](https://github.com/okou-ai/okou/commit/ccee77fffc666113fa529042d1f6046e9a96c1ff))
+* **mcp:** make chat status lifecycle-only ([#35643](https://github.com/okou-ai/okou/issues/35643)) ([bfcefb7](https://github.com/okou-ai/okou/commit/bfcefb708909ba609261da023fba4e0f20f65d37))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.480.0
+    * @okouai/connectors bumped to 3.14.3
+    * @okouai/core bumped to 8.688.3
+    * @okouai/db bumped to 1.279.10
+    * @okouai/pi-agent-runtime bumped to 1.33.32
+
+## [1.643.0](https://github.com/okou-ai/okou/compare/api-v1.642.3...api-v1.643.0) (2026-09-20)
+
+
+### Features
+
+* **mcp:** add bounded wait-and-read for chat output ([#35642](https://github.com/okou-ai/okou/issues/35642)) ([f896ec4](https://github.com/okou-ai/okou/commit/f896ec439314c3aacc50f22439c57c4738320b59))
+* **platform:** rebuild the get started panel around one grid ([#35659](https://github.com/okou-ai/okou/issues/35659)) ([6906e1a](https://github.com/okou-ai/okou/commit/6906e1a9c9c77235d6ee872c6e384bfae1324332))
+
+
+### Bug Fixes
+
+* **api:** finalize a healthy multi-source morning brief collection ([#35669](https://github.com/okou-ai/okou/issues/35669)) ([94c366f](https://github.com/okou-ai/okou/commit/94c366fb7065eb4b1ca5fd4c3c6582fb36c86f46))
+* **api:** send branded transactional export completion emails ([#35644](https://github.com/okou-ai/okou/issues/35644)) ([1386243](https://github.com/okou-ai/okou/commit/138624317c64a39c4b297ebca50798f9eb189f37))
+* **connectors:** emit terminal built-in absence after runner drain ([#35598](https://github.com/okou-ai/okou/issues/35598)) ([4ac5b93](https://github.com/okou-ai/okou/commit/4ac5b93f50e6b17c5d03e8e86fb408391887fe73))
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Refactoring
+
+* **slack:** retire the legacy failed ingress status ([#35658](https://github.com/okou-ai/okou/issues/35658)) ([e65ccab](https://github.com/okou-ai/okou/commit/e65ccab9cb25c15094fe87983b73bc88e0bf5408))
+
+
+### Performance Improvements
+
+* **mcp:** reduce chat payload cost ([#35647](https://github.com/okou-ai/okou/issues/35647)) ([d36398a](https://github.com/okou-ai/okou/commit/d36398adbc113d1561eb1de8822670d096d2f083))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.479.0
+    * @okouai/core bumped to 8.688.2
+    * @okouai/db bumped to 1.279.9
+    * @okouai/pi-agent-runtime bumped to 1.33.31
+
+## [1.642.3](https://github.com/okou-ai/okou/compare/api-v1.642.2...api-v1.642.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* **api:** drain chat search gin between projection transactions ([#35633](https://github.com/okou-ai/okou/issues/35633)) ([8e1fe5d](https://github.com/okou-ai/okou/commit/8e1fe5dbad87087d540d26f4ba7ff10589cd08b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+    * @okouai/core bumped to 8.688.1
+    * @okouai/db bumped to 1.279.8
+    * @okouai/pi-agent-runtime bumped to 1.33.30
+
+## [1.642.2](https://github.com/okou-ai/okou/compare/api-v1.642.1...api-v1.642.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* align cloudflare access naming ([#35632](https://github.com/okou-ai/okou/issues/35632)) ([708ac2e](https://github.com/okou-ai/okou/commit/708ac2e7cec6250eef99bdae13ce272ea2fff6e9))
+* **api:** advertise current run usage to agents ([#35627](https://github.com/okou-ai/okou/issues/35627)) ([67a701c](https://github.com/okou-ai/okou/commit/67a701ca94c65fcd0bce202ceb3bbd2a8a60189a))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+* remove the stripe marketplace oauth feature switch ([#35623](https://github.com/okou-ai/okou/issues/35623)) ([cc48fcf](https://github.com/okou-ai/okou/commit/cc48fcf04b8972204e619837915a59316d4b2326))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+    * @okouai/core bumped to 8.688.0
+    * @okouai/db bumped to 1.279.7
+    * @okouai/pi-agent-runtime bumped to 1.33.29
+
+## [1.642.1](https://github.com/okou-ai/okou/compare/api-v1.642.0...api-v1.642.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+* **mcp:** align chat tool input schemas ([#35619](https://github.com/okou-ai/okou/issues/35619)) ([9e32b4e](https://github.com/okou-ai/okou/commit/9e32b4ec8b77ef30e3a80fcd528119a683adcfb8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/db bumped to 1.279.6
+    * @okouai/pi-agent-runtime bumped to 1.33.28
+
+## [1.642.0](https://github.com/okou-ai/okou/compare/api-v1.641.0...api-v1.642.0) (2026-09-20)
+
+
+### Features
+
+* **api:** carry cloudflare ray id and browser time on preview failures ([#35574](https://github.com/okou-ai/okou/issues/35574)) ([ced9458](https://github.com/okou-ai/okou/commit/ced9458700d43861586a90f7c57428113d08584b))
+* **api:** trigger a native morning brief on demand from settings debug ([#35596](https://github.com/okou-ai/okou/issues/35596)) ([c09e95b](https://github.com/okou-ai/okou/commit/c09e95bf7b724e7a32dfa6cdb01303b840c8fde6))
+* **core:** release the welcome thread to every workspace ([#35586](https://github.com/okou-ai/okou/issues/35586)) ([6bb62d1](https://github.com/okou-ai/okou/commit/6bb62d1157a83b416d91f77705bb448182196f64))
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* **api:** preserve terminal chat events on lock contention ([#35560](https://github.com/okou-ai/okou/issues/35560)) ([71ec306](https://github.com/okou-ai/okou/commit/71ec30640f4f43da06a1db1fbebd147f8fc3cea3))
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+* **cli:** surface failed mcp calls ([#35562](https://github.com/okou-ai/okou/issues/35562)) ([f92d366](https://github.com/okou-ai/okou/commit/f92d3665968bb3a9e03bb1a8d579c5b1405fb586))
+
+
+### CI
+
+* prepare runtime references for okou-ai rename ([#35352](https://github.com/okou-ai/okou/issues/35352)) ([e0445aa](https://github.com/okou-ai/okou/commit/e0445aa875eae424817d932886e6de38895ce986))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/db bumped to 1.279.5
+    * @okouai/pi-agent-runtime bumped to 1.33.27
+
+## [1.641.0](https://github.com/vm0-ai/okou/compare/api-v1.640.0...api-v1.641.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Bug Fixes
+
+* **api:** align pi api-first failure reporting ([#35490](https://github.com/vm0-ai/okou/issues/35490)) ([ad1996c](https://github.com/vm0-ai/okou/commit/ad1996ccb76f571c306e3200601fc564b1b39020))
+* **api:** make pi loop user scoped ([#35565](https://github.com/vm0-ai/okou/issues/35565)) ([8b8715c](https://github.com/vm0-ai/okou/commit/8b8715c553690b2f699d776a7985dce94457b836))
+
+
+### Refactoring
+
+* **connectors:** remove replacement metadata ([#35566](https://github.com/vm0-ai/okou/issues/35566)) ([0dd5f71](https://github.com/vm0-ai/okou/commit/0dd5f7140af5032e07a483b58be28da73bc34030))
+* remove retired hosted publication version columns ([#35323](https://github.com/vm0-ai/okou/issues/35323)) ([d2032e5](https://github.com/vm0-ai/okou/commit/d2032e55ce1e25d8f438e488948e9fe9ccb88de5))
+
+
+### Performance Improvements
+
+* **api:** overlap subscription capture with thread preparation ([#35545](https://github.com/vm0-ai/okou/issues/35545)) ([677bb0b](https://github.com/vm0-ai/okou/commit/677bb0b1afb775e6ab29e52b771807c51512c5fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+    * @okouai/db bumped to 1.279.4
+    * @okouai/pi-agent-runtime bumped to 1.33.26
+
+## [1.640.0](https://github.com/vm0-ai/okou/compare/api-v1.639.2...api-v1.640.0) (2026-09-20)
+
+
+### Features
+
+* **connectors:** gate monday mcp discovery ([#35525](https://github.com/vm0-ai/okou/issues/35525)) ([a7384c6](https://github.com/vm0-ai/okou/commit/a7384c6f34b5841a424676418e5f57178b21da06))
+
+
+### Performance Improvements
+
+* **api:** reuse chat startup snapshots ([#35371](https://github.com/vm0-ai/okou/issues/35371)) ([8396eda](https://github.com/vm0-ai/okou/commit/8396eda860c508e1cfa79e974390991035168ce1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.685.0
+    * @okouai/db bumped to 1.279.3
+
+## [1.639.2](https://github.com/vm0-ai/okou/compare/api-v1.639.1...api-v1.639.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **api:** separate deferred demand expiry from queue position ([#35487](https://github.com/vm0-ai/okou/issues/35487)) ([0bb0320](https://github.com/vm0-ai/okou/commit/0bb032075f3213182a400f45d4ea97ef77c27346))
+* **vnc:** align remote access defaults ([#35448](https://github.com/vm0-ai/okou/issues/35448)) ([08b7e4c](https://github.com/vm0-ai/okou/commit/08b7e4c9d5a641c665616f9bbbde2b2efe50294e))
+
+
+### Refactoring
+
+* retire hosted publication version column dependencies ([#35321](https://github.com/vm0-ai/okou/issues/35321)) ([f205ec5](https://github.com/vm0-ai/okou/commit/f205ec54fc463f43b1106a3659e5d6a8c979cab8))
+
+
+### Performance Improvements
+
+* **api:** reuse request-scoped model routing facts ([#35373](https://github.com/vm0-ai/okou/issues/35373)) ([cc0d66f](https://github.com/vm0-ai/okou/commit/cc0d66f610a38e2bc2d3fbe74ed360768f9995ae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.279.2
+
 ## [1.639.1](https://github.com/vm0-ai/okou/compare/api-v1.639.0...api-v1.639.1) (2026-09-20)
 
 

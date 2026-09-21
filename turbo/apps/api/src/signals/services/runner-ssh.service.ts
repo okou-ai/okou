@@ -141,7 +141,7 @@ async function currentConnection(
   }
   // The FK makes a missing local config a broken invariant, not an external miss.
   if (row.access === null) {
-    throw new Error("SSH Cloudflare Access configuration is missing");
+    throw new Error("SSH Cloudflare Access is missing");
   }
   if (lockAuthority) {
     // PostgreSQL cannot lock the nullable side of the outer join above. The

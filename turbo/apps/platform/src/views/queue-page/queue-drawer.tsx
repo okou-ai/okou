@@ -748,25 +748,21 @@ function QueueDrawerContent() {
       ? t(($) => {
           return $.queue.tiers.limitedFree;
         })
-      : concurrency.tier === "pro-suspend"
+      : concurrency.tier === "free"
         ? t(($) => {
-            return $.queue.tiers.noPlan;
+            return $.queue.tiers.free;
           })
-        : concurrency.tier === "free"
+        : concurrency.tier === "pro"
           ? t(($) => {
-              return $.queue.tiers.free;
+              return $.queue.tiers.pro;
             })
-          : concurrency.tier === "pro"
+          : concurrency.tier === "team"
             ? t(($) => {
-                return $.queue.tiers.pro;
+                return $.queue.tiers.team;
               })
-            : concurrency.tier === "team"
-              ? t(($) => {
-                  return $.queue.tiers.team;
-                })
-              : t(($) => {
-                  return $.queue.tiers.custom;
-                });
+            : t(($) => {
+                return $.queue.tiers.custom;
+              });
   const canManageBilling =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const visibleUpgrade = canManageBilling ? upgrade : undefined;
@@ -840,7 +836,11 @@ export function QueueDrawer() {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto -mx-6 px-6 -mb-6 pb-6">
+        {/* The list scrolls to the sheet's own padding edges so its scrollbar
+            sits at the edge, then re-applies that padding inside itself. The
+            bottom pair carries the sheet's safe-area inset for the same
+            reason the sheet does. */}
+        <div className="flex-1 min-h-0 overflow-y-auto -mx-6 px-6 -mb-safe-offset-6 pb-safe-offset-6">
           <QueueDrawerContent />
         </div>
       </SheetContent>

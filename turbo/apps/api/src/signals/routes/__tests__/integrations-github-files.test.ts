@@ -173,7 +173,7 @@ describe("GitHub file integration routes", () => {
   it("uses the GitHub URL filename when no filename hint is provided", async () => {
     const fixture = await seedFixture();
     const fileUrl =
-      "https://raw.githubusercontent.com/vm0-ai/vm0/main/github-file.png";
+      "https://raw.githubusercontent.com/okou-ai/okou/main/github-file.png";
     server.use(
       http.get(fileUrl, ({ request }) => {
         expect(request.headers.get("authorization")).toBeNull();
@@ -331,8 +331,8 @@ describe("GitHub file integration routes", () => {
       http.post(
         "https://api.github.com/repos/:owner/:repo/issues/:issueNumber/comments",
         async ({ request, params }) => {
-          expect(params.owner).toBe("vm0-ai");
-          expect(params.repo).toBe("vm0");
+          expect(params.owner).toBe("okou-ai");
+          expect(params.repo).toBe("okou");
           expect(params.issueNumber).toBe("42");
           expect(request.headers.get("authorization")).toBe(
             "Bearer ghs_test_token",
@@ -353,7 +353,7 @@ describe("GitHub file integration routes", () => {
       client.complete({
         body: {
           uploadId,
-          repo: "vm0-ai/vm0",
+          repo: "okou-ai/okou",
           issueNumber: 42,
           contentType: "application/pdf",
           caption: "Daily report",
@@ -375,7 +375,7 @@ describe("GitHub file integration routes", () => {
     );
     expect(response.body).toMatchObject({
       commentId: "98765",
-      repo: "vm0-ai/vm0",
+      repo: "okou-ai/okou",
       issueNumber: 42,
       filename: "report.pdf",
       mimetype: "application/pdf",

@@ -41,7 +41,7 @@ import { webhooksGoogleWorkspaceEventsRoutes } from "../webhooks-google-workspac
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
 const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);

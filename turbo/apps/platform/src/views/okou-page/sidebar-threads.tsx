@@ -1,5 +1,10 @@
 import type { MouseEvent } from "react";
-import { useGet, useLoadable, useSet, useLastResolved } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useSet,
+  useLastResolved,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -56,10 +61,11 @@ import {
   newChatThreadDisabled$,
   type NewChatThreadPane,
 } from "../../signals/chat-page/optimistic-chat-thread-page.ts";
-import type {
-  SidebarChatThreadListSignals,
-  SidebarChatThreadScrollSignals,
-  SidebarChatThreadWindow,
+import {
+  unreadSidebarChatThreadList$,
+  type SidebarChatThreadListSignals,
+  type SidebarChatThreadScrollSignals,
+  type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { sidebarThreadTitleOverflowRef$ } from "../../signals/chat-page/sidebar-thread-title.ts";
@@ -841,25 +847,20 @@ function ChatThreads({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const unreadOnly = useGet(chatThreadOnlyUnread$);
   const threadCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
   if (threadCount === 0) {
-    if (!unreadOnly && hasHiddenArchivedThreads) {
+    if (hasHiddenArchivedThreads) {
       return <ArchivedChatThreadsEmptyState />;
     }
     return (
       <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-        {unreadOnly
-          ? t(($) => {
-              return $.chat.sidebar.noUnread;
-            })
-          : t(($) => {
-              return $.chat.sidebar.empty;
-            })}
+        {t(($) => {
+          return $.chat.sidebar.empty;
+        })}
       </p>
     );
   }
@@ -1165,14 +1166,72 @@ function ChatThreadsContent({
   );
 }
 
-function AgentChatThreadsContent({
+function UnreadChatThreadsContent({
   currentMainThreadId,
   scrollSignals,
 }: {
   currentMainThreadId: string | null;
   scrollSignals: SidebarChatThreadScrollSignals;
 }) {
-  const listLoadable = useLoadable(scrollSignals.list$);
+  const { t } = useTranslation();
+  const list = useLastLoadable(unreadSidebarChatThreadList$);
+  const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
+  const searchOpen = useGet(threeColumnSearchOpen$);
+  const scrollCurrentChatThreadOnRef = useSet(
+    scrollSignals.scrollCurrentChatThreadOnRef$,
+  );
+
+  if (list.state === "loading") {
+    return (
+      <div className="flex flex-col gap-1">
+        <ChatThreadsSkeleton />
+      </div>
+    );
+  }
+  if (list.state === "hasError") {
+    return null;
+  }
+  if (list.data.items.length === 0) {
+    return (
+      <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
+        {t(($) => {
+          return $.chat.sidebar.noUnread;
+        })}
+      </p>
+    );
+  }
+
+  return (
+    <div ref={setShortcutRoot} className="w-full">
+      {currentMainThreadId && list.data.currentThreadListed ? (
+        <span
+          ref={scrollCurrentChatThreadOnRef}
+          data-chat-thread-id={currentMainThreadId}
+          hidden
+        />
+      ) : null}
+      {list.data.items.map((signals, index) => {
+        return (
+          <div key={signals.threadId} className="pb-1">
+            <ChatThreadItem
+              signals={signals}
+              shortcutNumber={!searchOpen && index < 9 ? index + 1 : undefined}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AllChatThreadsContent({
+  currentMainThreadId,
+  scrollSignals,
+}: {
+  currentMainThreadId: string | null;
+  scrollSignals: SidebarChatThreadScrollSignals;
+}) {
+  const listLoadable = useLastLoadable(scrollSignals.list$);
 
   if (listLoadable.state === "loading") {
     return (
@@ -1232,6 +1291,7 @@ function ExpandedChatThreadsContent({
   const { t } = useTranslation();
   const isScrolled = useGet(scrollSignals.isScrolled$);
   const currentMainThreadId = useGet(currentChatThreadId$);
+  const unreadOnly = useGet(chatThreadOnlyUnread$);
 
   return (
     <OverlayScrollArea
@@ -1247,10 +1307,17 @@ function ExpandedChatThreadsContent({
         boxShadow: isScrolled ? "0 -1px 0 0 hsl(var(--border) / 0.4)" : "none",
       }}
     >
-      <AgentChatThreadsContent
-        currentMainThreadId={currentMainThreadId}
-        scrollSignals={scrollSignals}
-      />
+      {unreadOnly ? (
+        <UnreadChatThreadsContent
+          currentMainThreadId={currentMainThreadId}
+          scrollSignals={scrollSignals}
+        />
+      ) : (
+        <AllChatThreadsContent
+          currentMainThreadId={currentMainThreadId}
+          scrollSignals={scrollSignals}
+        />
+      )}
     </OverlayScrollArea>
   );
 }

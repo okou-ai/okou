@@ -30,7 +30,7 @@ pre-commit:
             root: turbo/
             glob: "turbo/apps/platform/**/*.{gif,ico,jpeg,jpg,png,svg,webp}"
             fail_text: |
-              Platform static assets should be managed in vm0-ai/static-files.
+              Platform static assets should be managed in okou-ai/static-files.
               Use append-only, versioned or content-hashed paths under static.vm0.io/platform and reference them with platformStaticAssetUrl().
           - name: knip
             run: pnpm knip

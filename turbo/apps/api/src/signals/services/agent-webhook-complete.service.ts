@@ -1,8 +1,3 @@
-import {
-  readPiInferenceLifecycle,
-  assertPiInferenceApiFailure,
-  assertPiInferencePublication,
-} from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -11,15 +6,7 @@ import {
   type RunResult,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import {
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  knownRunFailureReasonSchema,
-  type KnownRunFailureReason,
-  type RunFailureReasonToken,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
+import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -37,11 +24,12 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { safeSync, tapError } from "../utils";
+import { safeSync, settle, tapError } from "../utils";
 import {
   chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
   dispatchRunCallbacks$,
+  undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
 import { drainChatThreadQueueForRun$ } from "./chat-thread-queue-drain.service";
 import {
@@ -62,6 +50,10 @@ import {
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  logAgentRunFailure,
+  type AgentRunFailureLogSnapshot,
+} from "./agent-run-failure-log.service";
 
 type WebhookCompleteBody = z.infer<
   typeof webhookCompleteContract.complete.body
@@ -69,7 +61,6 @@ type WebhookCompleteBody = z.infer<
 type TerminalStatus = "completed" | "failed";
 
 interface CompleteAgentRunInput {
-  readonly inferenceOwnerEpoch?: number;
   readonly auth: SandboxAuth;
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
@@ -115,6 +106,8 @@ export type CompleteSideEffectsInput = (
 
 export type DispatchCompleteSideEffectsInput = CompleteSideEffectsInput & {
   readonly apiStartTime?: number;
+  readonly skipChatCallback?: true;
+  readonly chatThreadQueueHandled?: true;
 };
 
 interface CompletionSuccessResponse {
@@ -130,9 +123,10 @@ type CompletionResponse =
   | CompletionSuccessResponse
   | AgentCheckpointErrorResponse;
 
-interface RunRecord {
+interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
+  readonly error: string | null;
   readonly orgId: string;
   readonly sessionId: string;
   readonly status: RunStatus;
@@ -141,7 +135,6 @@ interface RunRecord {
   readonly triggerSource: string | null;
   readonly launchSnapshot: (typeof agentRuns.$inferSelect)["launchSnapshot"];
   readonly langfuseTraceEnabled: boolean;
-  readonly modelProvider: string | null;
 }
 
 interface PreparedCompletion {
@@ -173,54 +166,6 @@ type CompletionTransactionResult =
 
 const L = logger("webhook:complete");
 
-const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
-  // Input and execution limits need no operator action for either key owner.
-  safety_policy_refusal: "suppress",
-  input_too_large: "suppress",
-  execution_timeout: "suppress",
-  insufficient_credits: "suppress-byok",
-  provider_insufficient_credits: "suppress-byok",
-  invalid_api_key: "suppress-byok",
-  invalid_credentials: "suppress-byok",
-  terms_acceptance_required: "suppress-byok",
-  context_window_exceeded: "suppress-byok",
-  output_token_limit: "suppress-byok",
-  provider_rate_limited: "suppress-byok",
-  provider_overloaded: "suppress-byok",
-  provider_stream_timeout: "suppress-byok",
-  provider_queue_timeout: "suppress-byok",
-  provider_server_error: "suppress-byok",
-  response_connection_lost: "suppress-byok",
-  reconnect_required: "suppress-byok",
-  usage_limit: "suppress-byok",
-  session_history_limit: "retain",
-  guest_root_filesystem_full: "retain",
-  unsupported_model: "retain",
-} satisfies Record<
-  KnownRunFailureReason,
-  "suppress" | "suppress-byok" | "retain"
->);
-
-function shouldSuppressKnownFailureLog(
-  run: RunRecord,
-  failureReason: KnownRunFailureReason,
-): boolean {
-  switch (KNOWN_FAILURE_LOG_POLICY[failureReason]) {
-    case "suppress": {
-      return true;
-    }
-    case "suppress-byok": {
-      const providerType = modelProviderTypeSchema.safeParse(run.modelProvider);
-      return (
-        providerType.success && !isBuiltInModelProviderType(providerType.data)
-      );
-    }
-    case "retain": {
-      return false;
-    }
-  }
-}
-
 function logAgentRunCompletionOutcome(
   input: CompleteAgentRunInput,
   commit: CompletionCommit,
@@ -236,60 +181,14 @@ function logAgentRunCompletionOutcome(
     });
     return;
   }
-  if (!shouldSuppressFailureLog(commit.run, commit.transitionFailureReason)) {
-    logRunFailure(input, commit);
-  }
-}
-
-function shouldSuppressFailureLog(
-  run: RunRecord,
-  failureReason: RunFailureReasonToken | undefined,
-): boolean {
-  const knownFailureReason =
-    knownRunFailureReasonSchema.safeParse(failureReason);
-  if (!knownFailureReason.success) {
-    return false;
-  }
-  return shouldSuppressKnownFailureLog(run, knownFailureReason.data);
-}
-
-/**
- * A capacity rejection on a built-in route fails the user's run against a
- * credential the platform owns, so it stays a genuine operator-actionable
- * failure rather than a caller-side condition. The reason token is
- * framework-independent, so a built-in Claude overload that reaches this same
- * boundary is included. Routing recovery is a separate decision; this only
- * classifies the severity of the single terminal record.
- */
-function isBuiltInCapacityFailure(commit: CompletionCommit): boolean {
-  return (
-    commit.transitionFailureReason === "provider_overloaded" &&
-    isBuiltInModelProviderType(commit.run.modelProvider)
-  );
-}
-
-function logRunFailure(
-  input: CompleteAgentRunInput,
-  commit: CompletionCommit,
-): void {
-  const isCreditError =
-    commit.transitionFailureReason === "insufficient_credits";
-  const logFailure = isCreditError
-    ? L.debug
-    : commit.transitionFailureReason === "guest_root_filesystem_full"
-      ? L.info
-      : isBuiltInCapacityFailure(commit)
-        ? L.error
-        : L.warn;
-  logFailure(
-    isCreditError ? "Run stopped: insufficient credits" : "Run failed",
-    {
-      runId: input.body.runId,
-      exitCode: input.body.exitCode,
-      error: commit.transitionError,
-      failureReason: commit.transitionFailureReason,
-    },
-  );
+  logAgentRunFailure({
+    runId: input.body.runId,
+    exitCode: input.body.exitCode,
+    error: commit.transitionError,
+    failureReason: commit.transitionFailureReason,
+    executionOwner: input.executionOwner ?? "sandbox",
+    run: commit.run,
+  });
 }
 
 function checkpointInputForCompletion(
@@ -300,9 +199,6 @@ function checkpointInputForCompletion(
   }
   return {
     auth: input.auth,
-    ...(input.inferenceOwnerEpoch === undefined
-      ? {}
-      : { inferenceOwnerEpoch: input.inferenceOwnerEpoch }),
     body: {
       ...input.body.checkpoint,
       runId: input.body.runId,
@@ -359,6 +255,7 @@ async function loadCompletionRun(
   const [run] = await db
     .select({
       apiStartedAt: agentRuns.apiStartedAt,
+      error: agentRuns.error,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -369,6 +266,10 @@ async function loadCompletionRun(
       launchSnapshot: agentRuns.launchSnapshot,
       langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
+      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+      selectedModel: agentRuns.selectedModel,
+      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+      modelRuntimeModel: agentRuns.modelRuntimeModel,
     })
     .from(agentRuns)
     .where(
@@ -433,6 +334,7 @@ async function lockCompletionRun(
   const [run] = await tx
     .select({
       apiStartedAt: agentRuns.apiStartedAt,
+      error: agentRuns.error,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -443,6 +345,10 @@ async function lockCompletionRun(
       launchSnapshot: agentRuns.launchSnapshot,
       langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
+      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+      selectedModel: agentRuns.selectedModel,
+      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+      modelRuntimeModel: agentRuns.modelRuntimeModel,
     })
     .from(agentRuns)
     .where(
@@ -456,31 +362,6 @@ async function lockCompletionRun(
   if (!run) {
     return null;
   }
-  const lifecycle = await readPiInferenceLifecycle(
-    tx,
-    input.body.runId,
-    run.launchSnapshot,
-  );
-  const sandboxFence = input.auth.piSandbox;
-  if (sandboxFence) {
-    if (
-      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
-      lifecycle.lease.claimedGeneration !== sandboxFence.generation
-    ) {
-      throw new Error("Stale Pi Sandbox completion");
-    }
-    if (lifecycle.inference.phase !== "terminal") {
-      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
-    }
-  } else if (
-    input.executionOwner === "api-first" &&
-    input.body.exitCode !== 0
-  ) {
-    assertPiInferenceApiFailure(lifecycle, input.inferenceOwnerEpoch);
-  } else {
-    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
-  }
-
   return { ...run, status: runStatusSchema.parse(run.status) };
 }
 
@@ -620,6 +501,17 @@ async function lockCompletionPiMemoryStorage(
   }
 }
 
+function persistedTerminalError(
+  run: RunRecord,
+): { readonly transitionError: string } | Record<string, never> {
+  if (run.status !== "failed") {
+    return {};
+  }
+  return {
+    transitionError: run.error?.trim() || "Run failed without error message",
+  };
+}
+
 async function completeAgentRunTransition(
   tx: Tx,
   input: CompleteAgentRunInput,
@@ -714,6 +606,7 @@ async function completeAgentRunTransition(
       run,
       transitioned: false,
       responseStatus: run.status === "completed" ? "completed" : "failed",
+      ...persistedTerminalError(run),
       finalization,
     },
   };
@@ -722,13 +615,14 @@ async function completeAgentRunTransition(
 function completionResponse(
   runId: string,
   commit: CompletionCommit,
+  redriveTerminalChatCallback: boolean,
 ): CompletionResponse {
   let sideEffects: CompleteSideEffectsInput | undefined;
   const piCleanup =
     commit.run.launchSnapshot?.framework === "pi"
       ? ({ cleanupPiApiFirstTurn: true } as const)
       : {};
-  if (commit.transitioned) {
+  if (commit.transitioned || redriveTerminalChatCallback) {
     sideEffects = {
       kind: "terminal",
       runId,
@@ -793,10 +687,97 @@ function settledRunCompletionResponse(run: RunRecord): CompletionResponse {
   };
 }
 
+export type RequiredTerminalChatCallbackResult =
+  | { readonly success: true; readonly chatThreadQueueHandled: boolean }
+  | {
+      readonly success: false;
+      readonly chatThreadQueueHandled: boolean;
+      readonly error: string;
+    };
+
+/**
+ * Finish the canonical chat projection before the completion webhook is
+ * acknowledged. Other callbacks and accounting remain background side
+ * effects, but this durable callback owns the lifecycle marker and thread
+ * queue wakeup.
+ */
+export const dispatchRequiredTerminalChatCallback$ = command(
+  async (
+    { set },
+    input: TerminalSideEffectsInput & {
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<RequiredTerminalChatCallbackResult> => {
+    const db = set(writeDb$);
+    const chatCallbackId = await undeliveredChatCallbackIdForRun(
+      db,
+      input.runId,
+    );
+    signal.throwIfAborted();
+    if (chatCallbackId === undefined) {
+      return { success: true, chatThreadQueueHandled: false };
+    }
+
+    const [callbackResult] = await set(
+      dispatchRunCallbacks$,
+      {
+        db,
+        runId: input.runId,
+        status: input.status,
+        error: input.error,
+        redriveChatCallbackId: chatCallbackId,
+        redriveUndeliveredChatCallbackOnly: true,
+        awaitTerminalChatProjection: true,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (callbackResult?.success) {
+      return { success: true, chatThreadQueueHandled: true };
+    }
+    if (
+      callbackResult === undefined &&
+      (await undeliveredChatCallbackIdForRun(db, input.runId)) === undefined
+    ) {
+      signal.throwIfAborted();
+      return { success: true, chatThreadQueueHandled: false };
+    }
+
+    const drained = await settle(
+      set(
+        drainChatThreadQueueForRun$,
+        {
+          runId: input.runId,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+          apiStartTime: input.apiStartTime,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!drained.ok) {
+      L.error("Failed to drain chat thread queue after callback failure", {
+        runId: input.runId,
+        error: drained.error,
+      });
+    }
+    return {
+      success: false,
+      chatThreadQueueHandled: drained.ok,
+      error: callbackResult?.error ?? "Canonical terminal chat callback failed",
+    };
+  },
+);
+
 const dispatchTerminalCompleteSideEffects$ = command(
   async (
     { set },
-    input: TerminalSideEffectsInput & { readonly apiStartTime: number },
+    input: TerminalSideEffectsInput & {
+      readonly apiStartTime: number;
+      readonly skipChatCallback?: true;
+      readonly chatThreadQueueHandled?: true;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
@@ -810,7 +791,9 @@ const dispatchTerminalCompleteSideEffects$ = command(
     }
     const callbackStatus =
       input.status === "completed" ? "completed" : "failed";
-    const chatCallbackId = await chatCallbackIdForRun(db, input.runId);
+    const chatCallbackId = input.skipChatCallback
+      ? undefined
+      : await chatCallbackIdForRun(db, input.runId);
     signal.throwIfAborted();
     const callbackResults = await tapError(
       set(
@@ -820,6 +803,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
           runId: input.runId,
           status: callbackStatus,
           error: input.error,
+          skipChatCallback: input.skipChatCallback,
         },
         signal,
       ),
@@ -832,9 +816,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
     );
     signal.throwIfAborted();
 
-    const chatCallbackDrained = callbackResults?.some((result) => {
-      return result.callbackId === chatCallbackId && result.success;
-    });
+    const chatCallbackDrained =
+      input.chatThreadQueueHandled === true ||
+      callbackResults?.some((result) => {
+        return result.callbackId === chatCallbackId && result.success;
+      });
     if (!chatCallbackDrained) {
       await tapError(
         set(
@@ -1054,6 +1040,16 @@ export const completeAgentRun$ = command(
         activeInputFinalized: commit.finalization.finalized,
       });
     }
-    return completionResponse(input.body.runId, commit);
+    const redriveTerminalChatCallback =
+      !commit.transitioned &&
+      (commit.run.status === "completed" || commit.run.status === "failed") &&
+      (await undeliveredChatCallbackIdForRun(db, input.body.runId)) !==
+        undefined;
+    signal.throwIfAborted();
+    return completionResponse(
+      input.body.runId,
+      commit,
+      redriveTerminalChatCallback,
+    );
   },
 );

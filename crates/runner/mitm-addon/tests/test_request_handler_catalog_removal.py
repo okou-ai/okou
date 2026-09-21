@@ -114,11 +114,32 @@ def _write_account_mcp_state(tmp_path: Path, *, credentialed: bool = False) -> t
         "captureNetworkBodies": True,
         "firewalls": [
             {
-                "kind": "builtin",
-                "name": _REMOVED,
+                "kind": "inline",
                 "sourceId": _MCP_SOURCE_ID,
+                "firewall": {
+                    "name": _REMOVED,
+                    "apis": [
+                        {
+                            "id": f"{_REMOVED}:0",
+                            "base": "https://shared.example.com",
+                            "auth": (
+                                {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
+                                if credentialed
+                                else {}
+                            ),
+                            "permissions": [],
+                        }
+                    ],
+                },
             },
             {"kind": "builtin", "name": _RETAINED},
+        ],
+        "connectorRuntimeTargets": [
+            {
+                "kind": "builtin",
+                "connectorSlug": _REMOVED,
+                "sourceId": _MCP_SOURCE_ID,
+            }
         ],
         "connectorRoutingVariables": {f"builtin:{_REMOVED}": {}},
         "networkPolicies": {
@@ -131,23 +152,7 @@ def _write_account_mcp_state(tmp_path: Path, *, credentialed: bool = False) -> t
         cache_path,
         digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         version="catalog-a",
-        firewalls={
-            _REMOVED: {
-                "name": _REMOVED,
-                "apis": [
-                    {
-                        "base": "https://shared.example.com",
-                        "auth": (
-                            {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
-                            if credentialed
-                            else {}
-                        ),
-                        "permissions": [],
-                    }
-                ],
-            },
-            _RETAINED: _firewall(_RETAINED, "https://shared.example.com"),
-        },
+        firewalls={_RETAINED: _firewall(_RETAINED, "https://shared.example.com")},
     )
     return registry_path, cache_path
 
@@ -246,6 +251,7 @@ async def test_no_auth_mcp_skips_account_validation(
             },
         }
         sandbox["connectorRoutingVariables"] = {f"custom:{custom_id}": {}}
+        sandbox["connectorRuntimeTargets"] = [{"kind": "custom", "customConnectorId": custom_id}]
         intent = custom_id
     if not has_auth_context:
         sandbox.pop("encryptedSecrets")
@@ -344,8 +350,8 @@ async def test_authenticated_builtin_owner_removed_during_account_check_is_rejec
 
     assert endpoint.request_count == 1
     assert flow.response is not None
-    assert flow.response.status_code == 424
-    assert json.loads(flow.response.content)["error"] == "connector_not_configured_for_run"
+    assert flow.response.status_code == 409
+    assert json.loads(flow.response.content)["error"] == "ambiguous_connector_route"
     assert "Authorization" not in flow.request.headers
 
 
@@ -423,6 +429,74 @@ async def test_removed_connector_becomes_ordinary_request_without_auth(
     assert metadata_keys.FIREWALL_NAME not in removed_flow.metadata
     assert "Authorization" not in removed_flow.request.headers
     assert "X-Okou-Connector-Intent" not in removed_flow.request.headers
+    assert retained_flow.response is None
+    assert retained_flow.metadata[metadata_keys.FIREWALL_NAME] == _RETAINED
+    assert retained_flow.request.headers["Authorization"] == "Bearer retained"
+
+
+async def test_runtime_absence_overrides_stale_catalog_without_auth(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+):
+    removed_host = "removed.example.com"
+    retained_host = "retained.example.com"
+    registry_path, cache_path = _write_active_state(
+        tmp_path,
+        removed_base=f"https://{removed_host}",
+        retained_base=f"https://{retained_host}",
+    )
+    registry_data = json.loads(registry_path.read_text())
+    sandbox = registry_data["sandboxes"][_CLIENT_IP]
+    sandbox["connectorRuntimeTargets"] = [
+        {"kind": "builtin", "connectorSlug": _REMOVED},
+        {"kind": "builtin", "connectorSlug": _RETAINED},
+    ]
+    sandbox["omittedBuiltinFirewalls"] = [_REMOVED]
+    del sandbox["networkPolicies"][_REMOVED]
+    registry_path.write_text(json.dumps(registry_data))
+    registry.reset_cache_for_tests()
+
+    removed_flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host=removed_host,
+        path="/items/123",
+        request_headers=headers(("Host", removed_host)),
+    )
+    retained_flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host=retained_host,
+        path="/items/123",
+        request_headers=headers(("Host", retained_host)),
+    )
+
+    with (
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url="https://api.okou.ai",
+        ),
+        fake_firewall_headers(headers={"Authorization": "Bearer retained"}) as auth_fetch,
+    ):
+        state = registry.load_registry_state(str(registry_path))
+        await mitm_addon.request(removed_flow)
+        await mitm_addon.request(retained_flow)
+
+    assert not isinstance(state, registry.RegistryUnavailable)
+    assert state.invalid_sandboxes == {}
+    assert state.omitted_builtin_firewalls == {_CLIENT_IP: frozenset({_REMOVED})}
+    assert [firewall["name"] for firewall in state.sandboxes[_CLIENT_IP]["firewalls"]] == [
+        _RETAINED
+    ]
+    auth_fetch.assert_awaited_once()
+    assert removed_flow.response is None
+    assert removed_flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert metadata_keys.FIREWALL_NAME not in removed_flow.metadata
+    assert "Authorization" not in removed_flow.request.headers
     assert retained_flow.response is None
     assert retained_flow.metadata[metadata_keys.FIREWALL_NAME] == _RETAINED
     assert retained_flow.request.headers["Authorization"] == "Bearer retained"

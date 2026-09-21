@@ -10,7 +10,7 @@ import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { resetSignal, setDaemon, waitForOperation } from "../utils.ts";
+import { detach, Reason, resetSignal, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 
@@ -90,10 +90,14 @@ export interface GetStartedSummary {
   readonly completed: number;
   readonly total: number;
   readonly earnedCredits: number;
+  /** Credits still claimable, which is what the panel leads with. */
+  readonly remainingCredits: number;
+  readonly checkinStreak: number;
 }
 export const getStartedSummary$ = computed(
   async (get): Promise<GetStartedSummary> => {
     const quests = await get(getStartedQuests$);
+    const status = await get(getStartedStatus$);
     return {
       completed: quests.filter((quest) => {
         return quest.status === "done";
@@ -106,9 +110,26 @@ export const getStartedSummary$ = computed(
         .reduce((sum, quest) => {
           return sum + quest.earnedCredits;
         }, 0),
+      remainingCredits: quests
+        .filter((quest) => {
+          return quest.canEarnMore && quest.status !== "inReview";
+        })
+        .reduce((sum, quest) => {
+          return sum + quest.rewardAmount;
+        }, 0),
+      checkinStreak: status?.checkinStreak ?? 0,
     };
   },
 );
+
+/** Whether the panel's reward note is unfolded. */
+const rewardsNoteOpenState$ = state(false);
+export const rewardsNoteOpen$ = computed((get) => {
+  return get(rewardsNoteOpenState$);
+});
+export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
+  set(rewardsNoteOpenState$, open);
+});
 
 /**
  * Which quest's intro dialog is open, if any.
@@ -234,21 +255,25 @@ const refreshGetStartedFromRealtime$ = command(
 /** An authenticated app daemon; reward availability never delays route readiness. */
 export const setupGetStartedRewards$ = command(
   ({ get, set }, signal: AbortSignal): void => {
-    setDaemon(async (ownerSignal) => {
-      const switches = await get(featureSwitches$);
-      ownerSignal.throwIfAborted();
-      if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-        return;
-      }
-      set(
-        setAblyLoop$,
-        {
-          topic: GET_STARTED_REWARDS_CHANGED_EVENT,
-          loopCommand$: refreshGetStartedFromRealtime$,
-          options: { runOnSubscribe: true },
-        },
-        ownerSignal,
-      );
-    }, signal);
+    detach(
+      (async (ownerSignal: AbortSignal): Promise<void> => {
+        const switches = await get(featureSwitches$);
+        ownerSignal.throwIfAborted();
+        if (!switches[FeatureSwitchKey.GetStartedQuests]) {
+          return;
+        }
+        set(
+          setAblyLoop$,
+          {
+            topic: GET_STARTED_REWARDS_CHANGED_EVENT,
+            loopCommand$: refreshGetStartedFromRealtime$,
+            options: { runOnSubscribe: true },
+          },
+          ownerSignal,
+        );
+      })(signal),
+      Reason.Daemon,
+      "get started",
+    );
   },
 );

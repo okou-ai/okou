@@ -33,9 +33,7 @@ import {
   countMorningBriefChatWritesFixture,
   deleteSeededChatThreadFixture,
   excludeMorningBriefChatThreadFixture,
-  holdActiveRunReadFixture,
   holdAgentRowFixture,
-  holdChatCandidateDiscoveryFixture,
   holdChatThreadReadBarrierFixture,
   holdMorningBriefChatMembershipLookupFixture,
   holdMorningBriefOwnershipReadFixture,
@@ -53,7 +51,7 @@ import {
 } from "../../../test-fixtures/morning-brief-chat-collection";
 import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
-import { joinAll, onRejection } from "../../utils";
+import { onRejection } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -275,6 +273,15 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     );
   }
 
+  function isExcerptContentQueryForThread(
+    queryArgs: unknown[],
+    threadId: string,
+  ): boolean {
+    return (
+      isExcerptContentQuery(queryArgs) && barrierQueryBinds(queryArgs, threadId)
+    );
+  }
+
   function isAgentKeyShareQuery(
     queryArgs: unknown[],
     agentId: string,
@@ -284,6 +291,20 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       text.includes('from "agents"') &&
       text.includes("for key share") &&
       barrierQueryBinds(queryArgs, agentId)
+    );
+  }
+
+  function isUnreadCandidateDiscoveryQuery(
+    queryArgs: unknown[],
+    owner: { readonly orgId: string; readonly userId: string },
+  ): boolean {
+    const text = barrierQueryText(queryArgs);
+    return (
+      text.includes('from "chat_threads"') &&
+      text.includes("cross join lateral") &&
+      text.includes('order by "anchored_terminal_event"."created_at" desc') &&
+      barrierQueryBinds(queryArgs, owner.orgId) &&
+      barrierQueryBinds(queryArgs, owner.userId)
     );
   }
 
@@ -990,9 +1011,25 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     }, 60_000);
 
     it("spends successive PostgreSQL waits without starting content after the candidate deadline", async () => {
+      let targetThreadId: string | undefined;
+      let healthyControlArmed = false;
+      let expiredContentQueryObserved = false;
+      const matchesTargetContentQuery = (queryArgs: unknown[]): boolean => {
+        return (
+          targetThreadId !== undefined &&
+          isExcerptContentQueryForThread(queryArgs, targetThreadId)
+        );
+      };
       await withDatabaseTransactionBarrierFixture(
         {
-          select: isExcerptContentQuery,
+          select: (queryArgs) => {
+            return healthyControlArmed && matchesTargetContentQuery(queryArgs);
+          },
+          observe: (queryArgs) => {
+            if (!healthyControlArmed && matchesTargetContentQuery(queryArgs)) {
+              expiredContentQueryObserved = true;
+            }
+          },
           stopAt: (_queryArgs, selectingStatement) => {
             return selectingStatement;
           },
@@ -1016,32 +1053,28 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
                   prompt: "prompt beyond the cumulative budget",
                   reply: "reply beyond the cumulative budget",
                 });
-                const discovery = ownBarrier(
-                  await holdChatCandidateDiscoveryFixture(context.signal),
-                );
+                targetThreadId = threadId;
                 const agent = ownBarrier(
                   await holdAgentRowFixture(member.agentId, context.signal),
+                );
+                const thread = ownBarrier(
+                  await holdChatThreadReadBarrierFixture(
+                    threadId,
+                    context.signal,
+                  ),
                 );
                 const startedAt = freezeAttemptClock();
 
                 const pending = collectRequest(member);
                 requests.push(pending);
-                await discovery.waitForBlocked();
-                // Discovery consumed most of the candidate allowance while
-                // queued in PostgreSQL, but stayed within its individual cap.
-                mockNow(candidateDeadline(startedAt) - 500);
-                await discovery.release();
                 await agent.waitForBlocked();
-
-                // Acquire the final-query blocker only after discovery
-                // committed; candidate selection itself also reads agent_runs.
-                const activeRun = ownBarrier(
-                  await holdActiveRunReadFixture(context.signal),
-                );
+                // The first owned row wait consumed most of the candidate
+                // allowance while staying within its individual lock cap.
+                mockNow(candidateDeadline(startedAt) - 500);
                 await agent.release();
-                await activeRun.waitForBlocked();
+                await thread.waitForBlocked();
                 mockNow(candidateDeadline(startedAt));
-                await activeRun.release();
+                await thread.release();
 
                 const response = await accept(pending, [200]);
                 expect(response.body).toMatchObject({
@@ -1052,37 +1085,35 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
                   truncations: ["deadline_exceeded"],
                 });
                 expect(JSON.stringify(response.body)).not.toContain(threadId);
-                expect(contentQuery.enteredYet()).toBeFalsy();
+                expect(expiredContentQueryObserved).toBeFalsy();
 
                 // Guard-removal control: a fresh healthy request reaches this
-                // exact content statement. The selected transaction exposes
-                // all three real server settings, including the
-                // whole-transaction bound.
+                // exact owned-thread content statement. The selected
+                // transaction exposes all three real server settings,
+                // including the whole-transaction bound.
+                healthyControlArmed = true;
                 const healthy = collectRequest(member);
                 requests.push(healthy);
-                const inspectHealthyQuery = onRejection(
-                  (async () => {
-                    const healthyContentQuery = await contentQuery.entered;
-                    expect(healthyContentQuery).toMatchObject({
-                      lockTimeout: "2s",
-                      statementTimeout: "5s",
-                    });
-                    // PostgreSQL renders the conservatively floored monotonic
-                    // remainder in milliseconds when fractional clock origins
-                    // leave it 1ms shy.
-                    expect(["11999ms", "12s"]).toContain(
-                      healthyContentQuery.transactionTimeout,
+                const healthyContentQuery = await Promise.race([
+                  contentQuery.entered,
+                  healthy.then(() => {
+                    throw new Error(
+                      "Expected the healthy request to reach the excerpt content query",
                     );
-                    contentQuery.release();
-                  })(),
-                  () => {
-                    contentQuery.release();
-                  },
-                );
-                const [recovered] = await joinAll([
-                  accept(healthy, [200]),
-                  inspectHealthyQuery,
+                  }),
                 ]);
+                expect(healthyContentQuery).toMatchObject({
+                  lockTimeout: "2s",
+                  statementTimeout: "5s",
+                });
+                // PostgreSQL renders the conservatively floored monotonic
+                // remainder in milliseconds when fractional clock origins
+                // leave it 1ms shy.
+                expect(["11999ms", "12s"]).toContain(
+                  healthyContentQuery.transactionTimeout,
+                );
+                contentQuery.release();
+                const recovered = await accept(healthy, [200]);
                 expect(recovered.body.result).toBe("collected");
                 expect(recovered.body.items).toHaveLength(1);
               })(),
@@ -1123,58 +1154,93 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
               prompt: "prompt behind the server deadline",
               reply: "reply behind the server deadline",
             });
-            const discovery = await holdChatCandidateDiscoveryFixture(
+            await withDatabaseTransactionBarrierFixture(
+              {
+                select: (queryArgs) => {
+                  return isUnreadCandidateDiscoveryQuery(queryArgs, member);
+                },
+                stopAt: (_queryArgs, selectingStatement) => {
+                  return selectingStatement;
+                },
+                pauseAfter: true,
+                work: async (candidateQuery) => {
+                  const agent = await holdAgentRowFixture(
+                    member.agentId,
+                    context.signal,
+                  );
+                  const startedAt = freezeAttemptClock();
+                  const pending = collectRequest(member);
+
+                  await onRejection(
+                    (async () => {
+                      const selectedCandidateQuery =
+                        await candidateQuery.entered;
+                      expect(selectedCandidateQuery.rowCount).toBe(1);
+                      // Candidate discovery completed for this exact owner.
+                      // Advance both clocks while its transaction is still
+                      // paused so the following per-thread transaction starts
+                      // with less time than either individual statement cap.
+                      mockNow(
+                        candidateDeadline(startedAt) -
+                          serverCancellationAllowanceMs,
+                      );
+                      advanceAttemptIoClock?.(
+                        MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
+                          MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
+                          serverCancellationAllowanceMs,
+                      );
+                      candidateQuery.release();
+                      const selectedAgentQuery = await Promise.race([
+                        agentQuery.entered,
+                        pending.then(() => {
+                          throw new Error(
+                            "Expected collection to reach the owned Agent query",
+                          );
+                        }),
+                      ]);
+                      expect(selectedAgentQuery).toMatchObject({
+                        lockTimeout: "2s",
+                        statementTimeout: "5s",
+                        transactionTimeout: "1s",
+                      });
+
+                      // Move the application clock to the same absolute
+                      // boundary before dispatching the already-owned query.
+                      // The Agent lock remains held, so PostgreSQL's transaction
+                      // timeout alone must terminate it.
+                      mockNow(candidateDeadline(startedAt));
+                      agentQuery.release();
+                      const response = await accept(pending, [200]);
+                      await agent.release();
+
+                      expect(response.body).toMatchObject({
+                        result: "no-eligible-content",
+                        coverage: "partial",
+                        items: [],
+                        skipped: [],
+                        truncations: ["deadline_exceeded"],
+                      });
+                      expect(JSON.stringify(response.body)).not.toContain(
+                        threadId,
+                      );
+
+                      // The timed-out transaction was awaited and rolled back
+                      // (PostgreSQL may replace its terminated session); the
+                      // same route and pool remain usable.
+                      const recovered = await collect(member);
+                      expect(recovered.result).toBe("collected");
+                    })(),
+                    async () => {
+                      candidateQuery.release();
+                      agentQuery.release();
+                      await agent.release();
+                      await Promise.allSettled([pending]);
+                    },
+                  );
+                },
+              },
               context.signal,
             );
-            const agent = await holdAgentRowFixture(
-              member.agentId,
-              context.signal,
-            );
-            const startedAt = freezeAttemptClock();
-
-            const pending = collectRequest(member);
-            await discovery.waitForBlocked();
-            // The per-thread transaction starts with less time than either
-            // statement cap. Pause its exact Agent read at the driver boundary,
-            // before dispatch, instead of racing a pg_stat_activity poll inside
-            // the server deadline window.
-            mockNow(
-              candidateDeadline(startedAt) - serverCancellationAllowanceMs,
-            );
-            advanceAttemptIoClock?.(
-              MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
-                MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
-                serverCancellationAllowanceMs,
-            );
-            await discovery.release();
-            await expect(agentQuery.entered).resolves.toMatchObject({
-              lockTimeout: "2s",
-              statementTimeout: "5s",
-              transactionTimeout: "1s",
-            });
-
-            // Move the application clock to the same absolute boundary before
-            // dispatching the already-owned query. The Agent lock remains held,
-            // so PostgreSQL's transaction timeout alone must terminate it.
-            mockNow(candidateDeadline(startedAt));
-            agentQuery.release();
-            const response = await accept(pending, [200]);
-            await agent.release();
-
-            expect(response.body).toMatchObject({
-              result: "no-eligible-content",
-              coverage: "partial",
-              items: [],
-              skipped: [],
-              truncations: ["deadline_exceeded"],
-            });
-            expect(JSON.stringify(response.body)).not.toContain(threadId);
-
-            // The timed-out transaction was awaited and rolled back
-            // (PostgreSQL may replace its terminated session); the same route
-            // and pool remain usable.
-            const recovered = await collect(member);
-            expect(recovered.result).toBe("collected");
           },
         },
         context.signal,

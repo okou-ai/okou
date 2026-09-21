@@ -279,7 +279,7 @@ export function createImageGenerateCommand(
     .addOption(createArtifactVisibilityOption())
     .option(
       "--model <model>",
-      "Model: gpt-image-1 (default), gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image, qwen-image-3, seedream4, seedream5-pro, seedream5-lite, nano-banana-2, or nano-banana-2-lite",
+      "Model: gpt-image-1 (default), gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, seedream5-pro, seedream5-lite, nano-banana-2, or nano-banana-2-lite",
       IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias,
     )
     .option(
@@ -364,8 +364,8 @@ Models:
     GPT Image 2.5 generations bill the returned text input, image input,
     and image output tokens using configured model pricing.
   - fal.ai: gpt-image-1 (default), gpt-image-2, flux-2-pro, ideogram-4,
-    flux-pro-1.1, flux-pro-1.1-ultra, qwen-image, qwen-image-3, seedream4,
-    nano-banana-2, nano-banana-2-lite.
+    flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2,
+    nano-banana-2-lite.
     GPT Image models bill by fal output image quality and size.
     Other fal generations bill by output image or rounded-up output
     megapixel, depending on the model. qwen-image-3 bills per output image

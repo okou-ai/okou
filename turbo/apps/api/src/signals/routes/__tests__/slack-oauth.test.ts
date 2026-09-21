@@ -31,7 +31,7 @@ import {
 import { createFixtureTracker } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const API_ORIGIN = "https://api.okou.ai";
 const WEB_ORIGIN = "https://www.okou.ai";

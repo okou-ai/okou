@@ -14,7 +14,12 @@ import { getOkouAgentId } from "../../../lib/okou-env";
 import { isUuid } from "../../../lib/utils/uuid";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import { connectorAccountCliLabel } from "../account-label";
-import { finalizeActionUrl, printCallbackTurnInstruction } from "../action-url";
+import {
+  CALLBACK_PROMPT_GUIDANCE,
+  CALLBACK_PROMPT_MAX_LENGTH,
+  finalizeActionUrl,
+  printCallbackTurnInstruction,
+} from "../action-url";
 import {
   connectorDiscoveryItems,
   isConnectorDiscoveryAuthorized,
@@ -89,7 +94,7 @@ export const switchConnectorAccountRequestCommand = new Command()
   .addOption(
     new Option(
       "--callback-prompt <prompt>",
-      "Start the next web chat round with this prompt after confirmation",
+      `Start the next web chat round with this prompt after confirmation (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
     ).makeOptionMandatory(),
   )
   .addHelpText(
@@ -101,7 +106,7 @@ Example:
 Notes:
   - First run okou connector account list <slug> --json and use an exact returned connectionId
   - This changes only future runs in the current web chat thread, not the current run or global default
-  - Callback prompts are included in the URL; keep them concise and do not include secrets
+  - ${CALLBACK_PROMPT_GUIDANCE}
   - Use this callback flow only when account switching is this turn's single access action
   - Return the generated URL verbatim with all query parameters, then end the current turn`,
   )

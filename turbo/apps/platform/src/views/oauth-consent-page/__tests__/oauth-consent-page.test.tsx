@@ -40,9 +40,27 @@ test.each(["app.vm7.ai", "app.okou.ai"])(
       path: consentPath(),
     });
 
-    await expect(
-      screen.findByTestId("clerk-oauth-consent"),
-    ).resolves.toHaveAttribute("data-client-id", CLIENT_ID);
+    const consent = await screen.findByTestId("clerk-oauth-consent");
+    expect(consent).toHaveAttribute("data-client-id", CLIENT_ID);
+    expect(consent).toHaveAttribute("data-clerk-theme", "simple");
+    expect(consent).toHaveAttribute("data-clerk-logo-link-url", "/");
+    expect(consent).toHaveAttribute(
+      "data-clerk-primary-color",
+      "hsl(var(--primary))",
+    );
+    expect(consent).toHaveAttribute(
+      "data-clerk-primary-foreground",
+      "hsl(var(--primary-foreground))",
+    );
+    expect(screen.getByTestId("app-auth-layout")).toContainElement(
+      screen.getByTestId("app-oauth-consent"),
+    );
+    expect(screen.getByTestId("app-auth-background")).toBeInTheDocument();
+    expect(screen.getByLabelText("Go to Okou home")).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(screen.getByLabelText("Toggle theme")).toBeVisible();
     expect(location.pathname).toBe("/oauth-consent");
     expect(new URLSearchParams(location.search).get("code_challenge")).toBe(
       "synthetic-challenge",

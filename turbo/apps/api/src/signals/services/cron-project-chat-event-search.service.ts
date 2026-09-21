@@ -28,7 +28,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { chatSearchIndexText } from "../../lib/chat-search-bigram";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
-import { isLockNotAvailable } from "../../lib/pg-errors";
+import { isLockNotAvailable, isStatementTimeout } from "../../lib/pg-errors";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
@@ -40,6 +40,7 @@ import {
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
+import { maintainChatSearchGin } from "./chat-search-gin.service";
 
 interface ChatEventSearchProjectionStats {
   readonly threads: number;
@@ -84,7 +85,7 @@ interface ThreadProjectionStats {
 
 /**
  * `missing` is a resolved absent parent, `closed` is B1's exact subject closure
- * and `deferred` is a bounded lock wait or an exhausted ownership race that the
+ * and `deferred` is a bounded lock/statement wait or exhausted ownership race the
  * next tick retries. They stay separate so a database or cancellation failure
  * is never reported as account closure.
  */
@@ -124,10 +125,12 @@ interface SearchProjectionWriteStats {
 
 interface ChatEventSearchProjectionOptions {
   readonly chatThreadIds?: readonly string[];
+  readonly ginIndexName?: string;
 }
 
 interface ChatEventSearchTestProjectionOptions {
   readonly chatThreadIds: readonly string[];
+  readonly ginIndexName?: string;
 }
 
 type SearchableRole = "user" | "assistant";
@@ -147,6 +150,7 @@ interface CanonicalSearchMessageInsert {
 const DEFAULT_THREAD_BATCH_SIZE = 500;
 const THREAD_EVENT_LIMIT = 1000;
 const OWNERSHIP_ATTEMPTS = 3;
+const GIN_MAINTENANCE_BUDGET_MS = 30_000;
 /**
  * The repository's ordinary content-write budget. Waiting is now possible
  * because the fence conflicts with thread deletion, Agent transfer/deletion and
@@ -644,8 +648,8 @@ async function projectThreadOnce(
 
 /**
  * Rolls back and reselects a finite number of times when ownership moves under
- * the locks, then defers the thread to the next tick. Bounded lock waits defer
- * the same way; cancellation and every other database failure keep their
+ * the locks, then defers the thread to the next tick. Lock and statement
+ * deadlines defer the same way; cancellation and other database failures keep
  * existing propagation.
  */
 async function projectThread(
@@ -657,7 +661,7 @@ async function projectThread(
     if (result.ok) {
       return result.value;
     }
-    if (isLockNotAvailable(result.error)) {
+    if (isLockNotAvailable(result.error) || isStatementTimeout(result.error)) {
       return { kind: "deferred" };
     }
     if (!(result.error instanceof ProjectionOwnershipChangedError)) {
@@ -837,8 +841,8 @@ async function projectionConvergence(
 
 async function projectChatEventSearch(
   db: Db,
-  signal: AbortSignal,
   options: ChatEventSearchProjectionOptions,
+  signal: AbortSignal,
 ): Promise<ChatEventSearchProjectionStats> {
   const orphanedThreads = await cleanupOrphanedSearchProjection(db, options);
   signal.throwIfAborted();
@@ -850,9 +854,48 @@ async function projectChatEventSearch(
   let deletedDocs = 0;
   let closedThreads = 0;
   let deferredThreads = 0;
+  let maintenanceBudgetMs = GIN_MAINTENANCE_BUDGET_MS;
+  let attemptedThreads = 0;
   for (const chatThreadId of candidateThreads) {
+    signal.throwIfAborted();
+    if (options.ginIndexName !== undefined) {
+      // One shared budget for the whole tick, not 30 seconds per thread. A
+      // large pre-existing backlog may need a separate operational drain.
+      if (maintenanceBudgetMs <= 0) {
+        deferredThreads += candidateThreads.length - attemptedThreads;
+        break;
+      }
+      const started = performance.now();
+      const maintained = await settle(
+        maintainChatSearchGin(
+          db,
+          options.ginIndexName,
+          maintenanceBudgetMs,
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+      maintenanceBudgetMs -= performance.now() - started;
+      if (!maintained.ok) {
+        if (
+          !isLockNotAvailable(maintained.error) &&
+          !isStatementTimeout(maintained.error)
+        ) {
+          throw maintained.error;
+        }
+        // Avoid repeatedly charging a failed cleanup to every candidate. The
+        // untouched threads and their watermarks remain eligible next tick.
+        deferredThreads += candidateThreads.length - attemptedThreads;
+        break;
+      }
+      if (maintenanceBudgetMs <= 0) {
+        deferredThreads += candidateThreads.length - attemptedThreads;
+        break;
+      }
+    }
     const outcome = await projectThread(db, chatThreadId);
     signal.throwIfAborted();
+    attemptedThreads += 1;
     if (outcome.kind === "projected") {
       threads += outcome.stats.thread;
       indexedEvents += outcome.stats.indexedEvents;
@@ -882,7 +925,13 @@ export const projectChatEventSearch$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventSearchProjectionStats> => {
     const db = set(writeDb$);
-    return await projectChatEventSearch(db, signal, {});
+    return await projectChatEventSearch(
+      db,
+      {
+        ginIndexName: "public.chat_event_search_messages_tsv_idx",
+      },
+      signal,
+    );
   },
 );
 
@@ -893,8 +942,15 @@ export const projectChatEventSearchTestScope$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventSearchProjectionStats> => {
     const db = set(writeDb$);
-    return await projectChatEventSearch(db, signal, {
-      chatThreadIds: options.chatThreadIds,
-    });
+    return await projectChatEventSearch(
+      db,
+      {
+        chatThreadIds: options.chatThreadIds,
+        // Scoped route tests must never drain another test's shared index. GIN
+        // maintenance tests supply their own disposable index explicitly.
+        ginIndexName: options.ginIndexName,
+      },
+      signal,
+    );
   },
 );

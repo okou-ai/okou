@@ -12,6 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
 import {
   currentChatAgentId$,
   currentChatAgentDisplayName$,
@@ -200,31 +201,26 @@ function useTagline(
   return taglines[index % taglines.length];
 }
 
-function TypewriterText({
-  text,
-  speed = 40,
-}: {
-  text: string;
-  speed?: number;
-}) {
-  const displayedText = useGet(chatPageTaglineDisplayed$);
+function TypewriterText({ text }: { text: string }) {
+  const animation = useGet(chatPageTaglineDisplayed$);
+  const displayedText = animation.text === text ? animation.displayed : "";
   const typewriterRef = useSet(chatPageTaglineTypewriterRef$);
-  const typewriterKey = `${text}:${String(speed)}`;
 
   return (
     <>
-      <span
-        key={typewriterKey}
-        ref={typewriterRef}
-        className="contents"
-        data-typewriter-speed={String(speed)}
-        data-typewriter-text={text}
-      >
-        {displayedText}
+      {/* The complete copy keeps wrapping and height stable while the row
+          follows the width of the text that has actually unfolded. */}
+      <span key={text} ref={typewriterRef} aria-hidden className="invisible">
+        {text}
       </span>
-      {displayedText.length < text.length && (
-        <span className="inline-block w-[2px] h-[1em] bg-foreground/60 ml-0.5 align-middle animate-pulse" />
-      )}
+      <span
+        aria-hidden
+        data-slot="chat-tagline-measurement"
+        className="invisible absolute inset-0"
+      />
+      <span aria-hidden className="absolute inset-0">
+        <span data-slot="chat-tagline-text">{displayedText}</span>
+      </span>
     </>
   );
 }
@@ -278,6 +274,33 @@ function PinPill() {
   );
 }
 
+/**
+ * The frame owns the shape, and it is the only shape.
+ *
+ * This box already existed as the profile link's hover target, but it carried
+ * no border, so the only edge anyone could see was the image's own
+ * `rounded-full`. The agent artwork is a half figure drawn to the bottom of its
+ * canvas, and a circle is at its narrowest exactly where the collar lands, so
+ * the bottom of the sweater was pinched into a point by a mask with nothing
+ * visible to attribute it to. `rounded-xl` is 14px, so it leaves 28px of
+ * straight bottom under a collar that renders 14.7px wide, and the border makes
+ * the frame answerable for the crop. `surface-border` is the registered token
+ * for a four-sided hairline; `--border` is a stop lighter and would disagree
+ * with the chips on the same screen.
+ *
+ * The size stays on the step the mobile layout already used rather than gaining
+ * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
+ * reads as a standee beside the text.
+ */
+const AGENT_AVATAR_FRAME =
+  "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl border border-surface-border";
+/**
+ * Fills the frame's content box. Restating the frame's own `h-14 w-14` here
+ * would overflow it by the border on every side and be silently clipped, since
+ * the border box is what the frame sizes.
+ */
+const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
+
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const { t } = useTranslation("agents");
 
@@ -295,12 +318,15 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                 aria-label={t(($) => {
                   return $.detail.viewProfile;
                 })}
-                className="h-14 w-14 shrink-0 sm:h-16 sm:w-16 flex items-center justify-center overflow-hidden rounded-xl transition-colors duration-150 hover:bg-state-hover cursor-pointer"
+                className={cn(
+                  AGENT_AVATAR_FRAME,
+                  "cursor-pointer transition-colors duration-150 hover:bg-state-hover",
+                )}
               >
                 <AgentAvatarImg
                   name={agentId}
                   alt=""
-                  className="h-14 w-14 rounded-full object-cover object-top sm:h-16 sm:w-16"
+                  className={AGENT_AVATAR_IMAGE}
                 />
               </Link>
             </TooltipTrigger>
@@ -314,12 +340,8 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
           </Tooltip>
         </TooltipProvider>
       ) : (
-        <div className="h-14 w-14 shrink-0 sm:h-16 sm:w-16 flex items-center justify-center overflow-hidden rounded-xl">
-          <AgentAvatarImg
-            name=""
-            alt=""
-            className="h-14 w-14 rounded-full object-cover object-top sm:h-16 sm:w-16"
-          />
+        <div className={AGENT_AVATAR_FRAME}>
+          <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
         </div>
       )}
       <PinPill />
@@ -356,31 +378,67 @@ export function AgentChatPage() {
     <div className="relative flex flex-1 flex-col min-h-0">
       <GrowthEntryHeader />
 
-      <main className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6">
+      <main className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6">
+        {/* Below `sm` the composer is the page's footer. Every text tool a
+            phone user already has puts the field within thumb reach at the
+            bottom of the screen, and this page was the one surface that asked
+            them to reach back up to the top of the viewport for it.
+
+            The reordering is CSS, not DOM: the composer keeps its authored
+            position so a screen reader still meets the field right after the
+            tagline that invites it, and `order` only decides where the box
+            paints. `flex-1` gives the column the scrollport's height so the
+            greeting's auto margins below have free space to take; the column
+            still grows past it when the content is taller, and auto margins
+            collapse to nothing there, so the composer scrolls with the page
+            instead of holding the floor. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-[900px] flex flex-col items-stretch gap-6 pt-8 pb-[max(3rem,var(--sab))] sm:pt-[20vh] sm:pb-[max(10vh,var(--sab))]"
+          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:flex-none sm:gap-10 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
         >
-          <div className="flex items-center gap-4 w-full">
-            <ChatAgentAvatar agentId={currentChatAgentId} />
-            <div className="flex-1 min-w-0 flex items-center gap-3">
+          {/* The greeting keeps the space the composer left behind rather than
+              staying pinned under the header with a screen-deep hole under it.
+              Both margins are auto, so the free space is split above and below
+              it and the line lands in the middle of what is left. The reserved
+              line extends past the right edge during the centered hold, so clip
+              that axis while keeping the pin button visible vertically. */}
+          <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
+            <div
+              data-slot="chat-greeting"
+              data-testid="chat-greeting"
+              className="flex max-w-full items-center gap-4 motion-safe:translate-x-[var(--chat-greeting-offset,calc(50%-1.75rem))]"
+            >
+              <ChatAgentAvatar agentId={currentChatAgentId} />
               <h2
                 aria-label={tagline}
                 data-testid="chat-tagline"
-                className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+                className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
               >
-                <TypewriterText text={tagline} />
+                <TypewriterText key={currentChatAgentId} text={tagline} />
               </h2>
             </div>
           </div>
 
-          <ChatComposer signals={composerSignals} />
+          {/* The same two the thread page's footer carries.
+              `data-chat-composer` names the box the soft keyboard has to
+              reveal, and `pb-safe-or-2` takes the larger of the gutter and the
+              home indicator's reserve — the reserve being keyboard-aware, so
+              the card clears the gesture bar without floating above the
+              keyboard. */}
+          <div
+            data-chat-composer
+            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
+          >
+            <ChatComposer signals={composerSignals} />
+          </div>
 
-          {taskChipsEnabled ? (
-            <ComposerTaskChips signals={composerSignals} />
-          ) : (
-            <StartCards onSelectPrompt={handleInputChange} />
-          )}
+          <div className="order-2 sm:order-none">
+            {taskChipsEnabled ? (
+              <ComposerTaskChips signals={composerSignals} />
+            ) : (
+              <StartCards onSelectPrompt={handleInputChange} />
+            )}
+          </div>
         </div>
       </main>
       <PersonalClaudeCodeDeviceAuthDialog />

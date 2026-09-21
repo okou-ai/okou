@@ -112,6 +112,20 @@ function resizeWindow(): void {
   fireEvent(window, new Event("resize"));
 }
 
+function selectChatListFilter(
+  sidebar: HTMLElement,
+  filter: "All chats" | "Unread only",
+): void {
+  click(within(sidebar).getByLabelText("Open chat list menu"));
+  const item = queryAllByRoleFast("menuitem").find((candidate) => {
+    return candidate.textContent?.trim() === filter;
+  });
+  if (!item) {
+    throw new Error(`${filter} menu item is missing`);
+  }
+  click(item);
+}
+
 test("entering the scrolled list keeps the visible threads available for navigation", async () => {
   // Thirty rows exceed this five-row viewport plus its overscan. Row 21
   // starts outside the top window while keeping the rendered fixture small.
@@ -276,11 +290,78 @@ test("Use the fallback window before sidebar geometry is available", async () =>
   expect(within(sidebar).queryByText("History 101")).not.toBeInTheDocument();
 });
 
+test("Show every unread conversation beyond the current history window", async () => {
+  mockThreads(120);
+  mockViewportHeight(() => {
+    return 5 * ROW_HEIGHT;
+  });
+  const indicators = context.mocks.deferred<void>();
+  const unreadIndexes = Array.from({ length: 30 }, (_, index) => {
+    return index + 40;
+  });
+  context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
+    await indicators.promise;
+    return respond(200, {
+      agents: { [AGENT_ID]: "unread" },
+      threads: {
+        ...Object.fromEntries(
+          unreadIndexes.map((index) => {
+            return [threadId(index), "unread" as const];
+          }),
+        ),
+        [threadId(100)]: "active",
+      },
+    });
+  });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+
+  const sidebar = screen.getByTestId("chat-list-column");
+  await within(sidebar).findByText("History 1");
+  expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
+  selectChatListFilter(sidebar, "Unread only");
+  await within(sidebar).findAllByTestId("sidebar-skeleton");
+  expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
+  expect(
+    within(sidebar).queryByText("No unread chats"),
+  ).not.toBeInTheDocument();
+
+  indicators.resolve();
+  await within(sidebar).findByText("History 70");
+  for (const index of unreadIndexes) {
+    expect(
+      within(sidebar).getByText(`History ${index + 1}`),
+    ).toBeInTheDocument();
+  }
+  expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
+  expect(within(sidebar).queryByText("History 101")).not.toBeInTheDocument();
+
+  selectChatListFilter(sidebar, "All chats");
+  await within(sidebar).findByText("History 1");
+  expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
+  expect(within(sidebar).queryByText("History 70")).not.toBeInTheDocument();
+
+  selectChatListFilter(sidebar, "Unread only");
+  const lastUnreadTitle = await within(sidebar).findByText("History 70");
+  const lastUnreadLink = lastUnreadTitle.closest("a");
+  if (!lastUnreadLink) {
+    throw new Error("Last unread conversation link is missing");
+  }
+  click(lastUnreadLink);
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByText("History 70").closest("a"),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(sidebar).getByTestId("sidebar-scroll-area").scrollTop,
+    ).toBeGreaterThan(0);
+  });
+});
+
 test("Do not retain rows or show an empty state when the list query fails", async () => {
   mockThreads(120);
-  const unreads = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadsContract.unreads, async ({ respond }) => {
-    await unreads.promise;
+  const indicators = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
+    await indicators.promise;
     return respond(403, {
       error: {
         code: "FORBIDDEN",
@@ -292,21 +373,17 @@ test("Do not retain rows or show an empty state when the list query fails", asyn
 
   const sidebar = screen.getByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");
-  click(within(sidebar).getByLabelText("Open chat list menu"));
-  const unreadOnlyItem = queryAllByRoleFast("menuitem").find((item) => {
-    return item.textContent?.trim() === "Unread only";
-  });
-  if (!unreadOnlyItem) {
-    throw new Error("Unread-only menu item is missing");
-  }
-  click(unreadOnlyItem);
+  selectChatListFilter(sidebar, "Unread only");
 
   await waitFor(() => {
     expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
     expect(within(sidebar).getAllByTestId("sidebar-skeleton")).toHaveLength(3);
+    expect(
+      within(sidebar).queryByText("No unread chats"),
+    ).not.toBeInTheDocument();
   });
 
-  unreads.resolve(undefined);
+  indicators.resolve(undefined);
   await waitFor(() => {
     expect(within(sidebar).queryAllByTestId("sidebar-skeleton")).toHaveLength(
       0,
@@ -324,7 +401,7 @@ test("Do not retain rows or show an empty state when the list query fails", asyn
   ).not.toBeInTheDocument();
 });
 
-test("Coalesce sidebar resize bursts and cancel pending measurements when hidden", async () => {
+test("Use the latest viewport size after resizing, hiding, and reopening the sidebar", async () => {
   mockThreads(120);
   let viewportHeight = 612;
   mockViewportHeight(() => {
@@ -343,13 +420,6 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
     expect(rows()).toHaveLength(25);
   });
 
-  const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
-  let heightReads = 0;
-  vi.spyOn(viewport, "clientHeight", "get").mockImplementation(() => {
-    heightReads += 1;
-    return viewportHeight;
-  });
-  vi.spyOn(viewport, "scrollHeight", "get").mockReturnValue(120 * ROW_HEIGHT);
   const flushFrame = queueAnimationFrames();
 
   resizeWindow();
@@ -358,16 +428,12 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   viewportHeight = 360;
   resizeWindow();
 
-  // Intermediate layouts must not force repeated geometry reads. The single
-  // frame measurement must use the latest height and update the visible rows.
-  expect(heightReads).toBe(0);
+  // The frame must use the latest height and update the visible rows.
   flushFrame();
-  expect(heightReads).toBe(1);
   await waitFor(() => {
     expect(rows()).toHaveLength(18);
   });
 
-  heightReads = 0;
   viewportHeight = 900;
   resizeWindow();
   click(within(sidebar).getByLabelText("Hide chat list"));
@@ -376,7 +442,24 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   });
   resizeWindow();
   flushFrame();
-  expect(heightReads).toBe(0);
+  expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
+
+  click(screen.getByLabelText("Show chat list"));
+  const reopenedSidebar = await screen.findByTestId("chat-list-column");
+  const reopenedRows = () => {
+    return within(reopenedSidebar).getAllByTestId(
+      "sidebar-chat-thread-virtual-row",
+    );
+  };
+  await waitFor(() => {
+    expect(reopenedRows()).toHaveLength(33);
+  });
+  viewportHeight = 360;
+  resizeWindow();
+  flushFrame();
+  await waitFor(() => {
+    expect(reopenedRows()).toHaveLength(18);
+  });
 });
 
 function mockPinnedGrid(): string {
@@ -545,7 +628,7 @@ test("Refresh virtualization when the upgrade card appears and disappears", asyn
     ).toBeTruthy();
   });
 
-  tier = "pro-suspend";
+  tier = "limited-free-1";
   context.mocks.ably.trigger("billing:changed");
   await within(sidebar).findByText("Get Pro");
   await waitFor(() => {

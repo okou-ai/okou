@@ -1,0 +1,4 @@
+ALTER TABLE "vnc_connections" DROP CONSTRAINT "chk_vnc_connections_security_type";--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD COLUMN "auth_method" varchar(32) DEFAULT 'vnc_password' NOT NULL;--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD CONSTRAINT "vnc_connections_credential_profile_fk" FOREIGN KEY ("credential_id","org_id","user_id","auth_method") REFERENCES "public"."vnc_credentials"("id","org_id","user_id","auth_method") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD CONSTRAINT "chk_vnc_connections_profile" CHECK (("vnc_connections"."auth_method" = 'vnc_password' AND "vnc_connections"."security_type" = 'x509_vnc') OR ("vnc_connections"."auth_method" = 'username_password' AND "vnc_connections"."security_type" = 'x509_plain'));

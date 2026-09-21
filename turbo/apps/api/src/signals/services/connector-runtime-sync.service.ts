@@ -58,6 +58,18 @@ type BuiltinRuntimeTargetRegistration = Extract<
   { readonly kind: "builtin" }
 >;
 
+type ConnectorAccountResolution =
+  Awaited<ReturnType<typeof resolveConnectorAccounts>> extends ReadonlyMap<
+    string,
+    infer Resolution
+  >
+    ? Resolution
+    : never;
+
+type BuiltinConnectorCredentialAccessResult = ReturnType<
+  typeof resolveBuiltinConnectorCredentialAccess
+>;
+
 type ConnectorRuntimeCustomSyncResult = Extract<
   ConnectorRuntimeSyncResult,
   { readonly target: { readonly kind: "custom" } }
@@ -105,6 +117,14 @@ export type ConnectorRuntimeDiagnosticResult =
         { readonly kind: "builtin" }
       >;
       readonly state: "unresolved";
+      readonly reason: "connector-unavailable";
+    }
+  | {
+      readonly target: Extract<
+        ConnectorRuntimeTarget,
+        { readonly kind: "builtin" }
+      >;
+      readonly state: "absent";
       readonly reason: "connector-unavailable";
     }
   | {
@@ -173,6 +193,16 @@ function builtinUnresolvedResult(
   };
 }
 
+function builtinAbsentResult(
+  target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
+): ConnectorRuntimeBuiltinSyncResult {
+  return {
+    target,
+    state: "absent",
+    reason: "connector-unavailable",
+  };
+}
+
 function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
   return (
     Object.keys(auth.headers ?? {}).length > 0 ||
@@ -183,22 +213,23 @@ function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
 function builtinMcpCredentialResolution(args: {
   readonly snapshot: ConnectorRuntimeSelection | undefined;
   readonly registration: BuiltinRuntimeTargetRegistration;
-  readonly credentialAvailable: boolean;
+  readonly accountResolution: ConnectorAccountResolution | undefined;
+  readonly credentialAccess: BuiltinConnectorCredentialAccessResult | undefined;
 }): "network-boundary" | "none" | undefined {
   if (
     !args.snapshot ||
-    !args.credentialAvailable ||
+    args.credentialAccess?.kind !== "ok" ||
     !args.snapshot.serverFirewalls.isMcp(args.registration.connectorSlug)
   ) {
     return undefined;
   }
-  const credentialed =
-    args.snapshot.serverFirewalls
-      .getRuntimeFirewall(args.registration.connectorSlug)
-      ?.apis.some((api) => {
-        return authResolvesAtNetworkBoundary(api.auth);
-      }) ?? false;
-  return credentialed ? "network-boundary" : "none";
+  const grantKind =
+    args.credentialAccess.access.runtimeMethod.method.grant.kind;
+  return (args.accountResolution?.kind === "resolved" &&
+    args.accountResolution.account.automaticAuthType === "oauth") ||
+    (grantKind !== "none" && grantKind !== "automatic")
+    ? "network-boundary"
+    : "none";
 }
 
 async function loadCustomSnapshot(args: {
@@ -405,9 +436,11 @@ async function resolveCustomTarget(args: {
 
 function connectorAccountRequests(
   registrations: readonly ConnectorRuntimeTargetRegistration[],
+  catalogConnectorSlugs: ReadonlySet<string>,
 ): readonly ConnectorAccountResolutionRequest[] {
   return registrations.flatMap((registration) => {
     return registration.kind === "builtin" &&
+      catalogConnectorSlugs.has(registration.connectorSlug) &&
       registration.sourceId !== undefined
       ? [
           {
@@ -442,18 +475,29 @@ async function resolveConnectorRuntimeTargetStates(args: {
           requestedConnectorSlugs: builtinConnectorSlugs,
         })
       : undefined;
+  const builtinCatalogConnectorSlugs = new Set(
+    builtinCatalogSelection?.connectors.keys() ?? [],
+  );
+  const catalogBuiltinConnectorSlugs = builtinConnectorSlugs.filter(
+    (connectorSlug) => {
+      return builtinCatalogConnectorSlugs.has(connectorSlug);
+    },
+  );
   const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
     await Promise.all([
       resolveActiveNetworkPolicyRefreshes(
         args.db,
         args.scope,
-        builtinConnectorSlugs,
+        catalogBuiltinConnectorSlugs,
         builtinCatalogSelection,
       ),
       resolveConnectorAccounts(args.db, {
         orgId: args.scope.orgId,
         userId: args.scope.userId,
-        requests: connectorAccountRequests(args.targets),
+        requests: connectorAccountRequests(
+          args.targets,
+          builtinCatalogConnectorSlugs,
+        ),
       }),
       customRegistrations.length > 0
         ? loadCustomSnapshot({
@@ -519,13 +563,15 @@ async function resolveConnectorRuntimeTargetStates(args: {
     const credentialResolution = builtinMcpCredentialResolution({
       snapshot: builtinCatalogSelection,
       registration,
-      credentialAvailable: credentialAccess?.kind === "ok",
+      accountResolution,
+      credentialAccess,
     });
     resolvedTargets.push({
       kind: "builtin",
       ...(credentialResolution === undefined ? {} : { credentialResolution }),
-      result:
-        refresh && credentialAccess?.kind === "ok"
+      result: !builtinCatalogConnectorSlugs.has(registration.connectorSlug)
+        ? builtinAbsentResult(target)
+        : refresh && credentialAccess?.kind === "ok"
           ? {
               target,
               state: "available",
@@ -618,22 +664,30 @@ export async function resolveConnectorRuntimeDiagnosticTargets(args: {
   return resolvedTargets.map((resolved): ConnectorRuntimeDiagnosticResult => {
     if (resolved.kind === "builtin") {
       const { result } = resolved;
-      return result.state === "available"
-        ? {
-            target: result.target,
-            state: result.state,
-            networkPolicy: result.networkPolicy,
-            ...(resolved.credentialResolution !== undefined
-              ? {
-                  credentialResolution: resolved.credentialResolution,
-                }
-              : {}),
-          }
-        : {
-            target: result.target,
-            state: result.state,
-            reason: result.reason,
-          };
+      if (result.state === "absent") {
+        return {
+          target: result.target,
+          state: result.state,
+          reason: result.reason,
+        };
+      }
+      if (result.state === "unresolved") {
+        return {
+          target: result.target,
+          state: result.state,
+          reason: result.reason,
+        };
+      }
+      return {
+        target: result.target,
+        state: result.state,
+        networkPolicy: result.networkPolicy,
+        ...(resolved.credentialResolution !== undefined
+          ? {
+              credentialResolution: resolved.credentialResolution,
+            }
+          : {}),
+      };
     }
     const { result } = resolved;
     if (result.state === "absent") {

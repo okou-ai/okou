@@ -1602,28 +1602,17 @@ describe("CHAT-02: generation templates and attachments", () => {
       }),
     );
 
-    const catalog = await chat.listArtifactCatalog(actor, {
-      chatThreadId: sent.body.threadId,
-      kind: "file",
-      limit: 20,
-    });
+    // An attachment is not a catalog artifact, so each one is read back at the
+    // address the App resolves for it: the bounded waves must leave every file
+    // pointing at its own stored object rather than a neighbour's.
     for (const file of files) {
-      const summary = catalog.artifacts.find((artifact) => {
-        return artifact.title === file.filename;
-      });
-      if (!summary) {
-        throw new Error(`Expected catalog entry for ${file.filename}`);
-      }
-      const detail = await chat.getArtifactCatalogEntry(actor, summary.id);
-      expect(detail.kind).toBe("file");
-      if (detail.kind !== "file") {
-        throw new Error(`Expected file catalog entry for ${file.filename}`);
-      }
-      expect(detail.file).toMatchObject({
-        filename: file.filename,
-        contentType: file.contentType,
-        size: file.size,
-      });
+      const resolved = await chat.resolveWebFileUrl(actor, file.id);
+      const objectName = buildArtifactKeyV2(file.id, file.filename).replace(
+        /^artifacts\//u,
+        "",
+      );
+      expect(resolved.publicUrl).toContain(objectName);
+      expect(resolved.url).toContain(objectName);
     }
   }, 60_000);
 
@@ -1761,23 +1750,13 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
 
     expect(operations).toStrictEqual(["head:exact", "list:v2", "head:listed"]);
-    const catalog = await chat.listArtifactCatalog(actor, {
-      chatThreadId: run.threadId,
-      kind: "file",
-      limit: 20,
-    });
-    const summary = catalog.artifacts.find((artifact) => {
-      return artifact.title === filename;
-    });
-    if (!summary) {
-      throw new Error("Expected incomplete-head attachment in the catalog");
-    }
-    const detail = await chat.getArtifactCatalogEntry(actor, summary.id);
-    expect(detail.kind).toBe("file");
-    if (detail.kind !== "file") {
-      throw new Error("Expected incomplete-head file catalog entry");
-    }
-    expect(detail.file.size).toBe(73);
+    // A size the exact head never returned is what the listing recovers, and an
+    // attachment whose size stays unresolved blocks the send outright, so the
+    // created run and its rendered file block are the observable result.
+    const created = await api.readRun(actor, run.runId);
+    expect(created.prompt).toContain(`[Web file] ${filename}`);
+    const resolved = await chat.resolveWebFileUrl(actor, fileId);
+    expect(resolved.publicUrl).toContain(key.replace(/^artifacts\//u, ""));
   }, 60_000);
 
   it("does not create a run when an attachment is missing", async () => {
@@ -2103,23 +2082,9 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     await flushWaitUntilForTest();
 
-    const catalog = await chat.listArtifactCatalog(actor, {
-      chatThreadId: run.threadId,
-      kind: "file",
-      limit: 20,
-    });
-    const summary = catalog.artifacts.find((artifact) => {
-      return artifact.title === filename;
-    });
-    if (!summary) {
-      throw new Error("Expected the legacy attachment in the artifact catalog");
-    }
-    const detail = await chat.getArtifactCatalogEntry(actor, summary.id);
-    if (detail.kind !== "file") {
-      throw new Error("Expected a file artifact for the legacy attachment");
-    }
-    expect(detail.file.url).toMatch(/^https:\/\/cdn\.vm7\.io\//);
-    expect(detail.file.url).not.toMatch(
+    const resolved = await chat.resolveWebFileUrl(actor, fileId);
+    expect(resolved.publicUrl).toMatch(/^https:\/\/cdn\.vm7\.io\//);
+    expect(resolved.publicUrl).not.toMatch(
       /^https:\/\/(?:a\.okou\.io|cdn\.okou\.io)\//,
     );
 

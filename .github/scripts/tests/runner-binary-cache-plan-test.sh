@@ -167,7 +167,7 @@ run_plan() {
   R2_ACCOUNT_ID=test-account \
   R2_BUCKET_NAME=test-bucket \
   RUNNER_TEMP="${TMPDIR}/runner-temp" \
-  REPO=vm0-ai/vm0 \
+  REPO=okou-ai/okou \
   RUNNER_HOST_GROUPS_MATRIX="$matrix" \
   RESOLVE_OUTPUT_DIR="$output_dir" \
     "$PLAN"
@@ -277,7 +277,7 @@ timed_out=$(PATH="${TMPDIR}/timeout-bin:${TMPDIR}/bin:${PATH}" \
   GH_LOG="${TMPDIR}/gh.log" \
   RUNNER_HOST_GROUPS_MATRIX="$matrix" \
   RESOLVE_OUTPUT_DIR="${TMPDIR}/timed-out" \
-  REPO=vm0-ai/vm0 \
+  REPO=okou-ai/okou \
   "$PLAN")
 assert_contains "$timed_out" 'hit-count=0'
 assert_contains "$timed_out" 'miss-count=2'
@@ -288,7 +288,7 @@ killed=$(TIMEOUT_STATUS=137 \
   GH_LOG="${TMPDIR}/gh.log" \
   RUNNER_HOST_GROUPS_MATRIX="$matrix" \
   RESOLVE_OUTPUT_DIR="${TMPDIR}/killed" \
-  REPO=vm0-ai/vm0 \
+  REPO=okou-ai/okou \
   "$PLAN")
 assert_contains "$killed" 'hit-count=0'
 assert_contains "$killed" 'miss-count=2'

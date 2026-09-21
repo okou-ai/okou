@@ -24,7 +24,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsRoutes,
 ]);
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 
 const BASE_URL = "https://app.okou.test";

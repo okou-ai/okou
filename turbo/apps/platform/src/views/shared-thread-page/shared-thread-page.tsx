@@ -16,7 +16,6 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
-import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type {
   SharedThreadRichContentSignals,
   SharedThreadArtifactSignals,
@@ -25,6 +24,7 @@ import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
+import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import {
   ChatAssistantMessageBody,
@@ -39,15 +39,15 @@ import {
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
-  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
+import { SCROLL_FADE_Y_END } from "../okou-page/scroll-fade.ts";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
-import { SharedThreadArtifactLightbox } from "./shared-thread-artifact-lightbox.tsx";
-import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-thread-page/shared-thread-artifact-preview.ts";
+import { PublicArtifactLightbox } from "../components/public-artifact-lightbox.tsx";
+import type { PublicArtifactPreviewSignals } from "../../signals/public-artifact-preview.ts";
 
 /**
  * A shared message with an optional prepared plain tree. Rich bodies leave the
@@ -55,8 +55,7 @@ import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-th
  * view consumes them.
  */
 export type SharedDisplayAttachment = SharedMessageAttachment & {
-  readonly preview: AttachmentPreviewSignals;
-  readonly artifact?: SharedThreadArtifactSignals;
+  readonly artifact: SharedThreadArtifactSignals;
 };
 
 export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
@@ -67,7 +66,7 @@ export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
   readonly richContent?: SharedThreadRichContentSignals;
-  readonly artifactPreview?: SharedThreadArtifactPreviewSignals;
+  readonly artifactPreview?: PublicArtifactPreviewSignals;
 };
 
 interface SharedMessageGroup {
@@ -205,7 +204,7 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
                     ) : null}
                     {message.content.length > 0 ? (
                       <div className="whitespace-pre-wrap">
-                        {message.content}
+                        <PlainTextWithLinks text={message.content} />
                       </div>
                     ) : null}
                   </div>
@@ -319,10 +318,7 @@ function SharedThreadHandoff({
   return (
     <footer
       data-shared-thread-handoff=""
-      className="relative shrink-0"
-      style={{
-        paddingBottom: "max(0.5rem, var(--sab))",
-      }}
+      className="relative shrink-0 pb-safe-or-2"
     >
       <div className="pb-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6">
         <div className="mx-auto max-w-[900px]">
@@ -494,7 +490,7 @@ function SharedThreadTranscript({
         tabIndex={-1}
         className={cn(
           "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
-          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+          SCROLL_FADE_Y_END,
         )}
       >
         <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
@@ -613,7 +609,7 @@ export function SharedThreadPage({
         )}
       </WorkspaceInset>
       {sharedThread?.artifactPreview ? (
-        <SharedThreadArtifactLightbox signals={sharedThread.artifactPreview} />
+        <PublicArtifactLightbox signals={sharedThread.artifactPreview} />
       ) : null}
     </div>
   );

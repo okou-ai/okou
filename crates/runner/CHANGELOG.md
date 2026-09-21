@@ -1,5 +1,81 @@
 # Changelog
 
+## [0.205.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.0...runner-rs-v0.205.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+## [0.205.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.204.0...runner-rs-v0.205.0) (2026-09-20)
+
+
+### Features
+
+* **rfb-client:** add policy-driven x509 authentication ([#35626](https://github.com/okou-ai/okou/issues/35626)) ([dd6da89](https://github.com/okou-ai/okou/commit/dd6da89572b08a00884d2851f15b9c7efd7db3f3))
+
+
+### Bug Fixes
+
+* **runner:** persist built-in omission-only updates ([#35635](https://github.com/okou-ai/okou/issues/35635)) ([c141d99](https://github.com/okou-ai/okou/commit/c141d99ef53c1beb6e0b2414e25c89f5530457e4))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Performance Improvements
+
+* **runner:** observe storage history overlap eligibility ([#35567](https://github.com/okou-ai/okou/issues/35567)) ([14a43e3](https://github.com/okou-ai/okou/commit/14a43e3202e1f74771be2e88821982983c200e9f))
+
+## [0.204.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.203.1...runner-rs-v0.204.0) (2026-09-20)
+
+
+### Features
+
+* **runner:** accept terminal absence for built-in connectors ([#35542](https://github.com/okou-ai/okou/issues/35542)) ([16f2397](https://github.com/okou-ai/okou/commit/16f239728d078d42f6847b8057ef5c1cbd6e9ee0))
+
+## [0.203.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.203.0...runner-rs-v0.203.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+
+## [0.203.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.2...runner-rs-v0.203.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Bug Fixes
+
+* **runner:** use fresh memory evidence for balloon grace ([#35509](https://github.com/vm0-ai/okou/issues/35509)) ([961efe6](https://github.com/vm0-ai/okou/commit/961efe6ab002c6414844e65309e2df75fce4dba7))
+
+## [0.202.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.1...runner-rs-v0.202.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **python:** preserve auth base abort socket ownership ([#35521](https://github.com/vm0-ai/okou/issues/35521)) ([db151cf](https://github.com/vm0-ai/okou/commit/db151cf53b9b9df4f8b3bbafd6b7d4e24698675c))
+* **runner:** classify heartbeat connection resets ([#35511](https://github.com/vm0-ai/okou/issues/35511)) ([59bb98c](https://github.com/vm0-ai/okou/commit/59bb98c6c7192f5cab127c736d82750eef21cc1a))
+* **runner:** release catalog ownership on overflow ([#35514](https://github.com/vm0-ai/okou/issues/35514)) ([9c1d985](https://github.com/vm0-ai/okou/commit/9c1d9857f134b7e99005b479b721acbf137187da))
+
+
+### Performance Improvements
+
+* **runner:** bound sse parse diagnostics ([#35517](https://github.com/vm0-ai/okou/issues/35517)) ([f2146ee](https://github.com/vm0-ai/okou/commit/f2146eeacd252a357fc62ccf5c80b2fe0b715590))
+
+## [0.202.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.0...runner-rs-v0.202.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **runner:** inject oauth for platform mcp connector ([#35442](https://github.com/vm0-ai/okou/issues/35442)) ([2689ef3](https://github.com/vm0-ai/okou/commit/2689ef3a9814a649e548737478e9fa2833ea1a84))
+
 ## [0.202.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.201.0...runner-rs-v0.202.0) (2026-09-20)
 
 

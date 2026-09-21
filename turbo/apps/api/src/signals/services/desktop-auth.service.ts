@@ -5,7 +5,7 @@ import {
   type DesktopAuthHandoffStatus,
 } from "@okouai/api-contracts/contracts/desktop-auth";
 import { desktopAuthHandoffCodes } from "@okouai/db/schema/desktop-auth-handoff-code";
-import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -148,6 +148,10 @@ export async function getDesktopAuthHandoffStatus(
       and(
         eq(desktopAuthHandoffCodes.id, args.handoffId),
         eq(desktopAuthHandoffCodes.userId, args.userId),
+        or(
+          isNotNull(desktopAuthHandoffCodes.consumedAt),
+          gt(desktopAuthHandoffCodes.expiresAt, nowDate()),
+        ),
       ),
     );
 

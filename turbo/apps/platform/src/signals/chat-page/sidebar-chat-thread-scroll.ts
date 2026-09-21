@@ -7,7 +7,10 @@ import {
   type ChatThreadVirtualListScrollAlign,
 } from "../okou-page/sidebar-state.ts";
 import {
+  currentChatThreadId$,
+  currentChatThreadListIds$,
   currentChatThreadListSignals$,
+  unreadChatThreads$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
 import {
@@ -17,6 +20,21 @@ import {
 
 const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
+const SCROLL_VIEWPORT_LAYOUT_EVENT = "okou-sidebar-layout-change";
+
+export const unreadSidebarChatThreadList$ = computed(async (get) => {
+  const threads = await get(unreadChatThreads$);
+  const threadIds = threads.map((thread) => {
+    return thread.id;
+  });
+  const currentThreadId = get(currentChatThreadId$);
+  return {
+    items: get(sidebarChatThreadItemSignalsRegistry$).reconcile(threadIds),
+    currentThreadListed: currentThreadId
+      ? threadIds.includes(currentThreadId)
+      : false,
+  };
+});
 
 export interface SidebarChatThreadWindow {
   readonly startIndex: number;
@@ -27,7 +45,6 @@ export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
-  readonly threadIds$: Computed<readonly string[]>;
   readonly window$: Computed<SidebarChatThreadWindow>;
 }
 
@@ -68,16 +85,13 @@ function emptyScrollMetrics(): SidebarChatThreadScrollMetrics {
 }
 
 function createSidebarChatThreadDomSignals() {
-  const internalViewportRuntime$ = state<{
-    readonly element: HTMLElement;
-    readonly signal: AbortSignal;
-    resizeScheduled: boolean;
-  } | null>(null);
+  const internalViewport$ = state<HTMLElement | null>(null);
+  const resizeScheduled$ = state(false);
   const internalScrollMetrics$ =
     state<SidebarChatThreadScrollMetrics>(emptyScrollMetrics());
 
   const scrollViewport$ = computed((get) => {
-    return get(internalViewportRuntime$)?.element ?? null;
+    return get(internalViewport$);
   });
   const scrollMetrics$ = computed((get) => {
     return get(internalScrollMetrics$);
@@ -102,43 +116,56 @@ function createSidebarChatThreadDomSignals() {
       set(internalScrollMetrics$, metrics);
     },
   );
-  const refreshScrollViewport$ = command(({ get, set }) => {
-    const runtime = get(internalViewportRuntime$);
-    if (!runtime || runtime.resizeScheduled) {
-      return;
-    }
-    runtime.resizeScheduled = true;
-    // Layout refs and window resize events share one pending measurement.
-    // Read after the DOM commit, using the latest layout in this frame.
-    animationFrame(
-      () => {
-        runtime.resizeScheduled = false;
-        set(measureScrollViewport$, runtime.element);
-      },
-      { signal: runtime.signal },
+  const scheduleViewportMeasurement$ = command(
+    ({ get, set }, viewport: HTMLElement, signal: AbortSignal) => {
+      if (get(resizeScheduled$)) {
+        return;
+      }
+      set(resizeScheduled$, true);
+      // Layout refs and window resize events share one pending measurement.
+      // Read after the DOM commit, using the latest layout in this frame.
+      animationFrame(
+        () => {
+          set(resizeScheduled$, false);
+          set(measureScrollViewport$, viewport);
+        },
+        { signal },
+      );
+    },
+  );
+  const refreshScrollViewport$ = command(({ get }) => {
+    // A layout change is only a notification. The mounted viewport supplies
+    // the lifetime for the measurement, including when a sibling unmounts.
+    get(internalViewport$)?.dispatchEvent(
+      new Event(SCROLL_VIEWPORT_LAYOUT_EVENT),
     );
   });
   const clearScrollViewport$ = command(
     ({ get, set }, viewport: HTMLElement) => {
-      if (get(internalViewportRuntime$)?.element !== viewport) {
+      if (get(internalViewport$) !== viewport) {
         return;
       }
-      set(internalViewportRuntime$, null);
+      set(internalViewport$, null);
+      set(resizeScheduled$, false);
       set(internalScrollMetrics$, emptyScrollMetrics());
     },
   );
   const setScrollViewport$ = onRef(
     command(({ set }, viewport: HTMLElement, signal: AbortSignal) => {
-      set(internalViewportRuntime$, {
-        element: viewport,
-        signal,
-        resizeScheduled: false,
-      });
+      set(internalViewport$, viewport);
+      set(resizeScheduled$, false);
       set(measureScrollViewport$, viewport);
       window.addEventListener(
         "resize",
         () => {
-          set(refreshScrollViewport$);
+          set(scheduleViewportMeasurement$, viewport, signal);
+        },
+        { signal },
+      );
+      viewport.addEventListener(
+        SCROLL_VIEWPORT_LAYOUT_EVENT,
+        () => {
+          set(scheduleViewportMeasurement$, viewport, signal);
         },
         { signal },
       );
@@ -246,12 +273,11 @@ function createSidebarChatThreadViewportSignals(
     count$: list.count$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
-    threadIds$: list.threadIds$,
     window$,
   };
 }
 
-function createScrollVirtualListToIndexCommand(
+function createScrollListToIndexCommand(
   domSignals: SidebarChatThreadDomSignals,
 ) {
   return command(
@@ -306,8 +332,7 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
     const list = await get(currentChatThreadListSignals$);
     return createSidebarChatThreadViewportSignals(domSignals, list);
   });
-  const scrollVirtualListToIndex$ =
-    createScrollVirtualListToIndexCommand(domSignals);
+  const scrollListToIndex$ = createScrollListToIndexCommand(domSignals);
   const scrollToThread$ = command(
     async (
       { get, set },
@@ -316,15 +341,15 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
     ) => {
       const threadId = typeof request === "string" ? request : request.threadId;
       const align = typeof request === "string" ? "top" : request.align;
-      const list = await get(list$);
+      const threadIds = await get(currentChatThreadListIds$);
       signal.throwIfAborted();
 
-      const index = get(list.threadIds$).indexOf(threadId);
+      const index = threadIds.indexOf(threadId);
       if (index === -1) {
         return false;
       }
 
-      return set(scrollVirtualListToIndex$, index, align);
+      return set(scrollListToIndex$, index, align);
     },
   );
   const scrollCurrentChatThreadOnRef$ = onRef(

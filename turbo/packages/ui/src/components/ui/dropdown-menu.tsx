@@ -7,6 +7,7 @@ import { asChildRender } from "../../lib/base-ui-compat";
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
+import { resolveCollisionPadding } from "../../lib/safe-area";
 
 function DropdownMenu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -64,7 +65,6 @@ type DropdownMenuContentProps = MenuPrimitive.Popup.Props &
   DropdownMenuPositionerProps & {
     avoidCollisions?: boolean;
     hideWhenDetached?: boolean;
-    portalContainer?: HTMLElement | null;
     updatePositionStrategy?: "always" | "optimized";
   };
 
@@ -88,7 +88,6 @@ const DropdownMenuContent = React.forwardRef<
       collisionPadding,
       disableAnchorTracking,
       hideWhenDetached = false,
-      portalContainer,
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
@@ -109,7 +108,7 @@ const DropdownMenuContent = React.forwardRef<
         : undefined);
 
     return (
-      <DropdownMenuPortal container={portalContainer}>
+      <DropdownMenuPortal>
         <MenuPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
@@ -119,7 +118,7 @@ const DropdownMenuContent = React.forwardRef<
           )}
           collisionAvoidance={resolvedCollisionAvoidance}
           collisionBoundary={collisionBoundary}
-          collisionPadding={collisionPadding}
+          collisionPadding={resolveCollisionPadding(collisionPadding)}
           disableAnchorTracking={
             disableAnchorTracking ?? updatePositionStrategy === "optimized"
           }

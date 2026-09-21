@@ -31,10 +31,15 @@ export function ChatCardDetails({
   return (
     <Dialog>
       <DialogTrigger asChild>
+        {/*
+          The compact trigger sits beside a card's own title, where a bordered
+          button would read as a second action competing with the card's real
+          one. `quiet` keeps it as chrome: muted at rest, weight on hover.
+        */}
         <Button
           type="button"
-          variant="outline"
-          size="sm"
+          variant={compact ? "quiet" : "outline"}
+          size={compact ? "icon-2xs" : "sm"}
           className="shrink-0"
           aria-label={label}
         >

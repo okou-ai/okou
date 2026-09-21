@@ -111,7 +111,7 @@ export const cronProjectChatEventSearchResponseSchema = z.object({
   orphanedThreads: z.number(),
   /** Candidates denied by an account-erasure subject closure this tick. */
   closedThreads: z.number().int().nonnegative(),
-  /** Candidates left for the next tick after a bounded lock or ownership race. */
+  /** Candidates deferred by lock/statement deadlines, GIN maintenance or ownership races. */
   deferredThreads: z.number().int().nonnegative(),
   convergence: z.object({
     /** Threads with events whose canonical subjects are all still open. */
@@ -829,3 +829,18 @@ export {
   cronMaterializeMemorySummariesResponseSchema,
   cronExtractPiMemoryStage1ResponseSchema,
 };
+
+/** Durable jobs are claimed with short leases; every invocation has a fixed work budget. */
+export const cronProcessBackgroundJobsContract = c.router({
+  process: {
+    method: "GET",
+    path: "/api/cron/process-background-jobs",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({ processed: z.number(), cleaned: z.number() }),
+      401: apiErrorSchema,
+    },
+    summary:
+      "Resume compatible background jobs and reclaim terminal export resources",
+  },
+});

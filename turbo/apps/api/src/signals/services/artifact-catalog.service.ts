@@ -37,12 +37,19 @@ import {
   hostedDeployments,
   hostedSites,
   privateHostedDeployments,
-} from "@okouai/db/schema/hosted-site";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+} from "@okouai/db/runtime/hosted-site";
+import {
+  runUploadedFiles,
+  type CanonicalAssetClassification,
+} from "@okouai/db/schema/run-uploaded-file";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { z } from "zod";
 
 import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
+import {
+  nullableDriverValueDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import {
   isSharedThreadArtifactLogicalKey,
@@ -93,6 +100,7 @@ interface CatalogFileRow {
   readonly url: string | null;
   readonly previewImageUrl: string | null;
   readonly metadata: Record<string, unknown>;
+  readonly classification: CanonicalAssetClassification | null;
   readonly createdAt: Date;
 }
 
@@ -102,6 +110,35 @@ function metadataString(
 ): string | null {
   const value = metadata[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Whether a stored file belongs in the catalog at all. The database trigger
+ * queues every `run_uploaded_files` row that gains a URL, so attachments the
+ * user handed to the agent arrive here alongside the agent's own outputs; this
+ * is where the two are separated.
+ *
+ * An upload declaring `purpose: "artifact"` is one, and every producer of an
+ * artifact output declares it — including the generation and download paths
+ * that can run without a run. A chat or integration attachment is not, and
+ * neither is a private upload's ownership record that no run produced and no
+ * uploader claimed: a composer attachment still sitting in a draft.
+ *
+ * Only versioned private storage identifies that ownership record, so a row
+ * without the storage marker keeps the catalog behavior it had before private
+ * artifacts existed. Surface: DB versus API, for rows written by earlier API
+ * versions (`docs/fallback.md` §7). Remove this clause once the historical
+ * public artifact objects and their references are migrated or retired, which
+ * is tracked with the matching public-object readers under #32492.
+ */
+function isCatalogArtifactFile(row: CatalogFileRow): boolean {
+  if (metadataString(row.metadata, "purpose") === "artifact") {
+    return true;
+  }
+  if (row.classification === "input") {
+    return false;
+  }
+  return metadataString(row.metadata, "storage") === null || row.runId !== null;
 }
 
 /**
@@ -270,6 +307,7 @@ async function readCatalogFileRow(
       url: runUploadedFiles.url,
       previewImageUrl: runUploadedFiles.previewImageUrl,
       metadata: runUploadedFiles.metadata,
+      classification: runUploadedFiles.classification,
       createdAt: runUploadedFiles.createdAt,
     })
     .from(runUploadedFiles)
@@ -583,6 +621,23 @@ async function removeHostedRunShadowArtifacts(
   signal.throwIfAborted();
 }
 
+/**
+ * A file can already carry a projection that the current rules refuse: every
+ * attachment registered before this admission existed. Removing it here keeps
+ * the catalog converging on the current classification instead of retaining
+ * whatever an earlier sync observed. No current producer writes such a
+ * projection, so after the accompanying cleanup migration this only repairs a
+ * row an older API registered while it was still draining.
+ */
+async function removeAttachmentArtifacts(
+  db: Db,
+  fileId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await db.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
+  signal.throwIfAborted();
+}
+
 async function finishPendingArtifactFile(
   db: Db,
   fileId: string,
@@ -601,6 +656,12 @@ async function syncArtifactCatalogFile(
 ): Promise<void> {
   const row = await readCatalogFileRow(db, fileId, signal);
   if (!row?.url || !row.orgId) {
+    await finishPendingArtifactFile(db, fileId, signal);
+    return;
+  }
+
+  if (!isCatalogArtifactFile(row)) {
+    await removeAttachmentArtifacts(db, fileId, signal);
     await finishPendingArtifactFile(db, fileId, signal);
     return;
   }
@@ -1000,7 +1061,10 @@ async function hostedSiteDetail(
         requestedSlug: hostedSites.requestedSlug,
         publicSlug: hostedSites.publicSlug,
         url: privateHostedDeployments.url,
-        deploymentVersion: privateHostedDeployments.deploymentVersion,
+        deploymentVersion:
+          sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+            pgIntegerDecoder,
+          ),
         entrypoint: privateHostedDeployments.entrypoint,
         spaFallback: privateHostedDeployments.spaFallback,
       })
@@ -1031,7 +1095,10 @@ async function hostedSiteDetail(
       slug: hostedSites.slug,
       requestedSlug: hostedSites.requestedSlug,
       publicSlug: hostedSites.publicSlug,
-      deploymentVersion: hostedSites.activeDeploymentVersion,
+      deploymentVersion:
+        sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
       url: hostedDeployments.url,
       entrypoint: hostedDeployments.entrypoint,
       spaFallback: hostedDeployments.spaFallback,

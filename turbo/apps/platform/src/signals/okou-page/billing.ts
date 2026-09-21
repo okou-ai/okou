@@ -56,14 +56,8 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type BillingTier =
-  | "free"
-  | "limited-free-1"
-  | "pro-suspend"
-  | "pro"
-  | "team"
-  | "custom";
-type DowngradeTargetTier = "limited-free-1" | "pro-suspend" | "pro";
+export type BillingTier = "free" | "limited-free-1" | "pro" | "team" | "custom";
+type DowngradeTargetTier = "limited-free-1" | "pro";
 export type CreditCheckoutSelection =
   | { readonly credits: number; readonly customAmount?: false }
   | { readonly credits: number; readonly customAmount: true };
@@ -103,14 +97,13 @@ export function apiTierToBillingTier(tier: string | undefined): BillingTier {
   if (
     tier === "free" ||
     tier === "limited-free-1" ||
-    tier === "pro-suspend" ||
     tier === "pro" ||
     tier === "team" ||
     tier === "custom"
   ) {
     return tier;
   }
-  return "pro-suspend";
+  return "limited-free-1";
 }
 
 const rememberPendingRestorePayment$ = command(({ set }) => {
@@ -126,7 +119,7 @@ function downgradeSuccessToastMessage(
   effectiveDateValue: string | null,
 ): string {
   const effectiveDate = formatEffectiveDate(effectiveDateValue);
-  if (targetTier === "limited-free-1" || targetTier === "pro-suspend") {
+  if (targetTier === "limited-free-1") {
     return effectiveDate
       ? i18n.t(
           ($) => {
@@ -164,12 +157,15 @@ const clearPendingDowngradePayment$ = command(({ set }) => {
 function pendingDowngradeTargetTier(
   value: string | null,
 ): DowngradeTargetTier | null {
-  if (
-    value === "pro" ||
-    value === "limited-free-1" ||
-    value === "pro-suspend"
-  ) {
+  if (value === "pro" || value === "limited-free-1") {
     return value;
+  }
+  if (value === "pro-suspend") {
+    // A previous App build stored the retired cancellation literal before
+    // redirecting to Stripe. Surface: old app state -> new app. Remove once
+    // every tab session started on that build has ended, which sessionStorage
+    // bounds to the tab lifetime. See docs/deployment-compatibility.md.
+    return "limited-free-1";
   }
   return null;
 }
@@ -1612,7 +1608,7 @@ export const closeRestoreDialog$ = command(({ set }) => {
 export const confirmDowngrade$ = command(
   async (
     { get, set },
-    targetTier: "limited-free-1" | "pro-suspend" | "pro",
+    targetTier: DowngradeTargetTier,
     signal: AbortSignal,
   ) => {
     const createClient = get(apiClient$);

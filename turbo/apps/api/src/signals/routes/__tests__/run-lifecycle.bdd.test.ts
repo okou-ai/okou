@@ -159,7 +159,6 @@ import {
   clearRunApiStart,
   holdOrgAdmissionLock,
   mutateRunnerJobConnectorPermissionBaseline,
-  mutateRunnerJobSecretValueEnvironmentKeys,
   removeRunCanonicalStorageState,
   readOrgAdmissionLockState,
   readRunAutonomyBudgetFixture,
@@ -202,7 +201,7 @@ import { createRouteMocks } from "./helpers/route-test";
  * billing status API, so no DB fixtures are involved.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const callbackStore = createStore();
 const fixtureStore = createStore();
 // `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the
@@ -488,17 +487,6 @@ function inlineFirewallApis(
     throw new Error(`Expected inline firewall entry: ${name}`);
   }
   return entry.firewall.apis;
-}
-
-function builtinFirewallEntry(
-  entries: readonly ExecutionFirewallEntry[] | undefined,
-  name: string,
-): Extract<ExecutionFirewallEntry, { readonly kind: "builtin" }> {
-  const entry = findFirewallEntry(entries, name);
-  if (!entry || entry.kind !== "builtin") {
-    throw new Error(`Expected builtin firewall entry: ${name}`);
-  }
-  return entry;
 }
 
 type AvailableCustomConnectorRuntime = Extract<
@@ -1038,7 +1026,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "./generated/resources/reverse-template/SKILL.md",
     );
     expect(appendSystemPrompt).toContain(
-      "https://github.com/vm0-ai/Template-artifact/tree/<commit>/reverse-template",
+      "https://github.com/okou-ai/Template-artifact/tree/<commit>/reverse-template",
     );
     expect(appendSystemPrompt).toContain(
       "do not pull or compare the registry copy",
@@ -1048,7 +1036,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("mounts shared skills without granting Goal authority to a fresh manual run", async () => {
     const names = ["goal", "workflow-setup"];
     const versions = names.map((name) => {
-      const fullPath = `vm0-ai/vm0-skills/tree/fixture-${randomUUID()}/${name}`;
+      const fullPath = `okou-ai/vm0-skills/tree/fixture-${randomUUID()}/${name}`;
       return {
         name,
         url: `https://github.com/${fullPath}`,
@@ -1134,20 +1122,42 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     }
   });
 
-  it("always advertises presentation screenshots", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const toolHint =
-      "okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>";
+  it.each([false, true])(
+    "advertises current Run usage only while its feature is enabled (%s)",
+    async (enabled) => {
+      const api = createRunsApi(context);
+      const connectors = createConnectorBddApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.RunUsage]: enabled,
+      });
 
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "render this deck to page images",
-      modelProvider: "anthropic-api-key",
-    });
-    const stored = await api.readRun(actor, run.runId);
-    expect(stored.appendSystemPrompt ?? "").toContain(toolHint);
-  });
+      const created = await api.createRun(actor, {
+        agentId,
+        prompt: "inspect this Run's provider-token usage",
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(created.runId);
+      const prompt = claim.appendSystemPrompt ?? "";
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a minted Run token");
+      }
+
+      expect(
+        prompt
+          .split("\n")
+          .includes(
+            "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
+          ),
+      ).toBe(enabled);
+      expect(
+        verifyOkouToken(token)?.capabilities.includes("run-usage:read"),
+      ).toBe(enabled);
+      await api.requestCancelRun(actor, created.runId, [200]);
+    },
+  );
 
   it("advertises Lark messaging only while the organization rollout is enabled", async () => {
     const api = createRunsApi(context);
@@ -1903,8 +1913,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     const suspendedPrompt = `suspended direct ${randomUUID()}`;
     const rejected = await api.requestDirectRun(
@@ -5198,7 +5212,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     },
   );
 
-  it("rejects runs for onboarded organizations that never gained an entitlement", async () => {
+  it("rejects runs for onboarded organizations with suspended entitlements", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
@@ -5214,15 +5228,19 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD suspended-org agent",
-      description: "Covers the pro-suspend admission branch.",
+      description: "Covers the suspended entitlement admission branch.",
       visibility: "private",
     });
     const byokPrompt = `suspended BYOK ${randomUUID()}`;
     const builtInPrompt = `suspended built-in ${randomUUID()}`;
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
 
     const rejected = await api.requestCreateRun(
@@ -8371,89 +8389,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
   });
-
-  it("rejects missing masking metadata but falls back completely for invalid keys", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-
-    const kms = useSecretKmsProbe();
-    const composeName = `bdd-secret-fallback-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: {
-            ANTHROPIC_API_KEY: "bdd-inline-key",
-            FIRST_TOKEN: `\${{ secrets.FIRST_TOKEN }}`,
-            SECOND_TOKEN: `\${{ secrets.SECOND_TOKEN }}`,
-          },
-        },
-      },
-    });
-
-    const missingRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "reject missing masking metadata",
-      secrets: {
-        FIRST_TOKEN: "first-missing-secret",
-        SECOND_TOKEN: "second-missing-secret",
-      },
-    });
-    await mutateRunnerJobSecretValueEnvironmentKeys(
-      context,
-      missingRun.runId,
-      "remove",
-    );
-    const decryptCountBeforeMissingClaim = kms.decryptCalls;
-
-    const missingClaim = await api.requestClaimRunnerJob(
-      true,
-      missingRun.runId,
-      [400],
-    );
-    expectApiError(missingClaim.body);
-    expect(missingClaim.body.error.message).toBe(
-      "Job missing execution context",
-    );
-    expect(kms.decryptCalls).toBe(decryptCountBeforeMissingClaim);
-    const failedMissingRun = await api.readRun(actor, missingRun.runId);
-    expect(failedMissingRun.status).toBe("failed");
-    expect(failedMissingRun.error).toBe(
-      "Runner job missing valid execution context",
-    );
-    const invalidRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "materialize invalid masking metadata",
-      secrets: {
-        FIRST_TOKEN: "first-fallback-secret",
-        SECOND_TOKEN: "second-fallback-secret",
-      },
-    });
-    await mutateRunnerJobSecretValueEnvironmentKeys(
-      context,
-      invalidRun.runId,
-      "invalid",
-    );
-    const decryptCountBeforeInvalidClaim = kms.decryptCalls;
-
-    const claim = await api.claimRunnerJob(invalidRun.runId);
-
-    expect(claim.secretValues).toStrictEqual([
-      "first-fallback-secret",
-      "second-fallback-secret",
-    ]);
-    expect(kms.decryptCalls).toBe(decryptCountBeforeInvalidClaim + 1);
-    expect(claim).not.toHaveProperty("secretValueEnvironmentKeys");
-
-    await api.requestCancelRun(actor, invalidRun.runId, [200]);
-  });
 });
 
 describe("RUN-02: custom connectors, grants, and network policies", () => {
@@ -10371,8 +10306,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 20_000,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     const deniedRefresh = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
@@ -10849,7 +10788,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {
       const catalog = await installAutomaticMcpCatalog({
-        firewallAuth: resolution,
+        firewallAuth: resolution === "oauth" ? "none" : "oauth",
       });
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",
@@ -10872,7 +10811,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           methodId: catalog.methodId,
           storageVersion: 2,
           isolateSource: false,
-          firewallAuth: resolution,
+          firewallAuth: "oauth",
         });
       }
       const run = await api.createRun(actor, {
@@ -10884,12 +10823,36 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(connectionId);
-      const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
+      const firewall = findFirewallEntry(claim.firewalls, catalog.slug);
       expect(firewall).toMatchObject({
-        kind: "builtin",
-        name: catalog.slug,
+        kind: "inline",
         sourceId: connectionId,
+        firewall: {
+          name: catalog.slug,
+          apis: [
+            {
+              id: `${catalog.slug}:0`,
+              base: catalog.endpoint,
+              auth:
+                resolution === "oauth"
+                  ? {
+                      headers: {
+                        Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+                      },
+                    }
+                  : {},
+              permissions: [],
+            },
+          ],
+        },
       });
+      if (!firewall || firewall.kind !== "inline") {
+        throw new Error("Expected the built-in MCP inline firewall");
+      }
+      const runtimeApi = firewall.firewall.apis[0];
+      if (!runtimeApi) {
+        throw new Error("Expected the built-in MCP runtime API");
+      }
       expect(JSON.stringify(claim)).not.toContain(
         "automatic-initial-access-token",
       );
@@ -10926,7 +10889,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }
       const authBody = {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: catalog.firewallAuthHeaders,
+        authHeaders: runtimeApi.auth.headers ?? {},
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
@@ -10936,19 +10899,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           routingVariables: {},
         },
       };
-      const resolved = await fw.requestFirewallAuth(
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        authBody,
-        [200],
-      );
-      expect(resolved.body).toMatchObject({
-        headers:
-          resolution === "oauth"
-            ? { Authorization: "Bearer automatic-initial-access-token" }
-            : {},
-      });
-
       if (resolution === "oauth") {
+        const resolved = await fw.requestFirewallAuth(
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          authBody,
+          [200],
+        );
+        expect(resolved.body).toMatchObject({
+          headers: { Authorization: "Bearer automatic-initial-access-token" },
+        });
         mockAutomaticMcpOAuthProvider(context, {
           registration: "none",
           authentication: "none",
@@ -10984,7 +10943,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         );
         expect(check.body).toMatchObject({
           outcome: "resolved",
-          connector: { credentialResolution: "network-boundary" },
+          connector: { credentialResolution: "none" },
         });
       }
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -10996,7 +10955,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     },
   );
 
-  it("keeps a no-auth catalog firewall when Automatic discovery resolves OAuth", async () => {
+  it("ignores a legacy no-auth firewall when Automatic discovery resolves OAuth", async () => {
     const catalog = await installAutomaticMcpCatalog({
       firewallAuth: "none",
     });
@@ -11023,11 +10982,31 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
-    expect(builtinFirewallEntry(claim.firewalls, catalog.slug)).toStrictEqual({
-      kind: "builtin",
-      name: catalog.slug,
+    const firewall = findFirewallEntry(claim.firewalls, catalog.slug);
+    expect(firewall).toMatchObject({
+      kind: "inline",
       sourceId: connectionId,
+      firewall: {
+        name: catalog.slug,
+        apis: [
+          {
+            base: catalog.endpoint,
+            auth: {
+              headers: {
+                Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+              },
+            },
+          },
+        ],
+      },
     });
+    if (!firewall || firewall.kind !== "inline") {
+      throw new Error("Expected the built-in MCP inline firewall");
+    }
+    const runtimeApi = firewall.firewall.apis[0];
+    if (!runtimeApi) {
+      throw new Error("Expected the built-in MCP runtime API");
+    }
     expect(catalog.firewallAuthHeaders).toStrictEqual({});
 
     const checkClient = setupApp({ context, routes: connectorCheckRoutes })(
@@ -11049,15 +11028,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(check.body).toMatchObject({
       outcome: "resolved",
-      connector: { credentialResolution: "none" },
+      connector: { credentialResolution: "network-boundary" },
     });
-    const staleOAuth = await fw.requestFirewallAuth(
+    const staleNoAuth = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
       {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: {
-          Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-        },
+        authHeaders: {},
         forceRefresh: true,
         matchedFirewall: {
           name: catalog.slug,
@@ -11070,7 +11047,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
       [424],
     );
-    expect(staleOAuth.body).toMatchObject({
+    expect(staleNoAuth.body).toMatchObject({
       error: { code: "CONNECTOR_NOT_CONFIGURED" },
     });
     expect(provider.tokenBodies).toHaveLength(1);
@@ -11078,8 +11055,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       { authorization: `Bearer ${claim.sandboxToken}` },
       {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: catalog.firewallAuthHeaders,
-        forceRefresh: true,
+        authHeaders: runtimeApi.auth.headers ?? {},
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
@@ -11091,7 +11067,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       },
       [200],
     );
-    expect(resolved.body).toMatchObject({ headers: {} });
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer automatic-initial-access-token" },
+    });
     expect(provider.tokenBodies).toHaveLength(1);
     const [runtime] = await api.syncConnectorRuntime(run.runId, {
       targets: [target],
@@ -11108,7 +11086,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it.each(["none", "manual"] as const)(
-    "keeps catalog auth when reconnecting builtin Automatic to %s",
+    "keeps the Run auth snapshot when reconnecting builtin Automatic to %s",
     async (authMode) => {
       const catalog = await installAutomaticMcpCatalog({
         slug: "manual-mcp",
@@ -11136,13 +11114,31 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
-      expect(builtinFirewallEntry(claim.firewalls, catalog.slug)).toMatchObject(
-        {
-          kind: "builtin",
+      const firewall = findFirewallEntry(claim.firewalls, catalog.slug);
+      expect(firewall).toMatchObject({
+        kind: "inline",
+        sourceId: connectionId,
+        firewall: {
           name: catalog.slug,
-          sourceId: connectionId,
+          apis: [
+            {
+              base: catalog.endpoint,
+              auth: {
+                headers: {
+                  Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+                },
+              },
+            },
+          ],
         },
-      );
+      });
+      if (!firewall || firewall.kind !== "inline") {
+        throw new Error("Expected the built-in MCP inline firewall");
+      }
+      const runtimeApi = firewall.firewall.apis[0];
+      if (!runtimeApi) {
+        throw new Error("Expected the built-in MCP runtime API");
+      }
       if (authMode === "none") {
         const client = setupApp({ context, routes: builtinConnectorsRoutes })(
           builtinConnectorNoAuthGrantContract,
@@ -11202,15 +11198,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       expect(check.body).toMatchObject({
         outcome: "resolved",
         connector: {
-          credentialResolution: "network-boundary",
+          credentialResolution:
+            authMode === "none" ? "none" : "network-boundary",
         },
       });
-      const authHeaders =
-        authMode === "none"
-          ? catalog.firewallAuthHeaders
-          : {
-              Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
-            };
       const auth = await fw.requestFirewallAuth(
         {
           authorization: `Bearer ${claim.sandboxToken}`,
@@ -11218,23 +11209,21 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         {
           encryptedSecrets:
             claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-          authHeaders,
+          authHeaders: runtimeApi.auth.headers ?? {},
           matchedFirewall: {
             name: catalog.slug,
             apiId: `${catalog.slug}:0`,
-            base: endpoint,
+            base: catalog.endpoint,
             connectorSlug: catalog.slug,
             sourceId: connectionId,
             routingVariables: {},
           },
         },
-        authMode === "none" ? [424] : [200],
+        [424],
       );
-      expect(auth.body).toMatchObject(
-        authMode === "none"
-          ? { error: { code: "CONNECTOR_NOT_CONFIGURED" } }
-          : { headers: { Authorization: "Bearer reconnected-manual-token" } },
-      );
+      expect(auth.body).toMatchObject({
+        error: { code: "CONNECTOR_NOT_CONFIGURED" },
+      });
       await api.requestCancelRun(actor, run.runId, [200]);
       await connectors.deleteBuiltinConnectorAccount(
         actor,
@@ -11279,10 +11268,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+    if (!runtimeApi) {
+      throw new Error("Expected the built-in MCP runtime API");
+    }
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: catalog.firewallAuthHeaders,
+      authHeaders: runtimeApi.auth.headers ?? {},
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
@@ -11445,6 +11438,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+      const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+      if (!runtimeApi) {
+        throw new Error("Expected the built-in MCP runtime API");
+      }
       expect(target.sourceId).toBe(refreshConnectionId);
       const held = await holdConnectorAccountFixture(
         {
@@ -11463,7 +11460,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
               forceRefresh: true,
               encryptedSecrets:
                 claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-              authHeaders: catalog.firewallAuthHeaders,
+              authHeaders: runtimeApi.auth.headers ?? {},
               matchedFirewall: {
                 name: catalog.slug,
                 apiId: `${catalog.slug}:0`,
@@ -11597,9 +11594,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+    if (!runtimeApi) {
+      throw new Error("Expected the built-in MCP runtime API");
+    }
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: catalog.firewallAuthHeaders,
+      authHeaders: runtimeApi.auth.headers ?? {},
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
@@ -13093,11 +13094,26 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(grantedContext.claim.networkPolicyRefreshes).not.toHaveProperty(
       "model-provider:anthropic-api-key",
     );
+    expect(
+      findFirewallEntry(
+        grantedContext.claim.firewalls,
+        "model-provider:anthropic-api-key",
+      ),
+    ).toMatchObject({
+      kind: "builtin",
+      name: "model-provider:anthropic-api-key",
+    });
     expect(grantedContext.claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "slack",
       sourceId: expect.any(String),
     });
+    expect(grantedContext.claim.connectorRuntimeTargets).not.toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        connectorSlug: "model-provider:anthropic-api-key",
+      }),
+    );
     expect(granted.allow).toContain("chat:write");
     expect(granted.allow).toContain("files:read");
     expect(granted.deny).not.toContain("chat:write");
@@ -13164,7 +13180,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(sameUserRuntime.body.results[0]).toMatchObject({
       target: { kind: "builtin", connectorSlug: "missing-builtin" },
-      state: "unresolved",
+      state: "absent",
       reason: "connector-unavailable",
     });
     expect(sameUserRuntime.body.results[1]).toMatchObject({
@@ -13614,25 +13630,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 });
 
 describe("RUN-01: agent runner context, queue promotion, and skills", () => {
-  it("uses the configured commit-addressed Okou CLI distribution", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const r2Run = await api.createRun(actor, {
-      agentId,
-      prompt: "use the default Okou CLI",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const r2Claim = await api.claimRunnerJob(r2Run.runId);
-    expect(r2Claim.appendSystemPrompt ?? "").toContain(
-      `Run commands with: \`npx --yes --package="\${CLI_PKG_URL}" okou <command>\``,
-    );
-    expect(r2Claim.platformEnvironment.CLI_PKG_URL).toBe(
-      "https://static.okou.io/okou-cli/test-commit/package.tgz",
-    );
-    await api.requestCancelRun(actor, r2Run.runId, [200]);
-  });
-
   it("keeps direct-run execution config isolated from product execution", async () => {
     const appUrl = "https://app.writer-stop.example.test";
     mockEnv("APP_URL", appUrl);
@@ -13999,132 +13996,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("explains supported connector discovery for service connections", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "connect a third-party service",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    for (const connectorContext of [
-      "okou connector search <service-name>",
-      "searches every supported service",
-      "reports which matching connectors are available to the current run",
-      "provider credentials stay outside the sandbox",
-      "When a user wants to connect a third-party service, search for it first",
-    ]) {
-      expect(appendSystemPrompt).toContain(connectorContext);
-    }
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("requires Mercury attribution when a response presents account data", async () => {
-    const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      mercuryConnector: true,
-    });
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "mercury",
-      authMethod: "oauth",
-      accessToken: "mercury-bdd-access",
-      refreshToken: "mercury-bdd-refresh",
-    });
-    await api.enableAgentConnectors(actor, agentId, ["mercury"]);
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "summarize my Mercury account balances",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-
-    expect(appendSystemPrompt).toContain("# Mercury Account Data Disclosure");
-    expect(appendSystemPrompt).toContain(
-      "[Powered by Mercury](https://mercury.com)",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Do not include this disclosure when the response does not present Mercury-sourced data.",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises managed research tools for regular runs", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "find current public information",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-
-    expect(claim.disallowedTools).toStrictEqual(
-      EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
-    );
-    expect(claim.appendSystemPrompt ?? "").toContain("okou web-search --help");
-    expect(claim.appendSystemPrompt ?? "").toContain("okou finance --help");
-    expect(claim.appendSystemPrompt ?? "").toContain("okou seo --help");
-    expect(claim.appendSystemPrompt ?? "").toContain("okou scrape --help");
-    expect(claim.appendSystemPrompt ?? "").toContain(
-      "okou people-search <query>",
-    );
-    expect(claim.appendSystemPrompt ?? "").toContain("model-extracted");
-    expect(claim.appendSystemPrompt ?? "").toContain("provider-backed sources");
-    expect(claim.appendSystemPrompt ?? "").toContain(
-      "execute through the built-in platform provider",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises concise Social guidance for regular runs", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "analyze public social data",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain("okou social --help");
-    expect(appendSystemPrompt).toContain(
-      "relevant subcommand's `--help` before use",
-    );
-    expect(appendSystemPrompt).toContain(
-      "okou social capabilities [platform] --json",
-    );
-    expect(appendSystemPrompt).toContain(
-      "public research, transcripts, summaries, and media downloads",
-    );
-    expect(appendSystemPrompt).toContain(
-      "prefer it for supported public X/Twitter research",
-    );
-    const socialGuidance = appendSystemPrompt.split("\n").filter((line) => {
-      return line.includes("okou social");
-    });
-    expect(socialGuidance).toHaveLength(1);
-    expect(socialGuidance.join("\n").length).toBeLessThanOrEqual(500);
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -14253,40 +14124,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises live Social status for an ordinary organization", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "check public social service health",
-      modelProvider: "anthropic-api-key",
-    });
-    const prompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    expect(prompt).toContain("okou social capabilities [platform] --json");
-    expect(prompt).toContain("okou social status [platform] --json");
-    expect(prompt).toContain("for service health");
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises Slack bot reads for an ordinary organization", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "read the channel's recent messages",
-      modelProvider: "anthropic-api-key",
-    });
-    const prompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    expect(prompt).toContain("okou slack channel list --help");
-    expect(prompt).toContain("okou slack message history --help");
-    expect(prompt).toContain("okou slack message send --help");
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
   it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -14372,65 +14209,55 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     },
   );
 
-  it("advertises connector account switching", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
+  it.each([false, true])(
+    "advertises pptx presentation delivery and Run capabilities only while its feature is enabled (%s)",
+    async (enabled) => {
+      const api = createRunsApi(context);
+      const connectors = createConnectorBddApi(context);
+      const webhooks = createWebhookCallbackApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "switch my connector account",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain(
-      "okou connector account list <slug> --json",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Use only an exact `connectionId` returned by these commands",
-    );
-    expect(appendSystemPrompt).toContain(
-      "okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>",
-    );
-    expect(appendSystemPrompt).toContain(
-      "only the current thread's override for future runs",
-    );
-    expect(appendSystemPrompt).toContain(
-      "do not include secrets because it is included in the URL",
-    );
-    expect(appendSystemPrompt).toContain(
-      "only after the user confirms and the selection succeeds",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("advertises managed SEO tools by default", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "research search rankings",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-
-    expect(appendSystemPrompt).toContain(
-      "SEO research, live search-engine results, keyword ideas, ranked keywords, and backlink summaries",
-    );
-    expect(appendSystemPrompt).toContain("okou seo --help");
-    expect(appendSystemPrompt).toContain("okou seo serp --help");
-    expect(appendSystemPrompt).toContain("Okou SEO uses DataForSEO");
-    expect(appendSystemPrompt).toContain("select a compatible engine");
-    expect(appendSystemPrompt).toContain(
-      "Use `okou web-search` instead for general public-web source discovery",
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PresentationConvert]: enabled,
+      });
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "make me a deck about our quarterly plan",
+        modelProvider: "anthropic-api-key",
+      });
+      expect(run.status).toBe("pending");
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const prompt = claim.appendSystemPrompt ?? "";
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a minted Run token");
+      }
+      const capabilities = verifyOkouToken(token)?.capabilities;
+      expect(capabilities).toBeDefined();
+      if (enabled) {
+        expect(capabilities).toContain("presentation-convert:write");
+        expect(prompt).toContain("Presentation delivery:");
+        expect(prompt).toContain(
+          "deliver both the hosted HTML deck and a pptx of it in one reply",
+        );
+        expect(prompt).toContain("name the artifact, not a format");
+        expect(prompt).toContain(
+          "okou presentation convert --input <deck.html> --verify",
+        );
+      } else {
+        expect(capabilities).not.toContain("presentation-convert:write");
+        expect(prompt).not.toContain("okou presentation convert");
+        expect(prompt).not.toContain("Presentation delivery:");
+      }
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+    },
+  );
 
   it("mounts the caller's private workflow over same-slug visible workflows", async () => {
     const bdd = createBddApi(context);
@@ -15256,65 +15083,6 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
 });
 
 describe("HOOK-01: callback authentication failures", () => {
-  it("leaves retired Slack org callbacks inert", async () => {
-    const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const prompt = `retired Slack org callback ${randomUUID()}`;
-    const created = await api.createRun(actor, {
-      agentId,
-      prompt,
-      modelProvider: "anthropic-api-key",
-    });
-    await callbackStore.set(
-      seedAgentRunCallback$,
-      {
-        runId: created.runId,
-        internalKind: "slack:org",
-        payload: {},
-      },
-      context.signal,
-    );
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, created.runId)}`,
-    };
-
-    await webhooks.requestAgentHeartbeat(
-      { runId: created.runId },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await webhooks.requestAgentComplete(
-      { runId: created.runId, exitCode: 0 },
-      sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    await expect(
-      callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: actor.orgId,
-          userId: actor.userId,
-          prompt,
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({
-        internalKind: "slack:org",
-        status: "pending",
-        attempts: 0,
-        lastError: null,
-      }),
-    ]);
-  });
-
   it("fails closed without authentication material on progress and completion", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);

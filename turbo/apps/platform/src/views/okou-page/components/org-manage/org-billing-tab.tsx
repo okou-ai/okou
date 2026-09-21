@@ -121,11 +121,6 @@ function planName(tier: BillingTier): string {
       return $.billing.plans.limitedFree.name;
     });
   }
-  if (tier === "pro-suspend") {
-    return i18n.t(($) => {
-      return $.billing.plans.noPlan.name;
-    });
-  }
   return i18n.t(($) => {
     return $.billing.plans.free.name;
   });
@@ -149,7 +144,7 @@ function isCustomTier(tier: BillingTier): boolean {
 }
 
 function isNoActivePlanTier(tier: BillingTier): boolean {
-  return tier === "limited-free-1" || tier === "pro-suspend";
+  return tier === "limited-free-1";
 }
 
 function formatBillingDate(value: string): string {
@@ -371,15 +366,14 @@ function DowngradeConfirmDialogContent({
                 return setSelectedTarget("limited-free-1");
               }}
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
-                selectedTarget === "limited-free-1" ||
-                selectedTarget === "pro-suspend"
+                selectedTarget === "limited-free-1"
                   ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
               <div>
                 <span className="text-sm font-semibold text-foreground">
-                  {planName("pro-suspend")}
+                  {planName("limited-free-1")}
                 </span>
                 <span className="ml-2 text-sm text-muted-foreground">
                   {freePlanPrice}
@@ -406,8 +400,7 @@ function DowngradeConfirmDialogContent({
               ? i18n.t(($) => {
                   return $.billing.downgrade.inProgress;
                 })
-              : downgradeTarget === "limited-free-1" ||
-                  downgradeTarget === "pro-suspend"
+              : downgradeTarget === "limited-free-1"
                 ? i18n.t(($) => {
                     return $.billing.downgrade.cancelSubscription;
                   })
@@ -2048,8 +2041,8 @@ function usagePackMigrationConfigurable(
 
 function migrationDowngradeTarget(
   migration: UsagePackMigrationStateResponse | null,
-): "pro-suspend" | null {
-  return migration ? "pro-suspend" : null;
+): "limited-free-1" | null {
+  return migration ? "limited-free-1" : null;
 }
 
 function planActionsLoading(

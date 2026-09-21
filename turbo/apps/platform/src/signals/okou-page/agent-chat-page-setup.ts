@@ -8,6 +8,7 @@ import {
   updateSearchParams$,
   detachedNavigateTo$,
 } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
 import { currentAgentId$, defaultAgentId$, agents$ } from "../agent.ts";
 import { setChatAgentId$ } from "../agent-chat.ts";
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
@@ -49,14 +50,37 @@ export const setupAgentChatPage$ = command(
       return candidate.agentId === agentId;
     });
     if (!agent) {
+      // The URL names an agent this user cannot reach: it was deleted, it
+      // belongs to another organization, or it is private to someone else.
+      // Recover onto a usable surface the way the home route already does,
+      // instead of leaving the user behind the bootstrap skeleton.
       const defaultAgentId = await get(defaultAgentId$);
       signal.throwIfAborted();
-      if (!defaultAgentId || defaultAgentId === agentId) {
-        throw new Error("Chat page requires an active agent, but none found");
+
+      // The stored default is never validated against the visible agents, so
+      // trust it only when this already-loaded list contains it. A default
+      // equal to `agentId` fails the same check, because `agentId` is absent
+      // from the list. Otherwise fall back to any visible agent.
+      const defaultAgentIsVisible = agents.some((candidate) => {
+        return candidate.agentId === defaultAgentId;
+      });
+      const fallbackAgentId = defaultAgentIsVisible
+        ? defaultAgentId
+        : agents[0]?.agentId;
+
+      if (fallbackAgentId) {
+        set(detachedNavigateTo$, ROUTES.agentChat, {
+          pathParams: { agentId: fallbackAgentId },
+          searchParams: get(searchParams$),
+          replace: true,
+        });
+        return;
       }
 
-      set(detachedNavigateTo$, "/agents/:agentId/chat", {
-        pathParams: { agentId: defaultAgentId },
+      // No visible agent at all. Home degrades to the agents surface only when
+      // no default is recorded; while an unreachable default is still recorded
+      // it would navigate straight back here, so go to that surface directly.
+      set(detachedNavigateTo$, defaultAgentId ? ROUTES.agents : ROUTES.home, {
         searchParams: get(searchParams$),
         replace: true,
       });
@@ -94,7 +118,7 @@ export const setupAgentChatPage$ = command(
     if (templatePicker) {
       const composerSignals = get(agentChatComposerSignals$);
       set(composerSignals.template.setTemplatePickerSearch$, "");
-      set(composerSignals.template.setTemplatePickerPreviewSlug$, null);
+      set(composerSignals.template.clearPresentationTemplatePreviews$);
       set(composerSignals.template.setTemplatePickerReferenceValue$, null);
       set(composerSignals.template.setTemplatePickerCategory$, templatePicker);
       set(composerSignals.template.setTemplatePickerOpen$, true);

@@ -27,6 +27,7 @@ import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
 import {
   sidebarExpanded$,
   setSidebarExpanded$,
+  sidebarOff$,
   isChatRoute,
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -372,7 +373,7 @@ function MobileSidebarMount() {
         // A fixed cover is clipped by the visual viewport, so in a standalone
         // PWA it stops short of the bottom safe inset. Extending `bottom` by
         // that inset keeps the scrim painted to the physical screen edge.
-        className="fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block [@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]"
+        className="fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block [@media(display-mode:standalone)]:-bottom-safe"
         aria-label={t(($) => {
           return $.appShell.sidebar.mobile.overlay;
         })}
@@ -387,6 +388,7 @@ function MobileSidebarMount() {
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+  const chatListHidden = useGet(sidebarOff$);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
 
   return withChatScrollLayout(
@@ -407,7 +409,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <AttachmentLightboxMount />
       <QueueDrawer />
       {isDesktop ? <Sidebar isDesktop /> : <MobileSidebarMount />}
-      <WorkspaceInset>
+      <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>
         <InstallBanner />
         <IosInstallModal />
         {!isDesktop && <MobileTopBar />}

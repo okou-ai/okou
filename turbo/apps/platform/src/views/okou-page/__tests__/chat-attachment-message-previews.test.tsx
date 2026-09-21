@@ -31,6 +31,7 @@ import {
   publicArtifactUrl,
   queryNamedButton,
   queryNamedButtons,
+  queryNamedLink,
   userMessage,
   type AttachmentChatEvent,
 } from "./chat-attachment-test-helpers.ts";
@@ -360,9 +361,7 @@ test("Only exact trusted public links receive rich attachment previews", async (
   ).toBeFalsy();
 });
 
-async function setupPersistedAttachmentMessage(): Promise<{
-  readonly markdownShareUrl: string;
-}> {
+async function setupPersistedAttachmentMessage(): Promise<void> {
   const specifications = [
     ["private-audio", "voice.mp3", "audio/mpeg"],
     ["private-video", "demo.mp4", "video/mp4"],
@@ -428,7 +427,6 @@ async function setupPersistedAttachmentMessage(): Promise<{
   await expect(
     screen.findByText("Files from the completed review"),
   ).resolves.toBeVisible();
-  return { markdownShareUrl };
 }
 
 test("Persisted audio attachments open from their private URL", async () => {
@@ -505,16 +503,15 @@ test("Persisted HTML attachments use the document sidebar", async () => {
   });
 });
 
-test("Persisted Markdown attachments render and share their public URL", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const { markdownShareUrl } = await setupPersistedAttachmentMessage();
+test("Persisted Markdown attachments render without offering sharing", async () => {
+  await setupPersistedAttachmentMessage();
 
   click(getNamedButton("Open markdown preview for notes.md"));
   await expect(screen.findByText("Review notes")).resolves.toBeVisible();
-  click(await findNamedLink("Share"));
-  await waitFor(() => {
-    expect(clipboard.writes).toContain(markdownShareUrl);
-  });
+  // The file belongs to the user's own message, so the preview has a download
+  // but no share action even though a public URL resolved for it.
+  expect(getNamedButton("Download options")).toBeInTheDocument();
+  expect(queryNamedLink("Share")).toBeNull();
   await closeFocusedPreview();
 });
 

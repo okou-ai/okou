@@ -8,7 +8,11 @@ import {
   useContext,
 } from "react";
 import { vi } from "vitest";
-import type { BrowserClerk, ClerkOptions } from "@clerk/shared/types";
+import type {
+  BrowserClerk,
+  ClerkAppearanceTheme,
+  ClerkOptions,
+} from "@clerk/shared/types";
 
 const MockClerkContext = createContext<BrowserClerk | null>(null);
 
@@ -191,7 +195,13 @@ export function SignUp(props: ClerkAuthComponentProps) {
   });
 }
 
-export function OAuthConsent({ fallback }: { fallback?: ReactNode }) {
+export function OAuthConsent({
+  appearance,
+  fallback,
+}: {
+  appearance?: ClerkAppearanceTheme;
+  fallback?: ReactNode;
+}) {
   const mounted = useSyncExternalStore(
     subscribeToClerkAuthComponent,
     getClerkAuthComponentMounted,
@@ -202,6 +212,11 @@ export function OAuthConsent({ fallback }: { fallback?: ReactNode }) {
     mounted ? null : fallback,
     createElement("div", {
       "data-client-id": new URLSearchParams(location.search).get("client_id"),
+      "data-clerk-logo-link-url": appearance?.options?.logoLinkUrl,
+      "data-clerk-primary-color": appearance?.variables?.colorPrimary,
+      "data-clerk-primary-foreground":
+        appearance?.variables?.colorPrimaryForeground,
+      "data-clerk-theme": appearance?.theme,
       "data-testid": "clerk-oauth-consent",
       hidden: !mounted,
     }),

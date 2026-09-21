@@ -9,6 +9,7 @@ import {
   type VncSecurity,
   type VncTrust,
 } from "@okouai/api-contracts/contracts/vnc-connections";
+import type { VncAuthentication } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   VNC_ERROR_CODES,
   type VncErrorCode,
@@ -36,6 +37,11 @@ const failures = {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_TRUST,
     message: "VNC custom trust requires a bounded bundle of CA certificates",
+  },
+  profileMismatch: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.PROFILE_MISMATCH,
+    message: "VNC credential and security profiles do not match",
   },
   credentialNotFound: {
     kind: "not_found",
@@ -139,7 +145,7 @@ export function canonicalizeVncHost(host: string): VncResult<string> {
 }
 
 export function prepareVncSecurity(security: VncSecurity): VncResult<{
-  readonly securityType: "x509_vnc";
+  readonly securityType: VncSecurity["type"];
   readonly trustMode: "system" | "custom_ca";
   readonly caBundle: string | null;
 }> {
@@ -148,6 +154,16 @@ export function prepareVncSecurity(security: VncSecurity): VncResult<{
     return trust;
   }
   return { ok: true, value: { securityType: security.type, ...trust.value } };
+}
+
+export function isVncProfileCompatible(
+  authMethod: VncAuthentication["method"],
+  securityType: VncSecurity["type"],
+): boolean {
+  return (
+    (authMethod === "vnc_password" && securityType === "x509_vnc") ||
+    (authMethod === "username_password" && securityType === "x509_plain")
+  );
 }
 
 function prepareVncTrust(trust: VncTrust): VncResult<{

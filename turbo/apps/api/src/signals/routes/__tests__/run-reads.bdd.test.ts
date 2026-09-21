@@ -53,7 +53,7 @@ import {
 const UTF8_ENCODING = ["utf", "8"].join("-");
 const HOUR_MS = 60 * 60 * 1000;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
@@ -678,108 +678,107 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(drained.body.queue).toStrictEqual([]);
   });
 
-  it("returns validated run duration estimates across the numeric domain", async () => {
-    const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-duration-estimate");
-
-    const emptyQueue = await api.readRunQueue(actor);
-    expect(emptyQueue.body.estimatedTimePerRun).toBeNull();
-
-    const agentRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "zero duration estimate",
-    });
-    await api.claimRunnerJob(agentRun.runId);
-    await completeRunAfter(actor, agentRun.runId, 0);
-    const zeroQueue = await api.readRunQueue(actor);
-    expect(zeroQueue.body.estimatedTimePerRun).toBe(0);
-
-    const fractionalRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "fractional average estimate",
-    });
-    await api.claimRunnerJob(fractionalRun.runId);
-    await completeRunAfter(actor, fractionalRun.runId, 1);
-    const fractionalQueue = await api.readRunQueue(actor);
-    expect(fractionalQueue.body.estimatedTimePerRun).toBe(1);
-
-    const normalRun = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "normal duration estimate",
-    });
-    await api.claimRunnerJob(normalRun.runId);
-    await completeRunAfter(actor, normalRun.runId, 2999);
-    const normalQueue = await api.readRunQueue(actor);
-    expect(normalQueue.body.estimatedTimePerRun).toBe(1000);
-
-    const largeActor = await entitledActor();
-    const largeCompose = await createClaudeAgent(
-      largeActor,
-      "bdd-large-duration-estimate",
-    );
-    const largeRun = await api.createDirectRun(largeActor, {
-      agentId: largeCompose.agentId,
-      prompt: "large duration estimate",
-    });
-    await api.claimRunnerJob(largeRun.runId);
-    const largeDurationMs = 200_000_000_000_000;
-    await completeRunAfter(largeActor, largeRun.runId, largeDurationMs);
-    const largeQueue = await api.readRunQueue(largeActor);
-    expect(largeQueue.body.estimatedTimePerRun).toBe(largeDurationMs);
-  });
+  it.each([
+    { domain: "empty history", durations: [], expected: null },
+    { domain: "zero", durations: [0], expected: 0 },
+    { domain: "fractional average", durations: [0, 1], expected: 1 },
+    { domain: "ordinary average", durations: [0, 1, 2999], expected: 1000 },
+    {
+      domain: "large integer",
+      durations: [200_000_000_000_000],
+      expected: 200_000_000_000_000,
+    },
+  ])(
+    "returns a validated run duration estimate for $domain",
+    async ({ domain, durations, expected }) => {
+      const actor = await entitledActor();
+      const compose = await createClaudeAgent(
+        actor,
+        `bdd-duration-estimate-${domain.replaceAll(" ", "-")}`,
+      );
+      for (const [index, duration] of durations.entries()) {
+        const run = await api.createDirectRun(actor, {
+          agentId: compose.agentId,
+          prompt: `${domain} duration estimate ${index}`,
+        });
+        await api.claimRunnerJob(run.runId);
+        await completeRunAfter(actor, run.runId, duration);
+      }
+      const queue = await api.readRunQueue(actor);
+      expect(queue.body.estimatedTimePerRun).toBe(expected);
+    },
+  );
 });
 
 describe("RUN-03: cancel through the run cancel route", () => {
-  it("cancels runs through the run cancel route across states", async () => {
+  async function cancelFixture() {
     const actor = await entitledActor();
     const compose = await createClaudeAgent(actor, "bdd-cancel");
+    return { actor, compose };
+  }
 
-    const c1 = await api.createDirectRun(actor, {
+  it("cancels a running run idempotently", async () => {
+    const { actor, compose } = await cancelFixture();
+    const run = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt: "cancel a running run",
     });
-    await api.claimRunnerJob(c1.runId);
+    await api.claimRunnerJob(run.runId);
     const cancelled = await api.requestCancelRun(
       actor,
-      c1.runId.toUpperCase(),
+      run.runId.toUpperCase(),
       [200],
     );
     expect(cancelled.body).toStrictEqual({
-      id: c1.runId,
+      id: run.runId,
       status: "cancelled",
       message: "Run cancelled successfully",
     });
-    const c1Detail = await api.readRun(actor, c1.runId);
-    expect(c1Detail.status).toBe("cancelled");
-
-    const repeated = await api.requestCancelRun(actor, c1.runId, [200]);
+    expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
+    const repeated = await api.requestCancelRun(actor, run.runId, [200]);
     expect(repeated.body).toMatchObject({ status: "cancelled" });
+  });
 
-    const c2 = await api.createDirectRun(actor, {
+  it("rejects cancellation after a run completes", async () => {
+    const { actor, compose } = await cancelFixture();
+    const run = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt: "complete then cancel",
     });
-    const claim2 = await api.claimRunnerJob(c2.runId);
-    await completeRun(c2.runId, claim2.sandboxToken);
-    const notCancellable = await api.requestCancelRun(actor, c2.runId, [400]);
+    const claim = await api.claimRunnerJob(run.runId);
+    await completeRun(run.runId, claim.sandboxToken);
+    const notCancellable = await api.requestCancelRun(actor, run.runId, [400]);
     expectApiError(notCancellable.body);
     expect(notCancellable.body.error.code).toBe("RUN_NOT_CANCELLABLE");
+  });
 
+  it("hides an unknown run from cancellation", async () => {
+    const { actor } = await cancelFixture();
     const unknown = await api.requestCancelRun(actor, randomUUID(), [404]);
     expectApiError(unknown.body);
     expect(unknown.body.error.code).toBe("NOT_FOUND");
+  });
 
+  it("hides another organization's run from cancellation", async () => {
+    const { actor, compose } = await cancelFixture();
+    const run = await api.createDirectRun(actor, {
+      agentId: compose.agentId,
+      prompt: "cross-organization cancel",
+    });
+    const claim = await api.claimRunnerJob(run.runId);
+    await completeRun(run.runId, claim.sandboxToken);
     const outsider = bdd.user();
     const crossOrg = await api.requestCancelRun(
       outsider,
-      c2.runId.toUpperCase(),
+      run.runId.toUpperCase(),
       [404],
     );
     expectApiError(crossOrg.body);
     expect(crossOrg.body.error.code).toBe("NOT_FOUND");
+  });
 
-    // A queued agent run cancelled through the agent route disappears from
-    // the visible queue.
+  it("removes a cancelled queued agent run from the visible queue", async () => {
+    const { actor, compose } = await cancelFixture();
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD cancel agent",
@@ -794,13 +793,17 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "occupy slot two",
     });
-    const c4 = await api.createRun(actor, {
+    const queued = await api.createRun(actor, {
       agentId: agent.agentId,
       prompt: "queued run to cancel",
       modelProvider: "anthropic-api-key",
     });
-    expect(c4.status).toBe("queued");
-    const queuedCancelled = await api.requestCancelRun(actor, c4.runId, [200]);
+    expect(queued.status).toBe("queued");
+    const queuedCancelled = await api.requestCancelRun(
+      actor,
+      queued.runId,
+      [200],
+    );
     expect(queuedCancelled.body).toMatchObject({ status: "cancelled" });
     const queueAfter = await api.readRunQueue(actor);
     expect(queueAfter.body.queue).toStrictEqual([]);
@@ -1909,7 +1912,7 @@ function networkHardeningRows(
       port: "443",
       status: "200",
       browser_user_agent: "true",
-      firewall_params: { owner: "vm0-ai", broken: 5 },
+      firewall_params: { owner: "okou-ai", broken: 5 },
       connector_diagnostic_env_names: ["FAL_TOKEN", 5],
       connector_route_candidates: ["primary", 5],
       auth_resolved_secrets: ["TOKEN", null],
@@ -2132,7 +2135,7 @@ describe("RUN-04: agent run telemetry families", () => {
       {
         timestamp: "2026-06-10T12:00:00Z",
         type: "http",
-        firewall_params: { owner: "vm0-ai" },
+        firewall_params: { owner: "okou-ai" },
         request_headers: { host: "api.example.com" },
         response_body_encoding: "binary",
       },
@@ -2714,7 +2717,7 @@ describe("RUN-04: agent run telemetry families", () => {
             latency_ms: 150,
             request_size: 100,
             response_size: 2048,
-            firewall_params: { owner: "vm0-ai", broken: 5 },
+            firewall_params: { owner: "okou-ai", broken: 5 },
             connector_diagnostic_slug: "fal",
             connector_diagnostic_reason: "not_configured_for_run",
             connector_diagnostic_env_names: ["FAL_TOKEN"],
@@ -3055,7 +3058,7 @@ describe("RUN-04: agent run telemetry families", () => {
             latency_ms: 150,
             request_size: 100,
             response_size: 2048,
-            firewall_params: { owner: "vm0-ai", broken: 5 },
+            firewall_params: { owner: "okou-ai", broken: 5 },
             connector_diagnostic_slug: "fal",
             connector_diagnostic_reason: "not_configured_for_run",
             connector_diagnostic_env_names: ["FAL_TOKEN"],
@@ -3136,7 +3139,7 @@ describe("RUN-04: agent run telemetry families", () => {
       latency_ms: 150,
       request_size: 100,
       response_size: 2048,
-      firewall_params: { owner: "vm0-ai" },
+      firewall_params: { owner: "okou-ai" },
       connector_diagnostic_slug: "fal",
       connector_diagnostic_reason: "not_configured_for_run",
       connector_diagnostic_env_names: ["FAL_TOKEN"],
@@ -3249,7 +3252,7 @@ describe("RUN-04: agent run telemetry families", () => {
 });
 
 describe("RUN-04/OPS-01: agent run logs", () => {
-  it("lists run logs with filters, paging, agent tokens, and detail residue", async () => {
+  async function setupRunLogFixture() {
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await api.ensureOrgModelProvider(actor);
@@ -3296,6 +3299,28 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
     await api.requestCancelRun(member, memberRun.runId, [200]);
 
+    return {
+      actor,
+      agentOne,
+      agentOneName,
+      agentTwo,
+      secondAgentRun,
+      testCompose,
+      testRun,
+      webRun,
+    };
+  }
+
+  it("lists organization run logs with their filter metadata", async () => {
+    const {
+      actor,
+      agentOne,
+      agentTwo,
+      secondAgentRun,
+      testCompose,
+      testRun,
+      webRun,
+    } = await setupRunLogFixture();
     const listed = await reads.requestListLogs(actor, {}, [200]);
     mustOk(listed, "the logs list");
     const listedIds = listed.body.data.map((entry) => {
@@ -3331,6 +3356,17 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       displayName: "Direct run fixture",
       triggerSource: "test",
     });
+    expect(listed.body.filters.statuses).toContain("cancelled");
+    expect([...listed.body.filters.sources].sort()).toStrictEqual([
+      "test",
+      "web",
+    ]);
+    expect(listed.body.filters.agents).toContain(agentOne.agentId);
+    expect(listed.body.filters.agents).toContain(agentTwo.agentId);
+  });
+
+  it("pages run logs and falls back from malformed cursors", async () => {
+    const { actor } = await setupRunLogFixture();
     const pageOne = await reads.requestListLogs(actor, { limit: 1 }, [200]);
     mustOk(pageOne, "the first log page");
     expect(pageOne.body.data).toHaveLength(1);
@@ -3373,7 +3409,11 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     );
     mustOk(malformedCursorId, "malformed cursor id list");
     expect(malformedCursorId.body.data[0]?.id).toBe(pageOne.body.data[0]?.id);
+  });
 
+  it("filters run logs by search, agent, status, and source", async () => {
+    const { actor, agentOne, agentOneName, secondAgentRun, webRun } =
+      await setupRunLogFixture();
     const agentOneRunIds = [webRun.runId];
     const fuzzy = await reads.requestListLogs(
       actor,
@@ -3442,16 +3482,10 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     );
     mustOk(noSourceMatch, "the empty source list");
     expect(noSourceMatch.body.data).toStrictEqual([]);
+  });
 
-    expect(listed.body.filters.statuses).toContain("cancelled");
-    expect([...listed.body.filters.sources].sort()).toStrictEqual([
-      "test",
-      "web",
-    ]);
-    expect(listed.body.filters.agents).toContain(agentOne.agentId);
-    expect(listed.body.filters.agents).toContain(agentTwo.agentId);
-
-    // Detail residue: pending nulls and failure error.
+  it("returns pending and failed run-log detail residue", async () => {
+    const { actor, agentOne } = await setupRunLogFixture();
     const pendingRun = await api.createRun(actor, {
       agentId: agentOne.agentId,
       prompt: "pending detail run",
@@ -3490,8 +3524,10 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       status: "failed",
       error: "bdd failure",
     });
+  });
 
-    // A claimed run's real Okou token reads the log surfaces by capability.
+  it("reads run-log list and detail with a claimed run token", async () => {
+    const { actor, agentOne, webRun } = await setupRunLogFixture();
     const tokenRun = await api.createRun(actor, {
       agentId: agentOne.agentId,
       prompt: "Okou run token log access",
@@ -3521,7 +3557,10 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     expect(tokenDetail.body).toMatchObject({ id: webRun.runId });
 
     await api.requestCancelRun(actor, tokenRun.runId, [200]);
+  });
 
+  it("filters run logs from an exact time boundary", async () => {
+    const { actor, agentOne } = await setupRunLogFixture();
     const beforeBoundaryRun = await api.createRun(actor, {
       agentId: agentOne.agentId,
       prompt: "since boundary hidden run",

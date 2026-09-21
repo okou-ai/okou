@@ -1638,7 +1638,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     let guest_rpc = config
         .guest_rpc
         .as_ref()
-        .and_then(|runtime| runtime.install(sandbox.as_ref(), context.run_id, &cleanup_cancel));
+        .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
     let reuse_result = start.reuse_result;
     let workspace_reuse_result = start.workspace_reuse_result;
 

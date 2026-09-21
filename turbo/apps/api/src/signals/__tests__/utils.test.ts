@@ -4,6 +4,7 @@ import {
   clearAllDetached,
   settleIncludingAbort,
   detach,
+  joinAllInOrder,
   Mechanism,
   startUntrackedBestEffortCleanup,
 } from "../utils";
@@ -14,12 +15,16 @@ interface PromiseResolvers<T> {
   readonly reject: (reason?: unknown) => void;
 }
 
-function pendingPromise(): Promise<void> {
+function promiseWithResolvers<T>(): PromiseResolvers<T> {
   return (
     Promise as PromiseConstructor & {
-      withResolvers<T>(): PromiseResolvers<T>;
+      withResolvers<Value>(): PromiseResolvers<Value>;
     }
-  ).withResolvers<void>().promise;
+  ).withResolvers<T>();
+}
+
+function pendingPromise(): Promise<void> {
+  return promiseWithResolvers<void>().promise;
 }
 
 describe("clearAllDetached", () => {
@@ -70,5 +75,79 @@ describe("settleIncludingAbort", () => {
         throw error;
       }),
     ).resolves.toStrictEqual({ ok: false, error });
+  });
+});
+
+describe("joinAllInOrder", () => {
+  it("settles every owned branch and surfaces errors by dependency order", async () => {
+    const first = promiseWithResolvers<void>();
+    const second = promiseWithResolvers<void>();
+    const completed: string[] = [];
+    const firstError = new Error("first dependency failed");
+    const secondError = new Error("second dependency failed");
+    const work = joinAllInOrder([
+      first.promise.finally(() => {
+        completed.push("first");
+      }),
+      second.promise.finally(() => {
+        completed.push("second");
+      }),
+    ]);
+    let settled = false;
+    void work.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    second.reject(secondError);
+    await Promise.resolve();
+    expect(settled).toBeFalsy();
+    expect(completed).toStrictEqual(["second"]);
+
+    first.reject(firstError);
+    await expect(work).rejects.toBe(firstError);
+    expect(completed).toStrictEqual(["second", "first"]);
+  });
+
+  it("settles every owned branch before surfacing cancellation", async () => {
+    const controller = new AbortController();
+    const first = promiseWithResolvers<void>();
+    const second = promiseWithResolvers<void>();
+    const completed: string[] = [];
+    const reason = new DOMException("cancelled", "AbortError");
+    const work = joinAllInOrder(
+      [
+        first.promise.finally(() => {
+          completed.push("first");
+        }),
+        second.promise.finally(() => {
+          completed.push("second");
+        }),
+      ],
+      controller.signal,
+    );
+    let settled = false;
+    void work.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    controller.abort(reason);
+    second.resolve();
+    await Promise.resolve();
+    expect(settled).toBeFalsy();
+    expect(completed).toStrictEqual(["second"]);
+
+    first.resolve();
+    await expect(work).rejects.toBe(reason);
+    expect(completed).toStrictEqual(["second", "first"]);
   });
 });

@@ -13,7 +13,6 @@ import {
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -394,6 +393,7 @@ test("Add an AWS account with an external code", async () => {
       return getConnectorAction("button", "Open AWS sign-in", dialog);
     }),
   ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Close")).toBeEnabled();
   click(getConnectorAction("button", "Open AWS sign-in", dialog));
   expect(
     browserOpen.calls.some((call) => {
@@ -675,93 +675,110 @@ test("Authorize visible agents only for the first manual account", async () => {
   ).toBeChecked();
 });
 
-test("Connect through device authorization", async () => {
-  const details = delayAccountDetails("base44");
-  const permissions = context.mocks.deferred<void>();
-  const permissionsStarted = context.mocks.deferred<void>();
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-  ]);
-  mockAgentConnectorAccess("base44", permissions.promise, () => {
-    if (!permissionsStarted.settled()) {
-      permissionsStarted.resolve();
+test.each(["verification page", "another device"])(
+  "Connect through device authorization approved from %s",
+  async (approvalSource) => {
+    const approval = context.mocks.deferred<void>();
+    const details = delayAccountDetails("base44");
+    const permissions = context.mocks.deferred<void>();
+    const permissionsStarted = context.mocks.deferred<void>();
+    mockConnectors(context, []);
+    context.mocks.data.agents([
+      listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
+      listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
+    ]);
+    mockAgentConnectorAccess("base44", permissions.promise, () => {
+      if (!permissionsStarted.settled()) {
+        permissionsStarted.resolve();
+      }
+    });
+    mockPublicConnectorStatus(context, [
+      publicStatusItem({
+        connectorSlug: "base44",
+        label: "Base44",
+        authMethods: [
+          {
+            id: "oauth",
+            label: "OAuth",
+            description: "Sign in with Base44 to grant access.",
+            grantKind: "device-auth",
+            manualFields: [],
+            startOptions: [],
+          },
+        ],
+      }),
+    ]);
+    const browserOpen = context.mocks.browser.open(createAuthWindow());
+    context.mocks.api(
+      builtinConnectorOauthDeviceAuthSessionContract.poll,
+      async ({ respond }) => {
+        await approval.promise;
+        return respond(200, {
+          status: "complete",
+          connector: storeConnectedConnector("base44", "oauth", "mock-base44"),
+        });
+      },
+    );
+    await setupPage({
+      context,
+      path: "/connectors",
+    });
+    click(
+      await waitFor(() => {
+        return getConnectorAction("button", "Connect Base44");
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Base44" });
+
+    click(getConnectorAction("button", "Connect Base44", dialog));
+
+    await expect(
+      screen.findByTestId("connector-oauth-device-code"),
+    ).resolves.toHaveTextContent("OKOU-DEVICE");
+    const approvalDialog = await screen.findByRole("dialog", {
+      name: "Base44",
+    });
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    expect(
+      screen.queryByRole("dialog", { name: "Connecting your account" }),
+    ).toBeNull();
+    if (approvalSource === "verification page") {
+      click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
     }
-  });
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "base44",
-      label: "Base44",
-      authMethods: [
-        {
-          id: "oauth",
-          label: "OAuth",
-          description: "Sign in with Base44 to grant access.",
-          grantKind: "device-auth",
-          manualFields: [],
-          startOptions: [],
-        },
-      ],
-    }),
-  ]);
-  const browserOpen = context.mocks.browser.open(createAuthWindow());
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  click(
+    expect(
+      browserOpen.calls.some((call) => {
+        return call.url?.includes("oauth.test/base44/device") ?? false;
+      }),
+    ).toBe(approvalSource === "verification page");
+    approval.resolve();
+    await permissionsStarted.promise;
+    expect(within(approvalDialog).getByRole("status")).toHaveTextContent(
+      "Checking for approval...",
+    );
+    permissions.resolve();
+    await details.requested.promise;
+    await expect(
+      within(dialog).findByRole("status"),
+    ).resolves.toHaveTextContent("Saving permissions...");
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    details.ready.resolve();
+    const naming = await screen.findByRole("dialog", {
+      name: "Name your Base44 account",
+    });
     await waitFor(() => {
-      return getConnectorAction("button", "Connect Base44");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Base44" });
-
-  click(getConnectorAction("button", "Connect Base44", dialog));
-
-  await expect(
-    screen.findByTestId("connector-oauth-device-code"),
-  ).resolves.toHaveTextContent("OKOU-DEVICE");
-  const approvalDialog = await screen.findByRole("dialog", { name: "Base44" });
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(
-    screen.queryByRole("dialog", { name: "Connecting your account" }),
-  ).toBeNull();
-  await userEvent
-    .setup()
-    .click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
-  await permissionsStarted.promise;
-  expect(within(approvalDialog).getByRole("status")).toHaveTextContent(
-    "Checking for approval...",
-  );
-  expect(
-    browserOpen.calls.some((call) => {
-      return call.url?.includes("oauth.test/base44/device") ?? false;
-    }),
-  ).toBeTruthy();
-  permissions.resolve();
-  await details.requested.promise;
-  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Saving permissions...",
-  );
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  details.ready.resolve();
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Base44 account",
-  });
-  await waitFor(() => {
-    return expect(screen.queryByText("Connecting your account")).toBeNull();
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      within(getConnectorCard("Base44")).getByText("mock-base44"),
-    ).toBeInTheDocument();
-    expect(
-      getConnectorAction("button", "Manage Base44 access"),
-    ).toHaveTextContent("Used by 2 agents");
-  });
-});
+      return expect(screen.queryByText("Connecting your account")).toBeNull();
+    });
+    click(getConnectorAction("button", "Skip", naming));
+    await waitFor(() => {
+      expect(
+        within(getConnectorCard("Base44")).getByText("mock-base44"),
+      ).toBeInTheDocument();
+      expect(
+        getConnectorAction("button", "Manage Base44 access"),
+      ).toHaveTextContent("Used by 2 agents");
+    });
+  },
+);
 
 test("Connect with a manual credential", async () => {
   mockConnectors(context, []);
@@ -1259,7 +1276,6 @@ test("Retry device authorization after a provider error", async () => {
   const dialog = await screen.findByRole("dialog", { name: "Stripe" });
 
   click(getConnectorAction("button", "Connect Stripe", dialog));
-  click(await within(dialog).findByTestId("connector-oauth-device-open"));
 
   await expect(
     screen.findByText("Stripe device authorization is unavailable"),
@@ -1272,7 +1288,6 @@ test("Retry device authorization after a provider error", async () => {
   });
 
   click(getConnectorAction("button", "Connect Stripe", dialog));
-  click(await within(dialog).findByTestId("connector-oauth-device-open"));
   await waitFor(() => {
     expect(
       getConnectorAction("button", "Connect Stripe", dialog),

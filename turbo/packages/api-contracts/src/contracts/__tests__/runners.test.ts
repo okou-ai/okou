@@ -1180,7 +1180,7 @@ describe("connector runtime synchronization contract", () => {
     ).toBe(false);
   });
 
-  it("keeps target-specific retry and authoritative absence states distinct", () => {
+  it("allows target-specific absence while keeping retry reasons distinct", () => {
     const builtinTarget = {
       kind: "builtin" as const,
       connectorSlug: "slack",
@@ -1207,7 +1207,7 @@ describe("connector runtime synchronization contract", () => {
         state: "absent",
         reason: "connector-unavailable",
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       connectorRuntimeSyncResultSchema.safeParse({
         target: customTarget,
@@ -1241,6 +1241,23 @@ describe("connector runtime synchronization contract", () => {
         target: customTarget,
         state: "absent",
         reason: "runtime-configuration-unavailable",
+      }).success,
+    ).toBe(false);
+    expect(
+      connectorRuntimeSyncResultSchema.safeParse({
+        target: builtinTarget,
+        state: "absent",
+        reason: "permission-bundle-unavailable",
+      }).success,
+    ).toBe(false);
+    expect(
+      connectorRuntimeSyncResultSchema.safeParse({
+        target: {
+          kind: "builtin",
+          connectorSlug: "model-provider:anthropic-api-key",
+        },
+        state: "absent",
+        reason: "connector-unavailable",
       }).success,
     ).toBe(false);
     expect(

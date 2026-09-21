@@ -11,6 +11,7 @@ import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { secrets } from "@okouai/db/schema/secret";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
@@ -35,6 +36,34 @@ export async function cleanupOrgMemberResources(
   await revokeOrgMemberRunAuthority(db, args, signal);
   signal.throwIfAborted();
   const currentTime = nowDate();
+  // Automations execute as their owner. Only the schedule poller gates on
+  // membership, and it does so lazily, at an automation's next due time; event
+  // dispatchers select on `enabled`, `kind` and their own event match, so
+  // nothing disarms those at all. Departure is the authoritative moment, so
+  // both kinds lose their arming here. Disabling rather than deleting keeps
+  // the configuration for a deliberate re-enable or reassignment, and an
+  // explicit enable recomputes the schedule, so the `next_run_at` left behind
+  // cannot fire on its own.
+  //
+  // An official installation is excluded because it does not own its enabled
+  // bit: official reconciliation drives it from `official_intended_enabled`,
+  // and this same cleanup already ends the installation's authority above by
+  // marking the Morning Brief enrollment `departed` and revoking its native
+  // schedule, collection and delivery ownership. Disabling the row here would
+  // both contend with that reconciler and silently pause the brief of a member
+  // who rejoins.
+  await db
+    .update(workflowAutomations)
+    .set({ enabled: false, updatedAt: currentTime })
+    .where(
+      and(
+        eq(workflowAutomations.orgId, args.orgId),
+        eq(workflowAutomations.ownerUserId, args.userId),
+        eq(workflowAutomations.enabled, true),
+        isNull(workflowAutomations.officialBlueprintKey),
+      ),
+    );
+  signal.throwIfAborted();
   await db
     .insert(morningBriefEnrollments)
     .values({

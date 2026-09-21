@@ -2,7 +2,6 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -13,10 +12,8 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   AGENT_ID,
-  THREAD_ID,
   context,
   expectInlineTemplateInComposer,
   findComposerEditor,
@@ -31,9 +28,9 @@ const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
 const THIRD_WORKFLOW_NAME = "axiom-traces";
 
-// The unfiltered menu has four category rows before the workflows.
+// The unfiltered menu has three category rows before the workflows.
 const WORKFLOW_NAVIGATION_CASES = [
-  { query: "", downCount: 5 },
+  { query: "", downCount: 4 },
   { query: "axi", downCount: 1 },
 ] as const;
 
@@ -99,16 +96,28 @@ function detailPane(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-detail"]');
 }
 
+/** The flyout is portalled beside the menu, so it is a surface of its own. */
+function flyout(): HTMLElement | null {
+  return document.querySelector('[data-slot="slash-template-flyout"]');
+}
+
 function querySlashButton(name: string): HTMLElement | null {
-  const menu = screen.getByTestId("slash-workflow-menu");
-  return (
-    queryAllByRoleFast("button", menu).find((candidate) => {
+  const surfaces = [screen.getByTestId("slash-workflow-menu"), flyout()];
+  for (const surface of surfaces) {
+    if (!surface) {
+      continue;
+    }
+    const match = queryAllByRoleFast("button", surface).find((candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
         candidate.textContent?.replace(/\s+/gu, " ").trim() === name
       );
-    }) ?? null
-  );
+    });
+    if (match) {
+      return match;
+    }
+  }
+  return null;
 }
 
 function slashButton(name: string): HTMLElement {
@@ -139,17 +148,16 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   expect(within(pane).getByText(first.title)).toBeInTheDocument();
 });
 
-test("Make lists the four types it indexes, and Video is not one of them", async () => {
+test("Make lists the three types it indexes; Video and Workflow are not among them", async () => {
   await openSlashMenu();
-  for (const category of [
-    "Presentation",
-    "Illustration",
-    "Website",
-    "Workflow",
-  ]) {
+  for (const category of ["Presentation", "Illustration", "Website"]) {
     expect(slashButton(category)).toBeInTheDocument();
   }
   expect(querySlashButton("Video")).toBeNull();
+  // The agent's own workflows are listed right below Make, so a type row for
+  // them would only reopen the same catalog the panel already indexes.
+  expect(querySlashButton("Workflow")).toBeNull();
+  expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
 });
 
 test("The pane carries the whole category, so its covers match the count it heads", async () => {
@@ -243,45 +251,68 @@ test("Hovering a website row previews the website catalog", async () => {
   ).toBeInTheDocument();
 });
 
-test("Hovering a workflow closes the preview pane", async () => {
+test("Hovering a workflow closes the flyout", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
-  expect(detailPane()).not.toBeNull();
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
   await user.hover(slashButton(`/${WORKFLOW_NAME}`));
   await waitFor(() => {
     expect(detailPane()).toBeNull();
   });
 });
 
-test("Hovering the Workflow type closes the preview pane", async () => {
+test("Arrowing to a type opens its flyout too", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
-  expect(detailPane()).not.toBeNull();
-  await user.hover(slashButton("Workflow"));
+
+  // The flyout follows the row the menu is on, and the keyboard owns that row
+  // whenever the pointer is elsewhere — so it is not a hover-only surface.
+  await user.keyboard("{ArrowDown}");
+
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
   });
 });
 
-test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+test("Crossing the gap into the flyout does not close it", async () => {
+  const user = userEvent.setup();
   await openSlashMenu();
-  const workflow = slashButton("Workflow");
-  // The popover is content-width, so closing the pane narrows it. When the
-  // popover has been collision-shifted against a boundary, that narrowing
-  // re-pins it and the left column slides away from a pointer that never
-  // moved, which the browser reports as a leave at the move's own
-  // coordinates. Replayed here because jsdom has no layout to shift.
-  const still = { clientX: 300, clientY: 470 };
-  fireEvent.mouseOver(workflow, still);
-  fireEvent.mouseMove(workflow, still);
+  await user.hover(slashButton("Website"));
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  const panel = document.querySelector('[data-slot="slash-panel"]');
+  if (!panel) {
+    throw new Error("Expected the panel");
+  }
+
+  // The two cards are separate elements, so the browser reports a leave the
+  // moment the pointer crosses between them — the panel has to read where it
+  // is going before it hands the preview back to the keyboard.
+  fireEvent.mouseOut(panel, { relatedTarget: flyout() });
+
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+});
+
+test("Leaving the panel hands the preview back to the keyboard selection", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
   });
 
-  fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
+  fireEvent.mouseOut(slashButton("Website"), {
+    clientX: 300,
+    clientY: 470,
+    relatedTarget: document.body,
+  });
 
-  expect(detailPane()).toBeNull();
-  expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+  // The pointer owns the mark only while it is inside the panel.
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+  });
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
 });
 
 test.each(WORKFLOW_NAVIGATION_CASES)(
@@ -404,23 +435,20 @@ test.each([
   },
 );
 
-// The two rows without a create mode are the ones that used to leave the menu
-// standing, so the dialog they opened had to compete with it.
-test.each(["Website", "Workflow"])(
-  "Clicking %s opens the picker on its own tab",
-  async (category) => {
-    const user = userEvent.setup();
-    await openSlashMenu();
+// Website has no create mode, so it is the row that used to leave the menu
+// standing and made the dialog it opened compete with it.
+test("Clicking Website opens the picker on its own tab", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
 
-    await user.click(slashButton(category));
+  await user.click(slashButton("Website"));
 
-    await waitFor(() => {
-      return screen.getByRole("dialog");
-    });
-    expect(tabByText(category)).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  },
-);
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
 test("Browse all templates opens the picker", async () => {
   const user = userEvent.setup();
@@ -635,85 +663,4 @@ test("Choosing a cover consumes the slash token that opened the panel", async ()
   // The whole token goes, not only its slash, and the prose before it stays.
   expect(editor).not.toHaveTextContent("/");
   expect(editor).toHaveTextContent("Draft");
-});
-
-const IMPORT_PROMPT =
-  "Analyse this deck and save its visual language as a reusable presentation template.";
-
-function uploadedFilePart(message: UserMessageDocument) {
-  const part = message.parts.find((candidate) => {
-    return candidate.type === "file";
-  });
-  if (!part || part.type !== "file") {
-    throw new Error("Imported message has no uploaded file");
-  }
-  return part;
-}
-
-test("Only the Presentation pane offers the deck import, and it leads the covers", async () => {
-  const user = userEvent.setup();
-  await openSlashMenu();
-  const pane = detailPane();
-  if (!pane) {
-    throw new Error("Expected the detail pane");
-  }
-  const grid = pane.querySelector(
-    '[data-slot="slash-template-import"]',
-  )?.parentElement;
-  expect(grid?.firstElementChild).toHaveAttribute(
-    "data-slot",
-    "slash-template-import",
-  );
-  expect(within(pane).getByLabelText("Import your own deck")).toHaveAttribute(
-    "accept",
-    ".pptx,.ppt,.pdf",
-  );
-
-  // A deck is a presentation, so no other category carries the control.
-  await user.hover(slashButton("Website"));
-  await waitFor(() => {
-    expect(detailPane()).toHaveAttribute("data-category", "website");
-  });
-  expect(
-    document.querySelector('[data-slot="slash-template-import"]'),
-  ).toBeNull();
-});
-
-test("Importing a deck from the panel sends it for analysis", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.upload.success({
-    id: "81000000-0000-4000-a000-000000000031",
-    filename: "panel-deck.pptx",
-    contentType:
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    size: 5,
-    url: "https://cdn.example.test/panel-deck.pptx",
-  });
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
-  });
-  const editor = await findComposerEditor();
-  await fill(editor, "Draft /");
-  await screen.findByTestId("slash-workflow-menu");
-
-  await user.upload(
-    screen.getByLabelText("Import your own deck"),
-    new File(["deck"], "panel-deck.pptx", {
-      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    }),
-  );
-
-  await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
-  });
-  expect(uploadedFilePart(capture.sentMessages[0]!).filenameSnapshot).toBe(
-    "panel-deck.pptx",
-  );
-  expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
 });

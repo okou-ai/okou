@@ -98,6 +98,70 @@ describe("DesktopComputerUseAutoStartSupervisor", () => {
     expect(start).toHaveBeenCalledOnce();
   });
 
+  it("paces further attempts while the runtime stays recoverable", async () => {
+    vi.useFakeTimers();
+    const start = vi.fn(async () => {});
+    const supervisor = new DesktopComputerUseAutoStartSupervisor({
+      getState: () => computerUseState("unauthenticated"),
+      start,
+      logError: vi.fn(),
+    });
+
+    supervisor.requestStart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(start).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(start).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(start).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(start).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(start).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops pacing once the runtime comes online", async () => {
+    vi.useFakeTimers();
+    let state = computerUseState("unauthenticated");
+    const start = vi.fn(async () => {
+      state = computerUseState("online");
+    });
+    const supervisor = new DesktopComputerUseAutoStartSupervisor({
+      getState: () => state,
+      start,
+      logError: vi.fn(),
+    });
+
+    supervisor.requestStart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(start).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    expect(start).toHaveBeenCalledOnce();
+  });
+
+  it("stops pacing when recovery needs the user", async () => {
+    vi.useFakeTimers();
+    const start = vi.fn(async () => {});
+    const supervisor = new DesktopComputerUseAutoStartSupervisor({
+      getState: () => computerUseState("unauthenticated"),
+      start,
+      canRecover: () => false,
+      logError: vi.fn(),
+    });
+
+    supervisor.requestStart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(start).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    expect(start).toHaveBeenCalledOnce();
+  });
+
   it("logs background auto-start failures", async () => {
     vi.useFakeTimers();
     const error = new Error("start failed");

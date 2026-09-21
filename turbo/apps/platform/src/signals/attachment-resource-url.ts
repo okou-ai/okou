@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
@@ -8,6 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
@@ -31,6 +32,11 @@ export function isAuthenticatedAttachmentUrl(url: string): boolean {
   );
 }
 
+export interface ArtifactShareIdentity {
+  readonly target: ArtifactShareTarget;
+  readonly sharedThreadSnapshot?: true;
+}
+
 interface AttachmentPresignedToken {
   /** The temporary URL that authorizes this browser to load the resource. */
   readonly token: string;
@@ -40,6 +46,8 @@ interface AttachmentPresignedToken {
   readonly previewImageUrl?: string;
   /** Signed bytes served as an attachment, distinct from a hosted preview. */
   readonly downloadUrl?: string;
+  /** Stable resource identity returned while resolving an artifact reference. */
+  readonly artifactShareIdentity?: ArtifactShareIdentity;
   /**
    * Stable URL that another viewer can open. A signature cannot be converted
    * into one, so null means that the attachment remains private.
@@ -76,6 +84,12 @@ function createArtifactReferencePresignedToken$(
       contentType: response.body.contentType,
       previewImageUrl: response.body.previewImageUrl,
       downloadUrl: response.body.downloadUrl,
+      artifactShareIdentity: {
+        target: response.body.target,
+        ...(response.body.sharedThreadSnapshot
+          ? { sharedThreadSnapshot: true as const }
+          : {}),
+      },
       publicUrl: null,
     };
   });
@@ -173,6 +187,9 @@ export function createAttachmentPreviewSignals(
     const token = await get(presignedToken$);
     return token === null ? url : token.publicUrl;
   });
+  const artifactShareIdentity$ = computed(async (get) => {
+    return (await get(presignedToken$))?.artifactShareIdentity ?? null;
+  });
   const thumbnailUrl$ = computed(async (get) => {
     const token = await get(presignedToken$);
     return r2ImageTransformUrl(
@@ -186,6 +203,7 @@ export function createAttachmentPreviewSignals(
     presignedToken$,
     resourceUrl$,
     shareUrl$,
+    artifactShareIdentity$,
     thumbnailUrl$,
   };
 }
@@ -193,6 +211,59 @@ export function createAttachmentPreviewSignals(
 export type AttachmentPreviewSignals = ReturnType<
   typeof createAttachmentPreviewSignals
 >;
+
+interface AttachmentPreviewSource {
+  readonly url: string;
+  readonly preview?: AttachmentPreviewSignals;
+}
+
+/**
+ * Keep one resource-resolution graph with the surface that owns a preview.
+ * Callers pass that graph through cards, dialogs, and sidebars; only a caller
+ * without an owner yet creates it here.
+ */
+export function attachmentPreviewSignalsFor(
+  source: AttachmentPreviewSource,
+): AttachmentPreviewSignals {
+  return source.preview ?? createAttachmentPreviewSignals(source.url);
+}
+
+interface AttachmentPreviewRegistry {
+  /** Get or create the one preview graph owned for a canonical resource URL. */
+  readonly register$: Command<
+    AttachmentPreviewSignals,
+    [AttachmentPreviewSource]
+  >;
+}
+
+/** A lifecycle-scoped registry for owners that retain multiple previews. */
+export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
+  const internalPreviewsByUrl$ = state<
+    ReadonlyMap<string, AttachmentPreviewSignals>
+  >(new Map());
+  const register$ = command(
+    (
+      { get, set },
+      source: AttachmentPreviewSource,
+    ): AttachmentPreviewSignals => {
+      const url = publicAttachmentUrl(source.url);
+      const previews = get(internalPreviewsByUrl$);
+      const existing = previews.get(url);
+      if (existing) {
+        return existing;
+      }
+      const preview = attachmentPreviewSignalsFor({
+        url,
+        ...(source.preview ? { preview: source.preview } : {}),
+      });
+      const next = new Map(previews);
+      next.set(url, preview);
+      set(internalPreviewsByUrl$, next);
+      return preview;
+    },
+  );
+  return { register$ };
+}
 
 export function createAttachmentResourceUrl$(url: string) {
   return createAttachmentPreviewSignals(url).resourceUrl$;

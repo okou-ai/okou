@@ -416,7 +416,7 @@ test("Show thinking while a newly accepted prompt starts", async () => {
   expect(queryButton("Stop")).toBeNull();
 });
 
-test("Spin beside a user message the server has not confirmed", async () => {
+test("Delay the spinner beside a user message the server has not confirmed", async () => {
   const runAccepted = context.mocks.deferred<void>();
   installRunChat({ sendGate: runAccepted.promise });
 
@@ -431,6 +431,19 @@ test("Spin beside a user message the server has not confirmed", async () => {
   await expect(
     screen.findByText("Draft the launch checklist"),
   ).resolves.toBeInTheDocument();
+  expect(optimisticUserMessageSpinners()).toHaveLength(0);
+  const spinnerAppeared = context.mocks.deferred<void>();
+  const observer = new MutationObserver(() => {
+    if (optimisticUserMessageSpinners().length === 1) {
+      spinnerAppeared.resolve();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    await spinnerAppeared.promise;
+  } finally {
+    observer.disconnect();
+  }
   expect(optimisticUserMessageSpinners()).toHaveLength(1);
 
   runAccepted.resolve(undefined);

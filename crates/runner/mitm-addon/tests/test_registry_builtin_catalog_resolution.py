@@ -526,6 +526,37 @@ class TestRegistryBuiltinCatalogResolution:
                 builtin_firewall_catalog_snapshot=snapshot,
             )
 
+    def test_explicit_omission_overrides_stale_catalog_entry(self, tmp_path):
+        cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
+        write_catalog_cache(
+            cache_path,
+            digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            version="catalog-a",
+            firewalls={
+                "github": github_cache_firewall(),
+                "slack": cache_firewall("slack", "https://slack.example.com"),
+            },
+        )
+        resolved = registry_firewalls.resolve_firewall_entries(
+            {
+                "runId": "run-explicit-omission",
+                "connectorRuntimeTargets": [
+                    {"kind": "builtin", "connectorSlug": "github"},
+                    {"kind": "builtin", "connectorSlug": "slack"},
+                ],
+                "firewalls": [
+                    {"kind": "builtin", "name": "github"},
+                    {"kind": "builtin", "name": "slack"},
+                ],
+            },
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            explicit_omitted_builtin_names=frozenset({"github"}),
+        )
+
+        assert resolved.firewalls is not None
+        assert [firewall["name"] for firewall in resolved.firewalls] == ["slack"]
+        assert resolved.omitted_builtin_names == frozenset({"github"})
+
     def test_inline_custom_connector_id_is_preserved_on_firewall_and_apis(self):
         custom_connector_id = "550e8400-e29b-41d4-a716-446655440000"
         source_id = "550e8400-e29b-41d4-a716-446655440001"
@@ -558,6 +589,60 @@ class TestRegistryBuiltinCatalogResolution:
         assert resolved.firewalls[0]["apis"][0]["customConnectorId"] == custom_connector_id
         assert resolved.firewalls[0]["sourceId"] == source_id
         assert resolved.firewalls[0]["apis"][0]["sourceId"] == source_id
+
+    def test_inline_builtin_requires_registered_exact_source_identity(self):
+        source_id = "550e8400-e29b-41d4-a716-446655440001"
+        entry = {
+            "kind": "inline",
+            "sourceId": source_id,
+            "firewall": {
+                "name": "builtin-mcp",
+                "apis": [
+                    {
+                        "id": "builtin-mcp:0",
+                        "base": "https://mcp.example.test/server",
+                        "auth": {},
+                    }
+                ],
+            },
+        }
+        resolved = registry_firewalls.resolve_firewall_entries(
+            {
+                "runId": "run-inline-builtin",
+                "firewalls": [entry],
+                "connectorRuntimeTargets": [
+                    {
+                        "kind": "builtin",
+                        "connectorSlug": "builtin-mcp",
+                        "sourceId": source_id,
+                    }
+                ],
+            },
+            builtin_firewall_catalog_snapshot=None,
+        )
+
+        assert resolved.firewalls is not None
+        firewall = resolved.firewalls[0]
+        assert connector_runtime_metadata.connector_runtime_kind(firewall) == "builtin"
+        assert firewall["sourceId"] == source_id
+        assert firewall["apis"][0]["sourceId"] == source_id
+
+        for target_source_id in [None, "550e8400-e29b-41d4-a716-446655440002"]:
+            target = {"kind": "builtin", "connectorSlug": "builtin-mcp"}
+            if target_source_id is not None:
+                target["sourceId"] = target_source_id
+            with pytest.raises(
+                registry_firewalls.FirewallEntryResolutionError,
+                match="inline builtin firewall must match its registered sourceId",
+            ):
+                registry_firewalls.resolve_firewall_entries(
+                    {
+                        "runId": "run-inline-builtin-mismatch",
+                        "firewalls": [entry],
+                        "connectorRuntimeTargets": [target],
+                    },
+                    builtin_firewall_catalog_snapshot=None,
+                )
 
     def test_inline_custom_connector_id_rejects_invalid_identity(self):
         with pytest.raises(registry_firewalls.FirewallEntryResolutionError):

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import type { ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { hostedSites } from "@okouai/db/schema/hosted-site";
+import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { artifactHash } from "../../lib/file-url";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
 import { db$ } from "../external/db";

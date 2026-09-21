@@ -15,6 +15,7 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
@@ -38,18 +39,21 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
+  holdAgentRunRowLockFixture,
   holdChatEventInsertTransactionFixture,
+  holdChatThreadRowLockFixture,
   holdRunOutputMaterializationRowFixture,
   insertQueuedSlackMissingContextFixture,
   removeAcknowledgedCancellationLifecycleFixture,
   removeChatCallbackPublicBrandFixture,
 } from "../../../test-fixtures/chat-events";
+import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settle } from "../../utils";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -77,7 +81,7 @@ import {
  * app-internal dispatch does not depend on an HTTP self-call.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
@@ -2028,6 +2032,96 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
+  it("redrives an undelivered terminal callback after lock contention", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "recover terminal projection after lock contention",
+    });
+    // This test isolates /complete: the route cannot otherwise pause between
+    // Runner claim and terminal callback delivery while retaining API auth.
+    const running = await holdAgentRunRowLockFixture({
+      runId: run.runId,
+      statusOnRelease: "running",
+      signal: context.signal,
+    });
+    running.release();
+    await running.done;
+    const sandboxHeaders = {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+    };
+    const completionBody = {
+      runId: run.runId,
+      exitCode: 0,
+      checkpoint: chatRunCheckpoint(run.runId),
+    } as const;
+    const held = await holdAgentRowLockFixture({
+      agentId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+
+    const blockedCompletion = settle(
+      webhooks.requestAgentComplete(completionBody, sandboxHeaders, [500]),
+    );
+    await waitForRunStatus(actor, run.runId, "completed");
+    const heldThread = await holdChatThreadRowLockFixture({
+      threadId: run.threadId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      heldThread.release();
+      await heldThread.done;
+    });
+    held.release();
+    await held.done;
+
+    const blockedResult = await blockedCompletion;
+    if (!blockedResult.ok) {
+      throw blockedResult.error;
+    }
+    expect(blockedResult.value.body).toMatchObject({
+      error: { code: "INTERNAL_SERVER_ERROR" },
+    });
+    const beforeRetry = await chat.listThreadEvents(actor, run.threadId);
+    expect(
+      lifecycleMarkers(beforeRetry.events, run.runId, "completed"),
+    ).toHaveLength(0);
+
+    heldThread.release();
+    await heldThread.done;
+    const recovered = await webhooks.requestAgentComplete(
+      completionBody,
+      sandboxHeaders,
+      [200],
+    );
+    expect(recovered.body).toStrictEqual({
+      success: true,
+      status: "completed",
+    });
+    const afterRetry = await chat.listThreadEvents(actor, run.threadId);
+    expect(
+      lifecycleMarkers(afterRetry.events, run.runId, "completed"),
+    ).toHaveLength(1);
+
+    const duplicate = await webhooks.requestAgentComplete(
+      completionBody,
+      sandboxHeaders,
+      [200],
+    );
+    expect(duplicate.body).toStrictEqual(recovered.body);
+    const afterDuplicate = await chat.listThreadEvents(actor, run.threadId);
+    expect(
+      lifecycleMarkers(afterDuplicate.events, run.runId, "completed"),
+    ).toHaveLength(1);
+    await flushWaitUntilForTest();
+  }, 90_000);
+
   it("continues a queued prompt while a historical Goal remains active", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await enableGoalWorkflows(actor);
@@ -3728,7 +3822,7 @@ describe("CHAT-02: drain-time admission failure", () => {
 
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({
@@ -4494,6 +4588,8 @@ describe("CHAT-02: failed chat callbacks", () => {
       "Claude usage limit reached. Visit https://claude.ai/settings/usage or try again at 6:17 AM.";
     const executionTimeoutError =
       "Agent execution timed out after 7200 seconds";
+    const codexAccessProgramError =
+      '{"type":"invalid_request_error","code":"unsupported_parameter","message":"The access_programs parameter is not enabled for this organization.","param":"access_programs.cyber"}';
     const rounds: readonly {
       readonly prompt: string;
       readonly error: string;
@@ -4567,6 +4663,13 @@ describe("CHAT-02: failed chat callbacks", () => {
           "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
         expectedError: CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
         failureReason: "safety_policy_refusal",
+      },
+      {
+        prompt: "Codex access-program rejection",
+        error: codexAccessProgramError,
+        expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
+        failureReason: "codex_access_program_unavailable",
+        selectedModel: "gpt-5.6-sol",
       },
     ];
 
@@ -4708,6 +4811,17 @@ describe("CHAT-02: failed chat callbacks", () => {
     ).toStrictEqual({
       content: "Oops, something went wrong. Please try again later.",
       error: "Oops, something went wrong. Please try again later.",
+    });
+
+    const codexAccessProgramRunId = runIds.at(-1);
+    if (!codexAccessProgramRunId) {
+      throw new Error("Expected Codex access-program run");
+    }
+    await expect(
+      api.readRun(actor, codexAccessProgramRunId),
+    ).resolves.toMatchObject({
+      status: "failed",
+      error: codexAccessProgramError,
     });
 
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(

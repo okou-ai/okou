@@ -1,14 +1,3 @@
-import {
-  hasDurablePiApiRecoveryOwner,
-  recoverDurablePiApiInference$,
-} from "./pi-api-inference-recovery.service";
-import { recoverDeferredPiRuns$ } from "./pi-deferred-sandbox.service";
-import { reclaimPiInferenceObjects } from "./pi-inference-object.service";
-import {
-  isPiInferenceRun,
-  readPiInferenceLifecycle,
-  piInferenceDeadline,
-} from "./pi-inference-lifecycle.service";
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { cleanupExpiredRunActivity$ } from "./run-activity-snapshot.service";
 import { command } from "ccstate";
@@ -287,6 +276,7 @@ const cleanupExportJobs$ = command(
         and(
           inArray(exportJobs.status, ["pending", "running"]),
           lt(exportJobs.createdAt, stuckCutoffTime),
+          isNull(exportJobs.executionMode),
           exportJobIds === null
             ? undefined
             : inArray(exportJobs.id, exportJobIds),
@@ -387,24 +377,7 @@ async function commitStaleRunTimeout(
           return { kind: "skipped" };
         }
         const referenceTime = lockedRun.lastHeartbeatAt ?? lockedRun.createdAt;
-        const lifecycle = await readPiInferenceLifecycle(
-          tx,
-          run.id,
-          lockedRun.launchSnapshot,
-        );
-        if (lifecycle) {
-          if (hasDurablePiApiRecoveryOwner(lifecycle.inference)) {
-            return { kind: "skipped" };
-          }
-          const deadlineExpired =
-            piInferenceDeadline(lifecycle).getTime() <= now();
-          const heartbeatExpired =
-            lifecycle.inference.phase === "sandbox_running" &&
-            referenceTime < cutoff;
-          if (!deadlineExpired && !heartbeatExpired) {
-            return { kind: "skipped" };
-          }
-        } else if (referenceTime >= cutoff) {
+        if (referenceTime >= cutoff) {
           return { kind: "skipped" };
         }
 
@@ -469,9 +442,8 @@ const cleanupSingleRun$ = command(
     cutoffs: CleanupCutoffs,
     signal: AbortSignal,
   ): Promise<CleanupResult | undefined> => {
-    const timeoutReason = isPiInferenceRun(run.launchSnapshot)
-      ? "Pi inference or Sandbox phase deadline expired"
-      : run.status === "pending"
+    const timeoutReason =
+      run.status === "pending"
         ? "Run timed out while pending (never started)"
         : "Run timed out (no heartbeat)";
     const cutoff = staleRunCutoff(run, cutoffs);
@@ -793,24 +765,6 @@ const cleanupFixtureMaintenance$ = command(
   },
 );
 
-const recoverPiExecutionOwners$ = command(
-  async (
-    { set },
-    db: Db,
-    runIds: readonly string[] | null,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(recoverDurablePiApiInference$, runIds, signal);
-    signal.throwIfAborted();
-    await set(recoverDeferredPiRuns$, runIds, signal);
-    signal.throwIfAborted();
-    if (runIds === null) {
-      await reclaimPiInferenceObjects(db);
-      signal.throwIfAborted();
-    }
-  },
-);
-
 export const cleanupSandboxes$ = command(
   async (
     { set },
@@ -819,8 +773,6 @@ export const cleanupSandboxes$ = command(
   ): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const runIds = scope.kind === "global" ? null : scope.runIds;
-    await set(recoverPiExecutionOwners$, db, runIds, signal);
-    signal.throwIfAborted();
     const orgIds = scope.kind === "global" ? null : scope.orgIds;
     const currentTime = now();
     const cutoffs = {
@@ -860,9 +812,8 @@ export const cleanupSandboxes$ = command(
       );
     signal.throwIfAborted();
 
-    // New owners are inspected under the per-run error boundary and run lock.
     const expiredRuns = staleRuns.filter((run) => {
-      return isPiInferenceRun(run.launchSnapshot) || isExpiredRun(run, cutoffs);
+      return isExpiredRun(run, cutoffs);
     });
 
     // Run before generic queue maintenance so an active threadless run always

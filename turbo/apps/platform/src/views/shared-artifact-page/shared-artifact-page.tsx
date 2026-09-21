@@ -24,13 +24,21 @@ import {
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
+import { PublicArtifactLightbox } from "../components/public-artifact-lightbox.tsx";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
 import {
   ArtifactActionSeparator,
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
-import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
+import {
+  getArtifactShareScope,
+  type ArtifactShareSession,
+} from "../../signals/artifact-sharing.ts";
+import {
+  artifactFallbackSubtitle,
+  artifactSupportsFullscreen,
+} from "../okou-page/artifact-display.ts";
 import { copyAttachmentLinkToClipboard } from "../okou-page/attachment-url.ts";
 
 function ArtifactViewerActions({
@@ -99,22 +107,24 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
-      <Button
-        ref={enterButtonRef}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        showTooltip
-        disabled={enterLoadable.state === "loading"}
-        aria-label={t(($) => {
-          return $.artifacts.actions.enterFullscreen;
-        })}
-        onClick={() => {
-          detach(enterFullscreen(pageSignal), Reason.DomCallback);
-        }}
-      >
-        <Maximize2 aria-hidden />
-      </Button>
+      {artifactSupportsFullscreen(artifact.preview.kind) && (
+        <Button
+          ref={enterButtonRef}
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          showTooltip
+          disabled={enterLoadable.state === "loading"}
+          aria-label={t(($) => {
+            return $.artifacts.actions.enterFullscreen;
+          })}
+          onClick={() => {
+            detach(enterFullscreen(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <Maximize2 aria-hidden />
+        </Button>
+      )}
       <ArtifactActionSeparator />
       <Button
         size="sm"
@@ -132,6 +142,63 @@ function ArtifactViewerActions({
   );
 }
 
+function ArtifactShareAudienceLabel({
+  session,
+}: {
+  session: ArtifactShareSession;
+}) {
+  const { t } = useTranslation();
+  const details = useLastResolved(session.details$);
+  if (!details?.status) {
+    return null;
+  }
+  return (
+    <>
+      {" · "}
+      {details.audience === "public"
+        ? t(($) => {
+            return $.artifacts.sharing.publicAccess;
+          })
+        : details.audience === "organization"
+          ? t(($) => {
+              return $.artifacts.sharing.organization;
+            })
+          : t(($) => {
+              return $.artifacts.sharing.onlyMe;
+            })}
+    </>
+  );
+}
+
+/**
+ * Who can reach this artifact is a standing fact about it, not something the
+ * owner should have to open a menu to recall. A public reference says so by
+ * itself; anything else is only known once the share read resolves, and an
+ * unresolved read prints nothing rather than guessing an audience.
+ */
+function ArtifactVisibilityLabel({
+  artifact,
+}: {
+  artifact: SharedArtifactPreview;
+}) {
+  const { t } = useTranslation();
+  const session = useGet(getArtifactShareScope("viewer").session$);
+  if (artifact.sharedThreadSnapshot) {
+    return null;
+  }
+  if (artifact.publicUrl !== null) {
+    return (
+      <>
+        {" · "}
+        {t(($) => {
+          return $.artifacts.sharing.publicAccess;
+        })}
+      </>
+    );
+  }
+  return session ? <ArtifactShareAudienceLabel session={session} /> : null;
+}
+
 function ArtifactAccessPage() {
   const { t } = useTranslation();
   const user = useLastResolved(currentUserInfo$);
@@ -141,10 +208,14 @@ function ArtifactAccessPage() {
     user ? openClerkAddAccount$ : signInToSharedArtifact$,
   );
   return (
-    <div className="flex min-h-full items-center justify-center bg-gray-50 px-5 py-10 sm:px-8">
+    // `gray-50` is the dark theme's page background, so using the primitive
+    // directly left the card and its surround within eight points of each
+    // other. The semantic pair is the one the ramp designs a step between:
+    // `card` sits above `background` in dark, and `muted` sits above `card`.
+    <div className="flex min-h-full items-center justify-center bg-background px-5 py-10 sm:px-8">
       <Card className="w-full max-w-[480px] rounded-3xl">
         <div className="px-6 pb-8 pt-9 text-center sm:px-9 sm:pt-10">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-gray-50 text-muted-foreground">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
             <LockKeyhole size={24} strokeWidth={1.5} aria-hidden />
           </div>
           <h2 className="mt-6 text-2xl font-semibold leading-8 tracking-tight text-foreground">
@@ -153,17 +224,25 @@ function ArtifactAccessPage() {
             })}
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            {t(($) => {
-              return $.artifacts.access.description;
-            })}
+            {user
+              ? t(($) => {
+                  return $.artifacts.access.signedInDescription;
+                })
+              : t(($) => {
+                  return $.artifacts.access.description;
+                })}
             <br />
             {t(($) => {
               return $.artifacts.access.help;
             })}
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+            {/* The API answers every denial with one status so artifacts cannot
+                be enumerated, so a signed-in visitor's next step is a guess.
+                Only offer a primary action when it is known to help. */}
             <Button
               type="button"
+              variant={user ? "outline" : "default"}
               disabled={accessLoadable.state === "loading"}
               aria-busy={accessLoadable.state === "loading"}
               onClick={() => {
@@ -274,6 +353,7 @@ export function SharedArtifactPage({
                 artifact.preview.kind,
                 artifact.filename,
               )}
+              <ArtifactVisibilityLabel artifact={artifact} />
             </p>
           )}
         </div>
@@ -295,12 +375,24 @@ export function SharedArtifactPage({
       </header>
       <main
         ref={containerRef}
-        className={`relative min-h-0 flex-1 bg-muted/30 ${artifact === null ? "overflow-y-auto" : "overflow-hidden"}`}
+        // This element is the one handed to requestFullscreen, so it paints
+        // over the browser's black backdrop with nothing behind it. A
+        // translucent surface would let that backdrop through as an
+        // undefined grey, so fullscreen takes the opaque surface instead.
+        className={cn(
+          "relative min-h-0 flex-1",
+          fullscreen ? "bg-muted" : "bg-muted/30",
+          artifact === null ? "overflow-y-auto" : "overflow-hidden",
+        )}
       >
         {artifact !== null ? (
           <ArtifactPreviewBody
             artifact={undefined}
-            fullscreen={false}
+            // Escape leaves fullscreen through a document listener, which a
+            // cross-origin frame would swallow, so the frame keeps the focus
+            // it took on mount instead of claiming it again on the switch.
+            focusHtmlOnMount={!fullscreen}
+            fullscreen={fullscreen}
             imageCanvasSignals={viewer.imageCanvas}
             preview={artifact.preview}
           />
@@ -321,6 +413,7 @@ export function SharedArtifactPage({
           </IconButton>
         )}
       </main>
+      <PublicArtifactLightbox signals={viewer.diagram} />
     </div>
   );
 }

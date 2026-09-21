@@ -186,14 +186,24 @@ class _ValidatedTLSConnection(http_client.HTTPConnection):
             timeout=remaining_deadline_seconds(deadline),
         )
         self._abort_handle = abort_handle
+        self._abort_socket: socket.socket | None = None
         self._deadline = deadline
         self._validated_addresses = validated_addresses
         self._context = _get_https_context()
 
     def _close_and_clear_socket(self, sock: socket.socket) -> None:
         self._abort_handle.clear_socket(sock)
+        if self._abort_socket is sock:
+            self._abort_socket = None
         with suppress(Exception):
             sock.close()
+
+    def _release_abort_socket(self) -> None:
+        """Release abort ownership after response and connection cleanup."""
+        sock = self._abort_socket
+        self._abort_socket = None
+        if sock is not None:
+            self._abort_handle.clear_socket(sock)
 
     def _connect_raw_socket(self) -> socket.socket:
         last_error: OSError | None = None
@@ -206,6 +216,7 @@ class _ValidatedTLSConnection(http_client.HTTPConnection):
                 continue
             try:
                 self._abort_handle.register_socket(raw_sock)
+                self._abort_socket = raw_sock
                 raw_sock.settimeout(remaining_deadline_seconds(self._deadline))
                 raw_sock.connect(_validated_socket_address(address))
                 self._abort_handle.raise_if_aborted()
@@ -237,6 +248,7 @@ class _ValidatedTLSConnection(http_client.HTTPConnection):
             )
             if wrapped_sock is not raw_sock:
                 self._abort_handle.replace_socket(raw_sock, wrapped_sock)
+                self._abort_socket = wrapped_sock
             self.sock = wrapped_sock
             self.set_remaining_timeout()
             wrapped_sock.do_handshake()
@@ -250,14 +262,6 @@ class _ValidatedTLSConnection(http_client.HTTPConnection):
         self._abort_handle.raise_if_aborted()
         if self.sock is not None:
             self.sock.settimeout(remaining_deadline_seconds(self._deadline))
-
-    def close(self) -> None:
-        sock = self.sock
-        try:
-            super().close()
-        finally:
-            if sock is not None:
-                self._abort_handle.clear_socket(sock)
 
 
 def _make_validated_https_connection(
@@ -619,6 +623,11 @@ def forward_request_sync(
         resp_body = _read_response_body(resp)
         return resp.status, resp_body, _filter_response_headers(resp.getheaders())
     finally:
-        if resp is not None:
-            resp.close()
-        conn.close()
+        try:
+            if resp is not None:
+                resp.close()
+        finally:
+            try:
+                conn.close()
+            finally:
+                conn._release_abort_socket()

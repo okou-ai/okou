@@ -18,7 +18,7 @@ import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
@@ -106,6 +106,9 @@ describe("builtin MCP Run admission", () => {
       replacementAccount.id,
     );
     await runs.heartbeatRunner(runnerGroup);
+    expect((await runs.pollRunner(runnerGroup)).body.job?.runId).toBe(
+      run.runId,
+    );
     const claim = await runs.claimRunnerJob(run.runId);
     expect(claim.platformEnvironment.CLI_PKG_URL).toBe(packageUrl);
     expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
@@ -118,8 +121,40 @@ describe("builtin MCP Run admission", () => {
     expect(claim.secretValues).not.toContain("new-default-mcp-token");
     expect(claim.firewalls).toStrictEqual(
       expect.arrayContaining([
-        { kind: "builtin", name: "public-mcp", sourceId: publicAccountId },
-        { kind: "builtin", name: "manual-mcp", sourceId: admittedAccount.id },
+        {
+          kind: "inline",
+          sourceId: publicAccountId,
+          firewall: {
+            name: "public-mcp",
+            apis: [
+              {
+                id: "public-mcp:0",
+                base: "https://public-mcp.example.test/server",
+                auth: {},
+                permissions: [],
+              },
+            ],
+          },
+        },
+        {
+          kind: "inline",
+          sourceId: admittedAccount.id,
+          firewall: {
+            name: "manual-mcp",
+            apis: [
+              {
+                id: "manual-mcp:0",
+                base: "https://manual-mcp.example.test/server",
+                auth: {
+                  headers: {
+                    Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}`,
+                  },
+                },
+                permissions: [],
+              },
+            ],
+          },
+        },
       ]),
     );
     expect(claim.networkPolicies?.["manual-mcp"]).toStrictEqual({
@@ -166,14 +201,25 @@ describe("builtin MCP Run admission", () => {
         }),
       ]),
     );
+    const manualFirewall = claim.firewalls?.find((entry) => {
+      return entry.kind === "inline" && entry.firewall.name === "manual-mcp";
+    });
+    if (manualFirewall?.kind !== "inline") {
+      throw new Error("Expected the manual MCP inline firewall");
+    }
+    const manualApi = manualFirewall.firewall.apis[0];
+    if (!manualApi) {
+      throw new Error("Expected the manual MCP runtime API");
+    }
     const authBody = {
       encryptedSecrets: claim.encryptedSecrets,
-      authHeaders: { Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}` },
+      authHeaders: manualApi.auth.headers ?? {},
       secretConnectorMap: claim.secretConnectorMap ?? undefined,
       secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
       matchedFirewall: {
         name: "manual-mcp",
         apiId: "manual-mcp:0",
+        base: manualApi.base,
         connectorSlug: "manual-mcp",
         sourceId: admittedAccount.id,
         routingVariables: {},

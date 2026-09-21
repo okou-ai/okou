@@ -15,6 +15,7 @@ import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
 import {
   deleteOrgPlanEntitlementFixture,
@@ -66,7 +67,10 @@ import {
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
 
-const context = testContext();
+const context = testContext({
+  connectorCatalog: true,
+  dbFixtures: [usageEventCompactionDbFixture],
+});
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -927,7 +931,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     api.configureGithubWebhookSecret();
     const user = { id: 42, login: "bdd-user", type: "User" };
     const bot = { id: 43, login: "zero[bot]", type: "Bot" };
-    const repository = { full_name: "vm0-ai/vm0" };
+    const repository = { full_name: "okou-ai/okou" };
     const installation = { id: 12_345 };
     const issue = {
       number: 123,
@@ -942,7 +946,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       pull_request: {
         number: 123,
         title: "BDD pull request",
-        html_url: "https://github.com/vm0-ai/vm0/pull/123",
+        html_url: "https://github.com/okou-ai/okou/pull/123",
         draft: false,
         merged: false,
         user,
@@ -1031,7 +1035,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "suspend",
       installation: {
         id: 67_890,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -1046,7 +1050,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "created",
       installation: {
         id: 67_891,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -1061,7 +1065,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "deleted",
       installation: {
         id: 67_892,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -5893,8 +5897,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(restored.cancelAtPeriodEnd).toBeFalsy();
     expect(restored.scheduledChange).toBeNull();
 
-    // A downgrade-purpose setup checkout (string setup intent refreshed via
-    // session retrieve) schedules the cancellation again.
+    // A setup Checkout Session created by the previous App can still finish
+    // after rollout. Its retired target is normalized before cancellation.
     context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
       id: `cs_bdd_downgrade_${suffix}`,
       setup_intent: { payment_method: "pm_bdd_downgrade" },
@@ -5936,7 +5940,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
             purpose: "billing_downgrade",
             orgId,
             subscriptionId: granted.subscriptionId,
-            targetTier: "limited-free-1",
+            targetTier: "pro-suspend",
           },
         },
       }),
@@ -5952,7 +5956,12 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const downgraded = await billing.readBillingStatus(actor);
     expect(downgraded.cancelAtPeriodEnd).toBeTruthy();
-    expect(downgraded.scheduledChange?.type).toBe("cancel");
+    expect(downgraded.scheduledChange).toStrictEqual(
+      expect.objectContaining({
+        type: "cancel",
+        targetTier: "limited-free-1",
+      }),
+    );
 
     // A schedule-managed cancellation syncs the final schedule end.
     const scheduleId = `sched_bdd_${suffix}`;
@@ -6653,7 +6662,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
       })
-      .toStrictEqual(["pro-suspend", null, false]);
+      .toStrictEqual(["limited-free-1", null, false]);
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6756,7 +6765,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
       })
-      .toStrictEqual(["pro-suspend", null, false]);
+      .toStrictEqual(["limited-free-1", null, false]);
   });
 
   describe("verified user.deleted cleanup", () => {

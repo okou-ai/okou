@@ -41,7 +41,7 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { webhooksStripeAutomationEventsRoutes } from "../webhooks-stripe-automation-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
@@ -1742,7 +1742,7 @@ describe("Stripe automation event webhook", () => {
     });
   });
 
-  it("recovers an expired claim and exposes a failed warning after the 72-hour retry window", async () => {
+  it("recovers an expired delivery claim", async () => {
     const startedAt = Date.parse("2026-08-07T10:00:00.000Z");
     mockNow(startedAt);
     const recoverable = await setupScenario();
@@ -1764,7 +1764,13 @@ describe("Stripe automation event webhook", () => {
     expect((await readStripeAutomation(recoverable)).health).toMatchObject({
       lastDeliveryStatus: "delivered",
     });
+  });
 
+  it("exposes a failed warning after the delivery retry window", async () => {
+    const startedAt = Date.parse("2026-08-07T10:00:00.000Z");
+    // Preserve the original retry scenario's creation point after the
+    // recoverable delivery advanced the shared clock by six minutes.
+    mockNow(startedAt + 360_000);
     const exhausted = await setupScenario({
       accountId: "acct_stripe_workflow_retry",
     });

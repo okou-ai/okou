@@ -22,7 +22,6 @@
  * - no-create-child-abort-controller: Prevent reintroducing imperative child ownership
  * - no-direct-local-storage: Disallow direct localStorage access — use localStorageSignals()
  * - no-direct-session-storage: Disallow direct sessionStorage access — use sessionStorageSignals()
- * - no-detach-in-signals: Disallow detach() in signals/ — use await or signal chain
  * - no-direct-fetch: Require typed API clients or the resource transport
  * - no-empty-promise-catch: Disallow .catch(() => {}) — use detach() for proper promise tracking
  * - no-test-delay: Disallow manual delays/timers in tests — use createDeferredPromise + waitFor
@@ -57,7 +56,6 @@ import noCreateChildAbortController from "./rules/no-create-child-abort-controll
 import noNewPromise from "./rules/no-new-promise.ts";
 import noDirectLocalStorage from "./rules/no-direct-local-storage.ts";
 import noDirectSessionStorage from "./rules/no-direct-session-storage.ts";
-import noDetachInSignals from "./rules/no-detach-in-signals.ts";
 import noDirectFetch from "./rules/no-direct-fetch.ts";
 import noManualPolling from "./rules/no-manual-polling.ts";
 import noEmptyPromiseCatch from "./rules/no-empty-promise-catch.ts";
@@ -104,7 +102,6 @@ const plugin = {
     "no-new-promise": noNewPromise,
     "no-direct-local-storage": noDirectLocalStorage,
     "no-direct-session-storage": noDirectSessionStorage,
-    "no-detach-in-signals": noDetachInSignals,
     "no-direct-fetch": noDirectFetch,
     "no-manual-polling": noManualPolling,
     "no-empty-promise-catch": noEmptyPromiseCatch,

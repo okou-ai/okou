@@ -1,0 +1,4 @@
+ALTER TABLE "vnc_credentials" DROP CONSTRAINT "chk_vnc_credentials_auth_method";--> statement-breakpoint
+ALTER TABLE "vnc_credentials" ADD COLUMN "username" varchar(255);--> statement-breakpoint
+ALTER TABLE "vnc_credentials" ADD CONSTRAINT "uq_vnc_credentials_owner_id_auth_method" UNIQUE("id","org_id","user_id","auth_method");--> statement-breakpoint
+ALTER TABLE "vnc_credentials" ADD CONSTRAINT "chk_vnc_credentials_auth" CHECK (("vnc_credentials"."auth_method" = 'vnc_password' AND "vnc_credentials"."username" IS NULL) OR ("vnc_credentials"."auth_method" = 'username_password' AND "vnc_credentials"."username" IS NOT NULL AND octet_length("vnc_credentials"."username") BETWEEN 1 AND 255));

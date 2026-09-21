@@ -87,7 +87,7 @@ async function page(add = false) {
 }
 async function selectConfig(dialog: HTMLElement, name = config.name) {
   await userEvent.click(
-    await within(dialog).findByLabelText("Access configuration"),
+    await within(dialog).findByLabelText("Cloudflare Access"),
   );
   click(await screen.findByRole("option", { name }));
 }
@@ -96,7 +96,7 @@ async function selectCredential(dialog: HTMLElement) {
   click(await screen.findByRole("option", { name: "SSH login · deploy" }));
 }
 async function tokenFields(dialog: HTMLElement, name = config.name) {
-  await fill(within(dialog).getByLabelText("Configuration name"), name);
+  await fill(within(dialog).getByLabelText("Name"), name);
   await fill(
     within(dialog).getByLabelText("Service Token Client ID"),
     "test-client-id",
@@ -114,19 +114,19 @@ test.each(["host", "configuration"])(
     if (kind === "configuration") {
       click(getAction("radio", "Cloudflare Access"));
       const add = await waitFor(() => {
-        return getAction("button", "Add Access configuration");
+        return getAction("button", "Add Cloudflare Access");
       });
       click(add);
     }
     const dialog = await screen.findByRole("dialog", {
-      name: kind === "host" ? "Add host" : "Add Access configuration",
+      name: kind === "host" ? "Add host" : "Add Cloudflare Access",
     });
     if (kind === "host") {
       click(getAction("radio", "Cloudflare Access", dialog));
     }
-    await within(dialog).findByLabelText("Configuration name");
+    await within(dialog).findByLabelText("Name");
     const hints = {
-      "Configuration name": "e.g. Production access",
+      Name: "e.g. Production access",
       "Service Token Client ID": "Paste the Service Token Client ID",
       "Service Token Client Secret": "Paste the Service Token Client Secret",
     };
@@ -183,13 +183,13 @@ test.each([0, 1, 2])(
             : "Select a credential",
       );
       expect(
-        within(dialog).getByLabelText("Access configuration"),
+        within(dialog).getByLabelText("Cloudflare Access"),
       ).toHaveTextContent(
         count === 0
-          ? "Create new configuration"
+          ? "Create new Cloudflare Access"
           : count === 1
             ? "Gateway 1"
-            : "Select a configuration",
+            : "Select Cloudflare Access",
       );
     });
     expect(within(dialog).queryAllByLabelText("Credential name")).toHaveLength(
@@ -211,9 +211,9 @@ test.each([0, 1, 2])(
       count === 0 ? "Create new credential" : `Login ${count} · deploy`,
     );
     expect(
-      within(dialog).getByLabelText("Access configuration"),
+      within(dialog).getByLabelText("Cloudflare Access"),
     ).toHaveTextContent(
-      count === 0 ? "Create new configuration" : `Gateway ${count}`,
+      count === 0 ? "Create new Cloudflare Access" : `Gateway ${count}`,
     );
     click(getAction("button", "Cancel", dialog));
     await waitFor(() => {
@@ -250,10 +250,10 @@ test("Unknown lists are not empty, Direct does not wait for Access, and Retry in
   });
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   click(getAction("radio", "Cloudflare Access", dialog));
-  expect(within(dialog).queryByLabelText("Configuration name")).toBeNull();
+  expect(within(dialog).queryByLabelText("Name")).toBeNull();
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   pendingAccess.resolve();
-  await within(dialog).findByLabelText("Configuration name");
+  await within(dialog).findByLabelText("Name");
 });
 
 test("Deactivating inline Access fields clears tokens without discarding the SSH draft", async () => {
@@ -267,7 +267,7 @@ test("Deactivating inline Access fields clears tokens without discarding the SSH
   const dialog = await screen.findByRole("dialog");
   await fill(await within(dialog).findByLabelText("Private key"), "ssh-draft");
   click(getAction("radio", "Cloudflare Access", dialog));
-  await selectConfig(dialog, "Create new configuration");
+  await selectConfig(dialog, "Create new Cloudflare Access");
   await tokenFields(dialog);
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await waitFor(() => {
@@ -281,7 +281,7 @@ test("Deactivating inline Access fields clears tokens without discarding the SSH
   expect(
     within(dialog).queryByLabelText("Service Token Client Secret"),
   ).toBeNull();
-  await selectConfig(dialog, "Create new configuration");
+  await selectConfig(dialog, "Create new Cloudflare Access");
   expect(
     within(dialog).getByLabelText("Service Token Client Secret"),
   ).toHaveValue("");
@@ -297,7 +297,7 @@ test("Deactivating inline Access fields clears tokens without discarding the SSH
   expect(within(dialog).getByLabelText("Private key")).toHaveValue("ssh-draft");
 });
 
-test("Access configuration CRUD is inside SSH and never turns zero hosts into configured SSH", async () => {
+test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into configured SSH", async () => {
   let configs: CloudflareAccessConfig[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
@@ -315,25 +315,27 @@ test("Access configuration CRUD is inside SSH and never turns zero hosts into co
   await page();
   await screen.findByText("0 hosts configured");
   click(getAction("radio", "Cloudflare Access"));
-  await screen.findByText("0 Access configurations configured");
-  click(getAction("button", "Add Access configuration"));
+  await screen.findByText("0 Cloudflare Access configured");
+  click(getAction("button", "Add Cloudflare Access"));
   let dialog = await screen.findByRole("dialog", {
-    name: "Add Access configuration",
+    name: "Add Cloudflare Access",
   });
   await tokenFields(dialog);
   const secret = within(dialog).getByLabelText("Service Token Client Secret");
   click(getAction("button", "Save", dialog));
-  await screen.findByText("1 Access configuration configured");
+  await screen.findByText("1 Cloudflare Access configured");
   expect(secret).toHaveValue("");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   click(getAction("radio", "Hosts"));
   await screen.findByText("0 hosts configured");
   click(getAction("radio", "Cloudflare Access"));
   await screen.findByText(config.name);
-  click(getAction("button", "Delete configuration"));
-  dialog = await screen.findByRole("dialog", { name: "Delete configuration" });
-  click(getAction("button", "Delete configuration", dialog));
-  await screen.findByText("0 Access configurations configured");
+  click(getAction("button", "Delete Cloudflare Access"));
+  dialog = await screen.findByRole("dialog", {
+    name: "Delete Cloudflare Access",
+  });
+  click(getAction("button", "Delete Cloudflare Access", dialog));
+  await screen.findByText("0 Cloudflare Access configured");
 });
 
 test("Direct and protected mode retain their port and configuration drafts but submit only active fields", async () => {
@@ -354,7 +356,7 @@ test("Direct and protected mode retain their port and configuration drafts but s
   );
   await fill(within(dialog).getByLabelText("Port"), "2222");
   click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Access configuration");
+  await within(dialog).findByLabelText("Cloudflare Access");
   const publishedHost = within(dialog).getByLabelText("Published hostname");
   expect(publishedHost).toHaveAttribute("placeholder", "e.g. ssh.example.com");
   expect(publishedHost).toHaveValue("ssh.example.com");
@@ -364,7 +366,7 @@ test("Direct and protected mode retain their port and configuration drafts but s
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2222);
   click(getAction("radio", "Cloudflare Access", dialog));
   await expect(
-    within(dialog).findByLabelText("Access configuration"),
+    within(dialog).findByLabelText("Cloudflare Access"),
   ).resolves.toHaveTextContent(config.name);
   await selectCredential(dialog);
   click(getAction("button", "Save", dialog));
@@ -430,9 +432,9 @@ test.each(
       );
       click(getAction("radio", "Cloudflare Access", dialog));
     }
-    await within(dialog).findByLabelText("Access configuration");
+    await within(dialog).findByLabelText("Cloudflare Access");
     if (newAccess) {
-      await selectConfig(dialog, "Create new configuration");
+      await selectConfig(dialog, "Create new Cloudflare Access");
       await tokenFields(dialog);
     }
     if (newCredential) {
@@ -520,7 +522,7 @@ test("A failed host save retains inline Access input for manual retry without a 
     "ssh.example.com",
   );
   click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Configuration name");
+  await within(dialog).findByLabelText("Name");
   await tokenFields(dialog);
   click(getAction("button", "Save", dialog));
   await reached.promise;
@@ -574,7 +576,7 @@ test("Pending and failed Access Save keep secrets for retry; a background refres
   click(getAction("radio", "Cloudflare Access"));
   click(
     await waitFor(() => {
-      return getAction("button", "Add Access configuration");
+      return getAction("button", "Add Cloudflare Access");
     }),
   );
   const dialog = await screen.findByRole("dialog");
@@ -613,7 +615,7 @@ test("A committed Access creation completes on same-ID retry without another con
   click(getAction("radio", "Cloudflare Access"));
   click(
     await waitFor(() => {
-      return getAction("button", "Add Access configuration");
+      return getAction("button", "Add Cloudflare Access");
     }),
   );
   const dialog = await screen.findByRole("dialog");
@@ -658,7 +660,7 @@ test("A token replacement conflict preserves input and needs explicit latest-ver
   await page();
   click(getAction("radio", "Cloudflare Access"));
   await screen.findByText(config.name);
-  click(getAction("button", "Edit Access configuration"));
+  click(getAction("button", "Edit Cloudflare Access"));
   const dialog = await screen.findByRole("dialog");
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: "Replace Service Token" }),
@@ -719,11 +721,13 @@ test("A referenced deletion race explains the new affected host without removing
   await page();
   click(getAction("radio", "Cloudflare Access"));
   await screen.findByText(config.name);
-  click(getAction("button", "Delete configuration"));
+  click(getAction("button", "Delete Cloudflare Access"));
   const dialog = await screen.findByRole("dialog");
-  click(getAction("button", "Delete configuration", dialog));
+  click(getAction("button", "Delete Cloudflare Access", dialog));
   await within(dialog).findByText(host.displayName);
-  expect(getAction("button", "Delete configuration", dialog)).toBeDisabled();
+  expect(
+    getAction("button", "Delete Cloudflare Access", dialog),
+  ).toBeDisabled();
   expect(
     getAction("button", "Keep my changes with this version", dialog),
   ).toBeDisabled();
@@ -818,7 +822,7 @@ test("An eligible protected host can explicitly change to Direct", async () => {
   await screen.findByText(host.displayName);
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByLabelText("Access configuration");
+  await within(dialog).findByLabelText("Cloudflare Access");
   click(getAction("radio", "Direct", dialog));
   expect(within(dialog).getByLabelText("Port")).toHaveValue(22);
   click(getAction("button", "Save", dialog));
@@ -952,7 +956,7 @@ test("A new host can be explicitly saved as Direct after Access becomes unavaila
   );
   await selectCredential(dialog);
   click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Access configuration");
+  await within(dialog).findByLabelText("Cloudflare Access");
   await selectConfig(dialog);
   click(getAction("button", "Save", dialog));
   await within(dialog).findAllByText(
@@ -978,7 +982,7 @@ test("Changing the owner clears Access secrets and hides the previous owner's co
   click(getAction("radio", "Cloudflare Access"));
   click(
     await waitFor(() => {
-      return getAction("button", "Add Access configuration");
+      return getAction("button", "Add Cloudflare Access");
     }),
   );
   const dialog = await screen.findByRole("dialog");
@@ -1010,15 +1014,12 @@ test("Renaming changes metadata without requesting a new Service Token", async (
   await page();
   click(getAction("radio", "Cloudflare Access"));
   await screen.findByText(config.name);
-  click(getAction("button", "Edit Access configuration"));
+  click(getAction("button", "Edit Cloudflare Access"));
   const dialog = await screen.findByRole("dialog");
   expect(
     within(dialog).queryByLabelText("Service Token Client Secret"),
   ).not.toBeInTheDocument();
-  await fill(
-    within(dialog).getByLabelText("Configuration name"),
-    "Renamed gateway",
-  );
+  await fill(within(dialog).getByLabelText("Name"), "Renamed gateway");
   click(getAction("button", "Save", dialog));
   await screen.findByText("Renamed gateway");
   expect(requests).toStrictEqual([
@@ -1125,14 +1126,14 @@ test("A configuration deleted before host Save can be replaced without losing th
   );
   await selectCredential(dialog);
   click(getAction("radio", "Cloudflare Access", dialog));
-  await within(dialog).findByLabelText("Access configuration");
+  await within(dialog).findByLabelText("Cloudflare Access");
   await selectConfig(dialog);
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(getAction("button", "Save", dialog)).toBeDisabled();
   });
   await within(dialog).findAllByText(
-    /This Access configuration is no longer available/u,
+    /This Cloudflare Access is no longer available/u,
   );
   await selectConfig(dialog, alternate.name);
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
@@ -1177,7 +1178,7 @@ test.each(["navigation", "owner"])(
     );
     const privateKey = within(dialog).getByLabelText("Private key");
     click(getAction("radio", "Cloudflare Access", dialog));
-    await within(dialog).findByLabelText("Configuration name");
+    await within(dialog).findByLabelText("Name");
     await tokenFields(dialog);
     const secret = within(dialog).getByLabelText("Service Token Client Secret");
     click(getAction("button", "Save", dialog));
@@ -1226,9 +1227,9 @@ test("Access load failure offers retry while feature unavailability remains dist
   });
   await page();
   click(getAction("radio", "Cloudflare Access"));
-  await screen.findByText("Could not load Access configurations. Try again.");
+  await screen.findByText("Could not load Cloudflare Access. Try again.");
   expect(
-    queryAction("button", "Add Access configuration"),
+    queryAction("button", "Add Cloudflare Access"),
   ).not.toBeInTheDocument();
   unavailable = true;
   click(getAction("button", "Retry"));

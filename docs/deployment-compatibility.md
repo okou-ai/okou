@@ -17,6 +17,110 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Slack ingress failed status retirement (2026-09-20)
+
+Migration `1179_retire_slack_ingress_failed_status` rewrites every
+`slack_chat_ingress` row still held at the legacy `failed` status to `terminal`
+with `last_error_class = 'legacy_terminal_failure'` and a cleared `retry_at`,
+then re-adds `chk_slack_chat_ingress_status` without `'failed'`. The conversion
+runs inside the same migration and before `ADD CONSTRAINT`, so the validating
+scan has no row left to reject and any row written during the deploy window is
+absorbed. `slack_chat_ingress` is not exposed through the masked production
+gateway, so the residual count cannot be measured in advance; the in-migration
+conversion removes that dependency. `retry_count`, the `attempts_exhausted`
+conversion, the constraint name and `idx_slack_chat_ingress_retry_sweep` are
+unchanged.
+
+Old API/new DB is compatible. #35193 removed the last writer of `'failed'`; the
+serving API classifies failures into `retryable` and `terminal` only, and it
+reads the converted rows as ordinary terminal rows. New API/old DB is also
+compatible: the new API neither writes nor reads `'failed'` and does not require
+the tightened constraint, so it is safe before the migration is visible to it.
+
+**API rollback floor: `29dfab0ba2bdc20979635596ccfa5c78809426c0`** (#35193's
+merge commit). An API artifact that predates it still writes `'failed'`, and
+after this migration that write fails with SQLSTATE `23514` instead of being
+handled — worse than the bounded-retry behaviour it replaced. Rolling the API
+back does not restore the previous constraint. Every rollback target must
+contain that commit; verify with
+`gh api repos/okou-ai/okou/compare/29dfab0ba2bdc20979635596ccfa5c78809426c0...<artifact-sha> --jq .status`
+and require `ahead` or `identical`.
+
+The floor was established before merge from `api_commit_sha` in the
+`vm0-sandbox-op-log-prod` Axiom dataset: all 17 distinct production API
+artifacts observed from 2026-09-18T07:37:39Z, when #35193 first reached
+production, through 2026-09-20T11:57:25Z report `ahead`. No production artifact
+has been able to write `'failed'` since that first appearance.
+
+## Durable Pi inference table retirement (2026-09-20)
+
+Migration `1180_retire_durable_pi_inference` drops `agent_run_inference`,
+`agent_run_sandbox_intent`, `agent_run_sandbox_lease`,
+`agent_run_inference_objects` and `pi_inference_objects`. It must ship in a
+**later release than the code removal**, not alongside it. Migrations run
+before API promotion, so a combined release would have executed this migration
+while the previous backend was still serving. In that backend, run creation
+reached `checkRunConcurrencyLimit` → `loadOrgConcurrencyAdmissionState`, which
+cross-joined `earlierDeferredDemandTotals` into its admission aggregate in a
+single statement. That subquery read `agent_run_sandbox_intent` and
+`agent_run_inference_objects` with no `schemaVersion` or feature-switch gate,
+so every run creation would have failed. The remaining three tables were
+reached only by the durable surface itself and by the conversation-history
+erasure path, both removed by #35559.
+
+The writers were removed by #35559 and are live in `api-v1.642.2`. Before this
+migration ran, only `3ba83ad99700` and `b96c4458caa2` had served since
+11:53:45Z, and both contain that removal; the pre-removal commit
+`26f1b0acf73a` last served at 11:47:47Z. Old backend/new schema is therefore
+not a serving combination for this contraction, which is the only reason the
+drop is safe. New backend/old schema remains compatible: the current API never
+references these tables.
+
+**This contraction sets a rollback floor.** Once the tables are gone, the API
+cannot be rolled back to any build at or before `api-v1.642.1`, because run
+creation in those builds reads `agent_run_sandbox_intent` and
+`agent_run_inference_objects` unconditionally. A rollback must stay at or above
+the release carrying #35559.
+
+The tables held only internal test records: 24, 16, 16, 91 and 90 rows
+respectively, measured directly against production on 2026-09-20 before this
+migration shipped, matching the 24 durable-inference runs recorded on
+2026-09-17 and 2026-09-19. `piDeferredSandbox` shipped `enabled: false` with no org hashes and
+never carried real traffic. No backfill is performed and none is required; the
+migration comment records that as a decision. There are no browser, Runner, or
+API response changes.
+
+## Chat search GIN maintenance (2026-09-20)
+
+Apply `1178_chat_search_gin_statistics` before promoting the API that calls
+`public.pgstatginindex`. The migration only installs `pgstattuple` in `public`;
+it does not change indexes, drain the pending list, or backfill messages. The
+API database role must be able to execute `public.pgstatginindex(regclass)`
+and own the search index for `gin_clean_pending_list`. The Neon branch
+experiment verified these operations with the branch's database owner.
+
+Old API/new DB remains compatible. New API/old DB is not a serving combination:
+the release must complete the additive migration before API promotion. Rollback
+keeps the extension installed and rolls back only the API. There are no browser,
+Runner, or search-response changes. The existing cron `deferredThreads` count
+now also includes statement deadlines and candidates postponed by GIN maintenance.
+
+Maintenance runs before the first candidate and between committed per-thread
+transactions, under a nonblocking index-specific advisory lock. It drains at
+512 KiB while retaining `fastupdate` and the default 4 MiB foreground threshold.
+One tick shares a 30-second maintenance budget and a 1-second lock timeout;
+exhaustion or a maintenance deadline defers untouched candidates to the next
+tick. A projection statement timeout rolls back just that thread and continues
+with other candidates. User cancellation and unrelated failures still propagate.
+
+Branch experiments covered 4,400 synthetic messages across 316 INSERTs with
+at most 14 messages per INSERT, plus 22 successful cleanups. This does not bound
+a production-sized 1,000-event thread batch or a cold cache. A pre-existing
+4.3 MiB backlog exceeded the 30-second cleanup budget in the branch; rollout
+must inspect pending size and arrange a separately authorized initial drain if
+needed. This migration performs no such drain. Monitor pending-list growth and
+cron convergence after release; a deferred watermark is never advanced.
+
 ## Pi stable-context schema rollout and rollback
 
 Migration 1168, following retained main migrations through
@@ -238,6 +342,25 @@ sharing. It replaces new-publication counter allocation with fixed compatibility
 values and binds immutable public content by deployment ID. Legacy API history,
 selectors, old upload completion and schema fields remain until the documented
 consumer, data and rollback gates; no physical schema cleanup runs in that step.
+
+The subsequent runtime cleanup reads retained historical versions from manifest
+metadata and derives the active version through the fixed public deployment ID.
+Its runtime Drizzle mappings omit the four relational version fields from every
+implicit selection and insertion. A guarded SQL migration normalizes the
+metadata from the old authoritative columns, rotates changed manifest CAS hashes,
+and keeps outgoing API readers working with temporary defaults and a pointer
+projection trigger. IDs, stored byte paths and share policies do not change.
+See the [runtime retirement matrix](database/hosted-publication-retirement.md#runtime-version-column-retirement).
+The separately gated physical-drop migration removes the four columns, their
+two old indexes and the projection trigger/function. It verifies the retained
+manifest versions, public bindings and persisted SQL dependencies before
+dropping anything, and preserves content rows and share identities. This
+contraction remains draft until the runtime cleanup has shipped in its own
+production release and its predecessor has drained. The contraction installs
+that runtime transition's canonical main commit as the API rollback floor in
+the main-owned resolver before the physical drop deploys. Its API-only floor
+does not constrain the independently retained Runner tag. A migration journal
+entry cannot prove this serving/rollback boundary.
 
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
@@ -558,6 +681,35 @@ Backend changes must be safe with:
 - old runner -> new backend
 - new runner -> old backend, if traffic propagation or non-production
   deployment order can expose that pairing
+
+#### Pro-suspend plan retirement
+
+Migration `1177_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
+organization tiers, pending cancellation targets, and entitlement snapshots to
+`limited-free-1`. The entitlement rewrite applies the complete canonical
+limited-free capability set and active status while preserving balances,
+subscription and period fields, source metadata, and other billing provenance.
+Validated constraints prevent the retired value from being persisted again.
+
+The outgoing API already writes `limited-free-1` for cancellations and can read
+the migrated state, so it remains compatible while the migration runs before
+API promotion. The current App emits only `limited-free-1`, and current API
+responses never expose `pro-suspend`. Three input-only compatibility aliases
+remain. A new API still accepts the previous App's cancellation request literal
+and normalizes it before service execution; Stripe setup completion applies the
+same normalization to checkout metadata created before the rollout; and the
+replacement App normalizes a `vm0:billing:downgrade-payment-pending`
+sessionStorage entry that the previous build wrote before redirecting to
+Stripe. None of them is an organization tier or a stored plan value.
+
+Remove the App-request alias only after the replacement App is live and the
+web-client floor excludes the previous build. Remove the Stripe metadata alias
+only after every setup Checkout Session created by the previous build is
+terminal or expired. Remove the sessionStorage alias only after every tab
+session started on the previous build has ended; sessionStorage cannot outlive
+its tab, so that window closes once the replacement App is live and no
+pre-rollout tab remains open. No alias permits the retired value to pass the
+persistence constraints.
 
 ### Commit-addressed CLI artifacts
 
@@ -1318,6 +1470,17 @@ runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
 generic server/overload evidence from exact terminal text. It cannot undo
 retries already performed by an old SDK. No new protocol, database column or
 session format is introduced, and local-deadline handoff is unchanged.
+
+Codex access-program rejection adds `codex_access_program_unavailable` under
+that same open-token contract. The API accepts and persists future snake-case
+tokens, so a new Runner talking to an older API remains functional but receives
+generic failure presentation and the older unknown-token warning policy. An old
+Runner talking to a new API omits the reason and keeps its existing behavior.
+With both artifacts updated, the exact trusted terminal
+`access_programs.cyber` rejection receives specific guidance, Runner INFO
+telemetry, and no API WARN/ERROR. The run remains failed and retains its original
+error. There is no schema migration, historical backfill, replay, retry,
+credential change, rollout switch, or production-observation authorization.
 
 Queued or active commit-addressed contexts can retain the old CLI. Release
 acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
@@ -2128,11 +2291,12 @@ The receipt-capable writer from [#32880](https://github.com/vm0-ai/vm0/pull/3288
 Cancelling a connector connection aborts the current App attempt: owned requests
 and polling stop, its popup closes when the browser still permits access, busy controls are
 released, and unfinished local continuations (including account naming and Chat
-callbacks) must not start or update a newer attempt. Explicit dialog close and
-Escape have the same meaning; outside presses do not cancel pending work. Once
-the App has confirmed success, the action is labelled Close rather than Cancel.
-Provider isolation policies can sever the popup handle, so closing that external
-window is best-effort and is not required to release the App's attempt.
+callbacks) must not start or update a newer attempt. The dialog's Close control
+and Escape have the same meaning; outside presses do not cancel pending work.
+Connector authorization progress surfaces add no separate Cancel action; forms
+that already provide a general Cancel action keep it. Provider isolation
+policies can sever the popup handle, so closing that external window is
+best-effort and is not required to release the App's attempt.
 
 This is **local cancellation**, not a provider revocation or an API transaction
 rollback. The API may already have claimed OAuth state and may finish persisting
@@ -2232,30 +2396,34 @@ v3 readers; current code performs no data deletion or rewrite.
 
 ### Builtin MCP execution
 
-Builtin MCP uses the current App, CLI and Runner contract directly. There is no
-MCP-specific request-header negotiation, old-client HTTP projection, upgrade
-response or Runner claim capability flag. Agent connector replacement applies
-to the complete submitted list, including MCP grants. The CLI is kept current;
-its package URL does not need to match the serving API commit for MCP admission.
-Custom and builtin MCP use the same typed discovery response.
+Explicit `mcp` metadata is the builtin MCP protocol discriminator and its fixed
+endpoint is the runtime routing authority. New APIs ignore the artifact
+firewall for MCP and create one run-scoped inline firewall for the exact
+admitted account. The entry carries the connector slug and account `sourceId`,
+uses the fixed MCP endpoint, has no HTTP path permissions, and keeps unknown
+transport access allowed. Its auth is empty for a `none` grant or an Automatic
+account resolved to no authentication, uses the platform-owned bearer template
+for Automatic OAuth, and uses that same Bearer shape with the admitted
+manual/static method's single connector-secret binding. Other auth shapes fail
+closed. Producer firewall contents cannot change this shape.
 
-Queued Runs retain their captured CLI package and exact account mapping.
-Builtin MCP admission requires the Run's Okou token for authenticated MCP
-discovery. None/manual and Automatic methods are executable. Plaud's Automatic
-method defaults off in auth-method discovery through `plaudConnector`; this
-switch does not gate existing account callbacks or execution. The addon honors explicit
-owner intent and never injects another owner's credentials when the requested
-owner is absent, including overlapping builtin/custom destinations.
+Queued Runs retain their captured CLI package, inline firewall and exact account
+mapping. Builtin MCP admission requires the Run's Okou token for authenticated
+MCP discovery. Agent connector replacement applies to the complete submitted
+list, including MCP grants. Custom and builtin MCP use the same typed discovery
+response. The addon assigns builtin ownership only when an inline entry's slug
+and `sourceId` exactly match its registered runtime target, and it never injects
+another owner's credentials when builtin and custom destinations overlap.
 
-No-auth builtin and custom MCP requests skip credential validity checks and
-proxy auth resolution, including Automatic builtin and custom MCP resolved to no
-authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
-field to cap cached account authorization at 30 seconds from validation; this
-also bounds static-token cache reuse. Discovery immediately removes deleted
-accounts, while subsequent proxy requests may reuse an existing lease until
-expiry. Expiry does not interrupt an in-flight request or stream. After
-resolution, the addon rechecks the current owner before forwarding. No new
-HTTP/custom cache policy is introduced.
+No-auth builtin and custom MCP requests stay on the proxy fast path and make no
+firewall-auth request. Builtin no-auth admission is therefore a Run-start
+account/catalog snapshot: deletion, reconnect or catalog changes affect the
+next Run, not an active no-auth Run. Credentialed builtin MCP remains a
+network-boundary operation. The API revalidates the current endpoint, auth
+method and exact account, and its `expiresAt` response caps cached account
+authorization at 30 seconds; this also bounds static-token cache reuse. After
+resolution, the addon rechecks the current owner before forwarding. Expiry does
+not interrupt an in-flight request or stream.
 
 Automatic authentication adds separate builtin OAuth bindings and DCR
 registrations, plus a nullable account auth-resolution field. Apply this
@@ -2264,25 +2432,33 @@ CIMD/DCR, PKCE, exact issuer/resource binding and optional refresh tokens.
 Builtin callbacks are owned by the API and completion receipts identify the
 exact account and attempt. Stored catalog method IDs remain unchanged.
 
-Automatic accounts receive the same compact builtin firewall reference used by
-builtin HTTP connectors. The Runner resolves its definition, including auth, from
-the accepted catalog; account state does not replace or override that firewall.
-An OAuth catalog firewall uses the proxy-only
-`Bearer ${{ secrets.MCP_ACCESS_TOKEN }}` template, resolved outside the sandbox.
-Automatic discovery still records whether the selected account resolved to OAuth
-or no-auth. A mismatch fails at its natural boundary: an OAuth catalog firewall
-cannot resolve its required secret from a no-auth account, while a no-auth catalog
-firewall sends an OAuth account's request without credentials and lets the upstream
-reject it. Builtin runtime-sync updates remain policy-only. There is no MCP-specific
-client or Runner capability negotiation. A rollback after Automatic accounts exist
-must retain their schema and credential readers.
-The addon sends `matchedFirewall.base` when resolving builtin credentials.
-Automatic OAuth resolution requires this destination to match the current
-catalog and the locked account binding. Missing or stale destinations fail closed;
-HTTP/custom and no-auth resolution do not require this field. Best-effort runtime
-sync cannot authorize credentials for a changed endpoint.
+Automatic discovery records whether the selected account resolved to OAuth or
+no authentication. The addon sends `matchedFirewall.base` and `sourceId` when
+resolving credentialed builtin MCP auth. Missing, stale or mismatched
+destinations, auth shapes and accounts fail closed. Builtin runtime sync remains
+policy/status-only and cannot authorize credentials for a changed endpoint. A
+rollback after Automatic accounts exist must retain their schema and credential
+readers.
 
-The current connector catalog reader is v4-only as described above. This
+Deploy this boundary in separate PRs. First deploy #35630, which teaches Runner
+to assign builtin ownership to exact source-bound inline firewalls while
+retaining the existing named catalog path. The currently deployed API continues
+creating name-based contexts, so both the old and new Runner remain compatible
+during that rollout. Only after the compatible Runner is live across the fleet
+that can claim new work may #35671 deploy the API writer for inline-MCP Runs.
+No Runner capability header, stored execution-context marker or poll/claim
+filter is part of this protocol; deployment order is the compatibility gate.
+
+After the API activation, wait for pre-inline queued and claimed Runs to drain
+before publishing the companion firewall-free catalog from
+`vm0-ai/vm0-connectors#4646`; otherwise a still-active legacy Run can lose its
+named MCP firewall on catalog refresh. For rollback below inline support,
+restore a legacy generated-MCP catalog before rolling back the API/Runner. After
+the firewall-free catalog is live, pre-inline Runs have drained, and retained
+rollback targets are inline-capable, remove legacy generated-MCP decoding and
+named Runner catalog resolution together under #35654.
+
+The current connector catalog reader remains v4-only as described above. This
 execution change adds no environment variable, release workflow change or
 per-service skill.
 
@@ -2333,23 +2509,6 @@ policy. The database's required `refresh_after` and `last_requested_at` columns
 remain writable for deployment coexistence; new rows set `refresh_after` to their
 expiration and new code does not use either column to schedule renewal.
 
-## Pi inference lifecycle reader floor (#34242)
-
-The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v4
-launch discriminator without a Runner profile and three sparse ownership/intent/lease
-tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
-expand migration replaces the launch CHECK as NOT VALID; a separate bounded
-validation transaction scans retained runs before API promotion. The
-`piDeferredSandbox` default remains off, but that default does not establish the
-state of every organization or staff override; historical v4 attempts and their
-retained obligations must remain readable.
-
-After future v4 activation, disabling starts must retain phase/epoch-aware readers,
-consumer/recovery, cancellation, capacity counting, credential retention and erasure.
-A v1–v3-only application is below the rollback floor while v4 records remain.
-Do not shrink the CHECK or cascade away releasing leases. See the linked contract
-for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
-
 ## API-first usage handoff producer (#35413)
 
 The consumer contract and tolerant readers are delivered by #34787. This
@@ -2387,31 +2546,6 @@ the additive column.
 Deploy the API across the serving fleet before enabling the Runner consumer in
 #34384. Unsupported endpoints and other inconclusive reads must not become
 disappearance decisions. This API slice alone adds no new stop-delay bound.
-
-## Deferred Pi Sandbox reader floor
-
-Before a v4 API-inference producer can emit Sandbox demand, deploy the
-[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
-Its optional Runner header is ignored by older APIs; older Runners remain
-excluded from v4 jobs. The release endpoint and Runner use one strict explicit
-outcome contract: a missing, malformed or unknown outcome retains the receipt
-instead of fabricating a stale acknowledgement. No mixed-response bridge is
-provided for this non-GA path. New admission remains default-off and the
-user-reported shutdown is the current operational boundary, but historical
-production attempts under #34795 mean retained v4 obligations may still exist.
-The outer Pi launch-config v2 contains a new versioned continuation slot. The
-co-built Guest uses its private Sandbox control token to assemble the handoff in
-a 0600 run-scoped file and passes only an additive path variable to the CLI. The
-entire pre-spawn request and response-body wait stays under the existing user
-cancellation token, original absolute execution deadline and heartbeat terminal
-semantics; a winning control removes unpublished/published startup files and
-starts no child. An older CLI fails its legacy ordinary-token read; a newer CLI
-under an older Guest fails because the authenticated file is absent. Both
-combinations stop before the RPC boundary. Enablement therefore requires the
-capable API, Runner/Guest and newly captured commit-addressed CLI.
-Drain existing v4 intents, leases, claims and release receipts before rolling any
-of those readers back below that floor. No switch is enabled by the consumer
-implementation.
 
 ## Email outbox provider replay and send-time expiry (#34645, #34695)
 
@@ -2747,9 +2881,18 @@ fields, including old privacy receipts; Marketing retains authoritative
 withdrawal state. Historical rows and external objects are not erased in this
 change.
 
+The final App cleanup removes its remaining click/UTM parser, attribution
+session-storage reader/writer, auth redirect propagation, and explicit PostHog
+attribution properties. Existing product
+analytics, PostHog user/organization identity, and `/api/events` business facts
+remain. Marketing is the single URL boundary: it omits acquisition parameters
+from App links while preserving product deep links. App does not add a second
+sanitizer for arbitrary incoming query strings or a migration that cleans
+historical browser state.
+
 Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an
-already-open old bundle can otherwise continue sending browser conversions.
+already-open old bundle can otherwise continue collecting browser attribution.
 This PR does not select a floor or change production provider settings.
 
 ## X resource protocol cleanup

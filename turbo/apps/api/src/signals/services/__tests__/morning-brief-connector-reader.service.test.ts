@@ -70,7 +70,7 @@ const TEST_TIMEOUT_MS = 30_000;
 /** How long one socket lags its siblings while tearing down. */
 const SLOW_TEARDOWN_MS = 150;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);

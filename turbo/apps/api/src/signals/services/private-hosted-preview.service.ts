@@ -5,7 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import {
   privateHostedDeployments,
   hostedSites,
-} from "@okouai/db/schema/hosted-site";
+} from "@okouai/db/runtime/hosted-site";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";

@@ -92,7 +92,7 @@ export function DetailPageMain({
     <main
       className={cn(
         scrollable ? "min-h-0 flex-1 overflow-auto" : "shrink-0",
-        "px-4 pt-4 pb-[max(4rem,var(--sab))] sm:px-6 sm:pt-6",
+        "px-4 pt-4 pb-safe-or-16 sm:px-6 sm:pt-6",
         className,
       )}
     >

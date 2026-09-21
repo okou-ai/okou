@@ -29,7 +29,9 @@ import { writeDb$, type Db } from "../signals/external/db";
 import { createDeferredPromise } from "../signals/utils";
 import {
   clearStableAgentPromptBuildHookForTest,
+  clearStableContextCacheIdentityBuildHookForTest,
   setStableAgentPromptBuildHookForTest,
+  setStableContextCacheIdentityBuildHookForTest,
 } from "../signals/services/agent-runs-create.service";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
 import { deleteExpiredPiStableContextArtifacts } from "../signals/services/pi-api-first-turn-cleanup.service";
@@ -536,12 +538,16 @@ export async function removePiStableContextHeadFixture(
   return removed.artifactDigest;
 }
 
-export async function stableContextBackendBlockedByFixture(args: {
-  readonly blockedPid: number;
-  readonly blockerPid: number;
-}): Promise<boolean> {
+/** Inspect a blocker through either the shared fixture DB or its owning tx. */
+export async function stableContextBackendBlockedByFixture(
+  args: {
+    readonly blockedPid: number;
+    readonly blockerPid: number;
+  },
+  executor: Db | Tx = store.set(writeDb$),
+): Promise<boolean> {
   const [state] = await executeRawRows(
-    store.set(writeDb$),
+    executor,
     sql`SELECT ${args.blockerPid} = ANY(pg_blocking_pids(${args.blockedPid})) AS blocked`,
     z.object({ blocked: z.boolean() }),
   );
@@ -590,15 +596,25 @@ export async function readPiStableContextStorageDemandFixture(headId: string) {
 
 export async function withStableAgentPromptBuildCountFixture<T>(
   work: () => Promise<T>,
-): Promise<{ readonly buildCount: number; readonly result: T }> {
+): Promise<{
+  readonly buildCount: number;
+  readonly cacheIdentityBuildCount: number;
+  readonly result: T;
+}> {
   let buildCount = 0;
+  let cacheIdentityBuildCount = 0;
   setStableAgentPromptBuildHookForTest(() => {
     buildCount += 1;
   });
-  onTestFinished(() => {
-    clearStableAgentPromptBuildHookForTest();
+  setStableContextCacheIdentityBuildHookForTest(() => {
+    cacheIdentityBuildCount += 1;
   });
+  const clear = () => {
+    clearStableAgentPromptBuildHookForTest();
+    clearStableContextCacheIdentityBuildHookForTest();
+  };
+  onTestFinished(clear);
   const result = await work();
-  clearStableAgentPromptBuildHookForTest();
-  return { buildCount, result };
+  clear();
+  return { buildCount, cacheIdentityBuildCount, result };
 }

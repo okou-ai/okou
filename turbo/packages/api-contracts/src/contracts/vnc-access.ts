@@ -3,7 +3,6 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { vncConnectionResponseSchema } from "./vnc-connections";
-import { vncCredentialResponseSchema } from "./vnc-credentials";
 
 const c = initContract();
 const agentPath = z.object({ agentId: z.uuid() }).strict();
@@ -19,7 +18,7 @@ const errors = {
 export const vncHostSchema = vncConnectionResponseSchema
   .pick({ id: true, displayName: true, host: true, port: true })
   .extend({
-    authMethod: vncCredentialResponseSchema.shape.authMethod,
+    authMethod: z.literal("vnc_password"),
     securityType: z.literal("x509_vnc"),
   });
 

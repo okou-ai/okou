@@ -5,7 +5,7 @@ import { Button } from "@okouai/ui/components/ui/button";
 import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
-  connectorRedirectingMobileWarningVisible$,
+  connectorRedirectingMobileHintVisible$,
   type ConnectorRedirectingStatus,
 } from "../../signals/connectors-page/connector-redirecting.ts";
 import { brandName$ } from "../../signals/branding.ts";
@@ -28,7 +28,7 @@ export function ConnectorRedirectingPage({
   const { t } = useTranslation();
   const hasError = status === "error";
   const brandName = useGet(brandName$);
-  const showMobileWarning = useGet(connectorRedirectingMobileWarningVisible$);
+  const showMobileHint = useGet(connectorRedirectingMobileHintVisible$);
 
   return (
     <ConnectorFlowCard
@@ -84,8 +84,8 @@ export function ConnectorRedirectingPage({
             </span>
           </div>
         )}
-        {!hasError && showMobileWarning && (
-          <p className="w-72 max-w-full text-sm text-amber-600 dark:text-amber-400">
+        {!hasError && showMobileHint && (
+          <p className="w-72 max-w-full text-sm text-muted-foreground">
             {t(
               ($) => {
                 return $.connectors.redirect.mobileWarning;

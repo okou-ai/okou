@@ -1,0 +1,14 @@
+-- Retire the Gemini 2.5 Flash Image pricing rows (one `image` row and four
+-- `model` token rows seeded 2026-04-24/28). Nothing emits usage under this
+-- provider: built-in Nano Banana generation routes through fal
+-- (`fal-ai/nano-banana-2`, `google/nano-banana-2-lite`), and the only direct
+-- Gemini image caller — the `nano-banana` skill — now uses the GA model IDs.
+--
+-- Unlike the GPT 5.5 retirement, no history depends on these rows. Retained
+-- usage starts before they were seeded (`usage_event_hourly_rollup` from
+-- 2026-03-18, `usage_event` from 2026-04-23) and neither table holds a single
+-- row for this provider, so the rows price nothing that was ever charged.
+--
+-- Google shuts the model down for the Gemini Developer API on 2026-10-02.
+-- https://ai.google.dev/gemini-api/docs/deprecations
+DELETE FROM "usage_pricing" WHERE "provider" = 'gemini-2.5-flash-image';

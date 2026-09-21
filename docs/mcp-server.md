@@ -11,14 +11,45 @@ foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
 #35100; sending and cancellation are delivered in #34934, status in #35101,
 and Agent/model discovery and empty conversation creation in #35102.
-Results include both structured content and a
-JSON text representation.
+Atomic creation with an optional first message is delivered in #35540.
+Successful results keep the complete machine-readable value in
+`structuredContent` and include a tool-specific human summary of at most 512
+UTF-8 bytes in text content; they do not duplicate the full JSON value as text.
+
+## Tool errors and CLI exit status
+
+MCP server-declared tool failures use `isError: true` and content for human
+inspection; MCP does not require structured error metadata. Okou chat tools also
+return the optional `structuredContent.error` extension with a stable `code`,
+human-readable `message`, explicit `retryable` boolean, and optional bounded
+validation `issues` containing field paths, issue codes and messages. Invalid
+tool arguments use `invalid_arguments`; an idempotency key reused for a different
+request uses `request_id_conflict`. A retryable value is metadata, not permission
+to automatically replay a tool call.
+
+For `okou mcp call`, a successful invocation exits `0`. A server result with
+`isError: true`, a protocol failure, a transport failure, or an action-level
+client failure exits nonzero. Successful `--json` output remains the raw MCP
+result. Failed `--json` output uses `{status:"error", error:{kind,code,message,retryable}}`;
+server-declared tool failures also preserve the complete raw MCP result under
+`result`. When the optional Okou extension is absent or invalid, the CLI reports
+`tool` / `tool_error` with a fixed generic message; it does not infer machine
+fields from human text. Without `--json`, tool errors continue to print the
+complete raw result for inspection before exiting nonzero. Commander syntax and
+option-conflict errors occur before the action and retain the CLI's standard
+error format.
+
+The CLI never automatically retries a tool call. A timeout, connection failure,
+or error result does not prove that a remote side effect did not happen; follow
+the tool's documented idempotency and inspection guidance before retrying.
 
 ## Starting a conversation
 
-Call `list_agents` and `list_models` before `create_chat_thread`. Discovery
-requires `okou:chat:read`; creation additionally requires `okou:chat:manage`.
-All calls retain the endpoint's organization/read-scope requirements.
+Call `list_agents` and `list_models` before `create_chat_thread` when selecting
+explicit values. Discovery requires `okou:chat:read`; creation additionally
+requires `okou:chat:manage`. The optional first-message branch also requires
+`okou:chat:send`. All calls retain the endpoint's organization/read-scope
+requirements.
 
 `list_agents` accepts optional `limit` (default 20, maximum 50) and `cursor`.
 It lists public or caller-owned Agents in the authorized organization, with
@@ -43,37 +74,65 @@ defaults awaiting canonical repair after a plan change return a setup error.
 Open model settings to synchronize the policies, then retry discovery. Discovery
 reads enforce a 15-second deadline, three-second SQL limits and a 16 KiB data budget.
 
-For example:
+To create an empty conversation, only `requestId` is required:
 
 ```json
 {
-  "requestId": "<new UUID for this intended conversation>",
-  "agentId": "<visible Agent UUID from list_agents>",
-  "title": "Review the quarterly plan",
-  "model": "<selectable model id from list_models>"
+  "requestId": "<new UUID for this intended conversation>"
 }
 ```
 
-All four fields are required; title must be nonblank and at most 200 UTF-16 units.
-Creation returns `threadId` (the normalized `requestId`), Agent, current title,
-selected/effective model, service tier, creation time, authenticated App URL,
-`replayed`, `retryUntil`, and `nextAction` pointing to `send_chat_message` with
-that thread ID. The conversation starts empty: no message is submitted, no run
-starts, and no context or run is inherited. Existing media/reasoning defaults
-apply; the service tier starts unset. Sending is a separate call with its own
-request ID and self-contained text. Credentials, quota and execution policy are
-checked on send, as indicated by `admission: "checked_on_send"`.
+The response points `nextAction` to `send_chat_message`; no message is submitted
+and no run starts. Sending later uses its own request ID and self-contained text.
 
-Retry an uncertain creation using the identical request ID, Agent, exact title
-and model within 24 hours of acceptance. The canonical `created` event retains
-the original intent; replay returns current stored settings without undoing
-later title/model edits. Concurrent identical requests converge on one thread.
-Conflicting input, deleted conversations, expired retries or missing creation
-evidence return an error. The guarantee is limited to accessible conversations
-and the 24-hour window; creation events have seven-day live retention. There is
-no permanent request-ID ledger. Never automatically retry an uncertain old
-request after the window; inspect the original thread before intentionally
-creating new work. No new table or schema migration is introduced.
+To atomically create a conversation and accept its first input, add `message`.
+All selection fields remain optional:
+
+```json
+{
+  "requestId": "<new UUID for this intended conversation and input>",
+  "message": "Summarize the risks and propose next steps."
+}
+```
+
+In either mode, optional `agentId`, `title`, and `model` select explicit values.
+An omitted Agent resolves to the currently visible organization default and is
+stored concretely on the thread. An omitted title stays null until the first
+text run triggers automatic title generation. An omitted model leaves the
+thread unpinned until run admission, so the current member default then
+organization default is used for that admission. Canonical admission may
+persist the resolved model on the thread for future runs. The response exposes
+the selected/effective model and `source`. `message` uses the same nonblank,
+32,000 UTF-16-unit limit as `send_chat_message` and preserves its exact accepted
+text.
+
+The thread and canonical input event commit in one transaction. Only after that
+commit does the shared scheduler attempt to start, queue, or steer execution.
+The response therefore reports the durable `input` receipt and its current
+`disposition`; it does not claim delivery or run success. Its `nextAction`
+points to `get_chat_status` with the complete stable `inputRef`. Use that handoff
+and then `get_chat_messages` to observe output.
+
+Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
+current title, selected/effective model, service tier, creation time,
+authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
+defaults apply and service tier starts unset. Credentials, quota, and execution
+policy are checked when the initial or later input is dispatched, as indicated
+by `admission: "checked_on_send"`.
+
+Retry an uncertain creation within 24 hours using the identical request ID,
+operation mode, exact values, and optional-field presence. Combined retries keep
+the same derived input reference. Concurrent identical requests converge on one
+thread and, when present, one input. Switching between empty and combined modes,
+changing a message, or changing omitted-versus-explicit Agent/title/model intent
+is a conflict. Replay returns current stored thread settings without undoing
+later edits. An originally omitted model follows current defaults while the
+thread is still unpinned; after run admission persists the resolved model,
+replay reports that thread pin. Deleted conversations, expired retries, or
+missing canonical evidence return an error. There is no permanent request-ID ledger. Never
+automatically retry an uncertain old request after the window; inspect the
+original thread before intentionally creating new work. No new table or schema
+migration is introduced.
 
 Creation checks current Agent visibility and account-content admission in its
 transaction, including the Agent owner's account. It uses the existing creation
@@ -227,9 +286,9 @@ concatenate text and files in offset order. Content continuation returns one
 message segment and no history-page cursors; retain the original page's cursors
 separately. A large attachment can occupy a segment on its own; its text resumes
 from the unchanged text offset in later segments. Oversized indivisible metadata
-fails explicitly. Complete structured responses are capped at 160 KiB,
-reserving space for the SDK's duplicate text representation and JSON escaping
-within a 512 KiB tool result.
+fails explicitly. Complete structured responses are capped at 160 KiB, leaving
+transport, human-readable summary and JSON-envelope headroom within a 512 KiB
+tool result.
 
 Signed cursors bind the user, selected organization, thread, run filter, page
 size and operation, and expire 24 hours after the initial page. History cursors
@@ -336,9 +395,9 @@ Canonical validation shares a **single** 32 MiB decoded/database-tail,
 reader's 8 MiB compressed limit per archive and three-second SQL deadline.
 Each distinct thread is reconstructed once per call. Index text fingerprints
 are calculated only after the candidate limit, and bodies over 32 MiB are
-rejected before hashing. Structured pages are capped at 160 KiB, keeping the
-SDK's duplicate text/JSON output within 512 KiB. Resource errors recommend
-narrowing thread/Agent/time filters or retrying; reducing page size cannot make
+rejected before hashing. Structured pages are capped at 160 KiB, leaving
+transport, summary and JSON-envelope headroom within 512 KiB. Resource errors
+recommend narrowing thread/Agent/time filters or retrying; reducing page size cannot make
 one oversized history readable. These source-size caps are not absolute process
 memory limits. Search reuses existing lexical indexes and adds no migration.
 
@@ -417,47 +476,61 @@ unchanged.
 
 Call `get_chat_status` with `threadId` and the complete original `inputRef`
 returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
-match. With no input reference, `runSelection: "latest"` observes the latest
-authorized run by creation time, with run ID as a deterministic tie breaker.
-With an input reference, `runSelection: "input"` observes only its associated
-or reserved run. A queued, revoked, missing or inaccessible association never
-falls back to another run in the conversation.
+match. With no input reference, the service observes the latest authorized run
+by creation time, with run ID as a deterministic tie breaker. With an input
+reference, it observes only that input's associated or reserved run. A queued,
+revoked, missing or inaccessible association never falls back to another run
+in the conversation.
 
-The result separates three observations:
+The result exposes lifecycle as its complete public status model. Internal
+input, delivery, run, cancellation-recovery and output observations are used to
+derive it but are not returned:
 
-| Field                | Meaning                                                                                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
-| `input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
-| `run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
-| `output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
-| `output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
-| `messages`           | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
-| `retryAfterMs`       | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
+| Field          | Meaning                                                                                                                                                    |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle`    | Sole `{phase, outcome, output}` status result. Its strict union permits only documented combinations.                                                      |
+| `messages`     | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `wait`         | For positive `waitMs`, requested/effective wait, elapsed time, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.               |
+| `messagePage`  | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
+| `retryAfterMs` | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
 
-Initial admission is `associated`, even when the run has started: the service
-does not invent a runtime delivery receipt for the initial prompt. `reserved`
-means an active-input handoff is open. `delivered` requires an acknowledged
-active-input receipt and its canonical replacement; it never proves model
-compliance. Several inputs may share one run and its conversation output.
-`visibleMessageRef` can differ from the immutable original `ref` and may be
-null after revocation. Reads never submit, revoke, cancel, change recency or
-mark a conversation read.
+Lifecycle does not expose or prove launch versus steer delivery, model
+compliance, timestamps, cancellation-recovery details or internal output
+reasons. Several inputs may share one run and its conversation output. Reads
+never submit, revoke, cancel, change recency or mark a conversation read.
 
-Run status preserves `queued`, `pending`, `running`, `completed`, `failed`,
-`timeout` and `cancelled`. A terminal run is not enough for output readiness.
-Actual visible assistant output plus the matching canonical terminal marker
-is required for `ready`; unresolved cancellation recovery keeps it `partial`.
-Without messages the state is `pending` until materialization completes, then
-`unavailable` with `no_output`. Missing associations use `no_associated_run`,
-and a deleted or inaccessible associated run uses `run_unavailable`. Terminal
-error/control markers are not fabricated as message references. Read the run
-status to distinguish success, failure and cancellation.
+`lifecycle.phase` is `idle`, `queued`, `running`, `finalizing`, `settled`, or
+`unavailable`. Its `outcome` is `completed`, `failed`, `timeout`,
+`cancelled`, `rejected`, `revoked`, or null; `output` is `pending`, `partial`,
+`ready`, `none`, or `unavailable`. Exact-input observation takes precedence:
+missing or inaccessible input is unavailable, rejected and revoked
+inputs are settled with no output, and queued or reserved inputs remain queued
+without inheriting output from a shared run. With no selected run, the phase is
+idle and output is none; this means no work was selected by that observation,
+not that the conversation has no queued input when `inputRef` was omitted.
+
+For a selected run, queued and pending run states map to the queued phase, and
+running maps to the running phase. A terminal run with pending or partial output
+is finalizing while preserving its completed, failed, timeout, or cancelled
+outcome. It becomes settled only when output is ready or confirmed absent
+(`none`). Failure, timeout and cancellation remain visible even if output is
+ready. Pending cancellation recovery also remains finalizing. This summary is a
+current server observation, not proof of delivery mode, model compliance, or a
+single immutable final answer.
+
+Internally, actual visible assistant output plus the matching canonical
+terminal marker is required for `ready`; unresolved cancellation recovery keeps
+the lifecycle finalizing. Without messages, lifecycle output stays `pending`
+until materialization completes and then becomes `none`. Missing associations
+map to idle or the exact-input outcome above. Terminal error/control markers
+are not fabricated as messages. Read `lifecycle.outcome` to distinguish
+success, failure, timeout and cancellation.
 
 `ready` describes the current materialized view, not an immutable final answer:
-late output can still arrive. Cancellation recovery reports `pending`,
-`complete` or `not_applicable`; a stale recovery barrier does not count as
-complete merely because the scheduler permits another run.
+late output can still arrive. Internally, cancellation recovery can be pending,
+complete or not applicable; a stale recovery barrier does not count as complete
+merely because the scheduler permits another run. Those details are not exposed
+in the public status response.
 
 Status uses the same verified archive plus live tail as message history, with
 run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
@@ -465,23 +538,59 @@ run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
 changes appear on the next call. Every call reconstructs the supported history
 and inherits the limits above, including three-second SQL statements and a
 15-second overall budget. Disconnect cancels the read only.
-Status data is capped at 16 KiB, leaving space for the duplicated MCP wire
-representation below 64 KiB. Oversized historical reference metadata fails
+Status data is capped at 16 KiB, leaving transport, summary and JSON-envelope
+headroom below 64 KiB. Oversized historical reference metadata fails
 explicitly instead of truncating identities. Poll no faster
 than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
 and stop automatic polling when it is null or the tool returns a resource
-error. A queued input with no run has unavailable output but a non-null retry
-delay: continue tracking that original input instead of submitting it again.
+error. A queued input with no run has `lifecycle.output: "pending"` plus a
+non-null retry delay: continue tracking that original input instead of
+submitting it again.
+
+Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
+single immediate observation above. A positive value is a client preference up
+to 60 seconds and is currently clamped to an 8-second server dwell after the
+initial observation. Each fresh observation keeps its independent 15-second
+history budget, so total request time also includes the initial and final
+bounded reads. The waiter follows `retryAfterMs`, completes at most five
+canonical observations, and never holds a transaction, connection, snapshot or
+authorization decision between them.
+
+`wait.outcome` is `ready` only at the same materialized-output condition used by
+ordinary status. `deadline` returns the last fresh retryable state after the
+effective dwell; `status` returns a non-retryable state or a capacity fallback.
+Inspect `returnReason` to distinguish those cases. Deadline, capacity and the
+observation limit are successful reads, not run completion or tool failure.
+Ready wait responses include `messagePage`, a first limit-20 page made from the
+same final authorized history snapshot. Its signed page/content cursors,
+segmentation and artifact authorization are identical to `get_chat_messages`.
+The combined status and page data is capped at 192 KiB; follow the existing
+handoff/cursors for more content.
+
+At most two active waits per principal and 32 per API runtime are admitted after
+the initial retryable observation. Capacity exhaustion returns current status
+immediately. Cancellation or disconnect releases the abortable timer and slot
+and stops only this read; it never cancels or revokes accepted work. These are
+runtime resource limits, not a deployment-global lease. MCP Tasks remains the
+longer-term negotiated protocol for durable work; bounded status wait is the
+compatibility optimization for current clients.
+
+Each positive wait also adds an identifier-free `mcp.chat_status.wait` event to
+the request trace. It records requested/effective/elapsed milliseconds,
+observations, outcome and return reason, principal/runtime occupancy and
+capacity, final input/run/output state categories, and whether content was
+included. Use these fields to validate live timeout margin and capacity before
+raising the server dwell limit.
 
 Original input lookup lasts while the exact canonical input and linkage remain
 in readable retained thread history. It continues through archives after the
 30-day live-event window, within the stated history limits; it is not a new
 permanent identity store. Deleted/mismatched/absent references return
-`input.state: "unavailable"`; corrupt, missing or oversized required archives
-fail the tool explicitly. Historical launch/steer evidence can become `unknown`
-when receipt or callback records are no longer available. None of this extends
-the independent 24-hour send retry guarantee. References and artifact links
-retain their existing user/org/thread authorization and grant no new access.
+`lifecycle.phase: "unavailable"`; corrupt, missing or oversized required
+archives fail the tool explicitly. Historical launch/steer provenance is not
+part of the status response. None of this extends the independent 24-hour send
+retry guarantee. References and artifact links retain their existing
+user/org/thread authorization and grant no new access.
 
 Combined native Codex acceptance in #34936 should exercise send returning a
 null run ID → status by inputRef → queued/associated execution → partial/ready
@@ -584,14 +693,17 @@ Tokens with just these two scopes remain valid for reads.
 A `403 insufficient_scope` challenge names those required scopes.
 Mutation permissions are checked on every tool invocation:
 
-| Tool                                  | Additional required scope |
-| ------------------------------------- | ------------------------- |
-| `create_chat_thread`                  | `okou:chat:manage`        |
-| `send_chat_message`                   | `okou:chat:send`          |
-| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`         |
+| Tool                                  | Additional required scope                                           |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| `create_chat_thread`                  | `okou:chat:manage`; plus `okou:chat:send` when `message` is present |
+| `send_chat_message`                   | `okou:chat:send`                                                    |
+| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`                                                   |
 
-Tools requiring a missing mutation scope are not advertised. Direct invocation
-is rejected and performs no operation.
+`create_chat_thread` is advertised when manage scope is present so the empty
+mode remains discoverable; its message branch independently checks send scope
+at invocation. Other mutation tools requiring a missing scope are not
+advertised. Direct invocation without the applicable scope is rejected and
+performs no operation.
 Title/model editing is delivered separately. A tool argument cannot select or override
 the organization. Existing grants do not automatically gain scopes; clients must
 reauthorize to obtain additional permissions.

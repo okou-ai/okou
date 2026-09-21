@@ -43,18 +43,13 @@ const L = logger("BillingDowngrade");
 const TIER_RANK = Object.freeze<Record<OrgTier, number>>({
   free: 0,
   "limited-free-1": 0,
-  "pro-suspend": 0,
   pro: 1,
   team: 2,
   custom: 3,
 });
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 type CancellationTargetTier = typeof CANCELED_SUBSCRIPTION_TARGET_TIER;
-type LegacyCancellationTargetTier = "pro-suspend";
-type DowngradeTargetTier =
-  | CancellationTargetTier
-  | LegacyCancellationTargetTier
-  | "pro";
+type DowngradeTargetTier = CancellationTargetTier | "pro";
 
 type DowngradeResult =
   | {
@@ -655,10 +650,7 @@ export async function downgradeSubscriptionForOrg(
     org: downgradeOrg,
   };
 
-  if (
-    args.targetTier === CANCELED_SUBSCRIPTION_TARGET_TIER ||
-    args.targetTier === "pro-suspend"
-  ) {
+  if (args.targetTier === CANCELED_SUBSCRIPTION_TARGET_TIER) {
     const effectiveDate = await scheduleCancellationAtPeriodEnd(
       context,
       signal,

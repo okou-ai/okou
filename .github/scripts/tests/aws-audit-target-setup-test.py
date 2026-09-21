@@ -27,6 +27,11 @@ SPEC.loader.exec_module(audit)
 SECRET = "synthetic-provider-secret-must-not-be-logged"
 REQUEST_ID = "8a09df32-b555-47c3-b6a7-5895764899c0"
 SNAPSHOT_ID = "07c0eeed-e8d8-48d7-b5f4-922c4798f962"
+IMMUTABLE_SUB_CLAIM_PREFIX = "repo:okou-ai@242540347/okou@1096175506"
+IMMUTABLE_PRODUCTION_SUBJECT = (
+    f"{IMMUTABLE_SUB_CLAIM_PREFIX}:environment:production"
+)
+LEGACY_PRODUCTION_SUBJECT = "repo:okou-ai/okou:environment:production"
 
 
 class AuditSetupTests(unittest.TestCase):
@@ -50,11 +55,11 @@ class AuditSetupTests(unittest.TestCase):
             self.stubs[service] = stub
         self.env = {
             "RUNNER_TEMP": str(self.root),
-            "GITHUB_REPOSITORY": "vm0-ai/okou",
+            "GITHUB_REPOSITORY": "okou-ai/okou",
             "GITHUB_REPOSITORY_ID": "1096175506",
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
-            "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
             "GITHUB_RUN_ID": "1234",
             "ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.actions.githubusercontent.com/example",
             "ACTIONS_ID_TOKEN_REQUEST_TOKEN": SECRET,
@@ -63,18 +68,15 @@ class AuditSetupTests(unittest.TestCase):
     def client(self, service, **_kwargs):
         return self.clients[service]
 
-    def test_iam_trust_allows_only_current_and_renamed_production_subjects(self):
-        expected_subjects = [
-            "repo:vm0-ai/okou:environment:production",
-            "repo:maxandzoe/okou:environment:production",
-        ]
+    def test_iam_trust_requires_immutable_production_subject(self):
         github_directory = SCRIPT.parent.parent
         for relative_path in [
             "aws-audit-32264/operator-trust.json",
             "kms-migration-32264/role-trust.json",
         ]:
             with self.subTest(path=relative_path):
-                policy = json.loads((github_directory / relative_path).read_text())
+                policy_text = (github_directory / relative_path).read_text()
+                policy = json.loads(policy_text)
                 conditions = policy["Statement"][0]["Condition"]["StringEquals"]
                 self.assertEqual(
                     conditions["token.actions.githubusercontent.com:aud"],
@@ -82,8 +84,9 @@ class AuditSetupTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     conditions["token.actions.githubusercontent.com:sub"],
-                    expected_subjects,
+                    IMMUTABLE_PRODUCTION_SUBJECT,
                 )
+                self.assertNotIn(LEGACY_PRODUCTION_SUBJECT, policy_text)
 
     def main(self, account=audit.ACCOUNT, denied=False, oidc_status="200"):
         sts = self.stubs["sts"]
@@ -136,9 +139,9 @@ class AuditSetupTests(unittest.TestCase):
         return result, json.loads(report_text)
 
     def test_renamed_repository_reaches_the_same_protected_identity_boundary(self):
-        self.env["GITHUB_REPOSITORY"] = "maxandzoe/okou"
+        self.env["GITHUB_REPOSITORY"] = "okou-ai/okou"
         self.env["GITHUB_WORKFLOW_REF"] = (
-            "maxandzoe/okou/.github/workflows/"
+            "okou-ai/okou/.github/workflows/"
             "aws-audit-target-setup.yml@refs/heads/main"
         )
         result, report = self.main(account="072707626411")

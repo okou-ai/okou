@@ -2,20 +2,12 @@ import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
-  ArrowUpRight,
-  CalendarDays,
   ChartNoAxesCombined,
-  FileText,
   Globe,
   Image,
-  Mail,
   MessageSquare,
   Presentation,
-  RefreshCw,
   Route,
-  Sparkles,
-  UserRound,
-  Video,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -42,23 +34,53 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
 /**
- * Both chip rows -- the task types and the ideas inside a type -- are the same
- * object, so the one thing they override carries one definition.
+ * The task-type row. `outline` at its default size is a form button: `px-4`
+ * against a fixed `h-9` leaves 17.25px of ink inset on the sides and 11.5px
+ * above and below, a 1.5 : 1 frame that reads as a submit control rather than a
+ * chip. `px-3` brings the sides to 13.25px, or 1.15 : 1 -- close to even, with
+ * the slight horizontal margin a label needs to not touch its own edge. The
+ * height is deliberately left alone: `h-9` is what sets this row's rhythm under
+ * the composer, and what reads wrong is the frame, not the size.
  *
- * `neutral` at its default size is a form button: `px-4` against a fixed `h-9`
- * leaves 17.25px of ink inset on the sides and 11.5px above and below, a
- * 1.5 : 1 frame that reads as a submit control rather than a chip. `px-3`
- * brings the sides to 13.25px, or 1.15 : 1 -- close to even, with the slight
- * horizontal margin a label needs to not touch its own edge. The height is
- * deliberately left alone: `h-9` is what sets this row's rhythm under the
- * composer, and what reads wrong is the frame, not the size.
+ * `outline` rather than `neutral`, because this row sits directly on the page
+ * canvas. `neutral` fills a chip with `control-surface`, which is gray-50:
+ * 1.02 : 1 against white, so it carries no step in lightness and reaches the
+ * eye as hue alone, on a screen whose canvas, card and copy are otherwise
+ * unsaturated. `outline` keeps the same stroke and leaves the canvas itself
+ * behind the label, so five chips stop reading as the one tinted band on the
+ * page. The idea cards below are the opposite case and keep `neutral`: they
+ * own an opaque `bg-muted` fill, which needs that variant's overlay states.
  *
- * Padding is the caller's to set; the border is not. The stroke stays on the
- * variant's `control-border`, because `--border` is `gray-200` rather than
- * `gray-300` under the color presets, so borrowing it here would take two
- * stops in those palettes instead of one.
+ * Padding is the caller's to set; the border is not.
  */
 const TASK_CHIP = "px-3";
+/**
+ * An idea is a sentence, not a label, so it gets a card rather than the pill
+ * the task row uses. A fixed box is what makes the row read as one set: the
+ * text wraps inside the top of the card and the icon parks on the floor, so a
+ * short idea and a long one still occupy the same shape.
+ *
+ * The card carries no fill of its own. `bg-muted` is warm -- red sits seven
+ * steps above blue -- so a row of them read as tinted against the page rather
+ * than as neutral surfaces. `bg-card` plus the lighter of the product's two
+ * stroke inks draws the box instead: `border-border` rather than the
+ * `control-border` a chip carries, which is the same gray-400 the composer's
+ * own edge uses and was heavier than a 232x116 perimeter wants. Both weights
+ * are the shared `--default-border-width` hairline; only the ink changes.
+ *
+ * `neutral` still owns the states, so hover and pressed keep painting as
+ * overlays above whichever fill is underneath.
+ */
+const TASK_IDEA_CARD = [
+  "h-[116px] w-[232px] flex-col items-start justify-start gap-0",
+  "rounded-xl border-border bg-card p-4 pb-3.5",
+  // A fixed box holds translated copy, so the overflow is contained here
+  // rather than left to spill past the card in a longer language.
+  "overflow-hidden whitespace-normal text-left text-sm font-normal leading-5",
+  // The label is an anonymous flex item and cannot take `order`, so the
+  // ordering is stated from the icon: past the text, then pushed to the floor.
+  "[&_svg]:order-2 [&_svg]:mt-auto",
+].join(" ");
 const TASK_ICONS = {
   workflow: Route,
   presentation: Presentation,
@@ -66,46 +88,13 @@ const TASK_ICONS = {
   website: Globe,
   visualization: ChartNoAxesCombined,
 } as const;
-const IDEA_ICONS = {
-  presentation: [
-    Presentation,
-    MessageSquare,
-    Sparkles,
-    FileText,
-    UserRound,
-    ChartNoAxesCombined,
-    Globe,
-    CalendarDays,
-  ],
-  image: [
-    Image,
-    UserRound,
-    CalendarDays,
-    Sparkles,
-    FileText,
-    ChartNoAxesCombined,
-  ],
-  video: [
-    Image,
-    Video,
-    MessageSquare,
-    CalendarDays,
-    Presentation,
-    RefreshCw,
-    Sparkles,
-    Mail,
-  ],
-  website: [
-    Globe,
-    UserRound,
-    CalendarDays,
-    Sparkles,
-    FileText,
-    Presentation,
-    ArrowUpRight,
-    CalendarDays,
-  ],
-} as const;
+/**
+ * One mark for the whole row. An idea is something the user says, so the same
+ * speech bubble fits every type; the four glyphs this replaced carried nothing
+ * the sentence beside them did not, and four different marks in one row of one
+ * kind of thing are four separate places for the eye to stop.
+ */
+const IdeaIcon = MessageSquare;
 const IMAGE_IDEAS = [
   "productScene",
   "headshot",
@@ -278,7 +267,7 @@ function ComposerTemplateShelf({
       aria-label={label}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
+        <p className="min-w-0 truncate text-base font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
@@ -350,7 +339,6 @@ function ComposerTaskIdeas({
   const insertPrompt = useSet(signals.editor.replacePromptText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const icons = IDEA_ICONS[task];
   return (
     <ComposerRail
       signals={signals}
@@ -358,21 +346,20 @@ function ComposerTaskIdeas({
       label={t(($) => {
         return $.chat.taskChips.ideasLabel;
       })}
-      gap="gap-2"
-      items={ideas.map((idea, index) => {
-        const Icon = icons[index % icons.length]!;
+      gap="gap-3"
+      items={ideas.map((idea) => {
         return (
           <Button
             key={idea.label}
             type="button"
             variant="neutral"
-            className={cn("shrink-0", TASK_CHIP)}
+            className={cn("shrink-0", TASK_IDEA_CARD)}
             onClick={() => {
               insertPrompt(idea.prompt);
               detach(saveDraft(pageSignal), Reason.DomCallback);
             }}
           >
-            <Icon
+            <IdeaIcon
               size={16}
               className="shrink-0 text-muted-foreground"
               aria-hidden
@@ -416,7 +403,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-start gap-2"
+          className="flex flex-wrap items-center justify-center gap-2"
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
@@ -437,7 +424,7 @@ export function ComposerTaskChips({
                 <Button
                   key={task}
                   type="button"
-                  variant="neutral"
+                  variant="outline"
                   className={TASK_CHIP}
                   onClick={() => {
                     selectTask(task);
@@ -461,7 +448,10 @@ export function ComposerTaskChips({
         <div
           key={selected}
           className={cn(
-            "flex min-w-0 flex-col gap-5",
+            // The ideas row and the shelf under it are two groups, not two
+            // members of one: they need visibly more air between them than the
+            // `gap-3` a shelf keeps between its own title and its covers.
+            "flex min-w-0 flex-col gap-12",
             "motion-safe:animate-composer-panel-in",
           )}
         >

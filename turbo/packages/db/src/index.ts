@@ -9,7 +9,6 @@ import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
 import * as agentSchema from "./schema/agent";
-import * as agentRunInferenceSchema from "./schema/agent-run-inference";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
@@ -90,6 +89,8 @@ import * as orgMembersSchema from "./schema/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
 import * as userCacheSchema from "./schema/user-cache";
 import * as exportJobSchema from "./schema/export-job";
+import * as backgroundJobSchema from "./schema/background-job";
+import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
 import * as usagePricingSchema from "./schema/usage-pricing";
@@ -120,7 +121,7 @@ import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-co
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
 import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
 import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
-import * as hostedSiteSchema from "./schema/hosted-site";
+import * as hostedSiteSchema from "./runtime/hosted-site";
 import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
@@ -166,7 +167,6 @@ export const schema = {
   ...desktopAuthHandoffCodeSchema,
   ...agentSchema,
   ...agentRunSchema,
-  ...agentRunInferenceSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
   ...checkpointSchema,
@@ -247,6 +247,8 @@ export const schema = {
   ...orgMembersCacheSchema,
   ...userCacheSchema,
   ...exportJobSchema,
+  ...backgroundJobSchema,
+  ...userExportEntrySchema,
   ...emailSuppressionSchema,
   ...skillSchema,
   ...usagePricingSchema,

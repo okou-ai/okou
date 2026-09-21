@@ -9,14 +9,14 @@
   More done. Same team.
   <br><br>
   <p>
-    <a href="https://deepwiki.com/vm0-ai/vm0"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
-    <a href="https://github.com/vm0-ai/vm0/actions/workflows/turbo.yml?query=event%3Apush+branch%3Amain"><img src="https://github.com/vm0-ai/vm0/actions/workflows/turbo.yml/badge.svg?event=push" alt="CI" /></a>
-    <a href="https://codecov.io/gh/vm0-ai/vm0"><img src="https://codecov.io/gh/vm0-ai/vm0/branch/main/graph/badge.svg?token=UZSMUBBOUC"/></a>
+    <a href="https://deepwiki.com/okou-ai/okou"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
+    <a href="https://github.com/okou-ai/okou/actions/workflows/turbo.yml?query=event%3Amerge_group"><img src="https://github.com/okou-ai/okou/actions/workflows/turbo.yml/badge.svg?event=merge_group" alt="CI" /></a>
+    <a href="https://codecov.io/gh/okou-ai/okou"><img src="https://codecov.io/gh/okou-ai/okou/branch/main/graph/badge.svg?token=UZSMUBBOUC"/></a>
   </p>
 </h2>
 
 <p align="center">
-  <a href="https://trendshift.io/repositories/19748" target="_blank"><img src="https://trendshift.io/api/badge/repositories/19748" alt="vm0-ai%2Fvm0 | Trendshift" width="250" height="55"/></a>
+  <a href="https://trendshift.io/repositories/19748" target="_blank"><img src="https://trendshift.io/api/badge/repositories/19748" alt="okou-ai%2Fokou | Trendshift" width="250" height="55"/></a>
 </p>
 
 <p align="center">
@@ -120,8 +120,8 @@ Model providers are yours to pick — Anthropic, OpenAI, DeepSeek, Google and ot
 ## Coverage
 
 <p align="center">
-  <a href="https://codecov.io/gh/vm0-ai/vm0">
-    <img src="https://codecov.io/gh/vm0-ai/vm0/graphs/sunburst.svg?token=UZSMUBBOUC" alt="Codecov Sunburst" width="400">
+  <a href="https://codecov.io/gh/okou-ai/okou">
+    <img src="https://codecov.io/gh/okou-ai/okou/graphs/sunburst.svg?token=UZSMUBBOUC" alt="Codecov Sunburst" width="400">
   </a>
 </p>
 
@@ -129,8 +129,8 @@ Model providers are yours to pick — Anthropic, OpenAI, DeepSeek, Google and ot
 
 ## Contribute
 
-<p><a href="https://github.com/vm0-ai/vm0/blob/main/CONTRIBUTING.md">
-  <img src="https://contrib.rocks/image?repo=vm0-ai/vm0" />
+<p><a href="https://github.com/okou-ai/okou/blob/main/CONTRIBUTING.md">
+  <img src="https://contrib.rocks/image?repo=okou-ai/okou" />
 </a></p>
 
 ![Alt](https://repobeats.axiom.co/api/embed/ef46db5e11f5146fcc8af07077a79d789efdfbe5.svg "Repobeats analytics image")

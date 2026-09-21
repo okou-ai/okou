@@ -1,49 +1,39 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test, vi } from "vitest";
 
+import { click } from "../../../__tests__/page-helper.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
+  chatScrollContainer,
   context,
   mockChatLifecycleWithoutBrowserSession,
-  mockResizeObserver,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
 
-const THREAD_IDS = {
-  overview: "b0000000-0000-4000-a000-000000000821",
-  disabled: "b0000000-0000-4000-a000-000000000822",
-  highlight: "b0000000-0000-4000-a000-000000000824",
-  jump: "b0000000-0000-4000-a000-000000000825",
-  page: "b0000000-0000-4000-a000-000000000826",
-  activation: "b0000000-0000-4000-a000-000000000827",
-  runWork: "b0000000-0000-4000-a000-000000000828",
-} as const;
+const THREAD_ID = "b0000000-0000-4000-a000-000000000825";
+const RUN_WORK_THREAD_ID = "b0000000-0000-4000-a000-000000000828";
+const VIEWPORT_HEIGHT = 600;
+const ROW_HEIGHT = 240;
+const ANCHOR_SELECTOR = "[data-chat-scroll-anchor-event-id]";
 
-const TURN_STEP_PX = 100;
-const TURN_HEIGHT_PX = 72;
-const DEFAULT_VIEWPORT_HEIGHT_PX = 600;
-const DEFAULT_RAIL_HEIGHT_PX = 320;
-
-function conversationPairs(
-  pairCount: number,
-  fixtureKey: string,
-): MockChatEventInput[] {
-  return Array.from({ length: pairCount }, (_, index) => {
+function conversationEvents(count: number): MockChatEventInput[] {
+  return Array.from({ length: count }, (_, index) => {
     const number = index + 1;
-    const runId = `${fixtureKey}-run-${number.toString()}`;
+    const runId = `locator-run-${number}`;
     const minute = index.toString().padStart(2, "0");
     return [
       {
-        id: `${fixtureKey}-question-${number.toString()}`,
+        id: `locator-question-${number}`,
         role: "user" as const,
-        content: `Locator question ${number.toString()}`,
+        content: `Locator question ${number}`,
         runId,
         createdAt: `2026-08-01T10:${minute}:00.000Z`,
       },
       {
-        id: `${fixtureKey}-answer-${number.toString()}`,
+        id: `locator-answer-${number}`,
         role: "assistant" as const,
-        content: `Locator answer ${number.toString()}`,
+        content: `Locator answer ${number}`,
         runId,
         runLifecycleEvent: "completed" as const,
         createdAt: `2026-08-01T10:${minute}:30.000Z`,
@@ -57,7 +47,7 @@ function foldedRunWorkConversation(): MockChatEventInput[] {
   const goalRunId = "locator-run-work-goal";
   const goalGroupId = "locator-run-work-goal-group";
   return [
-    ...conversationPairs(6, "locator-work-filler"),
+    ...conversationEvents(7),
     {
       id: "locator-work-question",
       role: "user",
@@ -125,466 +115,258 @@ function foldedRunWorkConversation(): MockChatEventInput[] {
   ];
 }
 
-function requiredElement(selector: string, root: ParentNode = document) {
-  const element = root.querySelector(selector);
-  if (!(element instanceof HTMLElement)) {
-    throw new Error(`Required element not found: ${selector}`);
+function anchors(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(ANCHOR_SELECTOR));
+}
+
+/** Happy DOM has no layout engine; retain real rendering and navigation. */
+function mockChatGeometry(): void {
+  const positions = new WeakMap<HTMLElement, number>();
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  const originalScrollTo = HTMLElement.prototype.scrollTo;
+
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "scrollContainer")
+        ? VIEWPORT_HEIGHT
+        : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "scrollContainer")
+        ? anchors(this).length * ROW_HEIGHT + VIEWPORT_HEIGHT
+        : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollTop", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return positions.get(this) ?? 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollTop", "set").mockImplementation(
+    function (this: HTMLElement, value: number) {
+      positions.set(
+        this,
+        Object.hasOwn(this.dataset, "scrollContainer")
+          ? Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight))
+          : value,
+      );
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollTo").mockImplementation(function (
+    this: HTMLElement,
+    options?: ScrollToOptions | number,
+    y?: number,
+  ) {
+    if (!Object.hasOwn(this.dataset, "scrollContainer")) {
+      if (typeof options === "number") {
+        originalScrollTo.call(this, options, y ?? 0);
+      } else {
+        originalScrollTo.call(
+          this,
+          options?.left ?? this.scrollLeft,
+          options?.top ?? this.scrollTop,
+        );
+      }
+      return;
+    }
+    this.scrollTop =
+      typeof options === "number" ? (y ?? 0) : (options?.top ?? this.scrollTop);
+  });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (Object.hasOwn(this.dataset, "scrollContainer")) {
+        return new DOMRect(0, 0, 800, VIEWPORT_HEIGHT);
+      }
+      if (Object.hasOwn(this.dataset, "conversationLocator")) {
+        return new DOMRect(0, 0, 24, VIEWPORT_HEIGHT);
+      }
+      const container = this.closest<HTMLElement>("[data-scroll-container]");
+      if (container && this.matches(ANCHOR_SELECTOR)) {
+        return new DOMRect(
+          0,
+          anchors(container).indexOf(this) * ROW_HEIGHT - container.scrollTop,
+          800,
+          80,
+        );
+      }
+      return originalRect.call(this);
+    },
+  );
+}
+
+function requiredElement(
+  selector: string,
+  root: ParentNode = document,
+): HTMLElement {
+  const element = root.querySelector<HTMLElement>(selector);
+  if (!element) {
+    throw new Error(`Expected ${selector}`);
   }
   return element;
 }
 
-function topLevelTurnElements(content: HTMLElement): HTMLElement[] {
-  return Array.from(
-    content.querySelectorAll('[data-role="user"], [data-role="assistant"]'),
-  ).filter((element): element is HTMLElement => {
-    return (
-      element instanceof HTMLElement &&
-      !element.parentElement?.closest(
-        '[data-role="user"], [data-role="assistant"]',
-      )
-    );
-  });
-}
-
-function defineRect(
-  element: HTMLElement,
-  top: () => number,
-  height: number,
-  width = 800,
-): void {
-  Object.defineProperty(element, "getBoundingClientRect", {
-    configurable: true,
-    value: () => {
-      return new DOMRect(0, top(), width, height);
-    },
-  });
-}
-
-interface LocatorGeometry {
-  readonly rail: HTMLElement;
-  readonly container: HTMLElement;
-  readonly scrollRequests: ScrollToOptions[];
-  readonly readScrollTop: () => number;
-  readonly setScrollHeight: (value: number) => void;
-  readonly setScrollTop: (value: number) => void;
-}
-
-function installLocatorGeometry({
-  clientHeight = DEFAULT_VIEWPORT_HEIGHT_PX,
-  railHeight = DEFAULT_RAIL_HEIGHT_PX,
-  scrollHeight: requestedScrollHeight,
-  initialScrollTop,
-}: {
-  readonly clientHeight?: number;
-  readonly railHeight?: number;
-  readonly scrollHeight?: number;
-  readonly initialScrollTop?: number;
-} = {}): LocatorGeometry {
-  const container = requiredElement("[data-scroll-container]");
-  const content = requiredElement("[data-message-container]", container);
-  const rail = requiredElement("[data-conversation-locator]");
-  const turns = topLevelTurnElements(content);
-  let scrollHeight =
-    requestedScrollHeight ??
-    Math.max(turns.length * TURN_STEP_PX, clientHeight * 4);
-  let scrollTop = initialScrollTop ?? Math.max(0, scrollHeight - clientHeight);
-  const scrollRequests: ScrollToOptions[] = [];
-
-  Object.defineProperties(container, {
-    clientHeight: {
-      configurable: true,
-      get: () => {
-        return clientHeight;
-      },
-    },
-    scrollHeight: {
-      configurable: true,
-      get: () => {
-        return scrollHeight;
-      },
-    },
-    scrollTop: {
-      configurable: true,
-      get: () => {
-        return scrollTop;
-      },
-      set: (value: number) => {
-        scrollTop = value;
-      },
-    },
-    scrollTo: {
-      configurable: true,
-      value: (optionsOrX?: ScrollToOptions | number, y?: number): void => {
-        const options: ScrollToOptions =
-          typeof optionsOrX === "object"
-            ? optionsOrX
-            : { left: optionsOrX, top: y };
-        scrollRequests.push(options);
-        if (options.top !== undefined) {
-          scrollTop = options.top;
-        }
-      },
-    },
-  });
-  Object.defineProperty(rail, "clientHeight", {
-    configurable: true,
-    get: () => {
-      return railHeight;
-    },
-  });
-
-  defineRect(
-    container,
-    () => {
-      return 0;
-    },
-    clientHeight,
-  );
-  defineRect(
-    content,
-    () => {
-      return -scrollTop;
-    },
-    scrollHeight,
-  );
-  defineRect(
-    rail,
-    () => {
-      return 0;
-    },
-    railHeight,
-    56,
-  );
-
-  for (const [index, turn] of turns.entries()) {
-    const logicalTop = index * TURN_STEP_PX;
-    const readTop = () => {
-      return logicalTop - scrollTop;
-    };
-    defineRect(turn, readTop, TURN_HEIGHT_PX);
-    const anchor = turn.matches("[data-chat-scroll-anchor-event-id]")
-      ? turn
-      : turn.querySelector("[data-chat-scroll-anchor-event-id]");
-    if (anchor instanceof HTMLElement && anchor !== turn) {
-      defineRect(anchor, readTop, TURN_HEIGHT_PX);
-    }
+function messageAnchor(text: string, container: HTMLElement): HTMLElement {
+  const message = within(container).getByText(text);
+  const anchor = message.closest<HTMLElement>(ANCHOR_SELECTOR);
+  if (!anchor) {
+    throw new Error(`Expected a scroll anchor for ${text}`);
   }
-
-  return {
-    rail,
-    container,
-    scrollRequests,
-    readScrollTop: () => {
-      return scrollTop;
-    },
-    setScrollHeight: (value) => {
-      scrollHeight = value;
-    },
-    setScrollTop: (value) => {
-      scrollTop = value;
-    },
-  };
+  return anchor;
 }
 
-function locatorTicks(): HTMLElement[] {
-  return Array.from(document.querySelectorAll("[data-locator-tick]")).filter(
-    (element): element is HTMLElement => {
-      return element instanceof HTMLElement;
-    },
+function messageOffset(text: string, container: HTMLElement): number {
+  const anchor = messageAnchor(text, container);
+  return (
+    anchor.getBoundingClientRect().top - container.getBoundingClientRect().top
   );
 }
 
-async function expectLocatorTickCount(count: number): Promise<HTMLElement[]> {
-  return await waitFor(() => {
-    const ticks = locatorTicks();
-    expect(ticks).toHaveLength(count);
-    return ticks;
-  });
-}
-
-function requiredTick(turnIndex: number): HTMLElement {
-  return requiredElement(
-    `[data-locator-tick][data-turn-index="${turnIndex.toString()}"]`,
-  );
-}
-
-function movePointerToTick(rail: HTMLElement, tick: HTMLElement): void {
-  const y = Number.parseFloat(tick.style.top);
-  fireEvent.pointerMove(rail, { clientX: 24, clientY: y });
-}
-
-async function expectHotTick(turnIndex: number): Promise<void> {
-  await waitFor(() => {
-    const hotTicks = Array.from(
-      document.querySelectorAll("[data-locator-hot]"),
-    );
-    expect(hotTicks).toHaveLength(1);
-    expect(hotTicks[0]).toHaveAttribute(
-      "data-turn-index",
-      turnIndex.toString(),
-    );
-  });
-}
-
-function locatorPreview(): HTMLElement {
-  return requiredElement("[data-conversation-locator-preview]");
-}
-
-function turnForText(text: string): HTMLElement {
-  const turn = queryTurnForText(text);
-  if (!(turn instanceof HTMLElement)) {
-    throw new Error(`Turn not found for text: ${text}`);
-  }
-  return turn;
-}
-
-function queryTurnForText(text: string): HTMLElement | null {
-  const content = requiredElement("[data-message-container]");
-  const match = screen.queryAllByText(text).find((candidate) => {
-    return content.contains(candidate);
-  });
-  const turn = match?.closest('[data-role="user"], [data-role="assistant"]');
-  return turn instanceof HTMLElement ? turn : null;
-}
-
-function textForTick(tick: HTMLElement): string {
-  const turnIndex = Number(tick.dataset.turnIndex);
-  const pairNumber = Math.floor(turnIndex / 2) + 1;
-  return tick.dataset.locatorTick === "user"
-    ? `Locator question ${pairNumber.toString()}`
-    : `Locator answer ${pairNumber.toString()}`;
-}
-
-async function pointAndSelectTurn(
-  rail: HTMLElement,
-  turnIndex: number,
-  previewText: string,
-): Promise<void> {
-  movePointerToTick(rail, requiredTick(turnIndex));
-  await expectHotTick(turnIndex);
-  await waitFor(() => {
-    expect(locatorPreview()).toHaveTextContent(previewText);
-  });
-  fireEvent.click(rail);
-}
-
-test("A long conversation has a bounded, readable locator overview", async () => {
-  const resize = mockResizeObserver();
+test("sampled user markers preview and navigate beyond the rendered conversation", async () => {
+  const user = userEvent.setup();
+  mockChatGeometry();
   mockChatLifecycleWithoutBrowserSession({
-    threadId: THREAD_IDS.overview,
-    threadTitle: "Locator overview",
-    chatEvents: conversationPairs(16, "locator-overview"),
+    threadId: THREAD_ID,
+    threadTitle: "Locator sampled history",
+    chatEvents: conversationEvents(30),
   });
   await setupPage({
     context,
-    path: `/chats/${THREAD_IDS.overview}`,
+    path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
 
-  await screen.findByText("Locator answer 16");
-  installLocatorGeometry();
-  fireEvent.resize(window);
-  resize.automationAll();
+  await screen.findByText("Locator answer 30");
+  const container = chatScrollContainer();
+  expect(
+    within(container).queryByText("Locator question 1"),
+  ).not.toBeInTheDocument();
 
-  const ticks = await expectLocatorTickCount(24);
-  const tops = ticks.map((tick) => {
-    return Number.parseFloat(tick.style.top);
+  // Native scrolling reports the initial tail position after the DOM commit.
+  fireEvent.scroll(container);
+  const rail = requiredElement("[data-conversation-locator]");
+  await waitFor(() => {
+    expect(rail.querySelectorAll("[data-locator-tick]")).toHaveLength(24);
   });
-  const gaps = tops.slice(1).map((top, index) => {
-    return top - tops[index]!;
+
+  // The compact 24-mark scale has a 10px pitch around the rail's center.
+  const firstMarkY = VIEWPORT_HEIGHT / 2 - 115;
+  const lastMarkY = VIEWPORT_HEIGHT / 2 + 115;
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: firstMarkY },
   });
-  expect(new Set(gaps).size).toBe(1);
-  expect(gaps[0]).toBeGreaterThan(0);
-  expect(ticks).toHaveLength(24);
+  const preview = requiredElement("[data-conversation-locator-preview]");
+  await waitFor(() => {
+    expect(preview).toHaveTextContent("Locator question 1");
+  });
+  click(rail);
+
+  await within(container).findByText("Locator question 1");
+  await waitFor(() => {
+    // The first message cannot move below the top edge without overscrolling.
+    expect(messageOffset("Locator question 1", container)).toBe(0);
+    expect(
+      messageAnchor("Locator question 1", container).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  const firstHighlight = requiredElement(
+    "[data-locator-landed]",
+    messageAnchor("Locator question 1", container),
+  );
+  // A repeat selection starts the CSS landing animation again on this turn.
+  click(rail);
+  await waitFor(() => {
+    expect(firstHighlight).not.toBeInTheDocument();
+    expect(
+      messageAnchor("Locator question 1", container).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: lastMarkY },
+  });
+  await waitFor(() => {
+    expect(preview).toHaveTextContent("Locator question 30");
+  });
+  click(rail);
+  await waitFor(() => {
+    expect(messageOffset("Locator question 30", container)).toBeCloseTo(168);
+    expect(messageOffset("Locator question 1", container)).toBeLessThan(0);
+    expect(
+      messageAnchor("Locator question 30", container).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      messageAnchor("Locator question 1", container).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  await user.unhover(rail);
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
 });
 
-test("The conversation locator follows folded goal continuation work", async () => {
-  const resize = mockResizeObserver();
+test("folded goal continuations do not create locator markers", async () => {
+  const user = userEvent.setup();
+  mockChatGeometry();
   mockChatLifecycleWithoutBrowserSession({
-    threadId: THREAD_IDS.runWork,
+    threadId: RUN_WORK_THREAD_ID,
     threadTitle: "Run work locator",
     chatEvents: foldedRunWorkConversation(),
   });
   await setupPage({
     context,
-    path: `/chats/${THREAD_IDS.runWork}`,
+    path: `/chats/${RUN_WORK_THREAD_ID}`,
     host: "app.okou.ai",
   });
 
   await screen.findByText("All deployment regions are healthy");
-  expect(screen.queryByText("Checked the first deployment region")).toBeNull();
+  const container = chatScrollContainer();
   expect(
-    screen.queryByText("Keep checking the deployment regions"),
+    within(container).queryByText("Checked the first deployment region"),
   ).not.toBeInTheDocument();
-  const collapsedGeometry = installLocatorGeometry({ clientHeight: 360 });
-  fireEvent.resize(window);
-  resize.automationAll();
-  await expectLocatorTickCount(14);
-  fireEvent.pointerEnter(collapsedGeometry.rail);
-
-  await pointAndSelectTurn(
-    collapsedGeometry.rail,
-    13,
-    "All deployment regions are healthy",
-  );
-  await waitFor(() => {
-    expect(turnForText("All deployment regions are healthy")).toHaveAttribute(
-      "data-locator-landed",
-      "",
-    );
-  });
-
   expect(
-    screen.queryByText("Keep checking the deployment regions"),
+    within(container).queryByText("Keep checking the deployment regions"),
   ).not.toBeInTheDocument();
-});
 
-test("The conversation locator makes the pointed turn easy to identify", async () => {
-  const resize = mockResizeObserver();
-  mockChatLifecycleWithoutBrowserSession({
-    threadId: THREAD_IDS.highlight,
-    threadTitle: "Locator highlighting",
-    chatEvents: conversationPairs(16, "locator-highlight"),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_IDS.highlight}`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText("Locator answer 16");
-  const geometry = installLocatorGeometry();
-  fireEvent.resize(window);
-  resize.automationAll();
-  const ticks = await expectLocatorTickCount(24);
-  const selected = ticks[12]!;
-  const near = ticks[14]!;
-  const farther = ticks[16]!;
-  const selectedIndex = Number(selected.dataset.turnIndex);
-
-  fireEvent.pointerEnter(geometry.rail);
-  movePointerToTick(geometry.rail, selected);
-  await expectHotTick(selectedIndex);
-
-  const selectedWidth = Number.parseFloat(selected.style.width);
-  const nearWidth = Number.parseFloat(near.style.width);
-  const fartherWidth = Number.parseFloat(farther.style.width);
-  expect(selectedWidth).toBeGreaterThan(nearWidth);
-  expect(nearWidth).toBeGreaterThan(fartherWidth);
-});
-
-test("Selecting a locator marker jumps to that conversation turn", async () => {
-  const resize = mockResizeObserver();
-  mockChatLifecycleWithoutBrowserSession({
-    threadId: THREAD_IDS.jump,
-    threadTitle: "Locator jumping",
-    chatEvents: conversationPairs(16, "locator-jump"),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_IDS.jump}`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText("Locator answer 16");
-  const geometry = installLocatorGeometry();
-  fireEvent.resize(window);
-  resize.automationAll();
-  const initialTicks = await expectLocatorTickCount(24);
-  const firstTarget = initialTicks.find((tick) => {
-    return queryTurnForText(textForTick(tick)) !== null;
-  });
-  if (!firstTarget) {
-    throw new Error("Rendered locator target not found");
-  }
-  const firstIndex = Number(firstTarget.dataset.turnIndex);
-  const firstText = textForTick(firstTarget);
-  const firstTurn = turnForText(firstText);
-
-  fireEvent.pointerEnter(geometry.rail);
-  await pointAndSelectTurn(geometry.rail, firstIndex, firstText);
+  fireEvent.scroll(container);
+  const rail = requiredElement("[data-conversation-locator]");
   await waitFor(() => {
-    expect(firstTurn).toHaveAttribute("data-locator-landed", "");
-    expect(geometry.scrollRequests.at(-1)).toMatchObject({
-      behavior: "smooth",
-    });
+    // Seven earlier requests and the real trigger remain visible user turns.
+    expect(rail.querySelectorAll("[data-locator-tick]")).toHaveLength(8);
   });
-  const firstLandingTop = geometry.scrollRequests.at(-1)?.top;
 
-  const secondGeometry = installLocatorGeometry({
-    initialScrollTop: geometry.readScrollTop(),
+  await user.pointer({
+    target: rail,
+    coords: { clientX: 12, clientY: VIEWPORT_HEIGHT / 2 + 35 },
   });
-  fireEvent.resize(window);
-  resize.automationAll();
-  const currentTicks = await expectLocatorTickCount(24);
-  const secondTarget = [...currentTicks].reverse().find((tick) => {
-    return (
-      Number(tick.dataset.turnIndex) !== firstIndex &&
-      queryTurnForText(textForTick(tick)) !== null
+  const preview = requiredElement("[data-conversation-locator-preview]");
+  await waitFor(() => {
+    expect(preview).toHaveTextContent("Review the deployment");
+    expect(preview).not.toHaveTextContent(
+      "Keep checking the deployment regions",
     );
   });
-  if (!secondTarget) {
-    throw new Error("Second locator target not found");
-  }
-  const secondIndex = Number(secondTarget.dataset.turnIndex);
-  const secondText = textForTick(secondTarget);
-  const secondTurn = turnForText(secondText);
-
-  await pointAndSelectTurn(secondGeometry.rail, secondIndex, secondText);
-  await waitFor(() => {
-    expect(secondTurn).toHaveAttribute("data-locator-landed", "");
-    expect(firstTurn).not.toHaveAttribute("data-locator-landed");
-    expect(secondGeometry.scrollRequests.length).toBeGreaterThan(0);
-  });
-  expect(secondGeometry.scrollRequests.at(-1)).toMatchObject({
-    behavior: "smooth",
-  });
-  expect(secondGeometry.scrollRequests.at(-1)?.top).not.toBe(firstLandingTop);
-});
-
-test("The conversation locator can page through older turns", async () => {
-  const resize = mockResizeObserver();
-  mockChatLifecycleWithoutBrowserSession({
-    threadId: THREAD_IDS.page,
-    threadTitle: "Locator paging",
-    chatEvents: conversationPairs(16, "locator-page"),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_IDS.page}`,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText("Locator answer 16");
-  const geometry = installLocatorGeometry();
-  fireEvent.resize(window);
-  resize.automationAll();
-  const initialTicks = await expectLocatorTickCount(24);
-  const initialFirstIndex = Number(initialTicks[0]!.dataset.turnIndex);
-  const originalScrollTop = geometry.readScrollTop();
-
-  fireEvent.pointerEnter(geometry.rail);
-  movePointerToTick(geometry.rail, initialTicks[12]!);
-  await expectHotTick(Number(initialTicks[12]!.dataset.turnIndex));
-  const wheel = new WheelEvent("wheel", {
-    bubbles: true,
-    cancelable: true,
-    deltaY: -52,
-  });
-  geometry.rail.dispatchEvent(wheel);
+  click(rail);
 
   await waitFor(() => {
-    expect(Number(locatorTicks()[0]?.dataset.turnIndex)).toBe(
-      initialFirstIndex - 2,
-    );
-  });
-  expect(wheel.defaultPrevented).toBeTruthy();
-  expect(geometry.readScrollTop()).toBe(originalScrollTop);
-
-  fireEvent.pointerLeave(geometry.rail);
-  await waitFor(() => {
-    expect(Number(locatorTicks()[0]?.dataset.turnIndex)).toBe(
-      initialFirstIndex,
-    );
+    expect(messageOffset("Review the deployment", container)).toBeCloseTo(168);
+    expect(
+      messageAnchor("Review the deployment", container).querySelector(
+        "[data-locator-landed]",
+      ),
+    ).toBeInTheDocument();
   });
 });

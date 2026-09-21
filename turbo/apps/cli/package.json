@@ -1,11 +1,11 @@
 {
   "name": "@okouai/cli",
-  "version": "9.346.0",
+  "version": "9.348.5",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vm0-ai/vm0",
+    "url": "https://github.com/okou-ai/okou",
     "directory": "turbo/apps/cli"
   },
   "type": "module",

@@ -115,7 +115,7 @@ export const sshCommand = new Command("ssh")
   .addHelpText(
     "after",
     `
-Connections use the owner's saved Direct or Cloudflare Access configuration; credentials stay outside the sandbox and no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
+Connections use the owner's saved Direct or Cloudflare Access settings; credentials stay outside the sandbox and no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
 
 Command guide (read the relevant subcommand's --help before use):
   - Find hosts: okou ssh host list --json

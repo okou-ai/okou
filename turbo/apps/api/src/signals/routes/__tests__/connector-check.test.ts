@@ -42,7 +42,7 @@ const TEST_APP_ROUTES = Object.freeze([
   ...testCronCleanupSandboxesStateRoutes,
 ]);
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -337,7 +337,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       body: JSON.stringify({
         mode: "url",
         method: "GET",
-        url: "https://api.github.com/repos/vm0-ai/vm0",
+        url: "https://api.github.com/repos/okou-ai/okou",
         unexpected: true,
       }),
     });
@@ -346,7 +346,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const invalidMethod = await checkWithSession(actor, {
       mode: "url",
       method: "TRACE",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
     });
     expect(invalidMethod.body).toStrictEqual({
       outcome: "unsafe-input",
@@ -354,7 +354,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
 
     for (const url of [
-      "api.github.com/repos/vm0-ai/vm0",
+      "api.github.com/repos/okou-ai/okou",
       "https://user@example.com/path",
       "https://api%2eexample.com/path",
       "https://例子.example/path",
@@ -388,7 +388,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const base = {
       mode: "url" as const,
       method: "GET",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
     };
 
     const canonical = await checkWithSession(actor, {
@@ -419,7 +419,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const response = await checkWithSession(actor, {
       mode: "url",
       method: "GET",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
     });
 
     expect(response.body).toMatchObject({
@@ -507,7 +507,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const siblingAlias = await checkWithSession(actor, {
       mode: "url",
       method: "GET",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
       environmentName: "GH_TOKEN",
     });
     expect(siblingAlias.body).toMatchObject({
@@ -560,7 +560,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const mismatch = await checkWithSession(actor, {
       mode: "url",
       method: "GET",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
       connectorSlug: "slack",
     });
     expect(mismatch.body).toMatchObject({
@@ -571,7 +571,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const notOwned = await checkWithSession(actor, {
       mode: "url",
       method: "GET",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
       environmentName: "SLACK_TOKEN",
     });
     expect(notOwned.body).toMatchObject({
@@ -610,7 +610,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const segmentBoundary = await checkWithSession(actor, {
       mode: "url",
       method: "GET",
-      url: "https://api.github.com.evil.example/repos/vm0-ai/vm0",
+      url: "https://api.github.com.evil.example/repos/okou-ai/okou",
     });
     expect(segmentBoundary.body).toStrictEqual({
       outcome: "no-match",

@@ -3,7 +3,6 @@ import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
-import { composerSuggestionCollisionPadding } from "./slash-workflow.tsx";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 
 function scrollSelectedSuggestionIntoView(
@@ -43,7 +42,6 @@ export function ComposerMentionSuggestionMenu({
       side="top"
       align="start"
       sideOffset={8}
-      collisionPadding={composerSuggestionCollisionPadding()}
       updatePositionStrategy="always"
       initialFocus={false}
       className="flex h-[min(16rem,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0 md:h-[min(20rem,var(--available-height))]"

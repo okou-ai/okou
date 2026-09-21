@@ -349,10 +349,8 @@ describe("membership refresh through public PAT and Agent requests", () => {
     const controller = new AbortController();
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
-    let reads = 0;
     server.use(
       http.get(membershipUrl, async () => {
-        reads += 1;
         if (!started.settled()) {
           started.resolve();
         }
@@ -364,6 +362,9 @@ describe("membership refresh through public PAT and Agent requests", () => {
     const survivors = Array.from({ length: 8 }, () => {
       return statusRequest(agent);
     });
+    // Starting a route request does not prove it joined this refresh before
+    // cancellation. A later caller may validly establish a replacement owner;
+    // the cold-refresh case above owns the one-read coalescing assertion.
     await started.promise;
     controller.abort();
     expect((await cancelled).status).toBe(500);
@@ -371,7 +372,6 @@ describe("membership refresh through public PAT and Agent requests", () => {
     for (const survivor of await Promise.all(survivors)) {
       expect(survivor.status).toBe(404);
     }
-    expect(reads).toBe(1);
   });
 
   it("releases abandoned work and ignores a late negative result", async () => {

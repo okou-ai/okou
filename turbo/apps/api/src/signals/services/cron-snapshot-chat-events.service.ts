@@ -28,6 +28,7 @@ import {
   chatEventSnapshots,
 } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 
 import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -1167,8 +1168,13 @@ const collectR2SnapshotGarbage$ = command(
           .from(chatEventSnapshots)
           .where(inArray(chatEventSnapshots.objectKey, keys));
         signal.throwIfAborted();
+        const exportReferences = await db
+          .selectDistinct({ objectKey: userExportEntries.sourceKey })
+          .from(userExportEntries)
+          .where(inArray(userExportEntries.sourceKey, keys));
+        signal.throwIfAborted();
         const referencesByKey = new Map(
-          references.map((reference) => {
+          [...references, ...exportReferences].map((reference) => {
             return [reference.objectKey, reference] as const;
           }),
         );

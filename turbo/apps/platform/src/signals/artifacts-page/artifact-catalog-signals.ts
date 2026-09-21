@@ -2,16 +2,9 @@ import { command } from "ccstate";
 import {
   artifactCatalogContract,
   type ArtifactCatalogKind,
-  type ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-
-import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import { downloadAttachment$ } from "../attachment-download.ts";
 import { isTextPreviewKind } from "../text-preview.ts";
-import {
-  classifyChatAttachment,
-  type BodyPreviewKind,
-} from "../chat-page/parse-body-blocks.ts";
 import {
   closeLightboxWithDialogExit$,
   openAudioLightbox$,
@@ -27,7 +20,8 @@ import {
   updateSearchParams$,
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { onRef } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
+import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
 import { createArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
 
 /**
@@ -175,44 +169,19 @@ export const closeArtifactCatalogPreview$ = command(
   },
 );
 
-export function artifactDetailPreview(detail: ArtifactDetail): {
-  readonly kind: BodyPreviewKind;
-  readonly url: string;
-  readonly filename: string;
-} {
-  if (detail.kind === "shared-thread") {
-    return {
-      kind: "html",
-      url: new URL(
-        `/share/threads/${encodeURIComponent(detail.sharedThread.id)}`,
-        window.location.origin,
-      ).toString(),
-      filename: detail.title,
-    };
-  }
-  if (detail.kind === "hosted-site" || detail.kind === "presentation") {
-    return { kind: "html", url: detail.site.url, filename: detail.title };
-  }
-  return {
-    kind: classifyChatAttachment({
-      filename: detail.file.filename,
-      url: detail.file.url,
-      contentType: detail.file.contentType,
-    }),
-    url: publicAttachmentUrl(detail.file.url),
-    filename: detail.file.filename,
-  };
-}
-
 /**
  * Open a card. The kind entity is fetched here rather than with the list, so
  * browsing the grid never pays for detail queries.
  */
+const resetOpenArtifactSignal$ = resetSignal();
+
 export const openArtifact$ = command(
   async ({ get, set }, artifactId: string, signal: AbortSignal) => {
+    const openSignal = set(resetOpenArtifactSignal$, signal);
     set(pageCatalog.selectArtifact$, artifactId);
     const detail = await get(pageCatalog.selectedArtifactDetail$);
     signal.throwIfAborted();
+    openSignal.throwIfAborted();
     if (!detail) {
       return;
     }
@@ -225,8 +194,29 @@ export const openArtifact$ = command(
     }
 
     const preview = artifactDetailPreview(detail);
+    if (preview.kind === "file") {
+      await set(
+        downloadAttachment$,
+        { filename: preview.filename, url: preview.url },
+        openSignal,
+      );
+      signal.throwIfAborted();
+      openSignal.throwIfAborted();
+      return;
+    }
+    const previewSignals = await set(
+      pageCatalog.ensureSelectedArtifactPreview$,
+      artifactId,
+      openSignal,
+    );
+    signal.throwIfAborted();
+    openSignal.throwIfAborted();
+    if (!previewSignals) {
+      return;
+    }
     const base = {
       filename: preview.filename,
+      preview: previewSignals,
       showSizeInSubtitle: false,
       splitViewAvailable: false,
       url: preview.url,
@@ -241,15 +231,6 @@ export const openArtifact$ = command(
     }
     if (preview.kind === "audio") {
       set(openAudioLightbox$, base);
-      return;
-    }
-    if (preview.kind === "file") {
-      await set(
-        downloadAttachment$,
-        { filename: preview.filename, url: preview.url },
-        signal,
-      );
-      signal.throwIfAborted();
       return;
     }
     if (isTextPreviewKind(preview.kind)) {

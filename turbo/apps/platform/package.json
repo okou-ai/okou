@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.923.1",
+  "version": "0.929.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -58,6 +58,7 @@
     "@tiptap/pm": "3.31.0",
     "@tiptap/react": "3.31.0",
     "ably": "^2.21.0",
+    "anchorme": "3.0.8",
     "bs58": "6.0.0",
     "ccstate": "^5.5.0",
     "ccstate-react": "^5.5.0",
@@ -70,6 +71,7 @@
     "micromark-util-sanitize-uri": "^2.0.1",
     "path-to-regexp": "^8.4.0",
     "posthog-js": "^1.422.5",
+    "qrcode.react": "4.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-i18next": "^17.0.11",

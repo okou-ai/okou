@@ -87,7 +87,102 @@ async function visibility(agentId: string, value: "public" | "private") {
 }
 
 describe("explicit VNC grants and current Agent inventory", () => {
-  it("keeps grants off when a connection is created and requires explicit enable", async () => {
+  async function createHost(host = "vnc.example.com") {
+    return await accept(
+      api.connections().create({
+        headers,
+        body: { ...vncConnectionBody(), host },
+      }),
+      [201],
+    );
+  }
+
+  it("automatically grants all visible Agents only on a zero-to-one host transition", async () => {
+    const current = await owner();
+    const ownPrivate = await api.runtime(current);
+    await visibility(ownPrivate.agentId, "private");
+    const teammate = await owner({ orgId: current.orgId });
+    const shared = await api.runtime(teammate);
+    const teammatePrivate = await api.runtime(teammate);
+    await visibility(teammatePrivate.agentId, "private");
+    const foreign = await owner();
+    const foreignAgent = await api.runtime(foreign);
+
+    api.authenticate(current);
+    const first = await createHost();
+    for (const agentId of [ownPrivate.agentId, shared.agentId]) {
+      expect(
+        (
+          await accept(
+            api.access().get({ headers, params: { agentId } }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ enabled: true });
+    }
+    for (const agentId of [teammatePrivate.agentId, foreignAgent.agentId]) {
+      await accept(api.access().get({ headers, params: { agentId } }), [404]);
+    }
+
+    await api.grant({ ...current, agentId: ownPrivate.agentId }, false);
+    const laterAgent = await api.runtime(current);
+    const second = await createHost("second.example.com");
+    for (const agentId of [ownPrivate.agentId, laterAgent.agentId]) {
+      expect(
+        (
+          await accept(
+            api.access().get({ headers, params: { agentId } }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ enabled: false });
+    }
+
+    for (const connection of [first.body, second.body]) {
+      await accept(
+        api.connections().delete({
+          headers,
+          params: { connectionId: connection.id },
+          body: { expectedGeneration: connection.generation },
+        }),
+        [204],
+      );
+    }
+    await createHost("replacement.example.com");
+    for (const agentId of [ownPrivate.agentId, laterAgent.agentId]) {
+      expect(
+        (
+          await accept(
+            api.access().get({ headers, params: { agentId } }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual({ enabled: true });
+    }
+  });
+
+  it("serializes concurrent first hosts while granting visible Agents", async () => {
+    const current = await owner();
+    const runtime = await api.runtime(current);
+    await Promise.all([
+      createHost("one.example.com"),
+      createHost("two.example.com"),
+    ]);
+    expect(
+      (
+        await accept(
+          api.access().get({ headers, params: { agentId: runtime.agentId } }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ enabled: true });
+    expect(
+      (await accept(api.connections().list({ headers }), [200])).body
+        .connections,
+    ).toHaveLength(2);
+  });
+
+  it("does not auto-grant an Agent created after the first connection", async () => {
     const f = await api.fixture({ grant: false });
     const params = { agentId: f.agentId };
     expect(
@@ -142,6 +237,58 @@ describe("explicit VNC grants and current Agent inventory", () => {
       inventory().list({ headers: token({ ...current, ...other }) }),
       [404],
     );
+  });
+
+  it("contains X509Plain while returning the supported inventory subset", async () => {
+    const current = await owner();
+    const runtime = { ...current, ...(await api.runtime(current)) };
+    const kms = useSecretKmsProbe();
+    const plain = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Plain desktop",
+          host: "plain.example.com",
+          credential: {
+            create: {
+              name: "Plain credential",
+              authentication: {
+                method: "username_password",
+                username: "operator",
+                password: " private secret ",
+              },
+            },
+          },
+          security: {
+            type: "x509_plain",
+            trust: { mode: "system" },
+          },
+        },
+      }),
+      [201],
+    );
+    expect(plain.body.security.type).toBe("x509_plain");
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
+
+    const supported = await createHost("supported.example.com");
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({
+      hosts: [
+        {
+          id: supported.body.id,
+          displayName: "VNC desktop",
+          host: "supported.example.com",
+          port: 5900,
+          authMethod: "vnc_password",
+          securityType: "x509_vnc",
+        },
+      ],
+    });
+    expect(kms.decryptCalls).toBe(0);
   });
 
   it("isolates a shared Agent's grants and inventory by the Run owner", async () => {

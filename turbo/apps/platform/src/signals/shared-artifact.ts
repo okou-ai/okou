@@ -109,8 +109,14 @@ export const setupSharedArtifact$ = command(
       location.origin,
     );
     referenceUrl.hash = location.hash;
+    const viewer = get(sharedArtifactViewer$);
+    set(viewer.diagram.initialize$, signal);
     const artifact = content
-      ? createSharedArtifactPreview(content, referenceUrl.href)
+      ? createSharedArtifactPreview(
+          content,
+          referenceUrl.href,
+          viewer.diagram.openDiagram$,
+        )
       : null;
     set(
       updateDocumentTitle$,
@@ -124,7 +130,7 @@ export const setupSharedArtifact$ = command(
       createElement(SharedArtifactPage, {
         key: id,
         artifact,
-        viewer: get(sharedArtifactViewer$),
+        viewer,
       }),
     );
     await set(hideAppSkeleton$, signal);

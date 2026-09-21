@@ -142,6 +142,8 @@ interface DialogContentProps extends Omit<
   readonly surface?: "card" | "canvas" | "transparent";
   readonly overlayClassName?: string;
   readonly showCloseButton?: boolean;
+  /** Stops painting this popup while a dialog opened from it is on top. */
+  readonly hideWhenNestedOpen?: boolean;
 }
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
@@ -157,6 +159,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
       surface = "card",
       overlayClassName,
       showCloseButton = true,
+      hideWhenNestedOpen = false,
       ...props
     },
     ref,
@@ -168,12 +171,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
           data-slot="dialog-viewport"
           className={cn(
             "fixed inset-x-0 top-0 flex h-[var(--okou-viewport-height,100dvh)] items-center justify-center overflow-hidden",
-            mode === "windowed" && [
-              "pt-[calc(var(--sat,env(safe-area-inset-top,0px))+1.5rem)]",
-              "pr-[calc(var(--sar,env(safe-area-inset-right,0px))+1.5rem)]",
-              "pb-[calc(var(--sab,env(safe-area-inset-bottom,0px))+1.5rem)]",
-              "pl-[calc(var(--sal,env(safe-area-inset-left,0px))+1.5rem)]",
-            ],
+            mode === "windowed" && "p-safe-offset-6",
           )}
         >
           <DialogPrimitive.Popup
@@ -189,6 +187,13 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
               "relative flex min-h-0 min-w-0 w-full max-h-full max-w-full flex-col overflow-hidden outline-none contain-layout",
               surface === "card" && "bg-card",
               surface === "canvas" && "bg-background",
+              // Base UI marks a popup while its own dialogs are open on top of
+              // it. A caller whose nested dialog is the same surface seen
+              // closer — a template opened from the gallery that opened it —
+              // takes this, so the edges it does not cover stop reading as a
+              // second panel behind it. `visibility` rather than opacity, so
+              // what is hidden leaves the accessibility tree with it.
+              hideWhenNestedOpen && "data-nested-dialog-open:invisible",
               mode === "windowed"
                 ? [
                     dialogMaxWidthClasses[maxWidth].base,
@@ -205,13 +210,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
                     surface === "canvas" &&
                       "shadow-[0_24px_70px_rgba(0,0,0,0.30)]",
                   ]
-                : [
-                    "h-full w-full rounded-none",
-                    "pt-[var(--sat,env(safe-area-inset-top,0px))]",
-                    "pr-[var(--sar,env(safe-area-inset-right,0px))]",
-                    "pb-[var(--sab,env(safe-area-inset-bottom,0px))]",
-                    "pl-[var(--sal,env(safe-area-inset-left,0px))]",
-                  ],
+                : ["h-full w-full rounded-none", "p-safe"],
             )}
           >
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.48.112](https://github.com/okou-ai/okou/compare/desktop-v0.48.111...desktop-v0.48.112) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.480.0
+
+## [0.48.111](https://github.com/okou-ai/okou/compare/desktop-v0.48.110...desktop-v0.48.111) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.479.0
+
+## [0.48.110](https://github.com/okou-ai/okou/compare/desktop-v0.48.109...desktop-v0.48.110) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+
+## [0.48.109](https://github.com/okou-ai/okou/compare/desktop-v0.48.108...desktop-v0.48.109) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+
+## [0.48.108](https://github.com/okou-ai/okou/compare/desktop-v0.48.107...desktop-v0.48.108) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+
+## [0.48.107](https://github.com/okou-ai/okou/compare/desktop-v0.48.106...desktop-v0.48.107) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+
+## [0.48.106](https://github.com/vm0-ai/okou/compare/desktop-v0.48.105...desktop-v0.48.106) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+
 ## [0.48.105](https://github.com/vm0-ai/okou/compare/desktop-v0.48.104...desktop-v0.48.105) (2026-09-20)
 
 

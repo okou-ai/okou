@@ -41,13 +41,13 @@ class ExitCheckTests(unittest.TestCase):
             {
                 "RUNNER_TEMP": str(self.root),
                 "GITHUB_STEP_SUMMARY": str(self.root / "summary.md"),
-                "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY": "okou-ai/okou",
                 "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "1234",
                 "GITHUB_SHA": "a" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-exit-check.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/kms-production-exit-check.yml@refs/heads/main",
                 "NEON_PROJECT_ID": "hidden-lab-39609750",
                 "NEON_API_KEY": SECRET,
                 "MIGRATION_VERIFIED_AT": (
@@ -314,9 +314,9 @@ print(json.dumps(data)+"\\n200", end="")
         self.assertEqual(inventory["failures"][0]["reason"], "duplicate_json_key")
 
     def test_renamed_repository_uses_the_same_protected_workflow(self):
-        self.env["GITHUB_REPOSITORY"] = "maxandzoe/okou"
+        self.env["GITHUB_REPOSITORY"] = "okou-ai/okou"
         self.env["GITHUB_WORKFLOW_REF"] = (
-            "maxandzoe/okou/.github/workflows/"
+            "okou-ai/okou/.github/workflows/"
             "kms-production-exit-check.yml@refs/heads/main"
         )
         self.fake_neon()

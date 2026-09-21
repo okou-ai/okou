@@ -412,6 +412,15 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/agent-run-failure-log.service.ts"],
+    rules: {
+      // Guest root filesystem exhaustion is already a classified, bounded
+      // execution condition. Preserve the canonical INFO behavior without
+      // allowing unrelated completion messages to bypass the noise gate.
+      "api/no-logger-info": ["error", { allowedMessages: ["Run failed"] }],
+    },
+  },
+  {
     files: ["src/signals/services/pi-api-first-turn.service.ts"],
     rules: {
       // Recovery, discarded late results and attempt timeouts are the only
@@ -422,6 +431,17 @@ export default [
       "api/no-logger-info": [
         "error",
         { allowedMessages: ["Pi API first-turn outcome"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/pi-api-first-turn-failure-log.service.ts"],
+    rules: {
+      // Classified provider outcomes mirror Runner's bounded execution
+      // diagnostic at INFO; unclassified structural failures remain ERROR.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Pi API first-turn execution failed"] },
       ],
     },
   },
@@ -609,6 +629,9 @@ export default [
       // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
       // sessions exercise first closure, lease recovery, and selector retirement.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // Bounded job ownership needs real row-lock competition, expired leases,
+      // handler-version skew and publication rollback unavailable through HTTP.
+      "src/signals/services/__tests__/background-job.service.test.ts",
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
@@ -843,6 +866,9 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // Bounded job ownership needs row locks, expired leases, handler-version
+      // skew and transaction rollback that callers cannot construct via HTTP.
+      "src/signals/services/__tests__/background-job.service.test.ts",
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",

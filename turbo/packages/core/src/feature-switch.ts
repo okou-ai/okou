@@ -45,17 +45,30 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DurableUserExport]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.WelcomeThread]: {
-    maintainer: "lancy@okou.ai",
-    description: "Manually create a welcome conversation with fixed examples",
+  [FeatureSwitchKey.RunUsage]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.WelcomeThread]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Deliver a welcome conversation with fixed examples to every member joining a workspace",
+    enabled: true,
   },
   [FeatureSwitchKey.ThreadActivitySummary]: {
     maintainer: "lancy@okou.ai",
@@ -68,9 +81,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Templates compiled from a file the user uploaded, with their own catalog.",
     enabled: false,
-    // Narrowed from the staff org to the maintainer while nothing in the
-    // product publishes a row: the API route exists, but no upload surface
-    // calls it yet, so everyone else would only ever see the empty panel.
+    // Back to the staff org now that the picker carries its own upload entry:
+    // a colleague who opens the empty panel has the one action that fills it,
+    // which is what the earlier narrowing to the maintainer was waiting for.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Kept beside the org so the maintainer keeps the feature while signed
+    // into a customer workspace, where the org hash does not apply.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
@@ -79,15 +95,24 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Convert an HTML presentation into an editable pptx from the CLI.",
     enabled: false,
-    // Held to the maintainer while fidelity is still being measured against
-    // real decks: conversion succeeds, but what a viewer without the deck's
-    // fonts makes of the result is only known for the decks tried so far.
+    // Opened to the staff org: the open question is how a converted deck reads
+    // for a viewer without its fonts, and that needs more decks than the
+    // maintainer alone can try.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Kept beside the org so the maintainer keeps the feature while signed
+    // into a customer workspace, where the org hash does not apply.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
     description: "Lightweight chat task chips and contextual starting ideas",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.UserMessageLinks]: {
+    maintainer: "bingjie@okou.ai",
+    description: "Make plain http(s) URLs clickable in a user's own messages",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -101,10 +126,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
+  [FeatureSwitchKey.MondayConnector]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable the Monday.com MCP connector",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PlaudConnector]: {
     maintainer: "liangyou@okou.ai",
     description: "Enable the Plaud MCP connector",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillConnector]: {
     maintainer: "yuma@okou.ai",
@@ -211,12 +243,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Spotify connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.StripeMarketplaceOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Show Stripe Marketplace OAuth as a sign-in option for the Stripe connector.",
-    enabled: false,
-  },
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -299,12 +325,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.PiDeferredSandbox]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
     enabled: false,
   },
   [FeatureSwitchKey.PiLoop]: {
@@ -399,6 +419,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AgentPhoneEntry]: {
+    maintainer: "linghan@okou.ai",
+    description: "Show the AgentPhone entry point on the Works page.",
+    enabled: false,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -495,6 +520,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // against hand-built decks; the template corpus has not been checked yet.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.OnboardingSourcesFirst]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
+    enabled: false,
   },
   [FeatureSwitchKey.OptimisticMessageSpinner]: {
     maintainer: "ethan@okou.ai",

@@ -1,5 +1,123 @@
 # Changelog
 
+## [9.348.5](https://github.com/okou-ai/okou/compare/cli-v9.348.4...cli-v9.348.5) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.480.0
+    * @okouai/connectors bumped to 3.14.3
+    * @okouai/core bumped to 8.688.3
+    * @okouai/pi-agent-runtime bumped to 1.33.32
+
+## [9.348.4](https://github.com/okou-ai/okou/compare/cli-v9.348.3...cli-v9.348.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.479.0
+    * @okouai/core bumped to 8.688.2
+    * @okouai/pi-agent-runtime bumped to 1.33.31
+
+## [9.348.3](https://github.com/okou-ai/okou/compare/cli-v9.348.2...cli-v9.348.3) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.3
+    * @okouai/core bumped to 8.688.1
+    * @okouai/pi-agent-runtime bumped to 1.33.30
+
+## [9.348.2](https://github.com/okou-ai/okou/compare/cli-v9.348.1...cli-v9.348.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* align cloudflare access naming ([#35632](https://github.com/okou-ai/okou/issues/35632)) ([708ac2e](https://github.com/okou-ai/okou/commit/708ac2e7cec6250eef99bdae13ce272ea2fff6e9))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.2
+    * @okouai/core bumped to 8.688.0
+    * @okouai/pi-agent-runtime bumped to 1.33.29
+
+## [9.348.1](https://github.com/okou-ai/okou/compare/cli-v9.348.0...cli-v9.348.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/pi-agent-runtime bumped to 1.33.28
+
+## [9.348.0](https://github.com/okou-ai/okou/compare/cli-v9.347.0...cli-v9.348.0) (2026-09-20)
+
+
+### Features
+
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* **cli:** surface failed mcp calls ([#35562](https://github.com/okou-ai/okou/issues/35562)) ([f92d366](https://github.com/okou-ai/okou/commit/f92d3665968bb3a9e03bb1a8d579c5b1405fb586))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/pi-agent-runtime bumped to 1.33.27
+
+## [9.347.0](https://github.com/vm0-ai/okou/compare/cli-v9.346.1...cli-v9.347.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+    * @okouai/pi-agent-runtime bumped to 1.33.26
+
+## [9.346.1](https://github.com/vm0-ai/okou/compare/cli-v9.346.0...cli-v9.346.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.685.0
+
 ## [9.346.0](https://github.com/vm0-ai/okou/compare/cli-v9.345.0...cli-v9.346.0) (2026-09-20)
 
 

@@ -51,6 +51,8 @@ export const getStartedStatusSchema = z.object({
   serverNow: z.string().datetime(),
   nextResetAt: z.string().datetime(),
   claimedToday: z.boolean(),
+  /** Consecutive UTC days the user has checked in, counting back from today. */
+  checkinStreak: z.number().int().nonnegative(),
   quests: z.array(
     z.object({
       key: getStartedQuestKeySchema,
