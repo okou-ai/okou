@@ -62,38 +62,29 @@ interpret the `-mcp` naming convention. Every MCP descriptor must declare
 HTTP connectors retain bundled skill support and exact-version mounting.
 
 The reader validates endpoint, ownership, replacement and none/Automatic auth
-metadata. MCP none/none and supported single-secret manual/static methods with
-no-op revocation are executable, as are Automatic grant/access pairs.
-Provider-backed MCP methods
-remain filtered until their handlers are installed. These expected filters do
-not emit warning or error logs and do not reject an otherwise valid catalog.
-New MCP entries use `firewall: { kind: "none" }`; the API derives transport
-routing and policy from explicit MCP metadata and does not expose HTTP
-permission bundles or permission editors. The reader temporarily accepts legacy
-generated MCP firewalls for rollout compatibility, but runtime construction
-ignores their endpoint, auth, permissions, billing and policy. Existing
-supported HTTP methods remain usable through v4.
+metadata. MCP none/none and manual/static methods with no-op revocation are
+executable, as are Automatic grant/access pairs. Provider-backed MCP methods
+remain filtered until their handlers are installed. These expected filters do not emit warning or
+error logs and do not reject an otherwise valid catalog. MCP generated firewalls
+participate in named builtin execution, but cannot supply HTTP permission bundles
+or permission editors. Existing supported HTTP methods remain usable through v4.
 
-Builtin MCP uses the current CLI without requiring its package URL to match the
-serving API commit. Its signed builtin account mapping comes from the final
-admitted runtime targets; later default changes cannot substitute another
-account. MCP credential values and aliases remain outside the sandbox
-environment and skill mounts. Shared MCP discovery supplies tools and schemas.
-The API creates a run-scoped inline firewall from the fixed MCP endpoint and
-exact admitted account; Runner assigns trusted builtin ownership only when its
-slug and `sourceId` match the registered runtime target.
-
-No-auth builtin and custom MCP skip credential validity checks and proxy auth
-resolution, including Automatic accounts resolved to no authentication.
-Builtin no-auth is a Run-start account/catalog snapshot, so account and catalog
-changes apply to later Runs. Credentialed builtin MCP resolves the exact current
-account at the network boundary and caches authorization for at most 30 seconds
-from validation, even when the provider credential has no expiry. Deleting an
-account removes it from discovery immediately; subsequent credentialed proxy
-requests can reuse cached authorization until its lease expires, then must
-validate the same account again. Lease expiry does not interrupt an in-flight
-request or stream. Credentialed HTTP and custom connector cache behavior is
-unchanged.
+Builtin MCP uses the current CLI without client-version negotiation or requiring
+its package URL to match the serving API commit. Its signed builtin account
+mapping comes from the final admitted runtime targets; later default changes
+cannot substitute another account. MCP credential values and aliases remain
+outside the sandbox environment and skill mounts. The proxy resolves the exact
+selected account at the network boundary when credentials are needed. Shared
+MCP discovery supplies tools and schemas. No-auth builtin and custom MCP skip
+credential validity checks and proxy auth resolution, including Automatic builtin and custom
+MCP accounts resolved to no authentication.
+Credentialed builtin MCP authorization is cached for at most 30 seconds from account
+validation, even when the provider credential has no expiry. Deleting an
+account removes it from discovery immediately; subsequent proxy requests can
+reuse cached authorization until its lease expires, then must validate the
+same account again. Lease expiry does not interrupt an in-flight request or
+stream. No-auth requests have no account authorization lease. Credentialed HTTP
+and custom connector cache behavior is unchanged.
 
 ## Runtime change reconciliation
 
@@ -130,39 +121,30 @@ and optional refresh tokens remain encrypted, outside the Run environment.
 OAuth completion receipts identify the actual connected account and attempt.
 
 Deploy the additive builtin OAuth schema migration before the API. OAuth runtime
-resolution validates the stored binding and serializes refresh and token
-rotation. Automatic connection commits, token resolution and shared DCR client
-retirement lock the organization and connector before account rows, including
-reconnects across authentication methods. Registration ownership remains
-specific to the method and catalog contract. Refresh takes the existing
-account-owner target lock before the account row; retirement takes each linked
-owner's target lock before their rows so ordinary account deletion and default
-changes cannot invert that order. Providers without refresh tokens work until
-the access token expires. A no-auth account bypasses credential validity,
-storage-version and refresh checks.
-
-Automatic discovery records whether the selected account resolved to OAuth or
-no authentication. The inline firewall uses empty auth for no authentication
-or the platform-owned `Bearer ${{ secrets.MCP_ACCESS_TOKEN }}` template for
-OAuth. The API resolves that proxy-only token outside the sandbox for the exact
-selected account. Credentialed auth requests carry the matched endpoint and
-`sourceId`; the API checks them against the accepted catalog, auth method and
-account binding before returning credentials, including after waiting for
-account locks. A stale or missing destination, mismatched auth shape or missing
-account fails closed without selecting a sibling/default account or invalidating
-a newly reconnected account. Best-effort runtime-sync delivery cannot authorize
-credentials for a changed endpoint.
-
-Deploy Runner support for exact source-bound inline builtin ownership first.
-Only after that Runner version is live across the fleet that can claim new work
-may the API begin creating inline-MCP Runs. The new Runner remains compatible
-with pre-inline name-based contexts, and the Runner catalog retains legacy
-generated MCP entries during their drain. After the API activation, let
-pre-inline Runs finish before publishing the firewall-free producer catalog.
-The complete PR ordering, rollback rule and cleanup gate are documented in
-[deployment compatibility](deployment-compatibility.md#builtin-mcp-execution)
-and tracked for removal by
-[#35654](https://github.com/okou-ai/okou/issues/35654).
+resolution validates the stored binding and serializes refresh and token rotation.
+Automatic connection commits, token resolution and shared DCR client retirement
+lock the organization and connector before account rows, including reconnects
+across authentication methods. Registration ownership remains specific to the
+method and catalog contract. Refresh takes the existing account-owner target lock
+before the account row; retirement takes each linked owner's target lock before
+their rows so ordinary account deletion and default changes cannot invert that order.
+Providers without refresh tokens work until the access token expires. A no-auth
+account bypasses credential validity, storage-version and refresh checks. Each Run
+receives the same compact builtin firewall reference used by builtin HTTP connectors.
+The runner resolves its firewall definition from the accepted catalog without
+replacing or overriding its authentication policy from account state. Automatic
+discovery records whether the selected account resolved to OAuth or no-auth, but
+the catalog remains authoritative because that requirement is fixed for a service.
+An OAuth catalog firewall uses `Bearer ${{ secrets.MCP_ACCESS_TOKEN }}`; the API
+resolves that proxy-only token outside the sandbox for the exact selected account.
+If a no-auth account is paired with an OAuth firewall, resolving the firewall's
+required secret fails closed. If an OAuth account is paired with a no-auth firewall,
+the proxy sends no credential and the upstream rejects the unauthenticated request.
+OAuth auth requests carry the matched catalog endpoint. The API checks it against
+the accepted catalog and account binding before returning credentials, including
+after waiting for account locks. A stale or missing destination is rejected without
+invalidating a newly reconnected account. This check does not depend on successful
+runtime-sync notification delivery and does not apply to no-auth accounts.
 
 The existing auth-method discovery switch `plaudConnector` defaults off and
 controls only `plaud-mcp / automatic`. It does not gate existing account
