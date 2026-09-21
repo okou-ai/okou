@@ -10,21 +10,19 @@ use tokio::sync::oneshot;
 
 use super::super::super::*;
 use super::super::support::{
-    minimal_context, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
-    wait_cancel_handle, wait_idle_pool_len,
+    minimal_context, mock_run_config_with_overrides, push_job, seed_workspace_cache_state,
+    shutdown, test_profiles, wait_cancel_handle, wait_idle_pool_len,
 };
+use crate::paths::RunnerPaths;
 use crate::storage_manifest::{ArtifactEntry, StorageManifest};
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
 use crate::types::{
     ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,
-    ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult,
+    ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult, WorkspaceReuseResult,
 };
+use crate::workspace_image_cache::WorkspaceImageCache;
 
 const WAIT: Duration = Duration::from_secs(5);
-// Full-workspace coverage instrumentation can delay decoding and validation
-// between the remote response and the mock Guest write. The write is still
-// deterministically gated; only this CPU-heavy transition needs extra headroom.
-const INSTRUMENTED_WRITE_WAIT: Duration = Duration::from_secs(30);
 const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -33,6 +31,26 @@ enum PublicationExpectation {
     SerialRecovery,
     SerialRecoveryCleanupFailure,
     AmbiguousFailure,
+}
+
+async fn configure_workspace_cache_hit(config: &mut RunConfig, reuse_key: &str) {
+    let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let workspace_cache = WorkspaceImageCache::shared(
+        runner_paths.clone(),
+        &config.paths.home,
+        &config.runner.group,
+    );
+    seed_workspace_cache_state(
+        &workspace_cache,
+        &runner_paths,
+        reuse_key,
+        "vm0/default",
+        16 * 1024 * 1024,
+    )
+    .await;
+    Arc::get_mut(&mut config.exec_config)
+        .unwrap()
+        .workspace_cache = Some(workspace_cache);
 }
 
 pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> ExecutionContext {
@@ -69,35 +87,30 @@ pub(super) fn history_context(run_id: RunId, url: String, history: &[u8]) -> Exe
 }
 
 #[tokio::test]
-async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
-    for (framework, keyed, encoding, publication) in [
+async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
+    for (framework, encoding, publication) in [
         (
             CliFramework::ClaudeCode,
-            true,
             ResumeSessionHistoryEncoding::Identity,
             PublicationExpectation::Published,
         ),
         (
             CliFramework::Pi,
-            false,
             ResumeSessionHistoryEncoding::Gzip,
             PublicationExpectation::SerialRecovery,
         ),
         (
             CliFramework::Codex,
-            true,
             ResumeSessionHistoryEncoding::Zstd,
             PublicationExpectation::Published,
         ),
         (
             CliFramework::ClaudeCode,
-            true,
             ResumeSessionHistoryEncoding::Identity,
             PublicationExpectation::AmbiguousFailure,
         ),
         (
             CliFramework::ClaudeCode,
-            true,
             ResumeSessionHistoryEncoding::Identity,
             PublicationExpectation::SerialRecoveryCleanupFailure,
         ),
@@ -184,8 +197,12 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         overrides.set_finalize_staged_file_lifecycle_gate(finalize_gate.clone());
         let process_gate = MockLifecycleGate::new();
         overrides.set_start_process_lifecycle_gate(process_gate.clone());
-        let (config, env) =
-            mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, Arc::clone(&overrides));
+        let mut profiles = test_profiles();
+        profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+        let (mut config, env) =
+            mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
+        let reuse_key = format!("thread:staged-history-{}", uuid::Uuid::new_v4());
+        configure_workspace_cache_hit(&mut config, &reuse_key).await;
         let budget = Arc::clone(&config.capacity.budget);
         let run_handle = tokio::spawn(run(config));
         wait_idle_pool_len(&env.idle_pool, 1, WAIT).await;
@@ -216,7 +233,7 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
                 "credentialSecretName": "DEEPSEEK_API_KEY"
             }));
         }
-        context.reuse_key = keyed.then(|| "thread:blank-history".into());
+        context.reuse_key = Some(reuse_key);
         let resume_session = context.resume_session.as_mut().unwrap();
         resume_session.cli_agent_session_id = session_id.into();
         let ResumeSessionHistory::Ref { history_ref } = &mut resume_session.history else {
@@ -238,10 +255,7 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             .next_request("blank history before storage finishes")
             .await;
         release_history.send(()).unwrap();
-        write_gate
-            .wait_entered(1, INSTRUMENTED_WRITE_WAIT)
-            .await
-            .unwrap();
+        write_gate.wait_entered(1, WAIT).await.unwrap();
         let writes = overrides.write_file_calls();
         assert_eq!(writes.len(), 1);
         let restored = if framework == "codex" {
@@ -330,15 +344,12 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         process_gate.release_one();
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_eq!(completion.exit_code, 0);
-        assert_eq!(completion.sandbox_id, Some(blank_id));
+        assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
         assert_eq!(
-            completion.reuse_result,
-            Some(if keyed {
-                SandboxReuseResult::PoolMiss
-            } else {
-                SandboxReuseResult::NoReuseKey
-            })
+            completion.workspace_reuse_result,
+            Some(WorkspaceReuseResult::Reused)
         );
+        assert_ne!(completion.sandbox_id, Some(blank_id));
         // The one-response server and successful restore require one download;
         // a second materialization cannot obtain another history response.
         server.assert_finished().await;
@@ -348,7 +359,7 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
 }
 
 #[tokio::test]
-async fn blank_history_storage_failure_precedes_staging_failure() {
+async fn workspace_history_storage_failure_precedes_staging_failure() {
     let (release_history, history_release) = oneshot::channel();
     let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
         release: history_release,
@@ -370,28 +381,26 @@ async fn blank_history_storage_failure_precedes_staging_failure() {
     overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
     let write_gate = MockLifecycleGate::new();
     overrides.set_write_file_lifecycle_gate(write_gate.clone());
-    let (config, env) =
-        mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, Arc::clone(&overrides));
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
+    let (mut config, env) =
+        mock_run_config_with_overrides(profiles, 16, 32_768, 8, Arc::clone(&overrides));
+    let reuse_key = format!("thread:staged-history-failure-{}", uuid::Uuid::new_v4());
+    configure_workspace_cache_hit(&mut config, &reuse_key).await;
     let budget = Arc::clone(&config.capacity.budget);
     let run_handle = tokio::spawn(run(config));
     wait_idle_pool_len(&env.idle_pool, 1, WAIT).await;
     let run_id = RunId::new_v4();
-    push_job(
-        &env,
-        run_id,
-        "vm0/default",
-        Some(history_context(run_id, server.url(), HISTORY)),
-    );
+    let mut context = history_context(run_id, server.url(), HISTORY);
+    context.reuse_key = Some(reuse_key);
+    push_job(&env, run_id, "vm0/default", Some(context));
 
     storage_gate.wait_entered(1, WAIT).await.unwrap();
     server
         .next_request("history for dual preparation failure")
         .await;
     release_history.send(()).unwrap();
-    write_gate
-        .wait_entered(1, INSTRUMENTED_WRITE_WAIT)
-        .await
-        .unwrap();
+    write_gate.wait_entered(1, WAIT).await.unwrap();
     write_gate.release_one();
     storage_gate.release_one();
 
