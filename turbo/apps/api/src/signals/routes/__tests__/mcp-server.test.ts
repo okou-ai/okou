@@ -6680,7 +6680,7 @@ describe("external MCP entry", () => {
                   {
                     name: "create_chat_thread",
                     description: expect.stringContaining(
-                      "Omitted model pins the then-current default at first run admission",
+                      "omitted model pins the then-current default at first run admission",
                     ),
                     inputSchema: {
                       properties: {
