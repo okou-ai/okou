@@ -329,7 +329,7 @@ describe("Social data jobs", () => {
         node: {
           id: `media-${shortcode}`,
           shortcode,
-          taken_at_timestamp: 1789075224,
+          taken_at_timestamp: 1_789_075_224,
           is_video: true,
           video_view_count: views,
           edge_liked_by: { count: likes },
@@ -376,14 +376,14 @@ describe("Social data jobs", () => {
           output: {
             data: {
               user: {
-                id: "528817151",
+                id: "528_817_151",
                 username: "example",
                 full_name: "Example",
                 edge_owner_to_timeline_media: {
                   count: 2,
                   edges: [
-                    media("AAA", 744337, 26815),
-                    media("BBB", 872987, 56698),
+                    media("AAA", 744_337, 26_815),
+                    media("BBB", 872_987, 56_698),
                   ],
                 },
               },
@@ -446,11 +446,11 @@ describe("Social data jobs", () => {
             url: "https://www.instagram.com/p/AAA/",
             text: "Launch day",
             username: "example",
-            views: 744337,
-            likes: 26815,
+            views: 744_337,
+            likes: 26_815,
             comments: 7,
           },
-          { id: "media-BBB", views: 872987, likes: 56698 },
+          { id: "media-BBB", views: 872_987, likes: 56_698 },
         ],
       },
       billing: { state: "settled" },
