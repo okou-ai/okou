@@ -6911,8 +6911,7 @@
     "custom": "Eigene",
     "detail": {
       "back": "Eigene Vorlagen",
-      "page": "Seite {{number}}",
-      "sourceFile": "Aus {{filename}}"
+      "page": "Seite {{number}}"
     },
     "empty": {
       "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."

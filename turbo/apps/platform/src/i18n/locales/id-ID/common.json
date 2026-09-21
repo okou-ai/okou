@@ -6893,8 +6893,7 @@
     "custom": "Kustom",
     "detail": {
       "back": "Templat kustom",
-      "page": "Halaman {{number}}",
-      "sourceFile": "Dari {{filename}}"
+      "page": "Halaman {{number}}"
     },
     "empty": {
       "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."

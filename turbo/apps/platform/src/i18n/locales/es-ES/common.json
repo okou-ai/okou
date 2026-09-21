@@ -6978,8 +6978,7 @@
     "custom": "Personalizadas",
     "detail": {
       "back": "Plantillas personalizadas",
-      "page": "Página {{number}}",
-      "sourceFile": "De {{filename}}"
+      "page": "Página {{number}}"
     },
     "empty": {
       "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."

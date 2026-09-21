@@ -6978,8 +6978,7 @@
     "custom": "Personalizzati",
     "detail": {
       "back": "Modelli personalizzati",
-      "page": "Pagina {{number}}",
-      "sourceFile": "Da {{filename}}"
+      "page": "Pagina {{number}}"
     },
     "empty": {
       "description": "Okou trasforma il design del tuo file in un modello che puoi riutilizzare."

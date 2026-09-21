@@ -637,9 +637,11 @@ test("Opening a deck shows its pages and management controls", async () => {
   // step out of view rather than stay half-visible around a narrower panel.
   expect(dialog).toHaveAttribute("data-nested-dialog-open");
   expect(preview).not.toHaveAttribute("data-nested-dialog-open");
+  // The file it was reversed from is not named in the column: what the member
+  // manages here is the template, under the name they gave it.
   expect(
-    within(preview).getByText("From q3-board-final-v4.pptx"),
-  ).toBeVisible();
+    within(preview).queryByText(/q3-board-final-v4\.pptx/),
+  ).not.toBeInTheDocument();
   expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   expect(
@@ -810,7 +812,9 @@ test("Opening a Word template hands the source file to the Office viewer", async
   // The dialog carries the management column a deck shows, so what a member
   // can do to a template does not depend on its kind.
   const preview = previewDialogAround(frame);
-  expect(within(preview).getByText("From brand-report.docx")).toBeVisible();
+  expect(
+    within(preview).queryByText(/brand-report\.docx/),
+  ).not.toBeInTheDocument();
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by
@@ -891,7 +895,9 @@ test("Opening an illustration template shows the source picture itself", async (
   // The same management column a document's dialog carries, and the catalog
   // still mounted behind it.
   const preview = previewDialogAround(picture);
-  expect(within(preview).getByText("From market-day.png")).toBeVisible();
+  expect(
+    within(preview).queryByText(/market-day\.png/),
+  ).not.toBeInTheDocument();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   expect(within(dialog).getByText("Market day")).toBeInTheDocument();
 });
@@ -1067,9 +1073,11 @@ test("Confirmed edits finish before readback and survive an older catalog respon
 
   // This external update began before either local edit. Its response carries
   // the old title and visibility, even though PATCH will confirm newer values.
+  // The re-rendered page is what makes its arrival observable.
+  const refreshedPageUrl = "https://example.test/page-1-refreshed.png";
   const beforeEdits = {
     ...board,
-    sourceFilename: "q3-board-refreshed.pptx",
+    pageUrls: [refreshedPageUrl],
     updatedAt: "2026-01-02T00:00:01.000Z",
   };
   library.replace([
@@ -1117,7 +1125,12 @@ test("Confirmed edits finish before readback and survive an older catalog respon
   ).toBeInTheDocument();
 
   detailReadback.resolve();
-  await screen.findByText("From q3-board-refreshed.pptx");
+  await waitFor(() => {
+    expect(screen.getByAltText("Page 1")).toHaveAttribute(
+      "src",
+      refreshedPageUrl,
+    );
+  });
   expect(renameField()).toHaveValue("Board review FY26");
   expect(
     screen.getByText("Anyone in this organization can use it"),
