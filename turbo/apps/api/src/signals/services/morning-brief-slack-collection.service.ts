@@ -487,11 +487,9 @@ class SlackCollectionBudget {
  * boundary: the conversation is not part of what this owner's brief could have
  * covered. An archived conversation has no live morning to miss either.
  */
-const OUT_OF_SCOPE_CONVERSATION_CODES: readonly string[] = [
-  "channel_not_found",
-  "is_archived",
-  "not_in_channel",
-];
+const OUT_OF_SCOPE_CONVERSATION_CODES: ReadonlySet<string> = Object.freeze(
+  new Set(["channel_not_found", "is_archived", "not_in_channel"]),
+);
 
 /**
  * Provider errors that end the whole attempt rather than one conversation.
@@ -501,18 +499,20 @@ const OUT_OF_SCOPE_CONVERSATION_CODES: readonly string[] = [
  * exactly the same way and the source has to report the failure instead of
  * quietly covering less of the morning.
  */
-const SOURCE_FATAL_SLACK_CODES: readonly string[] = [
-  "account_inactive",
-  "ekm_access_denied",
-  "invalid_auth",
-  "missing_scope",
-  "no_permission",
-  "not_authed",
-  "org_login_required",
-  "team_access_not_granted",
-  "token_expired",
-  "token_revoked",
-];
+const SOURCE_FATAL_SLACK_CODES: ReadonlySet<string> = Object.freeze(
+  new Set([
+    "account_inactive",
+    "ekm_access_denied",
+    "invalid_auth",
+    "missing_scope",
+    "no_permission",
+    "not_authed",
+    "org_login_required",
+    "team_access_not_granted",
+    "token_expired",
+    "token_revoked",
+  ]),
+);
 
 /**
  * What one conversation's failed provider read means for this attempt.
@@ -538,10 +538,10 @@ function classifyConversationFailure(error: unknown): SlackConversationFailure {
   if (error.statusCode === 429 || error.code === "ratelimited") {
     return "rate-limited";
   }
-  if (SOURCE_FATAL_SLACK_CODES.includes(error.code)) {
+  if (SOURCE_FATAL_SLACK_CODES.has(error.code)) {
     return "source-fatal";
   }
-  return OUT_OF_SCOPE_CONVERSATION_CODES.includes(error.code)
+  return OUT_OF_SCOPE_CONVERSATION_CODES.has(error.code)
     ? "out-of-scope"
     : "unread";
 }
