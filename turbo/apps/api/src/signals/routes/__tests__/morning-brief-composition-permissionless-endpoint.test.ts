@@ -244,7 +244,7 @@ async function setupOwner(
 /** GitHub answers every read the collector issues, with one open item. */
 function stubGithub(): { readonly paths: () => readonly string[] } {
   const paths: string[] = [];
-  const record = (payload: unknown) => {
+  const record = (payload: Record<string, unknown> | unknown[]) => {
     return ({ request }: { request: Request }) => {
       paths.push(new URL(request.url).pathname);
       return HttpResponse.json(payload);
