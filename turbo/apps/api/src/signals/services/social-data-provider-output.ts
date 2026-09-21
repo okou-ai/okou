@@ -173,7 +173,8 @@ function instagramMedia(row: ObjectValue): SocialDataRecord {
     // Instagram exposes the like count under different edges depending on
     // whether the media came from a profile feed or a single-post lookup.
     likes:
-      edgeCount(row, "edge_liked_by") ?? edgeCount(row, "edge_media_preview_like"),
+      edgeCount(row, "edge_liked_by") ??
+      edgeCount(row, "edge_media_preview_like"),
     comments:
       edgeCount(row, "edge_media_to_comment") ??
       edgeCount(row, "edge_media_preview_comment"),
@@ -198,7 +199,10 @@ function projectInstagram(
       replies: count(row.child_comment_count),
     };
   }
-  if (plan.format === "instagram-user" && plan.request.operation === "inspect") {
+  if (
+    plan.format === "instagram-user" &&
+    plan.request.operation === "inspect"
+  ) {
     const username = string(row.username);
     return {
       id: string(row.id),

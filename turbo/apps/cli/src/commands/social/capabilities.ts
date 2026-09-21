@@ -37,8 +37,14 @@ const jobCapabilities: Partial<
       operation: "posts",
       targets: ["profile"],
       inputs: { "--kind": ["posts", "reels"] },
+      maxResults: 12,
+      note: "One profile request returns the most recent items of the selected kind",
     },
-    { operation: "comments", targets: ["post", "reel"], maxResults: 50 },
+    {
+      operation: "comments",
+      targets: ["post", "reel"],
+      note: "Returns one bounded batch; the requested limit does not guarantee that many available comments",
+    },
   ],
   tiktok: [
     { operation: "inspect", targets: ["video", "photo"] },

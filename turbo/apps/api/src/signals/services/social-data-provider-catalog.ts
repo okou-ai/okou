@@ -14,17 +14,15 @@ export class SocialDataProviderError extends Error {
   }
 }
 
-export type SocialDataProviderInput = {
-  readonly body?: Readonly<Record<string, unknown>>;
-  readonly queryParams?: Readonly<Record<string, unknown>>;
-};
-
 export interface SocialDataProviderPlan {
   readonly request: SocialDataRequest;
   /** Apify runs Actors; TikHub proxies vendor APIs with per-call pricing. */
   readonly provider: "apify" | "tikhub";
   readonly endpoint: string;
-  readonly input: SocialDataProviderInput;
+  readonly input: {
+    readonly body?: Readonly<Record<string, unknown>>;
+    readonly queryParams?: Readonly<Record<string, unknown>>;
+  };
   readonly maxBillableUnits: number;
   readonly format:
     | "instagram-user"
@@ -158,7 +156,10 @@ function instagramPlan(request: SocialDataRequest): SocialDataProviderPlan {
       unsupported("Comments require an Instagram post or Reel URL.");
     }
     rejectOptions(request, request.operation === "posts" ? ["kind"] : []);
-    if (request.operation === "posts" && request.limit > INSTAGRAM_PROFILE_FEED) {
+    if (
+      request.operation === "posts" &&
+      request.limit > INSTAGRAM_PROFILE_FEED
+    ) {
       unsupported(
         `Instagram data jobs return at most ${INSTAGRAM_PROFILE_FEED} recent items per profile request.`,
       );
@@ -180,7 +181,8 @@ function instagramPlan(request: SocialDataRequest): SocialDataProviderPlan {
       {
         code_or_url: url.href,
         sort_by:
-          request.sort && choice(request.sort, ["recent", "popular"]) === "popular"
+          request.sort &&
+          choice(request.sort, ["recent", "popular"]) === "popular"
             ? "popular"
             : "recent",
       },
@@ -201,7 +203,7 @@ function xiaohongshuPlan(request: SocialDataRequest): SocialDataProviderPlan {
     unsupported("Xiaohongshu data jobs do not provide transcripts.");
   }
   if (request.operation === "search") {
-    rejectOptions(request, ["sort", "kind"]);
+    rejectOptions(request, ["sort"]);
     if (/[\r\n]/.test(request.query ?? "")) {
       unsupported("Xiaohongshu search accepts one query on a single line.");
     }
@@ -212,9 +214,13 @@ function xiaohongshuPlan(request: SocialDataRequest): SocialDataProviderPlan {
         keyword: request.query,
         page: 1,
         sort_type: request.sort
-          ? choice(request.sort, ["general", "popularity_descending", "time_descending"])
+          ? choice(request.sort, [
+              "general",
+              "popularity_descending",
+              "time_descending",
+            ])
           : "general",
-        note_type: request.kind === "reels" ? "视频笔记" : "不限",
+        note_type: "不限",
       },
       "xiaohongshu-note",
     );
@@ -222,7 +228,7 @@ function xiaohongshuPlan(request: SocialDataRequest): SocialDataProviderPlan {
   const url = targetUrl(request);
   rejectOptions(request);
   // Share links resolve upstream, so they are forwarded untouched.
-  const share = url.hostname.endsWith("xhslink.com") || url.hostname.endsWith("xhslink.cn");
+  const share = url.hostname === "xhslink.com" || url.hostname === "xhslink.cn";
   const userId = /^\/user\/profile\/([0-9a-f]{24})\/?$/.exec(url.pathname)?.[1];
   const noteId = /^\/(?:explore|discovery\/item)\/([0-9a-f]{24})\/?$/.exec(
     url.pathname,

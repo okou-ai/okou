@@ -231,7 +231,9 @@ export function buildCreditUsageDisplayRows(
     const parsed = parseUsageKind(entry.kind);
     const provider = parsed.provider ?? entry.provider;
     const managedKey = managedUsageRowKey(parsed.kind);
-    const key = managedKey ? `kind:${managedKey}` : `${parsed.kind}:${provider}`;
+    const key = managedKey
+      ? `kind:${managedKey}`
+      : `${parsed.kind}:${provider}`;
     const existing = rows.get(key);
     rows.set(key, {
       key,
