@@ -36,6 +36,38 @@ export const MORNING_BRIEF_FINAL_CHECK_RESERVE_MS = 5000;
 export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
   MORNING_BRIEF_COLLECTION_PHASE_MS - MORNING_BRIEF_FINAL_CHECK_RESERVE_MS;
 
+/**
+ * Held back inside **one source's** own budget so it can stop by its own clock.
+ *
+ * The phase reserve above protects the commit; this protects the payload. A
+ * source's cancellation signal and the clock its collector consults are two
+ * views of the same instant, so a collector that reads until the deadline is
+ * always cancelled rather than stopped: the abort escapes as an unclassified
+ * rejection, and the composition replaces the whole source with a failed
+ * collection carrying zero items — discarding evidence every provider call
+ * already returned successfully.
+ *
+ * So the last stretch of every source budget belongs to finishing, not to
+ * reading. New provider reads stop here; the release proof, the release fence
+ * and the bundle projection spend what is left, and the source hands back the
+ * partial evidence it really holds.
+ */
+export const MORNING_BRIEF_SOURCE_READ_RESERVE_MS = 3000;
+
+/**
+ * The instant one source stops starting provider reads.
+ *
+ * Never earlier than the moment it is asked: a budget already shorter than the
+ * reserve has no reading time to give back, and reporting a cutoff in the past
+ * would turn a short budget into a source that never started.
+ */
+export function morningBriefSourceReadCutoff(
+  deadlineAt: number,
+  at: number,
+): number {
+  return Math.max(at, deadlineAt - MORNING_BRIEF_SOURCE_READ_RESERVE_MS);
+}
+
 /** At most three sources are in flight; the rest queue in the fixed order. */
 export const MORNING_BRIEF_MAX_CONCURRENT_SOURCES = 3;
 

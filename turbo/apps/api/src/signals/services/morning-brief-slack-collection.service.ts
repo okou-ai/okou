@@ -196,6 +196,17 @@ class SlackCollectionBudget {
     private readonly scope: MorningBriefSlackCollectionScope,
     private readonly clock: () => number,
     private readonly deadline: number,
+    /**
+     * When this attempt stops reading, ahead of the deadline that cancels it.
+     *
+     * Reading up to `deadline` spends the same instant the caller's signal
+     * fires on, so the attempt is aborted mid-read instead of stopping: the
+     * abort escapes classification, the source is rejected outright, and every
+     * message these reads already collected and proved is discarded. Leaving
+     * the last stretch to the release proof is what lets an attempt that ran
+     * out of time still hand back the conversations it actually read.
+     */
+    private readonly readDeadline: number = deadline,
   ) {}
 
   /** True once a total budget stopped this attempt from reading further. */
@@ -213,8 +224,8 @@ class SlackCollectionBudget {
     this.limits.add(limit);
   }
 
-  private spendWithin(ceiling: number): boolean {
-    if (this.clock() >= this.deadline) {
+  private spendWithin(ceiling: number, until: number): boolean {
+    if (this.clock() >= until) {
       return this.stop("deadline");
     }
     if (this.requests >= ceiling) {
@@ -229,7 +240,7 @@ class SlackCollectionBudget {
     if (this.exhausted) {
       return false;
     }
-    return this.spendWithin(MAX_READ_REQUESTS);
+    return this.spendWithin(MAX_READ_REQUESTS, this.readDeadline);
   }
 
   /**
@@ -240,7 +251,7 @@ class SlackCollectionBudget {
    * then. Only the total request ceiling and the wall clock can refuse it.
    */
   spendProofRequest(): boolean {
-    return this.spendWithin(MAX_PROVIDER_REQUESTS);
+    return this.spendWithin(MAX_PROVIDER_REQUESTS, this.deadline);
   }
 
   /**
@@ -795,13 +806,19 @@ async function readThreadReplies(
  */
 export async function collectMorningBriefSlackBundle(
   scope: MorningBriefSlackCollectionScope,
-  options: { readonly clock: () => number; readonly deadline: number },
+  options: {
+    readonly clock: () => number;
+    readonly deadline: number;
+    /** When reading stops, leaving the rest of the budget to the proof. */
+    readonly readDeadline?: number;
+  },
   signal: AbortSignal,
 ): Promise<MorningBriefSlackCollectionResult> {
   const budget = new SlackCollectionBudget(
     scope,
     options.clock,
     options.deadline,
+    options.readDeadline ?? options.deadline,
   );
   const collected = await settle(
     (async () => {
