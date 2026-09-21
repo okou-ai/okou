@@ -799,7 +799,8 @@ lint does not establish correct stacking.
 
 [Browser regression tests](../e2e/playwright/tests/floating-layers.spec.ts)
 check actual pointer hit targets over sidebar actions in fullscreen, nested
-dialog interaction and dismissal, and a select above its settings dialog.
+dialog interaction and dismissal, a dialog above fullscreen content, and a
+select above its settings dialog.
 Class names and computed z-index values alone cannot verify these relationships.
 Fullscreen state preservation also needs the shared primitive's state and
 scroll regression coverage. Standalone behavior still needs installed-PWA

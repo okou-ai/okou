@@ -64,6 +64,17 @@ test("fullscreen artifacts cover sidebar actions and restore their interaction o
       await expectHitWithin(panel, point);
     }
 
+    // The public rename shortcut opens a body-level dialog while the app's
+    // fullscreen layer is still present. Its controls must win that overlap.
+    await page.keyboard.press("F2");
+    const rename = page.getByRole("dialog");
+    const title = rename.getByRole("textbox");
+    await expectHitWithin(title, await centerOf(title));
+    await title.fill("Unsaved fullscreen title");
+    await rename.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(rename).toBeHidden();
+    await expect(exit).toBeVisible();
+
     await exit.click();
     await expect(
       panel.getByRole("button", { name: "Enter fullscreen" }),
