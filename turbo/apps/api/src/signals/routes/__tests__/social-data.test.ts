@@ -78,15 +78,17 @@ function client(actor: SocialActor) {
 }
 
 async function pricing(unitPrice = 7): Promise<UsagePricingFixture> {
-  const configured = ["youtube", "x", "instagram"].map((platform) => {
-    return {
-      kind: "social",
-      provider: `monid/${platform}`,
-      category: "provider_cost_usd_micros",
-      unitPrice,
-      unitSize: 1000,
-    } satisfies UsagePricingRow;
-  });
+  const configured = ["youtube", "x", "instagram", "wechat", "threads"].map(
+    (platform) => {
+      return {
+        kind: "social",
+        provider: `monid/${platform}`,
+        category: "provider_cost_usd_micros",
+        unitPrice,
+        unitSize: 1000,
+      } satisfies UsagePricingRow;
+    },
+  );
   const fixture = await createUsagePricingFixture({ configured });
   onTestFinished(fixture.cleanup);
   return fixture;
@@ -271,6 +273,58 @@ function source(
         { error: "Run cannot be stopped" },
         { status: 409 },
       );
+    }),
+  );
+  return observed;
+}
+
+/**
+ * TikHub endpoints are priced per call and read either a JSON body or query
+ * parameters, so their admission and settlement differ from the Apify Actors
+ * covered above.
+ */
+function tikhubPlanSource(options: {
+  readonly endpoint: string;
+  readonly location: "body" | "queryParams";
+  readonly properties: Readonly<Record<string, { readonly type: string }>>;
+  readonly required: readonly string[];
+  readonly output: unknown;
+}) {
+  const runId = `source-${randomUUID()}`;
+  const observed: {
+    runRequests: number;
+    runInput?: unknown;
+  } = { runRequests: 0 };
+  server.use(
+    http.post(`${SOURCE_BASE}/inspect`, () => {
+      return HttpResponse.json({
+        provider: "tikhub",
+        endpoint: options.endpoint,
+        input: {
+          [options.location]: {
+            type: "object",
+            properties: options.properties,
+            required: options.required,
+          },
+        },
+        price: { type: "PER_CALL", amount: { value: 0.015, currency: "USD" } },
+      });
+    }),
+    http.post(`${SOURCE_BASE}/run`, async ({ request }) => {
+      observed.runRequests += 1;
+      observed.runInput = await request.json();
+      return HttpResponse.json({
+        runId,
+        provider: "tikhub",
+        endpoint: options.endpoint,
+        status: "COMPLETED",
+        providerResponse: { httpStatus: 200 },
+        billing: {
+          actualCost: { value: 15_000, unit: "MICRO_DOLLAR", currency: "USD" },
+        },
+        billedUnits: 1,
+        output: options.output,
+      });
     }),
   );
   return observed;
@@ -914,6 +968,173 @@ describe("Social data jobs", () => {
     });
     expect(observed.runRequests).toBe(1);
     await expect(credits(actor)).resolves.toBe(before);
+  });
+
+  it("collects WeChat Official Account comments through a per-call plan", async () => {
+    const actor = await seedActor();
+    const observed = tikhubPlanSource({
+      endpoint: "/api/v1/wechat_mp/v2/fetch_article_comments",
+      location: "body",
+      properties: { url: { type: "string" }, raw: { type: "boolean" } },
+      required: ["url"],
+      output: {
+        elected_total: 1,
+        comments: [
+          {
+            content_id: "6255846262940111556",
+            nick_name: "A reader",
+            content: "A clear breakdown of the launch.",
+            like_num: 87,
+            create_time: 1_741_148_719,
+            reply_total: 2,
+          },
+        ],
+      },
+    });
+    const before = await credits(actor);
+    const request = {
+      platform: "wechat",
+      operation: "comments",
+      url: "https://mp.weixin.qq.com/s/TSNQKkRpN1qbKsT7BvzqIw",
+      limit: 20,
+    } as const satisfies SocialDataRequest;
+
+    const quote = await accept(
+      client(actor)(socialDataContract).quote({
+        headers: authenticate(actor),
+        body: request,
+      }),
+      [200],
+    );
+    expect(quote.body).toMatchObject({
+      platform: "wechat",
+      operation: "comments",
+      quantity: 1,
+      unit: "request",
+      estimatedCredits: 105,
+    });
+
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody(request),
+      }),
+      [202],
+    );
+    const finished = await readJob(actor, created.body.jobId);
+
+    expect(observed.runInput).toStrictEqual({
+      provider: "tikhub",
+      endpoint: "/api/v1/wechat_mp/v2/fetch_article_comments",
+      input: { body: { url: request.url, raw: false } },
+    });
+    expect(finished.body).toMatchObject({
+      status: "completed",
+      data: {
+        items: [
+          {
+            id: "6255846262940111556",
+            text: "A clear breakdown of the launch.",
+            displayName: "A reader",
+            likes: 87,
+            replies: 2,
+            publishedAt: "2025-03-05T04:25:19.000Z",
+          },
+        ],
+      },
+      billing: { state: "settled", creditsCharged: 105 },
+    });
+    await expect(credits(actor)).resolves.toBe(before - 105);
+  });
+
+  it("inspects one Threads profile by its exact handle", async () => {
+    const actor = await seedActor();
+    const observed = tikhubPlanSource({
+      endpoint: "/api/v1/threads/web/search_profiles",
+      location: "queryParams",
+      properties: { query: { type: "string" } },
+      required: ["query"],
+      output: {
+        xdt_api__v1__users__search_connection: {
+          edges: [
+            {
+              node: {
+                pk: "63625256886",
+                username: "example",
+                full_name: "Example Newsroom",
+              },
+            },
+            {
+              node: {
+                pk: "63266688630",
+                username: "examplejapan",
+                full_name: "Example Newsroom Japan",
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({
+          platform: "threads",
+          operation: "inspect",
+          url: "https://www.threads.com/@example",
+          limit: 1,
+        }),
+      }),
+      [202],
+    );
+    const finished = await readJob(actor, created.body.jobId);
+
+    expect(observed.runInput).toMatchObject({
+      input: { queryParams: { query: "example" } },
+    });
+    expect(finished.body).toMatchObject({
+      status: "completed",
+      data: {
+        items: [
+          {
+            id: "63625256886",
+            username: "example",
+            displayName: "Example Newsroom",
+            url: "https://www.threads.com/@example",
+          },
+        ],
+      },
+    });
+    expect(observed.runRequests).toBe(1);
+  });
+
+  it("rejects unsupported new-platform targets before execution", async () => {
+    const actor = await seedActor();
+    const observed = source();
+    for (const body of [
+      {
+        platform: "threads",
+        operation: "posts",
+        url: "https://www.threads.com/@example",
+        limit: 10,
+      },
+      {
+        platform: "wechat",
+        operation: "inspect",
+        url: "https://mp.weixin.qq.com/mp/homepage",
+        limit: 1,
+      },
+    ] as const satisfies readonly SocialDataRequest[]) {
+      await accept(
+        client(actor)(socialDataContract).quote({
+          headers: authenticate(actor),
+          body,
+        }),
+        [422],
+      );
+    }
+    expect(observed.runRequests).toBe(0);
   });
 
   it("retains separate platform identifiers in the public usage breakdown", async () => {
