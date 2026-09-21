@@ -561,13 +561,23 @@ test("A workspace without a saved color theme starts on the default palette", as
 
   const colorTheme = await screen.findByRole("group", { name: "Color theme" });
   expectSelected(getFastRole("button", "Default", colorTheme));
-  await waitFor(() => {
-    expect(updates).toContainEqual({ colorTheme: "default" });
-  });
   expect(document.documentElement).not.toHaveAttribute("data-color-theme");
   expect(document.documentElement).not.toHaveAttribute(
     "data-gradient-color-themes",
   );
+
+  // An absent palette stays absent until the member picks one, so the first
+  // palette this workspace records is the one they click.
+  click(getFastRole("button", "Golden hour", colorTheme));
+
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "Golden hour", colorTheme));
+  });
+  expect(
+    updates.filter((update) => {
+      return update.colorTheme !== undefined;
+    }),
+  ).toEqual([{ colorTheme: "golden-hour" }]);
 });
 
 test("Gradient color themes stay hidden when the capability is disabled", async () => {

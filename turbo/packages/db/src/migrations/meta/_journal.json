@@ -778,6 +778,13 @@
       "when": 1789974568475,
       "tag": "1188_social_data_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 1189,
+      "version": "7",
+      "when": 1789982141008,
+      "tag": "1189_reset_unchosen_blue_horizon_color_theme",
+      "breakpoints": true
     }
   ]
 }
