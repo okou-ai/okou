@@ -226,14 +226,11 @@ export function agentAvatarTexture(
   if (!config) {
     return null;
   }
+  // Not guarded for emptiness. Every one of the 150 hair x sweater x skin
+  // combinations leaves at least two textures, and the suite asserts that over
+  // the whole input space, so a palette change that broke it would fail there
+  // rather than quietly hand one agent no texture.
   const options = admissibleAvatarTextures(config);
-  if (options.length === 0) {
-    // Every one of the 150 hair x sweater x skin combinations leaves at least
-    // two textures, so this is unreachable today. It stays because adding a
-    // sweater colour or a texture is what would break it, and a missing
-    // texture is a better failure than an invisible sweater.
-    return null;
-  }
   return options[agentSeed(agentId) % options.length]!;
 }
 
