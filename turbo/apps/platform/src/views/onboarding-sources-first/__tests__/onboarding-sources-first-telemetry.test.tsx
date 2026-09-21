@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -37,6 +37,7 @@ const MARKETING_FIELD = "Marketing & content";
 const TEAMMATE_EMAIL = "teammate@example.test";
 /** A word the catalog only matches through a description, never a slug. */
 const SEARCH_WORDS = "shared notes";
+const API_TOKEN_PLACEHOLDER = "token-xxxx";
 
 function mockOnboardingNeeded(): void {
   context.mocks.data.onboardingStatus({
@@ -45,32 +46,51 @@ function mockOnboardingNeeded(): void {
   });
 }
 
-function catalogItem(
-  slug: string,
-  label: string,
-  description: string,
-  connected: boolean,
-): PublicConnectorCatalogStatusItem {
+function catalogItem(item: {
+  readonly slug: string;
+  readonly label: string;
+  readonly description: string;
+  readonly connected: boolean;
+  /** A token this test can type, so a connect completes without a provider. */
+  readonly manual?: boolean;
+}): PublicConnectorCatalogStatusItem {
   return {
-    slug,
-    label,
-    description,
+    slug: item.slug,
+    label: item.label,
+    description: item.description,
     icon: {
-      url: `https://icons.example.test/onboarding-${slug}.svg`,
+      url: `https://icons.example.test/onboarding-${item.slug}.svg`,
       invertInDarkMode: false,
     },
     category: "productivity",
     generation: [],
     tags: [],
     authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
+      item.manual
+        ? {
+            id: "api-token",
+            label: "API Token",
+            description: null,
+            grantKind: "manual",
+            manualFields: [
+              {
+                id: "apiToken",
+                label: "API Token",
+                required: true,
+                placeholder: API_TOKEN_PLACEHOLDER,
+                inputType: "password",
+              },
+            ],
+            startOptions: [],
+          }
+        : {
+            id: "oauth",
+            label: "OAuth",
+            description: null,
+            grantKind: "auth-code",
+            manualFields: [],
+            startOptions: [],
+          },
     ],
     permissionSummary: {
       hasPermissions: false,
@@ -79,12 +99,12 @@ function catalogItem(
       hasDefaultPolicyOverrides: false,
     },
     connection: null,
-    connected,
-    connectionStatus: connected ? "connected" : "not-connected",
+    connected: item.connected,
+    connectionStatus: item.connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: false,
     tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
+    singleAuthCodeAuthMethodId: item.manual ? null : "oauth",
     connectNotice: null,
   };
 }
@@ -97,8 +117,19 @@ function mockCatalog(): void {
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, {
       connectors: [
-        catalogItem("gmail", "Gmail", "Mail for your workspace", true),
-        catalogItem("notion", "Notion", "Shared notes for a team", false),
+        catalogItem({
+          slug: "gmail",
+          label: "Gmail",
+          description: "Mail for your workspace",
+          connected: true,
+        }),
+        catalogItem({
+          slug: "notion",
+          label: "Notion",
+          description: "Shared notes for a team",
+          connected: false,
+          manual: true,
+        }),
       ],
     });
   });
@@ -354,7 +385,7 @@ test("The catalog search reports what it produced, never the words that produced
   expect(JSON.stringify(posthog.events)).not.toContain(SEARCH_WORDS);
 });
 
-test("Connecting from the grid is separable from connecting through the search", async () => {
+test("A source connected from the grid reports the connect it came from", async () => {
   const posthog = context.mocks.posthog();
   mockOnboardingNeeded();
   mockCatalog();
@@ -372,12 +403,26 @@ test("Connecting from the grid is separable from connecting through the search",
 
   click(getButtonByName("Connect Notion"));
 
-  await expect(
-    screen.findByRole("dialog", { name: "Notion" }),
-  ).resolves.toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", { name: "Notion" });
   expect(posthog.events).toStrictEqual(
     expect.arrayContaining([
       onboardingEvent("SourceConnectStarted", {
+        connector_slug: "notion",
+        source_origin: "grid",
+      }),
+    ]),
+  );
+
+  await fill(within(dialog).getByPlaceholderText(API_TOKEN_PLACEHOLDER), "abc");
+  click(getButtonByName("Save"));
+
+  await expect(
+    screen.findByText("Notion connected successfully"),
+  ).resolves.toBeInTheDocument();
+  expect(posthog.events).toStrictEqual(
+    expect.arrayContaining([
+      onboardingEvent("SourceConnected", {
+        step_key: "sources",
         connector_slug: "notion",
         source_origin: "grid",
       }),
