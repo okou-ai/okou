@@ -3084,7 +3084,14 @@ describe("MCP chat status", () => {
     });
     const token = f.auth.token();
     const before = await f.chat.readThread(f.actor, thread.id);
+    const inputRef = {
+      threadId: thread.id,
+      eventId: randomUUID(),
+      seqId: 1,
+    };
     for (const args of [
+      { threadId: thread.id, inputRef },
+      { threadId: thread.id, waitMs: 0 },
       {
         inputRef: {
           threadId: "not-a-uuid",

@@ -142,6 +142,15 @@ describe("MCP chat status input", () => {
       threadId,
     });
   });
+
+  it("rejects redundant selectors and latest-thread wait controls", () => {
+    for (const value of [
+      { threadId, inputRef },
+      { threadId, waitMs: 0 },
+    ]) {
+      expect(mcpGetChatStatusInputSchema.safeParse(value).success).toBe(false);
+    }
+  });
 });
 
 describe("MCP chat status response coherence", () => {
