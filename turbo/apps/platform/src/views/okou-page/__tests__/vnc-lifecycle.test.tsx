@@ -26,11 +26,25 @@ const credential = Object.freeze<VncCredentialResponse>({
   updatedAt: "2026-09-01T00:00:00.000Z",
 });
 
-async function openCredential(name: string) {
+async function openCredential(
+  name: string,
+  method: "vnc_password" | "username_password" = "vnc_password",
+) {
   click(getAction("button", "Add credential"));
   const dialog = await screen.findByRole("dialog", { name: "Add credential" });
   await fill(within(dialog).getByLabelText("Credential name"), name);
-  await fill(within(dialog).getByLabelText("VNC password"), " pwd ");
+  if (method === "username_password") {
+    await userEvent.click(
+      within(dialog).getByLabelText("Authentication method"),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Username and password" }),
+    );
+    await fill(within(dialog).getByLabelText("Username"), " operator ");
+    await fill(within(dialog).getByLabelText("Password"), " plain password ");
+  } else {
+    await fill(within(dialog).getByLabelText("VNC password"), " pwd ");
+  }
   return dialog;
 }
 
@@ -110,6 +124,66 @@ test("A same-owner session replacement preserves the password and focus and save
         id: expect.any(String),
         name: "Original session login",
         authentication: { method: "vnc_password", password: " pwd " },
+      },
+      authorization: "Bearer replacement-token",
+    },
+  ]);
+  expect(secret).toHaveValue("");
+});
+
+test("A same-owner session replacement preserves a Plain draft and saves its exact authentication", async () => {
+  mockEmptySettings();
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncCredentialsContract.create,
+    ({ body, request, respond }) => {
+      requests.push({
+        body,
+        authorization: request.headers.get("authorization"),
+      });
+      return respond(201, {
+        id: body.id,
+        name: body.name,
+        authMethod: "username_password",
+        username: " operator ",
+        revision: 1,
+        hosts: [],
+        createdAt: credential.createdAt,
+        updatedAt: credential.updatedAt,
+      });
+    },
+  );
+  await credentialPage();
+  const dialog = await openCredential(
+    "Original Plain login",
+    "username_password",
+  );
+  const secret = within(dialog).getByLabelText("Password");
+  await userEvent.click(secret);
+  replaceSession();
+  const current = await screen.findByRole("dialog", { name: "Add credential" });
+  expect(within(current).getByLabelText("Credential name")).toHaveValue(
+    "Original Plain login",
+  );
+  expect(within(current).getByLabelText("Username")).toHaveValue(" operator ");
+  expect(within(current).getByLabelText("Password")).toHaveValue(
+    " plain password ",
+  );
+  expect(within(current).getByLabelText("Password")).toHaveFocus();
+  click(getAction("button", "Save", current));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      body: {
+        id: expect.any(String),
+        name: "Original Plain login",
+        authentication: {
+          method: "username_password",
+          username: " operator ",
+          password: " plain password ",
+        },
       },
       authorization: "Bearer replacement-token",
     },

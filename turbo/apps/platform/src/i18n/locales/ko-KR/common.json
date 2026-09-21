@@ -601,13 +601,13 @@
       "loadFailed": "권한을 불러올 수 없습니다",
       "loadingPermissions": "권한을 불러오는 중",
       "onlyMe": "나만",
-      "onlyMeDescription": "나만 이 아티팩트를 볼 수 있습니다",
+      "onlyMeOption": "나만",
       "organization": "조직",
-      "organizationDescription": "링크가 있는 {{organization}} 구성원",
-      "organizationDescriptionUnnamed": "링크가 있는 조직 내 모든 사용자",
+      "organizationOption": "{{organization}} 구성원",
+      "organizationOptionUnnamed": "조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
-      "publicDescription": "링크가 있는 모든 사람이 볼 수 있습니다",
+      "publicOption": "링크가 있는 모든 사람",
       "retry": "다시 시도"
     },
     "sidebar": {
@@ -4136,7 +4136,6 @@
     "sourcesFirst": {
       "common": {
         "back": "뒤로",
-        "cancel": "취소",
         "continue": "계속",
         "finish": "설정 완료",
         "notNow": "나중에",
@@ -4208,24 +4207,32 @@
         "title": "어떤 일을 하시나요?"
       },
       "skills": {
-        "confirm": "가져오고 계속",
-        "copy": "SKILL.md를 가져오면 Okou의 워크플로가 되어 /로 바로 실행할 수 있습니다.",
-        "import": "파일 선택",
+        "copied": "복사됨",
+        "copy": "이 프롬프트를 본인의 Codex 또는 Claude Code 세션에 붙여 넣으면 내 컴퓨터의 스킬이 Okou로 들어옵니다.",
+        "copyError": "프롬프트를 복사하지 못했습니다.",
+        "copyPrompt": "프롬프트 복사",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
-        "importedTitle": "워크플로가 준비됐습니다",
-        "panelCopy": "Codex, Claude Code 또는 SKILL.md를 작성하는 어떤 에이전트에서든.",
-        "panelTitle": "여기에 SKILL.md를 놓으세요",
-        "previewCopy": "Okou 워크플로로 가져옵니다. 공유하기 전까지는 본인만 사용할 수 있습니다.",
-        "previewTitle": "스킬 확인",
-        "replace": "다른 파일 선택",
-        "title": "이미 써 둔 스킬을 그대로 가져오세요."
+        "importedLabel": "가져온 스킬",
+        "importedTitle": "스킬이 Okou에 들어왔습니다",
+        "preparing": "가져오기 세션을 여는 중…",
+        "promptCopy": "내 컴퓨터의 스킬을 읽어 Okou에 씁니다.",
+        "promptLabel": "스킬 가져오기 프롬프트",
+        "promptTitle": "Codex 또는 Claude Code에서 실행하세요",
+        "startError": "가져오기 세션을 열지 못했습니다.",
+        "title": "이미 써 둔 스킬을 그대로 가져오세요.",
+        "tryAgain": "다시 시도",
+        "waiting": "가져온 스킬은 도착하는 대로 여기에 표시됩니다."
       },
       "slack": {
         "add": "Slack에 추가",
+        "channelAdminRequired": "워크스페이스 관리자에게 {{channel}}에 Okou를 추가해 달라고 요청하세요.",
+        "channelUnavailable": "{{channel}}은(는) 아직 이 워크스페이스에서 사용할 수 없습니다.",
+        "connectAction": "Slack 연결",
         "connectedCopy": "Slack에서 @Okou을 멘션해 일을 맡기세요.",
         "connectedStatus": "워크스페이스에 추가됨",
         "connectedTitle": "Slack이 연결됐습니다",
         "copy": "한 번만 추가하면, 일이 오가는 곳에서 @Okou을 부르기만 하면 됩니다.",
+        "name": "Slack",
         "otherAdded": "추가됨",
         "otherImessage": "iMessage",
         "othersLabel": "지금 추가해도, 나중에 해도 됩니다",
@@ -6893,8 +6900,7 @@
     "custom": "커스텀",
     "detail": {
       "back": "커스텀 템플릿",
-      "page": "{{number}}페이지",
-      "sourceFile": "{{filename}}에서"
+      "page": "{{number}}페이지"
     },
     "empty": {
       "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
@@ -6975,6 +6981,7 @@
     "configured": "구성됨",
     "credential": {
       "add": "자격 증명 추가",
+      "authentication": "인증 방식",
       "createNew": "새 자격 증명 만들기",
       "delete": "자격 증명 삭제",
       "deleteHelp": "사용하지 않는 자격 증명을 삭제할까요? 되돌릴 수 없습니다.",
@@ -6988,13 +6995,20 @@
       "password": "VNC 비밀번호",
       "passwordHelp": "기존 VNC 비밀번호는 인쇄 가능한 ASCII 문자 1~8자를 사용합니다. 공백은 유지됩니다.",
       "passwordHint": "서버의 VNC 비밀번호를 입력하세요",
-      "replace": "비밀번호 교체",
-      "replaceHelp": "끄면 저장된 비밀번호를 유지합니다. 교체하면 이 자격 증명을 사용하는 모든 호스트에 영향을 줍니다.",
+      "replace": "인증 정보 교체",
+      "replaceHelp": "끄면 저장된 인증 정보를 유지합니다. 교체하면 이 자격 증명을 사용하는 모든 호스트에 영향을 줍니다.",
       "select": "인증 정보 선택",
-      "sharedHelp_one": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 해당 호스트에 영향을 줍니다.",
-      "sharedHelp_other": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 모두에 영향을 줍니다.",
+      "sharedHelp_one": "호스트 {{count}}개에서 사용 중입니다. 인증 정보 변경은 해당 호스트에 영향을 줍니다.",
+      "sharedHelp_other": "호스트 {{count}}개에서 사용 중입니다. 인증 정보 변경은 모두에 영향을 줍니다.",
       "summary_other": "자격 증명 {{count}}개 구성됨",
-      "unused": "사용 중인 호스트가 없습니다."
+      "unused": "사용 중인 호스트가 없습니다.",
+      "username": "사용자 이름",
+      "usernameHelp": "1~255 UTF-8바이트입니다. NUL은 허용되지 않습니다.",
+      "usernameHint": "서버 사용자 이름을 입력하세요",
+      "usernamePassword": "비밀번호",
+      "usernamePasswordHelp": "1~1023 UTF-8바이트입니다. NUL은 허용되지 않으며 공백은 유지됩니다.",
+      "usernamePasswordHint": "이 사용자 이름의 비밀번호를 입력하세요",
+      "usernamePasswordMethod": "사용자 이름 및 비밀번호"
     },
     "credentialsTab": "자격 증명",
     "delete": "호스트 삭제",
@@ -7039,10 +7053,13 @@
       "caHelp": "최대 8개의 CA 인증서, 총 64 KiB까지 가능합니다. 개인 키나 서버 인증서를 붙여넣지 마세요.",
       "caHint": "서버 인증서를 발급한 공개 CA 인증서를 붙여넣으세요",
       "custom": "사용자 지정 인증 기관",
-      "help": "VeNCrypt X509Vnc를 지원하는 VNC 서버가 필요합니다. 인증서는 설정한 호스트 이름 또는 IP 주소와 일치해야 합니다.",
-      "profile": "암호화된 VNC (X509Vnc)",
+      "profileLabel": "보안 프로필",
       "system": "시스템 인증 기관",
-      "title": "서버 인증서 신뢰"
+      "title": "서버 인증서 신뢰",
+      "x509Plain": "암호화된 사용자 이름 및 비밀번호(X509Plain)",
+      "x509PlainHelp": "VeNCrypt X509Plain이 필요합니다. TLS는 사용자 이름과 비밀번호를 보내기 전에 서버를 확인합니다.",
+      "x509Vnc": "암호화된 VNC(X509Vnc)",
+      "x509VncHelp": "VeNCrypt X509Vnc가 필요합니다. TLS는 VNC 비밀번호를 보내기 전에 서버를 확인합니다."
     },
     "summary_one": "설정된 호스트 {{count}}개",
     "summary_other": "설정된 호스트 {{count}}개",

@@ -53,8 +53,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DurableUserExport]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
-    enabled: false,
+      "Run a data export as a resumable background job that continues after an interrupted request. Turning it off runs the next export in the previous single-request exporter.",
+    enabled: true,
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
@@ -354,7 +354,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OpenRouterUsRouting]: {
     maintainer: "liangyou@okou.ai",
     description:
-      "Use US routing for supported models with platform-owned OpenRouter keys.",
+      "Use US routing for supported non-DeepSeek models with platform-owned OpenRouter keys.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

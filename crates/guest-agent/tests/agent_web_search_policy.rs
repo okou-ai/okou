@@ -1,4 +1,4 @@
-//! Agent runs must use managed web search instead of framework-native search.
+//! Agent runs use managed search unless an API-resolved BYOK fallback is enabled.
 
 mod common;
 
@@ -13,6 +13,18 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::test]
 async fn okou_agent_id_disables_builtin_web_search_for_claude_and_codex() -> TestResult {
+    assert_web_search_policy(None, true).await
+}
+
+#[tokio::test]
+async fn positive_opt_in_enables_builtin_web_search_for_claude_and_codex() -> TestResult {
+    assert_web_search_policy(Some("true"), false).await
+}
+
+async fn assert_web_search_policy(
+    framework_web_search: Option<&str>,
+    expect_disabled: bool,
+) -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let root = tempfile::tempdir()?;
     let claude_mock = common::build_and_locate_mock()?;
@@ -22,11 +34,25 @@ async fn okou_agent_id_disables_builtin_web_search_for_claude_and_codex() -> Tes
         ("claude-code", claude_mock.as_path()),
         ("codex", codex_mock.as_path()),
     ] {
-        let case_root = root.path().join(framework);
+        let case_root = root.path().join(format!(
+            "{framework}-{}",
+            if expect_disabled {
+                "disabled"
+            } else {
+                "enabled"
+            }
+        ));
         std::fs::create_dir_all(&case_root)?;
         let args_path = case_root.join("args.txt");
         let wrapper_path = write_recording_wrapper(&case_root)?;
-        let runtime = build_runtime(&case_root, framework, &wrapper_path, real_mock, &args_path)?;
+        let runtime = build_runtime(
+            &case_root,
+            framework,
+            &wrapper_path,
+            real_mock,
+            &args_path,
+            framework_web_search,
+        )?;
 
         let result = execute(&runtime).await?;
         assert_eq!(result.exit_code, common::CLEAN_EXIT);
@@ -37,15 +63,26 @@ async fn okou_agent_id_disables_builtin_web_search_for_claude_and_codex() -> Tes
                 .iter()
                 .position(|arg| arg == "--disallowed-tools")
                 .ok_or("Claude command omitted --disallowed-tools")?;
+            let first_disallowed_tool = args
+                .get(disallowed_tools_index + 1)
+                .ok_or("Claude command omitted the disallowed-tools value")?;
+            assert_eq!(first_disallowed_tool, "CronCreate");
             assert_eq!(
-                &args[disallowed_tools_index + 1..disallowed_tools_index + 3],
-                ["CronCreate", "WebSearch"]
+                args.iter().any(|arg| arg == "WebSearch"),
+                expect_disabled,
+                "unexpected Claude web-search policy: {args:?}"
             );
         } else {
-            assert!(
-                args.windows(2)
-                    .any(|window| { window[0] == "-c" && window[1] == r#"web_search="disabled""# }),
-                "Codex command omitted the disabled web-search config: {args:?}"
+            assert_eq!(
+                args.windows(2).any(|window| {
+                    matches!(
+                        window,
+                        [flag, value]
+                            if flag == "-c" && value == r#"web_search="disabled""#
+                    )
+                }),
+                expect_disabled,
+                "unexpected Codex web-search policy: {args:?}"
             );
         }
     }
@@ -59,6 +96,7 @@ fn build_runtime(
     wrapper_path: &Path,
     real_mock: &Path,
     args_path: &Path,
+    framework_web_search: Option<&str>,
 ) -> TestResult<GuestRuntime> {
     let run_id = format!("agent-web-search-{framework}");
     let home = root.join("home");
@@ -72,20 +110,21 @@ fn build_runtime(
             ..guest_contracts::env::RunPayload::default()
         },
     )?;
-    let user_env_file = write_user_env_file(
-        &runtime_dir,
-        &HashMap::from([
-            ("OKOU_AGENT_ID", "agent-okou-web-search"),
-            (
-                "TEST_ARGS_PATH",
-                args_path.to_str().ok_or("args path must be valid UTF-8")?,
-            ),
-            (
-                "TEST_REAL_MOCK",
-                real_mock.to_str().ok_or("mock path must be valid UTF-8")?,
-            ),
-        ]),
-    )?;
+    let mut user_env = HashMap::from([
+        ("OKOU_AGENT_ID", "agent-okou-web-search"),
+        (
+            "TEST_ARGS_PATH",
+            args_path.to_str().ok_or("args path must be valid UTF-8")?,
+        ),
+        (
+            "TEST_REAL_MOCK",
+            real_mock.to_str().ok_or("mock path must be valid UTF-8")?,
+        ),
+    ]);
+    if let Some(value) = framework_web_search {
+        user_env.insert("OKOU_ENABLE_FRAMEWORK_WEB_SEARCH", value);
+    }
+    let user_env_file = write_user_env_file(&runtime_dir, &user_env)?;
     let is_claude = framework == "claude-code";
     let mut config = guest_agent::env::GuestConfig::from_raw(guest_agent::env::GuestConfigRaw {
         run_id,

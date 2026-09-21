@@ -14,6 +14,7 @@ import type {
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { env } from "../../../lib/env";
 import { clearMockNow, mockNow } from "../../../lib/time";
@@ -32,6 +33,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { commitMemoryVersion } from "./helpers/memory";
 import { createFixtureTracker } from "./helpers/route-test";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   installUserExportStorage,
   readExportChatRows,
@@ -61,6 +63,23 @@ const trackDeferredS3Put = createFixtureTracker<DeferredS3Put>((pendingPut) => {
 afterEach(() => {
   clearMockNow();
 });
+
+/**
+ * Durable admission is the registry default, so these scenarios state the
+ * owner opt-out that keeps a new export on the legacy streaming exporter and
+ * install the uploads that exporter performs.
+ */
+async function installLegacyUserExport(actor: ApiTestUser): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Legacy user export scenarios require an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    { [FeatureSwitchKey.DurableUserExport]: false },
+  );
+  installUserExportStorage(context);
+}
 
 async function entitledRunActor(): Promise<{
   readonly actor: ApiTestUser;
@@ -285,7 +304,7 @@ describe("OPS-01: user data export", () => {
     });
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const pendingPut = await trackDeferredS3Put(
       Promise.resolve(api.deferS3PutOnce()),
     );
@@ -405,7 +424,7 @@ describe("OPS-01: user data export", () => {
     const downloadUrl = "https://r2.example.com/bdd-okou-export.zip?sig=test";
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
 
     const started = await api.requestPostUserExport(actor, [202]);
     const exportKey = `exports/${actor.userId}/${started.body.jobId}.zip`;
@@ -518,7 +537,7 @@ describe("OPS-01: user data export", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-structured-export.zip?sig=test",
     );
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const started = await api.requestPostUserExport(actor, [202]);
     const exportKey = `exports/${actor.userId}/${started.body.jobId}.zip`;
     await waitForUserExportJobStatus(
@@ -655,7 +674,7 @@ describe("OPS-01: user data export", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-accessible-export.zip?sig=test",
     );
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const started = await api.requestPostUserExport(actor, [202]);
     await waitForUserExportJobStatus(
       api,
@@ -747,7 +766,7 @@ describe("OPS-01: user data export", () => {
           createTarGz([]),
         );
       }
-      installUserExportStorage(context);
+      await installLegacyUserExport(actor);
       const started = await api.requestPostUserExport(actor, [202]);
       const status = await waitForUserExportJobStatus(
         api,
@@ -771,7 +790,7 @@ describe("OPS-01: user data export", () => {
     const actor = bdd.user();
     const agent = await bdd.createAgent(actor, { visibility: "private" });
     await bdd.updateAgentInstructions(actor, agent.agentId, "");
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const started = await api.requestPostUserExport(actor, [202]);
     await waitForUserExportJobStatus(
       api,
@@ -838,7 +857,7 @@ describe("OPS-01: user data export", () => {
     const peerMemory = await commitMemoryVersion(context, peer, peerFiles);
     putMemoryArchive(misc, peerMemory.s3Key, peerFiles);
 
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const started = await api.requestPostUserExport(actor, [202]);
     await waitForUserExportJobStatus(
       api,
@@ -937,7 +956,7 @@ describe("OPS-01: user data export", () => {
           createTarGz([{ path: "MEMORY.md", content: "Tampered memory" }]),
         );
       }
-      installUserExportStorage(context);
+      await installLegacyUserExport(actor);
       const started = await api.requestPostUserExport(actor, [202]);
       const status = await waitForUserExportJobStatus(
         api,
@@ -1012,7 +1031,7 @@ describe("OPS-01: user data export", () => {
     // The object store contains no session blob. Export still preserves the
     // user's instruction data without depending on runner resume artifacts.
     const visibleAgents = await bdd.listAgents(actor);
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const started = await api.requestPostUserExport(actor, [202]);
     await waitForUserExportJobStatus(
       api,
@@ -1063,7 +1082,7 @@ describe("OPS-01: user data export", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-retry.zip?sig=test",
     );
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const storage = context.mocks.s3.send.getMockImplementation();
     if (!storage) {
       throw new Error("Expected export object storage mock");
@@ -1128,7 +1147,7 @@ describe("OPS-01: user data export", () => {
     const api = createOpsLogsApi(context);
     const actor = createBddApi(context).user();
     createMiscRoutesApi(context);
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const storage = context.mocks.s3.send.getMockImplementation();
     if (!storage) {
       throw new Error("Expected export object storage mock");
@@ -1230,7 +1249,7 @@ describe("OPS-01: user data export", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-unsubscribed.zip?sig=test",
     );
-    installUserExportStorage(context);
+    await installLegacyUserExport(actor);
     const started = await api.requestPostUserExport(actor, [202]);
 
     const status = await waitForUserExportJobStatus(

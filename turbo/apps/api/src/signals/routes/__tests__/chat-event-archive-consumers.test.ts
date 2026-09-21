@@ -466,18 +466,18 @@ describe("archived chat event consumers", () => {
     "exports snapshot history plus the PostgreSQL tail after archived source rows are gone (durable=%s)",
     async (durable) => {
       const fixture = await createArchiveFixture("export");
-      if (durable) {
-        if (!fixture.actor.orgId) {
-          throw new Error("Expected an organization for the export fixture");
-        }
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...fixture.actor, orgId: fixture.actor.orgId },
-          {
-            [FeatureSwitchKey.DurableUserExport]: true,
-          },
-        );
+      if (!fixture.actor.orgId) {
+        throw new Error("Expected an organization for the export fixture");
       }
+      // Durable admission is the registry default, so the legacy arm states
+      // the owner opt-out that keeps its export on the streaming exporter.
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...fixture.actor, orgId: fixture.actor.orgId },
+        {
+          [FeatureSwitchKey.DurableUserExport]: durable,
+        },
+      );
       const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
       // Each message stays within PostgreSQL's indexed document limit while
       // their combined compressed snapshot crosses the export range boundary.

@@ -602,13 +602,13 @@
       "loadFailed": "अनुमतियाँ लोड नहीं हो सकीं",
       "loadingPermissions": "अनुमतियाँ लोड हो रही हैं",
       "onlyMe": "केवल मैं",
-      "onlyMeDescription": "केवल आप यह आर्टिफ़ैक्ट देख सकते हैं",
+      "onlyMeOption": "केवल मैं",
       "organization": "संगठन",
-      "organizationDescription": "{{organization}} में लिंक वाला कोई भी व्यक्ति",
-      "organizationDescriptionUnnamed": "आपके संगठन में लिंक रखने वाला कोई भी व्यक्ति",
+      "organizationOption": "{{organization}} में कोई भी व्यक्ति",
+      "organizationOptionUnnamed": "आपके संगठन में कोई भी व्यक्ति",
       "permissionsUpdated": "पहुँच अपडेट हो गई",
       "publicAccess": "सार्वजनिक ऐक्सेस",
-      "publicDescription": "लिंक वाला कोई भी व्यक्ति देख सकता है",
+      "publicOption": "लिंक वाला कोई भी व्यक्ति",
       "retry": "फिर से कोशिश करें"
     },
     "sidebar": {
@@ -4148,7 +4148,6 @@
     "sourcesFirst": {
       "common": {
         "back": "वापस",
-        "cancel": "रद्द करें",
         "continue": "आगे बढ़ें",
         "finish": "सेटअप पूरा करें",
         "notNow": "अभी नहीं",
@@ -4220,24 +4219,32 @@
         "title": "आप किस तरह का काम करते हैं?"
       },
       "skills": {
-        "confirm": "इम्पोर्ट करें और आगे बढ़ें",
-        "copy": "एक SKILL.md इम्पोर्ट करें और वह Okou में workflow बन जाती है, / से चलाने के लिए तैयार।",
-        "import": "फ़ाइल चुनें",
+        "copied": "कॉपी हो गया",
+        "copy": "इस prompt को अपने Codex या Claude Code सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
+        "copyError": "prompt कॉपी नहीं हो सका।",
+        "copyPrompt": "prompt कॉपी करें",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
-        "importedTitle": "आपका workflow तैयार है",
-        "panelCopy": "Codex, Claude Code या इसे लिखने वाले किसी भी एजेंट से।",
-        "panelTitle": "SKILL.md यहाँ छोड़ें",
-        "previewCopy": "Okou workflow के रूप में इम्पोर्ट होगा। साझा करने तक इसे सिर्फ़ आप चला सकते हैं।",
-        "previewTitle": "अपनी skill देखें",
-        "replace": "दूसरी फ़ाइल चुनें",
-        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।"
+        "importedLabel": "इम्पोर्ट हुई skills",
+        "importedTitle": "आपकी skills Okou में आ गईं",
+        "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
+        "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
+        "promptLabel": "skill इम्पोर्ट prompt",
+        "promptTitle": "इसे Codex या Claude Code में चलाएँ",
+        "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
+        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।",
+        "tryAgain": "फिर से कोशिश करें",
+        "waiting": "इम्पोर्ट हुई skills आते ही यहाँ दिखेंगी।"
       },
       "slack": {
         "add": "Slack में जोड़ें",
+        "channelAdminRequired": "अपने workspace के व्यवस्थापक से {{channel}} में Okou जोड़ने के लिए कहें।",
+        "channelUnavailable": "{{channel}} इस workspace में अभी उपलब्ध नहीं है।",
+        "connectAction": "Slack कनेक्ट करें",
         "connectedCopy": "Slack खोलें और काम सौंपने के लिए @Okou को मेंशन करें।",
         "connectedStatus": "आपके workspace में जुड़ गया",
         "connectedTitle": "Slack जुड़ गया है",
         "copy": "एक बार जोड़ें, फिर जहाँ काम पहले से हो रहा है वहीं @Okou को मेंशन करें।",
+        "name": "Slack",
         "otherAdded": "जोड़ा गया",
         "otherImessage": "iMessage",
         "othersLabel": "बाद में जोड़ें, या अभी",
@@ -6911,8 +6918,7 @@
     "custom": "कस्टम",
     "detail": {
       "back": "कस्टम टेम्पलेट",
-      "page": "पृष्ठ {{number}}",
-      "sourceFile": "{{filename}} से"
+      "page": "पृष्ठ {{number}}"
     },
     "empty": {
       "description": "Okou आपकी फ़ाइल के डिज़ाइन को ऐसे टेम्पलेट में बदल देता है जिसे आप दोबारा इस्तेमाल कर सकते हैं।"
@@ -6993,6 +6999,7 @@
     "configured": "कॉन्फ़िगर किया गया",
     "credential": {
       "add": "क्रेडेंशियल जोड़ें",
+      "authentication": "प्रमाणीकरण विधि",
       "createNew": "नया क्रेडेंशियल बनाएं",
       "delete": "क्रेडेंशियल हटाएं",
       "deleteHelp": "इस अप्रयुक्त क्रेडेंशियल को हटाएँ? यह कार्रवाई वापस नहीं की जा सकती।",
@@ -7006,14 +7013,21 @@
       "password": "VNC पासवर्ड",
       "passwordHelp": "पारंपरिक VNC पासवर्ड में 1–8 प्रिंट करने योग्य ASCII वर्ण होते हैं। स्पेस बनाए रखे जाते हैं।",
       "passwordHint": "सर्वर का VNC पासवर्ड दर्ज करें",
-      "replace": "पासवर्ड बदलें",
-      "replaceHelp": "सहेजा गया पासवर्ड बनाए रखने के लिए इसे बंद रखें। पासवर्ड बदलने से इस क्रेडेंशियल का उपयोग करने वाले हर होस्ट पर असर पड़ता है।",
+      "replace": "प्रमाणीकरण बदलें",
+      "replaceHelp": "सहेजा गया प्रमाणीकरण बनाए रखने के लिए इसे बंद रखें। इसे बदलने से इस क्रेडेंशियल का उपयोग करने वाले हर होस्ट पर असर पड़ता है।",
       "select": "क्रेडेंशियल चुनें",
-      "sharedHelp_one": "{{count}} होस्ट इसका उपयोग करता है। पासवर्ड बदलने से इस होस्ट पर असर पड़ता है।",
-      "sharedHelp_other": "{{count}} होस्ट इसका उपयोग करते हैं। पासवर्ड बदलने से उन सभी पर असर पड़ता है।",
+      "sharedHelp_one": "{{count}} होस्ट इसका उपयोग करता है। प्रमाणीकरण बदलने से इस होस्ट पर असर पड़ता है।",
+      "sharedHelp_other": "{{count}} होस्ट इसका उपयोग करते हैं। प्रमाणीकरण बदलने से उन सभी पर असर पड़ता है।",
       "summary_one": "{{count}} क्रेडेंशियल कॉन्फ़िगर किया गया",
       "summary_other": "{{count}} क्रेडेंशियल कॉन्फ़िगर किए गए",
-      "unused": "कोई सहेजा गया होस्ट इसका उपयोग नहीं करता।"
+      "unused": "कोई सहेजा गया होस्ट इसका उपयोग नहीं करता।",
+      "username": "उपयोगकर्ता नाम",
+      "usernameHelp": "1–255 UTF-8 बाइट। NUL की अनुमति नहीं है।",
+      "usernameHint": "सर्वर का उपयोगकर्ता नाम दर्ज करें",
+      "usernamePassword": "पासवर्ड",
+      "usernamePasswordHelp": "1–1023 UTF-8 बाइट। NUL की अनुमति नहीं है और स्पेस बनाए रखे जाते हैं।",
+      "usernamePasswordHint": "इस उपयोगकर्ता नाम का पासवर्ड दर्ज करें",
+      "usernamePasswordMethod": "उपयोगकर्ता नाम और पासवर्ड"
     },
     "credentialsTab": "क्रेडेंशियल",
     "delete": "होस्ट हटाएँ",
@@ -7058,10 +7072,13 @@
       "caHelp": "अधिकतम 8 CA प्रमाणपत्र, कुल 64 KiB। निजी कुंजी या सर्वर प्रमाणपत्र न चिपकाएँ।",
       "caHint": "सर्वर प्रमाणपत्र जारी करने वाले सार्वजनिक CA प्रमाणपत्र चिपकाएँ",
       "custom": "कस्टम प्रमाणपत्र प्राधिकरण",
-      "help": "VeNCrypt X509Vnc का समर्थन करने वाला VNC सर्वर आवश्यक है। सर्वर प्रमाणपत्र कॉन्फ़िगर किए गए होस्टनाम या IP पते से मेल खाना चाहिए।",
-      "profile": "एन्क्रिप्टेड VNC (X509Vnc)",
+      "profileLabel": "सुरक्षा प्रोफ़ाइल",
       "system": "सिस्टम के प्रमाणपत्र प्राधिकरण",
-      "title": "सर्वर प्रमाणपत्र पर भरोसा"
+      "title": "सर्वर प्रमाणपत्र पर भरोसा",
+      "x509Plain": "एन्क्रिप्ट किया गया उपयोगकर्ता नाम और पासवर्ड (X509Plain)",
+      "x509PlainHelp": "VeNCrypt X509Plain आवश्यक है। उपयोगकर्ता नाम और पासवर्ड भेजने से पहले TLS सर्वर को सत्यापित करता है।",
+      "x509Vnc": "एन्क्रिप्ट किया गया VNC (X509Vnc)",
+      "x509VncHelp": "VeNCrypt X509Vnc आवश्यक है। VNC पासवर्ड भेजने से पहले TLS सर्वर को सत्यापित करता है।"
     },
     "summary_one": "{{count}} कॉन्फ़िगर किया गया होस्ट",
     "summary_other": "{{count}} कॉन्फ़िगर किए गए होस्ट",

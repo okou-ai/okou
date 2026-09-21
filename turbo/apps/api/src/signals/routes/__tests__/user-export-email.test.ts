@@ -32,7 +32,12 @@ function client() {
   return setupApp({ context, routes: userExportRoutes })(userExportContract);
 }
 
-function actor() {
+/**
+ * The completion email is owed by both execution modes; these cases cover the
+ * legacy streaming exporter, which a new export reaches only when its owner
+ * opts out of durable admission.
+ */
+async function actor() {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   const email = `${userId}@example.test`;
@@ -54,6 +59,11 @@ function actor() {
       imageUrl: "https://images.example.test/export-user.png",
     },
   ]);
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId, orgId },
+    { [FeatureSwitchKey.DurableUserExport]: false },
+  );
   installUserExportStorage(context);
   context.mocks.resend.send.mockResolvedValue({
     data: { id: `resend_${randomUUID()}` },
@@ -92,7 +102,7 @@ async function exportData(downloadUrl: string) {
 test.each(["cold", "warm"])(
   "delivers export email with a %s user cache",
   async (cache) => {
-    const current = actor();
+    const current = await actor();
     if (cache === "warm") {
       await accept(
         setupApp({ context, routes: authMeRoutes })(authContract).me({
@@ -149,7 +159,7 @@ test.each(["cold", "warm"])(
 );
 
 test("sends a requested export once after completion even when optional emails are disabled", async () => {
-  const current = actor();
+  const current = await actor();
   await updateFeatureSwitchesForUser(context, current, {
     [FeatureSwitchKey.MorningBrief]: true,
   });
@@ -226,7 +236,7 @@ test.each([
 ])(
   "keeps the export downloadable after a %s email lookup",
   async (_label, error) => {
-    const current = actor();
+    const current = await actor();
     context.mocks.clerk.users.getUser.mockRejectedValue(error);
     await exportData(current.downloadUrl);
     const items = await current.outbox.findItems({

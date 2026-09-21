@@ -15,6 +15,7 @@ import {
   CHAT_EVENT_SCHEMA_VERSION_HEADER,
   CURRENT_CHAT_EVENT_SCHEMA_VERSION,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -38,6 +39,7 @@ import {
   readExportChatRows,
   readUserExportZip,
 } from "./helpers/user-export-storage";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -298,6 +300,17 @@ describe("retired Goal logical history", () => {
         cursor,
       );
       const exports = createOpsLogsApi(context);
+      // Retired goal history is read back through the legacy streaming
+      // exporter, which a new export reaches only when its owner opts out of
+      // durable admission.
+      if (!actor.orgId) {
+        throw new Error("Expected organization-scoped actor");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: actor.orgId, userId: actor.userId },
+        { [FeatureSwitchKey.DurableUserExport]: false },
+      );
       installUserExportStorage(context);
       const started = await exports.requestPostUserExport(actor, [202]);
       await flushWaitUntilForTest();

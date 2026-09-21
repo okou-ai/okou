@@ -620,13 +620,13 @@
       "loadFailed": "Não foi possível carregar as permissões",
       "loadingPermissions": "Carregando permissões",
       "onlyMe": "Somente eu",
-      "onlyMeDescription": "Somente você pode ver este artefato",
+      "onlyMeOption": "Somente eu",
       "organization": "Organização",
-      "organizationDescription": "Qualquer pessoa de {{organization}} com o link",
-      "organizationDescriptionUnnamed": "Qualquer pessoa da sua organização com o link",
+      "organizationOption": "Qualquer pessoa de {{organization}}",
+      "organizationOptionUnnamed": "Qualquer pessoa da sua organização",
       "permissionsUpdated": "Acesso atualizado",
       "publicAccess": "Acesso público",
-      "publicDescription": "Qualquer pessoa com o link pode ver",
+      "publicOption": "Qualquer pessoa com o link",
       "retry": "Tentar novamente"
     },
     "sidebar": {
@@ -4202,7 +4202,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Voltar",
-        "cancel": "Cancelar",
         "continue": "Continuar",
         "finish": "Concluir configuração",
         "notNow": "Agora não",
@@ -4274,24 +4273,32 @@
         "title": "Que tipo de trabalho você faz?"
       },
       "skills": {
-        "confirm": "Importar e continuar",
-        "copy": "Importe um SKILL.md e ele vira um workflow no Okou, pronto para rodar com /.",
-        "import": "Escolher um arquivo",
+        "copied": "Copiado",
+        "copy": "Cole este prompt na sua própria sessão do Codex ou do Claude Code e ele traz para o Okou as skills da sua máquina.",
+        "copyError": "Não foi possível copiar o prompt.",
+        "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow do Okou.",
-        "importedTitle": "Seu workflow está pronto",
-        "panelCopy": "Do Codex, do Claude Code ou de qualquer agente que escreva um.",
-        "panelTitle": "Solte um SKILL.md aqui",
-        "previewCopy": "Importado como workflow do Okou. Só você pode usá-lo até compartilhar.",
-        "previewTitle": "Revise sua skill",
-        "replace": "Escolher outro arquivo",
-        "title": "Traga as skills que você já escreveu."
+        "importedLabel": "Skills importadas",
+        "importedTitle": "Suas skills estão no Okou",
+        "preparing": "Abrindo sua sessão de importação…",
+        "promptCopy": "Ele lê as skills da sua máquina e as grava no Okou.",
+        "promptLabel": "Prompt de importação de skills",
+        "promptTitle": "Rode isto no Codex ou no Claude Code",
+        "startError": "Não foi possível abrir a sessão de importação.",
+        "title": "Traga as skills que você já escreveu.",
+        "tryAgain": "Tentar novamente",
+        "waiting": "As skills importadas aparecem aqui conforme chegam."
       },
       "slack": {
         "add": "Adicionar ao Slack",
+        "channelAdminRequired": "Peça a um administrador do workspace para adicionar o Okou ao {{channel}}.",
+        "channelUnavailable": "O {{channel}} ainda não está disponível neste workspace.",
+        "connectAction": "Conectar o Slack",
         "connectedCopy": "Abra o Slack e mencione @Okou para passar uma tarefa.",
         "connectedStatus": "Adicionado ao seu workspace",
         "connectedTitle": "O Slack está conectado",
         "copy": "Adicione uma vez e mencione @Okou onde o trabalho já acontece.",
+        "name": "Slack",
         "otherAdded": "Adicionado",
         "otherImessage": "iMessage",
         "othersLabel": "Adicione depois, ou agora",
@@ -6978,8 +6985,7 @@
     "custom": "Personalizados",
     "detail": {
       "back": "Modelos personalizados",
-      "page": "Página {{number}}",
-      "sourceFile": "De {{filename}}"
+      "page": "Página {{number}}"
     },
     "empty": {
       "description": "O Okou transforma o design do seu arquivo em um modelo que você pode reutilizar."
@@ -7062,6 +7068,7 @@
     "configured": "Configurado",
     "credential": {
       "add": "Adicionar credencial",
+      "authentication": "Método de autenticação",
       "createNew": "Criar credencial",
       "delete": "Excluir credencial",
       "deleteHelp": "Excluir esta credencial não utilizada? Esta ação não pode ser desfeita.",
@@ -7075,16 +7082,23 @@
       "password": "Senha VNC",
       "passwordHelp": "Senhas VNC clássicas usam de 1 a 8 caracteres ASCII imprimíveis. Os espaços são preservados.",
       "passwordHint": "Digite a senha VNC do servidor",
-      "replace": "Substituir senha",
-      "replaceHelp": "Deixe desativado para manter a senha salva. A substituição afeta todos os hosts que usam esta credencial.",
+      "replace": "Substituir autenticação",
+      "replaceHelp": "Deixe desativado para manter a autenticação salva. A substituição afeta todos os hosts que usam esta credencial.",
       "select": "Selecionar uma credencial",
-      "sharedHelp_one": "Usada por {{count}} host. Alterar a senha afeta este host.",
+      "sharedHelp_one": "Usada por {{count}} host. Alterar a autenticação afeta este host.",
       "sharedHelp_many": "Usada por {{count}} hosts. Alterar a senha afeta todos eles.",
-      "sharedHelp_other": "Usada por {{count}} hosts. Alterar a senha afeta todos eles.",
+      "sharedHelp_other": "Usada por {{count}} hosts. Alterar a autenticação afeta todos eles.",
       "summary_one": "{{count}} credencial configurada",
       "summary_many": "{{count}} credenciais configuradas",
       "summary_other": "{{count}} credenciais configuradas",
-      "unused": "Não é usada por nenhum host salvo."
+      "unused": "Não é usada por nenhum host salvo.",
+      "username": "Nome de usuário",
+      "usernameHelp": "De 1 a 255 bytes UTF-8. NUL não é permitido.",
+      "usernameHint": "Digite o nome de usuário do servidor",
+      "usernamePassword": "Senha",
+      "usernamePasswordHelp": "De 1 a 1023 bytes UTF-8. NUL não é permitido e os espaços são preservados.",
+      "usernamePasswordHint": "Digite a senha deste usuário",
+      "usernamePasswordMethod": "Nome de usuário e senha"
     },
     "credentialsTab": "Credenciais",
     "delete": "Excluir host",
@@ -7129,10 +7143,13 @@
       "caHelp": "Até 8 certificados de CA, totalizando 64 KiB. Não cole uma chave privada nem um certificado de servidor.",
       "caHint": "Cole os certificados públicos da CA que emitiu o certificado do servidor",
       "custom": "Autoridades certificadoras personalizadas",
-      "help": "Requer um servidor VNC com suporte a VeNCrypt X509Vnc. O certificado deve corresponder ao nome do host ou endereço IP configurado.",
-      "profile": "VNC criptografado (X509Vnc)",
+      "profileLabel": "Perfil de segurança",
       "system": "Autoridades certificadoras do sistema",
-      "title": "Confiança no certificado do servidor"
+      "title": "Confiança no certificado do servidor",
+      "x509Plain": "Nome de usuário e senha criptografados (X509Plain)",
+      "x509PlainHelp": "Requer VeNCrypt X509Plain. O TLS verifica o servidor antes de enviar o nome de usuário e a senha.",
+      "x509Vnc": "VNC criptografado (X509Vnc)",
+      "x509VncHelp": "Requer VeNCrypt X509Vnc. O TLS verifica o servidor antes de enviar a senha VNC."
     },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",

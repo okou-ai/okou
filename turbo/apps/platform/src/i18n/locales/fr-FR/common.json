@@ -620,13 +620,13 @@
       "loadFailed": "Impossible de charger les autorisations",
       "loadingPermissions": "Chargement des autorisations",
       "onlyMe": "Moi uniquement",
-      "onlyMeDescription": "Vous seul pouvez voir cet artefact",
+      "onlyMeOption": "Moi uniquement",
       "organization": "Organisation",
-      "organizationDescription": "Toute personne de {{organization}} disposant du lien",
-      "organizationDescriptionUnnamed": "Toute personne de votre organisation disposant du lien",
+      "organizationOption": "Toute personne de {{organization}}",
+      "organizationOptionUnnamed": "Toute personne de votre organisation",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
-      "publicDescription": "Toute personne disposant du lien peut le voir",
+      "publicOption": "Toute personne disposant du lien",
       "retry": "Réessayer"
     },
     "sidebar": {
@@ -4202,7 +4202,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Retour",
-        "cancel": "Annuler",
         "continue": "Continuer",
         "finish": "Terminer la configuration",
         "notNow": "Pas maintenant",
@@ -4274,24 +4273,32 @@
         "title": "Quel type de travail faites-vous ?"
       },
       "skills": {
-        "confirm": "Importer et continuer",
-        "copy": "Importez un SKILL.md : il devient un workflow dans Okou, prêt à lancer avec /.",
-        "import": "Choisir un fichier",
+        "copied": "Copié",
+        "copy": "Collez ce prompt dans votre propre session Codex ou Claude Code : il amène dans Okou les skills présentes sur votre machine.",
+        "copyError": "Le prompt n’a pas pu être copié.",
+        "copyPrompt": "Copier le prompt",
         "importedCopy": "Importé comme workflow Okou.",
-        "importedTitle": "Votre workflow est prêt",
-        "panelCopy": "Depuis Codex, Claude Code ou tout agent qui en écrit un.",
-        "panelTitle": "Déposez un SKILL.md ici",
-        "previewCopy": "Importé comme workflow Okou. Vous seul pouvez l'utiliser tant que vous ne le partagez pas.",
-        "previewTitle": "Vérifier votre skill",
-        "replace": "Choisir un autre fichier",
-        "title": "Amenez les skills que vous avez déjà écrites."
+        "importedLabel": "Skills importées",
+        "importedTitle": "Vos skills sont dans Okou",
+        "preparing": "Ouverture de votre session d’import…",
+        "promptCopy": "Il lit les skills de votre machine et les écrit dans Okou.",
+        "promptLabel": "Prompt d’import de skills",
+        "promptTitle": "Lancez ceci dans Codex ou Claude Code",
+        "startError": "La session d’import n’a pas pu être ouverte.",
+        "title": "Amenez les skills que vous avez déjà écrites.",
+        "tryAgain": "Réessayer",
+        "waiting": "Les skills importées apparaissent ici au fur et à mesure."
       },
       "slack": {
         "add": "Ajouter à Slack",
+        "channelAdminRequired": "Demandez à un administrateur de l'espace de travail d'ajouter Okou à {{channel}}.",
+        "channelUnavailable": "{{channel}} n'est pas encore disponible dans cet espace de travail.",
+        "connectAction": "Connecter Slack",
         "connectedCopy": "Ouvrez Slack et mentionnez @Okou pour lui confier une tâche.",
         "connectedStatus": "Ajouté à votre espace de travail",
         "connectedTitle": "Slack est connecté",
         "copy": "Ajoutez-le une fois, puis mentionnez @Okou là où le travail se fait déjà.",
+        "name": "Slack",
         "otherAdded": "Ajouté",
         "otherImessage": "iMessage",
         "othersLabel": "À ajouter plus tard, ou maintenant",
@@ -6978,8 +6985,7 @@
     "custom": "Personnalisés",
     "detail": {
       "back": "Modèles personnalisés",
-      "page": "Page {{number}}",
-      "sourceFile": "À partir de {{filename}}"
+      "page": "Page {{number}}"
     },
     "empty": {
       "description": "Okou transforme le design de votre fichier en un modèle que vous pouvez réutiliser."
@@ -7062,6 +7068,7 @@
     "configured": "Configuré",
     "credential": {
       "add": "Ajouter des identifiants",
+      "authentication": "Méthode d’authentification",
       "createNew": "Créer des identifiants",
       "delete": "Supprimer les identifiants",
       "deleteHelp": "Supprimer ces identifiants inutilisés ? Cette action est irréversible.",
@@ -7075,16 +7082,23 @@
       "password": "Mot de passe VNC",
       "passwordHelp": "Les mots de passe VNC classiques utilisent 1 à 8 caractères ASCII imprimables. Les espaces sont conservés.",
       "passwordHint": "Saisissez le mot de passe VNC du serveur",
-      "replace": "Remplacer le mot de passe",
-      "replaceHelp": "Laissez cette option désactivée pour conserver le mot de passe enregistré. Son remplacement affecte tous les hôtes utilisant ces identifiants.",
+      "replace": "Remplacer l'authentification",
+      "replaceHelp": "Laissez cette option désactivée pour conserver l'authentification enregistrée. Son remplacement affecte tous les hôtes utilisant ces identifiants.",
       "select": "Sélectionner un identifiant",
-      "sharedHelp_one": "Utilisés par {{count}} hôte. Les changements de mot de passe affectent cet hôte.",
+      "sharedHelp_one": "Utilisés par {{count}} hôte. Les changements d'authentification affectent cet hôte.",
       "sharedHelp_many": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
-      "sharedHelp_other": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
+      "sharedHelp_other": "Utilisés par {{count}} hôtes. Les changements d'authentification les affectent tous.",
       "summary_one": "{{count}} identifiant configuré",
       "summary_many": "{{count}} identifiants configurés",
       "summary_other": "{{count}} identifiants configurés",
-      "unused": "Aucun hôte enregistré n’utilise ces identifiants."
+      "unused": "Aucun hôte enregistré n’utilise ces identifiants.",
+      "username": "Nom d’utilisateur",
+      "usernameHelp": "1 à 255 octets UTF-8. Le caractère NUL n’est pas autorisé.",
+      "usernameHint": "Saisissez le nom d’utilisateur du serveur",
+      "usernamePassword": "Mot de passe",
+      "usernamePasswordHelp": "1 à 1023 octets UTF-8. Le caractère NUL n’est pas autorisé et les espaces sont conservés.",
+      "usernamePasswordHint": "Saisissez le mot de passe de cet utilisateur",
+      "usernamePasswordMethod": "Nom d’utilisateur et mot de passe"
     },
     "credentialsTab": "Identifiants",
     "delete": "Supprimer l’hôte",
@@ -7129,10 +7143,13 @@
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
       "custom": "Autorités de certification personnalisées",
-      "help": "Nécessite un serveur VNC compatible avec VeNCrypt X509Vnc. Le certificat du serveur doit correspondre au nom d’hôte ou à l’adresse IP configurés.",
-      "profile": "VNC chiffré (X509Vnc)",
+      "profileLabel": "Profil de sécurité",
       "system": "Autorités de certification du système",
-      "title": "Confiance dans le certificat du serveur"
+      "title": "Confiance dans le certificat du serveur",
+      "x509Plain": "Nom d’utilisateur et mot de passe chiffrés (X509Plain)",
+      "x509PlainHelp": "Nécessite VeNCrypt X509Plain. TLS vérifie le serveur avant d’envoyer le nom d’utilisateur et le mot de passe.",
+      "x509Vnc": "VNC chiffré (X509Vnc)",
+      "x509VncHelp": "Nécessite VeNCrypt X509Vnc. TLS vérifie le serveur avant d’envoyer le mot de passe VNC."
     },
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",

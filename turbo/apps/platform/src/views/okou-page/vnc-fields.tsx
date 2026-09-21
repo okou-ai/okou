@@ -18,16 +18,21 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
   VNC_DISPLAY_NAME_MAX_LENGTH,
+  VNC_USERNAME_MAX_BYTES,
+  VNC_USERNAME_PASSWORD_MAX_BYTES,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   chooseVncCredential$,
+  chooseVncProfile$,
   chooseVncTrust$,
-  replaceVncPassword$,
+  replaceVncAuthentication$,
   vncEditor$,
   vncCredentials$,
   invalidateVnc$,
   mountVncSecret$,
+  vncAuthMethodForProfile,
+  vncCredentialMatchesProfile,
 } from "../../signals/vnc.ts";
 
 export function VncEndpointFields({
@@ -89,7 +94,7 @@ export function VncEndpointFields({
   );
 }
 
-export function VncTrustFields({
+export function VncSecurityFields({
   connection,
   disabled,
 }: {
@@ -98,19 +103,45 @@ export function VncTrustFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
+  const chooseProfile = useSet(chooseVncProfile$);
   const choose = useSet(chooseVncTrust$);
   const savedTrust = connection?.security.trust;
   return (
     <div className="grid gap-3">
-      <p className="text-sm font-medium">
+      <label htmlFor="vnc-profile" className="text-sm">
         {t(($) => {
-          return $.vnc.security.profile;
+          return $.vnc.security.profileLabel;
         })}
-      </p>
+      </label>
+      <Select
+        value={editor.profile}
+        onValueChange={chooseProfile}
+        disabled={disabled}
+      >
+        <SelectTrigger id="vnc-profile">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="x509_vnc">
+            {t(($) => {
+              return $.vnc.security.x509Vnc;
+            })}
+          </SelectItem>
+          <SelectItem value="x509_plain">
+            {t(($) => {
+              return $.vnc.security.x509Plain;
+            })}
+          </SelectItem>
+        </SelectContent>
+      </Select>
       <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.security.help;
-        })}
+        {editor.profile === "x509_vnc"
+          ? t(($) => {
+              return $.vnc.security.x509VncHelp;
+            })
+          : t(($) => {
+              return $.vnc.security.x509PlainHelp;
+            })}
       </p>
       <label htmlFor="vnc-trust" className="text-sm">
         {t(($) => {
@@ -166,17 +197,202 @@ export function VncTrustFields({
   );
 }
 
+function VncAuthenticationMethodSelector({
+  disabled,
+  profile,
+}: {
+  readonly disabled: boolean;
+  readonly profile: "x509_vnc" | "x509_plain";
+}) {
+  const { t } = useTranslation();
+  const chooseProfile = useSet(chooseVncProfile$);
+  return (
+    <div className="grid gap-2 text-sm">
+      <label htmlFor="vnc-auth-method">
+        {t(($) => {
+          return $.vnc.credential.authentication;
+        })}
+      </label>
+      <Select value={profile} onValueChange={chooseProfile} disabled={disabled}>
+        <SelectTrigger id="vnc-auth-method">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="x509_vnc">
+            {t(($) => {
+              return $.vnc.credential.method;
+            })}
+          </SelectItem>
+          <SelectItem value="x509_plain">
+            {t(($) => {
+              return $.vnc.credential.usernamePasswordMethod;
+            })}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function VncAuthenticationMethod({
+  method,
+}: {
+  readonly method: VncCredentialResponse["authMethod"];
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid gap-1 text-sm">
+      <span className="text-muted-foreground">
+        {t(($) => {
+          return $.vnc.credential.authentication;
+        })}
+      </span>
+      <span>
+        {method === "vnc_password"
+          ? t(($) => {
+              return $.vnc.credential.method;
+            })
+          : t(($) => {
+              return $.vnc.credential.usernamePasswordMethod;
+            })}
+      </span>
+    </div>
+  );
+}
+
+function VncAuthenticationReplacement({
+  disabled,
+  replace,
+}: {
+  readonly disabled: boolean;
+  readonly replace: boolean;
+}) {
+  const { t } = useTranslation();
+  const setReplace = useSet(replaceVncAuthentication$);
+  return (
+    <div className="grid gap-2">
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox
+          checked={replace}
+          disabled={disabled}
+          onCheckedChange={(checked) => {
+            setReplace(checked === true);
+          }}
+        />
+        {t(($) => {
+          return $.vnc.credential.replace;
+        })}
+      </label>
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.credential.replaceHelp;
+        })}
+      </p>
+    </div>
+  );
+}
+
+function VncAuthenticationInputs({
+  credential,
+  method,
+}: {
+  readonly credential: VncCredentialResponse | null;
+  readonly method: VncCredentialResponse["authMethod"];
+}) {
+  const { t } = useTranslation();
+  const mountSecret = useSet(mountVncSecret$);
+  return (
+    <div key={method} className="grid gap-4">
+      {method === "username_password" && (
+        <div className="grid gap-2 text-sm">
+          <label htmlFor="vnc-username">
+            {t(($) => {
+              return $.vnc.credential.username;
+            })}
+          </label>
+          <Input
+            id="vnc-username"
+            name="username"
+            required
+            maxLength={VNC_USERNAME_MAX_BYTES}
+            defaultValue={
+              credential?.authMethod === "username_password"
+                ? credential.username
+                : ""
+            }
+            aria-describedby="vnc-username-help"
+            placeholder={t(($) => {
+              return $.vnc.credential.usernameHint;
+            })}
+          />
+          <p id="vnc-username-help" className="text-muted-foreground">
+            {t(($) => {
+              return $.vnc.credential.usernameHelp;
+            })}
+          </p>
+        </div>
+      )}
+      <div className="grid gap-2 text-sm">
+        <label htmlFor="vnc-password">
+          {method === "vnc_password"
+            ? t(($) => {
+                return $.vnc.credential.password;
+              })
+            : t(($) => {
+                return $.vnc.credential.usernamePassword;
+              })}
+        </label>
+        <Input
+          ref={mountSecret}
+          id="vnc-password"
+          name="password"
+          type="password"
+          required
+          autoComplete="new-password"
+          aria-describedby="vnc-password-help"
+          maxLength={
+            method === "vnc_password"
+              ? undefined
+              : VNC_USERNAME_PASSWORD_MAX_BYTES
+          }
+          pattern={method === "vnc_password" ? "[ -~]{1,8}" : undefined}
+          placeholder={
+            method === "vnc_password"
+              ? t(($) => {
+                  return $.vnc.credential.passwordHint;
+                })
+              : t(($) => {
+                  return $.vnc.credential.usernamePasswordHint;
+                })
+          }
+        />
+        <p id="vnc-password-help" className="text-muted-foreground">
+          {method === "vnc_password"
+            ? t(($) => {
+                return $.vnc.credential.passwordHelp;
+              })
+            : t(($) => {
+                return $.vnc.credential.usernamePasswordHelp;
+              })}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function VncCredentialFields({
   credential,
   disabled,
+  showMethodSelection,
 }: {
   readonly credential: VncCredentialResponse | null;
   readonly disabled: boolean;
+  readonly showMethodSelection: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
-  const replace = useSet(replaceVncPassword$);
-  const mountSecret = useSet(mountVncSecret$);
+  const method =
+    credential?.authMethod ?? vncAuthMethodForProfile(editor.profile);
   return (
     <div className="grid gap-4">
       <label className="grid gap-2 text-sm">
@@ -195,53 +411,21 @@ export function VncCredentialFields({
           })}
         />
       </label>
+      {showMethodSelection && !credential && (
+        <VncAuthenticationMethodSelector
+          disabled={disabled}
+          profile={editor.profile}
+        />
+      )}
+      {credential && <VncAuthenticationMethod method={method} />}
       {credential && (
-        <div className="grid gap-2">
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox
-              checked={editor.replace}
-              disabled={disabled}
-              onCheckedChange={(checked) => {
-                replace(checked === true);
-              }}
-            />
-            {t(($) => {
-              return $.vnc.credential.replace;
-            })}
-          </label>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.vnc.credential.replaceHelp;
-            })}
-          </p>
-        </div>
+        <VncAuthenticationReplacement
+          disabled={disabled}
+          replace={editor.replace}
+        />
       )}
       {(!credential || editor.replace) && (
-        <div className="grid gap-2 text-sm">
-          <label htmlFor="vnc-password">
-            {t(($) => {
-              return $.vnc.credential.password;
-            })}
-          </label>
-          <Input
-            ref={mountSecret}
-            id="vnc-password"
-            name="password"
-            type="password"
-            required
-            autoComplete="new-password"
-            aria-describedby="vnc-password-help"
-            pattern="[ -~]{1,8}"
-            placeholder={t(($) => {
-              return $.vnc.credential.passwordHint;
-            })}
-          />
-          <p id="vnc-password-help" className="text-muted-foreground">
-            {t(($) => {
-              return $.vnc.credential.passwordHelp;
-            })}
-          </p>
-        </div>
+        <VncAuthenticationInputs credential={credential} method={method} />
       )}
     </div>
   );
@@ -257,6 +441,20 @@ export function VncCredentialSelection({
   const editor = useGet(vncEditor$);
   const choose = useSet(chooseVncCredential$);
   const retry = useSet(invalidateVnc$);
+  const compatibleCredentials =
+    credentials.state === "hasData" && credentials.data
+      ? credentials.data.filter((credential) => {
+          return vncCredentialMatchesProfile(credential, editor.profile);
+        })
+      : [];
+  const selectedCredentialUnavailable =
+    editor.selection !== "" &&
+    editor.selection !== "new" &&
+    credentials.state === "hasData" &&
+    credentials.data !== null &&
+    !compatibleCredentials.some((credential) => {
+      return credential.id === editor.selection;
+    });
   return (
     <fieldset className="grid min-w-0 gap-4">
       <legend className="mb-3 text-sm font-semibold">
@@ -315,7 +513,7 @@ export function VncCredentialSelection({
               />
             </SelectTrigger>
             <SelectContent className="w-(--anchor-width)">
-              {credentials.data.map((credential) => {
+              {compatibleCredentials.map((credential) => {
                 return (
                   <SelectItem
                     key={credential.id}
@@ -335,9 +533,20 @@ export function VncCredentialSelection({
           </Select>
         )}
       </div>
+      {selectedCredentialUnavailable && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.errors.credentialUnavailable;
+          })}
+        </p>
+      )}
       {editor.selection === "new" && (
         <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
-          <VncCredentialFields credential={null} disabled={disabled} />
+          <VncCredentialFields
+            credential={null}
+            disabled={disabled}
+            showMethodSelection={false}
+          />
         </div>
       )}
     </fieldset>
