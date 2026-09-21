@@ -3,15 +3,15 @@ import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import {
+  ONBOARDING_INDUSTRY_IDS,
+  type OnboardingIndustry,
+} from "@okouai/core/onboarding-industry";
+import {
   nextSourcesFirstStep,
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
-import {
-  INDUSTRY_IDS,
-  type IndustryId,
-} from "./onboarding-sources-first-data.ts";
 import {
   OnboardingChoiceCard,
   OnboardingIllustration,
@@ -47,11 +47,11 @@ export function OnboardingIndustryPage() {
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
-          updateDraft({ industry: value as IndustryId });
+          updateDraft({ industry: value as OnboardingIndustry });
         }}
         className="grid gap-3 sm:grid-cols-2"
       >
-        {INDUSTRY_IDS.map((id) => {
+        {ONBOARDING_INDUSTRY_IDS.map((id) => {
           return (
             <OnboardingChoiceCard
               key={id}

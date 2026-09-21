@@ -2,6 +2,7 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -11,9 +12,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { pathname } from "../../../signals/location.ts";
+import { pathname, search } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
 
@@ -25,6 +27,9 @@ const MAKE_QUESTION = "What do you want to make first";
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
 const MARKETING_FIELD = "Marketing & content";
+const READY_TITLE = "Okou is ready for you";
+const START_ACTION = "Start with Okou";
+const HANDOFF_PROMPT = "Draft the launch plan";
 
 function mockOnboardingNeeded(): void {
   context.mocks.data.onboardingStatus({
@@ -33,8 +38,16 @@ function mockOnboardingNeeded(): void {
   });
 }
 
+function mockMemberOnboardingNeeded(): void {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: false,
+  });
+}
+
 /** One catalog entry, so the source step has a grid to render. */
-function mockCatalog(): void {
+function mockCatalog({ connected = false } = {}): void {
   const connector: PublicConnectorCatalogStatusItem = {
     slug: "gmail",
     label: "Gmail",
@@ -63,8 +76,8 @@ function mockCatalog(): void {
       hasDefaultPolicyOverrides: false,
     },
     connection: null,
-    connected: false,
-    connectionStatus: "not-connected",
+    connected,
+    connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: false,
     tokenExpiresAt: null,
@@ -169,4 +182,136 @@ test("A later step returns to the entry until a source is connected", async () =
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboarding);
+});
+
+test("The ready step completes onboarding once, before it runs the first request", async () => {
+  mockOnboardingNeeded();
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  // Where the browser still was when completion went out, so the order of the
+  // two is observable rather than assumed.
+  const completedFrom: string[] = [];
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completedFrom.push(pathname());
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
+    });
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+
+  click(getButtonByName(START_ACTION));
+
+  await waitFor(() => {
+    expect(runPrompt).toBeTruthy();
+  });
+  expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
+});
+
+test("A member's run reaches the first request without the admin-only completion", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  let completions = 0;
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completions += 1;
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+
+  click(getButtonByName(START_ACTION));
+
+  await waitFor(() => {
+    expect(runPrompt).toBeTruthy();
+  });
+  // `POST /api/onboarding/complete` is admin-only, so a member run would only
+  // ever collect a 403 from it.
+  expect(completions).toBe(0);
+});
+
+test("A step keeps the prompt handoff and redeem code it arrived with", async () => {
+  mockOnboardingNeeded();
+  mockCatalog();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&redeemCode=LAUNCH50`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
+
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  const params = new URLSearchParams(search());
+  expect(params.get("prompt")).toBe(HANDOFF_PROMPT);
+  expect(params.get("redeemCode")).toBe("LAUNCH50");
+});
+
+test("An already-onboarded visitor is forwarded with the prompt they brought", async () => {
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboardingSources}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await waitFor(() => {
+    expect(runPrompt).toBe(HANDOFF_PROMPT);
+  });
 });

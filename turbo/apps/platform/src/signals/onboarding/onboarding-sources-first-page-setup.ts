@@ -19,9 +19,12 @@ import { featureSwitches$ } from "../external/feature-switch.ts";
 import { connectorCatalogStatus$ } from "../external/connectors.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { updatePage$ } from "../react-router.ts";
-import { detachedNavigateTo$ } from "../route.ts";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
-import { setupOnboardingMakePage$ } from "./onboarding-page-setup.ts";
+import {
+  promptHandoffParams,
+  setupOnboardingMakePage$,
+} from "./onboarding-page-setup.ts";
 import {
   setSourcesFirstFlow$,
   sourcesFirstDraft$,
@@ -43,9 +46,29 @@ const sourcesFirstEnabled$ = command(
   },
 );
 
-const redirectTo$ = command(({ set }, path: RoutePath) => {
+/**
+ * A redirect inside the flow keeps the query it arrived with: the Marketing
+ * `prompt` handoff and a `redeemCode` have to survive until the last step
+ * completes onboarding and opens the first request.
+ */
+const redirectTo$ = command(({ get, set }, path: RoutePath) => {
   set(detachedNavigateTo$, path, {
-    searchParams: new URLSearchParams(),
+    searchParams: new URLSearchParams(get(searchParams$)),
+    replace: true,
+  });
+});
+
+/**
+ * Nothing is left to onboard, so the visitor goes where the make-something
+ * flow sends them: to their prompt when they brought one, and home otherwise.
+ */
+const forwardOnboardedVisitor$ = command(({ get, set }) => {
+  const searchParams = get(searchParams$);
+  const prompt = searchParams.get("prompt")?.trim();
+  set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
+    searchParams: prompt
+      ? promptHandoffParams(searchParams)
+      : new URLSearchParams(),
     replace: true,
   });
 });
@@ -65,7 +88,7 @@ function createSourcesFirstPageSetup(
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
     if (!status.needsOnboarding) {
-      set(redirectTo$, ROUTES.home);
+      set(forwardOnboardedVisitor$);
       return;
     }
 
