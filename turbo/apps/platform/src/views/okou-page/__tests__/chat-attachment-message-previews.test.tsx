@@ -5,6 +5,7 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
@@ -327,6 +328,7 @@ function mockAssistantImagePair(): void {
  */
 test("Arrow keys navigate an assistant group while the artifact list is still loading", async () => {
   mockAssistantImagePair();
+  const user = userEvent.setup({ delay: null });
   context.mocks.api(chatThreadArtifactsContract.list, ({ never }) => {
     return never();
   });
@@ -336,7 +338,7 @@ test("Arrow keys navigate an assistant group while the artifact list is still lo
   click(await findPreviewActionForImage("pair-first.png"));
   await screen.findByRole("dialog", { name: "pair-first.png preview" });
 
-  fireEvent.keyDown(document, { key: "ArrowRight" });
+  await user.keyboard("{ArrowRight}");
 
   await waitFor(() => {
     expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
@@ -354,6 +356,7 @@ test("Arrow keys navigate an assistant group while the artifact list is still lo
  */
 test("Arrow keys still navigate when the artifact list request fails", async () => {
   mockAssistantImagePair();
+  const user = userEvent.setup({ delay: null });
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(403, {
       error: {
@@ -368,7 +371,7 @@ test("Arrow keys still navigate when the artifact list request fails", async () 
   click(await findPreviewActionForImage("pair-first.png"));
   await screen.findByRole("dialog", { name: "pair-first.png preview" });
 
-  fireEvent.keyDown(document, { key: "ArrowRight" });
+  await user.keyboard("{ArrowRight}");
 
   await waitFor(() => {
     expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
