@@ -366,6 +366,11 @@ interface ChatEventCommandResult {
   readonly seqId: number;
 }
 
+export interface ChatEventSequenceReservation {
+  readonly chatThreadId: string;
+  readonly seqId: number;
+}
+
 interface ChatEventBatchCommandResult {
   readonly id: string;
   readonly createdAt: Date;
@@ -1023,23 +1028,27 @@ async function addSeqIdsToEvents(
   });
 }
 
-/** Insert an immutable chat event using the caller-owned transaction. */
-export async function insertChatEvent(
+async function insertSequencedChatEvent(
   tx: ChatEventWriteTransaction,
   values: AppendChatEvent,
+  reservation: ChatEventSequenceReservation,
   conflict: InsertChatEventConflict = "none",
 ): Promise<ChatEventCommandResult | null> {
+  if (reservation.chatThreadId !== values.chatThreadId) {
+    throw new Error("Chat event sequence belongs to another thread");
+  }
+  if (!Number.isInteger(reservation.seqId) || reservation.seqId <= 0) {
+    throw new Error("Chat event sequence must be a positive integer");
+  }
   const eventId = values.id ?? randomUUID();
   const displayContext = newDisplayContext(eventId, values);
-  const [valueWithSeqId] = await addSeqIdsToEvents(tx, [
-    canonicalChatEventValues(values, {
+  const valueWithSeqId = {
+    ...canonicalChatEventValues(values, {
       id: eventId,
       ...displayContextPointer(displayContext),
     }),
-  ]);
-  if (!valueWithSeqId) {
-    throw new Error("chat event seq_id was not assigned");
-  }
+    seqId: reservation.seqId,
+  };
 
   const query = tx.insert(chatEvents).values(valueWithSeqId);
   const rows =
@@ -1077,6 +1086,35 @@ export async function insertChatEvent(
     await insertDisplayContext(tx, displayContext, inserted.createdAt);
   }
   return inserted ?? null;
+}
+
+/** Insert an immutable chat event using the caller-owned transaction. */
+export async function insertChatEvent(
+  tx: ChatEventWriteTransaction,
+  values: AppendChatEvent,
+  conflict: InsertChatEventConflict = "none",
+): Promise<ChatEventCommandResult | null> {
+  const seqId = await reserveChatEventSeqIds(tx, values.chatThreadId, 1);
+  return await insertSequencedChatEvent(
+    tx,
+    values,
+    { chatThreadId: values.chatThreadId, seqId },
+    conflict,
+  );
+}
+
+/**
+ * Insert with a sequence reserved for this thread by the caller in the same
+ * transaction. The reservation is consumed even when conflict handling drops
+ * the insert, preserving the stream's intentional sequence gap.
+ */
+export async function insertChatEventWithReservedSequence(
+  tx: ChatEventWriteTransaction,
+  values: AppendChatEvent,
+  reservation: ChatEventSequenceReservation,
+  conflict: InsertChatEventConflict = "none",
+): Promise<ChatEventCommandResult | null> {
+  return await insertSequencedChatEvent(tx, values, reservation, conflict);
 }
 
 /**
