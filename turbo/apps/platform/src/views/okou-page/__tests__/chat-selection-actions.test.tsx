@@ -237,6 +237,27 @@ test("Release a cancelled toolbar gesture and accept the next keyboard action", 
   expect(feedbackItems()[0]).toHaveTextContent(NEXT_PASSAGE);
 });
 
+test("Keep the passage actions through the click that ends the selecting drag", async () => {
+  await openSelection();
+
+  await expect(findButton("Quote")).resolves.toBeInTheDocument();
+});
+
+test("Dismiss the passage actions when a press lands outside them", async () => {
+  await openSelection();
+  await findButton("Quote");
+
+  fireEvent.pointerDown(screen.getByText(NEXT_PASSAGE), {
+    button: 0,
+    pointerId: 3,
+    pointerType: "mouse",
+  });
+
+  await waitFor(() => {
+    expect(queryQuoteButton()).not.toBeInTheDocument();
+  });
+});
+
 test("Capture a new gesture when the previous toolbar press never clicked", async () => {
   await openSelection();
   const button = await findButton("Quote");
