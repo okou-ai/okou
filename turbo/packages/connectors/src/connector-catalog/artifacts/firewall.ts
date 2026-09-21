@@ -6,6 +6,7 @@ import {
   validateBaseUrl,
   validateBaseUrlHostPolicy,
 } from "../../firewall-types";
+import { collectAndValidatePermissions } from "../../firewall-expander";
 import { z } from "zod";
 
 import { connectorSlugSchema, privateNameSchema } from "./common";
@@ -29,7 +30,7 @@ const firewallPermissionSchema = z
   .object({
     name: z.string().min(1),
     description: z.string().min(1).optional(),
-    rules: z.array(z.string().regex(/^[A-Z]+ \/\S*$/u)),
+    rules: z.array(z.string().min(1)),
   })
   .strict();
 
@@ -204,11 +205,20 @@ function duplicateStrings(values: readonly string[]): string[] {
   return [...duplicates].sort();
 }
 
-function firewallPermissionNames(firewall: FirewallConfig): Set<string> {
-  const names = new Set<string>();
+function validateFirewallPermissions(firewall: FirewallConfig): Set<string> {
+  let names: Set<string>;
+  try {
+    names = collectAndValidatePermissions(firewall);
+  } catch (error) {
+    throw new ConnectorCatalogRelationshipError(
+      "invalid-firewall-permission",
+      error instanceof Error
+        ? error.message
+        : "Firewall permission validation failed",
+    );
+  }
   for (const api of firewall.apis) {
     for (const permission of api.permissions ?? []) {
-      names.add(permission.name);
       const duplicateRules = duplicateStrings(permission.rules);
       if (duplicateRules.length > 0) {
         throw new ConnectorCatalogRelationshipError(
@@ -374,7 +384,6 @@ export function validateFirewallGeneratorResult(
   result: FirewallGeneratorResult,
 ): void {
   const connectorSlug = result.firewall.name;
-  const permissionNames = firewallPermissionNames(result.firewall);
   for (const api of result.firewall.apis) {
     parseFirewallBaseUrl(api.base, connectorSlug);
     validateBaseUrlHostPolicy({
@@ -387,6 +396,7 @@ export function validateFirewallGeneratorResult(
     }
     validateHostPolicy(connectorSlug, api);
   }
+  const permissionNames = validateFirewallPermissions(result.firewall);
 
   if (result.categories !== null) {
     const categorized = new Set(Object.keys(result.categories.byPermission));

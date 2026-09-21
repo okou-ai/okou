@@ -30,6 +30,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
@@ -280,6 +281,29 @@ const QUEST_ROW_CLASS =
   "grid grid-cols-[36px_minmax(0,1fr)_76px] items-center gap-3 px-3 py-2 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
 
 /**
+ * The outcomes a reviewer can record, in the reader's words.
+ *
+ * `get-started-review.service.ts` writes a fixed set of reason codes; these are
+ * the two a reader can act on. Anything else falls back to the plain "not
+ * eligible", so a new code added on the server degrades rather than throws.
+ */
+function useRejectionCopy(): Record<string, string | undefined> {
+  const { t } = useTranslation();
+  const assistantName = useGet(assistantName$);
+  return {
+    post_must_mention_okou: t(
+      ($) => {
+        return $.chat.agentPage.getStarted.rejected.postMustMention;
+      },
+      { assistantName },
+    ),
+    already_redeemed: t(($) => {
+      return $.chat.agentPage.getStarted.rejected.alreadyRedeemed;
+    }),
+  };
+}
+
+/**
  * The state a row carries, as one muted fragment after a middot.
  *
  * The descriptions moved to the intro dialogs, so the second line went with
@@ -288,13 +312,23 @@ const QUEST_ROW_CLASS =
  */
 function useQuestState(quest: GetStartedQuest): string | null {
   const { t } = useTranslation();
+  const rejection = useRejectionCopy();
   if (quest.status === "inReview") {
     return null;
   }
   if (quest.status === "rejected") {
-    return t(($) => {
-      return $.chat.agentPage.getStarted.notEligible;
-    });
+    // Saying only that it was turned down invites the same submission again,
+    // so the row states the outcome the reviewer actually recorded.
+    const stated =
+      quest.rejectedReason === null
+        ? undefined
+        : rejection[quest.rejectedReason];
+    return (
+      stated ??
+      t(($) => {
+        return $.chat.agentPage.getStarted.notEligible;
+      })
+    );
   }
   if (quest.key === "invite" && quest.limit !== null) {
     const counts = `${formatLocalizedNumber(quest.claimedCount)}/${formatLocalizedNumber(quest.limit)}`;
@@ -524,13 +558,13 @@ function useQuestHandoffs(
   const introEnabled = useQuestIntroEnabled();
   return {
     connector: () => {
-      navigate("/connectors");
+      navigate(ROUTES.connectors);
     },
     slack: () => {
-      navigate("/works");
+      navigate(ROUTES.works);
     },
     workflow: () => {
-      navigate("/workflows");
+      navigate(ROUTES.workflows);
     },
     invite: () => {
       detach(openSettings("people", pageSignal), Reason.DomCallback);

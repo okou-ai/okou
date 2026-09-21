@@ -69,7 +69,7 @@ test("Members manage Paid tools inside Chat when both rollouts are enabled", asy
     ),
   ).toBeInTheDocument();
   expect(
-    within(dialog).getByText(/Running tasks and tasks already prepared/),
+    within(dialog).getByText(/Tasks already running or prepared/),
   ).toBeInTheDocument();
   expect(window.location.search).toContain("settings=chat");
   expect(

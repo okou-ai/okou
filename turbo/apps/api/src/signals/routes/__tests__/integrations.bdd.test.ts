@@ -391,14 +391,8 @@ async function pollRunnerRun(
 ): Promise<string> {
   await runs.heartbeatRunner(runnerGroup);
   await flushWaitUntilForTest();
-  let runId: string | null = null;
-  await expect
-    .poll(async () => {
-      const poll = await runs.pollRunner(runnerGroup);
-      runId = poll.body.job?.runId ?? null;
-      return runId;
-    })
-    .toStrictEqual(expect.any(String));
+  const poll = await runs.pollRunner(runnerGroup);
+  const runId = poll.body.job?.runId;
   if (!runId) {
     throw new Error(message);
   }

@@ -785,6 +785,20 @@
       "when": 1789977883426,
       "tag": "1189_org_metadata_onboarding_industry",
       "breakpoints": true
+    },
+    {
+      "idx": 1190,
+      "version": "7",
+      "when": 1789984416488,
+      "tag": "1190_reset_unchosen_blue_horizon_color_theme",
+      "breakpoints": true
+    },
+    {
+      "idx": 1191,
+      "version": "7",
+      "when": 1789988274403,
+      "tag": "1191_model_policy_addability",
+      "breakpoints": true
     }
   ]
 }

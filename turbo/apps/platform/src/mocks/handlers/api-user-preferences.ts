@@ -25,7 +25,7 @@ let mockPreferences: UserPreferencesResponse = {
   sendMode: "enter",
   cloudBrowserEnabledByDefault: true,
   theme: "system",
-  colorTheme: "blue-horizon",
+  colorTheme: null,
   captureNetworkBodiesRemaining: 0,
   voiceInputModel: null,
 };
@@ -56,7 +56,7 @@ export function resetMockUserPreferences(): void {
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     theme: "system",
-    colorTheme: "blue-horizon",
+    colorTheme: null,
     captureNetworkBodiesRemaining: 0,
     voiceInputModel: null,
   };

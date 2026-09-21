@@ -10,6 +10,7 @@ import {
   admissibleAvatarTextures,
   agentAvatarTexture,
   avatarTextureUrl,
+  defaultAgentAvatarTextures,
   deltaE2000,
   AVATAR_TEXTURES,
   type AvatarTexture,
@@ -148,6 +149,26 @@ describe("agent avatar texture", () => {
     }
 
     expect(used.size).toBe(AVATAR_TEXTURES.length);
+  });
+
+  it("leaves the organization default agent exactly one texture", () => {
+    // It wears five brand colours at once — blue hat, orange face, lime
+    // collar, pink cheeks, dark outline — and three of those are the literal
+    // base or ink of a tile. Only the tonal light-blue drop clears all of them,
+    // so this is a fact about the artwork rather than a preference.
+    const options = defaultAgentAvatarTextures();
+
+    expect(options).toEqual(["drop-lightblue-blue"]);
+  });
+
+  it("holds the default agent's texture to the same distance as a garment", () => {
+    for (const texture of defaultAgentAvatarTextures()) {
+      for (const painted of ["#3363D3", "#FFA500", "#96D82D", "#FFC6E2"]) {
+        for (const colour of TEXTURE_HEX[texture]) {
+          expect(deltaE2000(painted, colour)).toBeGreaterThanOrEqual(25);
+        }
+      }
+    }
   });
 
   it("points every texture at its own published file", () => {

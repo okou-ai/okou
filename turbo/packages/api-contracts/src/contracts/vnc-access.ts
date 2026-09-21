@@ -15,12 +15,27 @@ const errors = {
   500: apiErrorSchema,
 };
 
-export const vncHostSchema = vncConnectionResponseSchema
-  .pick({ id: true, displayName: true, host: true, port: true })
-  .extend({
-    authMethod: z.literal("vnc_password"),
-    securityType: z.literal("x509_vnc"),
-  });
+const vncHostBaseSchema = vncConnectionResponseSchema.pick({
+  id: true,
+  displayName: true,
+  host: true,
+  port: true,
+});
+
+export const vncHostSchema = z.discriminatedUnion("securityType", [
+  vncHostBaseSchema
+    .extend({
+      authMethod: z.literal("vnc_password"),
+      securityType: z.literal("x509_vnc"),
+    })
+    .strict(),
+  vncHostBaseSchema
+    .extend({
+      authMethod: z.literal("username_password"),
+      securityType: z.literal("x509_plain"),
+    })
+    .strict(),
+]);
 
 export const agentVncAccessContract = c.router({
   get: {

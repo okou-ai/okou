@@ -620,13 +620,13 @@
       "loadFailed": "Impossibile caricare le autorizzazioni",
       "loadingPermissions": "Caricamento delle autorizzazioni",
       "onlyMe": "Solo io",
-      "onlyMeDescription": "Solo tu puoi visualizzare questo artefatto",
+      "onlyMeOption": "Solo io",
       "organization": "Organizzazione",
-      "organizationDescription": "Chiunque in {{organization}} abbia il link",
-      "organizationDescriptionUnnamed": "Chiunque nella tua organizzazione abbia il link",
+      "organizationOption": "Chiunque in {{organization}}",
+      "organizationOptionUnnamed": "Chiunque nella tua organizzazione",
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
-      "publicDescription": "Chiunque abbia il link può visualizzarlo",
+      "publicOption": "Chiunque abbia il link",
       "retry": "Riprova"
     },
     "sidebar": {
@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
-      "importFile": "Importa il tuo file",
-      "importFileHint": "Riutilizza il design del tuo file",
+      "importFile": "Importa modello",
       "multiAccent": "Multiaccento",
       "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
@@ -1519,6 +1518,10 @@
         },
         "notEligible": "Non idoneo",
         "pendingState": "{{amount}} in sospeso",
+        "rejected": {
+          "alreadyRedeemed": "Post già utilizzato",
+          "postMustMention": "Deve menzionare {{assistantName}}"
+        },
         "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "share": {
           "action": "Condividi",
@@ -4202,7 +4205,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Indietro",
-        "cancel": "Annulla",
         "continue": "Continua",
         "finish": "Completa la configurazione",
         "notNow": "Non ora",
@@ -4274,24 +4276,32 @@
         "title": "Che tipo di lavoro fai?"
       },
       "skills": {
-        "confirm": "Importa e continua",
-        "copy": "Importa un SKILL.md e diventa un workflow in Okou, pronto da lanciare con /.",
-        "import": "Scegli un file",
+        "copied": "Copiato",
+        "copy": "Incolla questo prompt nella tua sessione di Codex o Claude Code e porterà in Okou le skill che hai sul computer.",
+        "copyError": "Non è stato possibile copiare il prompt.",
+        "copyPrompt": "Copia prompt",
         "importedCopy": "Importato come workflow di Okou.",
-        "importedTitle": "Il tuo workflow è pronto",
-        "panelCopy": "Da Codex, Claude Code o qualsiasi agente che ne scriva uno.",
-        "panelTitle": "Trascina qui un SKILL.md",
-        "previewCopy": "Viene importato come workflow di Okou. Finché non lo condividi, puoi usarlo solo tu.",
-        "previewTitle": "Controlla la tua skill",
-        "replace": "Scegli un altro file",
-        "title": "Porta con te le skill che hai già scritto."
+        "importedLabel": "Skill importate",
+        "importedTitle": "Le tue skill sono in Okou",
+        "preparing": "Apertura della sessione di importazione…",
+        "promptCopy": "Legge le skill sul tuo computer e le scrive in Okou.",
+        "promptLabel": "Prompt per l’importazione delle skill",
+        "promptTitle": "Esegui questo in Codex o Claude Code",
+        "startError": "Non è stato possibile aprire la sessione di importazione.",
+        "title": "Porta con te le skill che hai già scritto.",
+        "tryAgain": "Riprova",
+        "waiting": "Le skill importate compaiono qui man mano che arrivano."
       },
       "slack": {
         "add": "Aggiungi a Slack",
+        "channelAdminRequired": "Chiedi a un amministratore del workspace di aggiungere Okou a {{channel}}.",
+        "channelUnavailable": "{{channel}} non è ancora disponibile in questo workspace.",
+        "connectAction": "Connetti Slack",
         "connectedCopy": "Apri Slack e menziona @Okou per affidargli un lavoro.",
         "connectedStatus": "Aggiunto al tuo workspace",
         "connectedTitle": "Slack è collegato",
         "copy": "Aggiungilo una volta, poi menziona @Okou dove il lavoro già accade.",
+        "name": "Slack",
         "otherAdded": "Aggiunto",
         "otherImessage": "iMessage",
         "othersLabel": "Aggiungili dopo, o adesso",
@@ -6354,11 +6364,11 @@
       }
     },
     "paidTools": {
-      "description": "Scegli quali strumenti integrati a pagamento puoi usare.",
-      "disabledForCreation": "{{tool}} è disattivato nelle impostazioni degli strumenti a pagamento.",
+      "description": "Scegli gli strumenti a pagamento che Okou può usare nelle tue attività. Ogni utilizzo consuma crediti.",
+      "disabledForCreation": "{{tool}} è disattivato per te",
       "loadError": "Impossibile caricare le impostazioni.",
       "loading": "Caricamento delle impostazioni…",
-      "openSettings": "Apri le impostazioni degli strumenti a pagamento",
+      "openSettings": "Apri le impostazioni",
       "retry": "Riprova",
       "saveError": "La modifica non è stata salvata.",
       "saving": "Salvataggio…",
@@ -6977,15 +6987,20 @@
       "preview": "Anteprima di {{title}}",
       "rename": "Rinomina modello"
     },
+    "clearSearch": "Cancella ricerca",
     "custom": "Personalizzati",
     "detail": {
       "back": "Modelli personalizzati",
-      "page": "Pagina {{number}}",
-      "sourceFile": "Da {{filename}}"
+      "page": "Pagina {{number}}"
     },
     "empty": {
-      "description": "Okou trasforma il design del tuo file in un modello che puoi riutilizzare."
+      "description": "Importa un documento, una presentazione o un’immagine per riutilizzarne il design.",
+      "document": "Ancora nessun documento",
+      "illustration": "Ancora nessuna immagine",
+      "presentation": "Ancora nessuna presentazione",
+      "title": "Fallo tuo"
     },
+    "importHint": "Importa un documento, una presentazione o un’immagine.",
     "loadFailed": "Impossibile caricare i modelli.",
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",
@@ -7064,6 +7079,7 @@
     "configured": "Configurato",
     "credential": {
       "add": "Aggiungi credenziali",
+      "authentication": "Metodo di autenticazione",
       "createNew": "Crea credenziali",
       "delete": "Elimina credenziali",
       "deleteHelp": "Eliminare queste credenziali inutilizzate? L’azione non può essere annullata.",
@@ -7077,16 +7093,23 @@
       "password": "Password VNC",
       "passwordHelp": "Le password VNC classiche usano da 1 a 8 caratteri ASCII stampabili. Gli spazi vengono mantenuti.",
       "passwordHint": "Inserisci la password VNC del server",
-      "replace": "Sostituisci password",
-      "replaceHelp": "Lascia questa opzione disattivata per mantenere la password salvata. La sostituzione interessa tutti gli host che usano queste credenziali.",
+      "replace": "Sostituisci autenticazione",
+      "replaceHelp": "Lascia questa opzione disattivata per mantenere l'autenticazione salvata. La sostituzione interessa tutti gli host che usano queste credenziali.",
       "select": "Seleziona una credenziale",
-      "sharedHelp_one": "Usate da {{count}} host. Le modifiche alla password interessano questo host.",
+      "sharedHelp_one": "Usate da {{count}} host. Le modifiche all'autenticazione interessano questo host.",
       "sharedHelp_many": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
-      "sharedHelp_other": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
+      "sharedHelp_other": "Usate da {{count}} host. Le modifiche all'autenticazione li interessano tutti.",
       "summary_one": "{{count}} credenziale configurata",
       "summary_many": "{{count}} credenziali configurate",
       "summary_other": "{{count}} credenziali configurate",
-      "unused": "Nessun host salvato usa queste credenziali."
+      "unused": "Nessun host salvato usa queste credenziali.",
+      "username": "Nome utente",
+      "usernameHelp": "Da 1 a 255 byte UTF-8. NUL non è consentito.",
+      "usernameHint": "Inserisci il nome utente del server",
+      "usernamePassword": "Password",
+      "usernamePasswordHelp": "Da 1 a 1023 byte UTF-8. NUL non è consentito e gli spazi vengono mantenuti.",
+      "usernamePasswordHint": "Inserisci la password per questo nome utente",
+      "usernamePasswordMethod": "Nome utente e password"
     },
     "credentialsTab": "Credenziali",
     "delete": "Elimina host",
@@ -7131,10 +7154,13 @@
       "caHelp": "Fino a 8 certificati CA, per un totale di 64 KiB. Non incollare una chiave privata né un certificato del server.",
       "caHint": "Incolla i certificati CA pubblici che hanno emesso il certificato del server",
       "custom": "Autorità di certificazione personalizzate",
-      "help": "Richiede un server VNC che supporti VeNCrypt X509Vnc. Il certificato del server deve corrispondere al nome host o all’indirizzo IP configurati.",
-      "profile": "VNC crittografato (X509Vnc)",
+      "profileLabel": "Profilo di sicurezza",
       "system": "Autorità di certificazione del sistema",
-      "title": "Attendibilità del certificato del server"
+      "title": "Attendibilità del certificato del server",
+      "x509Plain": "Nome utente e password crittografati (X509Plain)",
+      "x509PlainHelp": "Richiede VeNCrypt X509Plain. TLS verifica il server prima di inviare il nome utente e la password.",
+      "x509Vnc": "VNC crittografato (X509Vnc)",
+      "x509VncHelp": "Richiede VeNCrypt X509Vnc. TLS verifica il server prima di inviare la password VNC."
     },
     "summary_one": "{{count}} host configurato",
     "summary_many": "{{count}} host configurati",

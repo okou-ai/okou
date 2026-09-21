@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.93.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.92.7...guest-agent-v0.93.0) (2026-09-21)
+
+
+### Features
+
+* enable native web search fallback for byok runs ([#35827](https://github.com/okou-ai/okou/issues/35827)) ([02a6cc4](https://github.com/okou-ai/okou/commit/02a6cc450c2f93ecd143c13982b06f83ec23d124))
+
 ## [0.92.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.92.6...guest-agent-v0.92.7) (2026-09-21)
 
 ## [0.92.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.92.5...guest-agent-v0.92.6) (2026-09-21)

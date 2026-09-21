@@ -25,7 +25,22 @@ export interface GetStartedQuest {
   readonly canEarnMore: boolean;
   readonly rewardAmount: number;
   readonly rewardTarget: "user" | "org";
+  /** Why the last claim was turned down, when one was. */
+  readonly rejectedReason: string | null;
 }
+
+/**
+ * The quests whose reward is decided by the review worker rather than by the
+ * act itself.
+ *
+ * `processGetStartedClaims` leases exactly these two keys, so a claim of theirs
+ * sitting in `pending` means a reviewer still holds it. Everything else is
+ * granted inside the transaction that completes it and never waits.
+ */
+const REVIEWED_QUEST_KEYS: ReadonlySet<GetStartedQuestKey> = new Set([
+  "share",
+  "workflow",
+]);
 
 const reloadVersion$ = state(0);
 const getStartedStatus$ = computed(
@@ -68,7 +83,20 @@ export const getStartedQuests$ = computed(
       )
         ? "done"
         : "todo";
-      if (quest.key === "share" && status !== "done") {
+      let rejectedReason: string | null = null;
+      // A reviewed quest that has a claim in flight is waiting, not untouched.
+      // Without this the workflow row kept offering its own action for as long
+      // as the hourly worker took to reach the claim the user had just earned.
+      if (
+        status === "todo" &&
+        REVIEWED_QUEST_KEYS.has(quest.key) &&
+        quest.pendingCount > 0
+      ) {
+        status = "inReview";
+      }
+      if (quest.key === "share" && status === "todo") {
+        // The claim carries the outcome of the latest attempt, including the
+        // reason it was turned down, which the per-quest counts cannot express.
         if (
           data.shareClaim?.status === "pending" ||
           data.shareClaim?.status === "reviewing"
@@ -80,9 +108,10 @@ export const getStartedQuests$ = computed(
           data.shareClaim?.status === "ineligible"
         ) {
           status = "rejected";
+          rejectedReason = data.shareClaim.reason;
         }
       }
-      return { ...quest, status };
+      return { ...quest, status, rejectedReason };
     });
   },
 );

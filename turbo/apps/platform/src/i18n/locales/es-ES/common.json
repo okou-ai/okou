@@ -620,13 +620,13 @@
       "loadFailed": "No se pudieron cargar los permisos",
       "loadingPermissions": "Cargando permisos",
       "onlyMe": "Solo yo",
-      "onlyMeDescription": "Solo tú puedes ver este artefacto",
+      "onlyMeOption": "Solo yo",
       "organization": "Organización",
-      "organizationDescription": "Cualquier persona de {{organization}} con el enlace",
-      "organizationDescriptionUnnamed": "Cualquier persona de tu organización con el enlace",
+      "organizationOption": "Cualquier persona de {{organization}}",
+      "organizationOptionUnnamed": "Cualquier persona de tu organización",
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
-      "publicDescription": "Cualquier persona con el enlace puede verlo",
+      "publicOption": "Cualquier persona con el enlace",
       "retry": "Reintentar"
     },
     "sidebar": {
@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
-      "importFile": "Importa tu propio archivo",
-      "importFileHint": "Reutiliza el diseño de tu archivo",
+      "importFile": "Importar plantilla",
       "multiAccent": "Multiacentos",
       "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
@@ -1519,6 +1518,10 @@
         },
         "notEligible": "No elegible",
         "pendingState": "{{amount}} pendientes",
+        "rejected": {
+          "alreadyRedeemed": "Publicación ya usada",
+          "postMustMention": "Debe mencionar a {{assistantName}}"
+        },
         "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "share": {
           "action": "Compartir",
@@ -4202,7 +4205,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Atrás",
-        "cancel": "Cancelar",
         "continue": "Continuar",
         "finish": "Terminar configuración",
         "notNow": "Ahora no",
@@ -4274,24 +4276,32 @@
         "title": "¿A qué tipo de trabajo te dedicas?"
       },
       "skills": {
-        "confirm": "Importar y continuar",
-        "copy": "Importa un SKILL.md y se convierte en un workflow de Okou, listo para ejecutarse con /.",
-        "import": "Elegir un archivo",
+        "copied": "Copiado",
+        "copy": "Pega este prompt en tu propia sesión de Codex o Claude Code y traerá a Okou las skills de tu ordenador.",
+        "copyError": "No se pudo copiar el prompt.",
+        "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow de Okou.",
-        "importedTitle": "Tu workflow está listo",
-        "panelCopy": "De Codex, Claude Code o cualquier agente que escriba uno.",
-        "panelTitle": "Suelta aquí un SKILL.md",
-        "previewCopy": "Se importa como workflow de Okou. Solo tú puedes usarlo hasta que lo compartas.",
-        "previewTitle": "Revisa tu skill",
-        "replace": "Elegir otro archivo",
-        "title": "Trae las skills que ya escribiste."
+        "importedLabel": "Skills importadas",
+        "importedTitle": "Tus skills ya están en Okou",
+        "preparing": "Abriendo tu sesión de importación…",
+        "promptCopy": "Lee las skills de tu ordenador y las escribe en Okou.",
+        "promptLabel": "Prompt de importación de skills",
+        "promptTitle": "Ejecuta esto en Codex o Claude Code",
+        "startError": "No se pudo abrir la sesión de importación.",
+        "title": "Trae las skills que ya escribiste.",
+        "tryAgain": "Intentar de nuevo",
+        "waiting": "Las skills importadas aparecen aquí a medida que llegan."
       },
       "slack": {
         "add": "Añadir a Slack",
+        "channelAdminRequired": "Pide a un administrador del workspace que añada Okou a {{channel}}.",
+        "channelUnavailable": "{{channel}} aún no está disponible en este workspace.",
+        "connectAction": "Conectar Slack",
         "connectedCopy": "Abre Slack y menciona a @Okou para encargarle una tarea.",
         "connectedStatus": "Añadido a tu workspace",
         "connectedTitle": "Slack está conectado",
         "copy": "Añádelo una vez y menciona a @Okou donde ya ocurre el trabajo.",
+        "name": "Slack",
         "otherAdded": "Añadido",
         "otherImessage": "iMessage",
         "othersLabel": "Añádelos luego, o ahora",
@@ -6354,11 +6364,11 @@
       }
     },
     "paidTools": {
-      "description": "Elige qué herramientas de pago integradas puedes usar.",
-      "disabledForCreation": "{{tool}} está desactivado en tus ajustes de herramientas de pago.",
+      "description": "Elige las herramientas de pago que Okou puede usar en tus tareas. Cada uso consume créditos.",
+      "disabledForCreation": "{{tool}} está desactivado para ti",
       "loadError": "No se pudieron cargar tus ajustes.",
       "loading": "Cargando tus ajustes…",
-      "openSettings": "Abrir ajustes de herramientas de pago",
+      "openSettings": "Abrir ajustes",
       "retry": "Reintentar",
       "saveError": "No se ha guardado tu cambio.",
       "saving": "Guardando…",
@@ -6977,15 +6987,20 @@
       "preview": "Vista previa de {{title}}",
       "rename": "Cambiar nombre de la plantilla"
     },
+    "clearSearch": "Borrar búsqueda",
     "custom": "Personalizadas",
     "detail": {
       "back": "Plantillas personalizadas",
-      "page": "Página {{number}}",
-      "sourceFile": "De {{filename}}"
+      "page": "Página {{number}}"
     },
     "empty": {
-      "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."
+      "description": "Importa un documento, una presentación o una imagen para reutilizar su diseño.",
+      "document": "Aún no hay documentos",
+      "illustration": "Aún no hay imágenes",
+      "presentation": "Aún no hay presentaciones",
+      "title": "Hazlo tuyo"
     },
+    "importHint": "Importa un documento, una presentación o una imagen.",
     "loadFailed": "No se pudieron cargar las plantillas.",
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
@@ -7064,6 +7079,7 @@
     "configured": "Configurado",
     "credential": {
       "add": "Añadir credenciales",
+      "authentication": "Método de autenticación",
       "createNew": "Crear credenciales",
       "delete": "Eliminar credenciales",
       "deleteHelp": "¿Eliminar estas credenciales sin usar? Esta acción no se puede deshacer.",
@@ -7077,16 +7093,23 @@
       "password": "Contraseña VNC",
       "passwordHelp": "Las contraseñas VNC clásicas usan entre 1 y 8 caracteres ASCII imprimibles. Se conservan los espacios.",
       "passwordHint": "Introduce la contraseña VNC del servidor",
-      "replace": "Reemplazar contraseña",
-      "replaceHelp": "Deja esta opción desactivada para conservar la contraseña guardada. Reemplazarla afecta a todos los hosts que usan estas credenciales.",
+      "replace": "Reemplazar autenticación",
+      "replaceHelp": "Deja esta opción desactivada para conservar la autenticación guardada. Reemplazarla afecta a todos los hosts que usan estas credenciales.",
       "select": "Seleccionar una credencial",
-      "sharedHelp_one": "Utilizadas por {{count}} host. Los cambios de contraseña afectan a este host.",
+      "sharedHelp_one": "Utilizadas por {{count}} host. Los cambios de autenticación afectan a este host.",
       "sharedHelp_many": "Utilizadas por {{count}} hosts. Los cambios de contraseña afectan a todos ellos.",
-      "sharedHelp_other": "Utilizadas por {{count}} hosts. Los cambios de contraseña afectan a todos ellos.",
+      "sharedHelp_other": "Utilizadas por {{count}} hosts. Los cambios de autenticación afectan a todos ellos.",
       "summary_one": "{{count}} credencial configurada",
       "summary_many": "{{count}} credenciales configuradas",
       "summary_other": "{{count}} credenciales configuradas",
-      "unused": "Ningún host guardado las utiliza."
+      "unused": "Ningún host guardado las utiliza.",
+      "username": "Nombre de usuario",
+      "usernameHelp": "Entre 1 y 255 bytes UTF-8. No se permite NUL.",
+      "usernameHint": "Introduce el nombre de usuario del servidor",
+      "usernamePassword": "Contraseña",
+      "usernamePasswordHelp": "Entre 1 y 1023 bytes UTF-8. No se permite NUL y se conservan los espacios.",
+      "usernamePasswordHint": "Introduce la contraseña de este usuario",
+      "usernamePasswordMethod": "Nombre de usuario y contraseña"
     },
     "credentialsTab": "Credenciales",
     "delete": "Eliminar host",
@@ -7131,10 +7154,13 @@
       "caHelp": "Hasta 8 certificados de CA, 64 KiB en total. No pegues una clave privada ni un certificado de servidor.",
       "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
       "custom": "Autoridades de certificación personalizadas",
-      "help": "Requiere un servidor VNC compatible con VeNCrypt X509Vnc. El certificado del servidor debe coincidir con el nombre de host o la dirección IP configurados.",
-      "profile": "VNC cifrado (X509Vnc)",
+      "profileLabel": "Perfil de seguridad",
       "system": "Autoridades de certificación del sistema",
-      "title": "Confianza en el certificado del servidor"
+      "title": "Confianza en el certificado del servidor",
+      "x509Plain": "Usuario y contraseña cifrados (X509Plain)",
+      "x509PlainHelp": "Requiere VeNCrypt X509Plain. TLS verifica el servidor antes de enviar el nombre de usuario y la contraseña.",
+      "x509Vnc": "VNC cifrado (X509Vnc)",
+      "x509VncHelp": "Requiere VeNCrypt X509Vnc. TLS verifica el servidor antes de enviar la contraseña VNC."
     },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
