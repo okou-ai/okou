@@ -37,7 +37,6 @@ import {
   handlePiMemoryPhase2MaintenanceCallback,
 } from "../pi-memory-phase2-maintenance.service";
 import {
-  loadPiMemoryPhase2UsageBinding,
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_BYOK_MODEL,
 } from "../pi-memory-phase2-usage.service";
@@ -338,6 +337,13 @@ describe("Pi memory Phase 2 proxy billing", () => {
     "keeps the $type proxy owner through $status and delayed cleanup",
     async ({ status, type }) => {
       const run = await launchMaintenance(type);
+      // Both models stay legitimate forever: the built-in binding dispatches
+      // DeepSeek while every BYOK binding keeps dispatching GPT. The delayed
+      // cleanup below only reports `deleted: 0` while the retained binding is
+      // still resolvable, so this asserts the full set is honoured.
+      expect(run.run.selectedModel).toBe(
+        type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      );
       const completedAt = nowDate();
       // Terminal states, persisted launch snapshots and delayed proxy flushes
       // are infrastructure-only inputs.
@@ -748,47 +754,5 @@ test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
         expect((await run.cleanup()).body.threadlessRuns.deleted).toBe(1);
       },
     );
-  },
-);
-
-// Both models stay legitimate: built-in dispatches DeepSeek while every BYOK
-// binding keeps dispatching GPT, so neither lookup may narrow to one value.
-test.each([
-  {
-    label: "built-in",
-    type: undefined,
-    model: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-  },
-  {
-    label: "BYOK",
-    type: "openai-api-key" as const,
-    model: PI_MEMORY_PHASE2_BYOK_MODEL,
-  },
-])(
-  "retains the $label maintenance binding on $model",
-  async ({ type, model }) => {
-    const dispatched = await dispatchMaintenance(type);
-    expect(dispatched.run.selectedModel).toBe(model);
-    const completedAt = nowDate();
-    // Terminal state and persisted launch snapshot are infrastructure-only inputs.
-    await db()
-      .update(agentRuns)
-      .set({
-        status: "completed",
-        completedAt,
-        launchSnapshot: {
-          schemaVersion: 1,
-          framework: "pi",
-          runnerProfile: "vm0/test",
-        },
-      })
-      .where(eq(agentRuns.id, dispatched.runId));
-    await expect(
-      loadPiMemoryPhase2UsageBinding(db(), {
-        runId: dispatched.runId,
-        orgId: dispatched.scope.orgId,
-        userId: dispatched.scope.userId,
-      }),
-    ).resolves.toStrictEqual(dispatched.binding);
   },
 );

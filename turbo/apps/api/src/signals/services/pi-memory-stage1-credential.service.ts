@@ -169,13 +169,24 @@ function availableCredential(
  * `provider_model_unsupported`. This maps route provider types only; it does
  * not widen which providers may serve the model.
  */
-const BUILT_IN_STAGE1_PI_PROVIDERS: Partial<
-  Record<BuiltInModelRouteProviderType, "deepseek" | "openai" | "openrouter">
-> = {
-  deepseek: "deepseek",
-  "openai-api-key": "openai",
-  "openrouter-codex": "openrouter",
-};
+function builtInStage1PiProvider(
+  type: BuiltInModelRouteProviderType,
+): "deepseek" | "openai" | "openrouter" | null {
+  switch (type) {
+    case "deepseek": {
+      return "deepseek";
+    }
+    case "openai-api-key": {
+      return "openai";
+    }
+    case "openrouter-codex": {
+      return "openrouter";
+    }
+    default: {
+      return null;
+    }
+  }
+}
 
 async function builtinCredential(
   args: ResolutionContext,
@@ -194,9 +205,7 @@ async function builtinCredential(
     PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   );
   signal.throwIfAborted();
-  const provider = route
-    ? BUILT_IN_STAGE1_PI_PROVIDERS[route.providerType]
-    : undefined;
+  const provider = route ? builtInStage1PiProvider(route.providerType) : null;
   if (!route || !provider) {
     return skip("provider_model_unsupported");
   }
