@@ -113,7 +113,8 @@ test("a nested avatar dialog receives input above its parent and dismisses indep
 
   const nested = page.getByRole("dialog", { name: "Give your agent a face" });
   await nested.getByRole("button", { name: "Randomize avatar" }).hover();
-  const tooltip = page.getByRole("tooltip");
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  await expect(tooltip).toBeVisible();
   await expect(tooltip).toHaveText("Shuffle — try a random look!");
   await expectHitWithin(tooltip);
   const next = nested.getByRole("button", { name: "Next step" });
