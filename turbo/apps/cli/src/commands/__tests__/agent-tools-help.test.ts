@@ -249,9 +249,9 @@ describe("agent-facing operational CLI help", () => {
     expect(host).toContain("user-facing artifact view");
 
     const pull = await helpFor(resourceCommand, ["pull"]);
-    expect(pull).toContain("skill:presentation-extract-template");
+    expect(pull).toContain("skill:presentation-reverse-template");
     expect(pull).toContain("exact 40-hex commit");
-    expect(pull).toContain("extract-template/SKILL.md");
+    expect(pull).toContain("reverse-template/SKILL.md");
 
     const screenshot = await helpFor(presentationRenderCommand, ["screenshot"]);
     expect(screenshot).toContain("uploads and publishes nothing");

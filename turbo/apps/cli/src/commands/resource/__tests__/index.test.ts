@@ -225,26 +225,26 @@ describe("okou resource pull command", () => {
     );
   });
 
-  it("resolves the pull-only presentation extract-template guide through the command", async () => {
-    const extractTemplateSha256 =
-      "4ea856dcf18b86a3e95f55b8dd1f95224fb66a0c97df589c887c04c563972356";
+  it("resolves the pull-only presentation reverse-template guide through the command", async () => {
+    const reverseTemplateSha256 =
+      "4b2bb4ee2a041d57a2fe9ba07b796a690c6dbe130c6e232fa98364b6ed6aeb11";
     server.use(
       http.get(
         "http://localhost:3000/api/registry/resources/download",
         ({ request }) => {
           const url = new URL(request.url);
           expect(url.searchParams.get("id")).toBe(
-            "skill:presentation-extract-template",
+            "skill:presentation-reverse-template",
           );
           expect(url.searchParams.get("expectedSha256")).toBe(
-            extractTemplateSha256,
+            reverseTemplateSha256,
           );
           expect(request.headers.get("authorization")).toBe(
             "Bearer test-token",
           );
           return HttpResponse.json({
             url: downloadUrl,
-            id: "skill:presentation-extract-template",
+            id: "skill:presentation-reverse-template",
             type: "tar.gz",
             sha256: "0".repeat(64),
             expiresInSeconds: 900,
@@ -261,7 +261,7 @@ describe("okou resource pull command", () => {
         "node",
         "cli",
         "pull",
-        "skill:presentation-extract-template",
+        "skill:presentation-reverse-template",
         "--dir",
         outputDir,
       ]),

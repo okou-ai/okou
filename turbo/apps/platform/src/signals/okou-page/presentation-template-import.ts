@@ -101,15 +101,9 @@ function customTemplateImportPrompt(): string {
  *
  * Which guide and which catalog, and nothing else.
  *
- * Naming the guide is not redundant with the agent-tools prompt, which is
- * where the deck's route to it lives. That prompt sends a run to
- * `okou resource pull skill:presentation-extract-template`, and the archive it
- * unpacks to `./generated/resources/extract-template/` holds the presentation
- * branch alone. A run told to use "the extract-template skill" therefore
- * reaches a guide of that name, reads a deck guide, and has nothing to suggest
- * the document, PDF and illustration branches exist. Saying "the dispatcher in
- * `okou-ai/vm0-skills`" is what distinguishes the four-branch guide from the
- * one-branch copy that shares its name.
+ * Custom imports explicitly select the four-branch `extract-template`
+ * dispatcher in `okou-ai/vm0-skills`. The standing agent-tools prompt points
+ * deck imports to the separate presentation-only registry guide.
  *
  * The catalog still has to be said because the presentation branch ends in
  * `okou presentation-template publish`, which writes to the presentation table
@@ -139,8 +133,8 @@ interface TemplateImportMessage {
  * Neither answer reads the file. Which formats can become a template is what
  * the input's `accept` states and the file chooser applies, so re-reading the
  * extension here could only refuse a file the chooser already handed over,
- * and what to make of the one that arrives is the `extract-template` guide's
- * decision rather than this function's.
+ * and what to make of the one that arrives is the selected guide's decision
+ * rather than this function's.
  */
 function templateImportMessage(
   customTemplates: boolean,

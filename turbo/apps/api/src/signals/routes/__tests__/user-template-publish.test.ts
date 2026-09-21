@@ -44,7 +44,7 @@ function templateClient() {
 }
 
 /**
- * What each reverse skill actually writes.
+ * What each template-extraction branch actually writes.
  *
  * `presentation-extract-template` produces the visual language as prose;
  * `docx-extract-template` produces `reference.docx`, which is what pandoc

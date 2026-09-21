@@ -1031,13 +1031,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const claim = await api.claimRunnerJob(run.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
-      "okou resource pull skill:presentation-extract-template --dir ./generated/resources",
+      "okou resource pull skill:presentation-reverse-template --dir ./generated/resources",
     );
     expect(appendSystemPrompt).toContain(
-      "./generated/resources/extract-template/SKILL.md",
+      "./generated/resources/reverse-template/SKILL.md",
     );
     expect(appendSystemPrompt).toContain(
-      "https://github.com/okou-ai/vm0-skills/tree/<commit>/extract-template/presentation",
+      "https://github.com/okou-ai/Template-artifact/tree/<commit>/reverse-template",
     );
     expect(appendSystemPrompt).toContain(
       "do not pull or compare the registry copy",

@@ -1,7 +1,0 @@
-export const PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_ID =
-  "skill:presentation-extract-template";
-
-export const PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_PATH = "extract-template";
-
-export const PRESENTATION_EXTRACT_TEMPLATE_ARCHIVE_SHA256 =
-  "4ea856dcf18b86a3e95f55b8dd1f95224fb66a0c97df589c887c04c563972356";
