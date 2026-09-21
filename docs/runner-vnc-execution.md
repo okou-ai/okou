@@ -114,10 +114,12 @@ or button release from reaching the server.
 
 ## Authority and lifetime
 
-Start resolves only the supported `vnc_password` / `x509_vnc` profile, validates
-the saved destination and trust configuration, and establishes verified TLS/RFB.
-It checks the resolved connection generation again after handshake before
-publishing the session. Credentials are dropped after authentication.
+Start resolves one of the exact `vnc_password` / `x509_vnc` or
+`username_password` / `x509_plain` profiles, validates the saved destination,
+authentication and trust configuration, and establishes verified TLS/RFB. A
+cross-paired or malformed response fails before DNS or socket creation. It checks
+the resolved connection generation again after handshake before publishing the
+session. Credentials are dropped after authentication.
 
 Status/list disclosure and every capture/input check current authority and the
 resolved generation. A denied check, API failure or changed generation closes
@@ -226,16 +228,19 @@ Owner connection UI and real-Agent, multi-client product acceptance remain
 
 ## Deployment and verification
 
-This slice adds no API schema, database migration, guest-helper framing or
-feature-switch change. Old Runners return unknown/unavailable for these methods;
-new Runners fail closed when the private VNC endpoints are missing or fail. Keep
-those endpoints in supported API rollback targets before enabling clients.
-Existing SSH guest RPC remains supported.
+The X509Plain extension widens the private API schema and Runner authentication
+policy only. It adds no database migration, guest-helper framing or
+feature-switch change. Deploy the API first. Old Runners continue advertising
+and decoding X509Vnc only; new Runners against an older API fail closed rather
+than retrying with a weaker profile. Keep the widened endpoints in supported API
+rollback targets before enabling clients. Existing SSH and VNC guest RPC remain
+unchanged and connection-ID-only.
 
 VNC stays disabled by default, including staff. Runner integration tests exercise
-production dispatch against a controlled HTTP authority and an independent
-TLS/RFB peer, checking protocol bytes, captures, authority changes, cancellation
-and cleanup. The engine's separate TigerVNC acceptance evidence does not establish
+production dispatch against a controlled HTTP authority and independent TLS/RFB
+peers for X509Vnc and X509Plain, checking exact authentication bytes, captures,
+authority changes, cancellation and cleanup. The engine's separate TigerVNC
+acceptance evidence does not establish
 complete product acceptance. The CLI requires the matching packaged helper and
 a Runner supporting the VNC methods. Unsupported helpers or Runners fail
 explicitly without a compatibility fallback. The remaining UI and real-Agent,

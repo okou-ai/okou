@@ -301,7 +301,7 @@ describe("Rust type bindings", () => {
     expect(source).toContain("private_key: crate::SecretText<65536>");
     expect(source).toContain("passphrase: Option<crate::SecretText<4096>>");
     expect(source).toContain("password: crate::SecretText<4096>");
-    expect(source).toContain("password: crate::SecretText<8>");
+    expect(source).toContain("password: crate::SecretUtf8Text<1023>");
     expect(source).toContain("ResolvedPassword {");
     expect(
       source.match(/pub struct ResolveResponseResolvedLearnedHostKey \{/gu),
@@ -320,9 +320,11 @@ describe("Rust type bindings", () => {
     const binding = validBinding({
       sensitive: true,
       schema: z.discriminatedUnion("outcome", [
-        z.object({ outcome: z.literal("key"), shared: z.string() }).strict(),
         z
-          .object({ outcome: z.literal("password"), shared: z.number() })
+          .object({ outcome: z.literal("key"), shared: z.string().max(8) })
+          .strict(),
+        z
+          .object({ outcome: z.literal("password"), shared: z.string().max(16) })
           .strict(),
       ]),
       declarations: [
@@ -337,6 +339,29 @@ describe("Rust type bindings", () => {
     expect(() => {
       return renderExampleRustTypes([binding]);
     }).toThrow("sensitive shared field shared has incompatible schemas");
+  });
+
+  it("uses an explicit override for incompatible shared sensitive fields", () => {
+    const binding = validBinding({
+      sensitive: true,
+      schema: z.discriminatedUnion("outcome", [
+        z.object({ outcome: z.literal("key"), shared: z.string() }).strict(),
+        z
+          .object({ outcome: z.literal("password"), shared: z.number() })
+          .strict(),
+      ]),
+      fieldTypeOverrides: { shared: "crate::SecretText<16>" },
+      declarations: [
+        {
+          rustTypeName: "Request",
+          rustDoc: ["Sensitive test response."],
+          fields: { shared: ["Explicitly normalized shared field."] },
+          variants: { key: ["Key."], password: ["Password."] },
+        },
+      ],
+    });
+    const source = renderExampleRustTypes([binding]);
+    expect(source.match(/shared: crate::SecretText<16>/gu)).toHaveLength(2);
   });
   it("contains exactly the supported Rust DTO set", () => {
     const actualBindings = normalizeTypeBindings(rustTypeBindings).map(

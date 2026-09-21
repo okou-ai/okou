@@ -4,7 +4,7 @@ use api_contracts::generated::{
     routes::runners::runs::by_run_id::vnc as routes, types::runners::vnc::*,
 };
 use base64::Engine;
-use rfb_client::{TrustRoots, VncPassword};
+use rfb_client::{PlainCredentials, TrustRoots, VncPassword, X509Authentication};
 use rustls::pki_types::CertificateDer;
 use serde::{Serialize, de::DeserializeOwned};
 use zeroize::Zeroizing;
@@ -15,6 +15,7 @@ use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcess
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
 const MAX_CA_CERTIFICATES: usize = 8;
+const MAX_PLAIN_USERNAME_BYTES: usize = 255;
 
 pub(super) struct Authority {
     http: HttpClient,
@@ -28,7 +29,7 @@ pub(super) struct Credential {
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) generation: i64,
-    pub(super) password: VncPassword,
+    pub(super) authentication: X509Authentication,
     pub(super) roots: TrustRoots,
 }
 
@@ -98,10 +99,16 @@ impl Authority {
                 runner_id: self.identity.runner_id().to_string(),
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
-            supported_profiles: vec![ResolveRequestSupportedProfile {
-                auth_method: "vnc_password".into(),
-                security_type: "x509_vnc".into(),
-            }],
+            supported_profiles: vec![
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+                },
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                },
+            ],
         };
         let response = self
             .call(
@@ -127,10 +134,31 @@ impl Authority {
             return Err(Failure::Authority);
         }
         super::network::validate_host(&host)?;
-        let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication;
-        let password = VncPassword::new(password.expose().to_owned())
-            .map_err(|_| Failure::InvalidCredential)?;
-        let ResolveResponseResolvedSecurity::X509Vnc { trust } = security;
+        let (authentication, trust) = match (authentication, security) {
+            (
+                ResolveResponseResolvedAuthentication::VncPassword { password },
+                ResolveResponseResolvedSecurity::X509Vnc { trust },
+            ) => {
+                let password = VncPassword::new_zeroizing(password.into_zeroizing())
+                    .map_err(|_| Failure::InvalidCredential)?;
+                (X509Authentication::VncPassword(password), trust)
+            }
+            (
+                ResolveResponseResolvedAuthentication::UsernamePassword { username, password },
+                ResolveResponseResolvedSecurity::X509Plain { trust },
+            ) => {
+                if !(1..=MAX_PLAIN_USERNAME_BYTES).contains(&username.len())
+                    || username.as_bytes().contains(&0)
+                {
+                    return Err(Failure::InvalidCredential);
+                }
+                let credentials =
+                    PlainCredentials::new_zeroizing(username, password.into_zeroizing())
+                        .map_err(|_| Failure::InvalidCredential)?;
+                (X509Authentication::Plain(credentials), trust)
+            }
+            _ => return Err(Failure::Authority),
+        };
         let roots = match trust {
             ResolveResponseResolvedSecurityX509VncTrust::System => TrustRoots::public_roots(),
             ResolveResponseResolvedSecurityX509VncTrust::CustomCa { ca_bundle } => {
@@ -141,7 +169,7 @@ impl Authority {
             host,
             port,
             generation,
-            password,
+            authentication,
             roots,
         })
     }

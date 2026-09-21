@@ -99,7 +99,13 @@ impl VncPassword {
     /// Accept 1-8 printable ASCII bytes. Spaces are significant; no truncation or
     /// normalization is performed. Other encodings are outside this profile.
     pub fn new(password: String) -> Result<Self, Error> {
-        let bytes = Zeroizing::new(password.into_bytes());
+        Self::new_zeroizing(Zeroizing::new(password))
+    }
+
+    /// Validate a password whose allocation is already zeroizing, transferring
+    /// that allocation without making another plaintext copy.
+    pub fn new_zeroizing(mut password: Zeroizing<String>) -> Result<Self, Error> {
+        let bytes = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
         if !(1..=8).contains(&bytes.len()) || !bytes.iter().all(|b| (0x20..=0x7e).contains(b)) {
             return Err(Error::InvalidPassword);
         }
@@ -125,8 +131,14 @@ impl PlainCredentials {
     /// Embedded NUL bytes are rejected because common servers use C strings.
     /// Spaces are significant; no truncation or normalization is performed.
     pub fn new(username: String, password: String) -> Result<Self, Error> {
+        Self::new_zeroizing(username, Zeroizing::new(password))
+    }
+
+    /// Validate credentials whose password allocation is already zeroizing,
+    /// transferring it without making another plaintext copy.
+    pub fn new_zeroizing(username: String, mut password: Zeroizing<String>) -> Result<Self, Error> {
         let username = Zeroizing::new(username.into_bytes());
-        let password = Zeroizing::new(password.into_bytes());
+        let password = Zeroizing::new(std::mem::take(&mut *password).into_bytes());
         if !(1..=1023).contains(&username.len()) || username.contains(&0) {
             return Err(Error::InvalidPlainUsername);
         }

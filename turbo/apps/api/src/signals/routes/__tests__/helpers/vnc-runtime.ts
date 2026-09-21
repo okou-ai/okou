@@ -35,8 +35,15 @@ export const vncSecurity = Object.freeze({
   type: "x509_vnc" as const,
   trust: Object.freeze({ mode: "system" as const }),
 });
-export const vncProfiles = Object.freeze([
+export const vncX509VncProfiles = Object.freeze([
   { authMethod: "vnc_password" as const, securityType: "x509_vnc" as const },
+]);
+export const vncProfiles = Object.freeze([
+  ...vncX509VncProfiles,
+  {
+    authMethod: "username_password" as const,
+    securityType: "x509_plain" as const,
+  },
 ]);
 export const vncPassword = " secret ";
 type Owner = { readonly orgId: string; readonly userId: string };

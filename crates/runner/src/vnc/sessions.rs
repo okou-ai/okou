@@ -130,7 +130,7 @@ impl Run {
             .wait_deadline_aware(rfb_client::authenticate(
                 socket,
                 &credential.host,
-                rfb_client::X509Authentication::VncPassword(credential.password),
+                credential.authentication,
                 credential.roots,
                 scope.deadline,
             ))

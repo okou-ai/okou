@@ -41,11 +41,15 @@ validation. Malformed path parameters return a generic 400 before the handler.
 Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 400, missing/invalid authentication is 401, and authenticated local Runners are 403. DB/KMS failures remain server errors instead of fabricated absence.
 
-`resolve` requires `connectionId` and `supportedProfiles`, a bounded list of exact
-`{ authMethod: "vnc_password", securityType: "x509_vnc" }` pairs. An empty list
-returns `unsupported_profile` only after authorization, before KMS. Unknown
-methods or profiles are rejected. Future engine support must not broaden a saved
-policy or create an implicit downgrade path.
+`resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
+exact pairs. Current Runners advertise
+`{ authMethod: "vnc_password", securityType: "x509_vnc" }` and
+`{ authMethod: "username_password", securityType: "x509_plain" }`. An older
+Runner advertises only the first pair. An empty list or a saved pair absent from
+the list returns `unsupported_profile` only after authorization, before KMS.
+Unknown methods, profiles and cross-paired combinations are rejected. Future
+engine support must add a new exact pair instead of broadening a saved policy or
+creating an implicit downgrade path.
 
 A resolved response contains host, port, typed authentication/security and
 `generation`, matching SSH's connection identity. Generation changes on credential
@@ -67,10 +71,13 @@ pending resolve. Absence is unavailable, and a different generation is stale.
 This identity model does not add SSH's Run-lifetime credential cache or notification
 transport; the current checks and #34780 runtime responsibilities below still apply.
 
-Generated Rust resolve DTOs use zeroizing `SecretText<8>` and deliberately omit
-Debug, Clone and Serialize. The runtime must also validate printable ASCII through
-the engine password type. Raw responses, decode/provider errors, secrets and
-server-controlled text must never become guest output, logs or observations.
+Generated Rust resolve DTOs use a zeroizing, UTF-8 byte-bounded
+`SecretUtf8Text<1023>` and deliberately omit Debug, Clone and Serialize. The
+runtime then constructs the selected engine authentication type: classic VNC
+enforces 1–8 printable ASCII bytes, while Plain enforces its username and
+password bounds without trimming spaces. Raw responses, decode/provider errors,
+secrets and server-controlled text must never become guest output, logs or
+observations.
 
 ## Native sharing choice
 
@@ -119,6 +126,13 @@ Apply the generated VNC authority migration before the new API. It adds the
 Agent grant table; the existing connection schema and public responses stay
 unchanged. Old Runners make no VNC calls; missing endpoints cannot authorize a new
 Runner operation.
+
+Deploy the API decoder before Runners that advertise X509Plain. The widened API
+continues serving older X509Vnc-only Runners. A new Runner against an older API
+fails closed because the strict response decoder rejects an unsupported or
+cross-paired response; there is no fallback to classic authentication. No
+database migration, stored-data rewrite, guest RPC change or feature activation
+is part of this extension.
 
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new
