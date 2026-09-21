@@ -899,6 +899,17 @@ export {
 } from "./onboarding";
 export { skillFrontmatterSchema } from "./skills";
 export {
+  normalizeSkillImportName,
+  skillImportSessionsContract,
+  skillImportSkillsContract,
+  SKILL_IMPORT_LIMITS,
+  type SkillImportLimits,
+  type SkillImportRequest,
+  type SkillImportSessionResponse,
+  type SkillImportSessionsContract,
+  type SkillImportSkillsContract,
+} from "./skill-import";
+export {
   agentDraftContract,
   agentDraftResponseSchema,
   agentDraftRequestSchema,
