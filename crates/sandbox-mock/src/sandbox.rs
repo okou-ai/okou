@@ -10,10 +10,10 @@ use ::sandbox::*;
 use async_trait::async_trait;
 
 use crate::call_records::{
-    CodexSessionCleanupCall, CopyFileCall, ExecCall, GuestStateRestoreCall,
+    CodexSessionCleanupCall, CopyFileCall, ExecCall, FinalizeStagedFileCall, GuestStateRestoreCall,
     GuestStateRestoreTimezoneCall, ProcessCancelCall, ProcessControlCall, ReadFileCall,
-    SessionHistoryIdentityVerifyCall, StartAgentProcessCall, StartProcessCall, StorageManifestCall,
-    WaitProcessCall, WriteFileCall, WriteFilesCall,
+    SessionHistoryIdentityVerifyCall, StagedFileDispositionCall, StartAgentProcessCall,
+    StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
 };
 use crate::lifecycle::{MockLifecycleGate, wait_lifecycle_gate};
 use crate::overrides::{ExecMatcherOutcome, GuestStateRestoreBehavior, MockSandboxOverrides};
@@ -50,6 +50,9 @@ pub struct MockSandbox {
     copy_file_gate: Mutex<Option<MockLifecycleGate>>,
     write_file_results: Mutex<VecDeque<Result<()>>>,
     write_file_calls: Mutex<Vec<WriteFileCall>>,
+    finalize_staged_file_results: Mutex<VecDeque<Result<StagedFileFinalizeOutcome>>>,
+    finalize_staged_file_calls: Mutex<Vec<FinalizeStagedFileCall>>,
+    finalize_staged_file_gate: Mutex<Option<MockLifecycleGate>>,
     write_files_calls: Mutex<Vec<WriteFilesCall>>,
     private_write_file_results: Mutex<VecDeque<Result<()>>>,
     private_write_file_calls: Mutex<Vec<WriteFileCall>>,
@@ -99,6 +102,9 @@ impl MockSandbox {
             copy_file_gate: Mutex::new(None),
             write_file_results: Mutex::new(VecDeque::new()),
             write_file_calls: Mutex::new(Vec::new()),
+            finalize_staged_file_results: Mutex::new(VecDeque::new()),
+            finalize_staged_file_calls: Mutex::new(Vec::new()),
+            finalize_staged_file_gate: Mutex::new(None),
             write_files_calls: Mutex::new(Vec::new()),
             private_write_file_results: Mutex::new(VecDeque::new()),
             private_write_file_calls: Mutex::new(Vec::new()),
@@ -374,6 +380,25 @@ impl MockSandbox {
     /// [`MockSandboxOverrides::write_file_calls`].
     pub fn write_file_calls(&self) -> Vec<WriteFileCall> {
         self.write_file_calls.lock_ignoring_poison().clone()
+    }
+
+    /// Queue one staged-file finalizer result.
+    pub fn push_finalize_staged_file_result(&self, result: Result<StagedFileFinalizeOutcome>) {
+        self.finalize_staged_file_results
+            .lock_ignoring_poison()
+            .push_back(result);
+    }
+
+    /// Return recorded staged-file finalizer calls.
+    pub fn finalize_staged_file_calls(&self) -> Vec<FinalizeStagedFileCall> {
+        self.finalize_staged_file_calls
+            .lock_ignoring_poison()
+            .clone()
+    }
+
+    /// Block staged-file finalization after call recording.
+    pub fn set_finalize_staged_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
+        *self.finalize_staged_file_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Return this sandbox's recorded write-files batch calls.
@@ -1238,11 +1263,86 @@ impl Sandbox for MockSandbox {
         if let Some(gate) = gate {
             gate.enter_and_wait().await;
         }
+        if let Some(overrides) = &self.overrides {
+            wait_lifecycle_gate(&overrides.file.write_file_gate).await;
+        }
         self.write_file_results
             .lock_ignoring_poison()
             .pop_front()
             .unwrap_or(Ok(()))
             .map(|()| None)
+    }
+
+    async fn finalize_staged_file(
+        &self,
+        request: &StagedFileFinalizeRequest<'_>,
+    ) -> Result<StagedFileFinalizeOutcome> {
+        let disposition = match request.disposition {
+            StagedFileDisposition::Publish { destination } => StagedFileDispositionCall::Publish {
+                destination: destination.to_string(),
+            },
+            StagedFileDisposition::Discard => StagedFileDispositionCall::Discard,
+        };
+        let call = FinalizeStagedFileCall {
+            staging_path: request.staging_path.to_string(),
+            disposition,
+        };
+        self.finalize_staged_file_calls
+            .lock_ignoring_poison()
+            .push(call.clone());
+        if let Some(overrides) = &self.overrides {
+            overrides
+                .file
+                .finalize_staged_file_calls
+                .lock_ignoring_poison()
+                .push(call);
+        }
+        validate_mock_guest_file_path(
+            SandboxOperation::FinalizeStagedFile,
+            "finalize_staged_file",
+            request.staging_path,
+        )?;
+        if let StagedFileDisposition::Publish { destination } = request.disposition {
+            validate_mock_guest_file_path(
+                SandboxOperation::FinalizeStagedFile,
+                "finalize_staged_file",
+                destination,
+            )?;
+        }
+        let gate = self
+            .finalize_staged_file_gate
+            .lock_ignoring_poison()
+            .clone();
+        if let Some(gate) = gate {
+            gate.enter_and_wait().await;
+        }
+        if let Some(overrides) = &self.overrides {
+            wait_lifecycle_gate(&overrides.file.finalize_staged_file_gate).await;
+        }
+        if let Some(result) = self
+            .finalize_staged_file_results
+            .lock_ignoring_poison()
+            .pop_front()
+        {
+            return result;
+        }
+        if let Some(overrides) = &self.overrides
+            && let Some(result) = overrides
+                .file
+                .finalize_staged_file_results
+                .lock_ignoring_poison()
+                .pop_front()
+        {
+            return result;
+        }
+        let measurements = StagedFileFinalizeMeasurements::default();
+        Ok(match request.disposition {
+            StagedFileDisposition::Publish { .. } => StagedFileFinalizeOutcome::Published {
+                mode: StagedFilePublicationMode::SameDeviceRename,
+                measurements,
+            },
+            StagedFileDisposition::Discard => StagedFileFinalizeOutcome::Discarded { measurements },
+        })
     }
 
     async fn write_files(&self, files: &[WriteFileEntry<'_>]) -> Result<()> {

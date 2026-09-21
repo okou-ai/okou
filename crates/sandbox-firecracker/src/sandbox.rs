@@ -2915,6 +2915,16 @@ impl Sandbox for FirecrackerSandbox {
         .map(Some)
     }
 
+    async fn finalize_staged_file(
+        &self,
+        request: &sandbox::StagedFileFinalizeRequest<'_>,
+    ) -> sandbox::Result<sandbox::StagedFileFinalizeOutcome> {
+        self.run_bounded_guest_operation(SandboxOperation::FinalizeStagedFile, |guest| async move {
+            guest.finalize_staged_file(request).await
+        })
+        .await
+    }
+
     async fn write_files(&self, files: &[WriteFileEntry<'_>]) -> sandbox::Result<()> {
         let operation = SandboxOperation::WriteFile;
         let files = files

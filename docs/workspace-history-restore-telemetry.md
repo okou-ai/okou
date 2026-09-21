@@ -33,6 +33,31 @@ their service time to guest restore time and is not a critical-path wall
 interval. Use the remaining materialization-wait event and guest-restore event
 when assessing the history contribution to startup.
 
+## Storage overlap and publication
+
+On an exact workspace reuse with actual Guest storage-apply work, Runner can
+materialize history while storage is being prepared and then write the exact
+history bytes to a run-scoped staging path under `.vm0`. The staging write starts
+only when storage apply starts. It does not touch the framework's canonical
+history path, so storage cleanup or extraction cannot overwrite a partially
+restored history file.
+
+After storage succeeds, Runner publishes the staged file to the canonical
+framework path. Same-device publication is one rename. If the staging and
+destination directories are on different filesystems, publication copies to a
+unique sibling of the destination and then renames that sibling into place; this
+is correct but may be slower. A normally completed helper can report a bounded
+`not_published` result, in which case Runner performs the existing serial restore.
+A timeout, cancellation, transport failure or malformed result leaves publication
+ambiguous, so Runner fails closed and does not retry the write.
+
+`session_history_workspace_staging` measures the staging write.
+`session_history_workspace_publication` records `same_device`, `cross_device`,
+`not_published` or `ambiguous`. The overall
+`session_history_workspace_staged_restore` interval includes the overlap wait,
+staging and publication or safe serial fallback. Existing workspace-cache restore
+success telemetry is emitted only after canonical publication succeeds.
+
 ## Rollout and analysis
 
 The webhook fields are additive and optional. Old Runner payloads remain valid;

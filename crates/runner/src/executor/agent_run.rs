@@ -18,8 +18,10 @@ use guest_contracts::session_history_identity::{
 use sandbox::{
     ExecTermination, GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle,
     ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome, ProcessOutputMode,
-    Sandbox, SessionHistoryIdentityVerifyRequest, StartAgentProcessRequest,
+    Sandbox, SessionHistoryIdentityVerifyRequest, StagedFileDisposition, StagedFileFinalizeOutcome,
+    StagedFileFinalizeRequest, StartAgentProcessRequest,
 };
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -48,9 +50,9 @@ use super::session_history_download::{
     SessionHistoryDownloadPhaseTiming, SessionHistoryDownloadTimings,
     SessionHistoryMaterialization, SessionHistoryMaterializer,
 };
-use super::session_history_restore_plan::HistoryOverlapShadowApplicability;
 use super::session_restore::{
-    MaterializedResumeSession, SessionRestoreDiagnostics, restore_session,
+    FreshSessionRestorePlan, MaterializedResumeSession, SessionRestoreDiagnostics,
+    plan_fresh_session_restore, restore_session,
 };
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
 use super::workspace_session_history_materializer::{
@@ -75,7 +77,7 @@ use crate::restored_session_identity::{
 use crate::storage_plan::{StoragePlan, build_storage_plan};
 use crate::telemetry::{
     HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
-    session_history_prefix_extension_action_type,
+    WorkspaceSessionHistoryTelemetry, session_history_prefix_extension_action_type,
 };
 use crate::types::{ExecutionContext, WorkspaceReuseResult};
 
@@ -91,7 +93,6 @@ const WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR: &str =
     "workspace session history phase failed";
 const STORAGE_CACHE_POPULATE_FAILED: &str = "storage-cache-populate-failed";
 const STORAGE_DOWNLOAD_FAILED: &str = "storage-download-failed";
-const STORAGE_HISTORY_OVERLAP_SHADOW_ACTION: &str = "runner_storage_history_overlap_shadow";
 const SESSION_HISTORY_IDENTITY_VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
 const USER_CANCELLATION_CONTROL_PAYLOAD: &[u8] = br#"{"type":"user-cancellation"}"#;
 
@@ -1524,54 +1525,389 @@ fn record_storage_plan_state(
     }
 }
 
-fn record_storage_history_overlap_not_applicable(
+struct StagedSessionRestore {
+    session: MaterializedResumeSession,
+    plan: FreshSessionRestorePlan,
+    transfer_source: HistoryTransferSource,
+    transfer: crate::telemetry::HistoryTransferMeasurements,
+    workspace_completion: Option<(
+        WorkspaceSessionHistoryTimings,
+        WorkspaceSessionHistoryTelemetry,
+    )>,
+}
+
+enum StagedSessionRestorePreparation {
+    /// Storage had no Guest apply work, so the untouched plan remains serial.
+    Serial(SessionHistoryRestorePlan),
+    /// No materialized history exists for this run.
+    Missing,
+    /// Exact bytes were written to the isolated staging path.
+    Ready(StagedSessionRestore),
+}
+
+async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) {
+    if let Err(error) = sandbox
+        .finalize_staged_file(&StagedFileFinalizeRequest {
+            staging_path,
+            disposition: StagedFileDisposition::Discard,
+        })
+        .await
+    {
+        warn!(error = %error, "failed to discard staged session history");
+    }
+}
+
+async fn write_staged_session(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    session: MaterializedResumeSession,
+    source: HistoryTransferSource,
+    staging_path: &str,
+    workspace_completion: Option<(
+        WorkspaceSessionHistoryTimings,
+        WorkspaceSessionHistoryTelemetry,
+    )>,
     telemetry: &mut JobTelemetry,
-    reason: &'static str,
+) -> RunnerResult<StagedSessionRestore> {
+    let plan = plan_fresh_session_restore(context, &session, SandboxReuseResult::PoolMiss)?
+        .ok_or_else(|| RunnerError::Internal("fresh session restore plan unavailable".into()))?;
+    let started = Instant::now();
+    let result = plan.write_to(sandbox, staging_path, &session).await;
+    let elapsed = started.elapsed();
+    if result.is_err() {
+        telemetry.record_history_transfer(
+            elapsed,
+            source,
+            CliFramework::from(effective_cli_framework(&context.cli_agent_type))
+                .as_cli_agent_type(),
+            None,
+        );
+    }
+    telemetry.record(
+        "session_history_workspace_staging",
+        elapsed,
+        result.is_ok(),
+        result
+            .as_ref()
+            .err()
+            .map(|_| "session history staging failed"),
+    );
+    let transfer = result?;
+    Ok(StagedSessionRestore {
+        session,
+        plan,
+        transfer_source: source,
+        transfer,
+        workspace_completion,
+    })
+}
+
+fn record_staged_history_transfer_outcome(
+    telemetry: &mut JobTelemetry,
+    context: &ExecutionContext,
+    staged: &StagedSessionRestore,
+    elapsed: Duration,
+    success: bool,
 ) {
-    telemetry.record_bounded_outcome(
-        STORAGE_HISTORY_OVERLAP_SHADOW_ACTION,
-        true,
-        "not_applicable",
-        Some(reason),
+    telemetry.record_history_transfer(
+        elapsed,
+        staged.transfer_source,
+        CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(),
+        success.then(|| staged.transfer.clone()),
     );
 }
 
-fn prepare_storage_history_overlap_shadow(
-    plan: &StoragePlan,
-    applicability: HistoryOverlapShadowApplicability,
+fn record_staged_workspace_restore_outcome(
     telemetry: &mut JobTelemetry,
-) -> Option<guest_contracts::storage_manifest::HistoryOverlapShadow> {
-    match applicability {
-        HistoryOverlapShadowApplicability::Planned(history_root) => {
-            match plan.history_overlap_shadow(history_root) {
-                Ok(shadow) => Some(shadow),
-                Err(_) => {
-                    record_storage_history_overlap_not_applicable(telemetry, "descriptor_budget");
-                    None
-                }
-            }
-        }
-        HistoryOverlapShadowApplicability::NoPlannedRestore => {
-            record_storage_history_overlap_not_applicable(telemetry, "no_planned_restore");
-            None
-        }
-        HistoryOverlapShadowApplicability::VerifyFirst => {
-            record_storage_history_overlap_not_applicable(telemetry, "verify_first");
-            None
-        }
-    }
+    staged: &StagedSessionRestore,
+    elapsed: Duration,
+    success: bool,
+) {
+    let Some((timings, history_telemetry)) = staged.workspace_completion else {
+        return;
+    };
+    telemetry.record_workspace_session_history_restore(
+        elapsed,
+        success,
+        (!success).then_some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
+        history_telemetry,
+    );
+    telemetry.record(
+        "session_history_workspace_cache_restore",
+        timings.host_service_time().saturating_add(elapsed),
+        success,
+        (!success).then_some("restore_error"),
+    );
 }
 
-fn record_storage_history_overlap_transport(
+async fn prepare_staged_session_restore(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+    cancel: &CancellationToken,
+    plan: SessionHistoryRestorePlan,
+    storage_apply_start: oneshot::Receiver<()>,
+    staging_path: &str,
     telemetry: &mut JobTelemetry,
-    transport: super::storage::HistoryOverlapShadowTransport,
-) {
-    if matches!(
-        transport,
-        super::storage::HistoryOverlapShadowTransport::DescriptorBudget
-    ) {
-        record_storage_history_overlap_not_applicable(telemetry, "descriptor_budget");
+) -> RunnerResult<StagedSessionRestorePreparation> {
+    if storage_apply_start.await.is_err() {
+        return Ok(StagedSessionRestorePreparation::Serial(plan));
     }
+
+    let mut local_materializer = None;
+    let mut remote_materializer = match plan {
+        SessionHistoryRestorePlan::SkipVerified(_) => {
+            return Err(RunnerError::Internal(
+                "verify-first history plan reached staged restore".into(),
+            ));
+        }
+        SessionHistoryRestorePlan::DeferredHashBacked { fallback } => {
+            record_session_history_restore_fallback(telemetry, fallback);
+            Some(SessionHistoryMaterializer::start_cancellable(
+                &config.http,
+                &config.session_history_cpu,
+                context.resume_session.as_ref(),
+                effective_cli_framework(&context.cli_agent_type),
+                cancel.clone(),
+                Some(&config.session_history_probe),
+            ))
+        }
+        SessionHistoryRestorePlan::Default => Some(SessionHistoryMaterializer::start_cancellable(
+            &config.http,
+            &config.session_history_cpu,
+            context.resume_session.as_ref(),
+            effective_cli_framework(&context.cli_agent_type),
+            cancel.clone(),
+            Some(&config.session_history_probe),
+        )),
+        SessionHistoryRestorePlan::Prestarted {
+            materializer,
+            fallback,
+        } => {
+            record_session_history_restore_fallback(telemetry, fallback);
+            Some(materializer)
+        }
+        SessionHistoryRestorePlan::LocalSidecar {
+            materializer,
+            fallback,
+        } => {
+            record_session_history_restore_fallback(telemetry, fallback);
+            local_materializer = Some(materializer);
+            None
+        }
+    };
+
+    if let Some(local_materializer) = local_materializer {
+        let completed_before_restore = local_materializer.is_finished();
+        let wait_started = Instant::now();
+        let materialization = local_materializer.finish(cancel).await;
+        let materialization_wait = if completed_before_restore {
+            Duration::ZERO
+        } else {
+            wait_started.elapsed()
+        };
+        let materialization_succeeded = matches!(
+            &materialization,
+            WorkspaceSessionHistoryMaterialization::Materialized { .. }
+        );
+        telemetry.record(
+            "session_history_workspace_cache_materialization_wait",
+            materialization_wait,
+            materialization_succeeded,
+            (!materialization_succeeded).then_some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
+        );
+        match materialization {
+            WorkspaceSessionHistoryMaterialization::Materialized {
+                session,
+                timings,
+                telemetry: history_telemetry,
+            } => {
+                record_workspace_session_history_timings(telemetry, timings);
+                match write_staged_session(
+                    sandbox,
+                    context,
+                    session,
+                    HistoryTransferSource::WorkspaceCache,
+                    staging_path,
+                    Some((timings, history_telemetry)),
+                    telemetry,
+                )
+                .await
+                {
+                    Ok(staged) => return Ok(StagedSessionRestorePreparation::Ready(staged)),
+                    Err(error) => {
+                        if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
+                            return Err(error);
+                        }
+                        telemetry.record_workspace_session_history_restore(
+                            Duration::ZERO,
+                            false,
+                            Some(WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR),
+                            history_telemetry,
+                        );
+                        telemetry.record(
+                            "session_history_workspace_cache_restore",
+                            timings.host_service_time(),
+                            false,
+                            Some("restore_error"),
+                        );
+                        telemetry.record(
+                            "session_history_workspace_cache_miss",
+                            Duration::ZERO,
+                            true,
+                            Some("restore_error"),
+                        );
+                        warn!(
+                            run_id = %context.run_id,
+                            error = %error,
+                            "workspace session history sidecar staging failed; falling back to remote history"
+                        );
+                        remote_materializer = Some(SessionHistoryMaterializer::start_cancellable(
+                            &config.http,
+                            &config.session_history_cpu,
+                            context.resume_session.as_ref(),
+                            effective_cli_framework(&context.cli_agent_type),
+                            cancel.clone(),
+                            Some(&config.session_history_probe),
+                        ));
+                    }
+                }
+            }
+            WorkspaceSessionHistoryMaterialization::Failed { timings, error } => {
+                record_workspace_session_history_timings(telemetry, timings);
+                if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
+                    return Err(error);
+                }
+                telemetry.record(
+                    "session_history_workspace_cache_restore",
+                    timings.host_service_time(),
+                    false,
+                    Some("materialize_error"),
+                );
+                telemetry.record(
+                    "session_history_workspace_cache_miss",
+                    Duration::ZERO,
+                    true,
+                    Some("materialize_error"),
+                );
+                warn!(
+                    run_id = %context.run_id,
+                    error = %error,
+                    "workspace session history sidecar materialization failed; falling back to remote history"
+                );
+                remote_materializer = Some(SessionHistoryMaterializer::start_cancellable(
+                    &config.http,
+                    &config.session_history_cpu,
+                    context.resume_session.as_ref(),
+                    effective_cli_framework(&context.cli_agent_type),
+                    cancel.clone(),
+                    Some(&config.session_history_probe),
+                ));
+            }
+        }
+    }
+
+    let Some(remote_materializer) = remote_materializer else {
+        return Ok(StagedSessionRestorePreparation::Missing);
+    };
+    let should_record_wait = remote_materializer.is_downloading();
+    let completed_before_restore = remote_materializer.is_download_finished();
+    let wait_started = Instant::now();
+    let materialization = remote_materializer.finish(cancel).await;
+    let materialization_wait = wait_started.elapsed();
+    let downloaded = match materialization {
+        SessionHistoryMaterialization::Missing
+        | SessionHistoryMaterialization::NoDownloadNeeded => None,
+        SessionHistoryMaterialization::Downloaded {
+            session,
+            prefix_outcome,
+            elapsed,
+            timings,
+        } => {
+            record_session_history_materializer_state(
+                telemetry,
+                should_record_wait,
+                completed_before_restore,
+                materialization_wait,
+                true,
+                timings.metadata(),
+            );
+            if should_record_wait {
+                telemetry.record_with_session_history_metadata(
+                    "session_history_materialization_wait",
+                    materialization_wait,
+                    true,
+                    None,
+                    timings.metadata(),
+                );
+            }
+            telemetry.record_with_session_history_metadata(
+                "session_history_download",
+                elapsed,
+                true,
+                None,
+                timings.metadata(),
+            );
+            record_session_history_download_timings(telemetry, &timings);
+            if let Some(prefix_outcome) = prefix_outcome {
+                record_session_history_prefix_outcome(telemetry, prefix_outcome);
+            }
+            Some(session)
+        }
+        SessionHistoryMaterialization::Failed {
+            elapsed,
+            timings,
+            error,
+        } => {
+            record_session_history_materializer_state(
+                telemetry,
+                should_record_wait,
+                completed_before_restore,
+                materialization_wait,
+                false,
+                timings.metadata(),
+            );
+            if should_record_wait {
+                telemetry.record_with_session_history_metadata(
+                    "session_history_materialization_wait",
+                    materialization_wait,
+                    false,
+                    Some(SESSION_HISTORY_MATERIALIZATION_WAIT_TELEMETRY_ERROR),
+                    timings.metadata(),
+                );
+            }
+            telemetry.record_with_session_history_metadata(
+                "session_history_download",
+                elapsed,
+                false,
+                Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
+                timings.metadata(),
+            );
+            record_session_history_download_timings(telemetry, &timings);
+            return Err(error);
+        }
+    };
+    let (source, session) = match downloaded {
+        Some(session) => (HistoryTransferSource::Downloaded, Some(session)),
+        None => (
+            HistoryTransferSource::Inline,
+            materialize_inline_resume_session(context, config, cancel).await?,
+        ),
+    };
+    let Some(session) = session else {
+        return Ok(StagedSessionRestorePreparation::Missing);
+    };
+    write_staged_session(
+        sandbox,
+        context,
+        session,
+        source,
+        staging_path,
+        None,
+        telemetry,
+    )
+    .await
+    .map(StagedSessionRestorePreparation::Ready)
 }
 
 async fn populate_storage_plan(
@@ -1657,10 +1993,9 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
-    history_shadow_applicability: HistoryOverlapShadowApplicability,
+    mut storage_apply_start: Option<oneshot::Sender<()>>,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let Some(manifest) = &context.storage_manifest else {
-        record_storage_history_overlap_not_applicable(telemetry, "no_storage_work");
         return Ok(None);
     };
     let apply_started = Instant::now();
@@ -1683,7 +2018,6 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
-                record_storage_history_overlap_not_applicable(telemetry, "no_storage_work");
                 prepared.delivery.cancel_and_drain(telemetry).await;
                 let _ = prepared_storage.take();
                 Ok(None)
@@ -1701,14 +2035,11 @@ async fn prepare_guest_storage(
                         "prepared storage disappeared after cache population".into(),
                     )
                 })?;
-                let shadow = prepare_storage_history_overlap_shadow(
-                    &prepared.plan,
-                    history_shadow_applicability,
-                    telemetry,
-                );
                 let files = prepared.plan.take_decoded();
-                let mut guest_manifest = prepared.plan.into_guest_manifest();
-                guest_manifest.history_overlap_shadow = shadow;
+                let guest_manifest = prepared.plan.into_guest_manifest();
+                if let Some(start) = storage_apply_start.take() {
+                    let _ = start.send(());
+                }
                 let download_started = Instant::now();
                 let download_result =
                     super::storage::download_storages_with_files_observing_transport(
@@ -1716,9 +2047,7 @@ async fn prepare_guest_storage(
                         context,
                         guest_manifest,
                         &files,
-                        |transport| {
-                            record_storage_history_overlap_transport(telemetry, transport);
-                        },
+                        |_| {},
                     )
                     .await;
                 telemetry.record(
@@ -1747,19 +2076,15 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
-                record_storage_history_overlap_not_applicable(telemetry, "no_storage_work");
                 Ok(None)
             } else {
                 let deferred =
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
-                let shadow = prepare_storage_history_overlap_shadow(
-                    &plan,
-                    history_shadow_applicability,
-                    telemetry,
-                );
                 let files = plan.take_decoded();
-                let mut guest_manifest = plan.into_guest_manifest();
-                guest_manifest.history_overlap_shadow = shadow;
+                let guest_manifest = plan.into_guest_manifest();
+                if let Some(start) = storage_apply_start.take() {
+                    let _ = start.send(());
+                }
                 let download_started = Instant::now();
                 let download_result =
                     super::storage::download_storages_with_files_observing_transport(
@@ -1767,9 +2092,7 @@ async fn prepare_guest_storage(
                         context,
                         guest_manifest,
                         &files,
-                        |transport| {
-                            record_storage_history_overlap_transport(telemetry, transport);
-                        },
+                        |_| {},
                     )
                     .await;
                 telemetry.record(
@@ -1861,8 +2184,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         mut pre_spawn_admission_lease,
         guest_state_prepared,
     } = controls;
-    let history_shadow_applicability =
-        session_history_restore_plan.history_overlap_shadow_applicability(context);
+    let staged_history_eligible = start.workspace_reuse_result == WorkspaceReuseResult::Reused
+        && start.reuse_result != SandboxReuseResult::Reused
+        && context.resume_session.is_some()
+        && !matches!(
+            &session_history_restore_plan,
+            SessionHistoryRestorePlan::SkipVerified(_)
+        );
     let pre_spawn_started = Instant::now();
 
     // Complete cancellation-aware guest runtime and storage preparation while
@@ -1930,54 +2258,344 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         }
     };
     model_catalog_prefetch.record_outcome(telemetry);
-    let storage_result = model_catalog_prefetch
-        .race(run_pre_spawn_phase(
-            &cancel,
-            prepare_guest_storage(
-                sandbox,
-                context,
-                config,
-                &start,
-                telemetry,
-                &mut prepared_storage,
-                history_shadow_applicability,
-            ),
-        ))
-        .await;
-    model_catalog_prefetch.record_outcome(telemetry);
-    let deferred_background_fill = match storage_result {
-        Some(Ok(deferred)) => deferred,
-        Some(Err(error)) => {
-            if let Some(prepared) = prepared_storage.as_mut() {
-                prepared.delivery.cancel_and_drain(telemetry).await;
+    let (deferred_background_fill, session_history_restore_plan, staged_restore_diagnostics) =
+        if staged_history_eligible {
+            let (storage_apply_start, storage_apply_started) = oneshot::channel();
+            let staging_path = guest_runtime_path(context.run_id, |dir| {
+                dir.join("session-history-restore")
+                    .join(uuid::Uuid::new_v4().simple().to_string())
+            })?;
+            let staged_restore_started = Instant::now();
+            let mut history_telemetry = telemetry.fork_concurrent_phase();
+            let staged_cancel = cancel.child_token();
+            let staged_cancel_after_storage = staged_cancel.clone();
+            let (storage_result, staged_result) = model_catalog_prefetch
+                .race(async {
+                    tokio::join!(
+                        async {
+                            let result = prepare_guest_storage(
+                                sandbox,
+                                context,
+                                config,
+                                &start,
+                                telemetry,
+                                &mut prepared_storage,
+                                Some(storage_apply_start),
+                            )
+                            .await;
+                            if result.is_err() {
+                                staged_cancel_after_storage.cancel();
+                            }
+                            result
+                        },
+                        prepare_staged_session_restore(
+                            sandbox,
+                            context,
+                            config,
+                            &staged_cancel,
+                            session_history_restore_plan,
+                            storage_apply_started,
+                            &staging_path,
+                            &mut history_telemetry,
+                        )
+                    )
+                })
+                .await;
+            telemetry.merge_concurrent_phase(history_telemetry);
+            model_catalog_prefetch.record_outcome(telemetry);
+
+            let deferred = match storage_result {
+                Ok(deferred) => deferred,
+                Err(storage_error) => {
+                    match staged_result {
+                        Ok(StagedSessionRestorePreparation::Serial(plan)) => {
+                            plan.cancel_and_drain().await;
+                        }
+                        Ok(StagedSessionRestorePreparation::Ready(staged)) => {
+                            let elapsed = staged_restore_started.elapsed();
+                            record_staged_history_transfer_outcome(
+                                telemetry, context, &staged, elapsed, false,
+                            );
+                            record_staged_workspace_restore_outcome(
+                                telemetry, &staged, elapsed, false,
+                            );
+                        }
+                        Ok(StagedSessionRestorePreparation::Missing) | Err(_) => {}
+                    }
+                    discard_staged_session_history(sandbox, &staging_path).await;
+                    if let Some(prepared) = prepared_storage.as_mut() {
+                        prepared.delivery.cancel_and_drain(telemetry).await;
+                    }
+                    model_catalog_prefetch.finish(telemetry).await;
+                    return Err(storage_error);
+                }
+            };
+            let staged = match staged_result {
+                Ok(staged) => staged,
+                Err(error) => {
+                    discard_staged_session_history(sandbox, &staging_path).await;
+                    model_catalog_prefetch.finish(telemetry).await;
+                    if cancel.is_cancelled() || matches!(&error, RunnerError::Cancelled) {
+                        info!(
+                            run_id = %context.run_id,
+                            "cancel received before guest process started"
+                        );
+                        let result = AgentExecutionResult::cancelled();
+                        telemetry.record(
+                            "agent_execute",
+                            pre_spawn_started.elapsed(),
+                            false,
+                            result
+                                .failure
+                                .as_ref()
+                                .map(|failure| failure.error.as_str()),
+                        );
+                        return Ok(result);
+                    }
+                    return Err(error);
+                }
+            };
+            if cancel.is_cancelled() {
+                discard_staged_session_history(sandbox, &staging_path).await;
+                match staged {
+                    StagedSessionRestorePreparation::Serial(plan) => {
+                        plan.cancel_and_drain().await;
+                    }
+                    StagedSessionRestorePreparation::Ready(staged) => {
+                        let elapsed = staged_restore_started.elapsed();
+                        record_staged_history_transfer_outcome(
+                            telemetry, context, &staged, elapsed, false,
+                        );
+                        record_staged_workspace_restore_outcome(telemetry, &staged, elapsed, false);
+                    }
+                    StagedSessionRestorePreparation::Missing => {}
+                }
+                model_catalog_prefetch.finish(telemetry).await;
+                info!(
+                    run_id = %context.run_id,
+                    "cancel received before guest process started"
+                );
+                let result = AgentExecutionResult::cancelled();
+                telemetry.record(
+                    "agent_execute",
+                    pre_spawn_started.elapsed(),
+                    false,
+                    result
+                        .failure
+                        .as_ref()
+                        .map(|failure| failure.error.as_str()),
+                );
+                return Ok(result);
             }
-            model_catalog_prefetch.finish(telemetry).await;
-            session_history_restore_plan.cancel_and_drain().await;
-            return Err(error);
-        }
-        None => {
-            if let Some(prepared) = prepared_storage.as_mut() {
-                prepared.delivery.cancel_and_drain(telemetry).await;
+
+            match staged {
+                StagedSessionRestorePreparation::Serial(plan) => (deferred, Some(plan), None),
+                StagedSessionRestorePreparation::Missing => (deferred, None, None),
+                StagedSessionRestorePreparation::Ready(staged) => {
+                    let publication_started = Instant::now();
+                    let publication = sandbox
+                        .finalize_staged_file(&StagedFileFinalizeRequest {
+                            staging_path: &staging_path,
+                            disposition: StagedFileDisposition::Publish {
+                                destination: staged.plan.final_path(),
+                            },
+                        })
+                        .await;
+                    let publication_elapsed = publication_started.elapsed();
+                    let publication_outcome = match &publication {
+                        Ok(StagedFileFinalizeOutcome::Published { mode, .. }) => Some(match mode {
+                            sandbox::StagedFilePublicationMode::SameDeviceRename => "same_device",
+                            sandbox::StagedFilePublicationMode::CrossDeviceCopyRename => {
+                                "cross_device"
+                            }
+                        }),
+                        Ok(StagedFileFinalizeOutcome::NotPublished { .. }) => Some("not_published"),
+                        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {
+                            Some("unexpected_discard")
+                        }
+                        Err(_) => Some("ambiguous"),
+                    };
+                    telemetry.record_with_outcome(
+                        "session_history_workspace_publication",
+                        publication_elapsed,
+                        matches!(
+                            &publication,
+                            Ok(StagedFileFinalizeOutcome::Published { .. })
+                        ),
+                        publication.as_ref().err().map(|_| "ambiguous publication"),
+                        publication_outcome,
+                    );
+                    let diagnostics =
+                        match publication {
+                            Ok(StagedFileFinalizeOutcome::Published { .. }) => staged
+                                .plan
+                                .complete(context, &staged.session, staged.transfer.clone()),
+                            Ok(StagedFileFinalizeOutcome::NotPublished { .. }) => {
+                                telemetry.record_with_outcome(
+                                    "session_history_workspace_staged_restore_fallback",
+                                    Duration::ZERO,
+                                    true,
+                                    None,
+                                    Some("not_published"),
+                                );
+                                let started = Instant::now();
+                                let result = staged
+                                    .plan
+                                    .write_final(sandbox, context, &staged.session)
+                                    .await;
+                                let elapsed = started.elapsed();
+                                telemetry.record_history_transfer(
+                                    elapsed,
+                                    staged.transfer_source,
+                                    CliFramework::from(effective_cli_framework(
+                                        &context.cli_agent_type,
+                                    ))
+                                    .as_cli_agent_type(),
+                                    result
+                                        .as_ref()
+                                        .ok()
+                                        .map(|diagnostics| diagnostics.transfer.clone()),
+                                );
+                                discard_staged_session_history(sandbox, &staging_path).await;
+                                match result {
+                                    Ok(diagnostics) => diagnostics,
+                                    Err(error) => {
+                                        record_staged_workspace_restore_outcome(
+                                            telemetry,
+                                            &staged,
+                                            staged_restore_started.elapsed(),
+                                            false,
+                                        );
+                                        return Err(error);
+                                    }
+                                }
+                            }
+                            Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {
+                                record_staged_history_transfer_outcome(
+                                    telemetry,
+                                    context,
+                                    &staged,
+                                    staged_restore_started.elapsed(),
+                                    false,
+                                );
+                                record_staged_workspace_restore_outcome(
+                                    telemetry,
+                                    &staged,
+                                    staged_restore_started.elapsed(),
+                                    false,
+                                );
+                                return Err(RunnerError::Internal(
+                                    "publish request unexpectedly discarded staged history".into(),
+                                ));
+                            }
+                            Err(error) => {
+                                record_staged_history_transfer_outcome(
+                                    telemetry,
+                                    context,
+                                    &staged,
+                                    staged_restore_started.elapsed(),
+                                    false,
+                                );
+                                record_staged_workspace_restore_outcome(
+                                    telemetry,
+                                    &staged,
+                                    staged_restore_started.elapsed(),
+                                    false,
+                                );
+                                return Err(RunnerError::Sandbox(error));
+                            }
+                        };
+                    let total_elapsed = staged_restore_started.elapsed();
+                    if matches!(publication_outcome, Some("same_device" | "cross_device")) {
+                        record_staged_history_transfer_outcome(
+                            telemetry,
+                            context,
+                            &staged,
+                            total_elapsed,
+                            true,
+                        );
+                    }
+                    record_staged_workspace_restore_outcome(
+                        telemetry,
+                        &staged,
+                        total_elapsed,
+                        true,
+                    );
+                    telemetry.record("session_restore", total_elapsed, true, None);
+                    telemetry.record_with_outcome(
+                        "session_history_workspace_staged_restore",
+                        total_elapsed,
+                        true,
+                        None,
+                        publication_outcome,
+                    );
+                    if cancel.is_cancelled() {
+                        model_catalog_prefetch.finish(telemetry).await;
+                        let result = AgentExecutionResult::cancelled();
+                        telemetry.record(
+                            "agent_execute",
+                            pre_spawn_started.elapsed(),
+                            false,
+                            result
+                                .failure
+                                .as_ref()
+                                .map(|failure| failure.error.as_str()),
+                        );
+                        return Ok(result);
+                    }
+                    (deferred, None, Some(diagnostics))
+                }
             }
-            model_catalog_prefetch.finish(telemetry).await;
-            info!(
-                run_id = %context.run_id,
-                "cancel received before guest process started"
-            );
-            let result = AgentExecutionResult::cancelled();
-            telemetry.record(
-                "agent_execute",
-                pre_spawn_started.elapsed(),
-                false,
-                result
-                    .failure
-                    .as_ref()
-                    .map(|failure| failure.error.as_str()),
-            );
-            session_history_restore_plan.cancel_and_drain().await;
-            return Ok(result);
-        }
-    };
+        } else {
+            let storage_result = model_catalog_prefetch
+                .race(run_pre_spawn_phase(
+                    &cancel,
+                    prepare_guest_storage(
+                        sandbox,
+                        context,
+                        config,
+                        &start,
+                        telemetry,
+                        &mut prepared_storage,
+                        None,
+                    ),
+                ))
+                .await;
+            model_catalog_prefetch.record_outcome(telemetry);
+            match storage_result {
+                Some(Ok(deferred)) => (deferred, Some(session_history_restore_plan), None),
+                Some(Err(error)) => {
+                    if let Some(prepared) = prepared_storage.as_mut() {
+                        prepared.delivery.cancel_and_drain(telemetry).await;
+                    }
+                    model_catalog_prefetch.finish(telemetry).await;
+                    session_history_restore_plan.cancel_and_drain().await;
+                    return Err(error);
+                }
+                None => {
+                    if let Some(prepared) = prepared_storage.as_mut() {
+                        prepared.delivery.cancel_and_drain(telemetry).await;
+                    }
+                    model_catalog_prefetch.finish(telemetry).await;
+                    info!(
+                        run_id = %context.run_id,
+                        "cancel received before guest process started"
+                    );
+                    let result = AgentExecutionResult::cancelled();
+                    telemetry.record(
+                        "agent_execute",
+                        pre_spawn_started.elapsed(),
+                        false,
+                        result
+                            .failure
+                            .as_ref()
+                            .map(|failure| failure.error.as_str()),
+                    );
+                    session_history_restore_plan.cancel_and_drain().await;
+                    return Ok(result);
+                }
+            }
+        };
     let pre_spawn_cancel = cancel.clone();
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
@@ -1990,8 +2608,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
 
     // Consume the session-history restore plan and prepare the private guest
     // inputs before crossing the process-spawn ownership boundary.
-    let mut session_restore_diagnostics = None;
+    let mut session_restore_diagnostics = staged_restore_diagnostics;
     let mut pre_run_restored_session_identity = None;
+    if let Some(session_history_restore_plan) = session_history_restore_plan {
     let mut local_session_history_materializer = None;
     let mut session_history_materializer = match session_history_restore_plan {
         SessionHistoryRestorePlan::SkipVerified(identity) => {
@@ -2317,6 +2936,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let diagnostics = result?;
             session_restore_diagnostics = Some(diagnostics);
         }
+    }
     }
 
     // Finalize the prepared private run payload and build the environment used

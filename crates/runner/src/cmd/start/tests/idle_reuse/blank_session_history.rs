@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use guest_contracts::env::CliFramework;
-use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
+use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides, StagedFileDispositionCall};
 use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
 
@@ -68,19 +68,13 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             ResumeSessionHistoryEncoding::Zstd,
         ),
     ] {
-        let (framework, history, session_id, expected_path, expected_root): (
-            &str,
-            &[u8],
-            &str,
-            String,
-            &str,
-        ) = match framework {
+        let (framework, history, session_id, expected_path): (&str, &[u8], &str, String) =
+            match framework {
             CliFramework::ClaudeCode => (
                 "claude-code",
                 HISTORY,
                 "sess-blank-history",
                 "/home/user/.claude/projects/-home-user-workspace/sess-blank-history.jsonl".into(),
-                "/home/user/.claude/projects/-home-user-workspace",
             ),
             CliFramework::Pi => (
                 "pi",
@@ -88,14 +82,12 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
                 "22222222-2222-4222-8222-222222222222",
                 format!("{}/restored-22222222-2222-4222-8222-222222222222.jsonl",
                     api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR),
-                "/home/user/.pi/agent/sessions/--home-user-workspace--",
             ),
             CliFramework::Codex => (
                 "codex",
                 br#"{"type":"session_meta","payload":{"id":"019e9154-c304-70f0-adde-36efb1be1701","timestamp":"2026-07-13T01:02:03Z"}}"#,
                 "019e9154-c304-70f0-adde-36efb1be1701",
                 "/home/user/.codex/sessions/2026/07/13/rollout-2026-07-13T01-02-03-019e9154-c304-70f0-adde-36efb1be1701.jsonl.zst".into(),
-                "/home/user/.codex/sessions",
             ),
         };
         let encoded = match encoding {
@@ -117,6 +109,10 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         let overrides = Arc::new(MockSandboxOverrides::new());
         let storage_gate = MockLifecycleGate::new();
         overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
+        let write_gate = MockLifecycleGate::new();
+        overrides.set_write_file_lifecycle_gate(write_gate.clone());
+        let finalize_gate = MockLifecycleGate::new();
+        overrides.set_finalize_staged_file_lifecycle_gate(finalize_gate.clone());
         let process_gate = MockLifecycleGate::new();
         overrides.set_start_process_lifecycle_gate(process_gate.clone());
         let (config, env) =
@@ -161,25 +157,13 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         push_job(&env, run_id, "vm0/default", Some(context));
 
         storage_gate.wait_entered(1, WAIT).await.unwrap();
-        // Storage is still blocked: a received HTTP request proves automatic
-        // discovery prestart, not a manually supplied executor restore plan.
+        // Storage is still blocked: release materialization and prove the
+        // exact history bytes are staged without touching the canonical path.
         server
             .next_request("blank history before storage finishes")
             .await;
-        let storage_calls = overrides.storage_manifest_calls();
-        assert_eq!(storage_calls.len(), 1);
-        let guest_manifest: guest_contracts::storage_manifest::Manifest =
-            serde_json::from_slice(&storage_calls[0].manifest_json).unwrap();
-        let shadow = guest_manifest.history_overlap_shadow.unwrap();
-        assert_eq!(shadow.history_root, expected_root);
-        assert_eq!(shadow.storage_write_roots, ["/home/user/workspace"]);
-        assert!(overrides.write_file_calls().is_empty());
-        assert!(overrides.start_agent_process_calls().is_empty());
-        storage_gate.release_one();
-        assert_eq!(process_gate.entered_count(), 0);
         release_history.send(()).unwrap();
-
-        process_gate.wait_entered(1, WAIT).await.unwrap();
+        write_gate.wait_entered(1, WAIT).await.unwrap();
         let writes = overrides.write_file_calls();
         assert_eq!(writes.len(), 1);
         let restored = if framework == "codex" {
@@ -188,7 +172,29 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             history
         };
         assert_eq!(writes[0].content, restored);
-        assert_eq!(writes[0].path, expected_path);
+        let staging_root =
+            format!("/home/user/.vm0/guest-agent/runs/{run_id}/session-history-restore/");
+        assert!(writes[0].path.starts_with(&staging_root));
+        assert_ne!(writes[0].path, expected_path);
+        assert!(overrides.start_agent_process_calls().is_empty());
+        assert!(overrides.finalize_staged_file_calls().is_empty());
+        write_gate.release_one();
+
+        // Canonical publication is ordered after storage completion.
+        storage_gate.release_one();
+        finalize_gate.wait_entered(1, WAIT).await.unwrap();
+        let finalizations = overrides.finalize_staged_file_calls();
+        assert_eq!(finalizations.len(), 1);
+        assert_eq!(finalizations[0].staging_path, writes[0].path);
+        assert_eq!(
+            finalizations[0].disposition,
+            StagedFileDispositionCall::Publish {
+                destination: expected_path.clone(),
+            }
+        );
+        finalize_gate.release_one();
+
+        process_gate.wait_entered(1, WAIT).await.unwrap();
         process_gate.release_one();
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_eq!(completion.exit_code, 0);

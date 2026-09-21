@@ -6,9 +6,10 @@ use ::sandbox::*;
 use tokio_util::sync::CancellationToken;
 
 use crate::call_records::{
-    CodexSessionCleanupCall, CopyFileCall, ExecCall, ExecMatcher, GuestStateRestoreCall,
-    ProcessCancelCall, ProcessControlCall, SessionHistoryIdentityVerifyCall, StartAgentProcessCall,
-    StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall, WriteFilesCall,
+    CodexSessionCleanupCall, CopyFileCall, ExecCall, ExecMatcher, FinalizeStagedFileCall,
+    GuestStateRestoreCall, ProcessCancelCall, ProcessControlCall, SessionHistoryIdentityVerifyCall,
+    StartAgentProcessCall, StartProcessCall, StorageManifestCall, WaitProcessCall, WriteFileCall,
+    WriteFilesCall,
 };
 use crate::lifecycle::{DestroyBehavior, LifecycleBehaviors, MockLifecycleGate};
 use crate::support::LockIgnoringPoison;
@@ -89,6 +90,14 @@ pub(crate) struct ExecOverrideState {
 pub(crate) struct FileOverrideState {
     /// Recorded write_file calls across all sandboxes built from this override set.
     pub(crate) write_file_calls: Mutex<Vec<WriteFileCall>>,
+    /// Optional gate entered after recording a write_file call.
+    pub(crate) write_file_gate: Mutex<Option<MockLifecycleGate>>,
+    /// Recorded staged-file finalizer calls across attached sandboxes.
+    pub(crate) finalize_staged_file_calls: Mutex<Vec<FinalizeStagedFileCall>>,
+    /// FIFO staged-file finalizer results.
+    pub(crate) finalize_staged_file_results: Mutex<VecDeque<Result<StagedFileFinalizeOutcome>>>,
+    /// Optional gate entered after recording a staged-file finalizer call.
+    pub(crate) finalize_staged_file_gate: Mutex<Option<MockLifecycleGate>>,
     /// Recorded write_files calls across all sandboxes built from this override set.
     pub(crate) write_files_calls: Mutex<Vec<WriteFilesCall>>,
     /// Recorded write_private_file calls across all sandboxes built from this override set.
@@ -318,6 +327,32 @@ impl MockSandboxOverrides {
             process: ProcessOverrideState::default(),
             factory: FactoryOverrideState::default(),
         }
+    }
+
+    /// Queue one staged-file finalizer result shared by attached sandboxes.
+    pub fn push_finalize_staged_file_result(&self, result: Result<StagedFileFinalizeOutcome>) {
+        self.file
+            .finalize_staged_file_results
+            .lock_ignoring_poison()
+            .push_back(result);
+    }
+
+    /// Return recorded staged-file finalizer calls.
+    pub fn finalize_staged_file_calls(&self) -> Vec<FinalizeStagedFileCall> {
+        self.file
+            .finalize_staged_file_calls
+            .lock_ignoring_poison()
+            .clone()
+    }
+
+    /// Block staged-file finalization after call recording.
+    pub fn set_finalize_staged_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
+        *self.file.finalize_staged_file_gate.lock_ignoring_poison() = Some(gate);
+    }
+
+    /// Block write_file after call recording.
+    pub fn set_write_file_lifecycle_gate(&self, gate: MockLifecycleGate) {
+        *self.file.write_file_gate.lock_ignoring_poison() = Some(gate);
     }
 
     /// Create overrides that make `wait_process` return a custom exit code.
