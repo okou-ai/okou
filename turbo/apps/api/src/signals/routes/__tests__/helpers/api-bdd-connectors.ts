@@ -225,6 +225,7 @@ interface OAuthIdentityFixtureOptions {
   readonly subject: string;
   readonly tokenUsername?: string;
   readonly tokenEmail?: string;
+  readonly tokenIssuedAtOffsetSeconds?: number;
   readonly userInfoUsername?: string;
   readonly userInfoEmail?: string;
   readonly userInfoSubject?: string;
@@ -250,7 +251,8 @@ async function oauthIdentityIdToken(
   if (identity.invalidIdToken) {
     return "invalid-id-token";
   }
-  const timestamp = Math.floor(now() / 1000);
+  const timestamp =
+    Math.floor(now() / 1000) + (identity.tokenIssuedAtOffsetSeconds ?? 0);
   return await new SignJWT({
     ...(identity.tokenUsername
       ? { preferred_username: identity.tokenUsername }

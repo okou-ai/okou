@@ -223,6 +223,65 @@ describe("builtin MCP automatic authentication", () => {
     });
   });
 
+  it("keeps verified identity when an optional ID-token label is oversized", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "automatic-bounded-label-user",
+        tokenUsername: "x".repeat(256),
+        tokenEmail: "bounded-label-user@example.test",
+      },
+    });
+    const started = await beginOAuth(f);
+    expect((await callback(started.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const account = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId: completed.body.connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      externalId: "automatic-bounded-label-user",
+      externalUsername: "bounded-label-user@example.test",
+      externalEmail: "bounded-label-user@example.test",
+    });
+  });
+
+  it("keeps a successful connection unnamed for a future-issued ID token", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      identity: {
+        subject: "future-issued-user",
+        tokenIssuedAtOffsetSeconds: 300,
+      },
+    });
+    const started = await beginOAuth(f);
+    expect((await callback(started.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const account = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId: completed.body.connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(account.body).toMatchObject({
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+    });
+  });
+
   it("keeps a successful connection unnamed when its ID token is invalid", async () => {
     const f = await fixture();
     const provider = mockAutomaticMcpOAuthProvider(context, {
