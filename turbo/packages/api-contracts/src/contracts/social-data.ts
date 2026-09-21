@@ -14,6 +14,8 @@ export const socialDataPlatformSchema = z.enum([
   "youtube",
   "facebook",
   "xiaohongshu",
+  "threads",
+  "wechat",
 ]);
 
 export const socialDataOperationSchema = z.enum([
@@ -46,7 +48,7 @@ const socialDataInputSchema = z
     kind: z.enum(["posts", "reels"]).optional(),
     sort: z.string().trim().min(1).max(32).optional(),
     date: z.string().trim().min(1).max(64).optional(),
-    type: z.enum(["video", "shorts"]).optional(),
+    type: z.enum(["video", "shorts", "article", "account"]).optional(),
     hashtag: z.boolean().optional(),
     fullDetails: z.boolean().optional(),
     refresh: z.boolean().optional(),
