@@ -2,8 +2,9 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Clock, Play, User } from "lucide-react";
+import { Clock, Coins, Play, User } from "lucide-react";
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -17,6 +18,7 @@ import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import {
   checkinClaimedOpen$,
+  getStartedQuests$,
   questIntroKey$,
   questIntroPromptShown$,
   setCheckinClaimedOpen$,
@@ -113,12 +115,16 @@ function Tile({
  * The illustration gets its own ground rather than floating on the dialog's
  * paper: a washed band reads as one picture and separates the drawing from the
  * sentences under it without a rule.
+ *
+ * The band runs edge to edge at the top of the shell, above the header, which
+ * is the anatomy Atlassian's `benefits modal` states for exactly this job:
+ * illustration, then title, then message, then at most two actions. Sitting it
+ * inside the body instead left the drawing with padding on both sides and the
+ * words beside it with nothing to line up against.
  */
 function TileRow({ children }: { children: ReactNode }) {
   return (
-    // The band spans the shell, so the drawing inside it is sized to hold that
-    // width rather than sitting small in the middle of it.
-    <div className="flex w-full items-center justify-center gap-4 rounded-2xl bg-state-hover px-6 py-9">
+    <div className="flex w-full items-center justify-center gap-4 bg-state-hover px-6 py-8">
       {children}
     </div>
   );
@@ -455,6 +461,7 @@ function IntroNote({ children }: { children: ReactNode }) {
 function IntroLayout({
   title,
   description,
+  reward,
   figure,
   secondaryLabel,
   onSecondary,
@@ -464,6 +471,8 @@ function IntroLayout({
 }: {
   title: string;
   description: string;
+  /** What the step pays, when the quest carries a reward. */
+  reward?: number;
   figure?: ReactNode;
   secondaryLabel: string;
   onSecondary: () => void;
@@ -474,16 +483,30 @@ function IntroLayout({
 }) {
   return (
     <>
+      {/* The drawing runs edge to edge above the header, so it escapes the
+          body's padding rather than sitting inside it. The close button is
+          light-on-washed either way, so it needs no ground of its own. */}
+      {figure !== undefined && <div className="-mx-6 -mt-6">{figure}</div>}
       <DialogHeader>
         {/* The close button is absolutely placed at the top right, so a title
             long enough to wrap runs underneath it without this inset. */}
         <DialogTitle className="pr-7">{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+        {/* The price rides the description: the title is the argument, and what
+            the step pays is a fact about it. The row that led here is the only
+            place it used to appear, which is the one place the decision is not
+            being made. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <DialogDescription>{description}</DialogDescription>
+          {reward !== undefined && (
+            <Badge className="shrink-0 text-xs font-semibold tabular-nums text-brand-text">
+              <Coins />+{formatLocalizedNumber(reward)}
+            </Badge>
+          )}
+        </div>
       </DialogHeader>
-      <div className="flex flex-col gap-3">
-        {figure}
-        {children}
-      </div>
+      {children !== undefined && (
+        <div className="flex flex-col gap-3">{children}</div>
+      )}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onSecondary}>
           {secondaryLabel}
@@ -503,6 +526,8 @@ function IntroLayout({
 interface IntroProps {
   readonly onConfirm: () => void;
   readonly onClose: () => void;
+  /** What this step pays, read off the quest the panel already loaded. */
+  readonly reward?: number;
 }
 
 function useLaterLabel(): string {
@@ -515,6 +540,7 @@ function useLaterLabel(): string {
 function ConnectorIntro({
   onConfirm,
   onClose,
+  reward,
   onNeedsChoice,
 }: IntroProps & {
   readonly onNeedsChoice: (
@@ -540,6 +566,7 @@ function ConnectorIntro({
       // The connectors themselves are the illustration: every one of them
       // connects in one press, which is the claim the abstract figure was
       // making and these marks make better.
+      reward={reward}
       figure={<QuestConnectorPicker onNeedsChoice={onNeedsChoice} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
@@ -565,7 +592,7 @@ function ConnectorIntro({
  * a `window.open` that waits on a request first is no longer a user gesture.
  * Without one, confirm falls back to the list.
  */
-function SlackIntro({ onConfirm, onClose }: IntroProps) {
+function SlackIntro({ onConfirm, onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   const slackLoadable = useLastLoadable(slackOrgData$);
@@ -585,6 +612,7 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
         },
         { assistantName },
       )}
+      reward={reward}
       figure={<SlackFigure assistantName={assistantName} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
@@ -609,7 +637,7 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
   );
 }
 
-function InviteIntro({ onConfirm, onClose }: IntroProps) {
+function InviteIntro({ onConfirm, onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   return (
     <IntroLayout
@@ -619,6 +647,7 @@ function InviteIntro({ onConfirm, onClose }: IntroProps) {
       description={t(($) => {
         return $.chat.agentPage.getStarted.intro.invite.description;
       })}
+      reward={reward}
       figure={<InviteFigure />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
@@ -637,7 +666,7 @@ function InviteIntro({ onConfirm, onClose }: IntroProps) {
 }
 
 /** The three steps, before any of them is asked for. */
-function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
+function WorkflowStepsIntro({ onConfirm, onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
   return (
@@ -651,6 +680,7 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
       description={t(($) => {
         return $.chat.agentPage.getStarted.intro.workflow.description;
       })}
+      reward={reward}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
@@ -715,9 +745,11 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
 function WorkflowPromptIntro({
   onSend,
   onBrowse,
+  reward,
 }: {
   onSend: (prompt: string) => void;
   onBrowse: () => void;
+  reward?: number;
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
@@ -745,6 +777,7 @@ function WorkflowPromptIntro({
         },
         { assistantName },
       )}
+      reward={reward}
       onConfirm={() => {
         onSend(prompt);
       }}
@@ -764,13 +797,14 @@ function WorkflowPromptIntro({
   );
 }
 
-function WorkflowIntro({ onConfirm, onClose }: IntroProps) {
+function WorkflowIntro({ onConfirm, onClose, reward }: IntroProps) {
   const showPrompt = useGet(questIntroPromptShown$);
   const advance = useSet(showQuestIntroPrompt$);
   const navigate = useSet(detachedNavigateTo$);
 
   return showPrompt ? (
     <WorkflowPromptIntro
+      reward={reward}
       onSend={(prompt) => {
         const searchParams = new URLSearchParams();
         searchParams.set("prompt", prompt);
@@ -787,6 +821,7 @@ function WorkflowIntro({ onConfirm, onClose }: IntroProps) {
         advance();
       }}
       onClose={onClose}
+      reward={reward}
     />
   );
 }
@@ -817,7 +852,16 @@ export function GetStartedQuestIntroDialog({
     }
     close();
   };
-  const props: IntroProps = { onConfirm: confirm, onClose: close };
+  // The quest list the panel already loaded is where the price lives, so the
+  // dialog reads it rather than being handed a second copy of the same number.
+  const quests = useLastLoadable(getStartedQuests$);
+  const reward =
+    quests.state === "hasData" && introducedKey !== null
+      ? quests.data.find((quest) => {
+          return quest.key === introducedKey;
+        })?.rewardAmount
+      : undefined;
+  const props: IntroProps = { onConfirm: confirm, onClose: close, reward };
   const needsChoice = (connector: PlatformConnectorCatalogStatusItem) => {
     setSelectedSlug(connector.slug);
   };
@@ -836,9 +880,12 @@ export function GetStartedQuestIntroDialog({
         }}
       >
         <DialogContent
-          // The connector quest carries the whole one-click catalog, so it is
-          // given the wider of the two shells.
-          smMaxWidth={introducedKey === "connector" ? 760 : 680}
+          // Two widths, by what the body is. The connector step carries the
+          // whole one-click catalog and needs the room; a step whose body is a
+          // drawing and three lines reads better narrow, because a single
+          // illustration centred across 680 cannot fill it. 560 is the nearest
+          // width the shell registers, and the one the check-in already uses.
+          smMaxWidth={introducedKey === "connector" ? 760 : 560}
         >
           {introducedKey === "connector" && (
             <ConnectorIntro {...props} onNeedsChoice={needsChoice} />
@@ -846,7 +893,11 @@ export function GetStartedQuestIntroDialog({
           {introducedKey === "slack" && <SlackIntro {...props} />}
           {introducedKey === "invite" && <InviteIntro {...props} />}
           {introducedKey === "workflow" && (
-            <WorkflowIntro onConfirm={confirm} onClose={close} />
+            <WorkflowIntro
+              onConfirm={confirm}
+              onClose={close}
+              reward={reward}
+            />
           )}
         </DialogContent>
       </Dialog>
