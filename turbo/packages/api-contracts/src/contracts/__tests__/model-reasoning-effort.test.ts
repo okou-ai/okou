@@ -45,7 +45,7 @@ describe("chat reasoning effort capabilities", () => {
     expect(defaultModelReasoningEffort("deepseek-v4-flash")).toBe("high");
   });
 
-  it.each(["okou-1-0", "okou-1-0-pro", "okou-1-0-max"])(
+  it.each(["okou-1.0", "okou-1.0-pro", "okou-1.0-max"])(
     "leaves %s reasoning to its preset",
     (model) => {
       expect(getModelReasoningEfforts(model)).toStrictEqual([]);

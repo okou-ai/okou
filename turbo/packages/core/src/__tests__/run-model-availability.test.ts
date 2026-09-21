@@ -13,7 +13,7 @@ describe("run model availability", () => {
   });
 
   it("gates every Okou alias with the same effective switch", () => {
-    for (const model of ["okou-1-0", "okou-1-0-pro", "okou-1-0-max"]) {
+    for (const model of ["okou-1.0", "okou-1.0-pro", "okou-1.0-max"]) {
       expect(isRunModelAvailable(model, {})).toBe(false);
       expect(
         isRunModelAvailable(model, {
@@ -24,7 +24,7 @@ describe("run model availability", () => {
   });
 
   it("filters a selectable catalog without changing its order", () => {
-    const models = ["okou-1-0", "gpt-5.6-luna"] as const;
+    const models = ["okou-1.0", "gpt-5.6-luna"] as const;
     expect(availableRunModels(models, {})).toEqual(["gpt-5.6-luna"]);
     expect(
       availableRunModels(models, {

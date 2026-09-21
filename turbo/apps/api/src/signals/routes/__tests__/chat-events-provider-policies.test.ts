@@ -1849,9 +1849,9 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it.each([
-    ["okou-1-0", "@preset/okou-1-0"],
-    ["okou-1-0-pro", "@preset/okou-1-0-pro"],
-    ["okou-1-0-max", "@preset/okou-1-0-max"],
+    ["okou-1.0", "@preset/okou-1-0"],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro"],
+    ["okou-1.0-max", "@preset/okou-1-0-max"],
   ] as const)(
     "routes built-in %s only through its OpenRouter Preset",
     async (model, preset) => {
@@ -1889,7 +1889,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("uses a visible route without rewriting a switch-disabled Okou thread", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelCandidateKeys(context, "okou-1-0");
+    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
     await seedBuiltInModelCandidateKeys(context, "gpt-5.6-luna");
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.OkouModels]: true,
@@ -1897,7 +1897,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "okou-1-0",
+        model: "okou-1.0",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -1914,7 +1914,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
     const first = await sendChatRun(actor, {
       agentId,
-      model: "okou-1-0",
+      model: "okou-1.0",
       prompt: "start on the gated Okou model",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
@@ -1937,7 +1937,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(
       (await readThreadProjection(actor, first.threadId)).selectedModel,
-    ).toBe("okou-1-0");
+    ).toBe("okou-1.0");
     await expectNoThreadModelUpdateEvent(actor, first.threadId, "gpt-5.6-luna");
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);

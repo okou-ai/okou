@@ -14494,13 +14494,13 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization for final Okou admission");
     }
-    await seedBuiltInModelKey("okou-1-0");
+    await seedBuiltInModelKey("okou-1.0");
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.OkouModels]: true,
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "okou-1-0",
+        model: "okou-1.0",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -14574,13 +14574,13 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       modelProvider: "anthropic-api-key",
     });
 
-    await seedBuiltInModelKey("okou-1-0");
+    await seedBuiltInModelKey("okou-1.0");
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.OkouModels]: true,
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "okou-1-0",
+        model: "okou-1.0",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",

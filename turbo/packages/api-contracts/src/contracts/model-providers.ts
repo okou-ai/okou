@@ -177,9 +177,9 @@ export interface DefaultOrgModelPolicySeed {
 }
 
 const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
-  "okou-1-0-max": "Okou 1.0 Max",
-  "okou-1-0-pro": "Okou 1.0 Pro",
-  "okou-1-0": "Okou 1.0",
+  "okou-1.0-max": "Okou 1.0 Max",
+  "okou-1.0-pro": "Okou 1.0 Pro",
+  "okou-1.0": "Okou 1.0",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5": "Claude Opus 5",
@@ -202,9 +202,9 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
 );
 
 export const OKOU_RUN_MODEL_TO_UNDERLYING = {
-  "okou-1-0": "gpt-5.6-luna",
-  "okou-1-0-pro": "gpt-5.6-sol",
-  "okou-1-0-max": "gpt-5.6-sol",
+  "okou-1.0": "gpt-5.6-luna",
+  "okou-1.0-pro": "gpt-5.6-sol",
+  "okou-1.0-max": "gpt-5.6-sol",
 } as const satisfies Partial<Record<SupportedRunModel, SupportedRunModel>>;
 
 export type OkouRunModel = keyof typeof OKOU_RUN_MODEL_TO_UNDERLYING;
@@ -401,17 +401,17 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
-  "okou-1-0-max": {
+  "okou-1.0-max": {
     candidates: [
       { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-max" },
     ],
   },
-  "okou-1-0-pro": {
+  "okou-1.0-pro": {
     candidates: [
       { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-pro" },
     ],
   },
-  "okou-1-0": {
+  "okou-1.0": {
     candidates: [
       { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0" },
     ],
@@ -553,7 +553,7 @@ const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
   BUILT_IN_MODEL_ALIAS_TO_MODEL;
 
 const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
-  "okou-1-0",
+  "okou-1.0",
   "gpt-5.6-luna",
   "deepseek-v4.1-flash",
   "deepseek-v4-flash",
@@ -1063,9 +1063,9 @@ export function getModelProviderPresentationLabel(
 }
 
 const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
-  "okou-1-0-max": ["built-in"],
-  "okou-1-0-pro": ["built-in"],
-  "okou-1-0": ["built-in"],
+  "okou-1.0-max": ["built-in"],
+  "okou-1.0-pro": ["built-in"],
+  "okou-1.0": ["built-in"],
   "claude-fable-5-1": [
     "built-in",
     "claude-code-oauth-token",

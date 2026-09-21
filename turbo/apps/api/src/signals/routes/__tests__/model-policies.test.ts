@@ -201,7 +201,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.list({ headers: authHeaders() }),
       [200],
     );
-    const model = "okou-1-0";
+    const model = "okou-1.0";
     const unavailable = await accept(
       client.update({
         headers: authHeaders(),

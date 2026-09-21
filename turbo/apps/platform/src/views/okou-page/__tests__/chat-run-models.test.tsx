@@ -181,7 +181,7 @@ test.each([
   "shows $visibleCount Okou models when the rollout switch is $enabled",
   async ({ enabled, visibleCount }) => {
     configureModelPolicies(
-      ["okou-1-0-max", "okou-1-0-pro", "okou-1-0", "gpt-5.6-luna"],
+      ["okou-1.0-max", "okou-1.0-pro", "okou-1.0", "gpt-5.6-luna"],
       { defaultModel: "gpt-5.6-luna" },
     );
     installRunChat({ selectedModel: "gpt-5.6-luna" });

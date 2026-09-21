@@ -9,9 +9,9 @@
 // it drives the model dropdown and all model-related UI via sortRowsByCatalog.
 // Recognized wire and historical IDs. Use ACTIVE_RUN_MODELS for model selection.
 export const SUPPORTED_RUN_MODELS = [
-  "okou-1-0-max",
-  "okou-1-0-pro",
-  "okou-1-0",
+  "okou-1.0-max",
+  "okou-1.0-pro",
+  "okou-1.0",
   "claude-fable-5-1",
   "claude-fable-5",
   "claude-opus-5",
@@ -41,9 +41,9 @@ export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
 export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
   Record<SupportedRunModel, ModelPriceTier>
 >({
-  "okou-1-0-max": "$$$",
-  "okou-1-0-pro": "$$",
-  "okou-1-0": "$",
+  "okou-1.0-max": "$$$",
+  "okou-1.0-pro": "$$",
+  "okou-1.0": "$",
   "claude-fable-5-1": "$$$$",
   "claude-fable-5": "$$$$",
   "claude-opus-5": "$$$",

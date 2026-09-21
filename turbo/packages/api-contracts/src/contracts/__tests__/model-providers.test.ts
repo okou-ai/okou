@@ -110,9 +110,9 @@ describe("model-first canonical catalog", () => {
 
   it("exposes the curated flat model list only", () => {
     expect(SUPPORTED_RUN_MODELS).toEqual([
-      "okou-1-0-max",
-      "okou-1-0-pro",
-      "okou-1-0",
+      "okou-1.0-max",
+      "okou-1.0-pro",
+      "okou-1.0",
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-opus-5",
@@ -309,9 +309,9 @@ describe("model-first canonical catalog", () => {
 
   it("keeps historical models readable in the shared schema catalog", () => {
     expect(SUPPORTED_RUN_MODELS).toEqual([
-      "okou-1-0-max",
-      "okou-1-0-pro",
-      "okou-1-0",
+      "okou-1.0-max",
+      "okou-1.0-pro",
+      "okou-1.0",
       "claude-fable-5-1",
       "claude-fable-5",
       "claude-opus-5",
@@ -711,9 +711,9 @@ describe("model-first canonical catalog", () => {
       "claude-opus-4-8",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
-      "okou-1-0-max",
-      "okou-1-0-pro",
-      "okou-1-0",
+      "okou-1.0-max",
+      "okou-1.0-pro",
+      "okou-1.0",
       "deepseek-v4.1-flash",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
@@ -764,9 +764,9 @@ describe("model-first canonical catalog", () => {
   });
 
   it.each([
-    ["okou-1-0", "@preset/okou-1-0", "gpt-5.6-luna", "$"],
-    ["okou-1-0-pro", "@preset/okou-1-0-pro", "gpt-5.6-sol", "$$"],
-    ["okou-1-0-max", "@preset/okou-1-0-max", "gpt-5.6-sol", "$$$"],
+    ["okou-1.0", "@preset/okou-1-0", "gpt-5.6-luna", "$"],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro", "gpt-5.6-sol", "$$"],
+    ["okou-1.0-max", "@preset/okou-1-0-max", "gpt-5.6-sol", "$$$"],
   ] as const)(
     "routes %s only through its built-in OpenRouter preset",
     (model, preset, underlying, tier) => {
@@ -786,13 +786,14 @@ describe("model-first canonical catalog", () => {
   );
 
   it("keeps only the base Okou model available to restricted cohorts", () => {
-    expect(isLimitedFree1RestrictedRunModel("okou-1-0")).toBe(false);
-    expect(isLimitedFree1RestrictedRunModel("okou-1-0-pro")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("okou-1-0-max")).toBe(true);
+    expect(isLimitedFree1RestrictedRunModel("okou-1.0")).toBe(false);
+    expect(isLimitedFree1RestrictedRunModel("okou-1.0-pro")).toBe(true);
+    expect(isLimitedFree1RestrictedRunModel("okou-1.0-max")).toBe(true);
   });
 
   it("recognizes only own Okou model IDs", () => {
-    expect(isOkouRunModel("okou-1-0")).toBeTruthy();
+    expect(isOkouRunModel("okou-1.0")).toBeTruthy();
+    expect(isOkouRunModel("okou-1-0")).toBeFalsy();
     expect(isOkouRunModel("toString")).toBeFalsy();
     expect(isOkouRunModel("__proto__")).toBeFalsy();
   });
@@ -854,9 +855,9 @@ describe("model-first canonical catalog", () => {
   it("exposes price tiers for built-in reasoning models", () => {
     expect(BUILT_IN_MODEL_PRICE_TIER).toEqual(
       expect.objectContaining({
-        "okou-1-0-max": "$$$",
-        "okou-1-0-pro": "$$",
-        "okou-1-0": "$",
+        "okou-1.0-max": "$$$",
+        "okou-1.0-pro": "$$",
+        "okou-1.0": "$",
         "claude-fable-5-1": "$$$$",
         "claude-fable-5": "$$$$",
         "claude-opus-5": "$$$",

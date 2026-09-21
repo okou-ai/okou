@@ -368,9 +368,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OkouModels]: {
     maintainer: "liangyou@okou.ai",
     description:
-      "Enable the Okou 1.0 built-in model family backed by platform OpenRouter presets.",
+      "Enable the Okou 1.0 built-in model family backed by platform OpenRouter presets. Off for everyone by default, including the staff org.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",

@@ -68,7 +68,7 @@ describe("DeepSeek Pi admission", () => {
 });
 
 describe("Okou preset Pi admission", () => {
-  it.each(["okou-1-0", "okou-1-0-pro", "okou-1-0-max"] as const)(
+  it.each(["okou-1.0", "okou-1.0-pro", "okou-1.0-max"] as const)(
     "admits %s only on the built-in OpenRouter route",
     (selectedModel) => {
       expect(
