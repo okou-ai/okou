@@ -655,178 +655,167 @@ test("resolves a public snapshot to copied bytes without exposing its private so
   expect(revokedDownload.body).not.toHaveProperty("url");
 });
 
-test.each(["video", "site"] as const)(
-  "copies the generated %s cover with a stable reference, independent bytes, and the parent revocation",
-  async (kind) => {
-    const f = await fixture();
-    const generatedImage = Buffer.from("Generated preview image");
-    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
-    mockEnv(
-      "ARTIFACT_PREVIEW_WAF_SECRET",
-      "test-artifact-preview-waf-secret-value",
-    );
-    server.use(
-      http.post("https://files.okou.app/__artifact-video-poster", () => {
-        return new HttpResponse(new Uint8Array(generatedImage), {
-          headers: { "Content-Type": "image/jpeg" },
+// Hosted sites are public publications and are no longer copied into a
+// snapshot, so only an uploaded file carries a copied cover.
+test("copies a generated video cover with a stable reference, independent bytes, and the parent revocation", async () => {
+  const f = await fixture();
+  const generatedImage = Buffer.from("Generated preview image");
+  mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+  mockEnv(
+    "ARTIFACT_PREVIEW_WAF_SECRET",
+    "test-artifact-preview-waf-secret-value",
+  );
+  server.use(
+    http.post("https://files.okou.app/__artifact-video-poster", () => {
+      return new HttpResponse(new Uint8Array(generatedImage), {
+        headers: { "Content-Type": "image/jpeg" },
+      });
+    }),
+    http.post(
+      "https://api.cloudflare.com/client/v4/accounts/test-account/browser-rendering/snapshot",
+      () => {
+        return HttpResponse.json({
+          success: true,
+          errors: [],
+          meta: { status: 200, title: "Snapshot preview" },
+          result: {
+            content: "<main>Snapshot preview</main>",
+            screenshot: generatedImage.toString("base64"),
+          },
         });
-      }),
-      http.post(
-        "https://api.cloudflare.com/client/v4/accounts/test-account/browser-rendering/snapshot",
-        () => {
-          return HttpResponse.json({
-            success: true,
-            errors: [],
-            meta: { status: 200, title: "Snapshot preview" },
-            result: {
-              content: "<main>Snapshot preview</main>",
-              screenshot: generatedImage.toString("base64"),
-            },
-          });
-        },
-      ),
-    );
-    const sourceRun = await f.selection("Generate an artifact with a cover");
-    if (!f.actor.orgId) {
-      throw new Error("Expected artifact owner organization");
-    }
-    const seconds = Math.floor(now() / 1000);
-    const bearerToken = signSandboxJwtForTests({
-      scope: "okou",
-      userId: f.actor.userId,
-      orgId: f.actor.orgId,
-      runId: sourceRun.runId,
-      capabilities: ["file:write", "host:write"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
-    const source =
-      kind === "video"
-        ? await f.upload(f.actor, "Private video bytes", {
-            filename: "video.mp4",
-            contentType: "video/mp4",
-            bearerToken,
-          })
-        : await f.site(
-            [{ path: "/index.html", content: "<main>Private site</main>" }],
-            undefined,
-            false,
-            bearerToken,
-          );
-    await flushWaitUntilForTest();
-    const sourceArtifacts = await chat.listThreadArtifacts(
-      f.actor,
-      sourceRun.threadId,
-    );
-    const sourcePreviewUrl = sourceArtifacts.runs
-      .flatMap((run) => {
-        return run.files;
-      })
-      .find((file) => {
-        return file.url === source.url;
-      })?.previewImageUrl;
-    expect(sourcePreviewUrl).toBeDefined();
-    const originalPreview = await accept(
-      api()(artifactReferencesContract).resolve({
-        headers: headers(f.actor),
-        params: { reference: referenceName(sourcePreviewUrl!) },
-      }),
-      [200],
-    );
-    const selection = await f.selection(source.url);
-    const created = await accept(share(f.actor, selection), [201]);
-    const shared = await accept(
-      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-      [200],
-    );
-    const reference = referenceName(shared.body.messages[0]!.content);
-    const resolved = await accept(
-      api()(artifactReferencesContract).resolve({ params: { reference } }),
-      [200],
-    );
-    const previewImageUrl = resolved.body.previewImageUrl;
-    expect(resolved.body.downloadUrl).toBeDefined();
-    const download = new URL(resolved.body.downloadUrl!);
-    expect(download.searchParams.get("X-Amz-Credential")).toBe(
-      kind === "site" ? "snapshot-hosted-key" : "snapshot-private-key",
-    );
-    expect(download.searchParams.get("response-content-disposition")).toBe(
-      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
-    );
-    expect(download.pathname).toContain(created.body.id);
-    const downloaded = await fetch(download);
-    expect(downloaded.status).toBe(200);
-    expect(downloaded.headers.get("content-disposition")).toBe(
-      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
-    );
-    await expect(downloaded.text()).resolves.toBe(
-      kind === "video" ? "Private video bytes" : "<main>Private site</main>",
-    );
-    expect(previewImageUrl).toMatch(
-      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(jpg|webp)$/u,
-    );
-    expect(previewImageUrl).not.toBe(
-      new URL(sourcePreviewUrl!, "https://app.okou.ai").href,
-    );
-    const published = await accept(
-      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
-      [200],
-    );
-    expect(published.body.preview.previewImageUrl).toBe(previewImageUrl);
-    expect(published.body.downloadUrl).toBe(resolved.body.downloadUrl);
-    const previewReference = referenceName(previewImageUrl!);
-    const sourceKey = decodeURIComponent(
-      new URL(originalPreview.body.url).pathname.slice(1),
-    );
-    f.objects.set(sourceKey, Buffer.from("Changed source preview"));
-    const copiedPreview = await accept(
-      api()(artifactReferencesContract).resolve({
-        params: { reference: previewReference },
-      }),
-      [200],
-    );
-    await expect((await fetch(copiedPreview.body.url)).text()).resolves.toBe(
-      generatedImage.toString(),
-    );
-    f.objects.delete(sourceKey);
-    const retainedPreview = await accept(
-      api()(artifactReferencesContract).publicUrl({
-        params: { reference: previewReference },
-      }),
-      [200],
-    );
-    await expect((await fetch(retainedPreview.body.url)).text()).resolves.toBe(
-      generatedImage.toString(),
-    );
+      },
+    ),
+  );
+  const sourceRun = await f.selection("Generate an artifact with a cover");
+  if (!f.actor.orgId) {
+    throw new Error("Expected artifact owner organization");
+  }
+  const seconds = Math.floor(now() / 1000);
+  const bearerToken = signSandboxJwtForTests({
+    scope: "okou",
+    userId: f.actor.userId,
+    orgId: f.actor.orgId,
+    runId: sourceRun.runId,
+    capabilities: ["file:write", "host:write"],
+    iat: seconds,
+    exp: seconds + 60,
+  });
+  const source = await f.upload(f.actor, "Private video bytes", {
+    filename: "video.mp4",
+    contentType: "video/mp4",
+    bearerToken,
+  });
+  await flushWaitUntilForTest();
+  const sourceArtifacts = await chat.listThreadArtifacts(
+    f.actor,
+    sourceRun.threadId,
+  );
+  const sourcePreviewUrl = sourceArtifacts.runs
+    .flatMap((run) => {
+      return run.files;
+    })
+    .find((file) => {
+      return file.url === source.url;
+    })?.previewImageUrl;
+  expect(sourcePreviewUrl).toBeDefined();
+  const originalPreview = await accept(
+    api()(artifactReferencesContract).resolve({
+      headers: headers(f.actor),
+      params: { reference: referenceName(sourcePreviewUrl!) },
+    }),
+    [200],
+  );
+  const selection = await f.selection(source.url);
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const reference = referenceName(shared.body.messages[0]!.content);
+  const resolved = await accept(
+    api()(artifactReferencesContract).resolve({ params: { reference } }),
+    [200],
+  );
+  const previewImageUrl = resolved.body.previewImageUrl;
+  expect(resolved.body.downloadUrl).toBeDefined();
+  const download = new URL(resolved.body.downloadUrl!);
+  expect(download.searchParams.get("X-Amz-Credential")).toBe(
+    "snapshot-private-key",
+  );
+  expect(download.searchParams.get("response-content-disposition")).toBe(
+    'attachment; filename="video.mp4"',
+  );
+  expect(download.pathname).toContain(created.body.id);
+  const downloaded = await fetch(download);
+  expect(downloaded.status).toBe(200);
+  expect(downloaded.headers.get("content-disposition")).toBe(
+    'attachment; filename="video.mp4"',
+  );
+  await expect(downloaded.text()).resolves.toBe("Private video bytes");
+  expect(previewImageUrl).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(jpg|webp)$/u,
+  );
+  expect(previewImageUrl).not.toBe(
+    new URL(sourcePreviewUrl!, "https://app.okou.ai").href,
+  );
+  const published = await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+    [200],
+  );
+  expect(published.body.preview.previewImageUrl).toBe(previewImageUrl);
+  expect(published.body.downloadUrl).toBe(resolved.body.downloadUrl);
+  const previewReference = referenceName(previewImageUrl!);
+  const sourceKey = decodeURIComponent(
+    new URL(originalPreview.body.url).pathname.slice(1),
+  );
+  f.objects.set(sourceKey, Buffer.from("Changed source preview"));
+  const copiedPreview = await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: previewReference },
+    }),
+    [200],
+  );
+  await expect((await fetch(copiedPreview.body.url)).text()).resolves.toBe(
+    generatedImage.toString(),
+  );
+  f.objects.delete(sourceKey);
+  const retainedPreview = await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: previewReference },
+    }),
+    [200],
+  );
+  await expect((await fetch(retainedPreview.body.url)).text()).resolves.toBe(
+    generatedImage.toString(),
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: referenceName(sourcePreviewUrl!) },
+    }),
+    [404],
+  );
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: created.body.id },
+    }),
+    [204],
+  );
+  for (const revoked of [reference, previewReference]) {
     await accept(
-      api()(artifactReferencesContract).publicUrl({
-        params: { reference: referenceName(sourcePreviewUrl!) },
+      api()(artifactReferencesContract).resolve({
+        params: { reference: revoked },
       }),
       [404],
     );
     await accept(
-      api()(sharedThreadsContract).delete({
-        headers: headers(f.actor),
-        params: { id: created.body.id },
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: revoked },
       }),
-      [204],
+      [404],
     );
-    for (const revoked of [reference, previewReference]) {
-      await accept(
-        api()(artifactReferencesContract).resolve({
-          params: { reference: revoked },
-        }),
-        [404],
-      );
-      await accept(
-        api()(artifactReferencesContract).publicUrl({
-          params: { reference: revoked },
-        }),
-        [404],
-      );
-    }
-  },
-);
+  }
+});
 
 test.each(["missing", "unavailable"] as const)(
   "does not resolve a snapshot when its parent policy is %s",
