@@ -692,7 +692,7 @@ function registerMessageTool(
     "get_chat_messages",
     {
       description:
-        "Read visible conversation messages (latest 20 by default) in run-turn order. messageAt is the original accepted-input time for user messages and output-event time for assistant messages. Filter by runId or center the first page on a real eventId/seqId with around. Continue page cursors with the same filters and no around; use nextContentCursor to finish truncated text/files. Offsets count UTF-16 text units and file entries. History changes invalidate page cursors. Reading does not mark read or bypass artifact authorization. Histories over 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, or 15 seconds fail explicitly.",
+        "Read visible messages in turn order (latest 20 default). messageAt is accepted-input time for users and output-event time for assistants. Filter by runId or center the first page on eventId/seqId with around. Continue page cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading neither marks read nor bypasses artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
       annotations: readAnnotations,
