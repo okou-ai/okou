@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -19,6 +19,16 @@ import {
 const BEFORE_CUTOFF = "2026-09-21T07:13:24.999Z";
 const AT_CUTOFF = "2026-09-21T07:13:25.000Z";
 const AFTER_CUTOFF = "2026-09-22T00:00:00.000Z";
+
+// Draw a deterministic card order that offers video and avatar entries when
+// permitted, so their absence cannot pass just because neither was sampled.
+vi.hoisted(() => {
+  let sample = 1;
+  vi.spyOn(Math, "random").mockImplementation(() => {
+    sample += 1;
+    return 1 / sample;
+  });
+});
 
 function account(createdAt: string | null) {
   return {
@@ -66,7 +76,7 @@ test.each([
     visible: true,
   },
 ])(
-  "Video pickers for $cohort paid accounts",
+  "Video entry points for $cohort paid accounts",
   async ({ createdAt, enabled, visible }) => {
     mockTemplateChat({ tier: "pro" });
     context.mocks.browser.matchMedia((query) => {
@@ -79,6 +89,19 @@ test.each([
       auth: { user: account(createdAt) },
       featureSwitches: { [FeatureSwitchKey.NewUserVideoPickers]: enabled },
     });
+
+    const cards = await screen.findByTestId("start-cards");
+    await waitFor(() => {
+      const templateButtons = queryAllByRoleFast("button", cards).filter(
+        (button) => {
+          return button.getAttribute("aria-label") === "Browse templates";
+        },
+      );
+      expect(templateButtons).toHaveLength(3);
+    });
+    for (const title of ["Create a video", "Create an avatar"]) {
+      expect(within(cards).queryAllByText(title)).toHaveLength(visible ? 1 : 0);
+    }
 
     await openModels();
     const models = await screen.findByRole("tablist", { name: "Models" });
