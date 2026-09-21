@@ -302,9 +302,9 @@ export async function discoverStaticCustomOAuthUserInfo(
     return null;
   }
   const issuerResult = await settle(
-    (async () => {
-      return untrustedIssuerClaimSchema.parse(decodeJwt(idToken)).iss;
-    })(),
+    Promise.resolve().then(
+      () => untrustedIssuerClaimSchema.parse(decodeJwt(idToken)).iss,
+    ),
     signal,
   );
   signal.throwIfAborted();
