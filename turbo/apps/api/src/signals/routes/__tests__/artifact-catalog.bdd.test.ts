@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { signSandboxJwtForTests } from "../../auth/tokens";
@@ -641,7 +641,7 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("lists repeated same-name hosted-site publications as separate artifacts", async () => {
+  it("keeps one catalog entry for a redeployed hosted site", async () => {
     const owner = await catalogActor(
       "Artifact catalog hosted owner",
       bdd.user(),
@@ -661,14 +661,12 @@ describe("GET /api/artifacts/catalog", () => {
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
 
+    // The catalog is keyed by site, so a redeploy updates one entry.
     expect(
       catalog.artifacts.map((artifact) => {
         return { kind: artifact.kind, title: artifact.title };
       }),
-    ).toStrictEqual([
-      { kind: "hosted-site", title: site },
-      { kind: "hosted-site", title: site },
-    ]);
+    ).toStrictEqual([{ kind: "hosted-site", title: site }]);
 
     const entry = catalog.artifacts[0];
     if (!entry) {
@@ -678,9 +676,11 @@ describe("GET /api/artifacts/catalog", () => {
     if (detail.kind !== "hosted-site") {
       throw new Error("Expected a hosted site to be catalogued as hosted-site");
     }
+    // The entry follows the site's newest publication.
     expect(detail.site).toMatchObject({
       id: hosted.siteId,
       slug: site,
+      deploymentVersion: 2,
       entrypoint: "/index.html",
       spaFallback: false,
     });
@@ -799,7 +799,7 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("keeps the original site when publishing an updated presentation", async () => {
+  it("moves a catalog entry to presentation when a deck redeploys the site", async () => {
     const owner = await catalogActor(
       "Artifact catalog hosted transition owner",
       bdd.user(),
@@ -818,17 +818,16 @@ describe("GET /api/artifacts/catalog", () => {
       claimRun: false,
     });
 
-    // The site is one name; the artifact kind belongs to each publication.
+    // One name is one site, and its single catalog entry follows the newest
+    // publication's artifact kind.
     expect(presentation.siteId).toBe(hosted.siteId);
     expect(presentation.publicSlug).toBe(site);
     const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(catalog.artifacts).toHaveLength(2);
-    expect(catalog.artifacts).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "hosted-site", title: site }),
-        expect.objectContaining({ kind: "presentation", title: site }),
-      ]),
-    );
+    expect(
+      catalog.artifacts.map((artifact) => {
+        return { kind: artifact.kind, title: artifact.title };
+      }),
+    ).toStrictEqual([{ kind: "presentation", title: site }]);
   }, 180_000);
 
   it("filters by kind without leaking other kinds", async () => {
