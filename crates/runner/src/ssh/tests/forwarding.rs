@@ -65,22 +65,29 @@ async fn private_key_and_password_forward_exact_target_and_binary_bytes() {
         let mut stream = open(&harness, CancellationToken::new()).await.unwrap();
         let mut target = harness.accept_forwarded().await;
 
-        stream.write_all(b"client\0\xff").await.unwrap();
-        let mut from_client = [0; 8];
-        target.read_exact(&mut from_client).await.unwrap();
-        assert_eq!(&from_client, b"client\0\xff");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            stream.write_all(b"client\0\xff").await.unwrap();
+            let mut from_client = [0; 8];
+            target.read_exact(&mut from_client).await.unwrap();
+            assert_eq!(&from_client, b"client\0\xff");
 
-        target.write_all(b"server\0\xfe").await.unwrap();
-        let mut from_server = [0; 8];
-        stream.read_exact(&mut from_server).await.unwrap();
-        assert_eq!(&from_server, b"server\0\xfe");
+            target.write_all(b"server\0\xfe").await.unwrap();
+            let mut from_server = [0; 8];
+            stream.read_exact(&mut from_server).await.unwrap();
+            assert_eq!(&from_server, b"server\0\xfe");
+        })
+        .await
+        .unwrap();
         assert_eq!(
             *harness.observed.forwards.lock().unwrap(),
             vec![("desktop.internal".into(), 5900, "127.0.0.1".into(), 0)]
         );
         resolve.assert_calls_async(1).await;
 
-        stream.shutdown().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), stream.shutdown())
+            .await
+            .unwrap()
+            .unwrap();
         wait_for(|| harness.observed.closed.load(Ordering::SeqCst) == 1).await;
         harness.shutdown().await;
     }
@@ -234,6 +241,17 @@ async fn caller_cancellation_and_authority_invalidation_interrupt_active_streams
 async fn expired_setup_and_run_cancellation_fail_without_leaking_forward_capacity() {
     let mut expired = Harness::new(Reply::default()).await;
     let resolve = expired.resolve(expired.credential(true)).await;
+    let invalid = expired
+        .ssh()
+        .open_direct_tcpip(
+            connection(),
+            "https://desktop.internal",
+            5900,
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    assert_eq!(failure(invalid), FailureReason::UnsafeDestination);
     let result = expired
         .ssh()
         .open_direct_tcpip(
