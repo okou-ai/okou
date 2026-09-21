@@ -33,8 +33,8 @@ const vncPasswordAuthenticationVariantSchema = z
   })
   .strict();
 
-// Keep the current-only Runner schema as a one-variant discriminated union so
-// the Rust generator preserves the existing enum-shaped wire type.
+// Keep the classic-only schema as a one-variant discriminated union for callers
+// that intentionally accept only this profile.
 export const vncPasswordAuthenticationSchema = z.discriminatedUnion("method", [
   vncPasswordAuthenticationVariantSchema,
 ]);

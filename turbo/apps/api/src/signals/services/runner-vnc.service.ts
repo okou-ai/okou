@@ -4,14 +4,15 @@ import type {
   RunnerVncResolveRequest,
   RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import { vncPasswordAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { vncX509VncSecuritySchema } from "@okouai/api-contracts/contracts/vnc-connections";
+import { vncAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
+import { vncSecuritySchema } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { settle } from "../utils";
 import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
 import { currentRunnerVncAuthority } from "./runner-vnc-authority.service";
+import { isVncProfileCompatible } from "./vnc-configuration.utils";
 
 export async function checkRunnerVnc(
   db: Db,
@@ -20,13 +21,11 @@ export async function checkRunnerVnc(
   signal: AbortSignal,
 ): Promise<RunnerVncCheckResponse> {
   const row = await currentRunnerVncAuthority(db, input, signal);
-  if (
-    !row ||
-    row.authMethod !== "vnc_password" ||
-    row.securityType !== "x509_vnc" ||
-    !(await hasCurrentVncMembership(clerk, row, signal))
-  ) {
+  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
+  }
+  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
+    throw new Error("VNC connection has an invalid stored profile");
   }
   return {
     outcome:
@@ -46,9 +45,10 @@ export async function resolveRunnerVnc(
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
   }
+  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
+    throw new Error("VNC connection has an invalid stored profile");
+  }
   if (
-    row.authMethod !== "vnc_password" ||
-    row.securityType !== "x509_vnc" ||
     !input.supportedProfiles.some((profile) => {
       return (
         profile.authMethod === row.authMethod &&
@@ -64,7 +64,7 @@ export async function resolveRunnerVnc(
   ) {
     throw new Error("VNC connection has an invalid stored trust configuration");
   }
-  const security = vncX509VncSecuritySchema.safeParse({
+  const security = vncSecuritySchema.safeParse({
     type: row.securityType,
     trust:
       row.trustMode === "system"
@@ -85,10 +85,15 @@ export async function resolveRunnerVnc(
     throw new Error("VNC credential decryption failed");
   }
   signal.throwIfAborted();
-  const authentication = vncPasswordAuthenticationSchema.safeParse({
-    method: row.authMethod,
-    password: decrypted.value,
-  });
+  const authentication = vncAuthenticationSchema.safeParse(
+    row.authMethod === "username_password"
+      ? {
+          method: row.authMethod,
+          username: row.username,
+          password: decrypted.value,
+        }
+      : { method: row.authMethod, password: decrypted.value },
+  );
   if (!authentication.success) {
     throw new Error(
       "VNC credential has an invalid stored authentication shape",

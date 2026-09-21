@@ -24,6 +24,15 @@ pub(super) enum Event {
     Closed,
 }
 
+#[derive(Clone, Copy)]
+enum Profile {
+    Vnc,
+    Plain,
+}
+
+pub(super) const PLAIN_USERNAME: &str = " operator界 ";
+pub(super) const PLAIN_PASSWORD: &str = " päss 界 ";
+
 pub(super) struct Peer {
     pub(super) address: std::net::SocketAddr,
     pub(super) ca: String,
@@ -36,6 +45,14 @@ pub(super) struct Peer {
 
 impl Peer {
     pub(super) async fn new() -> Self {
+        Self::with_profile(Profile::Vnc).await
+    }
+
+    pub(super) async fn plain() -> Self {
+        Self::with_profile(Profile::Plain).await
+    }
+
+    async fn with_profile(profile: Profile) -> Self {
         let root_key = rcgen::KeyPair::generate().unwrap();
         let mut root = rcgen::CertificateParams::default();
         root.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
@@ -82,7 +99,7 @@ impl Peer {
                         let reject = Arc::clone(&reject);
                         let disconnect = disconnect_task.clone();
                         tasks.spawn(async move {
-                            let _ = serve(socket, config, &events, gate, reject, disconnect).await;
+                            let _ = serve(socket, config, &events, gate, reject, disconnect, profile).await;
                             let _ = events.send(Event::Closed);
                         });
                     }
@@ -124,6 +141,7 @@ async fn serve(
     capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
     refuse: Arc<AtomicBool>,
     disconnect: CancellationToken,
+    profile: Profile,
 ) -> io::Result<()> {
     socket.set_nodelay(true)?;
     socket.write_all(b"RFB 003.008\n").await?;
@@ -135,22 +153,42 @@ async fn serve(
     socket.write_all(&[0, 2]).await?;
     assert_eq!(socket.read_u16().await?, 2);
     socket.write_all(&[0, 1]).await?;
-    socket.write_u32(261).await?;
-    assert_eq!(socket.read_u32().await?, 261);
+    let subtype = match profile {
+        Profile::Vnc => 261,
+        Profile::Plain => 262,
+    };
+    socket.write_u32(subtype).await?;
+    assert_eq!(socket.read_u32().await?, subtype);
     socket.write_u8(1).await?;
     let mut socket = TlsAcceptor::from(config).accept(socket).await?;
-    socket.write_all(b"0123456789abcdef").await?;
-    socket.flush().await?;
-    let mut password_response = [0; 16];
-    socket.read_exact(&mut password_response).await?;
-    // Independent DES challenge vector for the printable password " secret ".
-    assert_eq!(
-        password_response,
-        [
-            0x34, 0x57, 0xe0, 0xfd, 0xf6, 0xe8, 0x42, 0x5e, 0x58, 0xb4, 0xdf, 0x6b, 0x1b, 0xe5,
-            0x22, 0x13
-        ]
-    );
+    match profile {
+        Profile::Vnc => {
+            socket.write_all(b"0123456789abcdef").await?;
+            socket.flush().await?;
+            let mut password_response = [0; 16];
+            socket.read_exact(&mut password_response).await?;
+            // Independent DES challenge vector for the printable password " secret ".
+            assert_eq!(
+                password_response,
+                [
+                    0x34, 0x57, 0xe0, 0xfd, 0xf6, 0xe8, 0x42, 0x5e, 0x58, 0xb4, 0xdf, 0x6b, 0x1b,
+                    0xe5, 0x22, 0x13
+                ]
+            );
+        }
+        Profile::Plain => {
+            let username_length = socket.read_u32().await?;
+            let password_length = socket.read_u32().await?;
+            assert_eq!(username_length as usize, PLAIN_USERNAME.len());
+            assert_eq!(password_length as usize, PLAIN_PASSWORD.len());
+            let mut username = vec![0; username_length as usize];
+            let mut password = vec![0; password_length as usize];
+            socket.read_exact(&mut username).await?;
+            socket.read_exact(&mut password).await?;
+            assert_eq!(username, PLAIN_USERNAME.as_bytes());
+            assert_eq!(password, PLAIN_PASSWORD.as_bytes());
+        }
+    }
     if refuse.load(Ordering::SeqCst) {
         socket.write_u32(1).await?;
         socket.write_u32(0).await?;

@@ -190,6 +190,59 @@ async fn invalid_and_duplicate_fields_are_rejected_before_api_or_network() {
 }
 
 #[tokio::test]
+async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
+    for (authentication, security, reason) in [
+        (
+            json!({"method":"username_password","username":"operator","password":"secret"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"vnc_password","password":"ninebytes"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"username_password","username":"x".repeat(256),"password":"secret"}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"username_password","username":"operator\0name","password":"secret"}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"username_password","username":"operator","password":"secret\0value"}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"username_password","username":"operator","password":"x".repeat(1024)}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+    ] {
+        let mut h = Harness::new().await;
+        let resolve = h
+            .resolve_response(json!({
+                "outcome":"resolved",
+                "host":"vnc.example.test",
+                "port":5900,
+                "generation":7,
+                "authentication":authentication,
+                "security":security,
+            }))
+            .await;
+        let reply = h.start("shared").await;
+        assert_eq!(reply.result(), &json!({"outcome":"failed","reason":reason}));
+        assert!(h.network.attempts.lock().unwrap().is_empty());
+        resolve.assert_calls_async(1).await;
+        h.run.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn denied_changed_and_failed_authority_close_before_any_input() {
     for (outcome, status, reason) in [
         ("unavailable", 200, "unavailable"),

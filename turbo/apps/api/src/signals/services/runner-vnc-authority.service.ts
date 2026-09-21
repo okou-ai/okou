@@ -32,7 +32,8 @@ export async function currentRunnerVncAuthority(
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
       caBundle: vncConnections.caBundle,
-      authMethod: vncCredentials.authMethod,
+      authMethod: vncConnections.authMethod,
+      username: vncCredentials.username,
       encryptedPassword: vncCredentials.encryptedPassword,
     })
     .from(agentRuns)

@@ -69,6 +69,33 @@ async fn post_handshake_generation_check_denies_before_publishing_session() {
 }
 
 #[tokio::test]
+async fn x509_plain_authenticates_exact_credentials_and_publishes_the_requested_mode() {
+    let mut h = Harness::new_plain().await;
+    let resolve = h.resolve_plain().await;
+    let check = h.check("valid", 200).await;
+    let session = h.start("exclusive").await.session();
+    mode(&h, 0).await;
+    assert_eq!(
+        h.run
+            .request("vnc.session.status", json!({"sessionId":session}))
+            .await
+            .result()["outcome"],
+        "status"
+    );
+    assert_eq!(
+        h.run
+            .request("vnc.session.close", json!({"sessionId":session}))
+            .await
+            .result()["outcome"],
+        "closed"
+    );
+    closed(&h).await;
+    resolve.assert_calls_async(1).await;
+    check.assert_calls_async(2).await;
+    h.run.shutdown().await;
+}
+
+#[tokio::test]
 async fn input_write_to_reset_socket_is_unknown_and_never_replayed() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
