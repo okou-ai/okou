@@ -2,7 +2,7 @@
 
 Issue [#34909](https://github.com/vm0-ai/okou/issues/34909) makes the API consume
 the complete v4 catalog published by
-[vm0-connectors #4634](https://github.com/vm0-ai/vm0-connectors/pull/4634).
+[okou-connectors #4634](https://github.com/okou-ai/okou-connectors/pull/4634).
 The new API syncs and reads v4 through the existing catalog path. Production
 completed the first-v4 bootstrap before the retained-v3 reader was removed under
 [#34913](https://github.com/vm0-ai/okou/issues/34913).
@@ -190,7 +190,7 @@ endpoint to retire.
 
 The verified first complete publication is source commit
 `985039aaa1bfef5bd93952913e8f9fd7ee077a79`, catalog `2026-09-17.4559`, from
-[publish run 35209618715](https://github.com/vm0-ai/vm0-connectors/actions/runs/35209618715).
+[publish run 35209618715](https://github.com/okou-ai/okou-connectors/actions/runs/35209618715).
 It contains 4,595 HTTP connectors and Plaud. The full catalog digest is
 `sha256:caa97a427cda78f72840a1279da97a607c6d8aea7eb6b5c3277f203de923b987`.
 Tests retain seven exact published descriptors with excerpt provenance. The
