@@ -12,6 +12,10 @@ import {
   cn,
 } from "@okouai/ui";
 import {
+  captureSourceOnboardingChannelClicked$,
+  captureSourceOnboardingSlackInstallStarted$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import {
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
@@ -217,7 +221,7 @@ export function OnboardingSkillsPage() {
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.skip;
       })}
-      onSecondary={flow.goNext}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       <SkillDropCard imported={imported} />
@@ -594,6 +598,9 @@ function ChannelNote({
  */
 function SlackChannelButton({ state }: { readonly state: ChannelState }) {
   const { t } = useTranslation();
+  const captureInstallStarted = useSet(
+    captureSourceOnboardingSlackInstallStarted$,
+  );
   const connected = state.kind === "connected";
   const actionUrl = channelActionUrl(state);
 
@@ -605,6 +612,7 @@ function SlackChannelButton({ state }: { readonly state: ChannelState }) {
       className="w-full gap-2"
       onClick={() => {
         if (actionUrl) {
+          captureInstallStarted();
           openFreshOAuth(actionUrl);
         }
       }}
@@ -696,12 +704,12 @@ function ChatChannelTile({
  * already asks. It navigates in-app, so the answers given so far are still
  * here when the browser comes back to the step.
  */
-function TelegramTile() {
+function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
   const { t } = useTranslation();
 
   return (
     <Button asChild variant="outline" className={CHAT_CHANNEL_TILE_CLASS}>
-      <Link pathname={ROUTES.settingsTelegram}>
+      <Link pathname={ROUTES.settingsTelegram} onClick={onOpen}>
         <ChatChannelTileContent
           label={t(($) => {
             return $.onboarding.sourcesFirst.slack.otherTelegram;
@@ -727,6 +735,7 @@ function OtherChatChannels({
   readonly onPick: (channel: ChatChannelId) => void;
 }) {
   const { t } = useTranslation();
+  const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
   const teams = loadedChannelState(useLastLoadable(teamsOrgData$), (status) => {
     return {
       isConnected: status.isConnected,
@@ -751,7 +760,13 @@ function OtherChatChannels({
         })}
       </p>
       <div className="flex gap-2">
-        <TelegramTile />
+        {/* A tile that leaves for an install is only ever a click to add it,
+            so the funnel reads that click as one. */}
+        <TelegramTile
+          onOpen={() => {
+            captureChannelClicked("telegram", true);
+          }}
+        />
         <ChatChannelTile
           label={t(($) => {
             return $.onboarding.sourcesFirst.slack.otherImessage;
@@ -760,6 +775,7 @@ function OtherChatChannels({
           added={picked.includes("imessage")}
           aria-pressed={picked.includes("imessage")}
           onClick={() => {
+            captureChannelClicked("imessage", !picked.includes("imessage"));
             onPick("imessage");
           }}
         />
@@ -770,6 +786,7 @@ function OtherChatChannels({
           disabled={teamsUrl === null}
           onClick={() => {
             if (teamsUrl) {
+              captureChannelClicked("teams", true);
               openFreshOAuth(teamsUrl);
             }
           }}
@@ -824,7 +841,7 @@ export function OnboardingSlackPage() {
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.skip;
       })}
-      onSecondary={flow.goNext}
+      onSecondary={flow.goSkip}
       onBack={flow.goBack}
     >
       {/* One column on the step's own sheet: what it looks like in a channel,
@@ -857,12 +874,13 @@ export function OnboardingSlackPage() {
           onPick={(channel) => {
             // iMessage is still answered here, until it becomes the
             // AgentPhone tile with a link flow of its own.
+            const added = !flow.draft.chatChannels.includes(channel);
             updateDraft({
-              chatChannels: flow.draft.chatChannels.includes(channel)
-                ? flow.draft.chatChannels.filter((picked) => {
+              chatChannels: added
+                ? [...flow.draft.chatChannels, channel]
+                : flow.draft.chatChannels.filter((picked) => {
                     return picked !== channel;
-                  })
-                : [...flow.draft.chatChannels, channel],
+                  }),
             });
           }}
         />
