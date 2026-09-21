@@ -726,7 +726,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -736,7 +736,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -772,7 +772,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -782,7 +782,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-identity-thread-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -820,7 +820,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -830,7 +830,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -871,7 +871,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -881,7 +881,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-agent-lock",
+              stopAt: "before-thread-read",
               work: run,
             },
             context.signal,
@@ -1237,7 +1237,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: first.threadId,
             requestToken: first.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
@@ -1247,7 +1247,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: first.threadId,
             requestToken: first.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
@@ -1286,7 +1286,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: fixture.threadId,
             requestToken: fixture.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
@@ -1296,7 +1296,7 @@ describe("authorization GET same-thread concurrency and operation ownership", ()
           {
             chatThreadId: fixture.threadId,
             requestToken: fixture.requestToken,
-            stopAt: "before-thread-pin",
+            stopAt: "before-thread-read",
             work: run,
           },
           context.signal,
