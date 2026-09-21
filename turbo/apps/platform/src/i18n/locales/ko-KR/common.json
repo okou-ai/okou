@@ -4589,9 +4589,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}}이(가) 연결되지 않았습니다. 다시 시도하거나 나중에 연결할 수 있습니다.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Okou 크레딧이 아니라 이 플랜에서 실행됩니다."
+        "connect": "{{provider}} 연결",
+        "connected": "연결됨",
+        "connecting": "연결 중…",
+        "failedNote": "{{provider}}을(를) 연결하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다.",
+        "retry": "다시 시도",
+        "rowCopy": "Okou 크레딧이 아니라 이 플랜에서 실행됩니다.",
+        "unconfirmedNote": "{{provider}} 연결 상태를 확인하지 못했습니다. 다시 시도하거나 나중에 연결할 수 있습니다."
       },
       "team": {
         "copy": "지금 팀원을 초대하거나, 나중에 워크스페이스 메뉴에서 초대하세요.",
