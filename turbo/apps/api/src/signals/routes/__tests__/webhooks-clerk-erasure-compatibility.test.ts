@@ -15,7 +15,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import {
   assertStableContextStorageWriteLockUnavailableFixture,
   countAgentStableContextPublicationsFixture,
@@ -734,20 +734,22 @@ test("completes signed Agent-owner erasure after proving scoped artifact GC conf
   const artifactDigest = await removePiStableContextHeadFixture(headId);
   const gcEntered = createDeferredPromise<void>(context.signal);
   const releaseGc = createDeferredPromise<void>(context.signal);
-  const gcCommitted = createDeferredPromise<void>(context.signal);
-  const [deleted] = await Promise.all([
-    (async () => {
-      const result = await deleteExpiredOwnedPiStableContextArtifactFixture({
-        artifactDigest,
-        cutoff: new Date("2099-01-01T00:00:00.000Z"),
-        afterCandidatesLocked: async () => {
-          gcEntered.resolve();
-          await releaseGc.promise;
-        },
-      });
-      gcCommitted.resolve();
-      return result;
-    })(),
+  const gc = onRejection(
+    deleteExpiredOwnedPiStableContextArtifactFixture({
+      artifactDigest,
+      cutoff: new Date("2099-01-01T00:00:00.000Z"),
+      afterCandidatesLocked: async () => {
+        gcEntered.resolve();
+        await releaseGc.promise;
+      },
+    }),
+    (error) => {
+      if (!gcEntered.settled()) {
+        gcEntered.reject(error);
+      }
+    },
+  );
+  const erasure = onRejection(
     (async () => {
       await gcEntered.promise;
       observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture(
@@ -761,12 +763,18 @@ test("completes signed Agent-owner erasure after proving scoped artifact GC conf
             instructions.storageId,
           );
           releaseGc.resolve();
-          await gcCommitted.promise;
+          await gc;
         },
       );
       await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure");
     })(),
-  ]);
+    () => {
+      if (!releaseGc.settled()) {
+        releaseGc.resolve();
+      }
+    },
+  );
+  const [deleted] = await joinAll([gc, erasure]);
   expect(deleted).toStrictEqual([{ digest: artifactDigest }]);
   await expect(
     countUserStableContextGenerationsFixture({
