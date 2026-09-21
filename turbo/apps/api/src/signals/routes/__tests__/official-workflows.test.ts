@@ -105,12 +105,12 @@ import {
   holdWorkflowAutomationCommittedRunFixture,
   holdNewerMorningBriefClaimFixture,
   installMorningBriefSettlementFailureFixture,
-  installWorkflowAutomationRunInsertFailureFixture,
   observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
   removeMorningBriefScheduleClaimForCompatibilityFixture,
   readWorkflowAutomationLastRunFixture,
   recordWorkflowAutomationLastRunFixture,
+  withWorkflowAutomationRunPersistenceFailureFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import {
@@ -14217,16 +14217,15 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(recovered[1]?.queueEventId).toStrictEqual(expect.any(String));
   });
 
-  it("rolls back the journal binding when PostgreSQL fails the real Run INSERT", async () => {
+  it("rolls back the journal binding when a real Run persistence fails", async () => {
     const brief = await installJournaledBrief();
-    const fault = await installWorkflowAutomationRunInsertFailureFixture({
+    const fault = await withWorkflowAutomationRunPersistenceFailureFixture({
       automationId: brief.automationId,
+      work: async () => {
+        await pollAt(brief.automationId, brief.anchor + 60_000);
+      },
     });
-    onTestFinished(fault.release);
-
-    await pollAt(brief.automationId, brief.anchor + 60_000);
-    await expect(fault.readAttempts()).resolves.toBeGreaterThan(0);
-    await fault.release();
+    expect(fault.attempts).toBe(1);
 
     const claims = await readMorningBriefScheduleClaimsFixture(
       brief.automationId,
@@ -14238,9 +14237,9 @@ describe("Morning Brief legacy schedule claim journal", () => {
       settlement: "pre_run_failure",
     });
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
-    // The trigger raises after INSERT, so this empty public Run projection is
-    // evidence that both the inserted Run and its earlier journal binding were
-    // rolled back with the launch transaction.
+    // The scoped fault raises after the real atomic persistence statement, so
+    // this empty public projection proves that the Run and its earlier journal
+    // binding rolled back with the launch transaction.
     await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
     await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
       body: { enabled: true, nextRunAt: expect.any(String) },

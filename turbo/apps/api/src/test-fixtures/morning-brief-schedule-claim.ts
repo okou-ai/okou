@@ -18,6 +18,7 @@ import {
   setWorkflowAutomationCommittedRunHookForTest,
   type WorkflowAutomationCommittedRunSnapshot,
 } from "../signals/services/workflow-automation-launch.service";
+import { withPreparedLaunchPersistenceObserverForTest } from "../signals/services/prepared-launch-persistence-observer.service";
 import { createDeferredPromise } from "../signals/utils";
 
 const claimPidRowSchema = z.object({ pid: z.int() });
@@ -313,75 +314,25 @@ export async function installMorningBriefSettlementFailureFixture(args: {
   };
 }
 
-/**
- * Install a scoped PostgreSQL trigger that raises after the real Run INSERT.
- *
- * No public API can ask PostgreSQL to fail at this exact statement boundary.
- * The trigger is scoped to one automation, and a nontransactional sequence
- * records arrival even though the surrounding launch transaction rolls back.
- */
-export async function installWorkflowAutomationRunInsertFailureFixture(args: {
+/** Fail one test-owned launch after its real atomic persistence statement. */
+export async function withWorkflowAutomationRunPersistenceFailureFixture<
+  T,
+>(args: {
   readonly automationId: string;
-}): Promise<{
-  readonly readAttempts: () => Promise<number>;
-  readonly release: () => Promise<void>;
-}> {
-  const suffix = randomUUID().replaceAll("-", "");
-  const automationKey = args.automationId.replaceAll("-", "");
-  const functionName = `test_mb_run_insert_fn_${suffix}`;
-  const suffixKey = suffix.slice(0, 8);
-  const triggerName = `test_mb_run_insert_${automationKey}_${suffixKey}`;
-  const sequenceName = `test_mb_run_insert_seq_${suffixKey}`;
-  await db().transaction(async (tx) => {
-    await tx.execute(sql`CREATE SEQUENCE ${sql.identifier(sequenceName)}`);
-    await tx.execute(sql`
-      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
-      LANGUAGE plpgsql AS $$
-      BEGIN
-        IF NEW.workflow_automation_id IS NOT NULL
-           AND replace(NEW.workflow_automation_id::text, '-', '') = split_part(TG_NAME, '_', 5) THEN
-          PERFORM nextval(('test_mb_run_insert_seq_' || split_part(TG_NAME, '_', 6))::regclass);
-          RAISE EXCEPTION 'forced Morning Brief Run INSERT rollback';
-        END IF;
-        RETURN NEW;
-      END;
-      $$
-    `);
-    await tx.execute(sql`
-      CREATE TRIGGER ${sql.identifier(triggerName)}
-      AFTER INSERT ON agent_runs
-      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
-    `);
-  });
-
-  let released = false;
-  return {
-    readAttempts: async () => {
-      const rows = await executeRawRows(
-        db(),
-        sql`SELECT last_value::int AS "lastValue", is_called AS "isCalled" FROM ${sql.identifier(sequenceName)}`,
-        sequenceStateRowSchema,
-      );
-      const [row] = rows;
-      if (!row) {
-        throw new Error("Expected the Run INSERT failure sequence");
-      }
-      return row.isCalled ? row.lastValue : 0;
-    },
-    release: async () => {
-      if (released) {
+  readonly work: () => Promise<T>;
+}): Promise<{ readonly attempts: number; readonly result: T }> {
+  let attempts = 0;
+  const result = await withPreparedLaunchPersistenceObserverForTest(
+    (snapshot) => {
+      if (snapshot.workflowAutomationId !== args.automationId) {
         return;
       }
-      released = true;
-      await db().transaction(async (tx) => {
-        await tx.execute(
-          sql`DROP TRIGGER ${sql.identifier(triggerName)} ON agent_runs`,
-        );
-        await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
-        await tx.execute(sql`DROP SEQUENCE ${sql.identifier(sequenceName)}`);
-      });
+      attempts += 1;
+      throw new Error("forced Morning Brief Run persistence rollback");
     },
-  };
+    args.work,
+  );
+  return { attempts, result };
 }
 
 /** Drive the production late last-run write directly. */
