@@ -27,6 +27,7 @@ import {
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
+  removeRunModelCatalogEntryFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
@@ -225,6 +226,33 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
     expect(unchanged.body.policies).toStrictEqual(initial.body.policies);
+  });
+
+  it("fails closed when an active model has no catalog row", async () => {
+    const restoreCatalogEntry =
+      await removeRunModelCatalogEntryFixture("gpt-6-sol");
+    onTestFinished(restoreCatalogEntry);
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const initial = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+
+    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    const rejected = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.message).toBe(
+      'Model "gpt-6-sol" is not available to add',
+    );
   });
 
   it("keeps a staged model configurable once added but prevents re-adding it", async () => {

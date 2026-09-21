@@ -1770,7 +1770,7 @@ export function OrgModelPoliciesSection() {
     return ACTIVE_RUN_MODELS.includes(policy.model);
   });
   // A new App can briefly reach an API from before this projection existed.
-  // Fail closed during that rollback window; make the field required afterward.
+  // Fail closed during that rollback window; make the field required in #35900.
   const addableModels = (data.modelsAvailableToAdd ?? []).filter((model) => {
     return isAddableBuiltInModel(model);
   });

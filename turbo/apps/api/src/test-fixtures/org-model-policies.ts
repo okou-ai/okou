@@ -3,6 +3,7 @@ import type {
   SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
+import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -38,6 +39,31 @@ export async function stagePreAddabilityModelPolicyFixture(args: {
   if (inserted.length !== 1) {
     throw new Error("Expected one pre-addability model policy to be inserted");
   }
+}
+
+/** Remove one operator catalog row to exercise the production fail-closed path. */
+export async function removeRunModelCatalogEntryFixture(
+  model: SupportedRunModel,
+): Promise<() => Promise<void>> {
+  const [removed] = await db()
+    .delete(runModelCatalog)
+    .where(eq(runModelCatalog.model, model))
+    .returning();
+  if (!removed) {
+    throw new Error(`Expected run model catalog entry for ${model}`);
+  }
+
+  let restored = false;
+  return async () => {
+    if (restored) {
+      return;
+    }
+    await db()
+      .insert(runModelCatalog)
+      .values(removed)
+      .onConflictDoNothing({ target: runModelCatalog.model });
+    restored = true;
+  };
 }
 
 /**
