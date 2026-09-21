@@ -5,10 +5,11 @@ chat threads, chat messages, readable agent instructions, readable workflow
 instructions, and current personal memory. The existing status, download,
 48-hour expiry, and 24-hour completion cooldown contract remains unchanged.
 
-The default-off `_durableUserExport` switch admits new exports to a persistent
-job handler. Its ZIP format is v3. Jobs accepted in legacy mode still execute
-the v2 streaming exporter; disabling admission does not stop already accepted
-durable jobs. Previously completed ZIP files keep their original contents.
+The `_durableUserExport` switch admits new exports to a persistent job handler
+and is enabled for every owner. Its ZIP format is v3. An owner override turns
+admission off and returns that owner's next export to the v2 streaming
+exporter; jobs already accepted in either mode keep the execution mode stored
+on the job. Previously completed ZIP files keep their original contents.
 
 ## Reentrant execution
 
@@ -180,11 +181,11 @@ and export entry/part inventory. Apply it before promoting the API.
 Old code after migration ignores the additive tables/column; new code before
 migration is unsupported, including its unconditional cleanup reads.
 
-Keep `_durableUserExport` disabled until every serving API and scheduled cleanup
-instance understands `execution_mode = durable-v1` and excludes those jobs from
-legacy timeout cleanup. The same deployment introduces the minute cron route.
-Only after that compatibility boundary is verified should a separate activation
-enable new durable admissions. This PR does not activate production traffic.
+`_durableUserExport` stayed disabled until every serving API and scheduled
+cleanup instance understood `execution_mode = durable-v1`, excluded those jobs
+from legacy timeout cleanup, and served the minute cron route. API 1.642.1
+shipped that boundary with migration 1175, so the switch now admits every new
+export to the durable handler.
 
 Disabling the switch stops new durable admissions while its cron continues
 existing jobs and cleanup. Keep a compatible API/cron serving until these jobs

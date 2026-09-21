@@ -53,8 +53,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DurableUserExport]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
-    enabled: false,
+      "Resume user exports across bounded background job invocations. An owner override admits a new export to the legacy streaming exporter instead.",
+    enabled: true,
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",

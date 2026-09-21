@@ -340,6 +340,27 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
+  it("should admit durable exports for every owner and accept an opt-out", () => {
+    expect(FeatureSwitchKey.DurableUserExport).toBe("_durableUserExport");
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DurableUserExport, context),
+      ).toBe(true);
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.DurableUserExport, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.DurableUserExport]: false },
+      }),
+    ).toBe(false);
+    // An execution mode is not a product surface, so the underscore key keeps
+    // the switch internal instead of moving it to the released stage.
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.DurableUserExport]
+        .rolloutStage,
+    ).toBe("internal");
+  });
+
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
