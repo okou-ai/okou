@@ -98,7 +98,7 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
     ref,
   ) => {
     return (
-      <TooltipPrimitive.Portal className="relative z-50">
+      <TooltipPrimitive.Portal>
         <TooltipPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}

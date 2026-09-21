@@ -165,7 +165,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     ref,
   ) => {
     return (
-      <DialogPortal className="relative z-50">
+      <DialogPortal>
         <DialogOverlay className={overlayClassName} forceRender />
         <DialogPrimitive.Viewport
           data-slot="dialog-viewport"

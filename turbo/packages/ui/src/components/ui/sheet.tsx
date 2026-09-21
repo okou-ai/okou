@@ -97,7 +97,7 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
     ref,
   ) => {
     return (
-      <SheetPortal className="relative z-50">
+      <SheetPortal>
         <SheetOverlay className={overlayClassName} forceRender />
         <SheetPrimitive.Popup
           ref={ref}

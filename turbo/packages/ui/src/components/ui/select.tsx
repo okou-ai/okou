@@ -262,7 +262,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       alignItemWithTrigger ?? position === "item-aligned";
 
     return (
-      <SelectPrimitive.Portal className="relative z-50">
+      <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
           align={align}
           alignItemWithTrigger={resolvedAlignItemWithTrigger}

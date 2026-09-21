@@ -108,7 +108,7 @@ const DropdownMenuContent = React.forwardRef<
         : undefined);
 
     return (
-      <DropdownMenuPortal className="relative z-50">
+      <DropdownMenuPortal>
         <MenuPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
