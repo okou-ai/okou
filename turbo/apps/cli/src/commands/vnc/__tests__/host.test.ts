@@ -12,6 +12,13 @@ const host = {
   authMethod: "vnc_password",
   securityType: "x509_vnc",
 };
+const plainHost = {
+  ...host,
+  id: "a0000000-0000-4000-8000-000000000002",
+  displayName: "Plain desktop",
+  authMethod: "username_password",
+  securityType: "x509_plain",
+};
 const output = vi.spyOn(console, "log").mockImplementation(() => {});
 const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 vi.spyOn(process, "exit").mockImplementation((): never => {
@@ -82,6 +89,20 @@ describe("okou vnc host list", () => {
     expect(text).toContain("vnc_password / x509_vnc");
     expect(text).toContain("okou vnc session start --help");
     expect(text).toContain("choose shared or exclusive mode explicitly");
+  });
+
+  it("prints the exact X509Plain authentication and security pair", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/vnc/hosts", () => {
+        return HttpResponse.json({ hosts: [plainHost] });
+      }),
+    );
+
+    await invoke();
+
+    const text = output.mock.calls.flat().join("\n");
+    expect(text).toContain("Plain desktop");
+    expect(text).toContain("username_password / x509_plain");
   });
 
   it("explains an authorized empty inventory without inventing a host", async () => {
@@ -173,6 +194,14 @@ describe("okou vnc host list", () => {
       "invalid inventory",
       () => {
         return HttpResponse.json({ hosts: "SENSITIVE_UPSTREAM_DETAIL" });
+      },
+    ],
+    [
+      "cross-paired inventory",
+      () => {
+        return HttpResponse.json({
+          hosts: [{ ...host, authMethod: "username_password" }],
+        });
       },
     ],
   ] as const)(
