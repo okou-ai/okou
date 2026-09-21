@@ -3,6 +3,8 @@ import { once } from "node:events";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 
+import { normalizeContext, Type } from "@earendil-works/pi-ai";
+import type { Message, Tool } from "@earendil-works/pi-ai";
 import { isRetryableAssistantError } from "@earendil-works/pi-ai/utils/retry";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { materializePiAgentModelConfig } from "./credential";
@@ -29,10 +31,10 @@ async function codexFailureResult(response: () => Response) {
   });
   const stream = piAgentStreamForConfig(CODEX_ROUTE)(
     model,
-    {
+    normalizeContext({
       messages: [{ role: "user", content: "hello", timestamp: 1 }],
       tools: [],
-    },
+    }),
     {
       apiKey: CODEX_ROUTE.apiKey,
       fetch: providerFetch,
@@ -105,6 +107,103 @@ async function retryableCodexProvider() {
   };
 }
 
+/** Resolve CODEX_ROUTE narrowed to its Codex Responses variant. */
+function codexModel() {
+  const model = resolvePiAgentModel(CODEX_ROUTE);
+  if (!model || model.api !== "openai-codex-responses") {
+    throw new Error("Expected a native Codex Responses model");
+  }
+  return model;
+}
+
+/** Capture the exact Codex request body the adapter puts on the wire. */
+async function codexRequestBody(
+  messages: readonly Message[],
+  tools: readonly Tool[],
+): Promise<Record<string, unknown>> {
+  const model = resolvePiAgentModel(CODEX_ROUTE);
+  if (!model || model.api !== "openai-codex-responses") {
+    throw new Error("Expected a native Codex Responses model");
+  }
+  let captured: Record<string, unknown> | undefined;
+  const providerFetch = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    const raw = init?.body;
+    const bytes = Buffer.isBuffer(raw)
+      ? raw
+      : Buffer.from(raw as unknown as Uint8Array);
+    const encoding = new Headers(init?.headers).get("content-encoding");
+    captured = JSON.parse(
+      (encoding === "zstd" ? zstdDecompressSync(bytes) : bytes).toString(
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    return new Response(JSON.stringify({ error: { message: "stop" } }), {
+      status: 429,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  const stream = piAgentStreamForConfig(CODEX_ROUTE)(
+    model,
+    normalizeContext({ messages: [...messages], tools: [...tools] }),
+    {
+      apiKey: CODEX_ROUTE.apiKey,
+      fetch: providerFetch as unknown as typeof globalThis.fetch,
+      signal: AbortSignal.timeout(5_000),
+    },
+  );
+  for await (const _event of stream) {
+    // Drain the failing provider answer before inspecting the captured request.
+  }
+  await stream.result();
+  if (!captured) throw new Error("Expected a captured Codex request body");
+  return captured;
+}
+
+describe("Pi 0.86.1 Codex wire pinning", () => {
+  const readTool: Tool = {
+    name: "read",
+    description: "Read a file",
+    parameters: Type.Object({ path: Type.String() }),
+  };
+
+  it("sends no strict field in Codex tool definitions", async () => {
+    // 0.86 resolves an unset `supportsStrictMode` to true for this dialect and
+    // its catalog never sets the field, so resolvePiAgentModel pins it false.
+    expect(codexModel().compat?.supportsStrictMode).toBe(false);
+
+    const body = await codexRequestBody(
+      [{ role: "user", content: "hello", timestamp: 1 }],
+      [readTool],
+    );
+    const tools = body.tools;
+    expect(Array.isArray(tools)).toBe(true);
+    expect(tools).not.toHaveLength(0);
+    for (const tool of tools as Array<Record<string, unknown>>) {
+      expect(tool).not.toHaveProperty("strict");
+    }
+    expect(JSON.stringify(tools)).not.toContain("strict");
+  });
+
+  it("delivers mid-conversation system messages the 0.86.1 catalog enables", async () => {
+    // The Codex catalog adds `supportsMidConvoSystemMessages: true` and
+    // resolvePiAgentModel copies `source.compat` wholesale. The upgrade
+    // deliberately lets that through, so prove it reaches the wire.
+    expect(codexModel().compat?.supportsMidConvoSystemMessages).toBe(true);
+
+    const body = await codexRequestBody(
+      [
+        { role: "user", content: "first", timestamp: 1 },
+        { role: "system", content: "MID_CONVO_MARKER", timestamp: 2 },
+        { role: "user", content: "second", timestamp: 3 },
+      ],
+      [readTool],
+    );
+    // The leading system message becomes `instructions`; a later one must
+    // survive as its own transcript entry rather than being dropped.
+    expect(JSON.stringify(body.input)).toContain("MID_CONVO_MARKER");
+  });
+});
+
 describe("Pi agent model adapter", () => {
   it("sends canonical Gen1 to public Responses with the selected credential", async () => {
     const provider = await retryableCodexProvider();
@@ -126,9 +225,9 @@ describe("Pi agent model adapter", () => {
       if (!model) throw new Error("Expected a public model");
       const result = await piAgentStreamForConfig(config)(
         model,
-        {
+        normalizeContext({
           messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        },
+        }),
         { apiKey: config.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
@@ -290,7 +389,9 @@ describe("Pi agent model adapter", () => {
 
       const result = await piAgentStreamForConfig(config)(
         model,
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
+        normalizeContext({
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        }),
         { apiKey: config.apiKey, fetch: providerFetch },
       ).result();
 
@@ -419,10 +520,13 @@ describe("Pi agent model adapter", () => {
       });
       expect(resolvePiAgentModel(config)).toBeNull();
       expect(() => {
-        return piAgentStreamForConfig(config)(model, {
-          messages: [],
-          tools: [],
-        });
+        return piAgentStreamForConfig(config)(
+          model,
+          normalizeContext({
+            messages: [],
+            tools: [],
+          }),
+        );
       }).toThrow("service tier");
     },
   );
@@ -448,10 +552,10 @@ describe("Pi agent model adapter", () => {
         }
         const stream = piAgentStreamForConfig(config)(
           model,
-          {
+          normalizeContext({
             messages: [{ role: "user", content: "hello", timestamp: 1 }],
             tools: [],
-          },
+          }),
           { apiKey: config.apiKey, serviceTier: "priority" },
         );
         for await (const _event of stream) {
@@ -553,10 +657,10 @@ describe("Pi agent model adapter", () => {
 
     const stream = piAgentStreamForConfig(config)(
       model,
-      {
+      normalizeContext({
         messages: [{ role: "user", content: "use a tool", timestamp: 1 }],
         tools: [],
-      },
+      }),
       {
         apiKey: config.apiKey,
         fetch: providerFetch,

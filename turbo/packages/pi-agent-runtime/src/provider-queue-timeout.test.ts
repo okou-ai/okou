@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { normalizeContext } from "@earendil-works/pi-ai";
 import { retryAssistantCall } from "@earendil-works/pi-ai/utils/retry";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { http, HttpResponse } from "msw";
@@ -110,7 +111,10 @@ function stream(signal?: AbortSignal) {
   if (!model) throw new Error("Expected the pinned DeepSeek model");
   return piAgentStreamForConfig(route)(
     model,
-    { messages: [{ role: "user", content: "hello", timestamp: 1 }], tools: [] },
+    normalizeContext({
+      messages: [{ role: "user", content: "hello", timestamp: 1 }],
+      tools: [],
+    }),
     { apiKey: route.apiKey, maxRetries: 3, signal },
   );
 }

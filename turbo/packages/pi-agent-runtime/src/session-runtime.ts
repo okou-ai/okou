@@ -317,6 +317,13 @@ async function createPiAgentSession(
     },
     signal,
   );
+  // 0.86 resolves an unset `cacheWarming` to `streaming`, so a long tool run
+  // would issue background prompt-cache requests we do not pay for. Pin it off
+  // for every path here, including the no-snapshot fallback that loads settings
+  // from disk. `getCacheWarmingMode()` reads global settings only, which
+  // `applyOverrides()` does not reach, so this setter is the effective one; it
+  // updates the resolved value without persisting the choice to any disk file.
+  services.settingsManager.setCacheWarmingMode("off");
   const created = await measurePiPreparation(
     args.onPreparationTiming,
     "session_create",

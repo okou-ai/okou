@@ -1573,7 +1573,11 @@ describe("sandbox Pi agent loop", () => {
           const state = await host.state(`native-input-state-${turn}`);
           expect(state).toMatchObject({
             sessionId: SESSION_ID,
-            messageCount: (turn - 1) * 2,
+            // A fresh session has projected nothing yet. Once the first turn
+            // has run, 0.86's single leading transcript system message is part
+            // of the projection this count reports, alongside each completed
+            // user/assistant pair.
+            messageCount: turn === 1 ? 0 : (turn - 1) * 2 + 1,
           });
           expect(host.records[0]).toStrictEqual({
             type: "vm0_pi_api_first_turn_boundary",
@@ -1624,7 +1628,17 @@ describe("sandbox Pi agent loop", () => {
           expect(persisted.getSessionId()).toBe(SESSION_ID);
           expect(persisted.isSettledCheckpoint()).toBe(true);
           const messages = persisted.buildSessionContext().messages;
-          expect(messages).toHaveLength(turn * 2);
+          // 0.86 declares the prompt and tool loadout as one leading transcript
+          // system message. It must be written once for the session, not once
+          // per turn, so the projection grows by exactly the user/assistant
+          // pair each turn.
+          expect(messages).toHaveLength(turn * 2 + 1);
+          expect(
+            messages.filter((message) => {
+              return message.role === "system";
+            }),
+          ).toHaveLength(1);
+          expect(messages[0]?.role).toBe("system");
           expect(
             messages.filter((message) => {
               return message.role === "user";

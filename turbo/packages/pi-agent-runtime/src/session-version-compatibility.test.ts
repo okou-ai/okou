@@ -123,7 +123,9 @@ it("continues the official 0.84.1 branch and compaction fixture without replay o
     "continued once",
   );
   expect(faux.state.callCount).toBe(1);
-  expect(started).toEqual(["toolResult", "assistant"]);
+  // 0.86 declares the tool loadout in a system message before each model
+  // request, so the post-tool assistant response is preceded by one.
+  expect(started).toEqual(["toolResult", "system", "assistant"]);
   expect(settled).toBe(1);
   await session.prompt("new explicit follow-up");
   expect(faux.state.callCount).toBe(2);
@@ -139,4 +141,40 @@ it("continues the official 0.84.1 branch and compaction fixture without replay o
     originalBranch,
   );
   expect(MemoryPiSession.fromJsonl(written).isSettledCheckpoint()).toBe(true);
+});
+
+it("reads a 0.86.1-written session identically on 0.85.1 and projects its new system entry", async () => {
+  const source = await readFile(
+    new URL("./test/fixtures/pi-0.86.1-session.jsonl", import.meta.url),
+    "utf8",
+  );
+  expect(source.endsWith("\n")).toBe(false);
+
+  // Session format stays v3, so the stored record is unchanged by the upgrade.
+  const memory = MemoryPiSession.fromJsonl(source);
+  expect(memory.getSessionId()).toBe("pi-0861-rollback-fixture");
+  expect(memory.getBranchEntries()).toHaveLength(5);
+
+  // 0.86 declares the tool loadout as a transcript system message, so every
+  // projection that counts or positionally inspects messages must tolerate it.
+  const context = memory.buildSessionContext();
+  expect(
+    context.messages.map((message) => {
+      return message.role;
+    }),
+  ).toEqual(["user", "assistant", "system", "user", "assistant"]);
+
+  // Positional readers stay correct with the system entry present.
+  expect(memory.hasPendingToolCalls()).toBe(false);
+  expect(memory.pendingToolIds()).toEqual([]);
+  expect(memory.isSettledCheckpoint()).toBe(true);
+
+  // Rollback is readable, not lossless: an official 0.85.1 installation reads
+  // this same file with the identical session id, 5 entries, 5 active-branch
+  // entries and the same 5 projected messages, including the `system` one its
+  // own LLM boundary would then discard. See the PR for that measurement.
+  const reopened = MemoryPiSession.fromJsonl(memory.toJsonl());
+  expect(reopened.getSessionId()).toBe(memory.getSessionId());
+  expect(reopened.buildSessionContext()).toEqual(context);
+  expect(memory.toJsonl().startsWith(source)).toBe(true);
 });
