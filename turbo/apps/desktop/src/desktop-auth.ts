@@ -46,6 +46,20 @@ export function isElectronNavigationAborted(error: unknown): boolean {
   );
 }
 
+/**
+ * The auth attempt was abandoned on purpose — superseded by a newer one,
+ * cancelled with the auth storage, or torn down with its window — rather than
+ * failing to reach an answer. The session layer recognises it by type, so it
+ * lives beside the other shared auth helpers instead of in the window module,
+ * which cannot be imported without pulling Electron in behind it.
+ */
+export class DesktopAuthTeardownError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DesktopAuthTeardownError";
+  }
+}
+
 export function parseDesktopAuthCallback(
   rawUrl: string,
   authScheme: string,

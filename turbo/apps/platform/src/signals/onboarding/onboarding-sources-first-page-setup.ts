@@ -19,6 +19,10 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { connectorCatalogStatus$ } from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
+import {
+  setAgentPhoneConnectDialogOpen$,
+  watchAgentPhoneConnection$,
+} from "../okou-page/agentphone.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
@@ -30,6 +34,7 @@ import {
   promptHandoffParams,
   setupOnboardingMakePage$,
 } from "./onboarding-page-setup.ts";
+import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
   claimSourcesFirstStartEvent$,
   setSourcesFirstFlow$,
@@ -48,6 +53,13 @@ interface SourcesFirstPageConfig {
    * listening behind it.
    */
   readonly watch?: readonly Command<Promise<void>, [AbortSignal]>[];
+  /**
+   * Finite work the step needs before it is any use, such as opening a
+   * session it has to show. Unlike `watch` it is awaited, so the step's own
+   * events stay in order behind `StepViewed`; it owns the route's signal, and
+   * it reports its own failure rather than keeping the step from opening.
+   */
+  readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
 
 const sourcesFirstEnabled$ = command(
@@ -145,6 +157,11 @@ function createSourcesFirstPageSetup(
     }
     await set(hideAppSkeleton$, signal);
     set(captureSourceOnboardingStepViewed$, config.step);
+    // The step is on screen first, so its own work is something the person
+    // watches happen rather than something they wait through.
+    if (config.enter) {
+      await set(config.enter, signal);
+    }
   });
 }
 
@@ -212,7 +229,25 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSkillsPage,
+  enter: enterSkillImport$,
 });
+
+/**
+ * The AgentPhone tile shows a real link, so the step watches that link for as
+ * long as it is open. It is behind the same switch as the Works page entry,
+ * and the watcher only runs where the tile does.
+ */
+const watchOnboardingAgentPhone$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const switches = await get(featureSwitches$);
+    signal.throwIfAborted();
+    if (!switches[FeatureSwitchKey.AgentPhoneEntry]) {
+      return;
+    }
+    set(setAgentPhoneConnectDialogOpen$, false);
+    await set(watchAgentPhoneConnection$, signal);
+  },
+);
 
 export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
   step: "slack",
@@ -223,8 +258,13 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
   },
   Page: OnboardingSlackPage,
   // The install finishes in the provider's own tab, so the step only learns it
-  // happened from the realtime change these watchers subscribe to.
-  watch: [watchSlackConnection$, watchTeamsConnection$],
+  // happened from the realtime change these watchers subscribe to. AgentPhone
+  // is linked from a phone, which the step never sees either.
+  watch: [
+    watchSlackConnection$,
+    watchTeamsConnection$,
+    watchOnboardingAgentPhone$,
+  ],
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({

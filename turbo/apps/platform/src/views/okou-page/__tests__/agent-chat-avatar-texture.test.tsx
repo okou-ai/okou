@@ -15,10 +15,14 @@
  * check the relationships the rules guarantee, not the numbers that happen to
  * satisfy them today.
  */
-import { avatarComposerUrl } from "@okouai/core/agent-avatar";
+import {
+  avatarComposerUrl,
+  DEFAULT_AGENT_AVATAR_URL,
+} from "@okouai/core/agent-avatar";
 import {
   admissibleAvatarTextures,
   avatarTextureUrl,
+  defaultAgentAvatarTextures,
 } from "@okouai/core/agent-avatar-texture";
 import {
   agentsByIdContract,
@@ -219,4 +223,34 @@ test("Keep every other avatar surface untextured", async () => {
     // Still centered, not anchored.
     expect(artworkBottom(artworkTransform(container!))).toBeLessThan(100);
   }
+});
+
+test("Give the organization default agent its own texture", async () => {
+  // The avatar every workspace's chat home opens on. It is a drawn file rather
+  // than a composer configuration, so it used to fall through to no texture at
+  // all — on the one surface this feature exists for.
+  mountedAgent(DEFAULT_AGENT_AVATAR_URL);
+  context.mocks.browser.matchMedia(false);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.AvatarFraming]: true,
+      [FeatureSwitchKey.AvatarTexture]: true,
+    },
+  });
+  await waitFor(() => {
+    expect(avatarFrame()).toBeInTheDocument();
+  });
+
+  const frame = avatarFrame();
+  expect(defaultAgentAvatarTextures()).toHaveLength(1);
+  expect(textureUrl(frame)).toBe(
+    avatarTextureUrl(defaultAgentAvatarTextures()[0]!),
+  );
+  // The artwork is the drawn file, still shown through the same frame.
+  expect(frame.querySelector("img")).toHaveAttribute(
+    "src",
+    DEFAULT_AGENT_AVATAR_URL,
+  );
 });

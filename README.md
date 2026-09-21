@@ -28,8 +28,7 @@
   <a href="https://app.okou.ai/sign-up"><b>Get started free</b></a> ·
   <a href="https://www.okou.ai/api/slack/oauth/install?publicBrand=okou"><b>Add to Slack</b></a> ·
   <a href="https://www.okou.ai/en/workflow-automation-examples"><b>Use cases</b></a> ·
-  <a href="https://www.okou.ai/en/blog"><b>Blog</b></a> ·
-  <a href="https://discord.gg/WMpAmHFfp6"><b>Discord</b></a>
+  <a href="https://www.okou.ai/en/blog"><b>Blog</b></a>
 </p>
 
 ⭐ **Star us on GitHub — it motivates us a lot!** ⭐

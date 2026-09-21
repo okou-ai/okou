@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
-      "importFile": "Import your own file",
-      "importFileHint": "Reuse your file's design",
+      "importFile": "Import template",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -4140,7 +4139,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Back",
-        "cancel": "Cancel",
         "continue": "Continue",
         "finish": "Finish setup",
         "notNow": "Not now",
@@ -4212,17 +4210,21 @@
         "title": "What kind of work do you do?"
       },
       "skills": {
-        "confirm": "Import and continue",
-        "copy": "Import a SKILL.md and it becomes a workflow in Okou, ready to run with /.",
-        "import": "Choose a file",
+        "copied": "Copied",
+        "copy": "Paste this prompt into your own Codex or Claude Code session and it brings the skills on your machine into Okou.",
+        "copyError": "The prompt could not be copied.",
+        "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
-        "importedTitle": "Your workflow is ready",
-        "panelCopy": "From Codex, Claude Code, or any agent that writes one.",
-        "panelTitle": "Drop a SKILL.md here",
-        "previewCopy": "Imported as an Okou workflow. Only you can use it until you share it.",
-        "previewTitle": "Review your skill",
-        "replace": "Choose another file",
-        "title": "Bring the skills you already wrote."
+        "importedLabel": "Imported skills",
+        "importedTitle": "Your skills are in Okou",
+        "preparing": "Opening your import session…",
+        "promptCopy": "It reads the skills on your machine and writes them into Okou.",
+        "promptLabel": "Skill import prompt",
+        "promptTitle": "Run this in Codex or Claude Code",
+        "startError": "The import session could not be opened.",
+        "title": "Bring the skills you already wrote.",
+        "tryAgain": "Try again",
+        "waiting": "Imported skills appear here as they arrive."
       },
       "slack": {
         "add": "Add to Slack",
@@ -6904,14 +6906,20 @@
       "preview": "Preview {{title}}",
       "rename": "Rename template"
     },
+    "clearSearch": "Clear search",
     "custom": "Custom",
     "detail": {
       "back": "Custom templates",
       "page": "Page {{number}}"
     },
     "empty": {
-      "description": "Okou turns your file's design into a template you can reuse."
+      "description": "Import a document, presentation or image to reuse its design.",
+      "document": "No documents yet",
+      "illustration": "No images yet",
+      "presentation": "No presentations yet",
+      "title": "Make it yours"
     },
+    "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",

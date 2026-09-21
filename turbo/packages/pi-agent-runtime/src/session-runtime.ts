@@ -292,23 +292,27 @@ async function createPiAgentSession(
               ),
             }
           : {}),
-        resourceLoaderOptions: resourceSnapshot
-          ? measurePiPreparationSync(
-              args.onPreparationTiming,
-              "resource_loader",
-              () => {
-                return {
+        // Both branches are measured so the preheated and sandbox loaders are
+        // comparable under one phase. This observes loader *option* assembly,
+        // which is all either branch does here; upstream discovery and loading
+        // happen inside `session_services` and `session_create`.
+        resourceLoaderOptions: measurePiPreparationSync(
+          args.onPreparationTiming,
+          "resource_loader",
+          () => {
+            return resourceSnapshot
+              ? {
                   ...piPreheatedResourceLoaderOptions({
                     snapshot: resourceSnapshot,
                     appendSystemPrompt,
                     systemPrompt,
                   }),
                   extensionFactories,
-                };
-              },
-              signal,
-            )
-          : { ...sandboxResourceLoaderOptions, extensionFactories },
+                }
+              : { ...sandboxResourceLoaderOptions, extensionFactories };
+          },
+          signal,
+        ),
       });
     },
     signal,
