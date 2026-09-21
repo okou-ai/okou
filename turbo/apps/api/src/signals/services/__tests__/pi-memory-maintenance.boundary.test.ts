@@ -489,7 +489,7 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       await db().delete(agentRuns).where(eq(agentRuns.id, cleanup.runId));
     }
   });
-  await seedBuiltInModelKey(context, "gpt-5.6-terra");
+  await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
   context.mocks.s3.getSignedUrl.mockResolvedValue(
     "https://objects.example.test/private-first-turn",
   );
@@ -820,8 +820,8 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
   );
   expect(execution.connectorRuntimeTargets).toStrictEqual([]);
   expect(execution.piModelConfig).toMatchObject({
-    provider: "openai",
-    model: "gpt-5.6-terra",
+    provider: "deepseek",
+    model: "deepseek-flash",
   });
   expect(maintenance).toMatchObject({
     memoryStorageId: scope.memoryStorageId,

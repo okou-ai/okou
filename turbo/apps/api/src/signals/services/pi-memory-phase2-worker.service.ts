@@ -30,7 +30,6 @@ import {
   type ClaimedPiMemoryPhase2Job,
   type PiMemoryPhase2OwnerScope,
 } from "./pi-memory-phase2-job.service";
-import { PI_MEMORY_PHASE2_MODEL } from "./pi-memory-phase2-usage.service";
 
 const log = logger("PiMemoryPhase2Worker");
 
@@ -186,7 +185,7 @@ async function checkNewAttemptQuotaAdmission(
     orgId: claim.orgId,
     userId: claim.userId,
     modelProviderType: credential.pin.modelProvider,
-    selectedModel: PI_MEMORY_PHASE2_MODEL,
+    selectedModel: credential.pin.selectedModel,
   });
   signal.throwIfAborted();
   if (admission) {
@@ -269,7 +268,7 @@ const dispatchClaim$ = command(
           credential.pin.modelProviderCredentialScope,
         agentRunModelPin: credential.pin,
         validatePiMemoryPhase2Admission: credential.validate,
-        selectedModelOverride: PI_MEMORY_PHASE2_MODEL,
+        selectedModelOverride: credential.pin.selectedModel,
         builtInModelRuntimeRoute: credential.route,
         callbacks: [
           {

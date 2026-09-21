@@ -44,6 +44,11 @@ import {
   type PiMemoryStage1WorkerResult,
 } from "../services/pi-memory-stage1-worker.service";
 import { recordPiMemoryStage1Usage } from "../services/pi-memory-stage1-usage.service";
+import {
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_BYOK_MODEL,
+  type PiMemoryStage1Model,
+} from "@okouai/pi-agent-runtime/api";
 import { resumeSessionHistoryBlobKey } from "../services/session-history-blobs";
 import {
   isTestEndpointAllowed,
@@ -654,6 +659,15 @@ const runScopedWorker$ = command(
   },
 );
 
+/** Billing mode follows the binding split the credential resolver applies. */
+function stage1ModelForBillingMode(
+  mode: "builtin" | "byok",
+): PiMemoryStage1Model {
+  return mode === "builtin"
+    ? PI_MEMORY_STAGE1_BUILT_IN_MODEL
+    : PI_MEMORY_STAGE1_BYOK_MODEL;
+}
+
 const action$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isTestEndpointAllowed(get(request$))) {
     return testEndpointNotFoundResponse();
@@ -678,6 +692,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
         memoryStorageId: body.memory_storage_id,
         piSessionId: body.pi_session_id,
         sourceHistoryHash: body.source_history_hash,
+        model: stage1ModelForBillingMode(body.billing_mode),
         responseSourceId: body.response_source_id,
         billing: {
           mode: body.billing_mode,
@@ -731,6 +746,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
         memoryStorageId: body.memory_storage_id,
         piSessionId: body.pi_session_id,
         sourceHistoryHash: body.source_history_hash,
+        model: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
         billing: {
           mode: "builtin",
           orgId: `${body.org_id}_collision`,

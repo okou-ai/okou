@@ -36,6 +36,11 @@ import {
   piMemoryPhase2MaintenanceCallbackPayloadSchema,
   handlePiMemoryPhase2MaintenanceCallback,
 } from "../pi-memory-phase2-maintenance.service";
+import {
+  loadPiMemoryPhase2UsageBinding,
+  PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  PI_MEMORY_PHASE2_BYOK_MODEL,
+} from "../pi-memory-phase2-usage.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import {
   createPhase2TestScope,
@@ -83,7 +88,10 @@ async function dispatchMaintenance(
     });
   });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  await seedBuiltInModelKey(context, "gpt-5.6-terra");
+  await seedBuiltInModelKey(
+    context,
+    type ? PI_MEMORY_PHASE2_BYOK_MODEL : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  );
   const provider = type
     ? await createPhase2Provider(context, scope, type, credentialScope)
     : undefined;
@@ -194,7 +202,9 @@ async function launchMaintenance(
       ...entry,
       idempotencyKey: randomUUID(),
       kind: "model" as const,
-      provider: "gpt-5.6-terra",
+      provider: type
+        ? PI_MEMORY_PHASE2_BYOK_MODEL
+        : PI_MEMORY_PHASE2_BUILT_IN_MODEL,
     };
   });
   const headers = {
@@ -668,13 +678,14 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   const actual = await executePhase2Runtime(context, run.runId);
   expect(actual.requests).toHaveLength(3);
   for (const request of actual.requests) {
-    expect(request.url).toBe("https://api.openai.com/v1/responses");
+    expect(request.url).toBe("https://api.deepseek.com/responses");
     expect(request.headers.get("authorization")).toMatch(
       /^Bearer built-in-key-runtime-fixture-/,
     );
+    // V4.1 Flash publishes no `medium` step, so maintenance sends `high`.
     expect(request.body).toMatchObject({
-      model: "gpt-5.6-terra",
-      reasoning: { effort: "medium" },
+      model: "deepseek-flash",
+      reasoning: { effort: "high" },
     });
     expect(request.body).not.toHaveProperty("service_tier");
   }
@@ -682,7 +693,7 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
     modelProvider: "built-in",
     modelProviderId: null,
     modelProviderCredentialScope: "org",
-    selectedModel: "gpt-5.6-terra",
+    selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   });
   await run.proxy();
   await run.proxy();
@@ -737,5 +748,47 @@ test.each(["missing-id", "missing-scope", "wrong-owner", "wrong-framework"])(
         expect((await run.cleanup()).body.threadlessRuns.deleted).toBe(1);
       },
     );
+  },
+);
+
+// Both models stay legitimate: built-in dispatches DeepSeek while every BYOK
+// binding keeps dispatching GPT, so neither lookup may narrow to one value.
+test.each([
+  {
+    label: "built-in",
+    type: undefined,
+    model: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+  },
+  {
+    label: "BYOK",
+    type: "openai-api-key" as const,
+    model: PI_MEMORY_PHASE2_BYOK_MODEL,
+  },
+])(
+  "retains the $label maintenance binding on $model",
+  async ({ type, model }) => {
+    const dispatched = await dispatchMaintenance(type);
+    expect(dispatched.run.selectedModel).toBe(model);
+    const completedAt = nowDate();
+    // Terminal state and persisted launch snapshot are infrastructure-only inputs.
+    await db()
+      .update(agentRuns)
+      .set({
+        status: "completed",
+        completedAt,
+        launchSnapshot: {
+          schemaVersion: 1,
+          framework: "pi",
+          runnerProfile: "vm0/test",
+        },
+      })
+      .where(eq(agentRuns.id, dispatched.runId));
+    await expect(
+      loadPiMemoryPhase2UsageBinding(db(), {
+        runId: dispatched.runId,
+        orgId: dispatched.scope.orgId,
+        userId: dispatched.scope.userId,
+      }),
+    ).resolves.toStrictEqual(dispatched.binding);
   },
 );
