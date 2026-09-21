@@ -2994,14 +2994,24 @@ serves `browserNativeInput` starts. The schema is additive: older APIs ignore
 the table, and rollback leaves it in place. There is no backfill or production
 data operation.
 
+The row is deliberately not an audit record. Its token hash is the primary
+key; searchable ownership, agent/thread authorization, provider-session
+identity, state, the strict versioned payload, and the two operational
+transition timestamps are the only persisted fields. Variant-specific callback
+and exact-target data live only in that payload. Do not add a copied Browser
+expiry, originating run, diagnostic reason, or created/updated timestamps.
+
 Keep `browserNativeInput` globally disabled during mixed-version deployment.
 Its initial registry policy is staff-only, but an explicit override must not be
 enabled until every serving API instance and Clerk account-cleanup worker has
 this implementation. Older API instances reject the new routes and older
 cleanup workers do not explicitly remove outstanding requests.
 
-The API rejects unknown persisted payload versions instead of guessing. New
-terminal requests remain readable after their Browser lease expires so the
+The API rejects unknown persisted payload versions instead of guessing. A
+nonterminal request is usable only while its exact `browser_session_instances`
+row is active and both `timeout_at` and the renewable `idle_expires_at` are in
+the future. Guarded lease updates must not revive an already expired Browser.
+Terminal requests remain readable after their Browser lease expires so the
 Platform can retry notification only; values are never stored and Browser
 mutation is never retried. Rolling back the API requires disabling the switch
 first. The retained expansion table needs no contraction until all requests

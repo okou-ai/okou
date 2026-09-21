@@ -163,7 +163,6 @@ const callbackIdsSchema = z
 const responseBaseSchema = z.object({
   requestToken: z.string().min(1),
   state: browserUserActionStateSchema,
-  expiresAt: z.iso.datetime(),
   completedAt: z.iso.datetime().nullable(),
   agentId: z.uuid(),
   threadId: z.uuid(),

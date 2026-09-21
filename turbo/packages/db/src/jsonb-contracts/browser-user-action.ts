@@ -3,10 +3,21 @@ import {
   BROWSER_USER_ACTION_MAX_FIELDS,
   BROWSER_USER_ACTION_MAX_KEY_LENGTH,
   BROWSER_USER_ACTION_MAX_LABEL_LENGTH,
+  BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH,
   type BrowserUserActionFieldKind,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 
-export interface BrowserUserActionInputTarget {
+export interface BrowserUserActionCallbackIdentity {
+  readonly clientEventId: string;
+  readonly chatThreadSortEventId: string;
+}
+
+export interface BrowserUserActionCallbackIds {
+  readonly success: BrowserUserActionCallbackIdentity;
+  readonly cancellation: BrowserUserActionCallbackIdentity;
+}
+
+export interface BrowserUserActionInputField {
   readonly key: string;
   readonly label: string;
   readonly description?: string;
@@ -19,21 +30,31 @@ export interface BrowserUserActionInputTarget {
   };
 }
 
+export interface BrowserUserActionInputTarget {
+  readonly pageTargetId: string;
+  readonly documentLoaderId: string;
+  readonly siteOrigin: string;
+  readonly pageUrlHash: string;
+  readonly fields: readonly BrowserUserActionInputField[];
+}
+
 export type BrowserUserActionPayload =
   | {
       readonly version: 1;
       readonly kind: "input";
-      readonly fields: readonly BrowserUserActionInputTarget[];
+      readonly callbackIds: BrowserUserActionCallbackIds;
+      readonly target: BrowserUserActionInputTarget;
     }
   | {
       readonly version: 1;
       readonly kind: "direct_interaction";
+      readonly callbackIds: BrowserUserActionCallbackIds;
       readonly reason: string;
     };
 
 export function browserUserActionFieldSupportsTarget(
   fieldKind: BrowserUserActionFieldKind,
-  fingerprint: BrowserUserActionInputTarget["fingerprint"],
+  fingerprint: BrowserUserActionInputField["fingerprint"],
 ): boolean {
   if (fingerprint.tagName === "TEXTAREA") {
     return fieldKind === "text" && fingerprint.inputType === "textarea";
@@ -80,7 +101,46 @@ function hasOnlyKeys(
   });
 }
 
-function decodeField(value: unknown): BrowserUserActionInputTarget | null {
+function uuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+      value,
+    )
+  );
+}
+
+function decodeCallbackIdentity(
+  value: unknown,
+): BrowserUserActionCallbackIdentity | null {
+  const identity = objectValue(value);
+  if (
+    !identity ||
+    !hasOnlyKeys(identity, ["clientEventId", "chatThreadSortEventId"]) ||
+    !uuid(identity.clientEventId) ||
+    !uuid(identity.chatThreadSortEventId)
+  ) {
+    return null;
+  }
+  return {
+    clientEventId: identity.clientEventId,
+    chatThreadSortEventId: identity.chatThreadSortEventId,
+  };
+}
+
+function decodeCallbackIds(
+  value: unknown,
+): BrowserUserActionCallbackIds | null {
+  const callbackIds = objectValue(value);
+  if (!callbackIds || !hasOnlyKeys(callbackIds, ["success", "cancellation"])) {
+    return null;
+  }
+  const success = decodeCallbackIdentity(callbackIds.success);
+  const cancellation = decodeCallbackIdentity(callbackIds.cancellation);
+  return success && cancellation ? { success, cancellation } : null;
+}
+
+function decodeField(value: unknown): BrowserUserActionInputField | null {
   const field = objectValue(value);
   const fingerprint = objectValue(field?.fingerprint);
   if (
@@ -118,7 +178,7 @@ function decodeField(value: unknown): BrowserUserActionInputTarget | null {
   const fieldKind = field.fieldKind as BrowserUserActionFieldKind;
   const tagName: "INPUT" | "TEXTAREA" =
     fingerprint.tagName === "INPUT" ? "INPUT" : "TEXTAREA";
-  const safeFingerprint: BrowserUserActionInputTarget["fingerprint"] = {
+  const safeFingerprint: BrowserUserActionInputField["fingerprint"] = {
     tagName,
     inputType: fingerprint.inputType,
   };
@@ -138,6 +198,89 @@ function decodeField(value: unknown): BrowserUserActionInputTarget | null {
   };
 }
 
+function httpOrigin(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      value === url.origin
+    );
+  } catch {
+    return false;
+  }
+}
+
+function decodeInputTarget(
+  value: unknown,
+): BrowserUserActionInputTarget | null {
+  const target = objectValue(value);
+  if (
+    !target ||
+    !hasOnlyKeys(target, [
+      "pageTargetId",
+      "documentLoaderId",
+      "siteOrigin",
+      "pageUrlHash",
+      "fields",
+    ]) ||
+    !boundedString(
+      target.pageTargetId,
+      1,
+      BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH,
+    ) ||
+    !boundedString(
+      target.documentLoaderId,
+      1,
+      BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH,
+    ) ||
+    !httpOrigin(target.siteOrigin) ||
+    typeof target.pageUrlHash !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(target.pageUrlHash) ||
+    !Array.isArray(target.fields) ||
+    target.fields.length < 1 ||
+    target.fields.length > BROWSER_USER_ACTION_MAX_FIELDS
+  ) {
+    return null;
+  }
+  const fields = target.fields.map(decodeField);
+  if (
+    fields.some((field) => {
+      return field === null;
+    })
+  ) {
+    return null;
+  }
+  const decoded = fields as BrowserUserActionInputField[];
+  if (
+    new Set(
+      decoded.map((field) => {
+        return field.key;
+      }),
+    ).size !== decoded.length
+  ) {
+    return null;
+  }
+  if (
+    new Set(
+      decoded.map((field) => {
+        return field.backendNodeId;
+      }),
+    ).size !== decoded.length
+  ) {
+    return null;
+  }
+  return {
+    pageTargetId: target.pageTargetId,
+    documentLoaderId: target.documentLoaderId,
+    siteOrigin: target.siteOrigin,
+    pageUrlHash: target.pageUrlHash,
+    fields: decoded,
+  };
+}
+
 /** Reject unknown versions and unsafe shapes instead of guessing at old data. */
 export function parseBrowserUserActionPayload(
   value: unknown,
@@ -146,48 +289,30 @@ export function parseBrowserUserActionPayload(
   if (!payload || payload.version !== 1) {
     throw new Error("Unsupported Browser user-action payload version");
   }
+  const callbackIds = decodeCallbackIds(payload.callbackIds);
+  if (!callbackIds) {
+    throw new Error("Invalid Browser user-action callback identities");
+  }
   if (
     payload.kind === "direct_interaction" &&
-    hasOnlyKeys(payload, ["version", "kind", "reason"]) &&
+    hasOnlyKeys(payload, ["version", "kind", "callbackIds", "reason"]) &&
     boundedString(payload.reason, 1, BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
   ) {
-    return { version: 1, kind: payload.kind, reason: payload.reason };
+    return {
+      version: 1,
+      kind: payload.kind,
+      callbackIds,
+      reason: payload.reason,
+    };
   }
   if (
     payload.kind === "input" &&
-    hasOnlyKeys(payload, ["version", "kind", "fields"]) &&
-    Array.isArray(payload.fields) &&
-    payload.fields.length >= 1 &&
-    payload.fields.length <= BROWSER_USER_ACTION_MAX_FIELDS
+    hasOnlyKeys(payload, ["version", "kind", "callbackIds", "target"])
   ) {
-    const fields = payload.fields.map(decodeField);
-    if (
-      fields.some((field) => {
-        return field === null;
-      })
-    ) {
-      throw new Error("Invalid Browser user-action input payload");
+    const target = decodeInputTarget(payload.target);
+    if (target) {
+      return { version: 1, kind: payload.kind, callbackIds, target };
     }
-    const decoded = fields as BrowserUserActionInputTarget[];
-    if (
-      new Set(
-        decoded.map((field) => {
-          return field.key;
-        }),
-      ).size !== decoded.length
-    ) {
-      throw new Error("Duplicate Browser user-action input field key");
-    }
-    if (
-      new Set(
-        decoded.map((field) => {
-          return field.backendNodeId;
-        }),
-      ).size !== decoded.length
-    ) {
-      throw new Error("Duplicate Browser user-action backend node ID");
-    }
-    return { version: 1, kind: payload.kind, fields: decoded };
   }
   throw new Error("Invalid Browser user-action payload");
 }

@@ -24,7 +24,6 @@ export async function stageStuckBrowserUserActionFixture(args: {
     .set({
       status: "applying",
       applyStartedAt: args.applyStartedAt,
-      updatedAt: args.applyStartedAt,
     })
     .where(
       eq(
@@ -32,7 +31,9 @@ export async function stageStuckBrowserUserActionFixture(args: {
         requestTokenHash(args.requestToken),
       ),
     )
-    .returning({ id: browserUserActionRequests.id });
+    .returning({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+    });
   if (updated.length !== 1) {
     throw new Error("Expected one Browser user-action request to be staged");
   }

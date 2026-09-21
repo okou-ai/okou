@@ -404,6 +404,7 @@ describe("Browser user-action route", () => {
     });
     expect(created.body.action).not.toHaveProperty("selector");
     expect(created.body.action).not.toHaveProperty("pageTargetId");
+    expect(created.body.action).not.toHaveProperty("expiresAt");
     expect(JSON.stringify(created.body.action)).not.toContain("backendNodeId");
     expect(providerReadCount).toBe(1);
     expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(1);
@@ -1000,11 +1001,57 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
-    const writesBeforeExpiry = browserInputWrites().length;
+
+    // User-action usability follows the Browser's renewable lease instead of
+    // a fixed expiry copied onto the request row.
+    mockNow(STARTED_AT_MS + 9 * MINUTE_MS);
+    await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "direct_interaction",
+          callbackPrompt: "Continue after renewing the Browser lease",
+          reason: "Renew the current Browser lease",
+        },
+      }),
+      [201],
+    );
     mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
+    const renewed = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: expiringCandidate.body.action.requestToken },
+        body: { values: [{ key: "code", value: "001234" }] },
+      }),
+      [200],
+    );
+    expect(renewed.body.state).toBe("succeeded");
+
+    const expiredCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after Browser expiry",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const writesBeforeExpiry = browserInputWrites().length;
+    mockNow(STARTED_AT_MS + 22 * MINUTE_MS);
     const expired = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: expiringCandidate.body.action.requestToken },
+      params: { requestToken: expiredCandidate.body.action.requestToken },
       body: { values: [{ key: "code", value: "001234" }] },
     });
     expect(expired).toMatchObject({
@@ -1012,6 +1059,18 @@ describe("Browser user-action route", () => {
       body: { error: { code: "BROWSER_USER_ACTION_EXPIRED" } },
     });
     expect(browserInputWrites()).toHaveLength(writesBeforeExpiry);
+    const cannotReviveExpiredBrowser = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "direct_interaction",
+        callbackPrompt: "Continue after Browser expiry",
+        reason: "This request must not revive the expired Browser",
+      },
+    });
+    expect(cannotReviveExpiredBrowser).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE" } },
+    });
     const terminalAfterExpiry = await accept(
       userActionClient().get({
         headers: { authorization: "Bearer clerk-session" },

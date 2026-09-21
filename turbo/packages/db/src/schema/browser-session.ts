@@ -15,10 +15,7 @@ import type {
   BrowserSuspensionReason,
 } from "@okouai/api-contracts/contracts/browser";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import type {
-  BrowserUserActionKind,
-  BrowserUserActionState,
-} from "@okouai/api-contracts/contracts/browser-user-actions";
+import type { BrowserUserActionState } from "@okouai/api-contracts/contracts/browser-user-actions";
 import type { BrowserUserActionPayload } from "@okouai/db/jsonb-contracts/browser-user-action";
 
 import { agentRuns } from "./agent-run";
@@ -161,11 +158,9 @@ export const browserAuthorizationRequests = pgTable(
 export const browserUserActionRequests = pgTable(
   "browser_user_action_requests",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    requestTokenHash: text("request_token_hash").notNull(),
+    requestTokenHash: text("request_token_hash").primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    runId: uuid("run_id").notNull(),
     agentId: uuid("agent_id").notNull(),
     chatThreadId: uuid("chat_thread_id")
       .notNull()
@@ -175,50 +170,25 @@ export const browserUserActionRequests = pgTable(
         },
         { onDelete: "cascade" },
       ),
-    kind: varchar("kind", { length: 24 })
-      .$type<BrowserUserActionKind>()
-      .notNull(),
     status: varchar("status", { length: 20 })
       .$type<BrowserUserActionState>()
       .notNull(),
     providerSessionId: uuid("provider_session_id").notNull(),
-    // Input requests bind to an exact page/document. Direct-interaction
-    // requests reuse the thread Browser card and intentionally capture none.
-    pageTargetId: text("page_target_id"),
-    documentLoaderId: text("document_loader_id"),
-    siteOrigin: text("site_origin"),
-    pageUrlHash: text("page_url_hash"),
-    payloadVersion: integer("payload_version").notNull(),
     payload: jsonb("payload").$type<BrowserUserActionPayload>().notNull(),
-    successClientEventId: uuid("success_client_event_id").notNull(),
-    successChatThreadSortEventId: uuid(
-      "success_chat_thread_sort_event_id",
-    ).notNull(),
-    cancellationClientEventId: uuid("cancellation_client_event_id").notNull(),
-    cancellationChatThreadSortEventId: uuid(
-      "cancellation_chat_thread_sort_event_id",
-    ).notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
     applyStartedAt: timestamp("apply_started_at"),
     completedAt: timestamp("completed_at"),
-    terminalReason: varchar("terminal_reason", { length: 64 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return [
-      uniqueIndex("uq_browser_user_action_requests_token_hash").on(
-        table.requestTokenHash,
-      ),
       index("idx_browser_user_action_requests_owner").on(
         table.orgId,
         table.userId,
       ),
+      index("idx_browser_user_action_requests_user").on(table.userId),
       index("idx_browser_user_action_requests_thread").on(table.chatThreadId),
-      index("idx_browser_user_action_requests_expires").on(table.expiresAt),
-      index("idx_browser_user_action_requests_applying").on(
+      index("idx_browser_user_action_requests_provider_state").on(
+        table.providerSessionId,
         table.status,
-        table.applyStartedAt,
       ),
     ];
   },
