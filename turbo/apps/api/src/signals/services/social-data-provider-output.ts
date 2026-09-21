@@ -5,6 +5,7 @@ import type {
 
 import {
   SocialDataProviderError,
+  threadsHandle,
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
 
@@ -83,6 +84,10 @@ function sourceUrl(value: unknown): string | undefined {
     "facebook.com",
     "x.com",
     "twitter.com",
+    "xiaohongshu.com",
+    "threads.com",
+    "threads.net",
+    "mp.weixin.qq.com",
   ];
   return allowed.some((host) => {
     return (
@@ -119,6 +124,7 @@ function mediaUrl(value: unknown): string | undefined {
     "googlevideo.com",
     "googleusercontent.com",
     "twimg.com",
+    "qpic.cn",
   ];
   return domains.some((host) => {
     return parsed.hostname === host || parsed.hostname.endsWith(`.${host}`);
@@ -270,6 +276,88 @@ function projectXiaohongshu(
     comments: count(row.comments_count),
     shares: count(row.shared_count),
     reactions: count(row.collected_count),
+  };
+}
+
+function projectThreads(row: ObjectValue): SocialDataRecord {
+  const username = string(row.username);
+  return {
+    id: string(row.pk) ?? string(row.id),
+    url: username
+      ? sourceUrl(`https://www.threads.com/@${username}`)
+      : undefined,
+    username,
+    displayName: string(row.full_name),
+  };
+}
+
+/**
+ * WeChat search wraps every matched term in inline highlight markup. Removing
+ * one pass of tags can reassemble another tag out of the surrounding text, so
+ * this repeats until the result stops changing.
+ */
+function plainText(value: unknown): string | undefined {
+  let text = string(value);
+  if (text === undefined) {
+    return undefined;
+  }
+  let previous = "";
+  while (previous !== text) {
+    previous = text;
+    text = text.replaceAll(/<[^<>]*>/gu, "");
+  }
+  return string(text);
+}
+
+/** Search rows link articles over http; WeChat serves the same page over https. */
+function secureUrl(value: unknown): string | undefined {
+  const parsed = typeof value === "string" ? URL.parse(value) : null;
+  if (
+    !parsed ||
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+  ) {
+    return undefined;
+  }
+  parsed.protocol = "https:";
+  return sourceUrl(parsed.href);
+}
+
+function projectWechat(
+  row: ObjectValue,
+  format: SocialDataProviderPlan["format"],
+): SocialDataRecord {
+  if (format === "wechat-comment") {
+    return {
+      id: string(row.content_id),
+      text: string(row.content),
+      publishedAt: timestamp(row.create_time),
+      displayName: string(row.nick_name),
+      likes: count(row.like_num),
+      replies: count(row.reply_total),
+    };
+  }
+  if (format === "wechat-search") {
+    return {
+      id: string(row.docID),
+      url: secureUrl(row.doc_url),
+      title: plainText(row.title),
+      text: plainText(row.desc),
+      publishedAt: timestamp(row.date ?? row.timestamp),
+      displayName: string(nested(row, "source").title),
+      mediaUrls: media([row.thumbUrl]),
+    };
+  }
+  const content = nested(row, "content");
+  return {
+    id: string(content.sn),
+    url: sourceUrl(row.url) ?? secureUrl(content.link),
+    title: string(content.title),
+    description: string(content.desc),
+    text: string(content.content_text),
+    publishedAt: timestamp(content.create_timestamp),
+    username: string(content.user_name),
+    displayName: string(content.nick_name),
+    mediaUrls: media([content.cdn_url]),
   };
 }
 
@@ -425,6 +513,12 @@ function projectRecord(
     case "xiaohongshu": {
       return projectXiaohongshu(row, plan.format);
     }
+    case "threads": {
+      return projectThreads(row);
+    }
+    case "wechat": {
+      return projectWechat(row, plan.format);
+    }
   }
 }
 
@@ -460,6 +554,56 @@ function transcript(rows: readonly unknown[]): SocialDataResult {
     segments,
     language: string(row.language),
   };
+}
+
+function xiaohongshuNotes(output: unknown): readonly unknown[] {
+  const data = object(output).data;
+  // Note details answer with a single-entry envelope wrapping note_list.
+  if (Array.isArray(data)) {
+    const notes = data.length === 1 ? object(data[0]).note_list : undefined;
+    return Array.isArray(notes) ? notes : invalidOutput();
+  }
+  const payload = object(data);
+  if (Array.isArray(payload.notes)) {
+    return payload.notes;
+  }
+  if (Array.isArray(payload.items)) {
+    return payload.items.map((item: unknown) => {
+      return nested(object(item), "note");
+    });
+  }
+  return invalidOutput();
+}
+
+function threadsProfiles(
+  plan: SocialDataProviderPlan,
+  output: unknown,
+): readonly unknown[] {
+  const edges = nested(
+    object(output),
+    "xdt_api__v1__users__search_connection",
+  ).edges;
+  if (!Array.isArray(edges)) {
+    return invalidOutput();
+  }
+  const profiles = edges.map((edge: unknown) => {
+    return nested(object(edge), "node");
+  });
+  const handle = threadsHandle(plan.request.url);
+  if (handle === undefined) {
+    return profiles;
+  }
+  // Inspection names one handle, so ranked neighbours are not the target.
+  const exact = profiles.filter((profile) => {
+    return string(profile.username) === handle;
+  });
+  if (exact.length === 0) {
+    throw new SocialDataProviderError(
+      "SOCIAL_DATA_CONTENT_UNAVAILABLE",
+      "The requested social content could not be retrieved.",
+    );
+  }
+  return exact;
 }
 
 /**
@@ -507,22 +651,21 @@ function tikhubOutputRows(
       return Array.isArray(comments) ? comments : invalidOutput();
     }
     case "xiaohongshu-note": {
-      const data = object(output).data;
-      // Note details answer with a single-entry envelope wrapping note_list.
-      if (Array.isArray(data)) {
-        const notes = data.length === 1 ? object(data[0]).note_list : undefined;
-        return Array.isArray(notes) ? notes : invalidOutput();
-      }
-      const payload = object(data);
-      if (Array.isArray(payload.notes)) {
-        return payload.notes;
-      }
-      if (Array.isArray(payload.items)) {
-        return payload.items.map((item: unknown) => {
-          return nested(object(item), "note");
-        });
-      }
-      return invalidOutput();
+      return xiaohongshuNotes(output);
+    }
+    case "threads-profile": {
+      return threadsProfiles(plan, output);
+    }
+    case "wechat-article": {
+      return [object(output)];
+    }
+    case "wechat-comment": {
+      const comments = object(output).comments;
+      return Array.isArray(comments) ? comments : invalidOutput();
+    }
+    case "wechat-search": {
+      const items = object(output).items;
+      return Array.isArray(items) ? items : invalidOutput();
     }
     default: {
       return null;

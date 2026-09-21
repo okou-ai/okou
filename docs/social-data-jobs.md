@@ -28,14 +28,20 @@ Saved jobs do not support streaming, checkpoints, or asynchronous file exports.
 `okou social capabilities PLATFORM --json` includes a `jobs` section describing
 the saved-job operations independently of the existing protocol.
 
-| Platform  | Operations                                                            | Boundaries                                               |
-| --------- | --------------------------------------------------------------------- | -------------------------------------------------------- |
-| Instagram | Profile/post/Reel inspection, profile posts/Reels, post comments      | One profile request returns at most 12 recent items; no search or transcript jobs |
-| Xiaohongshu | Profile/note inspection, profile notes, note search, note comments  | Accepts profile, note, and `xhslink` share URLs; no transcript jobs |
-| TikTok    | Video/photo inspection, profile posts, search, comments               | One bounded comments batch; no transcript jobs           |
-| YouTube   | Video inspection, channel videos/Shorts, search, comments, transcript | Transcript requires one video; optional language         |
-| Facebook  | Public page inspection, public profile posts, search, comments        | One search query; full public URLs; no nested replies    |
-| X         | Post inspection, profile posts, search, conversation comments         | Single target or query; no transcript jobs               |
+| Platform    | Operations                                                            | Boundaries                                                                                                                                                                                  |
+| ----------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Instagram   | Profile/post/Reel inspection, profile posts/Reels, post comments      | One profile request returns at most 12 recent items; no search or transcript jobs                                                                                                           |
+| Xiaohongshu | Profile/note inspection, profile notes, note search, note comments    | Accepts profile, note, and `xhslink` share URLs; no transcript jobs                                                                                                                         |
+| TikTok      | Video/photo inspection, profile posts, search, comments               | One bounded comments batch; no transcript jobs                                                                                                                                              |
+| YouTube     | Video inspection, channel videos/Shorts, search, comments, transcript | Transcript requires one video; optional language                                                                                                                                            |
+| Facebook    | Public page inspection, public profile posts, search, comments        | One search query; full public URLs; no nested replies                                                                                                                                       |
+| X           | Post inspection, profile posts, search, conversation comments         | Single target or query; no transcript jobs                                                                                                                                                  |
+| Threads     | Profile inspection, profile search                                    | Profile inspection resolves the exact handle through profile search and returns identity fields, not follower counts; post and profile-feed endpoints are unavailable to signed-out clients |
+| WeChat      | Official Account article inspection, article comments, search         | Article URLs only (`/s/ID` or the `__biz` long link); `--type` selects article, account, or video results; account article listings need an account handle the public URL does not carry    |
+
+Threads, WeChat, and Xiaohongshu exist only in this protocol: the standard
+Social commands have no upstream tool for them, so their URLs and `--platform`
+values are recognized only when a job control is present.
 
 The global result limit is 1,000. Platform and operation constraints can be
 smaller. Unsupported options fail before execution. Paid add-ons, nested
@@ -45,11 +51,12 @@ protocol. Responses expose normalized platform fields and public source URLs.
 
 ## Budget and recovery
 
-Instagram and Xiaohongshu run on TikHub, which proxies each vendor API and
-prices per call; the other platforms run Apify Actors priced per result. A
-TikHub plan sends `input.queryParams` instead of `input.body`, and admission
-accepts either shape. Because TikHub bills per call, its billable unit is
-always one regardless of how many rows a request returns.
+Instagram, Xiaohongshu, Threads, and WeChat run on TikHub, which proxies each
+vendor API and prices per call; the other platforms run Apify Actors priced per
+result. Most TikHub plans send `input.queryParams` instead of `input.body`, the
+WeChat endpoints read a JSON body, and admission accepts either shape. Because
+TikHub bills per call, its billable unit is always one regardless of how many
+rows a request returns.
 
 Admission inspects the selected tool's current pricing and input schema. An
 unknown price shape or an input without a reviewed result bound is rejected.

@@ -1790,9 +1790,6 @@
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
         "make": "Criar",
-        "templateCount_one": "{{count}} modelo",
-        "templateCount_many": "{{count}} modelos",
-        "templateCount_other": "{{count}} modelos",
         "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
@@ -4662,9 +4659,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} não está conectado. Você pode tentar de novo ou conectar depois.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Roda no seu plano, sem gastar créditos Okou."
+        "connect": "Conectar {{provider}}",
+        "connected": "Conectado",
+        "connecting": "Conectando…",
+        "failedNote": "Não conseguimos conectar o {{provider}}. Tente de novo ou conecte depois.",
+        "retry": "Tentar de novo",
+        "rowCopy": "Roda no seu plano, sem gastar créditos Okou.",
+        "unconfirmedNote": "Não conseguimos verificar sua conexão com o {{provider}}. Tente de novo ou conecte depois."
       },
       "team": {
         "copy": "Convide alguém do time agora, ou depois pelo menu do workspace.",

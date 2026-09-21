@@ -1758,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
         "make": "作成",
-        "templateCount_other": "{{count}} 件のテンプレート",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -4594,9 +4593,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} はまだつながっていません。もう一度試すか、あとでつなげます。",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Okou クレジットではなく、このプランで動きます。"
+        "connect": "{{provider}} をつなぐ",
+        "connected": "接続済み",
+        "connecting": "接続中…",
+        "failedNote": "{{provider}} をつなげませんでした。もう一度試すか、あとでつなげます。",
+        "retry": "もう一度試す",
+        "rowCopy": "Okou クレジットではなく、このプランで動きます。",
+        "unconfirmedNote": "{{provider}} の接続を確認できませんでした。もう一度試すか、あとでつなげます。"
       },
       "team": {
         "copy": "今すぐ誘っても、後からワークスペースのメニューで誘ってもかまいません。",

@@ -1790,9 +1790,6 @@
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
         "make": "Créer",
-        "templateCount_one": "{{count}} modèle",
-        "templateCount_many": "{{count}} modèles",
-        "templateCount_other": "{{count}} modèles",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
@@ -4662,9 +4659,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} n'est pas connecté. Vous pouvez réessayer ou le connecter plus tard.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "S'exécute sur votre offre, pas sur vos crédits Okou."
+        "connect": "Connecter {{provider}}",
+        "connected": "Connecté",
+        "connecting": "Connexion…",
+        "failedNote": "Nous n'avons pas pu connecter {{provider}}. Vous pouvez réessayer ou le connecter plus tard.",
+        "retry": "Réessayer",
+        "rowCopy": "S'exécute sur votre offre, pas sur vos crédits Okou.",
+        "unconfirmedNote": "Nous n'avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez réessayer ou le connecter plus tard."
       },
       "team": {
         "copy": "Invitez un collègue maintenant, ou plus tard depuis le menu de l'espace de travail.",

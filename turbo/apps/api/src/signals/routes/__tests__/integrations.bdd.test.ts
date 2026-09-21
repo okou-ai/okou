@@ -2698,9 +2698,27 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(canonicalInputRun.prompt).toBe(
         `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
       );
+      // The Slack delivery rules follow the integration block as their own
+      // section rather than sitting in `# Agent Tools`.
       expect(canonicalInputRun.appendSystemPrompt).toContain(
-        `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}`,
+        `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}\n\n# Integration Note\n\n- Slack messaging and files: only your final reply is delivered to the originating thread,`,
       );
+      // A private artifact address is unopenable from Slack, so the note asks
+      // for an upload only while private artifacts are on for this member.
+      // This member holds the switch through an override, not a staff
+      // organization, so it also pins that the note reads the same
+      // override-aware evaluation as `# Agent Tools`.
+      const privateArtifactRule =
+        "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the final reply carries something the user can open.";
+      if (privateFiles) {
+        expect(canonicalInputRun.appendSystemPrompt).toContain(
+          privateArtifactRule,
+        );
+      } else {
+        expect(canonicalInputRun.appendSystemPrompt).not.toContain(
+          "Private artifacts in the final reply",
+        );
+      }
       expect(canonicalInputRun.appendSystemPrompt).toContain(
         "okou web download-file -h",
       );

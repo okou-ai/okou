@@ -39,7 +39,11 @@ export interface SocialDataProviderPlan {
     | "x-post"
     | "xiaohongshu-user"
     | "xiaohongshu-note"
-    | "xiaohongshu-comment";
+    | "xiaohongshu-comment"
+    | "threads-profile"
+    | "wechat-article"
+    | "wechat-comment"
+    | "wechat-search";
 }
 
 /** Recent posts and Reels carried by one Instagram profile lookup. */
@@ -112,6 +116,26 @@ function queryPlan(
   };
 }
 
+/**
+ * TikHub's WeChat endpoints read a JSON body instead of query parameters and
+ * are still priced per call.
+ */
+function bodyPlan(
+  request: SocialDataRequest,
+  endpoint: string,
+  body: Readonly<Record<string, unknown>>,
+  format: SocialDataProviderPlan["format"],
+): SocialDataProviderPlan {
+  return {
+    request,
+    provider: "tikhub",
+    endpoint,
+    input: { body },
+    format,
+    maxBillableUnits: 1,
+  };
+}
+
 function targetUrl(request: SocialDataRequest): URL {
   if (!request.url) {
     throw new SocialDataProviderError(
@@ -134,6 +158,13 @@ function targetUrl(request: SocialDataRequest): URL {
       "xhslink.com",
       "xhslink.cn",
     ],
+    threads: [
+      "threads.com",
+      "www.threads.com",
+      "threads.net",
+      "www.threads.net",
+    ],
+    wechat: ["mp.weixin.qq.com"],
   };
   if (!hosts[request.platform].includes(host) || url.hash) {
     unsupported("Use a full public URL belonging to the selected platform.");
@@ -282,6 +313,90 @@ function xiaohongshuPlan(request: SocialDataRequest): SocialDataProviderPlan {
   );
 }
 
+/** Threads profile URLs carry the handle that identifies a search result. */
+export function threadsHandle(url: string | undefined): string | undefined {
+  return url ? /^\/@([\w.]+)\/?$/.exec(new URL(url).pathname)?.[1] : undefined;
+}
+
+function threadsPlan(request: SocialDataRequest): SocialDataProviderPlan {
+  if (request.operation === "search") {
+    rejectOptions(request);
+    if (/[\r\n]/.test(request.query ?? "")) {
+      unsupported("Threads search accepts one query on a single line.");
+    }
+    return queryPlan(
+      request,
+      "/api/v1/threads/web/search_profiles",
+      { query: request.query },
+      "threads-profile",
+    );
+  }
+  const handle = threadsHandle(targetUrl(request).href);
+  if (request.operation !== "inspect" || !handle) {
+    unsupported(
+      "Threads data jobs support profile inspection by profile URL and profile search.",
+    );
+  }
+  rejectOptions(request);
+  // Threads answers post and username lookups only to signed-in clients, so
+  // profile search resolves the exact handle within the same single call.
+  return queryPlan(
+    request,
+    "/api/v1/threads/web/search_profiles",
+    { query: handle },
+    "threads-profile",
+  );
+}
+
+function wechatPlan(request: SocialDataRequest): SocialDataProviderPlan {
+  if (request.operation === "search") {
+    rejectOptions(request, ["type"]);
+    if (/[\r\n]/.test(request.query ?? "")) {
+      unsupported("WeChat search accepts one query on a single line.");
+    }
+    return bodyPlan(
+      request,
+      "/api/v1/wechat_search/v2/fetch_search",
+      {
+        keyword: request.query,
+        business_type: request.type
+          ? choice(request.type, ["article", "account", "video"])
+          : "all",
+        raw: false,
+      },
+      "wechat-search",
+    );
+  }
+  const url = targetUrl(request);
+  // Official Account articles use a short path or the long query-string form.
+  const article =
+    /^\/s\/[\w-]+\/?$/.test(url.pathname) ||
+    (url.pathname === "/s" && url.searchParams.has("__biz"));
+  if (!article) {
+    unsupported("Use a WeChat Official Account article URL.");
+  }
+  rejectOptions(request);
+  if (request.operation === "comments") {
+    return bodyPlan(
+      request,
+      "/api/v1/wechat_mp/v2/fetch_article_comments",
+      { url: url.href, raw: false },
+      "wechat-comment",
+    );
+  }
+  if (request.operation !== "inspect") {
+    unsupported(
+      "WeChat data jobs support article inspection, article comments, and search.",
+    );
+  }
+  return bodyPlan(
+    request,
+    "/api/v1/wechat_mp/v2/fetch_article_detail_h5",
+    { url: url.href, raw: false },
+    "wechat-article",
+  );
+}
+
 function tiktokPlan(request: SocialDataRequest): SocialDataProviderPlan {
   if (request.operation === "search") {
     rejectOptions(request);
@@ -344,6 +459,9 @@ function youtubeContent(url: URL): boolean {
 }
 
 function youtubePostsBody(request: SocialDataRequest) {
+  if (request.type) {
+    choice(request.type, ["video", "shorts"]);
+  }
   return {
     maxResults: request.type === "shorts" ? 0 : request.limit,
     maxResultsShorts: request.type === "shorts" ? request.limit : 0,
@@ -605,6 +723,12 @@ export function prepareSocialDataProviderPlan(
     }
     case "xiaohongshu": {
       return xiaohongshuPlan(request);
+    }
+    case "threads": {
+      return threadsPlan(request);
+    }
+    case "wechat": {
+      return wechatPlan(request);
     }
   }
 }

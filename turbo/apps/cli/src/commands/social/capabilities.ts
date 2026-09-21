@@ -14,6 +14,11 @@ import {
   SOCIAL_INSTAGRAM_POST_KINDS,
   type SocialPlatform,
 } from "@okouai/api-contracts/contracts/social-discovery";
+import {
+  isJobOnlyPlatform,
+  SOCIAL_JOB_ONLY_PLATFORMS,
+  type SocialCommandPlatform,
+} from "./intents";
 import { socialExportCapabilities } from "./output";
 import {
   SOCIAL_DATA_MAX_RESULTS,
@@ -29,8 +34,46 @@ interface JobCapability {
 }
 
 const jobCapabilities: Partial<
-  Record<SocialPlatform, readonly JobCapability[]>
+  Record<SocialCommandPlatform, readonly JobCapability[]>
 > = {
+  threads: [
+    {
+      operation: "inspect",
+      targets: ["profile"],
+      note: "Resolves the exact handle through Threads profile search and returns identity fields, not follower counts",
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      note: "Returns matching profiles; Threads post search is unavailable",
+    },
+  ],
+  wechat: [
+    { operation: "inspect", targets: ["official_account_article"] },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: { "--type": ["article", "account", "video"] },
+      note: "Defaults to every result type; one query on a single line",
+    },
+    {
+      operation: "comments",
+      targets: ["official_account_article"],
+      note: "Returns one bounded batch of elected comments with their replies counted",
+    },
+  ],
+  xiaohongshu: [
+    { operation: "inspect", targets: ["profile", "note", "share_link"] },
+    { operation: "posts", targets: ["profile"] },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: {
+        "--sort": ["general", "popularity_descending", "time_descending"],
+      },
+    },
+    { operation: "comments", targets: ["note"] },
+  ],
   instagram: [
     { operation: "inspect", targets: ["profile", "post", "reel"] },
     {
@@ -327,30 +370,46 @@ function detailsFor(entry: ReturnType<typeof socialOperationBindings>[number]) {
   };
 }
 
-export function socialCapabilities(platform?: SocialPlatform) {
-  return (platform ? [platform] : socialPlatformSchema.options).map(
-    (selected) => {
-      const entries = socialOperationBindings(selected);
+function jobSection(selected: SocialCommandPlatform) {
+  return {
+    platform: selected === "twitter" ? "x" : selected,
+    controls: ["--dry-run", "--max-credits", "--async", "--request-id"],
+    maxResults: SOCIAL_DATA_MAX_RESULTS,
+    details: jobCapabilities[selected] ?? [],
+    note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
+    recovery: "okou social jobs get <job-id> --wait --json",
+  };
+}
+
+export function socialCapabilities(platform?: SocialCommandPlatform) {
+  const platforms: readonly SocialCommandPlatform[] = platform
+    ? [platform]
+    : [...socialPlatformSchema.options, ...SOCIAL_JOB_ONLY_PLATFORMS];
+  return platforms.map((selected) => {
+    if (isJobOnlyPlatform(selected)) {
       return {
         platform: selected,
-        operations: [
-          ...new Set(
-            entries.map((entry) => {
-              return entry.operation;
-            }),
-          ),
-        ].sort(),
-        ...(notes[selected] ? { notes: notes[selected] } : {}),
-        details: entries.map(detailsFor),
-        jobs: {
-          platform: selected === "twitter" ? "x" : selected,
-          controls: ["--dry-run", "--max-credits", "--async", "--request-id"],
-          maxResults: SOCIAL_DATA_MAX_RESULTS,
-          details: jobCapabilities[selected] ?? [],
-          note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
-          recovery: "okou social jobs get <job-id> --wait --json",
-        },
+        operations: [],
+        notes: [
+          "Saved data jobs are the only protocol for this platform; the standard Social commands have no tool for it",
+        ],
+        details: [],
+        jobs: jobSection(selected),
       };
-    },
-  );
+    }
+    const entries = socialOperationBindings(selected);
+    return {
+      platform: selected,
+      operations: [
+        ...new Set(
+          entries.map((entry) => {
+            return entry.operation;
+          }),
+        ),
+      ].sort(),
+      ...(notes[selected] ? { notes: notes[selected] } : {}),
+      details: entries.map(detailsFor),
+      jobs: jobSection(selected),
+    };
+  });
 }

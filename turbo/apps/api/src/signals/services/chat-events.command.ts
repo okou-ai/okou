@@ -154,6 +154,7 @@ import {
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import {
   buildWebChatAppendSystemPrompt,
   type WebChatSessionPromptContext,
@@ -3859,6 +3860,10 @@ function buildCreateAgentRunArgs(params: {
       prepared.computerUseHostGrant?.displayName ?? null,
     triggerSource: prepared.triggerSource,
     agentRunSource: prepared.agentRunSource,
+    integrationNote: resolveIntegrationNotePrompt({
+      triggerSource: prepared.triggerSource,
+      featureSwitchContext: prepared.featureSwitchContext,
+    }),
   };
   const authorizedRequestObservation =
     authorizedAgentRunRequestObservation(params);

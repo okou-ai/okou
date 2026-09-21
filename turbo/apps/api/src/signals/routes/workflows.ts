@@ -396,7 +396,7 @@ export function clearWorkflowCreationHooksForTest(): void {
   workflowCreationHooks.clear();
 }
 
-interface WorkflowCreationInput {
+export interface WorkflowCreationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
   readonly body: WorkflowCreateRequest;
@@ -609,6 +609,66 @@ const prepareAndCreateWorkflow$ = command(
   },
 );
 
+/** Agent visibility, agent existence, and slug conflicts, in that order. */
+export interface WorkflowCreationFailure {
+  readonly status: 403 | 404 | 409;
+  readonly body: {
+    readonly error: { readonly message: string; readonly code: string };
+  };
+}
+
+type WorkflowCreationOutcome =
+  | {
+      readonly kind: "created";
+      readonly workflowId: string;
+      readonly chatThreadId: string | null;
+    }
+  | { readonly kind: "error"; readonly response: WorkflowCreationFailure };
+
+/**
+ * Shared creation path for a validated workflow body: the built-in name guard,
+ * agent and slug validation, volume preparation, and the publication
+ * transaction. Callers own request parsing, their own admission rules, and how
+ * they render the created workflow.
+ */
+export const createWorkflowRecord$ = command(
+  async (
+    { set },
+    args: WorkflowCreationInput,
+    signal: AbortSignal,
+  ): Promise<WorkflowCreationOutcome> => {
+    if (SEED_SKILLS.includes(args.body.name)) {
+      return {
+        kind: "error",
+        response: conflict(
+          `Workflow name "${args.body.name}" conflicts with a built-in workflow`,
+        ),
+      };
+    }
+    const error = await validateWorkflowCreation(
+      set(writeDb$),
+      args,
+      false,
+      signal,
+    );
+    if (error) {
+      return { kind: "error", response: error };
+    }
+    const inserted = await set(prepareAndCreateWorkflow$, args, signal);
+    // Publication has committed. Notification, response or cancellation failures
+    // from this point must leave the valid Workflow and its volume intact.
+    signal.throwIfAborted();
+    if (inserted.kind === "error") {
+      return { kind: "error", response: inserted.response };
+    }
+    return {
+      kind: "created",
+      workflowId: inserted.workflow.id,
+      chatThreadId: inserted.chatThreadId,
+    };
+  },
+);
+
 const createWorkflowInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -619,37 +679,27 @@ const createWorkflowInner$ = command(
       return bodyResult.response;
     }
     const body = bodyResult.data;
-    if (SEED_SKILLS.includes(body.name)) {
-      return conflict(
-        `Workflow name "${body.name}" conflicts with a built-in workflow`,
-      );
-    }
-    const args = {
-      orgId: auth.orgId,
-      member,
-      body,
-      visibility: body.visibility ?? "private",
-    };
-    const writeDb = set(writeDb$);
-    const error = await validateWorkflowCreation(writeDb, args, false, signal);
-    if (error) {
-      return error;
-    }
-    const inserted = await set(prepareAndCreateWorkflow$, args, signal);
-    // Publication has committed. Notification, response or cancellation failures
-    // from this point must leave the valid Workflow and its volume intact.
-    signal.throwIfAborted();
+    const inserted = await set(
+      createWorkflowRecord$,
+      {
+        orgId: auth.orgId,
+        member,
+        body,
+        visibility: body.visibility ?? "private",
+      },
+      signal,
+    );
     if (inserted.kind === "error") {
       return inserted.response;
     }
-    const visible = await loadVisibleWorkflowById(writeDb, {
+    const visible = await loadVisibleWorkflowById(set(writeDb$), {
       orgId: auth.orgId,
       member,
-      workflowId: inserted.workflow.id,
+      workflowId: inserted.workflowId,
     });
     signal.throwIfAborted();
     if (!visible) {
-      throw new Error(`Created workflow not found: ${inserted.workflow.id}`);
+      throw new Error(`Created workflow not found: ${inserted.workflowId}`);
     }
     const summary = workflowSummary({
       workflow: visible.workflow,
