@@ -8,6 +8,25 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.647.0](https://github.com/okou-ai/okou/compare/api-v1.646.1...api-v1.647.0) (2026-09-21)
+
+
+### Features
+
+* **connectors:** refresh oauth account identity ([#35780](https://github.com/okou-ai/okou/issues/35780)) ([4e91504](https://github.com/okou-ai/okou/commit/4e915046c91d5cd5723eff7011f34f4ad49db1fb))
+* **model-provider:** gate alternative deepseek routing ([#35775](https://github.com/okou-ai/okou/issues/35775)) ([8cffdc6](https://github.com/okou-ai/okou/commit/8cffdc6ecfd86b58ac65c61c62d20bed6ece2d8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.2
+    * @okouai/connectors bumped to 3.15.0
+    * @okouai/core bumped to 8.690.0
+    * @okouai/db bumped to 1.281.2
+    * @okouai/pi-agent-runtime bumped to 1.34.2
+
 ## [1.646.1](https://github.com/okou-ai/okou/compare/api-v1.646.0...api-v1.646.1) (2026-09-21)
 
 

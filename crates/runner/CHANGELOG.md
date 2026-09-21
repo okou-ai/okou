@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.207.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.206.0...runner-rs-v0.207.0) (2026-09-21)
+
+
+### Features
+
+* **connectors:** support aws-aware firewall rules ([#35742](https://github.com/okou-ai/okou/issues/35742)) ([05a07b9](https://github.com/okou-ai/okou/commit/05a07b98e0ef6bfc04a29cb2e2603df19ea5a8c1))
+
 ## [0.206.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.3...runner-rs-v0.206.0) (2026-09-21)
 
 

@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.932.1](https://github.com/okou-ai/okou/compare/app-v0.932.0...app-v0.932.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **platform:** preserve custom templates during catalog refresh ([#35779](https://github.com/okou-ai/okou/issues/35779)) ([df7622c](https://github.com/okou-ai/okou/commit/df7622ca27ad9a781ab86a56cc6b6b76e5d3349e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.2
+    * @okouai/connectors bumped to 3.15.0
+    * @okouai/core bumped to 8.690.0
+
 ## [0.932.0](https://github.com/okou-ai/okou/compare/app-v0.931.0...app-v0.932.0) (2026-09-21)
 
 
