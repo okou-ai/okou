@@ -112,19 +112,19 @@ function eligibleBuiltInModelRouteCandidates(
   featureSwitchContext: FeatureSwitchContext,
 ): readonly BuiltInModelRouteTarget[] {
   const candidates = getBuiltInModelRouteCandidates(selectedModel);
-  const requireOpenRouter =
+  const useAlternativeRouting =
     isFeatureEnabled(
-      FeatureSwitchKey.DeepSeekOpenRouterRouting,
+      FeatureSwitchKey.DeepSeekAlternativeRouting,
       featureSwitchContext,
     ) &&
     candidates.some((candidate) => {
       return candidate.providerType === "deepseek";
     });
-  if (!requireOpenRouter) {
+  if (!useAlternativeRouting) {
     return candidates;
   }
   return candidates.filter((candidate) => {
-    return candidate.providerType === "openrouter-codex";
+    return candidate.providerType !== "deepseek";
   });
 }
 

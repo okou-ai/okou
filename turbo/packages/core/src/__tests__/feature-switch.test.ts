@@ -172,16 +172,16 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("enables DeepSeek OpenRouter routing for staff and honors explicit overrides", () => {
+  it("enables DeepSeek alternative routing for staff and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
-        isFeatureEnabled(FeatureSwitchKey.DeepSeekOpenRouterRouting, context),
+        isFeatureEnabled(FeatureSwitchKey.DeepSeekAlternativeRouting, context),
       ).toBe(false);
       expect(
-        isFeatureEnabled(FeatureSwitchKey.DeepSeekOpenRouterRouting, {
+        isFeatureEnabled(FeatureSwitchKey.DeepSeekAlternativeRouting, {
           ...context,
           overrides: {
-            [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+            [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
           },
         }),
       ).toBe(true);
@@ -189,14 +189,14 @@ describe("isFeatureEnabled", () => {
     const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     expect(
       isFeatureEnabled(
-        FeatureSwitchKey.DeepSeekOpenRouterRouting,
+        FeatureSwitchKey.DeepSeekAlternativeRouting,
         staffContext,
       ),
     ).toBe(true);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.DeepSeekOpenRouterRouting, {
+      isFeatureEnabled(FeatureSwitchKey.DeepSeekAlternativeRouting, {
         ...staffContext,
-        overrides: { [FeatureSwitchKey.DeepSeekOpenRouterRouting]: false },
+        overrides: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
       }),
     ).toBe(false);
   });

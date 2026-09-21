@@ -727,9 +727,9 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   await expect(run.ledger()).resolves.toHaveLength(4);
 });
 
-test("uses the Phase 2 owner's DeepSeek OpenRouter routing switch", async () => {
+test("uses the Phase 2 owner's DeepSeek alternative routing switch", async () => {
   const run = await launchMaintenance(undefined, "org", undefined, {
-    [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+    [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
     [FeatureSwitchKey.OpenRouterUsRouting]: false,
   });
   const actual = await executePhase2Runtime(context, run.runId);

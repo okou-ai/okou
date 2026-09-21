@@ -1854,15 +1854,15 @@ describe("CHAT-02: model-first provider policies", () => {
     (
       ["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"] as const
     ).flatMap((model) => {
-      return [false, true].flatMap((openRouterOnlyEnabled) => {
+      return [false, true].flatMap((alternativeRoutingEnabled) => {
         return [false, true].map((usRoutingEnabled) => {
-          return { model, openRouterOnlyEnabled, usRoutingEnabled };
+          return { model, alternativeRoutingEnabled, usRoutingEnabled };
         });
       });
     }),
   )(
-    "routes built-in $model with OpenRouter-only $openRouterOnlyEnabled and US routing $usRoutingEnabled",
-    async ({ model, openRouterOnlyEnabled, usRoutingEnabled }) => {
+    "routes built-in $model with alternative routing $alternativeRoutingEnabled and US routing $usRoutingEnabled",
+    async ({ model, alternativeRoutingEnabled, usRoutingEnabled }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
@@ -1879,7 +1879,8 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
-        [FeatureSwitchKey.DeepSeekOpenRouterRouting]: openRouterOnlyEnabled,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]:
+          alternativeRoutingEnabled,
         [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
       });
 
@@ -1889,21 +1890,22 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "capture the managed DeepSeek route",
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.DeepSeekOpenRouterRouting]: !openRouterOnlyEnabled,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]:
+          !alternativeRoutingEnabled,
         [FeatureSwitchKey.OpenRouterUsRouting]: !usRoutingEnabled,
       });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       const environment = claimEnvironment(claim);
-      const expectedProvider = openRouterOnlyEnabled
+      const expectedProvider = alternativeRoutingEnabled
         ? "openrouter-codex"
         : "deepseek";
-      const expectedModel = openRouterOnlyEnabled
+      const expectedModel = alternativeRoutingEnabled
         ? `deepseek/${model}`
         : model === "deepseek-v4.1-flash"
           ? "deepseek-flash"
           : model;
       expect(environment.OPENAI_BASE_URL).toBe(
-        openRouterOnlyEnabled
+        alternativeRoutingEnabled
           ? `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1`
           : "https://api.deepseek.com/",
       );
@@ -1920,7 +1922,7 @@ describe("CHAT-02: model-first provider policies", () => {
         `model-provider:${expectedProvider}`,
       );
       expect(claim.billableFirewalls).not.toContain(
-        `model-provider:${openRouterOnlyEnabled ? "deepseek" : "openrouter-codex"}`,
+        `model-provider:${alternativeRoutingEnabled ? "deepseek" : "openrouter-codex"}`,
       );
       await cancelChatRun(actor, run.runId);
     },
@@ -1952,7 +1954,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
-        [FeatureSwitchKey.DeepSeekOpenRouterRouting]: false,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
         [FeatureSwitchKey.OpenRouterUsRouting]: true,
       });
 
@@ -2002,7 +2004,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
-        [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
         [FeatureSwitchKey.OpenRouterUsRouting]: false,
       });
 

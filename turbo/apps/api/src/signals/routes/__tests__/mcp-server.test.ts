@@ -1027,7 +1027,7 @@ describe("MCP chat discovery and creation", () => {
     );
   });
 
-  it("projects the owner's DeepSeek OpenRouter-only routing in model discovery", async () => {
+  it("projects the owner's DeepSeek alternative routing in model discovery", async () => {
     const f = await threadFixture();
     const runs = createRunsApi(context);
     const model = "deepseek-v4-flash";
@@ -1045,7 +1045,7 @@ describe("MCP chat discovery and creation", () => {
     await updateFeatureSwitchesForUser(
       context,
       { userId: f.auth.userId, orgId: f.auth.orgId },
-      { [FeatureSwitchKey.DeepSeekOpenRouterRouting]: false },
+      { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
     );
     const token = f.auth.token();
     expect((await listModels(token)).models).toContainEqual(
@@ -1058,7 +1058,7 @@ describe("MCP chat discovery and creation", () => {
     await updateFeatureSwitchesForUser(
       context,
       { userId: f.auth.userId, orgId: f.auth.orgId },
-      { [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true },
+      { [FeatureSwitchKey.DeepSeekAlternativeRouting]: true },
     );
     const models =
       await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(

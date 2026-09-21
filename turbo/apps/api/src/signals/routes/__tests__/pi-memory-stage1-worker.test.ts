@@ -736,7 +736,7 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("uses the owner's DeepSeek OpenRouter routing switch and fails before an unsupported effort", async () => {
+  it("uses the owner's DeepSeek alternative routing switch and fails before an unsupported effort", async () => {
     // V4 Flash's OpenRouter listing publishes no `low` step, so the secondary
     // built-in candidate cannot carry the pinned extraction effort. The work
     // must end before any paid request rather than silently raising it.
@@ -753,7 +753,7 @@ describe("Pi memory Stage 1 worker", () => {
       { orgId: storage.org_id, userId: storage.user_id },
       {
         [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.DeepSeekOpenRouterRouting]: true,
+        [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
         [FeatureSwitchKey.OpenRouterUsRouting]: false,
       },
     );
