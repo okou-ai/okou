@@ -34,6 +34,7 @@ import {
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readUsageStorageCounts$ } from "./helpers/usage-state";
+import { openRouterModelContractError } from "./helpers/openrouter-model-contract";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { imageRecognitionRoutes } from "../image-recognition";
@@ -266,6 +267,17 @@ async function readUsageRecord(actor: ImageRecognitionActor) {
   return response.body.rows;
 }
 
+function recognitionFailureRecords(): readonly unknown[] {
+  return context.mocks.console.log.mock.calls.flatMap(([, fields]) => {
+    return typeof fields === "object" &&
+      fields !== null &&
+      "type" in fields &&
+      fields.type === "image_recognition_failure"
+      ? [fields]
+      : [];
+  });
+}
+
 async function expectNoUsage(actor: ImageRecognitionActor): Promise<void> {
   await expect(
     store.set(
@@ -291,16 +303,6 @@ describe("POST /api/image-recognition", () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     const output = context.mocks.console.log;
     onTestFinished(context.mocks.console.capture());
-    const records = () => {
-      return output.mock.calls.flatMap(([, fields]) => {
-        return typeof fields === "object" &&
-          fields !== null &&
-          "type" in fields &&
-          fields.type === "image_recognition_failure"
-          ? [fields]
-          : [];
-      });
-    };
     const completion = (
       content: unknown,
       finish = "stop",
@@ -585,14 +587,14 @@ describe("POST /api/image-recognition", () => {
       fileId,
     });
     expect(denied.status).toBe(403);
-    expect(records()).toStrictEqual([]);
+    expect(recognitionFailureRecords()).toStrictEqual([]);
     for (const testCase of cases) {
       output.mockClear();
       server.use(http.post(OPENROUTER_URL, testCase.response));
       const response = await request();
       expect(response.status).toBe(testCase.status);
       expect(response.body).toMatchObject({ error: { code: testCase.code } });
-      expect(records()).toStrictEqual([
+      expect(recognitionFailureRecords()).toStrictEqual([
         {
           type: "image_recognition_failure",
           operation_id: expect.any(String),
@@ -605,7 +607,9 @@ describe("POST /api/image-recognition", () => {
           ...testCase.fields,
         },
       ]);
-      expect(JSON.stringify([records(), response.body])).not.toContain(secret);
+      expect(
+        JSON.stringify([recognitionFailureRecords(), response.body]),
+      ).not.toContain(secret);
     }
     await expect(readUsageRecord(actor)).resolves.toStrictEqual([]);
 
@@ -631,7 +635,7 @@ describe("POST /api/image-recognition", () => {
     output.mockClear();
     const late = await request(controller.signal);
     expect(late.status).toBe(502);
-    expect(records()).toStrictEqual([
+    expect(recognitionFailureRecords()).toStrictEqual([
       {
         type: "image_recognition_failure",
         operation_id: expect.any(String),
@@ -646,7 +650,9 @@ describe("POST /api/image-recognition", () => {
         operation_aborted: false,
       },
     ]);
-    expect(JSON.stringify([records(), late.body])).not.toContain(secret);
+    expect(
+      JSON.stringify([recognitionFailureRecords(), late.body]),
+    ).not.toContain(secret);
     restoreText();
 
     output.mockClear();
@@ -656,7 +662,7 @@ describe("POST /api/image-recognition", () => {
       }),
     );
     expect((await request()).status).toBe(200);
-    expect(records()).toStrictEqual([]);
+    expect(recognitionFailureRecords()).toStrictEqual([]);
 
     const pricingIdentity = pricing.resolution.find((entry) => {
       return (
@@ -682,7 +688,7 @@ describe("POST /api/image-recognition", () => {
     output.mockClear();
     const unsettled = await request();
     expect(unsettled.status).toBe(500);
-    expect(records()).toStrictEqual([
+    expect(recognitionFailureRecords()).toStrictEqual([
       {
         type: "image_recognition_failure",
         operation_id: expect.any(String),
@@ -698,7 +704,9 @@ describe("POST /api/image-recognition", () => {
         operation_aborted: false,
       },
     ]);
-    expect(JSON.stringify([records(), unsettled.body])).not.toContain(secret);
+    expect(
+      JSON.stringify([recognitionFailureRecords(), unsettled.body]),
+    ).not.toContain(secret);
   });
 
   it("settles completed provider work exactly once after the request disconnects", async () => {
@@ -764,6 +772,81 @@ describe("POST /api/image-recognition", () => {
         credits: EXPECTED_CHARGE,
       }),
     ]);
+  });
+
+  it("ends an expired provider attempt as an upstream timeout", async () => {
+    const actor = await seedImageRecognitionActor();
+    const pricing = await seedImageRecognitionBilling(actor);
+    const fileId = randomUUID();
+    setStoredObjects([
+      { userId: actor.userId, id: fileId, filename: "screen.png", size: 12 },
+    ]);
+    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+    onTestFinished(context.mocks.console.capture());
+    // Own the attempt's budget by value, because this suite exercises the
+    // endpoint rather than the service module. Anything the endpoint asks for
+    // has to contain the slowest recognition observed succeeding (299.45 s),
+    // so only such a budget is taken over here and a smaller one is left to
+    // fail this test on its own real timer.
+    const deadline = new AbortController();
+    onTestFinished(() => {
+      return deadline.abort();
+    });
+    const budgets: number[] = [];
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      budgets.push(milliseconds);
+      return milliseconds >= 299_450 ? deadline.signal : undefined;
+    });
+    const generating = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(OPENROUTER_URL, async ({ request }) => {
+        const aborted = createDeferredPromise<void>(context.signal);
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve(undefined);
+          },
+          { once: true },
+        );
+        generating.resolve(undefined);
+        await aborted.promise;
+        return HttpResponse.error();
+      }),
+    );
+
+    const pending = requestImageRecognition({
+      token: okouToken(actor),
+      fileId,
+      usagePricingResolution: pricing.resolution,
+    });
+    await generating.promise;
+    deadline.abort(
+      new DOMException("Recognition provider deadline reached", "TimeoutError"),
+    );
+    const response = await pending;
+
+    expect(budgets).toContain(300_000);
+    expect(response.status).toBe(502);
+    expect(response.body).toMatchObject({
+      error: { code: "IMAGE_RECOGNITION_FAILED" },
+    });
+    // The budget is ours, so the attempt it ends stays an upstream outcome and
+    // neither caller signal is reported as having cancelled anything.
+    expect(recognitionFailureRecords()).toStrictEqual([
+      {
+        type: "image_recognition_failure",
+        operation_id: expect.any(String),
+        run_id: actor.runId,
+        duration_ms: expect.any(Number),
+        phase: "fetch",
+        reason: "upstream_timeout",
+        public_status: 502,
+        public_code: "IMAGE_RECOGNITION_FAILED",
+        request_aborted: false,
+        operation_aborted: false,
+      },
+    ]);
+    await expectNoUsage(actor);
   });
 
   it.each([
@@ -892,7 +975,14 @@ describe("POST /api/image-recognition", () => {
     const requestBodies: unknown[] = [];
     server.use(
       http.post(OPENROUTER_URL, async ({ request }) => {
-        requestBodies.push(await request.json());
+        const body = await request.json();
+        requestBodies.push(body);
+        // The recognition model exposes no effort selection, so an effort sent
+        // to it is a parameter the gateway rejects rather than honors.
+        const contractError = openRouterModelContractError(body);
+        if (contractError) {
+          return contractError;
+        }
         return HttpResponse.json({
           choices: [
             {
@@ -935,6 +1025,9 @@ describe("POST /api/image-recognition", () => {
     expect(requestBodies[0]).toMatchObject({
       model: "xiaomi/mimo-v2.5",
       max_tokens: 8192,
+      // Thinking and the visible answer share max_tokens, so recognition asks
+      // for none of it and leaves the whole ceiling to the answer.
+      reasoning: { enabled: false },
       messages: [
         {
           role: "user",
