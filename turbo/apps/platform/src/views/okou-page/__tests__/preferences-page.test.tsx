@@ -577,7 +577,7 @@ test("A workspace without a saved color theme starts on the default palette", as
     updates.filter((update) => {
       return update.colorTheme !== undefined;
     }),
-  ).toEqual([{ colorTheme: "golden-hour" }]);
+  ).toStrictEqual([{ colorTheme: "golden-hour" }]);
 });
 
 test("Gradient color themes stay hidden when the capability is disabled", async () => {

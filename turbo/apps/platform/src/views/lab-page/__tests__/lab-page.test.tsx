@@ -187,6 +187,9 @@ test("A user can toggle a Lab feature and reset all overrides", async () => {
 
 test("A feature switch update resynchronizes color theme document attributes", async () => {
   const user = userEvent.setup();
+  // A member carrying a palette: the default one declares no attributes, so it
+  // would have nothing to resynchronize.
+  context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
 
   await setupPage({
     context,
