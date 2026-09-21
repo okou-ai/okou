@@ -512,6 +512,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       true,
     );
@@ -539,6 +540,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
+    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       false,
     );
