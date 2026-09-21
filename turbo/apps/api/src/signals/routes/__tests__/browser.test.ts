@@ -25,6 +25,7 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
+import { stageStuckBrowserUserActionFixture } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -73,6 +74,16 @@ function commandInput(command: unknown): Record<string, unknown> {
   return command.input as Record<string, unknown>;
 }
 
+function browserInputWrites() {
+  return context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
+    return (
+      command.method === "Runtime.callFunctionOn" &&
+      typeof command.params.functionDeclaration === "string" &&
+      command.params.functionDeclaration.includes("nextValue")
+    );
+  });
+}
+
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
 });
@@ -95,7 +106,16 @@ describe("Browser user-action route", () => {
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
     let currentLoaderId = "native-input-loader";
+    let controlWritable = true;
+    let resolveNodeAvailable = true;
     let verificationMatches = true;
+    let failNextProviderRead = false;
+    let providerReadBarrier:
+      | {
+          readonly entered: ReturnType<typeof createDeferredPromise<void>>;
+          readonly release: ReturnType<typeof createDeferredPromise<void>>;
+        }
+      | undefined;
     context.mocks.browserUseCdp.command.mockImplementation((command) => {
       if (command.method === "Target.getTargets") {
         return {
@@ -138,7 +158,9 @@ describe("Browser user-action route", () => {
         return { node: { backendNodeId: 42 } };
       }
       if (command.method === "DOM.resolveNode") {
-        return { object: { objectId: "native-input-object" } };
+        return resolveNodeAvailable
+          ? { object: { objectId: "native-input-object" } }
+          : {};
       }
       if (command.method === "Runtime.callFunctionOn") {
         const declaration =
@@ -158,7 +180,7 @@ describe("Browser user-action route", () => {
               inputType: "password",
               connected: true,
               mainDocument: true,
-              writable: true,
+              writable: controlWritable,
             },
           },
         };
@@ -190,7 +212,20 @@ describe("Browser user-action route", () => {
       http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
         return HttpResponse.json(providerBrowser(providerId), { status: 201 });
       }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
+        if (failNextProviderRead) {
+          failNextProviderRead = false;
+          return HttpResponse.json(
+            { detail: "temporary provider failure" },
+            { status: 503 },
+          );
+        }
+        const barrier = providerReadBarrier;
+        if (barrier) {
+          providerReadBarrier = undefined;
+          barrier.entered.resolve(undefined);
+          await barrier.release.promise;
+        }
         return HttpResponse.json(providerBrowser(String(params.id)));
       }),
     );
@@ -199,6 +234,29 @@ describe("Browser user-action route", () => {
       client().use({ headers: current.claim.browserHeaders, body: {} }),
       [200],
     );
+    controlWritable = false;
+    const unsupported = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after unsupported input",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            selector: "#password",
+          },
+        ],
+      },
+    });
+    expect(unsupported).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+    });
+    controlWritable = true;
+
     const created = await accept(
       userActionClient().create({
         headers: current.claim.browserHeaders,
@@ -363,7 +421,7 @@ describe("Browser user-action route", () => {
 
     const cancellable = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.claim.sandboxHeaders,
         body: {
           kind: "direct_interaction",
           callbackPrompt: "Continue after cancellation",
@@ -393,15 +451,7 @@ describe("Browser user-action route", () => {
       cancelled.body.callbackIds,
     );
 
-    const writes = context.mocks.browserUseCdp.command.mock.calls.filter(
-      ([command]) => {
-        return (
-          command.method === "Runtime.callFunctionOn" &&
-          typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("nextValue")
-        );
-      },
-    );
+    const writes = browserInputWrites();
     expect(writes).toHaveLength(1);
     expect(writes[0]?.[0].params.functionDeclaration).toContain(
       'new Event("input"',
@@ -410,6 +460,60 @@ describe("Browser user-action route", () => {
       'new Event("change"',
     );
     expect(writes[0]?.[0].params.functionDeclaration).not.toContain("submit");
+
+    const providerRetryCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after provider recovery",
+          fields: [
+            {
+              key: "password",
+              label: "Password",
+              fieldKind: "password",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    failNextProviderRead = true;
+    const providerFailure = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: {
+        requestToken: providerRetryCandidate.body.action.requestToken,
+      },
+      body: { values: [{ key: "password", value: "retry-once" }] },
+    });
+    expect([502, 503]).toContain(providerFailure.status);
+    expect(
+      (
+        await accept(
+          userActionClient().get({
+            headers: { authorization: "Bearer clerk-session" },
+            params: {
+              requestToken: providerRetryCandidate.body.action.requestToken,
+            },
+          }),
+          [200],
+        )
+      ).body.state,
+    ).toBe("pending");
+    const writesBeforeProviderRetry = browserInputWrites().length;
+    await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: providerRetryCandidate.body.action.requestToken,
+        },
+        body: { values: [{ key: "password", value: "retry-once" }] },
+      }),
+      [200],
+    );
+    expect(browserInputWrites()).toHaveLength(writesBeforeProviderRetry + 1);
 
     const staleCandidate = await accept(
       userActionClient().create({
@@ -430,6 +534,7 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
+    const writesBeforeStale = browserInputWrites().length;
     currentLoaderId = "navigated-loader";
     const stale = await accept(
       userActionClient().apply({
@@ -441,15 +546,39 @@ describe("Browser user-action route", () => {
     );
     expect(stale.body.state).toBe("stale");
     currentLoaderId = "native-input-loader";
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
-        return (
-          command.method === "Runtime.callFunctionOn" &&
-          typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("nextValue")
-        );
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const detachedCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after detached input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
       }),
-    ).toHaveLength(1);
+      [201],
+    );
+    resolveNodeAvailable = false;
+    const detached = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: detachedCandidate.body.action.requestToken },
+        body: { values: [{ key: "code", value: "001234" }] },
+      }),
+      [200],
+    );
+    resolveNodeAvailable = true;
+    expect(detached.body.state).toBe("stale");
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
 
     const uncertainCandidate = await accept(
       userActionClient().create({
@@ -470,6 +599,7 @@ describe("Browser user-action route", () => {
       }),
       [201],
     );
+    const writesBeforeUncertain = browserInputWrites().length;
     verificationMatches = false;
     const uncertain = await accept(
       userActionClient().apply({
@@ -487,15 +617,137 @@ describe("Browser user-action route", () => {
       body: { values: [{ key: "code", value: "must-not-replay" }] },
     });
     expect(uncertainRetry).toMatchObject({ status: 409 });
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
-        return (
-          command.method === "Runtime.callFunctionOn" &&
-          typeof command.params.functionDeclaration === "string" &&
-          command.params.functionDeclaration.includes("nextValue")
-        );
+    expect(browserInputWrites()).toHaveLength(writesBeforeUncertain + 1);
+
+    const stuckCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after stuck input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
       }),
-    ).toHaveLength(2);
+      [201],
+    );
+    const writesBeforeStuckRecovery = browserInputWrites().length;
+    await stageStuckBrowserUserActionFixture({
+      requestToken: stuckCandidate.body.action.requestToken,
+      applyStartedAt: new Date(STARTED_AT_MS - MINUTE_MS - 1),
+    });
+    const recovered = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: stuckCandidate.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(recovered.body.state).toBe("uncertain");
+    const stuckRetry = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: stuckCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "must-not-replay" }] },
+    });
+    expect(stuckRetry.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(writesBeforeStuckRecovery);
+
+    const concurrentCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after concurrent input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const writesBeforeConcurrent = browserInputWrites().length;
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    providerReadBarrier = { entered, release };
+    const firstConcurrentApply = userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: concurrentCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "001234" }] },
+    });
+    await entered.promise;
+    const secondConcurrentApply = userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: concurrentCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "009876" }] },
+    });
+    release.resolve(undefined);
+    const concurrent = await Promise.all([
+      firstConcurrentApply,
+      secondConcurrentApply,
+    ]);
+    expect(
+      concurrent
+        .map((response) => {
+          return response.status;
+        })
+        .sort((left, right) => {
+          return left - right;
+        }),
+    ).toStrictEqual([200, 409]);
+    expect(browserInputWrites()).toHaveLength(writesBeforeConcurrent + 1);
+
+    const expiringCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after expiring input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    const writesBeforeExpiry = browserInputWrites().length;
+    mockNow(STARTED_AT_MS + 11 * MINUTE_MS);
+    const expired = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: expiringCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "001234" }] },
+    });
+    expect(expired).toMatchObject({
+      status: 410,
+      body: { error: { code: "BROWSER_USER_ACTION_EXPIRED" } },
+    });
+    expect(browserInputWrites()).toHaveLength(writesBeforeExpiry);
+    const terminalAfterExpiry = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: direct.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(terminalAfterExpiry.body.state).toBe("succeeded");
 
     await chat.deleteThread(actor, current.threadId);
     const erased = await userActionClient().get({
