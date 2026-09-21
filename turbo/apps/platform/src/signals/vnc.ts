@@ -9,6 +9,7 @@ import {
   createVncConnectionRequestSchema,
   updateVncConnectionRequestSchema,
   type VncConnectionResponse,
+  type VncSecurity,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
   vncCredentialsContract,
@@ -140,8 +141,57 @@ export interface VncDialogState {
 }
 const dialog$ = state<VncDialogState | null>(null);
 const view$ = state<"hosts" | "credentials">("hosts");
+export type VncProfile = VncSecurity["type"];
+export type VncAuthMethod = VncCredentialResponse["authMethod"];
+
+export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
+  switch (profile) {
+    case "x509_vnc": {
+      return "vnc_password";
+    }
+    case "x509_plain": {
+      return "username_password";
+    }
+  }
+  void (profile satisfies never);
+  throw new Error("Unsupported VNC profile");
+}
+
+function vncProfileForAuthMethod(method: VncAuthMethod): VncProfile {
+  switch (method) {
+    case "vnc_password": {
+      return "x509_vnc";
+    }
+    case "username_password": {
+      return "x509_plain";
+    }
+  }
+  void (method satisfies never);
+  throw new Error("Unsupported VNC authentication method");
+}
+
+export function vncCredentialMatchesProfile(
+  credential: VncCredentialResponse,
+  profile: VncProfile,
+) {
+  return credential.authMethod === vncAuthMethodForProfile(profile);
+}
+
+function initialVncProfile(
+  connection: VncConnectionResponse | null,
+  credential: VncCredentialResponse | null,
+): VncProfile {
+  if (connection) {
+    return connection.security.type;
+  }
+  return credential
+    ? vncProfileForAuthMethod(credential.authMethod)
+    : "x509_vnc";
+}
+
 const editor$ = state({
   selection: "",
+  profile: "x509_vnc" as VncProfile,
   trust: "system" as "system" | "custom_ca",
   replace: false,
 });
@@ -186,6 +236,20 @@ export const chooseVncCredential$ = command(
     }
   },
 );
+export const chooseVncProfile$ = command(
+  ({ get, set }, profile: string | null) => {
+    if (
+      !get(editorLocked$) &&
+      (profile === "x509_vnc" || profile === "x509_plain")
+    ) {
+      set(editor$, (current): Editor => {
+        return current.profile === profile
+          ? current
+          : { ...current, profile, selection: "" };
+      });
+    }
+  },
+);
 export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
   if (!get(editorLocked$) && (trust === "system" || trust === "custom_ca")) {
     set(editor$, (current): Editor => {
@@ -193,14 +257,16 @@ export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
     });
   }
 });
-export const replaceVncPassword$ = command(({ get, set }, replace: boolean) => {
-  if (get(editorLocked$)) {
-    return;
-  }
-  set(editor$, (current) => {
-    return { ...current, replace };
-  });
-});
+export const replaceVncAuthentication$ = command(
+  ({ get, set }, replace: boolean) => {
+    if (get(editorLocked$)) {
+      return;
+    }
+    set(editor$, (current) => {
+      return { ...current, replace };
+    });
+  },
+);
 
 export const closeVncDialog$ = command(({ set }) => {
   set(resetSave$);
@@ -208,7 +274,12 @@ export const closeVncDialog$ = command(({ set }) => {
   set(uncertain$, false);
   set(saveMessage$, null);
   set(conflict$, false);
-  set(editor$, { selection: "", trust: "system", replace: false });
+  set(editor$, {
+    selection: "",
+    profile: "x509_vnc",
+    trust: "system",
+    replace: false,
+  });
 });
 export const refreshVnc$ = command(({ set }) => {
   set(closeVncDialog$);
@@ -268,6 +339,7 @@ export const openVncDialog$ = command(
     set(closeVncDialog$);
     set(editor$, {
       selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
+      profile: initialVncProfile(connection, credential),
       trust: connection?.security.trust.mode ?? "system",
       replace: false,
     });
@@ -294,11 +366,14 @@ export const openVncDialog$ = command(
         return;
       }
       // Leave explicit user choices alone while the metadata request settles.
+      const compatible = credentials.value.filter((credential) => {
+        return vncCredentialMatchesProfile(credential, get(editor$).profile);
+      });
       const selection =
-        credentials.value.length === 0
+        compatible.length === 0
           ? "new"
-          : credentials.value.length === 1
-            ? credentials.value[0]!.id
+          : compatible.length === 1
+            ? compatible[0]!.id
             : "";
       set(editor$, (current) => {
         return current.selection === "" ? { ...current, selection } : current;
@@ -318,14 +393,31 @@ function textField(form: HTMLFormElement, name: string): string {
   return input.value;
 }
 
-function credentialFields(form: HTMLFormElement) {
-  return {
-    name: textField(form, "credentialName"),
-    authentication: {
-      method: "vnc_password" as const,
-      password: textField(form, "password"),
-    },
-  };
+function credentialFields(form: HTMLFormElement, profile: VncProfile) {
+  const name = textField(form, "credentialName");
+  switch (profile) {
+    case "x509_vnc": {
+      return {
+        name,
+        authentication: {
+          method: "vnc_password" as const,
+          password: textField(form, "password"),
+        },
+      };
+    }
+    case "x509_plain": {
+      return {
+        name,
+        authentication: {
+          method: "username_password" as const,
+          username: textField(form, "username"),
+          password: textField(form, "password"),
+        },
+      };
+    }
+  }
+  void (profile satisfies never);
+  throw new Error("Unsupported VNC profile");
 }
 
 interface VncClients {
@@ -340,6 +432,7 @@ interface VncClients {
 }
 interface Editor {
   readonly selection: string;
+  readonly profile: VncProfile;
   readonly trust: "system" | "custom_ca";
   readonly replace: boolean;
 }
@@ -351,10 +444,10 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
     port: Number(textField(form, "port")),
     credential:
       editor.selection === "new"
-        ? { create: credentialFields(form) }
+        ? { create: credentialFields(form, editor.profile) }
         : { id: editor.selection },
     security: {
-      type: "x509_vnc" as const,
+      type: editor.profile,
       trust:
         editor.trust === "system"
           ? { mode: "system" as const }
@@ -425,7 +518,7 @@ function credentialRequest(
 ) {
   if (dialog.kind === "create-credential") {
     const body = createVncCredentialRequestSchema.safeParse(
-      credentialFields(form),
+      credentialFields(form, editor.profile),
     );
     return body.success
       ? () => {
@@ -454,7 +547,12 @@ function credentialRequest(
     expectedRevision: credential.revision,
     name: textField(form, "credentialName"),
     ...(editor.replace
-      ? { authentication: credentialFields(form).authentication }
+      ? {
+          authentication: credentialFields(
+            form,
+            vncProfileForAuthMethod(credential.authMethod),
+          ).authentication,
+        }
       : {}),
   });
   return body.success

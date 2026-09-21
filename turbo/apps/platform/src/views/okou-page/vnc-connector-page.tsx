@@ -10,6 +10,9 @@ import {
   vncConnections$,
   vncCredentials$,
   vncView$,
+  vncAuthMethodForProfile,
+  type VncAuthMethod,
+  type VncProfile,
 } from "../../signals/vnc.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -24,6 +27,46 @@ import {
 import { VncCredentialImpact } from "./vnc-fields.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
+
+function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
+  const { t } = useTranslation();
+  switch (profile) {
+    case "x509_vnc": {
+      return t(($) => {
+        return $.vnc.security.x509Vnc;
+      });
+    }
+    case "x509_plain": {
+      return t(($) => {
+        return $.vnc.security.x509Plain;
+      });
+    }
+  }
+  void (profile satisfies never);
+  return null;
+}
+
+function VncAuthenticationLabel({
+  method,
+}: {
+  readonly method: VncAuthMethod;
+}) {
+  const { t } = useTranslation();
+  switch (method) {
+    case "vnc_password": {
+      return t(($) => {
+        return $.vnc.credential.method;
+      });
+    }
+    case "username_password": {
+      return t(($) => {
+        return $.vnc.credential.usernamePasswordMethod;
+      });
+    }
+  }
+  void (method satisfies never);
+  return null;
+}
 
 function VncHostCard({
   connection,
@@ -53,9 +96,11 @@ function VncHostCard({
         {connection.credentialName}
       </p>
       <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.security.profile;
-        })}
+        <VncProfileLabel profile={connection.security.type} />
+        {" · "}
+        <VncAuthenticationLabel
+          method={vncAuthMethodForProfile(connection.security.type)}
+        />
         {" · "}
         {connection.security.trust.mode === "system"
           ? t(($) => {
@@ -166,9 +211,14 @@ function VncCredentialCard({
       <h2 className="break-all font-semibold">{credential.name}</h2>
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return $.vnc.credential.method;
+          return $.vnc.credential.authentication;
         })}
+        {" · "}
+        <VncAuthenticationLabel method={credential.authMethod} />
       </p>
+      {credential.authMethod === "username_password" && (
+        <p className="break-all text-sm">{credential.username}</p>
+      )}
       <VncCredentialImpact credential={credential} />
       <div className="flex flex-wrap gap-2">
         <Button

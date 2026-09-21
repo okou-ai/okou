@@ -18,6 +18,7 @@ import {
   vncCredentials$,
   vncDialog$,
   vncEditor$,
+  vncCredentialMatchesProfile,
   vncSaveMessage$,
   vncSaveUncertain$,
   type VncDialogState,
@@ -30,7 +31,7 @@ import {
   VncCredentialImpact,
   VncCredentialSelection,
   VncEndpointFields,
-  VncTrustFields,
+  VncSecurityFields,
 } from "./vnc-fields.tsx";
 
 function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
@@ -140,7 +141,10 @@ function useSaveBlocked(dialog: VncDialogState) {
       credentials.data === null ||
       (editor.selection !== "new" &&
         !credentials.data.some((credential) => {
-          return credential.id === editor.selection;
+          return (
+            credential.id === editor.selection &&
+            vncCredentialMatchesProfile(credential, editor.profile)
+          );
         }))
     );
   }
@@ -244,16 +248,17 @@ function VncForm({
             {hostEditor ? (
               <>
                 <VncEndpointFields connection={dialog.connection} />
-                <VncCredentialSelection disabled={disabled} />
-                <VncTrustFields
+                <VncSecurityFields
                   connection={dialog.connection}
                   disabled={disabled}
                 />
+                <VncCredentialSelection disabled={disabled} />
               </>
             ) : (
               <VncCredentialFields
                 credential={dialog.credential}
                 disabled={disabled}
+                showMethodSelection={dialog.kind === "create-credential"}
               />
             )}
           </fieldset>

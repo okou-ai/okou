@@ -4,8 +4,23 @@ VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
-The Runner executes both X509Vnc and X509Plain. The owner-facing X509Plain
-exposure and full-path product acceptance remain #35621.
+The Runner, owner configuration and Agent inventory support the exact X509Vnc
+and X509Plain profiles. The feature remains unavailable until a separate
+activation decision.
+
+## Supported profiles and rollout state
+
+| Boundary                                 | X509Vnc                                                                   | X509Plain                                                                 | Activation meaning                     |
+| ---------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
+| Rust RFB engine                          | Supported and independently exercised against the pinned TigerVNC fixture | Supported and independently exercised against the pinned TigerVNC fixture | Protocol evidence only                 |
+| Private API and current Runner           | Exact `vnc_password` / `x509_vnc` pair                                    | Exact `username_password` / `x509_plain` pair                             | Runtime capability, not owner exposure |
+| Owner API, app and Agent inventory       | Exposed                                                                   | Exposed                                                                   | Available only behind `VncAccess`      |
+| Runner without the advertised exact pair | Supported                                                                 | `unsupported_profile` before KMS                                          | Fail closed; no downgrade              |
+| Production switch                        | Disabled                                                                  | Disabled                                                                  | Separate activation decision           |
+
+Acceptance must name the exact server and Runner versions and distinguish
+engine-only evidence, controlled Runner integration and a real Agent session.
+Neither the matrix nor a merged implementation turns on the feature.
 
 ## Owner API
 
@@ -70,10 +85,14 @@ With `vncAccess` enabled, open **Connectors → Remote access → VNC**.
 The independent VNC page at `/connectors/vnc` manages hosts and reusable
 credentials. Add a host's hostname or IP address and port (default 5900), then
 select a saved credential or create one. The initial supported profile is
-VeNCrypt X509Vnc: certificate-verified TLS plus a classic VNC password.
-Passwords must contain 1–8 printable ASCII characters; spaces are significant.
-The app does not offer unsupported authentication profiles or an insecure
-certificate bypass.
+VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
+VeNCrypt X509Plain (certificate-verified TLS plus username/password
+authentication). Classic passwords must contain 1–8 printable ASCII characters.
+X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
+bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
+clears draft authentication material and only exact compatible credentials are
+selectable. The app does not offer unsupported authentication profiles or an
+insecure certificate bypass.
 
 Choose system certificate authorities or paste the public CA certificates
 needed to verify the server. Custom trust accepts at most eight CA certificates
@@ -94,8 +113,11 @@ mode when opening each session; the server decides admission and may override
 the requested mode. The settings page adds no controller lock.
 
 The Credentials tab shows which hosts use each credential. Renaming does not
-rotate its password; explicitly replacing the password affects every bound
-host. Saved passwords are never returned or prefilled. A referenced credential
+rotate its authentication; explicitly replacing the password (and X509Plain
+username) affects every bound host. A saved credential's authentication method
+is immutable; create a different credential to change methods. Saved passwords
+are never returned or prefilled. X509Plain usernames are non-secret metadata and
+may be shown or prefilled during explicit replacement. A referenced credential
 cannot be deleted until its hosts are removed or reassigned. Deleting a host
 retains its reusable credential.
 
@@ -113,8 +135,8 @@ errors. The UI does not change the default-off switch or existing data.
 Real Agent/server interoperability, two-client admission, mixed versions and
 retained-data rollback for the base profile were verified in
 [#35299](https://github.com/vm0-ai/okou/issues/35299). X509Plain full-path
-verification remains #35621; merging its UI is not production activation
-evidence.
+verification is recorded separately from implementation; merging support is not
+production activation evidence.
 
 ## Secret inventory
 
@@ -178,12 +200,11 @@ and grants. A protocol with different credential bounds gets a new method value
 even when its UI also looks like username/password; it does not broaden
 `username_password`.
 
-Run host inventory remains limited to X509Vnc until #35621. The private resolve
-path can execute X509Plain for an already-authorized connection ID when the
-requesting Runner advertises that exact pair. An older Runner advertises only
-X509Vnc, so resolve reports a saved X509Plain connection as unsupported and
-fails closed before KMS. #35621 owns inventory/UI exposure and full-path
-acceptance.
+Run host inventory exposes both exact pairs without credentials or trust
+material. The private resolve path executes X509Plain only when the requesting
+Runner advertises that exact pair. An older Runner advertises only X509Vnc, so
+resolve reports a saved X509Plain connection as unsupported and fails closed
+before KMS. There is no compatibility downgrade.
 
 The authentication roadmap is tracked in
 [#35041](https://github.com/vm0-ai/okou/issues/35041), with separate work for
@@ -218,7 +239,9 @@ VNC-aware cleanup and the runtime/UI slices required for the selected activation
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
 that floor requires a separately verified disablement, drain and VNC erasure.
-Owner-facing X509Plain activation and full-path acceptance require #35621.
+Owner-facing X509Plain support does not activate the default-off feature. Any
+activation still requires separately reviewed deployment and acceptance
+evidence.
 
 ## Verification
 

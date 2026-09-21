@@ -7,7 +7,13 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -47,6 +53,29 @@ const credential = Object.freeze<VncCredentialResponse>({
   hosts: [{ id: host.id, displayName: host.displayName }],
   createdAt: host.createdAt,
   updatedAt: host.updatedAt,
+});
+type PlainCredential = Extract<
+  VncCredentialResponse,
+  { authMethod: "username_password" }
+>;
+const plainHost = Object.freeze<VncConnectionResponse>({
+  ...host,
+  id: "b0000000-0000-4000-8000-000000000002",
+  displayName: "Plain workstation",
+  host: "plain.example.com",
+  credentialId: "d0000000-0000-4000-8000-000000000002",
+  credentialName: "Plain login",
+  security: { type: "x509_plain", trust: { mode: "system" } },
+});
+const plainCredential = Object.freeze<PlainCredential>({
+  id: plainHost.credentialId,
+  name: plainHost.credentialName,
+  authMethod: "username_password",
+  username: "operator",
+  revision: 2,
+  hosts: [{ id: plainHost.id, displayName: plainHost.displayName }],
+  createdAt: plainHost.createdAt,
+  updatedAt: plainHost.updatedAt,
 });
 const caBundle =
   "-----BEGIN CERTIFICATE-----\nTEST-CA-CERTIFICATE\n-----END CERTIFICATE-----\n";
@@ -237,6 +266,243 @@ test("Inline password creation preserves spaces and sends the selected custom ce
   expect(secret).toHaveValue("");
 });
 
+test.each([
+  { trust: "system" as const, trustLabel: "System certificate authorities" },
+  {
+    trust: "custom_ca" as const,
+    trustLabel: "Custom certificate authorities",
+  },
+])(
+  "Inline X509Plain creation sends exact username/password and $trust trust",
+  async ({ trust, trustLabel }) => {
+    mockSettings({ connections: [], credentials: [] });
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, plainHost);
+    });
+    await page("/connectors/vnc?add=1");
+    const dialog = await screen.findByRole("dialog", { name: "Add host" });
+    await fillHost(dialog);
+    await choose(
+      dialog,
+      "Security profile",
+      "Encrypted username and password (X509Plain)",
+    );
+    await choose(dialog, "Credential", "Create new credential");
+    await fill(within(dialog).getByLabelText("Credential name"), "Plain login");
+    await fill(within(dialog).getByLabelText("Username"), " operator ");
+    const secret = within(dialog).getByLabelText("Password");
+    expect(secret).toHaveAttribute("type", "password");
+    expect(secret).toHaveValue("");
+    await fill(secret, " 密码 with spaces ");
+    if (trust === "custom_ca") {
+      await choose(dialog, "Server certificate trust", trustLabel);
+      await fill(
+        within(dialog).getByLabelText("CA certificates (PEM)"),
+        caBundle,
+      );
+    }
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      {
+        id: expect.any(String),
+        displayName: "Second desktop",
+        host: "second.example.com",
+        port: 5900,
+        credential: {
+          create: {
+            name: "Plain login",
+            authentication: {
+              method: "username_password",
+              username: " operator ",
+              password: " 密码 with spaces ",
+            },
+          },
+        },
+        security: {
+          type: "x509_plain",
+          trust:
+            trust === "system"
+              ? { mode: "system" }
+              : { mode: "custom_ca", caBundle },
+        },
+      },
+    ]);
+    expect(secret).toHaveValue("");
+  },
+);
+
+test("Profile selection filters credentials and clears incompatible choices", async () => {
+  mockSettings({
+    connections: [],
+    credentials: [credential, plainCredential],
+  });
+  await page("/connectors/vnc?add=1");
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await waitFor(() => {
+    expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+      credential.name,
+    );
+  });
+  await choose(
+    dialog,
+    "Security profile",
+    "Encrypted username and password (X509Plain)",
+  );
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  await userEvent.click(within(dialog).getByLabelText("Credential"));
+  await expect(
+    screen.findByRole("option", { name: plainCredential.name }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: credential.name })).toBeNull();
+  await userEvent.click(
+    screen.getByRole("option", { name: plainCredential.name }),
+  );
+  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+    plainCredential.name,
+  );
+  await choose(dialog, "Security profile", "Encrypted VNC (X509Vnc)");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByLabelText("Credential")).not.toHaveTextContent(
+    plainCredential.name,
+  );
+});
+
+test("Switching profiles clears inline authentication drafts", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  await page("/connectors/vnc?add=1");
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  const classicSecret = await within(dialog).findByLabelText("VNC password");
+  await fill(classicSecret, "classic");
+  await choose(
+    dialog,
+    "Security profile",
+    "Encrypted username and password (X509Plain)",
+  );
+  expect(classicSecret).toHaveValue("");
+  expect(within(dialog).queryByLabelText("Password")).toBeNull();
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(within(dialog).getByLabelText("Username"), "operator");
+  const plainSecret = within(dialog).getByLabelText("Password");
+  await fill(plainSecret, "plain secret");
+  await choose(dialog, "Security profile", "Encrypted VNC (X509Vnc)");
+  expect(plainSecret).toHaveValue("");
+  expect(within(dialog).queryByLabelText("VNC password")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+});
+
+test("Plain credential cards and edits expose only password-free metadata", async () => {
+  const data = mockSettings({
+    connections: [plainHost],
+    credentials: [plainCredential],
+  });
+  const requests: unknown[] = [];
+  let current = plainCredential;
+  context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    current = {
+      ...current,
+      name: body.name ?? current.name,
+      username:
+        body.authentication?.method === "username_password"
+          ? body.authentication.username
+          : current.username,
+      revision: current.revision + 1,
+    };
+    data.credentials = [current];
+    return respond(200, current);
+  });
+  await page();
+  await screen.findByText(plainHost.displayName);
+  expect(
+    screen.getByText(
+      "Encrypted username and password (X509Plain) · Username and password · System certificate authorities",
+    ),
+  ).toBeInTheDocument();
+  click(getAction("radio", "Credentials"));
+  await screen.findByText(plainCredential.name);
+  expect(screen.getByText(plainCredential.username)).toBeInTheDocument();
+  click(getAction("button", "Edit credential"));
+  const rename = await screen.findByRole("dialog", {
+    name: "Edit credential",
+  });
+  expect(within(rename).getByText("Username and password")).toBeInTheDocument();
+  expect(within(rename).queryByLabelText("Username")).toBeNull();
+  expect(within(rename).queryByLabelText("Password")).toBeNull();
+  await fill(within(rename).getByLabelText("Credential name"), "Renamed Plain");
+  click(getAction("button", "Save", rename));
+  await screen.findByText("Renamed Plain");
+  expect(requests).toStrictEqual([
+    { expectedRevision: 2, name: "Renamed Plain" },
+  ]);
+
+  click(getAction("button", "Edit credential"));
+  const replace = await screen.findByRole("dialog", {
+    name: "Edit credential",
+  });
+  await userEvent.click(
+    within(replace).getByRole("checkbox", { name: "Replace authentication" }),
+  );
+  expect(within(replace).getByLabelText("Username")).toHaveValue("operator");
+  await fill(within(replace).getByLabelText("Username"), "new operator");
+  const secret = within(replace).getByLabelText("Password");
+  expect(secret).toHaveValue("");
+  await fill(secret, " new private password ");
+  click(getAction("button", "Save", replace));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    { expectedRevision: 2, name: "Renamed Plain" },
+    {
+      expectedRevision: 3,
+      name: "Renamed Plain",
+      authentication: {
+        method: "username_password",
+        username: "new operator",
+        password: " new private password ",
+      },
+    },
+  ]);
+  expect(secret).toHaveValue("");
+  expect(document.body.textContent).not.toContain("new private password");
+});
+
+test.each([
+  ["oversized UTF-8 username", "Username", "界".repeat(86)],
+  ["oversized UTF-8 password", "Password", "界".repeat(342)],
+  ["NUL username", "Username", "operator\u0000root"],
+  ["NUL password", "Password", "secret\u0000tail"],
+] as const)(
+  "Plain %s validation fails before an API write",
+  async (_case, label, invalidValue) => {
+    mockSettings({ connections: [], credentials: [] });
+    const requests: unknown[] = [];
+    context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
+      requests.push(body);
+      return respond(201, { ...plainCredential, id: body.id, hosts: [] });
+    });
+    await page();
+    const dialog = await addCredential();
+    await choose(dialog, "Authentication method", "Username and password");
+    await fill(within(dialog).getByLabelText("Credential name"), "Plain login");
+    await fill(within(dialog).getByLabelText("Username"), "operator");
+    await fill(within(dialog).getByLabelText("Password"), "valid password");
+    fireEvent.input(within(dialog).getByLabelText(label), {
+      target: { value: invalidValue },
+    });
+    click(getAction("button", "Save", dialog));
+    await within(dialog).findByText(
+      "Check the VNC configuration and try again.",
+    );
+    expect(requests).toStrictEqual([]);
+  },
+);
+
 test("Host edits send the reviewed generation and explicit certificate trust changes", async () => {
   const data = mockSettings({
     connections: [
@@ -347,7 +613,7 @@ test("A reusable credential explains bound-host impact and only replaces its pas
   expect(within(dialog).getByText("Second desktop")).toBeInTheDocument();
   expect(within(dialog).queryByLabelText("VNC password")).toBeNull();
   await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: "Replace password" }),
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
   );
   const secret = within(dialog).getByLabelText("VNC password");
   expect(secret).toHaveValue("");
@@ -505,7 +771,7 @@ test("A credential conflict never rotates a password against an unseen revision"
   const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
   await fill(within(dialog).getByLabelText("Credential name"), "My login");
   await userEvent.click(
-    within(dialog).getByRole("checkbox", { name: "Replace password" }),
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
   );
   const secret = within(dialog).getByLabelText("VNC password");
   await fill(secret, "new-pass");
