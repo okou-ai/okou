@@ -79,14 +79,6 @@ function langfuseDebugExtensionFactories(
   return enabled ? [createLangfuseDebugExtension] : [];
 }
 
-const PI_INTERMEDIATE_COMMENTARY_PROMPT = `## Intermediate commentary
-
-As you work, provide brief intermediate text messages to the user. These messages are how you collaborate with the user while working - stating assumptions and sharing updates. Keep them concise and easy to scan. Their purpose is to make your work easy for the user to understand and verify.
-
-If the user's request requires calling tools, start with a brief intermediate message before the first tool call. During longer work, provide additional updates at meaningful points.
-
-Do not put a final response, such as a blocking or clarifying question, in an intermediate message. Intermediate messages are only for partial updates, partial results, or non-blocking context that can provide value while you continue working. An intermediate update does not end the task; continue working when more work remains. The final answer must always be fully self-contained.`;
-
 /**
  * Shell options for the loop's Bash tool.
  *
@@ -382,21 +374,18 @@ function prepareModelAndPrompt(
         })
       : [];
   const appendSystemPrompt = [
-    PI_INTERMEDIATE_COMMENTARY_PROMPT,
     ...(args.appendSystemPrompt === null ? [] : [args.appendSystemPrompt]),
     ...(memoryRecall.block === null ? [] : [memoryRecall.block]),
   ];
   const systemPrompt = buildOkouHarnessSystemPrompt(
     okouHarnessToolPrompts(args.cwd),
   );
+  // Passing `appendSystemPrompt` at all replaces the official loader's own
+  // append-block discovery, so an empty array must omit the key entirely or a
+  // Sandbox session silently stops loading its APPEND_SYSTEM.md.
   const sandboxResourceLoaderOptions =
-    args.appendSystemPrompt === null && memoryRecall.block === null
-      ? {
-          systemPrompt,
-          appendSystemPromptOverride(base: string[]) {
-            return [PI_INTERMEDIATE_COMMENTARY_PROMPT, ...base];
-          },
-        }
+    appendSystemPrompt.length === 0
+      ? { systemPrompt }
       : { systemPrompt, appendSystemPrompt };
   const model = resolvePiAgentModel(args.model);
   if (!model) {
