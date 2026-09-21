@@ -169,11 +169,13 @@ const pending = randomUUID();
 const newRun = randomUUID();
 const late = randomUUID();
 const missing = randomUUID();
+const historicalThread = randomUUID();
+const capturedThread = randomUUID();
 try {
   await client.query(`CREATE SCHEMA "${schema}"`);
   await client.query(`SET search_path TO "${schema}"`);
   await client.query(`
-    CREATE TABLE agent_runs (id uuid PRIMARY KEY, org_id text NOT NULL, user_id text NOT NULL, created_at timestamp NOT NULL, trigger_source text, prompt text);
+    CREATE TABLE agent_runs (id uuid PRIMARY KEY, org_id text NOT NULL, user_id text NOT NULL, created_at timestamp NOT NULL, trigger_source text, prompt text, chat_thread_id uuid);
     CREATE TABLE usage_event (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid REFERENCES agent_runs ON DELETE SET NULL,
       org_id text NOT NULL, user_id text NOT NULL, idempotency_key uuid UNIQUE DEFAULT gen_random_uuid(), created_at timestamp DEFAULT now(),
       status text DEFAULT 'pending', quantity bigint DEFAULT 0, credits_charged bigint, processed_at timestamp);
@@ -185,8 +187,8 @@ try {
     CREATE TABLE org_usage_allowance_windows (created_by_run_id uuid);
   `);
   await client.query(
-    "INSERT INTO agent_runs VALUES ($1, 'org', 'user', '2026-08-01 23:59:00', 'web', 'private'), ($2, 'org', 'user', '2026-08-01 20:00:00', 'automation-event', 'private')",
-    [run, rollupRun],
+    "INSERT INTO agent_runs VALUES ($1, 'org', 'user', '2026-08-01 23:59:00', 'web', 'private', $3), ($2, 'org', 'user', '2026-08-01 20:00:00', 'automation-event', 'private', NULL)",
+    [run, rollupRun, historicalThread],
   );
   await client.query(
     "INSERT INTO usage_event (id, run_id, org_id, user_id, created_at, quantity) VALUES ($1, $2, 'org', 'user', '2026-08-02 00:01:00', 9), ($3, NULL, 'org', 'user', '2026-08-02 00:01:00', 7)",
@@ -198,12 +200,46 @@ try {
   );
   await migrate("1118_billing_run_attribution");
   await migrate("1119_billing_attribution_capture");
+  await migrate("1192_billing_thread_attribution");
+  await migrate("1193_billing_thread_attribution_capture");
 
   // Both a legacy INSERT RETURNING and the canonical data-modifying CTE capture
   // the same minimal identity in the transaction that publishes the run.
   await client.query(
-    "WITH inserted_run AS (INSERT INTO agent_runs VALUES ($1, 'org', 'user', '2026-08-03 23:59:00', 'web', 'do not retain') RETURNING id) SELECT id FROM inserted_run",
+    "WITH inserted_run AS (INSERT INTO agent_runs VALUES ($1, 'org', 'user', '2026-08-03 23:59:00', 'web', 'do not retain', $2) RETURNING id) SELECT id FROM inserted_run",
+    [newRun, capturedThread],
+  );
+  // The grouping identity travels with the run transaction, and rows that
+  // predate this migration stay explicitly uncaptured until the backfill.
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT run_id, thread_id, thread_context FROM billing_run_attribution ORDER BY run_started_at",
+      )
+    ).rows,
+    [{ run_id: newRun, thread_id: capturedThread, thread_context: "thread" }],
+  );
+  await rejects(
+    "UPDATE billing_run_attribution SET thread_id=$2 WHERE run_id=$1",
+    [newRun, historicalThread],
+  );
+  await rejects(
+    "UPDATE billing_run_attribution SET thread_id=NULL, thread_context='threadless' WHERE run_id=$1",
     [newRun],
+  );
+  // A repeated capture of an already-known identity is a no-op, not a conflict.
+  await client.query("SELECT ensure_billing_run_thread($1, $2)", [
+    newRun,
+    historicalThread,
+  ]);
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT thread_id FROM billing_run_attribution WHERE run_id=$1",
+        [newRun],
+      )
+    ).rows,
+    [{ thread_id: capturedThread }],
   );
   await client.query(
     "INSERT INTO usage_event (id, run_id, org_id, user_id, created_at, quantity) VALUES ($1, $2, 'org', 'user', '2026-08-04 00:01:00', 11) ON CONFLICT (id) DO NOTHING RETURNING id",
@@ -520,7 +556,23 @@ try {
     pending_anchor_gaps: 1,
     new_writer_gaps: 1,
     pending_generation_gaps: 0,
+    thread_gaps: 0,
   });
+  // A zero thread gap is the drop criterion for the reader's transitional
+  // agent_runs join: every historical run now carries its own grouping
+  // identity, including the run that genuinely had no thread.
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT thread_id, thread_context FROM billing_run_attribution WHERE run_id=ANY($1::uuid[]) ORDER BY run_started_at",
+        [[run, rollupRun]],
+      )
+    ).rows,
+    [
+      { thread_id: null, thread_context: "threadless" },
+      { thread_id: historicalThread, thread_context: "thread" },
+    ],
+  );
   await client.query(
     "INSERT INTO agent_runs VALUES ($1, 'other-org', 'other-user', '2026-08-07', 'web', 'private')",
     [provisional],

@@ -69,12 +69,70 @@ The Stage 1 row is updated by #34267; the other foundation entries are unchanged
 writers. Their direct inserts also exercise the database boundary. Intentional
 legacy fixture inserts that omit new fields remain supported.
 
-Consumers deliberately unchanged: `credit-usage.service.ts`,
+Consumers were deliberately unchanged in A1: `credit-usage.service.ts`,
 `usage-allowance.service.ts`, `usage-record.service.ts`,
 `finalized-usage-relation.ts`, `usage.service.ts`, `usage-event-cleanup.service.ts`,
-and `webhooks-clerk-cleanup.service.ts`. The finalized UNION's public selection
-needs no new field yet. A2 must remove live-content reader dependencies and
-switch settlement only after completeness and B's closure/fencing contract pass.
+and `webhooks-clerk-cleanup.service.ts`. [Billing reads](#billing-reads-d3)
+switches the first four onto these fields.
+
+## Billing reads (D3)
+
+Issue [#35875](https://github.com/okou-ai/okou/issues/35875). Billing readers no
+longer require a live `agent_runs` or `chat_threads` row to produce a bill.
+
+`billing_run_attribution` adds `thread_id` and `thread_context`
+(`thread` / `threadless` / `unknown`). `thread_id` is a grouping identifier, not
+content: the reader resolves the **live** `chat_threads` row for the displayed
+title and for the decision to group by thread at all, so deleting a thread still
+collapses its usage into the threadless row exactly as the `agent_runs`
+`ON DELETE SET NULL` link did. `unknown` means "not captured yet" and is distinct
+from a run that genuinely had no thread. Capture is monotone: the run INSERT
+trigger, the usage-side capture for an older live run, and the operator backfill
+only fill `unknown`, and `reject_billing_attribution_update` rejects replacing a
+known grouping identity.
+
+| Read                                                          | Was                                               | Now                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------- |
+| `usage-record.service.ts` `usageRecordRunsWith` grouping      | `agent_runs.chat_thread_id`                       | `chat_threads.id` resolved from `billing_run_attribution`  |
+| `usage-record.service.ts` `usageRecordRunsWith` last activity | `COALESCE(agent_runs.created_at, processed_hour)` | `COALESCE(billing_anchor_at, processed_hour)`              |
+| `usage-record.service.ts` `threadedUsageRecordWith` title     | `chat_threads` joined on the run's live thread    | `chat_threads` joined on the captured grouping identity    |
+| `usage-record.service.ts` `queryUsageRecordBreakdown` row key | `agent_runs.chat_thread_id`                       | `chat_threads.id` resolved from `billing_run_attribution`  |
+| `usage-allowance.service.ts` `anchorUsageAllowanceCandidates` | `agent_runs.created_at` by run id                 | `usage_event.billing_anchor_at` carried by the settled row |
+
+`finalized-usage-relation.ts` exposes `billing_run_id` and a run-only
+`billing_anchor_at` to both ledger branches. The anchor is restricted to the
+`run` context there because the display path's remaining fallback is the
+processing hour, and a runless row must keep showing that hour rather than
+silently switching to its event time. Settlement has no such restriction: the
+context check keeps `billing_anchor_at` NULL for every context without a run
+start and equal to the event's own creation time for the runless contexts, so
+settlement prefers it unconditionally.
+
+Anchoring at settlement is now total. A candidate that cannot be anchored to a
+run start falls back to when it happened instead of being dropped from the
+allocation, because dropping it silently charged the event its full gross price.
+
+Reads that were checked and need no change: `usage-reporting-ledger.ts` and
+`usage.service.ts` group by member and never touch deletable data;
+`resolveUsageAllowanceAvailabilityForRun` and
+`activateUsageAllowanceWindowsForRun` serve a run that is live by construction;
+`chat-usage-event.service.ts` renders a live run inside a live chat thread and
+is a content reader, not a ledger reader; `x-resource-usage.service.ts` reads
+the requesting run while it is still executing.
+
+Two transitional fallbacks remain until the operator backfill converges, both
+declared at their call sites:
+
+| Fallback                                         | Protects                                                | Removal condition                  |
+| ------------------------------------------------ | ------------------------------------------------------- | ---------------------------------- |
+| `usage-record.service.ts` `agent_runs` join      | Rows whose attribution predates the grouping identity   | Inventory `thread_gaps: 0`         |
+| `usage-allowance.service.ts` `loadRunCreatedAts` | Pending rows written before A1 whose run is still alive | Inventory `pending_anchor_gaps: 0` |
+
+Both counters come from a complete, non-truncated
+`pnpm -F @okouai/db billing:attribution` dry-run inventory for the scope. The
+drop pull request removes the two joins together; it must re-run the backfill
+immediately beforehand so rows written by an older instance during the deploy
+window are not left without a grouping identity.
 
 ## Compaction and deployment
 
@@ -166,7 +224,8 @@ census. Restarting a completed job is a no-op; use a new job ID for another pass
 
 Reports contain only scope identifiers, up to ten conflicting run IDs, and counts: eligible, populated, missing
 source, conflicting attribution, pending anchor gaps, new-writer gaps since the
-operator-supplied deployment timestamp, and pending generation provenance gaps.
+operator-supplied deployment timestamp, pending generation provenance gaps, and
+thread gaps — runs whose grouping identity is not captured yet.
 A `truncated` inventory cannot certify completeness. `activationReady` stays
 false in A1 because B and A2 are not implemented. Never silently resolve a
 pending unknown/missing-run anchor using event time. Finalized legacy missing

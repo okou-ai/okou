@@ -220,6 +220,7 @@ export interface ProcessOrgUsageEventsResult {
 interface UsageEventRecord {
   readonly id: string;
   readonly runId: string | null;
+  readonly billingAnchorAt: Date | null;
   readonly idempotencyKey: string;
   readonly userId: string;
   readonly kind: string;
@@ -388,6 +389,7 @@ export async function processOrgUsageEventsInTransaction(
     .select({
       id: usageEvent.id,
       runId: usageEvent.runId,
+      billingAnchorAt: usageEvent.billingAnchorAt,
       idempotencyKey: usageEvent.idempotencyKey,
       userId: usageEvent.userId,
       kind: usageEvent.kind,
@@ -432,6 +434,7 @@ export async function processOrgUsageEventsInTransaction(
         return {
           usageEventId: event.record.id,
           runId: event.record.runId,
+          billingAnchorAt: event.record.billingAnchorAt,
           grossUnits: event.grossCredits,
           occurredAt: event.record.createdAt,
         };
