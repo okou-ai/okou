@@ -1,5 +1,3 @@
-import { getOkouUnderlyingRunModel } from "@okouai/api-contracts/contracts/model-providers";
-
 /**
  * A run model's product line: the line a vendor ships it under, independent of
  * the vendor prefix and the version. `claude-fable-5-1` and a later
@@ -17,6 +15,7 @@ import { getOkouUnderlyingRunModel } from "@okouai/api-contracts/contracts/model
  * one is the moment to decide whether it is a frontier line.
  */
 export const MODEL_PRODUCT_LINES = [
+  "okou",
   "fable",
   "opus",
   "sonnet",
@@ -66,8 +65,7 @@ export function modelProductLine(
   if (typeof model !== "string") {
     return null;
   }
-  const canonicalModel = getOkouUnderlyingRunModel(model) ?? model;
-  const line = canonicalModel
+  const line = model
     .trim()
     .toLowerCase()
     .split(/[-_./]/u)

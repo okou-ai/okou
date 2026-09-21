@@ -187,6 +187,14 @@ function withFastPricing(
   ];
 }
 
+const GPT_5_6_SOL_USAGE_PRICING = withFastPricing(
+  withLongContextPricing(GPT_5_6_SOL_PRICING, 2, 1.5),
+);
+
+const GPT_5_6_LUNA_USAGE_PRICING = withFastPricing(
+  withLongContextPricing(GPT_5_6_LUNA_PRICING, 2, 1.5),
+);
+
 function buildSeedSkillValues(
   names: readonly string[],
 ): (typeof skills.$inferInsert)[] {
@@ -374,7 +382,7 @@ END`;
   return seedSkillVolumes.length;
 }
 
-const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
+export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // Model usage in the unified usage_event ledger.
   ...usageGroup("model", "claude-sonnet-4-6", [
     ["tokens.input", usd(3), 1_000_000],
@@ -437,21 +445,18 @@ const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ),
   // OpenAI API pricing retrieved 2026-07-31 from:
   // https://developers.openai.com/api/docs/pricing
-  ...usageGroup(
-    "model",
-    "gpt-5.6-sol",
-    withFastPricing(withLongContextPricing(GPT_5_6_SOL_PRICING, 2, 1.5)),
-  ),
+  ...usageGroup("model", "gpt-5.6-sol", GPT_5_6_SOL_USAGE_PRICING),
   ...usageGroup(
     "model",
     "gpt-5.6-terra",
     withFastPricing(withLongContextPricing(GPT_5_6_TERRA_PRICING, 2, 1.5)),
   ),
-  ...usageGroup(
-    "model",
-    "gpt-5.6-luna",
-    withFastPricing(withLongContextPricing(GPT_5_6_LUNA_PRICING, 2, 1.5)),
-  ),
+  ...usageGroup("model", "gpt-5.6-luna", GPT_5_6_LUNA_USAGE_PRICING),
+  // Okou models own their billing identity while mirroring the corresponding
+  // managed GPT rates, including long-context and fast category variants.
+  ...usageGroup("model", "okou-1.0", GPT_5_6_LUNA_USAGE_PRICING),
+  ...usageGroup("model", "okou-1.0-pro", GPT_5_6_SOL_USAGE_PRICING),
+  ...usageGroup("model", "okou-1.0-max", GPT_5_6_SOL_USAGE_PRICING),
   ...usageGroup(
     "model",
     "gpt-5.5",

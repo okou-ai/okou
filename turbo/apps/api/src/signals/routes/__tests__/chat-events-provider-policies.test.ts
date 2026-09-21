@@ -1882,6 +1882,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       const environment = claimEnvironment(claim);
       expect(claim.cliAgentType).toBe("codex");
+      expect(claim.modelUsageProvider).toBe(model);
       expect(environment.OPENAI_BASE_URL).toBe("https://openrouter.ai/api/v1");
       expect(environment.OPENAI_MODEL).toBe(preset);
       expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();

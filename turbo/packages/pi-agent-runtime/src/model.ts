@@ -1,4 +1,8 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import {
+  isOkouRunModel,
+  type OkouRunModel,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { streamPiNative } from "./native-stream";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
@@ -28,6 +32,103 @@ import {
 } from "./stream-options";
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
+
+const OKOU_PI_MODEL_CAPABILITIES = {
+  "okou-1.0": {
+    name: "Okou 1.0",
+    cost: {
+      input: 0.2,
+      output: 1.2,
+      cacheRead: 0.02,
+      cacheWrite: 0.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 0.4,
+          output: 1.8,
+          cacheRead: 0.04,
+          cacheWrite: 0.5,
+        },
+      ],
+    },
+  },
+  "okou-1.0-pro": {
+    name: "Okou 1.0 Pro",
+    cost: {
+      input: 5,
+      output: 30,
+      cacheRead: 0.5,
+      cacheWrite: 6.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 10,
+          output: 45,
+          cacheRead: 1,
+          cacheWrite: 12.5,
+        },
+      ],
+    },
+  },
+  "okou-1.0-max": {
+    name: "Okou 1.0 Max",
+    cost: {
+      input: 5,
+      output: 30,
+      cacheRead: 0.5,
+      cacheWrite: 6.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 10,
+          output: 45,
+          cacheRead: 1,
+          cacheWrite: 12.5,
+        },
+      ],
+    },
+  },
+} as const satisfies Record<
+  OkouRunModel,
+  {
+    readonly name: string;
+    readonly cost: Model<Api>["cost"];
+  }
+>;
+
+/** Product-owned Pi catalog entries for the independently named Okou models. */
+function okouSourceModel(
+  provider: string,
+  model: string,
+): Model<Api> | undefined {
+  if (provider !== "openrouter" || !isOkouRunModel(model)) {
+    return undefined;
+  }
+  const capabilities = OKOU_PI_MODEL_CAPABILITIES[model];
+  return {
+    id: model,
+    name: capabilities.name,
+    provider,
+    // The source API tag only guards reuse of API-specific compatibility.
+    // Okou executes on OpenRouter Responses without completions compatibility.
+    api: "openai-completions",
+    baseUrl: "https://openrouter.ai/api/v1",
+    reasoning: true,
+    thinkingLevelMap: {
+      off: "none",
+      minimal: null,
+      low: "low",
+      medium: "medium",
+      high: "high",
+      xhigh: "xhigh",
+      max: "max",
+    },
+    input: ["text", "image"],
+    contextWindow: 1_050_000,
+    maxTokens: 128_000,
+    cost: capabilities.cost,
+  };
+}
 
 function providerModels(provider: string): readonly Model<Api>[] {
   switch (provider) {
@@ -72,6 +173,10 @@ function isCodexResponsesModel(
 }
 
 function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  const okouModel = okouSourceModel(provider, model);
+  if (okouModel) {
+    return okouModel;
+  }
   // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
   // the product still offers it. Pin the exact 0.85.1 definition so admission,
   // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.

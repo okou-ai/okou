@@ -201,29 +201,20 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
 
-export const OKOU_RUN_MODEL_TO_UNDERLYING = {
-  "okou-1.0": "gpt-5.6-luna",
-  "okou-1.0-pro": "gpt-5.6-sol",
-  "okou-1.0-max": "gpt-5.6-sol",
-} as const satisfies Partial<Record<SupportedRunModel, SupportedRunModel>>;
+export const OKOU_RUN_MODELS = [
+  "okou-1.0",
+  "okou-1.0-pro",
+  "okou-1.0-max",
+] as const satisfies readonly SupportedRunModel[];
 
-export type OkouRunModel = keyof typeof OKOU_RUN_MODEL_TO_UNDERLYING;
+export type OkouRunModel = (typeof OKOU_RUN_MODELS)[number];
+
+const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(OKOU_RUN_MODELS);
 
 export function isOkouRunModel(
   model: string | null | undefined,
 ): model is OkouRunModel {
-  return (
-    typeof model === "string" &&
-    Object.hasOwn(OKOU_RUN_MODEL_TO_UNDERLYING, model)
-  );
-}
-
-export function getOkouUnderlyingRunModel(
-  model: string | null | undefined,
-): SupportedRunModel | undefined {
-  return isOkouRunModel(model)
-    ? OKOU_RUN_MODEL_TO_UNDERLYING[model]
-    : undefined;
+  return typeof model === "string" && OKOU_RUN_MODEL_SET.has(model);
 }
 
 export type ActiveRunModel = Exclude<
@@ -1419,9 +1410,7 @@ export function getModelProviderCodexCatalogForModel(
     (logicalModel === "deepseek-v4.1-flash" ||
       logicalModel === "deepseek-v4-flash" ||
       logicalModel === "deepseek-v4-pro");
-  const canonicalModel = normalizeRunModelId(logicalModel);
-  const catalogModel =
-    getOkouUnderlyingRunModel(canonicalModel) ?? canonicalModel;
+  const catalogModel = normalizeRunModelId(logicalModel);
   // The native V4 alias serves V4.1. Other providers keep the original
   // legacy catalog until their upstream mapping is verified.
   const overrideCatalog =

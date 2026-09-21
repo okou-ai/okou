@@ -1,6 +1,5 @@
 import {
   getBuiltInModelRouteCandidates,
-  getOkouUnderlyingRunModel,
   getProviderRuntimeModel,
   isActiveRunModel,
   isBuiltInModelProviderType,
@@ -272,7 +271,6 @@ function builtInRouteIdentities(
   // land on has to resolve.
   const targets = selected.length > 0 ? selected : candidates;
   const identities: PiRuntimeIdentity[] = [];
-  const okouUnderlyingModel = getOkouUnderlyingRunModel(model);
   for (const target of targets) {
     const provider = builtInCatalogProvider(target.providerType);
     if (provider === null) {
@@ -280,9 +278,7 @@ function builtInRouteIdentities(
     }
     identities.push({
       provider,
-      model: okouUnderlyingModel
-        ? `openai/${okouUnderlyingModel}`
-        : target.upstreamModel,
+      model: isOkouRunModel(model) ? model : target.upstreamModel,
     });
   }
   return identities;

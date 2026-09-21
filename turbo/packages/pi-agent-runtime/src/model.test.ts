@@ -341,6 +341,35 @@ describe("Pi agent model adapter", () => {
   );
 
   it.each([
+    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", 0.2, 1.2],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro", "Okou 1.0 Pro", 5, 30],
+    ["okou-1.0-max", "@preset/okou-1-0-max", "Okou 1.0 Max", 5, 30],
+  ] as const)(
+    "resolves independent %s metadata for request preset %s",
+    (catalogModel, model, name, input, output) => {
+      expect(
+        resolvePiAgentModel({
+          provider: "openrouter",
+          baseUrl: "https://openrouter.ai/api/v1",
+          apiKey: "test-key",
+          model,
+          catalogModel,
+          dialect: "openai-responses",
+          transport: "sse",
+        }),
+      ).toMatchObject({
+        id: model,
+        name,
+        provider: "openrouter",
+        api: "openai-responses",
+        contextWindow: 1_050_000,
+        maxTokens: 128_000,
+        cost: { input, output },
+      });
+    },
+  );
+
+  it.each([
     {
       name: "public Responses",
       config: {

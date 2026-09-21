@@ -19,9 +19,9 @@ describe("model product line", () => {
     ["deepseek-v4.1-flash", "flash"],
     ["anthropic/claude-fable-5.1", "fable"],
     ["openai/gpt-6-astra", "astra"],
-    ["okou-1.0", "luna"],
-    ["okou-1.0-pro", "sol"],
-    ["okou-1.0-max", "sol"],
+    ["okou-1.0", "okou"],
+    ["okou-1.0-pro", "okou"],
+    ["okou-1.0-max", "okou"],
     // Position carries no meaning, so an ID that leads with its line still
     // classifies. A guard whose job is exclusion must not read this as "no
     // line" and let it through.

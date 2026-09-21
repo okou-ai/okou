@@ -16,7 +16,6 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   getModelProviderPiEndpoint,
-  getOkouUnderlyingRunModel,
   getBuiltInModelRouteCandidates,
   getProviderRuntimeModel,
   getSecretNameForType,
@@ -466,7 +465,6 @@ function resolveResponsesPiModelConfig(
   }
 
   const apiKeyEnv = "OPENAI_API_KEY";
-  const okouUnderlyingModel = getOkouUnderlyingRunModel(provider.selectedModel);
   const runtimeContract = piRuntimeContract({
     providerType: provider.type,
     selectedModel: provider.selectedModel,
@@ -478,8 +476,8 @@ function resolveResponsesPiModelConfig(
     model,
     apiKeyEnv,
     credentialSecretName,
-    ...(okouUnderlyingModel
-      ? { catalogModel: `openai/${okouUnderlyingModel}` }
+    ...(isOkouRunModel(provider.selectedModel)
+      ? { catalogModel: provider.selectedModel }
       : {}),
     ...runtimeContract,
   } as const;

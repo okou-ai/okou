@@ -84,7 +84,6 @@ import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contra
 import {
   getDefaultModel,
   getModelProviderCodexCatalogForModel,
-  getOkouUnderlyingRunModel,
   getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getModelImageInputSupport,
@@ -7200,9 +7199,7 @@ function modelUsageProviderForContext(
     return undefined;
   }
   const canonicalModel = normalizeRunModelId(modelProvider.selectedModel);
-  const billingModel =
-    getOkouUnderlyingRunModel(canonicalModel) ?? canonicalModel;
-  return isSupportedRunModel(billingModel) ? billingModel : undefined;
+  return isSupportedRunModel(canonicalModel) ? canonicalModel : undefined;
 }
 
 function sessionStorageMountsForPersistence(args: {

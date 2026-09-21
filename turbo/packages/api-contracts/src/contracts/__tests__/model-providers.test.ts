@@ -32,7 +32,6 @@ import {
   getSecretNameForType,
   getModelProviderFirewall,
   getModelProviderCodexCatalogForModel,
-  getOkouUnderlyingRunModel,
   isOkouRunModel,
   getSecretsForAuthMethod,
   isLimitedFree1RestrictedRunModel,
@@ -764,16 +763,15 @@ describe("model-first canonical catalog", () => {
   });
 
   it.each([
-    ["okou-1.0", "@preset/okou-1-0", "gpt-5.6-luna", "$"],
-    ["okou-1.0-pro", "@preset/okou-1-0-pro", "gpt-5.6-sol", "$$"],
-    ["okou-1.0-max", "@preset/okou-1-0-max", "gpt-5.6-sol", "$$$"],
+    ["okou-1.0", "@preset/okou-1-0", "$"],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro", "$$"],
+    ["okou-1.0-max", "@preset/okou-1-0-max", "$$$"],
   ] as const)(
     "routes %s only through its built-in OpenRouter preset",
-    (model, preset, underlying, tier) => {
+    (model, preset, tier) => {
       expect(getCanonicalModelDisplayName(model)).toMatch(/^Okou 1\.0/u);
       expect(getBuiltInModelPriceTier(model)).toBe(tier);
       expect(getProvidersForModel(model)).toEqual(["built-in"]);
-      expect(getOkouUnderlyingRunModel(model)).toBe(underlying);
       expect(getBuiltInModelRouteCandidates(model)).toEqual([
         {
           selectedModel: model,
@@ -894,6 +892,13 @@ describe("model-first canonical catalog", () => {
     );
     expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS["gpt-6-sol"]).toBe(
       272_001,
+    );
+    expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS).toEqual(
+      expect.objectContaining({
+        "okou-1.0": 272_001,
+        "okou-1.0-pro": 272_001,
+        "okou-1.0-max": 272_001,
+      }),
     );
   });
 });
