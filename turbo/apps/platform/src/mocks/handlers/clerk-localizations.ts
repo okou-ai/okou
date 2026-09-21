@@ -18,6 +18,10 @@ import koKR from "../../i18n/clerk-localizations/ko-KR.json";
 import koKRUrl from "../../i18n/clerk-localizations/ko-KR.json?url";
 import ptBR from "../../i18n/clerk-localizations/pt-BR.json";
 import ptBRUrl from "../../i18n/clerk-localizations/pt-BR.json?url";
+import zhHans from "../../i18n/clerk-localizations/zh-Hans.json";
+import zhHansUrl from "../../i18n/clerk-localizations/zh-Hans.json?url";
+import zhHant from "../../i18n/clerk-localizations/zh-Hant.json";
+import zhHantUrl from "../../i18n/clerk-localizations/zh-Hant.json?url";
 import type { SupportedLocale } from "../../i18n/resources.ts";
 
 export type ClerkLocalizationLocale = Exclude<SupportedLocale, "en-US">;
@@ -32,6 +36,8 @@ const clerkLocalizationFixtures = [
   { locale: "ja-JP", localization: jaJP, url: jaJPUrl },
   { locale: "ko-KR", localization: koKR, url: koKRUrl },
   { locale: "pt-BR", localization: ptBR, url: ptBRUrl },
+  { locale: "zh-Hans", localization: zhHans, url: zhHansUrl },
+  { locale: "zh-Hant", localization: zhHant, url: zhHantUrl },
 ] as const;
 
 export function clerkLocalizationFixtureForRequest(requestUrl: string) {

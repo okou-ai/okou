@@ -1,0 +1,638 @@
+{
+  "actions": {
+    "cancel": "取消",
+    "close": "关闭",
+    "copying": "复制中…",
+    "create": "创建",
+    "delete": "删除智能体",
+    "deleting": "删除中…",
+    "discard": "放弃更改",
+    "retry": "重试",
+    "save": "保存",
+    "saving": "保存中…"
+  },
+  "authorization": {
+    "closeSearch": "关闭搜索",
+    "connectorsLink": "连接器",
+    "connectorsSaved": "连接器已保存",
+    "customConnectors": {
+      "description": "你所在组织注册的自定义连接器。",
+      "saved": "自定义连接器已保存"
+    },
+    "description": "运行时，智能体可以安全地使用你已连接的服务。你随时可以管理或关闭这些访问权限。",
+    "findConnectors": "查找连接器",
+    "noConnectorsAfterLink": " 页面连接第一个服务。",
+    "noConnectorsAlt": "暂无连接器",
+    "noConnectorsBeforeLink": "还没有连接任何服务。前往 ",
+    "noResults": "没有与「{{search}}」匹配的结果",
+    "permissionLoadError": "加载权限授予失败",
+    "permissionsUpdated": "权限已更新",
+    "searchPlaceholder": "查找连接器…"
+  },
+  "avatar": {
+    "accessibilityDescription": "自定义智能体头像的风格、颜色和五官细节。",
+    "actions": {
+      "customize": "自定义头像"
+    },
+    "create": "创建自定义头像",
+    "description": "挑一种风格，或者随机换一换试试惊喜。",
+    "editDescription": "想改哪里就改哪里，也可以随机换个新造型。",
+    "editTitle": "编辑头像",
+    "nextStep": "下一步",
+    "previousStep": "上一步",
+    "randomize": "随机生成头像",
+    "shuffleHint": "随机换一换——试试新造型！",
+    "steps": {
+      "color": "颜色",
+      "face": "五官",
+      "hair": "发型",
+      "mood": "表情",
+      "skin": "肤色",
+      "sweater": "毛衣"
+    },
+    "title": "给你的智能体一张脸",
+    "use": "使用这个头像"
+  },
+  "delete": {
+    "dangerZone": "危险操作",
+    "dangerZoneDescription": "永久删除这个智能体及其所有数据。此操作无法撤销。",
+    "description": "将删除这个智能体，以及它的工作流、自动化和所有人的聊天记录。",
+    "irreversible": "此操作无法撤销。",
+    "success": "智能体已删除",
+    "title": "删除{{agentName}}？",
+    "workflows": {
+      "copiedTitle": "已复制",
+      "copiedTo": "{{workflowTitle}}已复制到{{agentName}}",
+      "copyTo": "复制到{{agentName}}",
+      "deleteWithAgent": "随智能体一起删除",
+      "description": "把想保留的工作流复制到其他智能体，剩下的都会被删除。",
+      "handle": "处理工作流{{workflowTitle}}",
+      "loadFailed": "无法加载工作流。请重试后再删除这个智能体。",
+      "loading": "正在加载工作流…",
+      "title": "要保留哪些工作流？",
+      "untitled": "工作流"
+    }
+  },
+  "detail": {
+    "chatWith": "与{{agentName}}对话",
+    "defaultDescription": "为你调校的AI同事",
+    "notFound": {
+      "back": "返回团队",
+      "description": "智能体「{{agentId}}」不存在，或者你没有访问权限。",
+      "title": "找不到该智能体"
+    },
+    "tabs": {
+      "authorization": "授权",
+      "instructions": "指令",
+      "profile": "资料"
+    },
+    "viewProfile": "查看智能体资料"
+  },
+  "errors": {
+    "unknown": "未知错误"
+  },
+  "fallbackName": "智能体",
+  "ideation": {
+    "all": "全部",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "批量优化和转换图片",
+            "title": "Cloudinary媒体优化"
+          },
+          "elevenlabs-audio-content": {
+            "description": "把Notion文章转成配音并存入Drive",
+            "title": "ElevenLabs音频内容"
+          },
+          "fal-ai-image-generation": {
+            "description": "根据Notion里的描述生成产品图",
+            "title": "Fal AI图像生成"
+          },
+          "heygen-video-from-script": {
+            "description": "Notion脚本变成HeyGen视频，并通知团队",
+            "title": "脚本生成HeyGen视频"
+          },
+          "runway-video-from-brief": {
+            "description": "根据创意简报生成短视频",
+            "title": "简报生成Runway视频"
+          }
+        },
+        "title": "创意"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "粘贴一份清单，{{assistantName}}就替你把issue逐条建好",
+            "title": "批量创建issue"
+          },
+          "browserbase-web-testing": {
+            "description": "为你的网页应用做自动化浏览器测试",
+            "title": "Browserbase网页测试"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "每周在Slack汇总流量与安全事件",
+            "title": "Cloudflare流量与安全报告"
+          },
+          "codebase-investigation": {
+            "description": "给一个URL，{{assistantName}}就在代码库里追查这个缺陷",
+            "title": "代码库排查"
+          },
+          "daily-standup-report": {
+            "description": "把早间数据做成幻灯片，发到Slack",
+            "title": "每日站会报告"
+          },
+          "deep-research-code-analysis": {
+            "description": "讲清楚你的代码库里某个子系统是怎么运作的",
+            "title": "深度代码分析"
+          },
+          "github-pr-summarizer": {
+            "description": "已合并的PR摘要写进Notion，也可以同步发到Slack",
+            "title": "GitHub PR摘要"
+          },
+          "github-progress-weekly": {
+            "description": "按功能汇总每周的仓库动态",
+            "title": "GitHub每周进展"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "把GitLab的issue和合并请求同步到GitHub",
+            "title": "GitLab迁移到GitHub助手"
+          },
+          "jira-github-issue-sync": {
+            "description": "让Jira工单和GitHub issue保持同步",
+            "title": "Jira ↔ GitHub问题同步"
+          },
+          "make-scenario-builder": {
+            "description": "用一段描述设计多步骤的Make场景",
+            "title": "Make场景搭建"
+          },
+          "security-dependency-alert-digest": {
+            "description": "每周汇总GitHub的安全与依赖告警",
+            "title": "安全与依赖告警摘要"
+          },
+          "sentry-issue-digest": {
+            "description": "每天早上按严重程度分组汇总报错",
+            "title": "Sentry报错摘要"
+          },
+          "vercel-deploy-digest": {
+            "description": "把每次部署关联到对应提交，部署失败时在Slack告警",
+            "title": "Vercel部署摘要"
+          },
+          "zapier-okou-migration": {
+            "description": "把你的Zapier工作流重建为{{brandName}}智能体",
+            "title": "Zapier → {{brandName}}迁移"
+          }
+        },
+        "title": "工程"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "用浏览器打开页面并返回截图",
+            "title": "浏览器截图"
+          },
+          "calendar-optimizer": {
+            "description": "帮你处理日程冲突、超载和专注时间",
+            "title": "日程优化"
+          },
+          "calendly-booking-sync": {
+            "description": "新预约自动进日历，并在Slack提醒",
+            "title": "Calendly预约同步"
+          },
+          "email-assistant": {
+            "description": "早间收件箱摘要，附下一步建议",
+            "title": "邮件助理"
+          },
+          "granola-notes-to-notion": {
+            "description": "把Granola会议笔记同步到Notion数据库",
+            "title": "Granola笔记同步到Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "在Lark和Slack之间双向转发消息",
+            "title": "Lark ↔ Slack消息互转"
+          },
+          "line-message-relay": {
+            "description": "把LINE消息转发到Slack，反向同样可以",
+            "title": "LINE消息转发"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies记录进Notion，跟进事项发到Slack",
+            "title": "会议纪要流水线"
+          },
+          "morning-brief": {
+            "description": "把邮件、日历和笔记整理成简短的当日计划",
+            "title": "晨间简报"
+          },
+          "perplexity-deep-research": {
+            "description": "AI调研摘要自动存入Notion",
+            "title": "Perplexity深度调研"
+          },
+          "personal-weekly-digest": {
+            "description": "PR、邮件和日历汇总成一条Slack周报",
+            "title": "个人每周摘要"
+          },
+          "self-update-instructions": {
+            "description": "直接在对话里更新智能体的指令",
+            "title": "自助更新指令"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "替你把团队公告发到Slack",
+            "title": "代你发送消息"
+          },
+          "strava-team-fitness-digest": {
+            "description": "每周把团队运动数据汇总发到Slack",
+            "title": "Strava团队运动摘要"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "搜索网页，并把结果整理进Notion",
+            "title": "Tavily网页调研流水线"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "会议录像在Notion里生成摘要和待办事项",
+            "title": "tl;dv会议回顾"
+          }
+        },
+        "title": "通用"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify抓取网站，整理成Google Sheets的结构化行",
+            "title": "Apify网页抓取到Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "根据CRM事件自动发送邮件序列",
+            "title": "Brevo邮件培育序列"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl盯住竞品网站，把变化记进Notion",
+            "title": "竞品情报抓取"
+          },
+          "competitor-research-to-notion": {
+            "description": "把X上的调研整理成Notion结构化笔记",
+            "title": "竞品调研存入Notion"
+          },
+          "content-planner": {
+            "description": "头脑风暴选题，规划内容日历",
+            "title": "内容规划"
+          },
+          "dev-to-auto-publisher": {
+            "description": "把Notion文章发布到Dev.to，并在X上带链接推广",
+            "title": "Dev.to自动发布"
+          },
+          "discord-community-insights": {
+            "description": "Discord反馈汇入Notion，每周在Slack出摘要",
+            "title": "Discord社区洞察"
+          },
+          "instagram-engagement-tracker": {
+            "description": "互动数据进Sheets，每周在Slack汇总",
+            "title": "Instagram互动追踪"
+          },
+          "loops-email-campaign": {
+            "description": "用Loops起草并发送事务性邮件",
+            "title": "Loops邮件活动"
+          },
+          "marketing-automation-system": {
+            "description": "三个智能体分管调研、每周监测和临时任务",
+            "title": "市场自动化体系"
+          },
+          "marketing-content-planning": {
+            "description": "结合Slack、访谈和竞品规划发布内容",
+            "title": "市场内容规划"
+          },
+          "onboarding-email-use-cases": {
+            "description": "从Slack和访谈里挖新手引导的切入点",
+            "title": "新手引导邮件用例"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "每周追踪关键词排名并记录到Sheets",
+            "title": "SerpAPI关键词追踪"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "与竞品的流量对比存入Notion",
+            "title": "SimilarWeb流量对比"
+          },
+          "social-media-content-calendar": {
+            "description": "把Sheets里的日历变成各平台的帖子",
+            "title": "社交内容日历"
+          },
+          "x-brand-monitor": {
+            "description": "X上的品牌提及存入Notion，并提醒团队",
+            "title": "X品牌监测"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "有新的YouTube视频发布时，生成Notion摘要和一条X长帖来推广",
+            "title": "YouTube转X长帖"
+          }
+        },
+        "title": "市场"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "用AgentMail API创建和管理收件箱",
+            "title": "AgentMail收件箱"
+          },
+          "clickup-slack-standups": {
+            "description": "每天把ClickUp任务作为站会发到Slack",
+            "title": "ClickUp → Slack站会"
+          },
+          "google-docs-notion-migrator": {
+            "description": "批量把Google Docs搬进Notion，排版原样保留",
+            "title": "Google Docs → Notion迁移"
+          },
+          "google-drive-file-organizer": {
+            "description": "新文件自动归入对应文件夹",
+            "title": "Google Drive文件整理"
+          },
+          "jotform-intake-to-notion": {
+            "description": "表单答复进入Notion，并在Slack通知",
+            "title": "Jotform表单收集到Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "每周在Slack汇报Monday.com的看板进展",
+            "title": "Monday.com每周摘要"
+          },
+          "pdf-contract-processor": {
+            "description": "合同字段进Notion，到期前提醒",
+            "title": "PDF合同处理"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "订阅数据进Sheets，流失异常在Slack告警",
+            "title": "RevenueCat订阅摘要"
+          },
+          "todoist-notion-task-sync": {
+            "description": "把Todoist任务同步到Notion，团队随时能看",
+            "title": "Todoist → Notion任务同步"
+          },
+          "wrike-project-reporter": {
+            "description": "每周在Slack汇总Wrike的项目进展",
+            "title": "Wrike项目播报"
+          },
+          "xero-financial-summary": {
+            "description": "每周把Xero的利润和现金流发到Slack",
+            "title": "Xero财务摘要"
+          }
+        },
+        "title": "运营"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana的里程碑和任务同步到Notion",
+            "title": "Asana → Notion项目同步"
+          },
+          "feedback-router": {
+            "description": "按你的规则把Slack里的反馈分发到对应位置",
+            "title": "反馈分发"
+          },
+          "linear-prd-implementer": {
+            "description": "把Notion里的需求文档变成Linear项目和issue",
+            "title": "Linear需求落地"
+          },
+          "metabase-dashboard-digest": {
+            "description": "自动把仪表盘快照发到Slack",
+            "title": "Metabase仪表盘摘要"
+          },
+          "pricing-analysis": {
+            "description": "分析竞品的定价策略，并与同类产品对比",
+            "title": "定价分析"
+          },
+          "product-copy-naming": {
+            "description": "给产品里的技术术语换个更好懂的说法",
+            "title": "产品文案与命名"
+          }
+        },
+        "title": "产品"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "交易成交时同步到Sheets并通知Slack",
+            "title": "Airtable商机追踪"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "新的Bitrix线索自动生成跟进任务，并在Slack提醒",
+            "title": "Bitrix24线索培育"
+          },
+          "hubspot-sales-reporter": {
+            "description": "每周把HubSpot数据整理成结构化报告",
+            "title": "HubSpot销售播报"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "新线索变成HubSpot任务，并在Slack提醒",
+            "title": "线索跟进流水线"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "每周在Slack更新Salesforce的商机进展",
+            "title": "Salesforce商机管道摘要"
+          },
+          "streak-pipeline-report": {
+            "description": "每周把Gmail里的CRM管道数据发到Slack",
+            "title": "Streak管道报告"
+          },
+          "win-loss-reporter": {
+            "description": "在Slack汇报管道里的赢单与丢单趋势",
+            "title": "赢单/丢单播报"
+          }
+        },
+        "title": "销售"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "客户对话在Notion里记录并归类",
+            "title": "Chatwoot → Notion支持记录"
+          },
+          "customer-support-bot": {
+            "description": "用知识库作答，答不上来的自动建任务",
+            "title": "客服机器人"
+          },
+          "intercom-conversation-triager": {
+            "description": "把Intercom对话变成带优先级的Notion任务",
+            "title": "Intercom对话分诊"
+          },
+          "support-ticket-router": {
+            "description": "工单进Notion，紧急的在Slack提醒",
+            "title": "工单分发"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "提取Zendesk上的高频问题，自动补进Notion的FAQ",
+            "title": "Zendesk → Notion知识库"
+          }
+        },
+        "title": "客户支持"
+      }
+    },
+    "chat": "聊天",
+    "description": "点击任意卡片即可开始对话。它可以变成一次性任务、定期运行的工作流，或者一个子智能体。",
+    "search": {
+      "accessibilityLabel": "搜索用例",
+      "empty": "没有匹配的用例。",
+      "placeholder": "搜索"
+    },
+    "title": "灵感与用例"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "指令编辑器",
+      "footerHint": "直接编辑指令，就能调整智能体的行为。",
+      "placeholder": "为你的智能体写下指令…",
+      "toolbar": {
+        "blockquote": "引用",
+        "bold": "加粗",
+        "bulletList": "无序列表",
+        "heading1": "一级标题",
+        "heading2": "二级标题",
+        "heading3": "三级标题",
+        "inlineCode": "行内代码",
+        "italic": "斜体",
+        "orderedList": "有序列表",
+        "strikethrough": "删除线"
+      }
+    },
+    "saved": "指令已保存"
+  },
+  "list": {
+    "actions": {
+      "new": "新建智能体"
+    },
+    "cards": {
+      "coreDescription": "你的核心智能体",
+      "createdBy": "由{{creator}}创建",
+      "subagentDescription": "子智能体",
+      "unknownCreator": "未知"
+    },
+    "create": {
+      "accessibilityDescription": "给新智能体命名、选择可见范围，并自定义它的头像。",
+      "creating": "创建中…",
+      "description": "给智能体起个名字，并设置谁可以使用。",
+      "namePlaceholder": "例如：调研助理",
+      "newAgentAlt": "新建智能体",
+      "success": "{{agentName}}创建成功",
+      "title": "创建新智能体",
+      "visibility": {
+        "private": {
+          "description": "（只有你能看到和使用）",
+          "label": "私有"
+        },
+        "public": {
+          "description": "（这个工作区里的任何人都能使用）",
+          "label": "公开"
+        }
+      },
+      "visibilityLabel": "可见范围"
+    },
+    "description": "{{agentName}}和子智能体协同配合，为你和团队运行量身定制的工作流。",
+    "documentTitle": "智能体",
+    "privateEmpty": {
+      "description": "创建一个只有你能看到和使用的智能体。私有智能体数量不限。",
+      "title": "还没有私有智能体"
+    },
+    "tabs": {
+      "private": "私有",
+      "public": "公开"
+    },
+    "title": "智能体"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "创建属于你的头像。",
+        "label": "头像"
+      },
+      "description": {
+        "description": "这个智能体能帮上什么忙——团队成员可见。",
+        "label": "描述",
+        "placeholder": "这个智能体是做什么的？"
+      },
+      "name": {
+        "description": "会显示在团队列表里，它发言时也会出现。",
+        "label": "名称",
+        "placeholder": "该怎么称呼它？"
+      },
+      "tone": {
+        "accessibilityLabel": "{{agentName}}的说话风格",
+        "description": "回复时的语气风格。切换语气后，预览会随之更新。",
+        "groupLabel": "语气",
+        "label": "说话风格"
+      },
+      "visibility": {
+        "defaultDescription": "工作区的默认智能体必须对所有工作区成员保持公开。",
+        "description": "这个工作区里的所有人都可见。",
+        "label": "设为公开"
+      }
+    },
+    "makePrivate": {
+      "confirm": "设为私有",
+      "description": "设为私有后，其他成员将无法访问自己在它下面的聊天记录。你重新设为公开，他们就能恢复访问。",
+      "title": "将{{agentName}}设为私有？",
+      "warningDescription": "其他成员将看不到{{agentName}}，也看不到自己在它下面的聊天。",
+      "warningTitle": "成员将失去访问权限"
+    },
+    "saved": "资料已保存",
+    "tones": {
+      "direct": {
+        "agentSample": "周五。周四先给你草稿。",
+        "hint": "直截了当",
+        "label": "直接",
+        "userSample": "我需要在周五前拿到三季度报告。"
+      },
+      "friendly": {
+        "agentSample": "没问题！三季度报告我周五前给你——周四先发一版草稿，你可以先过目。",
+        "hint": "温暖亲切",
+        "label": "友好",
+        "userSample": "我需要在周五前拿到三季度报告。"
+      },
+      "professional": {
+        "agentSample": "三季度报告我会在周五前准备好，周四先发草稿供你审阅。",
+        "hint": "清晰得体",
+        "label": "专业",
+        "userSample": "我需要在周五前拿到三季度报告。"
+      },
+      "supportive": {
+        "agentSample": "我会确保你在周五前拿到三季度报告。周四我先发草稿，让你有时间审阅——还需要什么随时告诉我。",
+        "hint": "始终站在你这边",
+        "label": "支持型",
+        "userSample": "我需要在周五前拿到三季度报告。"
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "固定",
+    "clearSearch": "清除搜索",
+    "escapeShortcut": "Esc",
+    "filterAll": "全部",
+    "markAllRead": "全部标为已读",
+    "more": "更多",
+    "noAgentsToPin": "你还没有其他智能体。",
+    "noResults": "没有找到结果",
+    "openMenu": "打开智能体菜单",
+    "pin": "固定到侧边栏",
+    "pinAgent": "固定一个智能体",
+    "pinAgentDescription": "选择一个要固定到侧边栏的智能体。",
+    "pinned": "已固定",
+    "pinnedAgents": "已固定的智能体",
+    "pinSuccess": "已固定{{agentName}}",
+    "resultCount_other": "{{count}}条结果",
+    "searchAgents": "搜索智能体…",
+    "searching": "搜索中…",
+    "searchWorkspace": "搜索工作区…",
+    "sections": {
+      "agents": "智能体",
+      "artifacts": "成果",
+      "chats": "聊天",
+      "messages": "消息",
+      "others": "其他",
+      "workflows": "工作流"
+    },
+    "unpin": "取消固定",
+    "unpinSuccess": "已取消固定{{agentName}}"
+  },
+  "status": {
+    "unread": "未读"
+  },
+  "unsaved": {
+    "message": "你有未保存的修改"
+  }
+}

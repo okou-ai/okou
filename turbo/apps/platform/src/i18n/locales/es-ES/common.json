@@ -6570,6 +6570,8 @@
         "description": "Elige tu idioma preferido para la interfaz de {{brandName}}",
         "label": "Idioma",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

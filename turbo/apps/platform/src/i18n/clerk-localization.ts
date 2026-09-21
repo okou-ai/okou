@@ -10,6 +10,8 @@ import itITUrl from "./clerk-localizations/it-IT.json?url";
 import jaJPUrl from "./clerk-localizations/ja-JP.json?url";
 import koKRUrl from "./clerk-localizations/ko-KR.json?url";
 import ptBRUrl from "./clerk-localizations/pt-BR.json?url";
+import zhHansUrl from "./clerk-localizations/zh-Hans.json?url";
+import zhHantUrl from "./clerk-localizations/zh-Hant.json?url";
 import { logger } from "../signals/log.ts";
 import { tapError } from "../signals/utils.ts";
 import { DEFAULT_LOCALE, type SupportedLocale } from "./resources.ts";
@@ -55,6 +57,12 @@ function clerkLocalizationUrl(locale: NonDefaultLocale): string {
     }
     case "hi-IN": {
       return hiINUrl;
+    }
+    case "zh-Hans": {
+      return zhHansUrl;
+    }
+    case "zh-Hant": {
+      return zhHantUrl;
     }
   }
 }

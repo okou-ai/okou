@@ -1100,8 +1100,10 @@ describe("declared bounds", () => {
     expect(MORNING_BRIEF_ACCOUNT_REF_MAX_BYTES).toBe(128);
   });
 
-  it("offers Chinese beyond the ten UI locales and digests the read surface", () => {
+  it("offers both Chinese scripts and digests the read surface", () => {
     expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toHaveLength(12);
+    expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toContain("zh-Hans");
+    expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toContain("zh-Hant");
     expect(MORNING_BRIEF_SLACK_READ_SURFACE).toStrictEqual([
       "users.conversations",
       "conversations.history",

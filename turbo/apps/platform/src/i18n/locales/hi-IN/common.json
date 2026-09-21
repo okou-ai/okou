@@ -6509,6 +6509,8 @@
         "description": "{{brandName}} इंटरफ़ेस के लिए अपनी पसंदीदा भाषा चुनें",
         "label": "भाषा",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

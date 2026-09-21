@@ -67,6 +67,8 @@ function createPreferences(
     "it-IT",
     "fr-FR",
     "hi-IN",
+    "zh-Hans",
+    "zh-Hant",
   ],
 ): UserPreferencesResponse {
   return {
