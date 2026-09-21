@@ -81,10 +81,8 @@ export const onboardingCompleteContract = c.router({
         // optional fallback cannot roll back the onboarding transition.
         timezone: z.string().optional(),
         // The field answered in the source-first flow. Only that flow asks the
-        // question, so an absent industry completes onboarding unchanged, and
-        // a value this version does not know — a newer App against an older
-        // API — is dropped rather than failing the transition it rides on.
-        industry: onboardingIndustrySchema.optional().catch(undefined),
+        // question, so an absent industry completes onboarding unchanged.
+        industry: onboardingIndustrySchema.optional(),
       })
       .strict(),
     responses: {

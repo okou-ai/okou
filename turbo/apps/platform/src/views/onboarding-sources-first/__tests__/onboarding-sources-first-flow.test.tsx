@@ -315,3 +315,66 @@ test("An already-onboarded visitor is forwarded with the prompt they brought", a
     expect(runPrompt).toBe(HANDOFF_PROMPT);
   });
 });
+
+test("A refused completion keeps the ready step open for another try", async () => {
+  mockOnboardingNeeded();
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  let completions = 0;
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completions += 1;
+    if (completions === 1) {
+      return respond(403, {
+        error: {
+          message: "Only org admins can complete onboarding",
+          code: "FORBIDDEN",
+        },
+      });
+    }
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
+    });
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+
+  click(getButtonByName(START_ACTION));
+
+  await waitFor(() => {
+    expect(getButtonByName(START_ACTION)).toBeEnabled();
+  });
+  expect(completions).toBe(1);
+  expect(pathname()).toBe(ROUTES.onboardingReady);
+  expect(
+    screen.getByRole("heading", { name: READY_TITLE }),
+  ).toBeInTheDocument();
+  // The first request never finished, so onboarding must not have handed the
+  // user on to it.
+  expect(runPrompt).toBeUndefined();
+
+  click(getButtonByName(START_ACTION));
+
+  await waitFor(() => {
+    expect(runPrompt).toBeTruthy();
+  });
+  expect(completions).toBe(2);
+});

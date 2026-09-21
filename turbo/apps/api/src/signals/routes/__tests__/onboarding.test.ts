@@ -153,8 +153,9 @@ describe("POST /api/onboarding/complete", () => {
       hasDefaultAgent: true,
       defaultAgentId: before.body.defaultAgentId,
     });
-    // The make-something flow never asks the question, so the field stays
-    // uncollected rather than being filled with a guess.
+    // No endpoint returns the stored field, so the column is the only place
+    // this can be read. The make-something flow never asks the question, so it
+    // stays uncollected rather than being filled with a guess.
     await expect(
       readOnboardingIndustryFixture(actor.orgId),
     ).resolves.toBeNull();
@@ -176,25 +177,31 @@ describe("POST /api/onboarding/complete", () => {
       needsOnboarding: false,
     });
 
+    // Read from the column because no endpoint exposes the stored field.
     await expect(readOnboardingIndustryFixture(actor.orgId)).resolves.toBe(
       "marketing",
     );
   });
 
-  it("drops a field the flow does not offer without holding up completion", async () => {
+  it("rejects a field the flow does not offer", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.test/default-agent.tar.gz?signature=test",
+    );
 
-    const completed = await rawCompleteRequest({ industry: "farming" });
+    const rejected = await rawCompleteRequest({ industry: "farming" });
 
-    expect(completed.status).toBe(200);
-    expect(completed.body).toStrictEqual({
-      onboardingComplete: true,
-      needsOnboarding: false,
+    expect(rejected.status).toBe(400);
+    const status = await accept(
+      onboardingStatusClient().getStatus({ headers: authHeaders() }),
+      [200],
+    );
+    expect(status.body).toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: false,
     });
-    await expect(
-      readOnboardingIndustryFixture(actor.orgId),
-    ).resolves.toBeNull();
   });
 
   it("rejects a key the completion body does not declare", async () => {
