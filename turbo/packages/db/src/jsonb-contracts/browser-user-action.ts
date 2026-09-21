@@ -178,6 +178,15 @@ export function parseBrowserUserActionPayload(
     ) {
       throw new Error("Duplicate Browser user-action input field key");
     }
+    if (
+      new Set(
+        decoded.map((field) => {
+          return field.backendNodeId;
+        }),
+      ).size !== decoded.length
+    ) {
+      throw new Error("Duplicate Browser user-action backend node ID");
+    }
     return { version: 1, kind: payload.kind, fields: decoded };
   }
   throw new Error("Invalid Browser user-action payload");

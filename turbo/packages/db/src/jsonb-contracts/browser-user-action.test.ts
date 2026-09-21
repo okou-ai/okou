@@ -78,5 +78,12 @@ describe("Browser user-action JSONB payload", () => {
         fields: [field, field],
       });
     }).toThrow("Duplicate Browser user-action input field key");
+    expect(() => {
+      return parseBrowserUserActionPayload({
+        version: 1,
+        kind: "input",
+        fields: [field, { ...field, key: "other" }],
+      });
+    }).toThrow("Duplicate Browser user-action backend node ID");
   });
 });
