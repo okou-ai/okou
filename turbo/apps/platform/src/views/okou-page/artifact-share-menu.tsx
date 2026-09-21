@@ -104,7 +104,7 @@ function PermissionChoices({
       })}
       disabled={unavailable}
       value={selected ?? null}
-      onValueChange={(value) => {
+      onValueChange={(value: string) => {
         return onChange(value as ArtifactShareStatus["audience"]);
       }}
     >

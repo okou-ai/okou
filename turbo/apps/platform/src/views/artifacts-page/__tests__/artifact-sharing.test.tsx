@@ -8,7 +8,7 @@ import {
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   click,
@@ -395,11 +395,9 @@ test("closing a pending share cancels copying and reopening reuses the prefetche
   await openArtifact();
   click(action("button", "Share"));
   await screen.findByRole("status", { name: "Loading permissions" });
-  // A share menu is a popover, so Escape is how it closes; it carries no
+  // A share menu is a popover, so its own trigger closes it; it carries no
   // dialog-style close button of its own.
-  fireEvent.keyDown(screen.getByRole("dialog", { name: "Share" }), {
-    key: "Escape",
-  });
+  click(action("button", "Share"));
   await waitFor(() => {
     return expect(
       screen.queryByRole("dialog", { name: "Share" }),
