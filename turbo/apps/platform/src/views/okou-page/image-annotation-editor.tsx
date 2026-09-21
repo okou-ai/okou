@@ -65,14 +65,6 @@ const TOOLS: readonly { tool: AnnotationTool; icon: typeof Square }[] = [
  */
 const MIN_DRAG = 0.005;
 
-/** One letter per tool, matching the first letter of each label. */
-const TOOL_SHORTCUTS: Readonly<Record<string, AnnotationTool | undefined>> = {
-  b: "box",
-  a: "arrow",
-  d: "pen",
-  t: "text",
-};
-
 /** The letter shown on each tool's tooltip, so the binding is discoverable. */
 const TOOL_KEYS: Readonly<Record<AnnotationTool, string>> = {
   box: "B",
@@ -80,100 +72,6 @@ const TOOL_KEYS: Readonly<Record<AnnotationTool, string>> = {
   pen: "D",
   text: "T",
 };
-
-/** Zoom direction per key, with `0` meaning "back to fit". */
-const ZOOM_SHORTCUTS: Readonly<Record<string, 1 | -1 | 0 | undefined>> = {
-  "=": 1,
-  "+": 1,
-  "-": -1,
-  _: -1,
-  0: 0,
-};
-
-/** One arrow key, one direction. */
-const NUDGE_KEYS: Readonly<
-  Record<string, { x: number; y: number } | undefined>
-> = {
-  ArrowUp: { x: 0, y: -1 },
-  ArrowDown: { x: 0, y: 1 },
-  ArrowLeft: { x: -1, y: 0 },
-  ArrowRight: { x: 1, y: 0 },
-};
-
-/**
- * Nudge distance in normalized units — roughly 4px and 20px on a 1000px-wide
- * image. The marks are stored against the image rather than the screen, so a
- * step in pixels would move a mark further on a small image than a large one.
- */
-const NUDGE_STEP = 0.004;
-const NUDGE_STEP_COARSE = 0.02;
-
-/** A shortcut taken with Cmd/Ctrl held, which a note being typed cannot claim. */
-type ChordAction =
-  | { kind: "undo" }
-  | { kind: "redo" }
-  | { kind: "commit" }
-  | { kind: "zoom"; direction: 1 | -1 }
-  | { kind: "zoomReset" };
-
-/** A shortcut taken on its own, which only applies when nothing has the caret. */
-type BareAction =
-  | { kind: "remove" }
-  | { kind: "nudge"; x: number; y: number }
-  | { kind: "ink"; ink: AnnotationInk }
-  | { kind: "tool"; tool: AnnotationTool };
-
-function resolveChord(event: KeyboardEvent): ChordAction | null {
-  if (!event.metaKey && !event.ctrlKey) {
-    return null;
-  }
-  if (event.key.toLowerCase() === "z") {
-    return event.shiftKey ? { kind: "redo" } : { kind: "undo" };
-  }
-  if (event.key === "Enter") {
-    return { kind: "commit" };
-  }
-  // The zoom buttons had no keys at all. These are the bindings every viewer
-  // already trains people to try, and the modifier keeps them clear of a note.
-  const zoom = ZOOM_SHORTCUTS[event.key];
-  if (zoom === undefined) {
-    return null;
-  }
-  return zoom === 0 ? { kind: "zoomReset" } : { kind: "zoom", direction: zoom };
-}
-
-function resolveBareKey(event: KeyboardEvent): BareAction | null {
-  if (event.key === "Delete" || event.key === "Backspace") {
-    return { kind: "remove" };
-  }
-  // Placing a mark by dragging is accurate to whatever the hand did; the arrow
-  // keys are how it gets from close to right. Shift covers distance, the bare
-  // key covers the last few pixels.
-  const nudge = NUDGE_KEYS[event.key];
-  if (nudge) {
-    const step = event.shiftKey ? NUDGE_STEP_COARSE : NUDGE_STEP;
-    return { kind: "nudge", x: nudge.x * step, y: nudge.y * step };
-  }
-  // The ink swatches are five buttons in a fixed order, so the digits are
-  // already their names. With a mark open this recolours it, which is exactly
-  // what pressing the swatch does.
-  const ink = ANNOTATION_INKS[Number.parseInt(event.key, 10) - 1];
-  if (ink !== undefined) {
-    return { kind: "ink", ink };
-  }
-  const tool = TOOL_SHORTCUTS[event.key.toLowerCase()];
-  return tool ? { kind: "tool", tool } : null;
-}
-
-/** A shortcut must never steal a keystroke aimed at a note being written. */
-function isTyping(): boolean {
-  const active = document.activeElement;
-  return (
-    active instanceof HTMLInputElement ||
-    active instanceof HTMLTextAreaElement ||
-    (active instanceof HTMLElement && active.isContentEditable)
-  );
-}
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -811,144 +709,6 @@ function EditorFooter({
         })}
       </Button>
     </div>
-  );
-}
-
-/**
- * The editor's keyboard surface. Every binding steps aside while a field has
- * focus, so typing a note never triggers a shortcut.
- */
-function KeyboardShortcuts({
-  signals,
-}: {
-  readonly signals: ImageAnnotationSignals;
-}) {
-  const removeSelected = useSet(signals.removeSelectedAnnotationMark$);
-  const selectMark = useSet(signals.selectAnnotationMark$);
-  const setTool = useSet(signals.setAnnotationTool$);
-  const setInk = useSet(signals.setAnnotationInk$);
-  const nudgeMark = useSet(signals.nudgeAnnotationMark$);
-  const zoomBy = useSet(signals.zoomAnnotation$);
-  const resetZoom = useSet(signals.resetAnnotationZoom$);
-  const undo = useSet(signals.undoAnnotation$);
-  const redo = useSet(signals.redoAnnotation$);
-  const close = useSet(signals.closeAnnotationEditor$);
-  const commit = useSet(signals.commitAnnotation$);
-  // The mark the editor has OPEN, not the one selected for reshaping. Escape
-  // backs out one layer, and with a note open `annotationSelectedMarkId$` is
-  // null — so Escape took the `else` and closed the whole session, discarding
-  // every mark drawn so far. Clicking a note to edit it and pressing Escape to
-  // dismiss the caret is now the primary path, which made that the likely one.
-  const selectedId = useGet(signals.annotationOpenMarkId$);
-  const focusPanel = useSet(signals.focusAnnotationPanel$);
-  const pageSignal = useGet(pageSignal$);
-  let cleanup: (() => void) | null = null;
-
-  const runChord = (action: ChordAction) => {
-    switch (action.kind) {
-      case "undo": {
-        undo();
-        return;
-      }
-      case "redo": {
-        redo();
-        return;
-      }
-      case "commit": {
-        detach(commit(pageSignal), Reason.DomCallback);
-        return;
-      }
-      case "zoom": {
-        zoomBy(action.direction);
-        return;
-      }
-      case "zoomReset": {
-        resetZoom();
-      }
-    }
-  };
-
-  const runBareKey = (action: BareAction) => {
-    switch (action.kind) {
-      case "remove": {
-        removeSelected();
-        return;
-      }
-      case "nudge": {
-        nudgeMark(action.x, action.y);
-        return;
-      }
-      case "ink": {
-        setInk(action.ink);
-        return;
-      }
-      case "tool": {
-        setTool(action.tool);
-      }
-    }
-  };
-
-  return (
-    <span
-      ref={(node) => {
-        cleanup?.();
-        cleanup = null;
-        if (!node) {
-          return;
-        }
-        const onKeyDown = (event: KeyboardEvent) => {
-          // A keystroke an input method is still composing belongs to the word
-          // being written, not to a shortcut: picking a candidate for a Chinese
-          // or Japanese note would otherwise switch tools underneath it.
-          if (event.isComposing || event.keyCode === 229) {
-            return;
-          }
-          const chord = resolveChord(event);
-          if (chord) {
-            event.preventDefault();
-            runChord(chord);
-            return;
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            // Escape backs out one layer at a time: the selection first, the
-            // editor only once nothing is selected. Leaving a note also hands
-            // the keyboard back to the panel, so the next tool letter is read
-            // as a tool letter rather than typed into the field just left.
-            if (selectedId) {
-              selectMark(null);
-              focusPanel();
-            } else {
-              close();
-            }
-            return;
-          }
-          if (isTyping()) {
-            return;
-          }
-          const bare = resolveBareKey(event);
-          if (!bare) {
-            return;
-          }
-          // Switching tools throws the open mark away, so a tool letter only
-          // counts while nothing is open — Tong: *"我在输入文字的时候，如果按到
-          // 了快捷按钮，也不应该直接切换mark啊，只有为未选中任何mark的情况，按快
-          // 捷按钮才会切换功能项"*. The caret can also be a frame late, and a
-          // keystroke that lands in that gap must not cost the mark. The rest of
-          // the bare keys act *on* the open mark, so they stay.
-          if (bare.kind === "tool" && selectedId !== null) {
-            return;
-          }
-          event.preventDefault();
-          runBareKey(bare);
-        };
-        document.addEventListener("keydown", onKeyDown, true);
-        cleanup = () => {
-          document.removeEventListener("keydown", onKeyDown, true);
-        };
-      }}
-      hidden
-    />
   );
 }
 
@@ -1754,6 +1514,7 @@ function AnnotationSurface({
   const { t } = useTranslation();
   const close = useSet(signals.closeAnnotationEditor$);
   const bindPanel = useSet(signals.bindAnnotationPanel$);
+  const bindShortcuts = useSet(signals.bindAnnotationShortcuts$);
   const panelElement = useSet(signals.annotationPanelElement$);
   const resolvedUrl = useLastResolved(signals.annotationResourceUrl$);
 
@@ -1770,15 +1531,17 @@ function AnnotationSurface({
         // would discard every one of them with no undo.
         disablePointerDismissal
         onOpenChange={(next, details) => {
-          // Escape belongs to `KeyboardShortcuts`, which backs out one layer at
-          // a time — the open note, then the selection, then the session.
-          // Closing here as well would collapse all three into the first press.
+          // Escape belongs to `bindAnnotationShortcuts$`, which backs out one
+          // layer at a time — the open note, then the selection, then the
+          // session. Closing here as well would collapse all three into the
+          // first press.
           if (!next && details.reason !== "escape-key") {
             close();
           }
         }}
       >
         <DialogContent
+          ref={bindShortcuts}
           showCloseButton={false}
           maxWidth={1440}
           height={1000}
@@ -1795,7 +1558,6 @@ function AnnotationSurface({
           })}
           data-testid="image-annotation-editor"
         >
-          <KeyboardShortcuts signals={signals} />
           <div
             ref={bindPanel}
             tabIndex={-1}
