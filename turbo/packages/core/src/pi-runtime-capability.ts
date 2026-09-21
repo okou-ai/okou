@@ -32,8 +32,9 @@ export interface PiRuntimeIdentity {
 }
 
 export const PI_RUNTIME_RESOLVABLE_MODELS = {
+  // `claude-fable-5-1` is absent because the Fable frontier line runs on the
+  // Claude Code vendor harness, so no admitted route asks Pi to resolve it.
   anthropic: [
-    "claude-fable-5-1",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-sonnet-5",

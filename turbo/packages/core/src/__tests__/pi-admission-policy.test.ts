@@ -5,6 +5,10 @@ import {
   getProvidersForModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
+  isFrontierModelProductLine,
+  modelProductLine,
+} from "../model-product-line";
+import {
   isPiDeepSeekModel,
   isPiExecutionRoute,
   isPiGptModel,
@@ -21,28 +25,18 @@ import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
  * Every active model against every provider in its
  * `MODEL_FIRST_PROVIDER_COMPATIBILITY` row plus both custom gateways, for each
  * runtime route the Built-in vendor picker can land on and both Codex service
- * tiers. `ADMITTED_ON_MAIN` is the decision main @ 3938412 produced for that
- * enumeration; this slice is behaviour-preserving, so it must not move.
+ * tiers.
+ *
+ * `EXPECTED_ADMITTED_ROUTES` is the admission decision this repository
+ * currently records for that enumeration, not a frozen copy of an earlier
+ * branch. It started as what main @ 3938412 produced and was moved once, by
+ * #35905, which returned the Fable frontier line to the Claude Code vendor
+ * harness and removed its 18 routes; every other model's decision is still the
+ * one 3938412 produced. Editing this list is how an admission change is
+ * recorded, so a diff here must come with the decision that moved it — an
+ * unexplained diff is a regression.
  */
-const ADMITTED_ON_MAIN = [
-  "claude-fable-5-1 | built-in | built-in | standard",
-  "claude-fable-5-1 | built-in | built-in | fast",
-  "claude-fable-5-1 | built-in | anthropic-api-key | standard",
-  "claude-fable-5-1 | built-in | anthropic-api-key | fast",
-  "claude-fable-5-1 | built-in | openrouter-api-key | standard",
-  "claude-fable-5-1 | built-in | openrouter-api-key | fast",
-  "claude-fable-5-1 | anthropic-api-key | anthropic-api-key | standard",
-  "claude-fable-5-1 | anthropic-api-key | anthropic-api-key | fast",
-  "claude-fable-5-1 | openrouter-api-key | openrouter-api-key | standard",
-  "claude-fable-5-1 | openrouter-api-key | openrouter-api-key | fast",
-  "claude-fable-5-1 | vercel-ai-gateway | vercel-ai-gateway | standard",
-  "claude-fable-5-1 | vercel-ai-gateway | vercel-ai-gateway | fast",
-  "claude-fable-5-1 | azure-foundry | azure-foundry | standard",
-  "claude-fable-5-1 | azure-foundry | azure-foundry | fast",
-  "claude-fable-5-1 | aws-bedrock | aws-bedrock | standard",
-  "claude-fable-5-1 | aws-bedrock | aws-bedrock | fast",
-  "claude-fable-5-1 | custom-anthropic-messages | custom-anthropic-messages | standard",
-  "claude-fable-5-1 | custom-anthropic-messages | custom-anthropic-messages | fast",
+const EXPECTED_ADMITTED_ROUTES = [
   "claude-opus-5 | built-in | built-in | standard",
   "claude-opus-5 | built-in | built-in | fast",
   "claude-opus-5 | built-in | anthropic-api-key | standard",
@@ -190,6 +184,11 @@ const ADMITTED_ON_MAIN = [
   "deepseek-v4-flash | custom-openai-responses | custom-openai-responses | fast",
 ] as const;
 
+/**
+ * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
+ * does not shrink when admission narrows: all 236 combinations are still
+ * evaluated, and fewer of them are admitted.
+ */
 const ENUMERATED_COMBINATIONS = 236;
 
 interface Combination {
@@ -262,7 +261,7 @@ describe("Pi admission policy table", () => {
       excluded.map(([model]) => {
         return model;
       }),
-    ).toStrictEqual(["gpt-6-astra", "gpt-6-sol"]);
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-6-sol"]);
     for (const [model, policy] of excluded) {
       expect(policy.pi, model).toBe(false);
       if (!policy.pi) {
@@ -278,7 +277,6 @@ describe("Pi admission policy table", () => {
     // entries for the GPT family. Editing a `route` in the table moves those
     // decisions, so the sets are pinned here and not only through admission.
     expect(ACTIVE_RUN_MODELS.filter(isPiNativeModel)).toStrictEqual([
-      "claude-fable-5-1",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
@@ -296,6 +294,40 @@ describe("Pi admission policy table", () => {
     ]);
   });
 
+  it("keeps every frontier product line on its vendor harness", () => {
+    // The epic's rule, enforced rather than restated per model: a frontier line
+    // runs on its vendor's harness, everything else is Pi-eligible. Adding a
+    // Fable or Astra model with `pi: true` fails here instead of quietly
+    // reaching Pi.
+    const frontier = Object.entries(PI_MODEL_POLICY).filter(([model]) => {
+      return isFrontierModelProductLine(model);
+    });
+    // Without this the loop below would pass on an empty set, which is exactly
+    // what a broken classifier produces.
+    expect(
+      frontier.map(([model]) => {
+        return model;
+      }),
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra"]);
+    for (const [model, policy] of frontier) {
+      expect(policy.pi, model).toBe(false);
+      if (!policy.pi) {
+        expect(policy.exception, model).toBe("frontier-vendor-harness");
+      }
+    }
+  });
+
+  it("classifies every active model into a known product line", () => {
+    // A model whose line is not recorded classifies as `null`, which would make
+    // the frontier rule silently inapplicable to it. Failing here forces the
+    // line into `MODEL_PRODUCT_LINES`, next to the frontier set, where the
+    // vendor-harness question has to be answered.
+    const unclassified = ACTIVE_RUN_MODELS.filter((model) => {
+      return modelProductLine(model) === null;
+    });
+    expect(unclassified).toStrictEqual([]);
+  });
+
   it("classifies a retired or unknown model into no family", () => {
     for (const model of ["claude-fable-5", "gpt-5.5", "deepseek-flash", null]) {
       expect(isPiNativeModel(model), String(model)).toBe(false);
@@ -306,7 +338,7 @@ describe("Pi admission policy table", () => {
 });
 
 describe("Pi admission decisions", () => {
-  it("keeps the decision of main @ 3938412 for every model and route", () => {
+  it("admits exactly the recorded routes for every model and route", () => {
     const combinations = enumerateCombinations();
     expect(combinations).toHaveLength(ENUMERATED_COMBINATIONS);
     const admitted = combinations
@@ -314,7 +346,7 @@ describe("Pi admission decisions", () => {
         return isPiExecutionRoute({ ...combination, piEnabled: true });
       })
       .map(label);
-    expect(admitted).toStrictEqual([...ADMITTED_ON_MAIN]);
+    expect(admitted).toStrictEqual([...EXPECTED_ADMITTED_ROUTES]);
   });
 
   it("admits nothing while the Pi loop switch is off", () => {
@@ -325,16 +357,27 @@ describe("Pi admission decisions", () => {
     }
   });
 
-  it("still routes claude-fable-5-1 to Pi", () => {
-    expect(
-      isPiExecutionRoute({
-        selectedModel: "claude-fable-5-1",
-        modelProviderType: "built-in",
-        runtimeProviderType: "anthropic-api-key",
-        codexServiceTier: undefined,
-        piEnabled: true,
-      }),
-    ).toBe(true);
+  it("keeps claude-fable-5-1 on the vendor harness on every route", () => {
+    // The Fable line left the Pi loop in #35905. Its routes stay in the
+    // enumeration, so this names the model the slice moved and proves the
+    // exclusion holds on every one of them rather than only on the absence of
+    // rows above.
+    const fableRoutes = enumerateCombinations().filter((combination) => {
+      return combination.selectedModel === "claude-fable-5-1";
+    });
+    expect(fableRoutes.length).toBeGreaterThan(0);
+    for (const combination of fableRoutes) {
+      // Both layers, because the capability gate would refuse these routes on
+      // its own now that the identity is gone. Asserting only the end result
+      // would let the table silently readmit the line.
+      expect(isPiPolicyAdmittedRoute(combination), label(combination)).toBe(
+        false,
+      );
+      expect(
+        isPiExecutionRoute({ ...combination, piEnabled: true }),
+        label(combination),
+      ).toBe(false);
+    }
   });
 
   it("keeps a model the pinned runtime cannot resolve out of the loop", () => {
