@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use guest_contracts::diagnostics::{CliTerminationReason, FailureDiagnostic};
@@ -1546,14 +1547,20 @@ enum StagedSessionRestorePreparation {
 }
 
 async fn discard_staged_session_history(sandbox: &dyn Sandbox, staging_path: &str) {
-    if let Err(error) = sandbox
+    match sandbox
         .finalize_staged_file(&StagedFileFinalizeRequest {
             staging_path,
             disposition: StagedFileDisposition::Discard,
         })
         .await
     {
-        warn!(error = %error, "failed to discard staged session history");
+        Ok(StagedFileFinalizeOutcome::Discarded { .. }) => {}
+        Ok(outcome) => {
+            warn!(?outcome, "staged session history was not discarded");
+        }
+        Err(error) => {
+            warn!(error = %error, "failed to discard staged session history");
+        }
     }
 }
 
@@ -1993,7 +2000,7 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
-    mut storage_apply_start: Option<oneshot::Sender<()>>,
+    mut storage_apply_start: Option<(oneshot::Sender<()>, &AtomicBool)>,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let Some(manifest) = &context.storage_manifest else {
         return Ok(None);
@@ -2037,7 +2044,8 @@ async fn prepare_guest_storage(
                 })?;
                 let files = prepared.plan.take_decoded();
                 let guest_manifest = prepared.plan.into_guest_manifest();
-                if let Some(start) = storage_apply_start.take() {
+                if let Some((start, storage_apply_admitted)) = storage_apply_start.take() {
+                    storage_apply_admitted.store(true, Ordering::Release);
                     let _ = start.send(());
                 }
                 let download_started = Instant::now();
@@ -2082,7 +2090,8 @@ async fn prepare_guest_storage(
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
-                if let Some(start) = storage_apply_start.take() {
+                if let Some((start, storage_apply_admitted)) = storage_apply_start.take() {
+                    storage_apply_admitted.store(true, Ordering::Release);
                     let _ = start.send(());
                 }
                 let download_started = Instant::now();
@@ -2269,20 +2278,32 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let mut history_telemetry = telemetry.fork_concurrent_phase();
             let staged_cancel = cancel.child_token();
             let staged_cancel_after_storage = staged_cancel.clone();
+            let storage_apply_admitted = AtomicBool::new(false);
             let (storage_result, staged_result) = model_catalog_prefetch
                 .race(async {
                     tokio::join!(
                         async {
-                            let result = prepare_guest_storage(
+                            let storage = prepare_guest_storage(
                                 sandbox,
                                 context,
                                 config,
                                 &start,
                                 telemetry,
                                 &mut prepared_storage,
-                                Some(storage_apply_start),
-                            )
-                            .await;
+                                Some((storage_apply_start, &storage_apply_admitted)),
+                            );
+                            tokio::pin!(storage);
+                            let result = tokio::select! {
+                                biased;
+                                result = &mut storage => result,
+                                _ = cancel.cancelled() => {
+                                    if storage_apply_admitted.load(Ordering::Acquire) {
+                                        storage.await
+                                    } else {
+                                        Err(RunnerError::Cancelled)
+                                    }
+                                }
+                            };
                             if result.is_err() {
                                 staged_cancel_after_storage.cancel();
                             }
@@ -2307,6 +2328,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let deferred = match storage_result {
                 Ok(deferred) => deferred,
                 Err(storage_error) => {
+                    let cancelled_before_storage_apply = cancel.is_cancelled()
+                        && matches!(&storage_error, RunnerError::Cancelled)
+                        && !storage_apply_admitted.load(Ordering::Acquire);
                     match staged_result {
                         Ok(StagedSessionRestorePreparation::Serial(plan)) => {
                             plan.cancel_and_drain().await;
@@ -2327,6 +2351,23 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         prepared.delivery.cancel_and_drain(telemetry).await;
                     }
                     model_catalog_prefetch.finish(telemetry).await;
+                    if cancelled_before_storage_apply {
+                        info!(
+                            run_id = %context.run_id,
+                            "cancel received before guest process started"
+                        );
+                        let result = AgentExecutionResult::cancelled();
+                        telemetry.record(
+                            "agent_execute",
+                            pre_spawn_started.elapsed(),
+                            false,
+                            result
+                                .failure
+                                .as_ref()
+                                .map(|failure| failure.error.as_str()),
+                        );
+                        return Ok(result);
+                    }
                     return Err(storage_error);
                 }
             };

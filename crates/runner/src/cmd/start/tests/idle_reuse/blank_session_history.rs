@@ -1,6 +1,9 @@
 use std::io::Write;
 
 use guest_contracts::env::CliFramework;
+use sandbox::{
+    StagedFileFinalizeMeasurements, StagedFileFinalizeOutcome, StagedFileNotPublishedReason,
+};
 use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides, StagedFileDispositionCall};
 use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
@@ -68,6 +71,7 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             ResumeSessionHistoryEncoding::Zstd,
         ),
     ] {
+        let expects_serial_fallback = framework == CliFramework::Pi;
         let (framework, history, session_id, expected_path): (&str, &[u8], &str, String) =
             match framework {
             CliFramework::ClaudeCode => (
@@ -107,6 +111,14 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         }])
         .await;
         let overrides = Arc::new(MockSandboxOverrides::new());
+        if expects_serial_fallback {
+            overrides.push_finalize_staged_file_result(Ok(
+                StagedFileFinalizeOutcome::NotPublished {
+                    reason: StagedFileNotPublishedReason::CopyFailed,
+                    measurements: StagedFileFinalizeMeasurements::default(),
+                },
+            ));
+        }
         let storage_gate = MockLifecycleGate::new();
         overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
         let write_gate = MockLifecycleGate::new();
@@ -194,6 +206,25 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         );
         finalize_gate.release_one();
 
+        if expects_serial_fallback {
+            write_gate.wait_entered(2, WAIT).await.unwrap();
+            let writes = overrides.write_file_calls();
+            assert_eq!(writes.len(), 2);
+            assert_eq!(writes[1].path, expected_path);
+            assert_eq!(writes[1].content, restored);
+            write_gate.release_one();
+
+            finalize_gate.wait_entered(2, WAIT).await.unwrap();
+            let finalizations = overrides.finalize_staged_file_calls();
+            assert_eq!(finalizations.len(), 2);
+            assert_eq!(finalizations[1].staging_path, writes[0].path);
+            assert_eq!(
+                finalizations[1].disposition,
+                StagedFileDispositionCall::Discard
+            );
+            finalize_gate.release_one();
+        }
+
         process_gate.wait_entered(1, WAIT).await.unwrap();
         process_gate.release_one();
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
@@ -247,6 +278,8 @@ async fn blank_history_prestart_is_cancelled_on_storage_failure_and_shutdown() {
             storage_gate.release_one();
         } else {
             env.trigger_stopping().await;
+            // An admitted Guest storage operation owns its terminal result.
+            storage_gate.release_one();
         }
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_ne!(completion.exit_code, 0);
@@ -284,6 +317,9 @@ async fn blank_history_prestart_run_cancellation_drops_pending_download() {
         .await;
     let cancellation = wait_cancel_handle(&env.cancel_tokens, run_id, WAIT).await;
     cancellation.request_hard_cancellation().await;
+    // Hard cancellation prevents publication and process spawn but does not
+    // abandon an admitted Guest storage operation.
+    storage_gate.release_one();
     let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
     assert_eq!(completion.exit_code, 137);
     assert!(overrides.start_agent_process_calls().is_empty());
