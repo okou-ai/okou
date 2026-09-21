@@ -20,7 +20,7 @@ use sandbox::{
     ExecTermination, GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle,
     ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome, ProcessOutputMode,
     Sandbox, SessionHistoryIdentityVerifyRequest, StagedFileDisposition, StagedFileFinalizeOutcome,
-    StagedFileFinalizeRequest, StartAgentProcessRequest,
+    StagedFileFinalizeRequest, StagedFileNotPublishedReason, StartAgentProcessRequest,
 };
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -1658,6 +1658,19 @@ fn record_staged_workspace_restore_outcome(
     );
 }
 
+const fn staged_file_not_published_outcome(reason: StagedFileNotPublishedReason) -> &'static str {
+    match reason {
+        StagedFileNotPublishedReason::InvalidSource => "invalid_source",
+        StagedFileNotPublishedReason::InvalidDestinationParent => "invalid_parent",
+        StagedFileNotPublishedReason::InvalidDestination => "invalid_destination",
+        StagedFileNotPublishedReason::MetadataPreparationFailed => "metadata_failed",
+        StagedFileNotPublishedReason::RenameFailed => "rename_failed",
+        StagedFileNotPublishedReason::CopyFailed => "copy_failed",
+        StagedFileNotPublishedReason::DiscardFailed => "discard_failed",
+        StagedFileNotPublishedReason::Other => "other",
+    }
+}
+
 async fn prepare_staged_session_restore(
     input: StagedSessionRestoreInput<'_>,
     plan: SessionHistoryRestorePlan,
@@ -2501,13 +2514,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             Duration::ZERO,
                             true,
                         ),
-                        Ok(StagedFileFinalizeOutcome::NotPublished { .. }) => {
+                        Ok(StagedFileFinalizeOutcome::NotPublished { reason, .. }) => {
                             telemetry.record_with_outcome(
                                 "session_history_workspace_staged_restore_fallback",
                                 Duration::ZERO,
                                 true,
                                 None,
-                                Some("not_published"),
+                                Some(staged_file_not_published_outcome(reason)),
                             );
                             let started = Instant::now();
                             let result = staged

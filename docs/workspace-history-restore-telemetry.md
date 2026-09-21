@@ -59,6 +59,10 @@ ambiguous, so Runner fails closed and does not retry the write.
 `session_history_workspace_staged_restore` interval includes the overlap wait,
 staging and publication or safe serial fallback. Existing workspace-cache restore
 success telemetry is emitted only after canonical publication succeeds.
+`session_history_workspace_staged_restore_fallback` records the bounded
+pre-publication reason (`invalid_source`, `invalid_parent`, `invalid_destination`,
+`metadata_failed`, `rename_failed`, `copy_failed`, `discard_failed`, or `other`)
+when the serial recovery path is safe to run.
 
 ## Rollout and analysis
 
