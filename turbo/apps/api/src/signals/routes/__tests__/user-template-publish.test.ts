@@ -46,8 +46,8 @@ function templateClient() {
 /**
  * What each reverse skill actually writes.
  *
- * `presentation-reverse-template` produces the visual language as prose;
- * `docx-reverse-template` produces `reference.docx`, which is what pandoc
+ * `presentation-extract-template` produces the visual language as prose;
+ * `docx-extract-template` produces `reference.docx`, which is what pandoc
  * consumes, and writes no `design-system.md` at all; the illustration branch
  * writes the locked frame and the prompt into `SKILL.md` itself and saves its
  * example pictures under names that follow the subject and dials they

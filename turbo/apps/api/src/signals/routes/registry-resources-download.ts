@@ -4,7 +4,7 @@ import {
   findColorSystem,
   findDesignSystem,
   findImageStyle,
-  findPresentationReverseTemplateResource,
+  findPresentationExtractTemplateResource,
   findPresentationRunbookResource,
   findSkill,
   findTemplate,
@@ -50,9 +50,9 @@ function storageServiceNotConfigured() {
 }
 
 const PRIVATE_REGISTRY_RESOURCE_ARCHIVE_VERSION_IDS = {
-  // Presentation reverse-template guide from okou-ai/Template-artifact@7daba24.
-  "skill:presentation-reverse-template":
-    "ec707d2338ddec36a4b413ba7fe58c35987b2b85b2a8ecd441add68dcc1472e7",
+  // Presentation extract-template guide from okou-ai/vm0-skills@5426db7.
+  "skill:presentation-extract-template":
+    "6dc0d008229bfa54d3c41fb78a80f46bb792bbdbda15d41727ff40d974ea354b",
   "color-system:bauhaus-primary":
     "26c34a2a33a5c7b751b6741da5e4013020d5dbe138e60f5b3a444f4a5d3a351b",
   "color-system:berry-pop":
@@ -254,7 +254,7 @@ function findRegistryResource(id: string): PullableRegistryEntry | undefined {
     findColorSystem(id) ??
     findImageStyle(id) ??
     findVideoTemplate(id) ??
-    findPresentationReverseTemplateResource(id) ??
+    findPresentationExtractTemplateResource(id) ??
     findPresentationRunbookResource(id) ??
     findWebsiteTemplateResource(id)
   );

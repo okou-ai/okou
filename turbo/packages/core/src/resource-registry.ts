@@ -8,10 +8,10 @@ import {
   PRESENTATION_STATIC_HTML_INSTRUCTION,
 } from "./presentation-generation-instructions";
 import {
-  PRESENTATION_REVERSE_TEMPLATE_ARCHIVE_SHA256,
-  PRESENTATION_REVERSE_TEMPLATE_RESOURCE_ID,
-  PRESENTATION_REVERSE_TEMPLATE_RESOURCE_PATH,
-} from "./presentation-reverse-template-resource";
+  PRESENTATION_EXTRACT_TEMPLATE_ARCHIVE_SHA256,
+  PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_ID,
+  PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_PATH,
+} from "./presentation-extract-template-resource";
 
 export type GenerationTarget =
   | "image"
@@ -3341,29 +3341,29 @@ const RESOURCE_REGISTRY: readonly RegistryEntry[] = [
   },
 ];
 
-// ── Presentation reverse-template guide ─────────────────────────────────────
+// ── Presentation extract-template guide ─────────────────────────────────────
 // This is a pull-only authoring resource. Keep it out of RESOURCE_REGISTRY so
 // it does not appear as a presentation-generation skill candidate: it is used
 // only when an uploaded deck is being reverse-engineered into a new template.
 
-const PRESENTATION_REVERSE_TEMPLATE_RESOURCE: RegistryEntry = {
-  id: PRESENTATION_REVERSE_TEMPLATE_RESOURCE_ID,
+const PRESENTATION_EXTRACT_TEMPLATE_RESOURCE: RegistryEntry = {
+  id: PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_ID,
   kind: "skill",
-  name: "Presentation Reverse Template",
+  name: "Presentation Extract Template",
   description:
     "Extract reusable presentation identity guidance and high-fidelity visual assets from an uploaded deck.",
   source: privateR2ArchiveSource(
-    PRESENTATION_REVERSE_TEMPLATE_RESOURCE_PATH,
-    PRESENTATION_REVERSE_TEMPLATE_ARCHIVE_SHA256,
+    PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_PATH,
+    PRESENTATION_EXTRACT_TEMPLATE_ARCHIVE_SHA256,
   ),
   targets: ["presentation"],
 };
 
-export function findPresentationReverseTemplateResource(
+export function findPresentationExtractTemplateResource(
   resourceId: string,
 ): RegistryEntry | undefined {
-  return resourceId === PRESENTATION_REVERSE_TEMPLATE_RESOURCE_ID
-    ? PRESENTATION_REVERSE_TEMPLATE_RESOURCE
+  return resourceId === PRESENTATION_EXTRACT_TEMPLATE_RESOURCE_ID
+    ? PRESENTATION_EXTRACT_TEMPLATE_RESOURCE
     : undefined;
 }
 

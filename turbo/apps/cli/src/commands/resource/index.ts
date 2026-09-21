@@ -11,7 +11,7 @@ import {
   findColorSystem,
   findDesignSystem,
   findImageStyle,
-  findPresentationReverseTemplateResource,
+  findPresentationExtractTemplateResource,
   findPresentationRunbookResource,
   findTool,
   findTemplate,
@@ -58,7 +58,7 @@ export function findRegistryResourceForPull(
       findTool(candidate) ??
       findImageStyle(candidate) ??
       findVideoTemplate(candidate) ??
-      findPresentationReverseTemplateResource(candidate) ??
+      findPresentationExtractTemplateResource(candidate) ??
       findPresentationRunbookResource(candidate) ??
       findWebsiteTemplateResource(candidate);
     if (entry) {

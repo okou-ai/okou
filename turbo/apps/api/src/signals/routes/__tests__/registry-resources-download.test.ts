@@ -221,13 +221,13 @@ describe("registry resource download", () => {
     },
   );
 
-  it("downloads the presentation reverse-template guide through the route", async () => {
-    const id = "skill:presentation-reverse-template";
+  it("downloads the presentation extract-template guide through the route", async () => {
+    const id = "skill:presentation-extract-template";
     const sha256 =
-      "4b2bb4ee2a041d57a2fe9ba07b796a690c6dbe130c6e232fa98364b6ed6aeb11";
+      "4ea856dcf18b86a3e95f55b8dd1f95224fb66a0c97df589c887c04c563972356";
     const versionId =
-      "ec707d2338ddec36a4b413ba7fe58c35987b2b85b2a8ecd441add68dcc1472e7";
-    const s3Key = "registry-fixture/presentation-reverse-template/version";
+      "6dc0d008229bfa54d3c41fb78a80f46bb792bbdbda15d41727ff40d974ea354b";
+    const s3Key = "registry-fixture/presentation-extract-template/version";
     const fixture = await seedPrivateRegistryResourceVersionFixture({
       storageName: `registry-resource@${id}`,
       versionId,
@@ -240,7 +240,7 @@ describe("registry resource download", () => {
 
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", "registry-resource-test");
     context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/registry/presentation-reverse-template.tar.gz",
+      "https://r2.example.com/registry/presentation-extract-template.tar.gz",
     );
 
     const response = await accept(
@@ -267,12 +267,12 @@ describe("registry resource download", () => {
     });
   });
 
-  it("rejects a reverse-template digest that was never published", () => {
+  it("rejects an extract-template digest that was never published", () => {
     expect(
       resolvePrivateRegistryResourceArchive(
-        "skill:presentation-reverse-template",
+        "skill:presentation-extract-template",
         "0".repeat(64),
-        "4b2bb4ee2a041d57a2fe9ba07b796a690c6dbe130c6e232fa98364b6ed6aeb11",
+        "4ea856dcf18b86a3e95f55b8dd1f95224fb66a0c97df589c887c04c563972356",
       ),
     ).toBeUndefined();
   });

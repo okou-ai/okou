@@ -1,0 +1,15 @@
+{
+  "resourceId": "skill:presentation-extract-template",
+  "directory": "extract-template",
+  "storageId": "be2ce51a-0eba-4321-8726-77614d442475",
+  "versionId": "6dc0d008229bfa54d3c41fb78a80f46bb792bbdbda15d41727ff40d974ea354b",
+  "archiveSha256": "4ea856dcf18b86a3e95f55b8dd1f95224fb66a0c97df589c887c04c563972356",
+  "ownerAnchorVersionId": "ec707d2338ddec36a4b413ba7fe58c35987b2b85b2a8ecd441add68dcc1472e7",
+  "source": {
+    "repository": "okou-ai/vm0-skills",
+    "commit": "5426db7cc40e222b697f927645400994cd7e8b6b",
+    "directory": "extract-template/presentation",
+    "committedAt": "2026-09-21T07:19:11.000Z",
+    "archiveSha256": "4ea21ffb4fb486e4a1d8b577f9c5da136568fc20ff83d2640d6ff09af93bf642"
+  }
+}

@@ -32,7 +32,7 @@ const PROMPT = "Analyse this file and save it as a reusable template.";
  * in.
  */
 const GUIDANCE =
-  "Analyse this file with the `reverse-template` dispatcher in `okou-ai/vm0-skills`: read `reverse-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
+  "Analyse this file with the `extract-template` dispatcher in `okou-ai/vm0-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 
 function additionalInfo(message: UserMessageDocument): string[] {
   return message.parts.flatMap((part) => {
@@ -1101,7 +1101,7 @@ test("Every source is sent with one message that lets the guide sort it", async 
   await waitFor(() => {
     expect(capture.runPrompts).toHaveLength(1);
   });
-  // The `reverse-template` guide decides whether the file is a deck or a
+  // The `extract-template` guide decides whether the file is a deck or a
   // document; repeating that here would give the run two answers that can
   // disagree. What the member reads is the request they made, one sentence
   // long whatever the file turns out to be.
