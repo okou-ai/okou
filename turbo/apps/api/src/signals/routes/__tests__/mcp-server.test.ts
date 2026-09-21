@@ -410,13 +410,19 @@ function jsonPointerValue(root: unknown, reference: string): unknown {
       if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
         throw new Error(`Unresolved JSON Pointer ${reference}`);
       }
-      value = value[index];
+      value = value.at(index);
       continue;
     }
-    if (!isJsonObject(value) || !Object.hasOwn(value, segment)) {
+    if (!isJsonObject(value)) {
       throw new Error(`Unresolved JSON Pointer ${reference}`);
     }
-    value = value[segment];
+    const entry = Object.entries(value).find(([key]) => {
+      return key === segment;
+    });
+    if (!entry) {
+      throw new Error(`Unresolved JSON Pointer ${reference}`);
+    }
+    value = entry[1];
   }
   return value;
 }
