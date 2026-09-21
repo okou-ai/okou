@@ -24,7 +24,6 @@ import {
 } from "@okouai/api-contracts/contracts/integrations";
 
 import { headersWithCliClientHeaders } from "../client-headers";
-import { withAbsoluteArtifactUrl } from "../../artifact-url";
 import { getActiveToken } from "../config";
 import {
   ApiRequestError,
@@ -100,7 +99,7 @@ export async function completeFeishuFileUpload({
   );
   const result = await client.complete({ body, headers: {} });
   if (result.status === 200) {
-    return withAbsoluteArtifactUrl(result.body);
+    return result.body;
   }
   handleError(
     result,

@@ -30,11 +30,7 @@ import {
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
-import {
-  absoluteArtifactUrl,
-  assertPrivateArtifactUrl,
-  withAbsoluteArtifactUrl,
-} from "../../artifact-url";
+import { assertPrivateArtifactUrl } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
 import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
 
@@ -809,7 +805,7 @@ async function readBuiltInGenerationResponse<
       token: args.token,
       fallback: args.fallback,
     });
-    return withAbsoluteArtifactUrl(result);
+    return result;
   }
   if (args.response.status === 202) {
     throw new ApiRequestError(
@@ -818,7 +814,7 @@ async function readBuiltInGenerationResponse<
       502,
     );
   }
-  return withAbsoluteArtifactUrl(body as T);
+  return body as T;
 }
 
 /**
@@ -952,7 +948,7 @@ export async function uploadWebFile(
     filename: completed.filename,
     contentType: completed.contentType,
     size: completed.size,
-    url: await absoluteArtifactUrl(completed.url),
+    url: completed.url,
   };
 }
 
@@ -1002,9 +998,7 @@ export async function generateWebVoice(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return withAbsoluteArtifactUrl(
-    (await response.json()) as GenerateWebVoiceResult,
-  );
+  return (await response.json()) as GenerateWebVoiceResult;
 }
 
 /**

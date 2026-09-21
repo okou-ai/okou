@@ -93,7 +93,7 @@ describe("okou generate image command", () => {
           return HttpResponse.json({
             ...IMAGE_RESULT,
             id: GENERATION_ARTIFACT_ID,
-            url: artifact.reference,
+            url: artifact.url,
           });
         }),
       );
@@ -478,82 +478,38 @@ describe("okou generate image command", () => {
     });
   });
 
-  it.each([
-    {
-      url: "/artifacts/abcxyz1234.png#detail",
-      appUrl: "https://app.okou.ai",
-      apiUrl: "http://localhost:3000",
-      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.png#detail",
-    },
-    {
-      url: "/artifacts/00000000000040008000000000000021.png",
-      appUrl: "https://pr-123-app.omby.ai/ignored-path",
-      apiUrl: "http://localhost:3000",
-      expectedUrl:
-        "https://pr-123-app.omby.ai/artifacts/00000000000040008000000000000021.png",
-    },
-    {
-      url: "/artifacts/abcxyz1234.png",
-      appUrl: undefined,
-      apiUrl: undefined,
-      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.png",
-    },
-    {
-      url: "/artifacts/abcxyz1234.png",
-      appUrl: undefined,
-      apiUrl: "https://pr-123-api.vm6.ai",
-      expectedUrl: "https://pr-123-app.omby.ai/artifacts/abcxyz1234.png",
-    },
-    {
-      url: "https://app.okou.ai/artifacts/abcxyz1234.png",
-      appUrl: "https://app.okou.ai",
-      apiUrl: "http://localhost:3000",
-      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.png",
-    },
-    {
-      url: "http://localhost:3000/api/web/download-file?file_id=00000000-0000-4000-8000-000000000021&filename=Launch%20v2.png",
-      appUrl: "https://app.okou.ai",
-      apiUrl: "http://localhost:3000",
-      expectedUrl:
-        "http://localhost:3000/api/web/download-file?file_id=00000000-0000-4000-8000-000000000021&filename=Launch%20v2.png",
-    },
-  ])(
-    "prints a complete artifact URL for $url and escapes its label",
-    async ({ url, appUrl, apiUrl, expectedUrl }) => {
-      vi.stubEnv("OKOU_APP_URL", appUrl);
-      vi.stubEnv("OKOU_API_BACKEND_URL", apiUrl);
-      const filename = String.raw`Launch [v2]\image.png`;
-      const label = String.raw`Launch \[v2\]\\image.png`;
-      server.use(
-        http.post(
-          new URL("/api/image-io/generate", apiUrl ?? "https://api.okou.ai")
-            .href,
-          () => {
-            return HttpResponse.json({ ...IMAGE_RESULT, filename, url });
-          },
-        ),
-      );
-      await generateCommand.parseAsync([
-        "node",
-        "cli",
-        "image",
-        "--raw-prompt",
-        "A product image",
-        "--json",
-      ]);
-      expect(
-        JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])),
-      ).toMatchObject({
+  it("escapes the artifact label in the Markdown presentation fields", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const url = "https://app.okou.ai/artifacts/abcxyz1234.png#detail";
+    const filename = String.raw`Launch [v2]\image.png`;
+    const label = String.raw`Launch \[v2\]\\image.png`;
+    server.use(
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json({ ...IMAGE_RESULT, filename, url });
+      }),
+    );
+
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--raw-prompt",
+      "A product image",
+      "--json",
+    ]);
+
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
+      {
         filename,
-        url: expectedUrl,
-        inlineMarkdownLink: `[${label}](<${expectedUrl}>)`,
-        previewMarkdownBlock: `![${label}](<${expectedUrl}>)`,
+        url,
+        inlineMarkdownLink: `[${label}](<${url}>)`,
+        previewMarkdownBlock: `![${label}](<${url}>)`,
         artifactPresentationContext: expect.stringContaining(
           "own Markdown paragraph",
         ),
-      });
-    },
-  );
+      },
+    );
+  });
 
   it.each([
     ["provider listing", ["image", "--json"]],
@@ -940,13 +896,11 @@ describe("okou generate image command", () => {
     expect(stderr).toContain("--style can only be used with --compile");
   });
 
-  it.each([IMAGE_RESULT.url, "/artifacts/abcxyz1234.png"])(
+  it.each([IMAGE_RESULT.url, "https://app.okou.ai/artifacts/abcxyz1234.png"])(
     "waits for an async generation and prints a complete URL for %s",
     async (url) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-      const expectedUrl = url.startsWith("/artifacts/")
-        ? `https://app.okou.ai${url}`
-        : url;
+      const expectedUrl = url;
       let statusRequested = false;
       server.use(
         http.post(IMAGE_URL, () => {
