@@ -291,6 +291,43 @@ test("The picker opens on Custom once the switch is on", async () => {
   ).resolves.toBeInTheDocument();
 });
 
+test("Custom opens and reopens on documents even when an image is newest", async () => {
+  mockCustomTemplates([
+    illustrationTemplate({ updatedAt: "2026-01-04T00:00:00Z" }),
+    customTemplate({ updatedAt: "2026-01-03T00:00:00Z" }),
+    documentTemplate(),
+  ]);
+
+  const { user, dialog } = await openCustomPanel();
+  await within(dialog).findByText("Brand report");
+  const filters = within(dialog).getByRole("group", {
+    name: "Template categories",
+  });
+  expect(buttonByName("Document", filters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
+
+  click(buttonByName("Image", filters)!);
+  await within(dialog).findByText("Market day");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  const reopened = await openTemplatePicker(user);
+  await within(reopened).findByText("Brand report");
+  const reopenedFilters = within(reopened).getByRole("group", {
+    name: "Template categories",
+  });
+  expect(buttonByName("Document", reopenedFilters)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(reopened).queryByText("Market day")).not.toBeInTheDocument();
+});
+
 test("The picker keeps opening on Presentation while the switch is off", async () => {
   mockCustomTemplates([customTemplate()]);
 

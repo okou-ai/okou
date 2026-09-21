@@ -136,7 +136,8 @@ export const subscribeCustomTemplatesChanged$ = command(
 );
 
 const internalSearchQuery$ = state("");
-// No explicit selection starts with the most recently updated template's kind.
+// Prefer documents on entry; an empty document category must not hide the
+// available catalog behind its empty state, which has no kind filters.
 const internalKindFilter$ = state<UserTemplateKind | null>(null);
 
 export const setCustomTemplateKindFilter$ = command(
@@ -184,7 +185,13 @@ export const projectCustomTemplatePicker$ = computed((get) => {
       const projected = project(template);
       return projected === null ? [] : [projected];
     });
-    const kind = selectedKind ?? catalog[0]?.kind ?? "document";
+    const kind =
+      selectedKind ??
+      (catalog.some((template) => {
+        return template.kind === "document";
+      })
+        ? "document"
+        : (catalog[0]?.kind ?? "document"));
     return {
       kind,
       isEmptyCatalog: catalog.length === 0,
