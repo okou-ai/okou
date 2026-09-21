@@ -100,6 +100,7 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
     return (
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Positioner
+          className="z-50"
           align={align}
           alignOffset={alignOffset}
           collisionAvoidance={collisionAvoidance}

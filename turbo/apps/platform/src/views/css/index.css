@@ -473,11 +473,9 @@ body {
 
 #root {
   box-sizing: border-box;
-  /* Base UI appends top-level portals after #root and nests descendant portals
-     under their owning portal. Fixed positioning already isolates the app in
-     browser tabs; isolation preserves that stacking boundary when standalone
-     mode switches to absolute positioning below. Keep app layers inside this
-     boundary so portal order can place floating surfaces above them. */
+  /* Keep app content in its own stacking context below Base UI's body-level
+     z-50 portals. Fixed positioning establishes that boundary in a browser tab;
+     isolation preserves it when standalone mode changes the root to absolute. */
   isolation: isolate;
   position: fixed;
   top: 0;

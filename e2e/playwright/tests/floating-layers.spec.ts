@@ -148,3 +148,59 @@ test("a select receives input above its settings dialog and Escape closes only t
   await page.keyboard.press("Escape");
   await expect(settings).toBeHidden();
 });
+
+test("the effort popover receives input above the composer and restores focus on dismissal", async ({
+  page,
+}) => {
+  await page.goto(appUrl);
+  await page.waitForURL(/agents\/.*\/chat/, { timeout: 30_000 });
+  const effort = page.getByRole("button", { name: /^Effort,/ });
+  await effort.click();
+  const slider = page.getByRole("slider", { name: "Effort", exact: true });
+  await expectHitWithin(slider, await centerOf(slider));
+
+  await page.keyboard.press("Escape");
+  await expect(slider).toBeHidden();
+  await expect(effort).toBeFocused();
+  await expectHitWithin(effort, await centerOf(effort));
+});
+
+test("mobile sidebar menus and the queue sheet stay interactive above their backdrops", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appUrl);
+  await page.waitForURL(/agents\/.*\/chat/, { timeout: 30_000 });
+  const openMenu = page.getByRole("button", { name: "Open menu", exact: true });
+  await openMenu.click();
+  const sidebar = page.locator('[data-slot="sidebar-expanded"]');
+  const menuTrigger = sidebar.getByRole("button", {
+    name: "Open chat list menu",
+  });
+  await expectHitWithin(menuTrigger, await centerOf(menuTrigger));
+  await menuTrigger.click();
+  const menu = page.getByRole("menu");
+  const item = menu.getByRole("menuitem").first();
+  await expectHitWithin(item, await centerOf(item));
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(sidebar).toBeVisible();
+  await expect(menuTrigger).toBeFocused();
+  await sidebar.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toBeHidden();
+  await expectHitWithin(openMenu, await centerOf(openMenu));
+
+  // The queue deep link is a public entry point and needs no active agent run.
+  const queueUrl = new URL(page.url());
+  queueUrl.searchParams.set("queue", "1");
+  await page.goto(queueUrl.href);
+  const sheet = page.getByRole("dialog", {
+    name: "Your agent is waiting in line",
+    exact: true,
+  });
+  const close = sheet.getByRole("button", { name: "Close", exact: true });
+  await expectHitWithin(close, await centerOf(close));
+  await close.click();
+  await expect(sheet).toBeHidden();
+  await expectHitWithin(openMenu, await centerOf(openMenu));
+});

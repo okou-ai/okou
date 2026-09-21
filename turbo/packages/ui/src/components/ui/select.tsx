@@ -264,6 +264,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
     return (
       <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
+          className="z-50"
           align={align}
           alignItemWithTrigger={resolvedAlignItemWithTrigger}
           alignOffset={alignOffset}

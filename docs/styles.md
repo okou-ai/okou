@@ -746,15 +746,17 @@ A row's background already paints behind its children; a button does not need
 `relative z-10` to sit above it. Event propagation is handled by event handlers,
 not by raising the button's paint order.
 
-- Shared floating primitives own their portals inside `@okouai/ui`. Base UI
-  appends top-level portals after the isolated app root and nests descendant
-  portals under their owner. Preserve that structure so floating surfaces paint
-  above app content, each popup paints above its backdrop, and a nested surface
-  stays above its parent. Callers must not override this order with z-index.
-  The wrappers currently rely on this structure rather than a shared `z-50`.
-  Shadcn's `z-50` is a convention, not a browser requirement or proof of correct
-  stacking; changing it requires a demonstrated ordering failure and a browser
-  regression test.
+- Shared floating primitives follow shadcn's flat `z-50` convention and own
+  their portals inside `@okouai/ui`. Put the literal utility on the elements
+  participating in the surrounding stacking context: Dialog's Backdrop and
+  Viewport, Sheet's Backdrop and Popup, and the Positioner for Popover, Select,
+  DropdownMenu and Tooltip. A z-index on an inner popup cannot raise its outer
+  viewport or positioner. Base UI appends top-level portals after the isolated
+  app root and nests descendant portals under their owner. Preserve that
+  structure and DOM order so each popup paints above its backdrop and nested
+  surfaces stay above their parents. Callers must not override this order with
+  z-index. The shared value is a maintenance convention; correct ordering still
+  requires browser interaction coverage.
 - The shell owns app-wide non-portal layers such as drawers, scrims and
   fullscreen panels. Keep a small fixed set of literal Tailwind z-index
   utilities in shell-owned files, below the shared floating layer in the
@@ -800,7 +802,8 @@ lint does not establish correct stacking.
 [Browser regression tests](../e2e/playwright/tests/floating-layers.spec.ts)
 check actual pointer hit targets over sidebar actions in fullscreen, nested
 dialog interaction and dismissal, a dialog above fullscreen content, and a
-select above its settings dialog.
+select above its settings dialog. They also cover the composer's effort popover
+and mobile sidebar menus and queue-sheet interaction.
 Class names and computed z-index values alone cannot verify these relationships.
 Fullscreen state preservation also needs the shared primitive's state and
 scroll regression coverage. Standalone behavior still needs installed-PWA

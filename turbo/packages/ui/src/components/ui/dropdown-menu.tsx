@@ -113,7 +113,7 @@ const DropdownMenuContent = React.forwardRef<
           align={align}
           alignOffset={alignOffset}
           className={cn(
-            "outline-none",
+            "z-50 outline-none",
             hideWhenDetached && "data-anchor-hidden:invisible",
           )}
           collisionAvoidance={resolvedCollisionAvoidance}
