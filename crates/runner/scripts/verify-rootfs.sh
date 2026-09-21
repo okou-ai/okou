@@ -338,6 +338,8 @@ check_bin "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf" "Noto Color Emoji"
 check_required_executable "/usr/local/bin/agent-browser" "agent-browser CLI"
 
 # Check CLIs
+check_required_executable "/usr/local/bin/uv" "uv"
+check_required_executable "/usr/local/bin/uvx" "uvx"
 check_required_executable "$CLAUDE_CLI_DEST" "Claude Code CLI"
 check_required_file_contains "$CLAUDE_CLI_DEST" \
   '--append-system-prompt-file' \
