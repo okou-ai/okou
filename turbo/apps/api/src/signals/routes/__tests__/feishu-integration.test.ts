@@ -6569,6 +6569,8 @@ describe("shared Feishu/Lark conversation and queue behavior", () => {
   });
 
   it("shows the run queue link when Feishu reaches the concurrency limit", async () => {
+    // The active runs below fill the plan, independent of its own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const fixture = await setupFeishuRunFixture();
     const { actor, appId, callbackUrl } = fixture;
     await connectFixtureUser(fixture);

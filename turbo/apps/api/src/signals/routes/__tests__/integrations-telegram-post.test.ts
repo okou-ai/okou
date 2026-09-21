@@ -3385,6 +3385,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("sends typing and a queued message at the custom-bot concurrency limit", async () => {
+    // One running run fills the plan here, independent of its own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     runsApi.acceptStorageDownloads();
     const queuedFixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),

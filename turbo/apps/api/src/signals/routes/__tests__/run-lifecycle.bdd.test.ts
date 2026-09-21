@@ -6001,11 +6001,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.modelUsageProvider).toBe("gpt-5.6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
 
-    for (const model of [
-      "gpt-5.6-sol",
-      "gpt-6-astra",
-      "claude-fable-5-1",
-    ] as const) {
+    // Model access follows the configured route. A seeded Built-in route the
+    // plan does not cover reports the upgrade, while a model the workspace
+    // never configured reports that it is unavailable.
+    for (const model of ["gpt-6-astra", "claude-fable-5-1"] as const) {
       const rejectedThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(
         actor,
@@ -6021,6 +6020,23 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
       await chat.requestReadThread(actor, rejectedThreadId, [404]);
     }
+    const unconfiguredThreadId = randomUUID();
+    const unconfigured = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        clientThreadId: unconfiguredThreadId,
+        prompt: "limited-free rejected gpt-5.6-sol run",
+        model: "gpt-5.6-sol",
+      },
+      [400],
+    );
+    expectApiError(unconfigured.body);
+    expect(unconfigured.body.error).toStrictEqual({
+      message: "The selected model is not available in this workspace",
+      code: "BAD_REQUEST",
+    });
+    await chat.requestReadThread(actor, unconfiguredThreadId, [404]);
     const queue = await api.readRunQueue(actor);
     expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
@@ -14843,6 +14859,9 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
   });
 
   it("returns null claim secretValues for direct compose runs without stored secrets", async () => {
+    // Two active direct runs keep the concurrency rejection below reachable,
+    // independent of the plan's own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
