@@ -344,7 +344,7 @@ describe("actual compute transactions versus the B1 projector", () => {
       tier: "pro",
       credits: 100_000,
     });
-    await seedBuiltInModelKey(context, "gpt-5.6-terra");
+    await seedBuiltInModelKey(context, "deepseek-v4.1-flash");
     await insertPhase2CandidatesWithSources(
       scope,
       ["first", "second"].map((name) => {

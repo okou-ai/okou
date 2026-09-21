@@ -84,11 +84,13 @@ async function extractOwnedThreadPiMemory(
   if (!candidate) {
     throw new Error("Expected completed source admission");
   }
-  await seedBuiltInModelKey("gpt-5.6-terra");
+  // Built-in extraction resolves its own model, independent of the source
+  // thread's foreground model.
+  await seedBuiltInModelKey("deepseek-v4-flash");
   const requests: unknown[] = [];
   server.use(
     http.post(
-      "https://api.openai.com/v1/responses",
+      "https://api.deepseek.com/responses",
       async ({ request }) => {
         requests.push(await request.json());
         return new HttpResponse(
