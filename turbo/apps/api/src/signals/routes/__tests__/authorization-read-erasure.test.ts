@@ -891,7 +891,7 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
-      "retains thread identity through a real request-pin wait",
+      "denies a thread identity that moves during a real request-pin wait",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
@@ -906,27 +906,24 @@ describe.each(["browser", "computer-use"] as const)(
                 signal: context.signal,
               });
         await withOwnedOperations(holder.release, async (scope) => {
-          const reading = scope.start(readAuthorization(fixture, [200]));
+          const reading = scope.start(readAuthorization(fixture, [404]));
           await expect
             .poll(holder.blockedRequestPinCount, BLOCKED)
             .toBeGreaterThanOrEqual(1);
+          // The read retains the request pin but no identity lock, so the
+          // thread user moves immediately instead of queueing behind it.
           const moving = scope.start(
             setChatThreadUserFixture({
               chatThreadId: fixture.threadId,
               userId: `user_${randomUUID()}`,
             }),
           );
-          const blocked = scope.start(
-            (async () => {
-              await expect
-                .poll(holder.blockedIdentityMutationCount, BLOCKED)
-                .toBeGreaterThanOrEqual(1);
-            })(),
-          );
-          valueOf(await blocked);
-          await scope.release();
-          expect(valueOf(await reading).status).toBe(200);
           valueOf(await moving);
+          await expect(holder.blockedIdentityMutationCount()).resolves.toBe(0);
+          await scope.release();
+          // The thread recheck runs under the pin and observes the move, so
+          // the read denies itself rather than projecting a moved thread.
+          expect(valueOf(await reading).status).toBe(404);
         });
         await expect(readAuthorization(fixture, [404])).resolves.toMatchObject({
           status: 404,

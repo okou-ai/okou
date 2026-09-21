@@ -768,7 +768,7 @@ async function retainComputerUseAuthorizationReadThread(
 
 /**
  * Reads one canonical source:chat projection under lock-free subject admission
- * and the retained exact request pin. The final host statement observes every
+ * and the retained exact request pin, which is taken before the thread read. The final host statement observes every
  * exact actor/org, nonrevoked host in last-seen order inside this transaction;
  * filtering to online happens only after that statement.
  *
@@ -792,12 +792,6 @@ async function readAuthorizedComputerUseProjection(
   },
   signal: AbortSignal,
 ): Promise<ReadComputerUseAuthorizationRequestResult> {
-  const selectedHostId = await retainComputerUseAuthorizationReadThread(
-    tx,
-    args.identity,
-  );
-  signal.throwIfAborted();
-
   const [request] = await tx
     .select({
       expiresAt: computerUseAuthorizationRequests.expiresAt,
@@ -827,6 +821,17 @@ async function readAuthorizedComputerUseProjection(
   if (!request) {
     return { status: "not_found" };
   }
+
+  // The thread read follows the pin. With no thread row lock left, the pin is
+  // the only barrier this projection has, so taking it first is what keeps an
+  // Apply from committing between the thread read and the request read and
+  // producing a response that reports the request completed while still
+  // showing the host selection it replaced.
+  const selectedHostId = await retainComputerUseAuthorizationReadThread(
+    tx,
+    args.identity,
+  );
+  signal.throwIfAborted();
 
   // Both TTL and heartbeat eligibility use an explicit clock acquired only
   // after every potentially waiting business-row pin.

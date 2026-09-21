@@ -330,9 +330,10 @@ async function retainBrowserAuthorizationReadThread(
 
 /**
  * Pins the fixed request identity after lock-free subject admission and the
- * thread recheck, then reads the clock. The request pin is retained through
- * the final cancellation check and COMMIT, which remains the projection's
- * linearization boundary; HTTP delivery can still happen after that COMMIT.
+ * request pin, then rechecks the thread under it and reads the clock. The pin
+ * is retained through the final cancellation check and COMMIT, which remains
+ * the projection's linearization boundary; HTTP delivery can still happen
+ * after that COMMIT.
  */
 async function readAuthorizedBrowserProjection(
   tx: Tx,
@@ -347,12 +348,6 @@ async function readAuthorizedBrowserProjection(
   },
   signal: AbortSignal,
 ): Promise<ReadBrowserAuthorizationRequestResult> {
-  const cloudBrowserEnabled = await retainBrowserAuthorizationReadThread(
-    tx,
-    args.identity,
-  );
-  signal.throwIfAborted();
-
   const [request] = await tx
     .select({
       expiresAt: browserAuthorizationRequests.expiresAt,
@@ -381,6 +376,17 @@ async function readAuthorizedBrowserProjection(
   if (!request) {
     return { status: "not_found" };
   }
+
+  // The thread read follows the pin. With no thread row lock left, the pin is
+  // the only barrier this projection has, so taking it first is what keeps an
+  // Apply from committing between the thread read and the request read and
+  // producing a response that reports the request completed while still
+  // showing the selection it replaced.
+  const cloudBrowserEnabled = await retainBrowserAuthorizationReadThread(
+    tx,
+    args.identity,
+  );
+  signal.throwIfAborted();
 
   // Acquiring the request pin can wait. A fresh clock after that wait keeps a
   // request that crosses its TTL from returning a stale success projection.
