@@ -83,15 +83,13 @@ describe("okou host publish command", () => {
     async ({ privateArtifact, publicSlug }) => {
       const aliasUrl = `https://${publicSlug}.sites.example.com`;
       const artifactUrl = privateArtifact
-        ? artifactReferencePath(
+        ? `https://app.okou.ai${artifactReferencePath(
             "00000000-0000-4000-8000-000000000002",
             "index.html",
-          )
+          )}`
         : ARTIFACT_URL;
       const url = privateArtifact ? artifactUrl : aliasUrl;
-      const expectedArtifactUrl = privateArtifact
-        ? `https://app.okou.ai${artifactUrl}`
-        : artifactUrl;
+      const expectedArtifactUrl = artifactUrl;
       const expectedUrl = privateArtifact ? expectedArtifactUrl : aliasUrl;
       const alias = privateArtifact ? {} : { aliasUrl };
       const index = "<!doctype html><main>Hosted site</main>";

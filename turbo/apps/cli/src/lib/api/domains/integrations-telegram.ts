@@ -23,7 +23,6 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
-import { withAbsoluteArtifactUrl } from "../../artifact-url";
 
 interface DownloadTelegramFileResult {
   path: string;
@@ -83,7 +82,7 @@ export async function completeTelegramFileUpload(
   const result = await client.complete({ body, headers: {} });
 
   if (result.status === 200) {
-    return withAbsoluteArtifactUrl(result.body);
+    return result.body;
   }
 
   handleError(result, "Failed to complete Telegram file upload");

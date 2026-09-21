@@ -7,29 +7,6 @@ import type {
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
-import {
-  absoluteArtifactUrl,
-  withAbsoluteArtifactUrl,
-} from "../../artifact-url";
-
-export async function withAbsoluteHostedUrls<
-  T extends {
-    readonly url: string;
-    readonly artifactUrl?: string;
-    readonly aliasUrl?: string;
-  },
->(result: T): Promise<T> {
-  return {
-    ...(await withAbsoluteArtifactUrl(result)),
-    ...(result.artifactUrl === undefined
-      ? {}
-      : { artifactUrl: await absoluteArtifactUrl(result.artifactUrl) }),
-    ...(result.aliasUrl === undefined
-      ? {}
-      : { aliasUrl: await absoluteArtifactUrl(result.aliasUrl) }),
-  };
-}
-
 function authHeaders(
   token: string,
   options: { readonly json?: boolean } = {},
@@ -97,9 +74,7 @@ export async function prepareHostedSite(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return withAbsoluteHostedUrls(
-    (await response.json()) as HostedSitePrepareResponse,
-  );
+  return (await response.json()) as HostedSitePrepareResponse;
 }
 
 export async function completeHostedSite(
@@ -124,9 +99,7 @@ export async function completeHostedSite(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return withAbsoluteHostedUrls(
-    (await response.json()) as HostedSiteCompleteResponse,
-  );
+  return (await response.json()) as HostedSiteCompleteResponse;
 }
 
 export async function getHostedSiteFiles(
@@ -152,7 +125,5 @@ export async function getHostedSiteFiles(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return withAbsoluteHostedUrls(
-    (await response.json()) as HostedSiteFilesResponse,
-  );
+  return (await response.json()) as HostedSiteFilesResponse;
 }

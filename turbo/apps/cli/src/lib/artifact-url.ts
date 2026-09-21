@@ -9,18 +9,10 @@ export async function assertPrivateArtifactUrl(url: string): Promise<void> {
   }
 }
 
-/** Qualify hostless responses from older APIs; complete URLs pass through. */
+/** Qualify hostless references stored by earlier CLI batch files; complete URLs pass through. */
 export async function absoluteArtifactUrl(url: string): Promise<string> {
   if (!parseArtifactReference(url)) {
     return url;
   }
   return new URL(url, await getPlatformOrigin()).href;
-}
-
-export async function withAbsoluteArtifactUrl<
-  T extends { readonly url?: string },
->(result: T): Promise<T> {
-  return result.url === undefined
-    ? result
-    : { ...result, url: await absoluteArtifactUrl(result.url) };
 }
