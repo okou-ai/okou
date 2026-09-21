@@ -90,13 +90,6 @@ pub(crate) enum BlankIdleReservation {
     Incompatible,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BlankIdleSelection {
-    Hit,
-    Empty,
-    Incompatible,
-}
-
 impl ExactIdleReservationMiss {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {

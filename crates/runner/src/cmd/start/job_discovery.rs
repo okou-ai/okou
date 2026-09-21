@@ -120,17 +120,17 @@ use super::ownership::{OwnershipTransitions, RunSandbox};
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::config::ProfileConfig;
 use crate::executor::{
-    BlankPoolSelection, ExactReuseSpeculationTiming, GuestTimezoneSyncOutcome,
-    RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
-    SessionHistoryRestorePlanInput, build_session_history_restore_plan,
+    BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
+    GuestTimezoneSyncOutcome, RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase,
+    RunnerPreSpawnTiming, SessionHistoryRestorePlanInput, build_session_history_restore_plan,
     restore_guest_state_with_intent, try_sync_guest_timezone_intent, validate_resume_session_id,
 };
 use crate::guest_timezone::{GuestTimezoneAssumption, GuestTimezoneIntent};
 use crate::idle_pool::{
-    BlankIdleReservation, BlankIdleSelection, DestroyOutcome, ExactIdleReservationMiss,
-    IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult, ReservedIdleSandbox,
-    RestoreReservedIdleResult, ReusableIdleSandbox, SpeculativeIdleSandbox,
-    SpeculativeIdleUnparkResult, SpeculativeReparkResult,
+    BlankIdleReservation, DestroyOutcome, ExactIdleReservationMiss, IdlePoolSnapshot,
+    IdleSandboxKind, IdleUnparkResult, ReservedIdleSandbox, RestoreReservedIdleResult,
+    ReusableIdleSandbox, SpeculativeIdleSandbox, SpeculativeIdleUnparkResult,
+    SpeculativeReparkResult,
 };
 use crate::ids::RunId;
 use crate::lifecycle::RunnerMode;
@@ -2687,23 +2687,27 @@ async fn try_reuse_from_pool(
             if exact.is_some() {
                 (exact, None)
             } else {
-                let reservation = pool.reserve_blank(profile_name, device_rate_limits);
-                let (raw_selection, taken) = match reservation {
+                match pool.reserve_blank(profile_name, device_rate_limits) {
                     BlankIdleReservation::Reserved(entry) => (
-                        BlankIdleSelection::Hit,
                         Some((*entry, pool.status_snapshot())),
+                        Some(BlankPoolSelection::Hit),
                     ),
-                    BlankIdleReservation::Empty => (BlankIdleSelection::Empty, None),
-                    BlankIdleReservation::Incompatible => (BlankIdleSelection::Incompatible, None),
-                };
-                let selection = ctx.spawn_ctx.blank_pool_diagnostics.classify(
-                    raw_selection,
-                    profile_name,
-                    device_rate_limits,
-                    pool.revision(),
-                    ctx.budget.allocated(),
-                );
-                (taken, Some(selection))
+                    BlankIdleReservation::Empty => (
+                        None,
+                        Some(ctx.spawn_ctx.blank_pool_diagnostics.classify_empty(
+                            profile_name,
+                            device_rate_limits,
+                            pool.revision(),
+                            ctx.budget.allocated(),
+                        )),
+                    ),
+                    BlankIdleReservation::Incompatible => (
+                        None,
+                        Some(BlankPoolSelection::Miss(
+                            BlankPoolSelectionReason::IncompatibleShape,
+                        )),
+                    ),
+                }
             }
         }
         None => (None, None),

@@ -18,9 +18,7 @@ use super::idle_lifecycle::{
 };
 use crate::config::ProfileConfig;
 use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
-use crate::idle_pool::{
-    BlankIdleSelection, DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate,
-};
+use crate::idle_pool::{DestroyOutcome, IdleDestroyJob, IdlePool, ParkResult, ParkedIdleCandidate};
 use crate::lifecycle::RunnerMode;
 use crate::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
 use crate::resource_budget::{BudgetLease, ResourceBudget};
@@ -75,22 +73,13 @@ impl BlankPoolDiagnostics {
         }
     }
 
-    pub(super) fn classify(
+    pub(super) fn classify_empty(
         &self,
-        selection: BlankIdleSelection,
         profile_name: &str,
         device_rate_limits: &Option<sandbox::DeviceRateLimits>,
         pool_revision: u64,
         budget_allocated: (u32, u32, usize),
     ) -> BlankPoolSelection {
-        match selection {
-            BlankIdleSelection::Hit => return BlankPoolSelection::Hit,
-            BlankIdleSelection::Incompatible => {
-                return BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape);
-            }
-            BlankIdleSelection::Empty => {}
-        }
-
         let Some(plan) = self.plan.as_ref() else {
             return BlankPoolSelection::Miss(BlankPoolSelectionReason::DisabledPlan);
         };
@@ -918,8 +907,7 @@ mod tests {
         budget: &ResourceBudget,
     ) -> BlankPoolSelection {
         let pool = idle_pool.lock().await;
-        replenisher.diagnostics().classify(
-            BlankIdleSelection::Empty,
+        replenisher.diagnostics().classify_empty(
             "vm0/default",
             &None,
             pool.revision(),
@@ -932,41 +920,15 @@ mod tests {
         let diagnostics = enabled_diagnostics();
 
         assert_eq!(
-            diagnostics.classify(BlankIdleSelection::Hit, "vm0/default", &None, 0, (0, 0, 0)),
-            BlankPoolSelection::Hit
-        );
-        assert_eq!(
-            diagnostics.classify(
-                BlankIdleSelection::Incompatible,
-                "vm0/default",
-                &None,
-                0,
-                (0, 0, 0),
-            ),
+            diagnostics.classify_empty("vm0/large", &None, 0, (0, 0, 0),),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape)
         );
         assert_eq!(
-            diagnostics.classify(BlankIdleSelection::Empty, "vm0/large", &None, 0, (0, 0, 0),),
-            BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape)
-        );
-        assert_eq!(
-            diagnostics.classify(
-                BlankIdleSelection::Empty,
-                "vm0/default",
-                &None,
-                0,
-                (0, 0, 0),
-            ),
+            diagnostics.classify_empty("vm0/default", &None, 0, (0, 0, 0),),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory)
         );
         assert_eq!(
-            BlankPoolDiagnostics::new(None).classify(
-                BlankIdleSelection::Empty,
-                "vm0/default",
-                &None,
-                0,
-                (0, 0, 0),
-            ),
+            BlankPoolDiagnostics::new(None).classify_empty("vm0/default", &None, 0, (0, 0, 0),),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::DisabledPlan)
         );
     }
@@ -977,25 +939,13 @@ mod tests {
         let cancel = CancellationToken::new();
         diagnostics.preparing(cancel.clone());
         assert_eq!(
-            diagnostics.classify(
-                BlankIdleSelection::Empty,
-                "vm0/default",
-                &None,
-                0,
-                (0, 0, 0),
-            ),
+            diagnostics.classify_empty("vm0/default", &None, 0, (0, 0, 0),),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
         );
 
         cancel.cancel();
         assert_eq!(
-            diagnostics.classify(
-                BlankIdleSelection::Empty,
-                "vm0/default",
-                &None,
-                0,
-                (0, 0, 0),
-            ),
+            diagnostics.classify_empty("vm0/default", &None, 0, (0, 0, 0),),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
         );
     }
@@ -1013,8 +963,7 @@ mod tests {
         ] {
             diagnostics.suppressed(reason, &pool, &budget);
             assert_eq!(
-                diagnostics.classify(
-                    BlankIdleSelection::Empty,
+                diagnostics.classify_empty(
                     "vm0/default",
                     &None,
                     pool.revision(),
@@ -1030,8 +979,7 @@ mod tests {
             &budget,
         );
         assert_eq!(
-            diagnostics.classify(
-                BlankIdleSelection::Empty,
+            diagnostics.classify_empty(
                 "vm0/default",
                 &None,
                 pool.revision() + 1,
@@ -1041,13 +989,7 @@ mod tests {
         );
         diagnostics.unknown();
         assert_eq!(
-            diagnostics.classify(
-                BlankIdleSelection::Empty,
-                "vm0/default",
-                &None,
-                pool.revision(),
-                budget.allocated(),
-            ),
+            diagnostics.classify_empty("vm0/default", &None, pool.revision(), budget.allocated(),),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
         );
     }
@@ -1206,8 +1148,7 @@ mod tests {
         {
             let pool = idle_pool.lock().await;
             assert_eq!(
-                replenisher.diagnostics().classify(
-                    BlankIdleSelection::Empty,
+                replenisher.diagnostics().classify_empty(
                     "vm0/default",
                     &None,
                     pool.revision(),
@@ -1480,8 +1421,7 @@ mod tests {
         {
             let pool = idle_pool.lock().await;
             assert_eq!(
-                replenisher.diagnostics().classify(
-                    BlankIdleSelection::Empty,
+                replenisher.diagnostics().classify_empty(
                     "vm0/default",
                     &None,
                     pool.revision(),
