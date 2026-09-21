@@ -27,7 +27,7 @@ import { executeRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
 import { isLockNotAvailable } from "../lib/pg-errors";
 import { writeDb$, type Db } from "../signals/external/db";
-import { createDeferredPromise } from "../signals/utils";
+import { createDeferredPromise, settle } from "../signals/utils";
 import {
   clearStableAgentPromptBuildHookForTest,
   clearStableContextCacheIdentityBuildHookForTest,
@@ -546,25 +546,22 @@ export async function assertStableContextStorageWriteLockUnavailableFixture(
   storageId: string,
 ): Promise<void> {
   await tx.execute(sql`SAVEPOINT stable_context_storage_lock_probe`);
-  let failure: unknown;
-  try {
-    await tx
+  const probe = await settle(
+    tx
       .select({ id: storages.id })
       .from(storages)
       .where(eq(storages.id, storageId))
-      .for("update", { noWait: true });
-  } catch (error) {
-    failure = error;
-  }
+      .for("update", { noWait: true }),
+  );
   await tx.execute(
     sql`ROLLBACK TO SAVEPOINT stable_context_storage_lock_probe`,
   );
   await tx.execute(sql`RELEASE SAVEPOINT stable_context_storage_lock_probe`);
-  if (failure === undefined) {
+  if (probe.ok) {
     throw new Error("Expected stable-context Storage write lock contention");
   }
-  if (!isLockNotAvailable(failure)) {
-    throw failure;
+  if (!isLockNotAvailable(probe.error)) {
+    throw probe.error;
   }
 }
 
