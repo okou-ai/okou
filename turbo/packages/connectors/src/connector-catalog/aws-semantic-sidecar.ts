@@ -222,7 +222,7 @@ export const awsSemanticServiceShardSchema = z
         return permission.name;
       }),
     );
-    const referencedPermissions = new Set<string>();
+    const referencedPrimaryPermissions = new Set<string>();
     for (const [operationIndex, operation] of shard.operations.entries()) {
       validateOperationForService(
         shard.service,
@@ -230,19 +230,17 @@ export const awsSemanticServiceShardSchema = z
         operationIndex,
         context,
       );
-      for (const effect of operation.authorizedEffects) {
-        referencedPermissions.add(effect);
-        if (!permissionNames.has(effect)) {
-          context.addIssue({
-            code: "custom",
-            path: ["operations", operationIndex, "authorizedEffects"],
-            message: `Authorized effect is missing permission metadata: ${effect}`,
-          });
-        }
+      referencedPrimaryPermissions.add(operation.primaryPermission);
+      if (!permissionNames.has(operation.primaryPermission)) {
+        context.addIssue({
+          code: "custom",
+          path: ["operations", operationIndex, "primaryPermission"],
+          message: `Primary permission is missing permission metadata: ${operation.primaryPermission}`,
+        });
       }
     }
     for (const [permissionIndex, permission] of shard.permissions.entries()) {
-      if (!referencedPermissions.has(permission.name)) {
+      if (!referencedPrimaryPermissions.has(permission.name)) {
         context.addIssue({
           code: "custom",
           path: ["permissions", permissionIndex],

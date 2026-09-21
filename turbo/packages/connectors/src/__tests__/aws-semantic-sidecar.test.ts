@@ -264,6 +264,17 @@ describe("AWS semantic sidecar contract", () => {
     const shard = shardFixture("ec2");
     const operation = shard.operations[0]!;
     const permission = shard.permissions[0]!;
+    expect(() => {
+      return encodeAwsSemanticServiceShard({
+        ...shard,
+        operations: [
+          {
+            ...operation,
+            authorizedEffects: ["ec2:DescribeInstances", "iam:PassRole"],
+          },
+        ],
+      });
+    }).not.toThrow();
     for (const invalidShard of [
       {
         ...shard,
