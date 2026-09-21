@@ -65,7 +65,7 @@ describe("private Runner VNC authority", () => {
         body: {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
-          supportedProfiles: [...vncProfiles],
+          supportedProfiles: [...vncX509VncProfiles],
         },
       }),
       [200],
