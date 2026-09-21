@@ -7583,19 +7583,13 @@ describe("Official Workflow installations", () => {
       prepared = await prepareInstalledBlueprints();
     });
 
-    it("records selective non-blocking work and converges schema changes per Blueprint", async () => {
+    it("ignores presentation-only and instruction-only catalog changes", async () => {
       const {
         definitionName,
         unrelatedDefinitionName,
         initialBlueprints,
         unrelatedInitial,
-        actor,
-        headers,
-        workflowId,
-        initialDaily,
-        initialPulse,
       } = prepared;
-
       const presentationOnly = activeDefinition(
         definitionName,
         initialBlueprints,
@@ -7612,7 +7606,6 @@ describe("Official Workflow installations", () => {
       await expect(
         readOfficialWorkflowReconciliationState({}),
       ).resolves.toMatchObject({ body: { reconciliationWork: [] } });
-
       await syncCatalog(
         catalog([
           activeDefinition(
@@ -7626,21 +7619,21 @@ describe("Official Workflow installations", () => {
       await expect(
         readOfficialWorkflowReconciliationState({}),
       ).resolves.toMatchObject({ body: { reconciliationWork: [] } });
+    });
 
+    it("reconciles work only for an unrelated changed definition", async () => {
+      const { definitionName, unrelatedDefinitionName, initialBlueprints } =
+        prepared;
       const unrelatedChanged = unresolvedLoopBlueprint();
-      const unrelatedActivation = await syncCatalog(
+      const activation = await syncCatalog(
         catalog([
-          activeDefinition(
-            definitionName,
-            initialBlueprints,
-            "Instruction-only release must not reconcile Automations.",
-          ),
+          activeDefinition(definitionName, initialBlueprints),
           activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
         ]),
       );
-      expect(unrelatedActivation.body.outcome).toBe("accepted");
-      const unrelatedWork = await readOfficialWorkflowReconciliationState({});
-      expect(unrelatedWork.body.reconciliationWork).toMatchObject([
+      expect(activation.body.outcome).toBe("accepted");
+      const work = await readOfficialWorkflowReconciliationState({});
+      expect(work.body.reconciliationWork).toMatchObject([
         { definitionName: unrelatedDefinitionName, state: "pending" },
       ]);
       await expect(
@@ -7652,7 +7645,18 @@ describe("Official Workflow installations", () => {
         retried: 0,
         installations: 0,
       });
+    });
 
+    it("reconciles one changed Blueprint without enabling its sibling", async () => {
+      const {
+        definitionName,
+        unrelatedDefinitionName,
+        unrelatedInitial,
+        headers,
+        workflowId,
+        initialDaily,
+        initialPulse,
+      } = prepared;
       const onceAt = new Date(now() + 24 * 60 * 60 * 1000).toISOString();
       const changedPulse = pulseOnceBlueprint(onceAt);
       const activation = await syncCatalog(
@@ -7661,7 +7665,7 @@ describe("Official Workflow installations", () => {
             scheduledBlueprint(),
             changedPulse,
           ]),
-          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
       expect(activation.body.outcome).toBe("accepted");
@@ -7687,7 +7691,6 @@ describe("Official Workflow installations", () => {
           appliedFingerprint: initialPulse.official.appliedFingerprint,
         },
       });
-
       await expect(
         runOfficialWorkflowReconciliationWorker(),
       ).resolves.toStrictEqual({
@@ -7726,24 +7729,46 @@ describe("Official Workflow installations", () => {
           intendedEnabled: false,
         },
       });
+    });
 
-      const evolutionActivation = await syncCatalog(
+    it("converges a scheduled Blueprint schema change", async () => {
+      const {
+        definitionName,
+        unrelatedDefinitionName,
+        unrelatedInitial,
+        headers,
+        workflowId,
+        initialDaily,
+      } = prepared;
+      const onceAt = new Date(now() + 24 * 60 * 60 * 1000).toISOString();
+      const changedPulse = pulseOnceBlueprint(onceAt);
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            scheduledBlueprint(),
+            changedPulse,
+          ]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
+        ]),
+      );
+      await runOfficialWorkflowReconciliationWorker();
+      const activation = await syncCatalog(
         catalog([
           activeDefinition(definitionName, [
             evolvedScheduledBlueprint(),
             changedPulse,
           ]),
-          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
-      if (evolutionActivation.body.outcome !== "accepted") {
+      if (activation.body.outcome !== "accepted") {
         throw new Error(
-          `Evolution catalog rejected: ${JSON.stringify(evolutionActivation.body.diagnostics)}`,
+          `Evolution catalog rejected: ${JSON.stringify(activation.body.diagnostics)}`,
         );
       }
-      expect(evolutionActivation.body).toMatchObject({ outcome: "accepted" });
-      const evolutionWork = await readOfficialWorkflowReconciliationState({});
-      expect(evolutionWork.body.reconciliationWork).toMatchObject([
+      expect(activation.body).toMatchObject({ outcome: "accepted" });
+      const work = await readOfficialWorkflowReconciliationState({});
+      expect(work.body.reconciliationWork).toMatchObject([
         { definitionName, state: "pending" },
       ]);
       await runOfficialWorkflowReconciliationWorker();
@@ -7781,14 +7806,38 @@ describe("Official Workflow installations", () => {
       await expect(
         readWorkflowAutomationAutonomyFixture(context, initialDaily.id),
       ).resolves.toMatchObject({ autonomyBudget: 7, enabled: false });
+    });
 
+    it("recovers unresolved required Blueprint bindings", async () => {
+      const {
+        definitionName,
+        unrelatedDefinitionName,
+        unrelatedInitial,
+        actor,
+        headers,
+        workflowId,
+        initialDaily,
+        initialPulse,
+      } = prepared;
+      const onceAt = new Date(now() + 24 * 60 * 60 * 1000).toISOString();
+      const changedPulse = pulseOnceBlueprint(onceAt);
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            evolvedScheduledBlueprint(),
+            changedPulse,
+          ]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
+        ]),
+      );
+      await runOfficialWorkflowReconciliationWorker();
       await syncCatalog(
         catalog([
           activeDefinition(definitionName, [
             unresolvedScheduledBlueprint(),
             withUnresolvedRequiredBudget(changedPulse),
           ]),
-          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
       );
       await setOfficialWorkflowsEnabled(actor, false);
@@ -7819,7 +7868,6 @@ describe("Official Workflow installations", () => {
           reconciliationStatus: "needs_reconfiguration",
         },
       });
-
       const recovered = await accept(
         installationClient().reconfigure({
           headers,
@@ -13631,7 +13679,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     );
   });
 
-  it("preserves compatibility recurrence, failure pause, and credit handling", async () => {
+  it("keeps insufficient credits non-pausing for compatibility runs", async () => {
     const creditBrief = await installJournaledBrief();
     if (!creditBrief.actor.orgId) {
       throw new Error("Expected an organization-scoped Morning Brief owner");
@@ -13658,7 +13706,9 @@ describe("Morning Brief legacy schedule claim journal", () => {
       nextRunAt: creditLegacy?.nextRunAt,
       scheduleOwner: "legacy",
     });
+  });
 
+  it("preserves compatibility recurrence through the three-failure pause", async () => {
     const failingBrief = await installJournaledBrief();
     if (!failingBrief.actor.orgId) {
       throw new Error("Expected an organization-scoped Morning Brief owner");
