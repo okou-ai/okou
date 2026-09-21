@@ -684,7 +684,7 @@ describe("Computer Use binary content account-erasure fence", () => {
     ["plugin", "getObject"],
     ["plugin", "body"],
   ] as const)(
-    "holds %s admission through the complete S3 %s phase before closure",
+    "completes %s delivery through the complete S3 %s phase without holding closure",
     { timeout: CASE_TIMEOUT_MS },
     async (kind, phase) => {
       const fake = computerUse.installComputerUseS3Fake();
@@ -729,13 +729,17 @@ describe("Computer Use binary content account-erasure fence", () => {
                 );
                 expect(enteredProvider.signal).toBeDefined();
 
+                // The read takes no advisory lock, so closure is not held
+                // behind an in-flight download. This read was admitted before
+                // the decision committed, so completing it stays correct.
                 const closing = startClosure(owner, {
                   subjectKind: "user",
                   subjectId: actor.userId,
                 });
-                await expect
-                  .poll(databaseBarrier.blockedWaiterCount, BLOCKED)
-                  .toBeGreaterThanOrEqual(1);
+                const closed = valueOf(await closing.settled);
+                await expect(
+                  databaseBarrier.blockedWaiterCount(),
+                ).resolves.toBe(0);
                 expectDownload(
                   await downloadContent(unrelatedFixture, unrelated),
                   unrelatedFixture,
@@ -743,7 +747,6 @@ describe("Computer Use binary content account-erasure fence", () => {
 
                 providerBarrier.release();
                 expectDownload(valueOf(await reading.settled), fixture);
-                const closed = valueOf(await closing.settled);
                 const getsBeforeDenied = fake.gets.length;
                 const denied = await requestContent(
                   kind,
@@ -766,7 +769,7 @@ describe("Computer Use binary content account-erasure fence", () => {
   );
 
   it.each(["screenshot", "plugin"] as const)(
-    "makes closure-first win before the %s pointer projection or S3 read",
+    "serves a %s read started before a closure commits and denies every read after it",
     { timeout: CASE_TIMEOUT_MS },
     async (kind) => {
       const fake = computerUse.installComputerUseS3Fake();
@@ -781,18 +784,29 @@ describe("Computer Use binary content account-erasure fence", () => {
             subjectId: actor.orgId,
           });
           await waitForBarrierEntry(barrier.entered, closing);
+          // A subject whose closure has not committed is not a closed
+          // subject. The read holds no advisory lock to wait on and cannot
+          // observe an uncommitted decision under READ COMMITTED.
           const reading = owner.start(
-            requestContent(kind, actor, fixture.commandId, [404]),
+            requestContent(kind, actor, fixture.commandId, [200]),
           );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          expect(fake.gets).toHaveLength(getsBefore);
+          expect(valueOf(await reading.settled).status).toBe(200);
+          await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
+          expect(fake.gets.length).toBeGreaterThan(getsBefore);
           barrier.release();
           const closed = valueOf(await closing.settled);
-          const denied = valueOf(await reading.settled);
+
+          // Once the decision commits, the separate closure lookup denies
+          // every later read before it ever reaches S3.
+          const getsBeforeDenied = fake.gets.length;
+          const denied = await requestContent(
+            kind,
+            actor,
+            fixture.commandId,
+            [404],
+          );
           expectOpaqueNotFound(kind, denied.body);
-          expect(fake.gets).toHaveLength(getsBefore);
+          expect(fake.gets).toHaveLength(getsBeforeDenied);
           await removeErasureSubjectsFixture([closed.jobId]);
         });
       }, context.signal);
@@ -935,13 +949,16 @@ describe("Computer Use binary content account-erasure fence", () => {
                 );
                 await waitForBarrierEntry(databaseBarrier.entered, reading);
 
+                // Closure is not held behind the paused read, so joining its
+                // settlement is what proves both operations are in flight.
                 const closing = startClosure(owner, {
                   subjectKind: "user",
                   subjectId: actor.userId,
                 });
-                await expect
-                  .poll(databaseBarrier.blockedWaiterCount, BLOCKED)
-                  .toBeGreaterThanOrEqual(1);
+                const closedEarly = valueOf(await closing.settled);
+                await expect(
+                  databaseBarrier.blockedWaiterCount(),
+                ).resolves.toBe(0);
                 databaseBarrier.release();
 
                 await expect(
@@ -951,8 +968,7 @@ describe("Computer Use binary content account-erasure fence", () => {
                   expect(String(error)).toMatch(/Unknown response status 500/);
                 });
 
-                const closed = valueOf(await closing.settled);
-                await removeErasureSubjectsFixture([closed.jobId]);
+                await removeErasureSubjectsFixture([closedEarly.jobId]);
                 bodyBarrier.release();
 
                 const recovered = owner.start(downloadContent(fixture, actor));
@@ -997,7 +1013,7 @@ describe("Computer Use binary content account-erasure fence", () => {
   );
 
   it.each(["screenshot", "plugin"] as const)(
-    "propagates the %s B1 lock timeout and never starts S3",
+    "never waits on admission and never starts S3 once the decision commits",
     { timeout: CASE_TIMEOUT_MS },
     async (kind) => {
       const fake = computerUse.installComputerUseS3Fake();
@@ -1012,18 +1028,29 @@ describe("Computer Use binary content account-erasure fence", () => {
             subjectId: actor.userId,
           });
           await waitForBarrierEntry(barrier.entered, closing);
+          // There is no admission lock left for this read to wait on, so the
+          // scoped `lock_timeout` it used to hit is unreachable: the read
+          // neither stalls nor turns an uncommitted decision into a denial.
           const reading = owner.start(
-            requestContent(kind, actor, fixture.commandId, [200, 404]),
+            requestContent(kind, actor, fixture.commandId, [200]),
           );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          await reading.acceptFailureAfter((error) => {
-            expect(String(error)).toMatch(/Unknown response status 500/);
-          });
-          expect(fake.gets).toHaveLength(getsBefore);
+          expect(valueOf(await reading.settled).status).toBe(200);
+          await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
+          expect(fake.gets.length).toBeGreaterThan(getsBefore);
           barrier.release();
           const closed = valueOf(await closing.settled);
+
+          // After the decision commits the closure lookup denies the read
+          // before S3 is ever reached.
+          const getsBeforeDenied = fake.gets.length;
+          const denied = await requestContent(
+            kind,
+            actor,
+            fixture.commandId,
+            [404],
+          );
+          expectOpaqueNotFound(kind, denied.body);
+          expect(fake.gets).toHaveLength(getsBeforeDenied);
           await removeErasureSubjectsFixture([closed.jobId]);
         });
       }, context.signal);
@@ -1154,9 +1181,9 @@ describe("Computer Use binary content account-erasure fence", () => {
                     subjectKind: "user",
                     subjectId: actor.userId,
                   });
-                  await expect
-                    .poll(databaseBarrier.blockedWaiterCount, BLOCKED)
-                    .toBeGreaterThanOrEqual(1);
+                  // Closure is not held behind the lock-free read, so joining
+                  // its settlement proves both operations are in flight.
+                  valueOf(await earlyClosure.settled);
                   throw new Error("deliberate content callback exit");
                 },
               );
