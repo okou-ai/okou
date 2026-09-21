@@ -1,14 +1,17 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
+import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import {
   chatThreadArtifactsContract,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { strFromU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -23,6 +26,7 @@ import {
   artifactFile,
   findNamedButton,
   findNamedLink,
+  findNamedMenuItem,
   getNamedButton,
   getNamedLink,
   mockAttachmentChat,
@@ -1049,7 +1053,6 @@ test.each([
     });
   },
 );
-
 test("A private site card keeps its screenshot credentials when the artifact list reloads", async () => {
   const deploymentId = "00000000-0000-4000-8000-000000000023";
   const screenshotId = "00000000-0000-4000-8000-000000000024";
@@ -1134,4 +1137,188 @@ test("A private site card keeps its screenshot credentials when the artifact lis
   expect(
     within(card).getByTestId("attachment-preview-thumbnail"),
   ).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${screenshotUrl}`);
+});
+
+const PUBLICATION_DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000021";
+const PUBLICATION_SITE_ID = "00000000-0000-4000-8000-000000000022";
+const PUBLICATION_HOST = "https://launch-site.sites.vm7.io/";
+const PUBLICATION_PAGE = "<!doctype html><h1>Launch</h1>";
+const PUBLICATION_STYLE = "h1 { color: teal }";
+
+function hostedFile(
+  path: string,
+  content: string,
+  contentType: string,
+): HostedSiteFilesResponse["files"][number] {
+  return {
+    path,
+    size: content.length,
+    sha256: "a".repeat(64),
+    contentType,
+    downloadUrl: `https://storage.example.test/signed${path}`,
+  };
+}
+
+/**
+ * Publish one hosted artifact and serve its publication from the delivery host
+ * the viewer already reads, so a download exercises the real member requests.
+ */
+function mockHostedPublication(
+  files: readonly HostedSiteFilesResponse["files"][number][],
+): { readonly members: readonly string[] } {
+  const canonicalUrl = artifactReferencePath(
+    PUBLICATION_DEPLOYMENT_ID,
+    "index.html",
+  );
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`[Launch site](${canonicalUrl})`)],
+    artifacts: [
+      artifactFile("launch-site.html", {
+        id: "hosted-publication",
+        contentType: "text/html",
+        url: canonicalUrl,
+        artifactKind: "hosted-site",
+      }),
+    ],
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: PUBLICATION_HOST,
+      filename: "index.html",
+      contentType: "text/html",
+      target: { kind: "html", id: PUBLICATION_DEPLOYMENT_ID },
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+  });
+  context.mocks.api(artifactDownloadsContract.files, ({ params, respond }) => {
+    expect(params.reference).toBe(canonicalUrl.slice("/artifacts/".length));
+    return respond(200, {
+      siteId: PUBLICATION_SITE_ID,
+      deploymentId: PUBLICATION_DEPLOYMENT_ID,
+      publicSlug: "launch-site",
+      url: PUBLICATION_HOST,
+      fileCount: files.length,
+      size: files.reduce((total, file) => {
+        return total + file.size;
+      }, 0),
+      files: [...files],
+    });
+  });
+  const members: string[] = [];
+  const bodies: Record<string, string> = {
+    "/index.html": PUBLICATION_PAGE,
+    "/assets/site.css": PUBLICATION_STYLE,
+  };
+  for (const [path, body] of Object.entries(bodies)) {
+    context.mocks.http.get(`${PUBLICATION_HOST.slice(0, -1)}${path}`, () => {
+      members.push(path);
+      return HttpResponse.text(body);
+    });
+  }
+  return { members };
+}
+
+test("a multi-file hosted publication downloads as a zip of every member", async () => {
+  const { members } = mockHostedPublication([
+    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
+    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
+  ]);
+  const downloads = context.mocks.browser.blobDownload();
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Launch site"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+
+  await waitFor(() => {
+    expect(downloads.downloads).toHaveLength(1);
+  });
+  expect(members).toStrictEqual(["/index.html", "/assets/site.css"]);
+  const [download] = downloads.downloads;
+  expect(download?.filename).toBe("launch-site.zip");
+  expect(download?.blob?.type).toBe("application/zip");
+  const archive = await download?.blob?.arrayBuffer();
+  const unpacked = unzipSync(new Uint8Array(archive!));
+  expect(Object.keys(unpacked).sort()).toStrictEqual([
+    "assets/site.css",
+    "index.html",
+  ]);
+  expect(strFromU8(unpacked["index.html"]!)).toBe(PUBLICATION_PAGE);
+  expect(strFromU8(unpacked["assets/site.css"]!)).toBe(PUBLICATION_STYLE);
+  expect(screen.queryByText("Download failed")).toBeNull();
+});
+
+test("a publication whose member cannot be reached reports the failure", async () => {
+  mockHostedPublication([
+    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
+    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
+  ]);
+  const downloads = context.mocks.browser.blobDownload();
+  // A member the browser never reaches: the delivery host does not get to
+  // describe this failure, so nothing but the archive can report it.
+  context.mocks.http.get(
+    `${PUBLICATION_HOST.slice(0, -1)}/assets/site.css`,
+    () => {
+      return HttpResponse.error();
+    },
+  );
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Launch site"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+
+  await expect(
+    screen.findByText("Download failed"),
+  ).resolves.toBeInTheDocument();
+  expect(downloads.downloads).toStrictEqual([]);
+});
+
+test("a publication that cannot be listed reports the failure instead of its entry page", async () => {
+  mockHostedPublication([
+    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
+    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
+  ]);
+  const downloads = context.mocks.browser.blobDownload();
+  context.mocks.api(artifactDownloadsContract.files, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL", message: "Listing unavailable" },
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Launch site"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+
+  await expect(
+    screen.findByText("Download failed"),
+  ).resolves.toBeInTheDocument();
+  expect(downloads.downloads).toStrictEqual([]);
+});
+
+test("a self-contained hosted page downloads as the page itself", async () => {
+  mockHostedPublication([
+    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
+  ]);
+  const downloads = context.mocks.browser.blobDownload();
+  context.mocks.http.get(PUBLICATION_HOST, () => {
+    return HttpResponse.text(PUBLICATION_PAGE);
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  click(await findNamedLink("Launch site"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findNamedButton("Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+
+  await waitFor(() => {
+    expect(downloads.downloads).toHaveLength(1);
+  });
+  const [download] = downloads.downloads;
+  expect(download?.filename).toBe("launch-site.html");
+  await expect(download?.blob?.text()).resolves.toBe(PUBLICATION_PAGE);
 });
