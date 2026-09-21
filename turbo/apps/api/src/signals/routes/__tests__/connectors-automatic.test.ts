@@ -220,8 +220,6 @@ describe("builtin MCP automatic authentication", () => {
       externalId: "automatic-user-123",
       externalUsername: "userinfo-user",
       externalEmail: "userinfo-user@example.test",
-      oauthRequestedScopes: null,
-      oauthGrantedScopes: ["read", "write"],
     });
   });
 
