@@ -1,3 +1,5 @@
+import { getOkouUnderlyingRunModel } from "@okouai/api-contracts/contracts/model-providers";
+
 /**
  * A run model's product line: the line a vendor ships it under, independent of
  * the vendor prefix and the version. `claude-fable-5-1` and a later
@@ -64,7 +66,8 @@ export function modelProductLine(
   if (typeof model !== "string") {
     return null;
   }
-  const line = model
+  const canonicalModel = getOkouUnderlyingRunModel(model) ?? model;
+  const line = canonicalModel
     .trim()
     .toLowerCase()
     .split(/[-_./]/u)
