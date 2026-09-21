@@ -9,6 +9,7 @@ import {
 import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "../connector-catalog/artifacts/mcp-auth";
 import {
   decodeAttestedConnectorCatalogSnapshot,
+  decodeConnectorCatalogArtifact,
   decodeConnectorCatalogSnapshot,
   encodeConnectorCatalogSnapshot,
   loadConnectorCatalogCandidate,
@@ -59,6 +60,15 @@ function snapshot(
 
 function decode(artifact: ConnectorCatalogArtifact) {
   return decodeConnectorCatalogSnapshot(snapshot(artifact)).artifact;
+}
+
+function rawArtifact(artifact: ConnectorCatalogArtifact) {
+  const bytes = Buffer.from(JSON.stringify(artifact));
+  return {
+    catalogBytes: bytes,
+    catalogVersion: artifact.catalogVersion,
+    catalogDigest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+  };
 }
 
 function filteredMethods(artifact: ConnectorCatalogArtifact) {
@@ -115,6 +125,61 @@ describe("v4 connector catalog reader", () => {
         reader({ ...args, catalogDigest: `sha256:${"0".repeat(64)}` });
       }).toThrow("digest-mismatch");
     }
+  });
+
+  it("validates exact raw catalog bytes and identity", () => {
+    const artifact = publishedCatalog();
+    const args = rawArtifact(artifact);
+    expect(decodeConnectorCatalogArtifact(args).artifact).toEqual(artifact);
+    expect(() => {
+      decodeConnectorCatalogArtifact({
+        ...args,
+        catalogVersion: "another-release",
+      });
+    }).toThrow("invalid-reference");
+    expect(() => {
+      decodeConnectorCatalogArtifact({
+        ...args,
+        catalogDigest: `sha256:${"0".repeat(64)}`,
+      });
+    }).toThrow("digest-mismatch");
+  });
+
+  it("validates AWS firewall rules through the shared semantic parser", () => {
+    const artifact = publishedCatalog();
+    const connector = requiredConnector(artifact, "019sms");
+    if (connector.firewall.kind !== "generated") {
+      throw new Error("Expected generated firewall fixture");
+    }
+    const api = connector.firewall.config.apis[0];
+    const permission = api?.permissions?.[0];
+    if (api === undefined || permission === undefined) {
+      throw new Error("Expected firewall permission fixture");
+    }
+    api.auth = {
+      awsSigv4: {
+        accessKeyId: "${{ vars.SMS019_USERNAME }}",
+        secretAccessKey: "${{ secrets.SMS019_API_TOKEN }}",
+      },
+    };
+    permission.rules = ["POST / AWS sigv4=ec2 action=DescribeInstances"];
+    expect(
+      decodeConnectorCatalogArtifact(rawArtifact(artifact)).artifact,
+    ).toEqual(artifact);
+
+    delete api.auth.awsSigv4;
+    expect(() => {
+      decodeConnectorCatalogArtifact(rawArtifact(artifact));
+    }).toThrow("relationship-mismatch");
+
+    api.auth.awsSigv4 = {
+      accessKeyId: "${{ vars.SMS019_USERNAME }}",
+      secretAccessKey: "${{ secrets.SMS019_API_TOKEN }}",
+    };
+    permission.rules = ["POST / AWS action=DescribeInstances"];
+    expect(() => {
+      decodeConnectorCatalogArtifact(rawArtifact(artifact));
+    }).toThrow("relationship-mismatch");
   });
 
   it("loads candidates only from the canonical v4 release path", async () => {
