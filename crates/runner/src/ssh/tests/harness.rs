@@ -49,7 +49,7 @@ pub(super) enum Reply {
     Disconnect,
     Hold,
     Process,
-    DelayedExit {
+    ProcessWithDelayedExit {
         command: &'static [u8],
         stdout: &'static [u8],
         delay: Duration,
@@ -335,7 +335,7 @@ impl Harness {
             },
             auth_rejection_time: Duration::ZERO,
             auth_rejection_time_initial: Some(Duration::ZERO),
-            limits: if matches!(reply, Reply::Process | Reply::DelayedExit { .. }) {
+            limits: if matches!(reply, Reply::Process | Reply::ProcessWithDelayedExit { .. }) {
                 // Traffic after a quiet period forces another key exchange,
                 // including after the initial setup deadline in the long-task test.
                 russh::Limits {
@@ -758,7 +758,7 @@ impl server::Handler for Peer {
                     session.handle(),
                 ));
             }
-            Reply::DelayedExit {
+            Reply::ProcessWithDelayedExit {
                 command: delayed_command,
                 stdout,
                 delay,
@@ -781,7 +781,7 @@ impl server::Handler for Peer {
                     let _ = handle.close(channel).await;
                 }));
             }
-            Reply::DelayedExit { .. } => {
+            Reply::ProcessWithDelayedExit { .. } => {
                 session.channel_success(channel)?;
                 self.process = Some(process::Process::start(
                     Some(command),

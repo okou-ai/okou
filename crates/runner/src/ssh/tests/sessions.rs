@@ -268,7 +268,7 @@ async fn a_real_pty_is_explicit_and_refusal_never_sends_the_program() {
 
 #[tokio::test]
 async fn quiet_command_survives_the_one_shot_deadline_and_peer_rekey() {
-    let mut h = Harness::new(Reply::DelayedExit {
+    let mut h = Harness::new(Reply::ProcessWithDelayedExit {
         command: b"quiet",
         stdout: b"done",
         delay: Duration::from_secs(61),
