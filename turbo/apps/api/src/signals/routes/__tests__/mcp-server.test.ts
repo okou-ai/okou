@@ -6051,7 +6051,7 @@ describe("external MCP entry", () => {
                     },
                     annotations: {
                       readOnlyHint: false,
-                      idempotentHint: true,
+                      idempotentHint: false,
                       openWorldHint: true,
                     },
                   },
@@ -6077,7 +6077,7 @@ describe("external MCP entry", () => {
                         },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: { readOnlyHint: false, idempotentHint: false },
                   },
                   {
                     name: "send_chat_message",
@@ -6086,7 +6086,7 @@ describe("external MCP entry", () => {
                         text: { maxLength: 32_000, pattern: "\\S" },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: { readOnlyHint: false, idempotentHint: false },
                   },
                   {
                     name: "revoke_queued_message",
@@ -6151,9 +6151,28 @@ describe("external MCP entry", () => {
             /neither reads messages nor marks read/iu,
             /not prove/iu,
           ],
-          create_chat_thread: [/24 hours/iu, /retry only/iu, /admission/iu],
-          update_chat_thread: [/24 hours/iu, /retry only/iu, /active run/iu],
-          send_chat_message: [/24 hours/iu, /not proof/iu, /get_chat_status/iu],
+          create_chat_thread: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /admission/iu,
+          ],
+          update_chat_thread: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /active run/iu,
+          ],
+          send_chat_message: [
+            /24 hours/iu,
+            /retryUntil/u,
+            /not generally idempotent/iu,
+            /inspect/iu,
+            /not proof/iu,
+            /get_chat_status/iu,
+          ],
           revoke_queued_message: [/never cancels a run/iu, /not_revocable/iu],
           cancel_run: [/neither revokes/iu, /prior effects/iu],
         } as const;

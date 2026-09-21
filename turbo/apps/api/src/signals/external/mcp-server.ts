@@ -768,13 +768,13 @@ function registerManageTools(
     "create_chat_thread",
     {
       description:
-        "Create a conversation, optionally accepting its first message atomically. Only requestId is required. Omitted agentId uses the visible organization default; omitted model leaves the thread unpinned so current member/workspace defaults apply at run admission; omitted title stays null until the first text run generates one. Without message, use the send_chat_message handoff. With message, dispatch is attempted after acceptance; follow get_chat_status because acceptance is not delivery or run success. Use one UUID requestId per intent; within 24 hours, retry only with the identical mode, values, and field presence. threadId equals requestId and inputRef is stable. Deleted, expired, or conflicting requests fail; inspect uncertain old work before retrying.",
+        "Create a conversation, optionally accepting its first message atomically. Only requestId is required. Omitted agentId uses the visible organization default; omitted model leaves the thread unpinned so current member/workspace defaults apply at run admission; omitted title stays null until the first text run generates one. Without message, use the send_chat_message handoff. With message, dispatch is attempted after acceptance; follow get_chat_status because acceptance is not delivery or run success. Use one UUID requestId per intent. Exact replay is bounded: within 24 hours, retry only with the identical mode, values, and field presence; success returns retryUntil. Retained identity is not permanent, so creation is not generally idempotent. threadId equals requestId and inputRef is stable. After uncertainty or expiry, inspect current state before new work.",
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: true,
       },
     },
@@ -801,13 +801,13 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Atomically update a conversation title and/or future-run model; omitted fields and unrelated settings remain unchanged. model:null clears the thread pin. A title update suppresses later automatic naming; model changes affect later runs, not an active run. Use one UUID requestId per intended patch; within 24 hours retry only the identical threadId and exact field presence/values. Replay returns current state without restoring older settings; inspect before a new intent after uncertainty.",
+        "Atomically update a conversation title and/or future-run model; omitted fields and unrelated settings remain unchanged. model:null clears the thread pin. A title update suppresses later automatic naming; model changes affect later runs, not an active run. Use one UUID requestId per intended patch. Exact replay is bounded: within 24 hours retry only the identical threadId and exact field presence/values; success returns retryUntil. Retained identity is not permanent, so updates are not generally idempotent. Replay returns current state without restoring older settings; inspect before a new intent after uncertainty or expiry.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },
@@ -845,13 +845,13 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message; within 24 hours retry only the identical threadId and exact text. After uncertainty or expiry, inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Pass threadId/inputRef to get_chat_status, then follow its message handoff.",
+          "Submit text to an existing conversation; the server may launch, queue, or steer. Use a new UUID requestId per intended message. Exact replay is bounded: within 24 hours retry only the identical threadId and exact text; success returns retryUntil. Retained identity is not permanent, so sends are not generally idempotent. After uncertainty or expiry, inspect history before new work. inputRef identifies the original input even if visible history replaces it. disposition is observational, not proof of delivery or success, and runId may be null. Pass threadId/inputRef to get_chat_status, then follow its message handoff.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
           readOnlyHint: false,
           destructiveHint: false,
-          idempotentHint: true,
+          idempotentHint: false,
           openWorldHint: true,
         },
       },

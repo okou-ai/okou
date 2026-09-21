@@ -43,6 +43,15 @@ The CLI never automatically retries a tool call. A timeout, connection failure,
 or error result does not prove that a remote side effect did not happen; follow
 the tool's documented idempotency and inspection guidance before retrying.
 
+The catalog publishes `idempotentHint: false` for creation, metadata updates and
+message sends because their request identities are retained for a bounded time,
+not permanently. Each still supports an identical replay within 24 hours. After
+a successful response, use its `retryUntil` as the deadline; after a lost
+response, retry the identical request immediately within that documented window.
+The positive hints on queued-input revocation and run cancellation instead
+describe target-state mutations whose repeated calls do not recreate missing
+work.
+
 ## Starting a conversation
 
 Call `list_agents` and `list_models` before `create_chat_thread` when selecting
@@ -129,10 +138,15 @@ is a conflict. Replay returns current stored thread settings without undoing
 later edits. An originally omitted model follows current defaults while the
 thread is still unpinned; after run admission persists the resolved model,
 replay reports that thread pin. Deleted conversations, expired retries, or
-missing canonical evidence return an error. There is no permanent request-ID ledger. Never
-automatically retry an uncertain old request after the window; inspect the
-original thread before intentionally creating new work. No new table or schema
-migration is introduced.
+missing canonical evidence return an error while either half of the retained
+identity remains. Thread events become eligible for snapshot-backed pruning
+after seven days. If the thread remains after its creation event is pruned, the
+missing evidence still conflicts; if the thread was also deleted, the same old
+arguments can create new work because neither identity remains. There is no
+permanent request-ID ledger. This complete lifecycle is why the catalog does not
+mark creation as generally idempotent. Never automatically retry an uncertain
+old request after the window; inspect the original thread before intentionally
+creating new work. No new table or schema migration is introduced.
 
 Creation checks current Agent visibility and account-content admission in its
 transaction, including the Agent owner's account. It uses the existing creation
@@ -180,9 +194,13 @@ cannot restore A. Reusing the key with a different patch conflicts.
 
 After the retry window, inspect `get_chat_thread` before making a new intended
 change. Do not automatically retry an uncertain old request. Deduplication is not
-promised beyond retained mutation identity. As with other MCP mutations, admitted
-finite work remains server-owned after HTTP disconnection, and thread-list
-invalidation is published only after a new commit.
+promised beyond retained mutation identity. Thread mutation events become
+eligible for snapshot-backed pruning after seven days; once those event IDs are
+gone, reusing an old request ID is a new update and can restore its old patch.
+The catalog therefore does not mark updates as generally idempotent. As with
+other MCP mutations, admitted finite work remains server-owned after HTTP
+disconnection, and thread-list invalidation is published only after a new
+commit.
 
 ## Conversation discovery
 
@@ -455,7 +473,9 @@ There is no deduplication guarantee after 24 hours. A retained original input
 past that window is rejected as expired. Once its live event has been removed
 by retention, its old request ID may be treated as a new submission. Inspect
 the conversation before intentionally submitting new work after the window;
-do not retry an uncertain old request automatically.
+do not retry an uncertain old request automatically. The catalog therefore does
+not mark sends as generally idempotent even though exact replay remains safe
+before the returned `retryUntil`.
 
 Retry protection covers input creation and dispatch. Ordinary send preparation
 can reconcile obsolete model settings with current policy before a later
@@ -617,6 +637,10 @@ return a tool error. The response confirms canonical cancellation, not that the
 executor has physically stopped or that callback/queue recovery has finished.
 Cancelling a run can allow queued input to proceed; use `revoke_queued_message`
 to withdraw a specific input that has not been reserved or associated.
+
+Both target-state tools retain `idempotentHint: true`: repeating revocation or
+cancellation converges on the retained target state, and an unavailable target
+is not recreated by either operation.
 
 After a mutation is admitted, its finite business operation and cancellation
 effects are tracked independently of the HTTP response. Disconnecting stops
