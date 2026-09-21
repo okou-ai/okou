@@ -88,6 +88,7 @@ pub(crate) enum ExactIdleReservationMiss {
 pub(crate) enum BlankIdleReservationMiss {
     Empty,
     Incompatible,
+    Unknown,
 }
 
 impl ExactIdleReservationMiss {
@@ -313,7 +314,7 @@ impl IdlePool {
             };
         };
         let Some(entry) = self.blank_entries.remove(&key) else {
-            return Err(BlankIdleReservationMiss::Incompatible);
+            return Err(BlankIdleReservationMiss::Unknown);
         };
         self.bump_revision();
         Ok(ReservedIdleSandbox::parked(entry))

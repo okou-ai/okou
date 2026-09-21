@@ -2707,6 +2707,10 @@ async fn try_reuse_from_pool(
                             BlankPoolSelectionReason::IncompatibleShape,
                         )),
                     ),
+                    Err(BlankIdleReservationMiss::Unknown) => (
+                        None,
+                        Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
+                    ),
                 }
             }
         }

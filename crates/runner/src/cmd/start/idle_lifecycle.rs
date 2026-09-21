@@ -232,6 +232,10 @@ pub(super) async fn select_idle_entries_for_pressure(
                             BlankPoolSelectionReason::IncompatibleShape,
                         )),
                     ),
+                    Err(BlankIdleReservationMiss::Unknown) => (
+                        None,
+                        Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
+                    ),
                 }
             }
             None => (None, None),
