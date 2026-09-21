@@ -444,7 +444,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
 });
 
-test("Hide archived chats until they are explicitly shown", async () => {
+test("Hide archived chats until they are explicitly shown, except in Unread only", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   const archivedReadThread = createThread(
@@ -497,13 +497,6 @@ test("Hide archived chats until they are explicitly shown", async () => {
   expect(menuItemByText("Show archived")).toBeInTheDocument();
   click(menuItemByText("Unread only"));
 
-  await expect(
-    within(sidebar()).findByText("No unread chats"),
-  ).resolves.toBeInTheDocument();
-
-  openChatListMenu();
-  click(menuItemByText("Show archived"));
-
   await waitFor(() => {
     expect(
       visibleThreadTitles(["✅ Archived context", "✅ Waiting for review"]),
@@ -511,7 +504,28 @@ test("Hide archived chats until they are explicitly shown", async () => {
   });
 
   openChatListMenu();
+  expect(menuItemByText("Show archived")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   click(menuItemByText("All chats"));
+
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles([
+        "Release plan",
+        "✅ Archived context",
+        "✅ Waiting for review",
+      ]),
+    ).toStrictEqual(["Release plan"]);
+  });
+
+  openChatListMenu();
+  expect(menuItemByText("Show archived")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  click(menuItemByText("Show archived"));
 
   await waitFor(() => {
     expect(
