@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.348.6](https://github.com/okou-ai/okou/compare/cli-v9.348.5...cli-v9.348.6) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** limit callback prompts to keep action urls concise ([#35681](https://github.com/okou-ai/okou/issues/35681)) ([2ea078e](https://github.com/okou-ai/okou/commit/2ea078e04b5941c484045e6ec9021ed7829cde4a))
+
 ## [9.348.5](https://github.com/okou-ai/okou/compare/cli-v9.348.4...cli-v9.348.5) (2026-09-20)
 
 
