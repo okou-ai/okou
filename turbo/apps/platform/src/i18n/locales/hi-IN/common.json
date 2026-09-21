@@ -1761,8 +1761,6 @@
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
         "make": "बनाएँ",
-        "templateCount_one": "{{count}} टेम्पलेट",
-        "templateCount_other": "{{count}} टेम्पलेट",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",

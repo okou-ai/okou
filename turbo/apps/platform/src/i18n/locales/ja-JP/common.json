@@ -1758,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
         "make": "作成",
-        "templateCount_other": "{{count}} 件のテンプレート",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",

@@ -1761,8 +1761,6 @@
       "slashPanel": {
         "browseAll": "Browse all templates",
         "make": "Make",
-        "templateCount_one": "{{count}} template",
-        "templateCount_other": "{{count}} templates",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",

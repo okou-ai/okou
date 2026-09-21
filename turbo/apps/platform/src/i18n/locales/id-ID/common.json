@@ -1758,7 +1758,6 @@
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
         "make": "Buat",
-        "templateCount_other": "{{count}} templat",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",

@@ -1790,9 +1790,6 @@
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
         "make": "Criar",
-        "templateCount_one": "{{count}} modelo",
-        "templateCount_many": "{{count}} modelos",
-        "templateCount_other": "{{count}} modelos",
         "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
