@@ -394,7 +394,9 @@ describe("POST /api/user-templates", () => {
 
     expect(response.body.coverUrl).not.toBeNull();
     // An invitation is one page. Sheets behind it would claim a second.
-    expect(response.body.coverHasMorePages).toBe(false);
+    // `toMatchObject` rather than `toBeFalsy`, which would also accept the
+    // `undefined` an absent field would produce.
+    expect(response.body).toMatchObject({ coverHasMorePages: false });
   });
 
   it("keeps a page count that arrived without a cover from claiming one", async () => {
@@ -416,7 +418,7 @@ describe("POST /api/user-templates", () => {
     // front of it is what pairing the two fields would have had to prevent by
     // rejecting the publish instead.
     expect(response.body.coverUrl).toBeNull();
-    expect(response.body.coverHasMorePages).toBe(false);
+    expect(response.body).toMatchObject({ coverHasMorePages: false });
   });
 
   it("refuses a cover the catalog could not paint", async () => {
