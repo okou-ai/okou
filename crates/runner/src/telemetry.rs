@@ -337,6 +337,34 @@ impl JobTelemetry {
         self.runner_pre_spawn_attribution = Some(attribution);
     }
 
+    /// Create an empty collector for one concurrently owned job phase.
+    ///
+    /// The fork carries the same job identity and attribution but owns its own
+    /// pending operations and flush tasks. Callers must merge it back before
+    /// dropping it so no telemetry ownership is lost.
+    pub(crate) fn fork_concurrent_phase(&self) -> Self {
+        Self {
+            http: self.http.clone(),
+            run_id: self.run_id,
+            sandbox_token: self.sandbox_token.clone(),
+            runner_hostname: self.runner_hostname.clone(),
+            runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
+            pending_ops: Vec::new(),
+            oldest_pending: None,
+            in_flight_flushes: Vec::new(),
+        }
+    }
+
+    /// Reclaim every pending or in-flight operation from a concurrent phase.
+    pub(crate) fn merge_concurrent_phase(&mut self, mut phase: Self) {
+        self.oldest_pending = match (self.oldest_pending, phase.oldest_pending) {
+            (Some(left), Some(right)) => Some(left.min(right)),
+            (left, right) => left.or(right),
+        };
+        self.pending_ops.append(&mut phase.pending_ops);
+        self.in_flight_flushes.append(&mut phase.in_flight_flushes);
+    }
+
     /// Stop decorating operations after the success-only Agent-ready boundary.
     pub(crate) fn finish_runner_pre_spawn_attribution(&mut self) {
         self.runner_pre_spawn_attribution = None;

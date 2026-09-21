@@ -31,6 +31,19 @@ import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/s
 
 type ConnectorSetupVariant = "workflow" | "prompt" | "sources";
 
+interface ConnectorSetupProps {
+  readonly connectorSlugs: readonly string[];
+  readonly requiredConnectorSlugs?: readonly string[];
+  readonly variant?: ConnectorSetupVariant;
+  /**
+   * The sources grid reports its own funnel events. The list layouts belong to
+   * other flows and pass neither.
+   */
+  readonly onConnectStart?: (connectorSlug: ConnectorSlug) => void;
+  readonly onConnected?: (connectorSlug: ConnectorSlug) => void;
+  readonly children?: ReactNode;
+}
+
 function parseConnectorSlugs(values: readonly string[]): ConnectorSlug[] {
   return values.flatMap((value) => {
     const parsed = connectorSlugSchema.safeParse(value);
@@ -126,12 +139,7 @@ function SourceConnectorCard({
   );
 }
 
-export function OnboardingConnectorSetup(props: {
-  readonly connectorSlugs: readonly string[];
-  readonly requiredConnectorSlugs?: readonly string[];
-  readonly variant?: ConnectorSetupVariant;
-  readonly children?: ReactNode;
-}) {
+export function OnboardingConnectorSetup(props: ConnectorSetupProps) {
   if (props.variant === "sources") {
     return <SourcesConnectorGrid {...props} />;
   }
@@ -141,11 +149,10 @@ export function OnboardingConnectorSetup(props: {
 /** The source step's grid, on the connector directory's own entry card. */
 function SourcesConnectorGrid({
   connectorSlugs,
+  onConnectStart,
+  onConnected,
   children,
-}: {
-  readonly connectorSlugs: readonly string[];
-  readonly children?: ReactNode;
-}) {
+}: ConnectorSetupProps) {
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
     connectorCatalogStatus$,
@@ -192,6 +199,7 @@ function SourcesConnectorGrid({
                 pollingDeviceAuthSlug === connectorSlug
               }
               onActivate={() => {
+                onConnectStart?.(connectorSlug);
                 setSelectedConnectorSlug(connectorSlug);
               }}
             />
@@ -204,6 +212,11 @@ function SourcesConnectorGrid({
           item={selectedConnector}
           accountOptions={selectedAccountOptions}
           authorizeVisibleAgentsOnConnect
+          // The modal serves the grid and the catalog search alike, so a
+          // source connected either way reports through the same success.
+          onSuccess={() => {
+            onConnected?.(selectedConnector.slug);
+          }}
           onClose={() => {
             setSelectedConnectorSlug(null);
           }}
@@ -225,12 +238,7 @@ function ListConnectorSetup({
   requiredConnectorSlugs,
   variant,
   children,
-}: {
-  readonly connectorSlugs: readonly string[];
-  readonly requiredConnectorSlugs?: readonly string[];
-  readonly variant?: ConnectorSetupVariant;
-  readonly children?: ReactNode;
-}) {
+}: ConnectorSetupProps) {
   const layout = listLayout(variant);
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const requiredSet = new Set(

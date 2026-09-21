@@ -88,6 +88,7 @@ export default defineConfig({
         "artifact-access.spec.ts",
         "chat.spec.ts",
         "create-agent.spec.ts",
+        "floating-layers.spec.ts",
         "workflows.spec.ts",
       ],
       dependencies: ["setup"],

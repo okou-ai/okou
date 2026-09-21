@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.691.0](https://github.com/okou-ai/okou/compare/core-v8.690.0...core-v8.691.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+* **platform:** back the chat home avatar with a brand texture ([#35783](https://github.com/okou-ai/okou/issues/35783)) ([8a1366d](https://github.com/okou-ai/okou/commit/8a1366da03ad829f7af1be96365983abcb849a35))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.483.0
+
 ## [8.690.0](https://github.com/okou-ai/okou/compare/core-v8.689.3...core-v8.690.0) (2026-09-21)
 
 

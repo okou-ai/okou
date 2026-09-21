@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.933.0](https://github.com/okou-ai/okou/compare/app-v0.932.1...app-v0.933.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+* **platform:** back the chat home avatar with a brand texture ([#35783](https://github.com/okou-ai/okou/issues/35783)) ([8a1366d](https://github.com/okou-ai/okou/commit/8a1366da03ad829f7af1be96365983abcb849a35))
+
+
+### Refactoring
+
+* bind image navigation shortcuts to preview controls ([#35786](https://github.com/okou-ai/okou/issues/35786)) ([d6a109f](https://github.com/okou-ai/okou/commit/d6a109f4446379e0bd432bd1d0ecc77da92caf44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.483.0
+    * @okouai/core bumped to 8.691.0
+
 ## [0.932.1](https://github.com/okou-ai/okou/compare/app-v0.932.0...app-v0.932.1) (2026-09-21)
 
 

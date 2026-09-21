@@ -76,6 +76,9 @@ async function holdUsageEventCompactionLock(
   readonly withAcquisitionAttemptTracking: <T>(
     work: () => Promise<T>,
   ) => Promise<T>;
+  readonly withReleaseAtAcquisitionAttempt: <T>(
+    work: () => Promise<T>,
+  ) => Promise<T>;
   readonly waiterCount: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(signal);
@@ -126,23 +129,40 @@ async function holdUsageEventCompactionLock(
   if (holderPid === undefined) {
     throw new Error("Compaction lock fixture finished before acquiring lock");
   }
+  const release = () => {
+    if (!released.settled()) {
+      released.resolve(undefined);
+    }
+  };
+  const observeAcquisitionAttempt = () => {
+    if (!acquisitionAttempted.settled()) {
+      acquisitionAttempted.resolve(undefined);
+    }
+  };
 
   return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
+    release,
     done,
     acquisitionAttempted: acquisitionAttempted.promise,
     withAcquisitionAttemptTracking: async <T>(
       work: () => Promise<T>,
     ): Promise<T> => {
-      return await withUsageEventCompactionLockAttemptTrackingForTest(() => {
-        if (!acquisitionAttempted.settled()) {
-          acquisitionAttempted.resolve(undefined);
-        }
-      }, work);
+      return await withUsageEventCompactionLockAttemptTrackingForTest(
+        observeAcquisitionAttempt,
+        work,
+      );
+    },
+    withReleaseAtAcquisitionAttempt: async <T>(
+      work: () => Promise<T>,
+    ): Promise<T> => {
+      return await withUsageEventCompactionLockAttemptTrackingForTest(
+        async () => {
+          observeAcquisitionAttempt();
+          release();
+          await done;
+        },
+        work,
+      );
     },
     waiterCount: async () => {
       const rows = await executeRawRows(
