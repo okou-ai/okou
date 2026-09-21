@@ -417,7 +417,6 @@ class _CompiledRuleCandidate(NamedTuple):
     rule: str
     specificity: _PathSpecificity
     params: dict[str, str]
-    aws_rule_identity: _AwsRuleIdentity | None
 
 
 class FirewallRequestContext(NamedTuple):
@@ -2238,7 +2237,6 @@ def _evaluate_selected_rule_entries(
                     rule.raw,
                     rule.specificity,
                     {**api_match.base_params, **params},
-                    _aws_rule_identity(rule),
                 ),
             )
         )
