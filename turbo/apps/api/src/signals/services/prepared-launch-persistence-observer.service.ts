@@ -2,14 +2,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 import { singleton } from "../../lib/singleton";
 
-interface PreparedLaunchPersistenceSnapshot {
-  readonly runId: string;
-  readonly workflowAutomationId: string | undefined;
-}
-
 type PreparedLaunchPersistenceObserver = (
-  snapshot: PreparedLaunchPersistenceSnapshot,
-) => Promise<void> | void;
+  workflowAutomationId: string | undefined,
+) => void;
 
 const scopedPreparedLaunchPersistenceObserver = singleton(() => {
   return new AsyncLocalStorage<PreparedLaunchPersistenceObserver>();
@@ -24,11 +19,11 @@ export async function withPreparedLaunchPersistenceObserverForTest<T>(
 }
 
 /** Observe a real atomic launch write before its transaction can commit. */
-export async function observePreparedLaunchPersistenceForTest(
-  snapshot: PreparedLaunchPersistenceSnapshot,
-): Promise<void> {
+export function observePreparedLaunchPersistenceForTest(
+  workflowAutomationId: string | undefined,
+): void {
   const observer = scopedPreparedLaunchPersistenceObserver.peek()?.getStore();
   if (observer) {
-    await observer(snapshot);
+    observer(workflowAutomationId);
   }
 }

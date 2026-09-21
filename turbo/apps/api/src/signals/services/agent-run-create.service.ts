@@ -8369,11 +8369,9 @@ async function persistAtomicLaunchRows(
     },
   );
 
-  await observePreparedLaunchPersistenceForTest({
-    runId: persisted.run.id,
-    workflowAutomationId:
-      args.commit.createArgs.agentRunMetadata?.workflowAutomationId,
-  });
+  observePreparedLaunchPersistenceForTest(
+    args.commit.createArgs.agentRunMetadata?.workflowAutomationId,
+  );
 
   const chatThreadId = args.commit.createArgs.chatThreadId;
   if (chatThreadId && !args.validatedThreadSession) {

@@ -314,25 +314,26 @@ export async function installMorningBriefSettlementFailureFixture(args: {
   };
 }
 
-/** Fail one test-owned launch after its real atomic persistence statement. */
-export async function withWorkflowAutomationRunPersistenceFailureFixture<
-  T,
->(args: {
+/**
+ * Fail one test-owned launch after its real atomic persistence statement.
+ *
+ * No public API can force a transaction failure at this exact boundary. The
+ * case remains valuable because it proves the Run and journal binding roll
+ * back atomically while setup and verification stay on production routes.
+ */
+export async function withWorkflowAutomationRunPersistenceFailureFixture(args: {
   readonly automationId: string;
-  readonly work: () => Promise<T>;
-}): Promise<{ readonly attempts: number; readonly result: T }> {
+  readonly work: () => Promise<void>;
+}): Promise<{ readonly attempts: number }> {
   let attempts = 0;
-  const result = await withPreparedLaunchPersistenceObserverForTest(
-    (snapshot) => {
-      if (snapshot.workflowAutomationId !== args.automationId) {
-        return;
-      }
-      attempts += 1;
-      throw new Error("forced Morning Brief Run persistence rollback");
-    },
-    args.work,
-  );
-  return { attempts, result };
+  await withPreparedLaunchPersistenceObserverForTest((workflowAutomationId) => {
+    if (workflowAutomationId !== args.automationId) {
+      return;
+    }
+    attempts += 1;
+    throw new Error("forced Morning Brief Run persistence rollback");
+  }, args.work);
+  return { attempts };
 }
 
 /** Drive the production late last-run write directly. */
