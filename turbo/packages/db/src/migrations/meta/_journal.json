@@ -757,6 +757,13 @@
       "when": 1789918687593,
       "tag": "1185_attachments_are_not_catalog_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 1186,
+      "version": "7",
+      "when": 1789960128404,
+      "tag": "1186_move_imported_deck_to_user_templates",
+      "breakpoints": true
     }
   ]
 }
