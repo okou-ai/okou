@@ -78,7 +78,7 @@ impl BlankPoolDiagnostics {
         profile_name: &str,
         device_rate_limits: &Option<sandbox::DeviceRateLimits>,
         pool_revision: u64,
-        budget_allocated: (u32, u32, usize),
+        budget: &ResourceBudget,
     ) -> BlankPoolSelection {
         let Some(plan) = self.plan.as_ref() else {
             return BlankPoolSelection::Miss(BlankPoolSelectionReason::DisabledPlan);
@@ -89,6 +89,7 @@ impl BlankPoolDiagnostics {
             return BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape);
         }
 
+        let budget_allocated = budget.allocated();
         match &*self.lock_state() {
             BlankPoolObservedState::Ready => {
                 BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory)
@@ -907,28 +908,26 @@ mod tests {
         budget: &ResourceBudget,
     ) -> BlankPoolSelection {
         let pool = idle_pool.lock().await;
-        replenisher.diagnostics().classify_empty(
-            "vm0/default",
-            &None,
-            pool.revision(),
-            budget.allocated(),
-        )
+        replenisher
+            .diagnostics()
+            .classify_empty("vm0/default", &None, pool.revision(), budget)
     }
 
     #[test]
     fn diagnostics_classify_inventory_and_plan_facts() {
         let diagnostics = enabled_diagnostics();
+        let budget = ResourceBudget::new(8, 16_384, 1.0, 0);
 
         assert_eq!(
-            diagnostics.classify_empty("vm0/large", &None, 0, (0, 0, 0),),
+            diagnostics.classify_empty("vm0/large", &None, 0, &budget),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape)
         );
         assert_eq!(
-            diagnostics.classify_empty("vm0/default", &None, 0, (0, 0, 0),),
+            diagnostics.classify_empty("vm0/default", &None, 0, &budget),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::EmptyInventory)
         );
         assert_eq!(
-            BlankPoolDiagnostics::new(None).classify_empty("vm0/default", &None, 0, (0, 0, 0),),
+            BlankPoolDiagnostics::new(None).classify_empty("vm0/default", &None, 0, &budget),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::DisabledPlan)
         );
     }
@@ -936,16 +935,17 @@ mod tests {
     #[test]
     fn diagnostics_classify_live_preparation_and_preemption() {
         let diagnostics = enabled_diagnostics();
+        let budget = ResourceBudget::new(8, 16_384, 1.0, 0);
         let cancel = CancellationToken::new();
         diagnostics.preparing(cancel.clone());
         assert_eq!(
-            diagnostics.classify_empty("vm0/default", &None, 0, (0, 0, 0),),
+            diagnostics.classify_empty("vm0/default", &None, 0, &budget),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
         );
 
         cancel.cancel();
         assert_eq!(
-            diagnostics.classify_empty("vm0/default", &None, 0, (0, 0, 0),),
+            diagnostics.classify_empty("vm0/default", &None, 0, &budget),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
         );
     }
@@ -963,12 +963,7 @@ mod tests {
         ] {
             diagnostics.suppressed(reason, &pool, &budget);
             assert_eq!(
-                diagnostics.classify_empty(
-                    "vm0/default",
-                    &None,
-                    pool.revision(),
-                    budget.allocated(),
-                ),
+                diagnostics.classify_empty("vm0/default", &None, pool.revision(), &budget,),
                 BlankPoolSelection::Miss(reason)
             );
         }
@@ -979,17 +974,12 @@ mod tests {
             &budget,
         );
         assert_eq!(
-            diagnostics.classify_empty(
-                "vm0/default",
-                &None,
-                pool.revision() + 1,
-                budget.allocated(),
-            ),
+            diagnostics.classify_empty("vm0/default", &None, pool.revision() + 1, &budget,),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
         );
         diagnostics.unknown();
         assert_eq!(
-            diagnostics.classify_empty("vm0/default", &None, pool.revision(), budget.allocated(),),
+            diagnostics.classify_empty("vm0/default", &None, pool.revision(), &budget),
             BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)
         );
     }
@@ -1152,7 +1142,7 @@ mod tests {
                     "vm0/default",
                     &None,
                     pool.revision(),
-                    budget.allocated(),
+                    &budget,
                 ),
                 BlankPoolSelection::Miss(BlankPoolSelectionReason::RefillInProgress)
             );
@@ -1425,7 +1415,7 @@ mod tests {
                     "vm0/default",
                     &None,
                     pool.revision(),
-                    budget.allocated(),
+                    &budget,
                 ),
                 BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
             );

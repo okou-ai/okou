@@ -2698,7 +2698,7 @@ async fn try_reuse_from_pool(
                             profile_name,
                             device_rate_limits,
                             pool.revision(),
-                            ctx.budget.allocated(),
+                            ctx.budget,
                         )),
                     ),
                     Err(BlankIdleReservationMiss::Incompatible) => (

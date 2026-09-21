@@ -221,7 +221,7 @@ pub(super) async fn select_idle_entries_for_pressure(
                                     request.profile_name,
                                     request.device_rate_limits,
                                     pool.revision(),
-                                    budget.allocated(),
+                                    budget,
                                 )
                             },
                         )),
