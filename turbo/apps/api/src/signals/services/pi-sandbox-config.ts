@@ -119,7 +119,7 @@ function piRuntimeContract(args: {
   readonly selectedModel: string;
   readonly codexServiceTier: "fast" | undefined;
 }): PiRuntimeContract {
-  if (isPiGptModel(args.selectedModel)) {
+  if (isPiGptModel(args.selectedModel) && !isOkouRunModel(args.selectedModel)) {
     return {
       thinkingLevel: "max",
       ...((isBuiltInModelProviderType(args.providerType) ||

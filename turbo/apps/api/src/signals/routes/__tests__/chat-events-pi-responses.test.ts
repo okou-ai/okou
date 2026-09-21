@@ -320,6 +320,7 @@ describe("CHAT-02: model-first provider policies", () => {
           store: false,
         }),
       ]);
+      expect(modelRequests[0]).not.toHaveProperty("reasoning");
       await expectPiApiUsage(run.runId, selectedModel, "", {
         input: 5,
         output: 3,

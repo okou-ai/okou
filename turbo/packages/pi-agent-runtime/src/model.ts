@@ -113,16 +113,8 @@ function okouSourceModel(
     // Okou executes on OpenRouter Responses without completions compatibility.
     api: "openai-completions",
     baseUrl: "https://openrouter.ai/api/v1",
-    reasoning: true,
-    thinkingLevelMap: {
-      off: "none",
-      minimal: null,
-      low: "low",
-      medium: "medium",
-      high: "high",
-      xhigh: "xhigh",
-      max: "max",
-    },
+    // Reasoning is configured by the OpenRouter Preset, not by the client.
+    reasoning: false,
     input: ["text", "image"],
     contextWindow: 1_050_000,
     maxTokens: 128_000,
