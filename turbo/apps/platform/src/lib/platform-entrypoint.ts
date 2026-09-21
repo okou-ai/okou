@@ -14,7 +14,7 @@ import { detach, Reason, resetSignal } from "../signals/utils.ts";
 import { setupRouter } from "../views/main.tsx";
 import { renderUnsupportedBrowserPage } from "../views/unsupported-browser-page.tsx";
 
-// (no-op Platform release marker refreshed for production delivery on 2026-09-20)
+// (no-op Platform release marker refreshed for production delivery on 2026-09-21)
 
 function startApplication(rootSignal: AbortSignal): void {
   rootSignal.throwIfAborted();

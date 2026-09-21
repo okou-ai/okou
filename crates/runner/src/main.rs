@@ -77,7 +77,7 @@ mod workspace_mount;
 mod workspace_promotion;
 
 // Source-observation API shared by the current-assignment usage composer.
-// (no-op Runner release marker refreshed for production delivery on 2026-09-20)
+// (no-op Runner release marker refreshed for production delivery on 2026-09-21)
 pub use proxy::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
     TokenTotals,
