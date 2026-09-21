@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Button } from "@okouai/ui";
@@ -12,97 +13,152 @@ import {
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
+
+interface PaidToolNoticeRow {
+  readonly message: string;
+  /** A settled read offers a way forward; a read in flight only reports. */
+  readonly action: { readonly label: string; readonly run: () => void } | null;
+}
+
+/** Only called behind the rollout gate, so an unreleased member reads nothing. */
+function usePaidToolNoticeRow(
+  tools: readonly PaidToolId[],
+): PaidToolNoticeRow | null {
+  const { t } = useTranslation();
+  const disabled = useLoadable(disabledPaidTools$);
+  const retry = useSet(reloadDisabledPaidTools$);
+  const openSettings = useSet(openSettingsDialogAt$);
+  const signal = useGet(pageSignal$);
+  if (disabled.state === "loading") {
+    return {
+      message: t(($) => {
+        return $.settings.paidTools.loading;
+      }),
+      action: null,
+    };
+  }
+  if (disabled.state === "hasError") {
+    return {
+      message: t(($) => {
+        return $.settings.paidTools.loadError;
+      }),
+      action: {
+        label: t(($) => {
+          return $.settings.paidTools.retry;
+        }),
+        run: () => {
+          retry();
+        },
+      },
+    };
+  }
+  const blocked = tools.filter((tool) => {
+    return disabled.data.includes(tool);
+  });
+  if (blocked.length === 0) {
+    return null;
+  }
+  return {
+    message: blocked.map(paidToolDisabledMessage).join(" "),
+    action: {
+      label: t(($) => {
+        return $.settings.paidTools.openSettings;
+      }),
+      run: () => {
+        detach(openSettings("chat", signal), Reason.DomCallback);
+      },
+    },
+  };
+}
+
+function usePaidToolNoticeEnabled(tools: readonly PaidToolId[]): boolean {
+  const features = useGet(featureSwitch$);
+  return (
+    (features[FeatureSwitchKey.ChatPreference] ?? false) &&
+    (features[FeatureSwitchKey.PaidToolControls] ?? false) &&
+    tools.length > 0
+  );
+}
 
 function PaidToolNoticeContent({
   tools,
 }: {
   readonly tools: readonly PaidToolId[];
 }) {
-  const { t } = useTranslation();
-  const disabled = useLoadable(disabledPaidTools$);
-  const retry = useSet(reloadDisabledPaidTools$);
-  const openSettings = useSet(openSettingsDialogAt$);
-  const signal = useGet(pageSignal$);
-  if (
-    disabled.state === "hasData" &&
-    !tools.some((tool) => {
-      return disabled.data.includes(tool);
-    })
-  ) {
+  const row = usePaidToolNoticeRow(tools);
+  if (!row) {
     return null;
   }
   return (
-    // Composer chrome, not composer content: the notice reads at the same
-    // weight as the temporary-model notice below the card, so the disabled
-    // state never competes with the draft the member is writing.
     <div
       role="status"
-      className="flex flex-wrap items-center gap-1 px-4 py-1 text-xs text-muted-foreground"
+      className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm text-muted-foreground"
     >
-      {disabled.state === "loading" ? (
-        t(($) => {
-          return $.settings.paidTools.loading;
-        })
-      ) : disabled.state === "hasError" ? (
-        <>
-          <span className="min-w-0">
-            {t(($) => {
-              return $.settings.paidTools.loadError;
-            })}
-          </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            className="shrink-0 text-xs font-medium text-foreground"
-            onClick={() => {
-              return retry();
-            }}
-          >
-            {t(($) => {
-              return $.settings.paidTools.retry;
-            })}
-          </Button>
-        </>
-      ) : (
-        <>
-          <span className="min-w-0">
-            {tools
-              .filter((tool) => {
-                return disabled.data.includes(tool);
-              })
-              .map(paidToolDisabledMessage)
-              .join(" ")}
-          </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            className="shrink-0 text-xs font-medium text-foreground"
-            onClick={() => {
-              return detach(openSettings("chat", signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.settings.paidTools.openSettings;
-            })}
-          </Button>
-        </>
+      <span>{row.message}</span>
+      {row.action && (
+        <Button variant="ghost" size="sm" onClick={row.action.run}>
+          {row.action.label}
+        </Button>
       )}
     </div>
   );
 }
 
-export function PaidToolNotice({
-  tools,
-}: {
-  readonly tools: readonly PaidToolId[];
-}) {
-  const features = useGet(featureSwitch$);
-  const enabled =
-    features[FeatureSwitchKey.ChatPreference] &&
-    features[FeatureSwitchKey.PaidToolControls];
-  return enabled && tools.length > 0 ? (
+function PaidToolNotice({ tools }: { readonly tools: readonly PaidToolId[] }) {
+  return usePaidToolNoticeEnabled(tools) ? (
     <PaidToolNoticeContent tools={tools} />
   ) : null;
+}
+
+function ComposerPaidToolNoticeContent({
+  tools,
+  fallback,
+}: {
+  readonly tools: readonly PaidToolId[];
+  readonly fallback: ReactNode;
+}) {
+  const row = usePaidToolNoticeRow(tools);
+  if (!row) {
+    return fallback;
+  }
+  return withChatScrollLayout(
+    <ComposerNoticeTray role="status">
+      <span className="min-w-0 max-w-full text-muted-foreground">
+        {row.message}
+      </span>
+      {row.action && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto shrink-0 text-xs font-medium text-foreground"
+          onClick={row.action.run}
+        >
+          {row.action.label}
+        </Button>
+      )}
+    </ComposerNoticeTray>,
+  );
+}
+
+/**
+ * The composer's own copy of the notice, in the tray the temporary model card
+ * already owns. A blocked tool outranks that card: the member cannot run the
+ * task at all, so the tray shows this row and the model card waits.
+ */
+export function ComposerPaidToolNotice({
+  tools,
+  fallback,
+}: {
+  readonly tools: readonly PaidToolId[];
+  readonly fallback: ReactNode;
+}) {
+  return usePaidToolNoticeEnabled(tools) ? (
+    <ComposerPaidToolNoticeContent tools={tools} fallback={fallback} />
+  ) : (
+    fallback
+  );
 }
 
 const CATEGORY_TOOLS: Readonly<Record<string, readonly PaidToolId[]>> = {
