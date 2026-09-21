@@ -32,8 +32,7 @@ was acceptance plumbing, not product behavior.
 
 A new preview chat thread and sandbox first ran `vnc session list` alone. Run
 `38783792-b80b-430f-9a9a-4ba98e278188` returned
-`{"outcome":"listed","sessions":[]}`. This separated the final test from an
-earlier reused-sandbox RPC failure.
+`{"outcome":"listed","sessions":[]}`.
 
 The owner then created one reusable `username_password` credential and one
 `x509_plain` connection with custom-CA trust. The real Agent inventory returned
