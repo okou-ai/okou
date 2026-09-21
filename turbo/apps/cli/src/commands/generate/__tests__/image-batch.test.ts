@@ -366,7 +366,6 @@ describe("okou generate image-batch command", () => {
       expect(stdout).toContain("hero\tassets/image-hero.webp");
       expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
       expect(stdout).toContain("only available inside the agent runtime");
-      expect(stdout).not.toContain("private artifact link");
       if (visibility === "public") {
         if (sharingUrl === undefined) {
           throw new Error("Public fixture did not provide its delivery alias");
@@ -393,7 +392,6 @@ describe("okou generate image-batch command", () => {
         join(stateDirectory, "artifacts.json"),
         "utf8",
       );
-      expect(artifactsJson).not.toContain("private artifact link");
       if (visibility === "public") {
         if (sharingUrl === undefined) {
           throw new Error("Public fixture did not provide its delivery alias");

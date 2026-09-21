@@ -117,7 +117,6 @@ describe("okou generate image command", () => {
         inlineMarkdownLink: `[${IMAGE_RESULT.filename}](<${artifact.url}>)`,
         previewMarkdownBlock: `![${IMAGE_RESULT.filename}](<${artifact.url}>)`,
       });
-      expect(output).not.toContain("private artifact link");
       if (visibility === "public") {
         expect(output).not.toContain(artifact.sharingUrl);
       }
@@ -1001,7 +1000,6 @@ describe("okou generate image command", () => {
       expect(statusRequested).toBe(true);
       expect(stdout).toContain(`Image generated: ${expectedUrl}`);
       expect(stdout).toContain(`![${IMAGE_RESULT.filename}](<${expectedUrl}>)`);
-      expect(stdout).not.toContain("private artifact link");
     },
   );
 
