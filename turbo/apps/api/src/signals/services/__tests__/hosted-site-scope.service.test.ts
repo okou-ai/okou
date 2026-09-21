@@ -128,7 +128,6 @@ function deploymentArgs(runId?: string, orgId = `org_${randomUUID()}`) {
     userId: `user_${randomUUID()}`,
     runId,
     publicBrand: "okou" as const,
-    privateArtifacts: false,
     body: {
       site: `scope-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
@@ -163,11 +162,6 @@ function createDeployment(db: ApiDb, args: ReturnType<typeof deploymentArgs>) {
   return createHostedSiteDeployment(db, args, {
     now: nowDate(),
     deploymentId: randomUUID(),
-    privateReference: args.privateArtifacts
-      ? () => {
-          return Promise.resolve("scope12345");
-        }
-      : null,
   });
 }
 
@@ -509,95 +503,81 @@ describe.each([true, false])(
       ).resolves.toMatchObject({ kind: "scope_conflict" });
     });
 
-    it.each([false, true])(
-      "serializes concurrent redeploys of one site and gates other owners (private=%s)",
-      async (privateArtifacts) => {
-        const runId = await seedRun(harness.db, randomUUID());
-        const args = { ...deploymentArgs(runId), privateArtifacts };
-        const created = await Promise.all(
-          Array.from({ length: 3 }, async () => {
-            return await requireDeployment(harness.db, args);
+    it("serializes concurrent redeploys of one site and rejects other owners", async () => {
+      const runId = await seedRun(harness.db, randomUUID());
+      const args = deploymentArgs(runId);
+      const created = await Promise.all(
+        Array.from({ length: 3 }, async () => {
+          return await requireDeployment(harness.db, args);
+        }),
+      );
+      expect(
+        new Set(
+          created.map((result) => {
+            return result.site.id;
           }),
-        );
-        expect(
-          new Set(
-            created.map((result) => {
-              return result.site.id;
-            }),
-          ).size,
-        ).toBe(1);
-        // Each concurrent publication still owns a distinct version.
-        expect(
-          new Set(
-            created.map((result) => {
-              return result.deployment.manifest.deploymentVersion;
-            }),
-          ),
-        ).toStrictEqual(new Set([1, 2, 3]));
-        const otherUser = { ...args, userId: `user_${randomUUID()}` };
-        if (privateArtifacts) {
-          await expect(
-            createDeployment(harness.db, otherUser),
-          ).resolves.toMatchObject({ kind: "owner_conflict" });
-          return;
-        }
-        // Without private ownership the chat's site accepts the redeploy, and
-        // the publication records the user who produced its bytes.
-        const redeployed = await requireDeployment(harness.db, otherUser);
-        expect(redeployed.site.id).toBe(created[0]?.site.id);
-        expect(redeployed.site.userId).toBe(args.userId);
-        expect(redeployed.deployment.userId).toBe(otherUser.userId);
-      },
-    );
+        ).size,
+      ).toBe(1);
+      // Each concurrent publication still owns a distinct version.
+      expect(
+        new Set(
+          created.map((result) => {
+            return result.deployment.manifest.deploymentVersion;
+          }),
+        ),
+      ).toStrictEqual(new Set([1, 2, 3]));
+      // Redeploying replaces what the site serves, so organization membership
+      // in the same chat does not authorize it.
+      await expect(
+        createDeployment(harness.db, {
+          ...args,
+          userId: `user_${randomUUID()}`,
+        }),
+      ).resolves.toMatchObject({ kind: "owner_conflict" });
+    });
 
-    it.each([false, true])(
-      "rolls back a slug reservation after deployment insertion fails (private=%s)",
-      async (privateArtifacts) => {
-        const args = { ...deploymentArgs(), privateArtifacts };
-        if (privateArtifacts) {
-          await harness.db.execute(
-            sql`ALTER TABLE private_hosted_deployments ADD CHECK (file_count < 2)`,
-          );
-        } else {
-          await harness.db.execute(
-            sql`ALTER TABLE hosted_deployments ADD CHECK (file_count < 2)`,
-          );
-        }
-        const invalid = {
-          ...args,
-          body: {
-            ...args.body,
-            files: [
-              ...args.body.files,
-              { ...args.body.files[0]!, path: "/style-7f21b8e3.css" },
-            ],
-          },
-        };
-        await expect(
-          createDeployment(harness.db, invalid),
-        ).rejects.toMatchObject({ cause: { code: "23514" } });
-        await expect(
-          harness.db.select().from(hostedSites),
-        ).resolves.toStrictEqual([]);
-        await requireDeployment(harness.db, args);
-        const nextBody = { ...args.body, site: `${args.body.site}-next` };
-        await expect(
-          createDeployment(harness.db, {
-            ...invalid,
-            body: { ...invalid.body, site: nextBody.site },
-          }),
-        ).rejects.toMatchObject({ cause: { code: "23514" } });
-        const retry = await requireDeployment(harness.db, {
-          ...args,
-          body: nextBody,
-        });
-        expect(retry.site.publicSlug).toBe(nextBody.site);
-        const table = privateArtifacts
-          ? privateHostedDeployments
-          : hostedDeployments;
-        await expect(harness.db.select().from(table)).resolves.toHaveLength(2);
-      },
-    );
+    it("rolls back a slug reservation after deployment insertion fails", async () => {
+      const args = deploymentArgs();
+      await harness.db.execute(
+        sql`ALTER TABLE hosted_deployments ADD CHECK (file_count < 2)`,
+      );
+      const invalid = {
+        ...args,
+        body: {
+          ...args.body,
+          files: [
+            ...args.body.files,
+            { ...args.body.files[0]!, path: "/style-7f21b8e3.css" },
+          ],
+        },
+      };
+      await expect(
+        createDeployment(harness.db, invalid),
+      ).rejects.toMatchObject({ cause: { code: "23514" } });
+      await expect(
+        harness.db.select().from(hostedSites),
+      ).resolves.toStrictEqual([]);
+      await requireDeployment(harness.db, args);
+      const nextBody = { ...args.body, site: `${args.body.site}-next` };
+      await expect(
+        createDeployment(harness.db, {
+          ...invalid,
+          body: { ...invalid.body, site: nextBody.site },
+        }),
+      ).rejects.toMatchObject({ cause: { code: "23514" } });
+      const retry = await requireDeployment(harness.db, {
+        ...args,
+        body: nextBody,
+      });
+      expect(retry.site.publicSlug).toBe(nextBody.site);
+      await expect(
+        harness.db.select().from(hostedDeployments),
+      ).resolves.toHaveLength(2);
+      // Hosted publications are public, so the private table stays empty.
+      await expect(
+        harness.db.select().from(privateHostedDeployments),
+      ).resolves.toStrictEqual([]);
+    });
 
     it("locks a metadata-less run before site allocation and reads the committed owner after waiting", async () => {
       const runId = await seedRun(harness.db, null, null);

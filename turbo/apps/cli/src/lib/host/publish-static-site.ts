@@ -1,7 +1,6 @@
 import type { HostedArtifactKind } from "@okouai/api-contracts/contracts/host";
 import { completeHostedSite, prepareHostedSite } from "../api/domains/host";
 import { readStaticSiteFile, scanStaticSite } from "./static-site";
-import { assertPrivateArtifactUrl } from "../artifact-url";
 
 interface PublishStaticSiteProgress {
   readonly phase: "preparing" | "uploading";
@@ -29,7 +28,6 @@ interface PublishStaticSiteOptions {
   readonly slugSuffix?: string;
   readonly artifactKind?: HostedArtifactKind;
   readonly spaFallback?: boolean;
-  readonly requirePrivateArtifact?: boolean;
   readonly onProgress?: (progress: PublishStaticSiteProgress) => void;
 }
 
@@ -55,7 +53,6 @@ export async function publishStaticSite(
     ...(options.slugSuffix !== undefined && { slugSuffix: options.slugSuffix }),
     artifactKind,
     spaFallback: Boolean(options.spaFallback),
-    requirePrivateArtifact: options.requirePrivateArtifact,
     files: scan.files.map((file) => {
       return {
         path: file.path,
@@ -66,10 +63,6 @@ export async function publishStaticSite(
       };
     }),
   });
-
-  if (options.requirePrivateArtifact) {
-    await assertPrivateArtifactUrl(prepared.url);
-  }
 
   const uploadByPath = new Map(
     prepared.uploads.map((upload) => {

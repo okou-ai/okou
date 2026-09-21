@@ -70,21 +70,33 @@ export function isHostedSiteDocument(file: {
 }
 
 /**
- * Protocol-fixed URLs cannot carry a content hash. They keep the ordinary
- * revalidating cache policy instead of the immutable one.
+ * Agents and browsers address these by a fixed name, so they cannot carry a
+ * content hash. They keep the ordinary revalidating cache policy rather than
+ * the immutable one, which bounds how long a changed copy can look stale.
  */
 const HOSTED_SITE_FIXED_PATHS: ReadonlySet<string> = new Set([
   "/robots.txt",
-  "/favicon.ico",
+  "/humans.txt",
+  "/ads.txt",
   "/sitemap.xml",
+  "/sitemap-index.xml",
+  "/favicon.ico",
+  "/favicon.svg",
+  "/favicon.png",
+  "/apple-touch-icon.png",
+  "/apple-touch-icon-precomposed.png",
+  "/browserconfig.xml",
   "/site.webmanifest",
   "/manifest.webmanifest",
+  "/_headers",
+  "/_redirects",
 ]);
 
 function hasFixedHostedSitePath(path: string): boolean {
+  const normalized = path.toLowerCase();
   return (
-    HOSTED_SITE_FIXED_PATHS.has(path.toLowerCase()) ||
-    path.toLowerCase().startsWith("/.well-known/")
+    HOSTED_SITE_FIXED_PATHS.has(normalized) ||
+    normalized.startsWith("/.well-known/")
   );
 }
 
@@ -95,6 +107,17 @@ function hasContentHashedName(path: string): boolean {
 }
 
 /**
+ * A mutable path may differ between publications of one site: documents because
+ * a redeploy replaces them, fixed paths because their name cannot change.
+ */
+export function isMutableHostedSitePath(file: {
+  readonly path: string;
+  readonly contentType: string;
+}): boolean {
+  return isHostedSiteDocument(file) || hasFixedHostedSitePath(file.path);
+}
+
+/**
  * Every cacheable asset must name its own content, so one published path always
  * means one byte string across every publication of a site.
  */
@@ -102,11 +125,7 @@ export function hostedSiteAssetNameError(file: {
   readonly path: string;
   readonly contentType: string;
 }): string | null {
-  if (
-    isHostedSiteDocument(file) ||
-    hasFixedHostedSitePath(file.path) ||
-    hasContentHashedName(file.path)
-  ) {
+  if (isMutableHostedSitePath(file) || hasContentHashedName(file.path)) {
     return null;
   }
   return `Hosted-site asset must carry a content hash in its file name: ${file.path}. Rename non-HTML files as <name>-<contenthash>.<ext>, for example /assets/app-4f3a9c12.js, and update every HTML/CSS reference to the new name.`;

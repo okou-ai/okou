@@ -7,12 +7,6 @@ import {
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { publishStaticSite } from "../../lib/host/publish-static-site";
 import { createArtifactPresentation } from "../shared/artifact-return";
-import {
-  applyArtifactVisibility,
-  createArtifactVisibilityOption,
-  prepareArtifactVisibility,
-  type ArtifactVisibility,
-} from "../shared/artifact-visibility";
 import { cloneHostedSiteCommand } from "./clone";
 import { versionsHostedSiteCommand } from "./versions";
 
@@ -22,7 +16,6 @@ interface HostOptions {
   readonly artifactKind?: HostedArtifactKind;
   readonly spa?: boolean;
   readonly json?: boolean;
-  readonly visibility?: ArtifactVisibility;
 }
 
 function parseArtifactKind(value: string): HostedArtifactKind {
@@ -51,7 +44,6 @@ export const hostCommand = new Command()
   )
   .option("--spa", "Serve unknown HTML navigation paths from index.html")
   .option("--json", "Output the result and Markdown return forms as JSON")
-  .addOption(createArtifactVisibilityOption())
   .addCommand(cloneHostedSiteCommand)
   .addCommand(versionsHostedSiteCommand)
   .addHelpText(
@@ -62,8 +54,7 @@ Examples:
   Redeploy the same URL: okou host ./dist --site my-product-demo --spa
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
-  Machine readable:     okou host ./dist --site my-product-demo --spa --json
-  Share publicly:       okou host ./dist --site my-product-demo --visibility public
+  Machine readable:      okou host ./dist --site my-product-demo --spa --json
 
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
@@ -71,14 +62,12 @@ Notes:
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
-  - With private artifacts enabled, the result is an authenticated preview URL
-  - Reusing --site redeploys that site when you own it: the hosted URL and artifact address stay the same and serve the new version
+  - Hosted sites are public: anyone with the returned URL can open them, so do not publish confidential content
+  - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
   - A name owned by another chat or another user is rejected; choose a different --site value
   - HTML files may change on every redeploy; every other file must carry a content hash in its name, such as /assets/app-4f3a9c12.js
   - A published non-HTML path keeps its bytes forever. Rename a changed asset with its new content hash instead of republishing the same name
   - Use the returned Site slug with versions or clone to inspect a publication
-  - With privateArtifacts enabled, new sites default to only-me; --visibility org or public explicitly shares the new publication
-  - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
   - The directory must include index.html
   - Local HTML/CSS asset references must point at files inside the directory`,
   )
@@ -87,16 +76,12 @@ Notes:
       if (!options.site) {
         throw new Error("--site is required when publishing a hosted site");
       }
-      const requirePrivateArtifact = await prepareArtifactVisibility(
-        options.visibility,
-      );
-      const deployed = await publishStaticSite({
+      const result = await publishStaticSite({
         dir,
         site: options.site,
         slugSuffix: options.slugSuffix,
         artifactKind: options.artifactKind,
         spaFallback: Boolean(options.spa),
-        requirePrivateArtifact,
         onProgress: options.json
           ? undefined
           : (progress) => {
@@ -109,12 +94,6 @@ Notes:
               console.log(chalk.dim(`Uploading ${progress.path}`));
             },
       });
-
-      const result = await applyArtifactVisibility(
-        deployed,
-        { kind: "html", id: deployed.deploymentId },
-        options.visibility,
-      );
 
       const presentation = createArtifactPresentation(
         options.site,

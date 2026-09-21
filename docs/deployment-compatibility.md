@@ -309,10 +309,11 @@ switching it to Only me; recipients lose access.
 
 `--site` names a site, and a site accepts repeated publications. A prepare first
 looks for a live site in the caller's organization, chat scope and publication
-brand whose `requestedSlug` matches, and redeploys it. Private publications also
-require the original owner; another owner receives an actionable `409 CONFLICT`
-instead of taking the name. A name owned at organization scope stays unavailable
-to a chat, as before.
+brand whose `requestedSlug` matches, and redeploys it. Redeploying replaces what
+a site serves, so only the site's creator may do it; organization membership
+alone never carries that authority, and another user receives an actionable
+`409 CONFLICT` instead of taking the name. A name owned at organization scope
+stays unavailable to a chat, as before.
 
 Without a match the allocator creates a site: the first candidate keeps the
 preferred name in `slug`, `publicSlug` and `requestedSlug`, and later candidates
@@ -333,14 +334,16 @@ of order never replace newer content. Completion retries for the same deployment
 remain idempotent, and existing authorization checks still govern reads and
 completion.
 
-Private publications share one hostless `/artifacts/<reference>` address per
-site, seeded by the site ID rather than a deployment ID. Prepare only creates
-that record, so a publication that never finishes uploading leaves the address on
-the last ready publication; completion rebinds it to the newest ready publication
-of the site. The reference record gains an optional `siteId`, which existing
-version-2 readers ignore; records written before this change stay immutable, so a
-site published by an older API moves to its site-owned address on its first
-redeploy.
+Hosted sites are public publications and no longer take part in private
+artifacts. `okou host` always returns the site's public alias, a prepare that
+requires a private artifact is refused, and no new `private_hosted_deployments`
+row is written. The site alias is therefore the durable address a redeploy
+preserves. The App viewer offers a hosted site's link instead of an artifact
+permission control, and sharing a conversation keeps a public site URL as a link
+rather than copying its bytes into a snapshot. This matches the behavior the
+`privateArtifacts` switch already produced when it was off, so an older API or
+App serving beside this one stays consistent. Existing private hosted
+deployments keep their rows and readers.
 
 Delivery caches accordingly. HTML documents are served `no-store` on public
 aliases, private previews and shared snapshots, because a redeploy replaces them

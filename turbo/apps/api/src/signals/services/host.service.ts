@@ -8,7 +8,7 @@ import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   hostedSiteAssetContentError,
   hostedSiteAssetNameError,
-  isHostedSiteDocument,
+  isMutableHostedSitePath,
   type HostedArtifactKind,
   type HostedSiteFilesResponse,
   type HostedSiteDeploymentsResponse,
@@ -44,15 +44,7 @@ import {
   putHostedSitesS3Object,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import {
-  privateArtifactCreationEnabled,
-  privateArtifactReferenceUrl,
-} from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
-import {
-  bindHostedSiteArtifactReference$,
-  hostedSiteArtifactReference$,
-} from "./artifact-reference.service";
 import {
   scheduleArtifactPreviewRender$,
   type RenderArtifactPreviewArgs,
@@ -89,7 +81,6 @@ interface PrepareDeploymentArgs {
 
 interface ScopedPrepareDeploymentArgs extends PrepareDeploymentArgs {
   readonly chatThreadId: string | null;
-  readonly privateArtifacts: boolean;
 }
 
 interface CompleteDeploymentArgs {
@@ -216,8 +207,6 @@ interface HostedSiteAllocation {
 interface CreateHostedSiteDeploymentContext {
   readonly now: Date;
   readonly deploymentId: string;
-  /** Resolved per site so redeploys reuse one hostless artifact address. */
-  readonly privateReference: ((siteId: string) => Promise<string>) | null;
 }
 
 type HostedSiteFilesTargetResult =
@@ -657,11 +646,11 @@ function resolvedHostedSite(
   site: HostedSiteRow,
   args: ScopedPrepareDeploymentArgs,
 ): HostedSiteResolution {
-  // Redeploying an existing name republishes its content under the same URLs.
-  // Private publications stay bound to the owner who created them.
-  return args.privateArtifacts && site.userId !== args.userId
-    ? { kind: "owner_conflict" }
-    : { kind: "ok", site };
+  // Redeploying replaces what a site serves, so only its creator may do it.
+  // Organization membership alone never carries that authority.
+  return site.userId === args.userId
+    ? { kind: "ok", site }
+    : { kind: "owner_conflict" };
 }
 
 /** Adopt the candidate that lost the insert when this scope already owns it. */
@@ -808,8 +797,8 @@ async function allocateHostedSite(
 const publishedAssetRowSchema = z.object({ path: z.string() });
 
 /**
- * Cached assets are addressed by name, so a name published once must keep its
- * bytes. Only HTML documents may change between publications of one site.
+ * Immutable assets are addressed by name, so a name published once must keep
+ * its bytes. Only mutable paths may differ between publications of one site.
  */
 async function republishedAssetConflict(
   db: Tx,
@@ -818,7 +807,7 @@ async function republishedAssetConflict(
 ): Promise<string | null> {
   const assets: Record<string, string> = {};
   for (const file of files) {
-    if (!isHostedSiteDocument(file)) {
+    if (!isMutableHostedSitePath(file)) {
       assets[file.path] = file.sha256;
     }
   }
@@ -861,38 +850,22 @@ async function insertHostedDeployment(
 ): Promise<HostedDeploymentRow> {
   const { deploymentVersion, site } = allocation;
   const { deploymentId } = context;
-  if (args.privateArtifacts !== (context.privateReference !== null)) {
-    throw new Error("Deployment reference does not match its storage policy");
-  }
-  // Every publication owns its bytes; only the site's addresses are reused.
-  const artifactUrl =
-    context.privateReference === null
-      ? deploymentUrl(site.publicBrand, deploymentId)
-      : privateArtifactReferenceUrl(
-          await context.privateReference(site.id),
-          "index.html",
-        );
-  const aliasUrl = args.privateArtifacts
-    ? artifactUrl
-    : publicUrl(site.publicBrand, site.publicSlug);
-  const prefix = args.privateArtifacts
-    ? `private-sites/${site.publicBrand}/${deploymentId}`
-    : deploymentPrefix(site.publicBrand, deploymentId);
-  const manifest: HostedSiteManifest = {
-    ...buildManifest({
-      deploymentId,
-      siteId: site.id,
-      site: args.body.site,
-      publicSlug: site.publicSlug,
-      deploymentVersion,
-      artifactKind: args.body.artifactKind,
-      spaFallback: args.body.spaFallback,
-      files: args.body.files,
-      createdAt: context.now,
-      publicBrand: site.publicBrand,
-    }),
-    ...(args.privateArtifacts ? { access: "owner-private-v1" as const } : {}),
-  };
+  // Every publication owns its bytes; only the site's alias is reused.
+  const artifactUrl = deploymentUrl(site.publicBrand, deploymentId);
+  const aliasUrl = publicUrl(site.publicBrand, site.publicSlug);
+  const prefix = deploymentPrefix(site.publicBrand, deploymentId);
+  const manifest: HostedSiteManifest = buildManifest({
+    deploymentId,
+    siteId: site.id,
+    site: args.body.site,
+    publicSlug: site.publicSlug,
+    deploymentVersion,
+    artifactKind: args.body.artifactKind,
+    spaFallback: args.body.spaFallback,
+    files: args.body.files,
+    createdAt: context.now,
+    publicBrand: site.publicBrand,
+  });
   const files = Object.values(manifest.files);
   await assertHostedDeploymentScope(db, {
     siteId: site.id,
@@ -900,9 +873,7 @@ async function insertHostedDeployment(
     runId: args.runId,
   });
   const [deployment] = await db
-    .insert(
-      args.privateArtifacts ? privateHostedDeployments : hostedDeployments,
-    )
+    .insert(hostedDeployments)
     .values({
       id: deploymentId,
       siteId: site.id,
@@ -934,7 +905,7 @@ async function insertHostedDeployment(
 
 export async function createHostedSiteDeployment(
   writeDb: Db,
-  args: PrepareDeploymentArgs & { readonly privateArtifacts: boolean },
+  args: PrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
 ): Promise<SiteDeploymentCreationResult> {
   const result = await settle(
@@ -995,35 +966,16 @@ export const prepareHostedSiteDeployment$ = command(
       return { status: "bad_request", message: fileError };
     }
 
-    const writeDb = set(writeDb$);
-    const creationArgs = {
-      ...args,
-      privateArtifacts: await get(
-        privateArtifactCreationEnabled(args.orgId, args.userId),
-      ),
-    };
-    signal.throwIfAborted();
-    if (args.body.requirePrivateArtifact && !creationArgs.privateArtifacts) {
+    // Hosted sites are public publications. A site's alias is its durable
+    // address, so it never takes a private artifact reference.
+    if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
-    const now = nowDate();
-    const deploymentId = crypto.randomUUID();
-    // A site keeps one hostless address. The record still points at the last
-    // completed publication until this one finishes uploading.
-    const privateReference = creationArgs.privateArtifacts
-      ? (siteId: string) => {
-          return set(
-            hostedSiteArtifactReference$,
-            { siteId, deploymentId },
-            signal,
-          );
-        }
-      : null;
-    const siteAndDeployment = await createHostedSiteDeployment(
-      writeDb,
-      creationArgs,
-      { now, deploymentId, privateReference },
-    );
+    const writeDb = set(writeDb$);
+    const siteAndDeployment = await createHostedSiteDeployment(writeDb, args, {
+      now: nowDate(),
+      deploymentId: crypto.randomUUID(),
+    });
     signal.throwIfAborted();
     if (
       siteAndDeployment.kind === "scope_conflict" ||
@@ -1247,28 +1199,6 @@ const bindHostedSiteDeployment$ = command(
           })
           .where(eq(hostedSites.id, args.deployment.siteId));
       }
-      // Private publications have no public alias. Their site keeps one
-      // hostless address, which now follows this ready publication.
-      if (
-        args.deployment.manifest.access === "owner-private-v1" &&
-        deploymentVersion !== null &&
-        (await maxHostedDeploymentVersion(
-          tx,
-          args.deployment.siteId,
-          "ready",
-        )) <= deploymentVersion
-      ) {
-        await set(
-          bindHostedSiteArtifactReference$,
-          {
-            siteId: args.deployment.siteId,
-            deploymentId: args.deployment.id,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-      }
-
       return {
         activeDeploymentId: shouldBind
           ? args.deployment.id
