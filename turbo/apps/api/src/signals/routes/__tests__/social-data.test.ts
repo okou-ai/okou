@@ -469,7 +469,9 @@ describe("Social data jobs", () => {
       [422],
     );
 
-    expect(rejected.body).toMatchObject({ code: "SOCIAL_DATA_UNSUPPORTED" });
+    expect(rejected.body).toMatchObject({
+      error: { code: "SOCIAL_DATA_UNSUPPORTED" },
+    });
     expect(observed.runRequests).toBe(0);
   });
 
