@@ -4,12 +4,10 @@
 organizations and disabled by default for other users. Existing per-user
 feature-switch overrides take precedence, including an explicit `false` for
 staff. When enabled, it selects `https://us.openrouter.ai` only for platform-owned
-keys and the verified model/API pairs in `openrouter-routing.ts`. It does not
-change built-in provider priority: DeepSeek models still prefer the direct
-DeepSeek candidate unless the independent `DeepSeekAlternativeRouting`
-(`deepSeekAlternativeRouting`) switch excludes that direct candidate. Only a
-selected OpenRouter candidate changes endpoint. BYOK, connection presets, saved
-URLs, other direct providers and model defaults are unchanged.
+keys and the product-approved non-DeepSeek model/API pairs in
+`openrouter-routing.ts`. It does not change built-in provider priority or any
+DeepSeek endpoint. BYOK, connection presets, saved URLs, other direct providers
+and model defaults are unchanged.
 
 `DeepSeekAlternativeRouting` is also enabled by default for staff organizations
 and disabled by default for other users, with the same explicit per-user
@@ -17,20 +15,19 @@ override precedence. When enabled, platform-owned built-in DeepSeek models skip
 the direct `deepseek` candidate and evaluate the remaining candidates in their
 canonical order. OpenRouter is currently the only remaining candidate, but the
 switch does not restrict future fallback providers to OpenRouter. It also does
-not imply US routing: `OpenRouterUsRouting` still independently selects the
-global or eligible US endpoint when an OpenRouter candidate is chosen.
+not imply US routing: DeepSeek OpenRouter candidates always use the global
+endpoint, regardless of `OpenRouterUsRouting`.
 
 The 2026-09-13 tests and official US catalog comparison in
 [#33565](https://github.com/vm0-ai/vm0/issues/33565), plus the 2026-09-18
-recheck, support four Claude Messages models and seven GPT/DeepSeek Responses
-models among the current platform routes. The recheck completed V4 Flash and V4
-Pro Responses on the US host; V4.1 Flash was present in the authenticated US
-catalog and reached its only in-region upstream, BaseTen, where the shared pool
-returned a temporary 429 rather than a data-region rejection. Gemini voice uses
-Google Cloud after [#33769](https://github.com/vm0-ai/vm0/pull/33769) and is
-outside this OpenRouter switch. No remaining platform Chat Completions or
-dedicated transcription model has verified US support. Unsupported combinations
-retain their global endpoint, including Claude Fable 5.1, the current internal
+recheck, established US support for the current Claude Messages and GPT
+Responses routes. DeepSeek is intentionally excluded from US routing so its
+OpenRouter route retains the global provider pool instead of narrowing to one
+regional upstream. Gemini voice uses Google Cloud after
+[#33769](https://github.com/vm0-ai/vm0/pull/33769) and is outside this OpenRouter
+switch. No remaining platform Chat Completions or dedicated transcription model
+has verified US support. Unsupported combinations retain their global endpoint,
+including all DeepSeek models, Claude Fable 5.1, the current internal
 text/image/translation helpers and dedicated transcription. Catalog presence
 alone does not authorize another API or model; update the allowlist only after
 verifying that combination.
@@ -43,8 +40,9 @@ canonical provider order before choosing the endpoint. With
 fallback after direct DeepSeek. With it enabled, the direct candidate is
 ineligible and the remaining candidates retain their catalog order. The route
 is unavailable only when none of those candidates has an available key; it does
-not fall back to direct DeepSeek. `OpenRouterUsRouting` then changes only an
-eligible selected OpenRouter route from the global endpoint to the US endpoint.
+not fall back to direct DeepSeek. DeepSeek OpenRouter candidates remain global;
+`OpenRouterUsRouting` changes only an eligible non-DeepSeek route from the global
+endpoint to the US endpoint.
 The execution context captures the selected provider, environment, Codex/Pi
 metadata, and exact firewall destinations together. US overrides use an existing
 inline firewall entry so a later name lookup cannot restore the global endpoint.
@@ -61,17 +59,18 @@ Phase 2's V4.1 Flash `high` effort remains supported on its OpenRouter route.
 
 Switch changes affect new provider selections and OpenRouter endpoint captures.
 Queued/claimed executions and requests already in progress keep their captured
-provider, endpoint and credentials. There is no failure-triggered retry against
-direct DeepSeek or the global OpenRouter host. Ordinary existing retry, error
-handling, billing and provider selection remain in place.
+provider, endpoint and credentials. Existing DeepSeek work captured on the US
+host remains readable, while new DeepSeek selections capture the global host.
+There is no failure-triggered retry against direct DeepSeek or another
+OpenRouter host. Ordinary existing retry, error handling, billing and provider
+selection remain in place.
 
 ## Deployment and rollback
 
 The staff default takes effect when this revision is deployed. Confirm the
-platform keys' Business/Enterprise in-region entitlement and compatible API,
-commit-pinned CLI and Runner native readers for that rollout. The earlier live
-probes used the authorized connector key; they do not establish entitlement for
-every platform key.
+platform keys' Business/Enterprise in-region entitlement and compatible API for
+the retained Claude and GPT routes. The earlier live probes used the authorized
+connector key; they do not establish entitlement for every platform key.
 
 GA Claude Code/Codex consumers use existing environment, runtime configuration
 and inline-firewall contracts; no new job fields or database migration are
