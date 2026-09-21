@@ -24,8 +24,8 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-#[cfg(test)]
-pub(super) mod testing;
+runner_test_support!(shared; #[cfg(test)]
+pub(super) mod testing;);
 
 use super::api::ApiClient;
 use super::api_direct_candidates::{
@@ -208,15 +208,15 @@ impl PollWakeups {
         self.notify.notify_waiters();
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     fn request_deferred_poll_at(&self, at: tokio::time::Instant) {
         self.request_deferred_poll_capped_at(at, at);
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn request_deferred_poll_after_for_test(&self, delay: Duration) {
         self.request_deferred_poll_after(delay);
-    }
+    });
 
     pub(super) fn record_poll_result(
         &self,
@@ -411,7 +411,7 @@ impl PollWakeups {
             || inner.deferred_poll_at.is_some_and(|at| at <= now)
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn snapshot(&self) -> PollWakeupsSnapshot {
         let inner = self.lock_inner();
         PollWakeupsSnapshot {
@@ -421,10 +421,10 @@ impl PollWakeups {
             deferred_poll_cap_at: inner.deferred_poll_cap_at,
             wakeup_retry_at: inner.wakeup_retry_at,
         }
-    }
+    });
 }
 
-#[cfg(test)]
+runner_test_support!(provider; #[cfg(test)]
 #[derive(Debug)]
 pub(super) struct PollWakeupsSnapshot {
     pub(super) ably_connected: bool,
@@ -432,7 +432,7 @@ pub(super) struct PollWakeupsSnapshot {
     pub(super) deferred_poll_at: Option<tokio::time::Instant>,
     pub(super) deferred_poll_cap_at: Option<tokio::time::Instant>,
     pub(super) wakeup_retry_at: Option<tokio::time::Instant>,
-}
+});
 
 pub(super) struct AblySupervisor {
     shutdown: CancellationToken,
@@ -502,15 +502,15 @@ impl AblySupervisor {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn disabled() -> Self {
         Self {
             shutdown: CancellationToken::new(),
             task: StdMutex::new(None),
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     fn spawn_test_task<F>(build: impl FnOnce(CancellationToken) -> F) -> Self
     where
         F: std::future::Future<Output = ()> + Send + 'static,
@@ -521,7 +521,7 @@ impl AblySupervisor {
             shutdown,
             task: StdMutex::new(Some(task)),
         }
-    }
+    });
 
     fn take_task(&self) -> Option<tokio::task::JoinHandle<()>> {
         self.task
@@ -667,7 +667,7 @@ async fn handle_ably_event(
     }
 }
 
-#[cfg(test)]
+runner_test_support!(provider; #[cfg(test)]
 async fn handle_ably_message(
     msg: &ably_subscriber::Message,
     profiles: &[String],
@@ -685,7 +685,7 @@ async fn handle_ably_message(
         None,
     )
     .await;
-}
+});
 
 async fn handle_ably_message_with_connector_runtime_sync(
     msg: &ably_subscriber::Message,
@@ -1177,7 +1177,7 @@ impl AblyDisconnectState {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::provider::{RunnerPreference, RunnerPreferenceTier};
@@ -2441,4 +2441,4 @@ mod tests {
         );
         assert_eq!(notification.mode, CancelNotificationMode::Cooperative);
     }
-}
+});

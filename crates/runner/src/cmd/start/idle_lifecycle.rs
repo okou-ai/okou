@@ -419,7 +419,7 @@ pub(super) async fn destroy_idle_payload_and_wait(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -495,4 +495,4 @@ mod tests {
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].reuse_key, fixture.reuse_key);
     }
-}
+});

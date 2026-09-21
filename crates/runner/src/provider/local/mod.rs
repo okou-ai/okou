@@ -24,20 +24,20 @@ use crate::types::{CompleteRequest, ExecutionContext, HeartbeatState};
 use cancel::{LocalCancelScanner, LocalCancelWatcher};
 use watch::{QueueFileKind, RECONCILE_INTERVAL, ensure_watcher, next_change_or_pending};
 
-#[cfg(test)]
+runner_test_support!(provider; #[cfg(test)]
 #[derive(Clone, Default)]
 struct ScanObserver {
     inner: Arc<ScanObserverInner>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(provider; #[cfg(test)]
 #[derive(Default)]
 struct ScanObserverInner {
     count: AtomicUsize,
     changed: tokio::sync::Notify,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(provider; #[cfg(test)]
 impl ScanObserver {
     fn record(&self) {
         self.inner.count.fetch_add(1, Ordering::Relaxed);
@@ -60,17 +60,17 @@ impl ScanObserver {
     fn observe(&self) -> ScanObservation {
         ScanObservation(self.clone())
     }
-}
+});
 
-#[cfg(test)]
-struct ScanObservation(ScanObserver);
+runner_test_support!(provider; #[cfg(test)]
+struct ScanObservation(ScanObserver););
 
-#[cfg(test)]
+runner_test_support!(provider; #[cfg(test)]
 impl Drop for ScanObservation {
     fn drop(&mut self) {
         self.0.record();
     }
-}
+});
 
 /// [`JobProvider`] backed by a file queue in a shared group directory.
 ///
@@ -173,25 +173,25 @@ impl LocalProvider {
             .collect()
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn wait_for_job_scan_count(&self, expected: usize) {
         self.job_scan_observer.wait_for_count(expected).await;
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     fn job_scan_count(&self) -> usize {
         self.job_scan_observer.count()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn wait_for_cancel_scan_count(&self, expected: usize) {
         self.cancel_scanner.wait_for_scan_count(expected).await;
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     fn cancel_scan_count(&self) -> usize {
         self.cancel_scanner.scan_count()
-    }
+    });
 }
 
 fn job_candidate_from_discovered(discovered: LocalDiscoveredJob) -> JobCandidate {
@@ -399,5 +399,5 @@ fn merge_local_environments(
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(provider; #[cfg(test)]
+mod tests;);

@@ -60,7 +60,7 @@ pub(super) async fn gc_orphaned_locks(home: &HomePaths, dry_run: bool) -> Runner
     Ok(GcReport::cleanup(removed, 0))
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use nix::fcntl::{Flock, FlockArg};
 
@@ -182,4 +182,4 @@ mod tests {
             "ordinary free locks should still be cleaned"
         );
     }
-}
+});

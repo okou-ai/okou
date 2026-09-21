@@ -284,12 +284,12 @@ impl ResourceBudget {
         }
     }
 
-    /// Release resources after a job completes.
+    runner_test_support!(runtime_control; /// Release resources after a job completes.
     #[cfg(test)]
     pub fn release(&self, vcpu: u32, memory_mb: u32) {
         self.release_reserved(vcpu, memory_mb)
             .expect("release underflow");
-    }
+    });
 
     /// Check if there is potentially enough budget for a job with the given
     /// resources. Used as a gate in the main loop to avoid blocking on
@@ -413,7 +413,7 @@ impl ResourceBudget {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -888,4 +888,4 @@ mod tests {
         assert_eq!(mem, 2048);
         assert_eq!(count, 1);
     }
-}
+});

@@ -15,7 +15,7 @@ pub(crate) fn human_bytes(bytes: u64) -> String {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::human_bytes;
 
@@ -44,4 +44,4 @@ mod tests {
             assert_eq!(human_bytes(input), expected, "human_bytes({input})");
         }
     }
-}
+});

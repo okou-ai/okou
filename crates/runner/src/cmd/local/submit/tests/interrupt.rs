@@ -1,8 +1,10 @@
-use std::ffi::OsStr;
 use std::process::ExitCode;
 use std::time::Duration;
 
 use super::super::run_submit_with_home;
+use super::super::submit_test_support::{
+    INTERRUPT_CHILD_ENV, INTERRUPT_CHILD_VALUE, SECOND_INTERRUPT_CHILD_VALUE, send_sigint,
+};
 use super::support::submit_args_for_test;
 use crate::ids::RunId;
 use crate::local_queue::{self, JobRequest, JobResponse};
@@ -11,28 +13,9 @@ use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
 
-const INTERRUPT_CHILD_ENV: &str = "OKOU_RUNNER_LOCAL_SUBMIT_INTERRUPT_TEST";
-const INTERRUPT_CHILD_VALUE: &str = "after-job-publication";
 const INTERRUPT_CHILD_TEST: &str =
     "cmd::local::submit::tests::interrupt::sigint_after_job_publication_uses_cancel_cleanup_child";
-const SECOND_INTERRUPT_CHILD_VALUE: &str = "second-interrupt-after-claim";
 const SECOND_INTERRUPT_CHILD_TEST: &str = "cmd::local::submit::tests::interrupt::second_sigint_preserves_claimed_cancel_without_result_child";
-
-pub(super) fn post_publish_test_checkpoint() {
-    let value = std::env::var_os(INTERRUPT_CHILD_ENV);
-    if value.as_deref() != Some(OsStr::new(INTERRUPT_CHILD_VALUE))
-        && value.as_deref() != Some(OsStr::new(SECOND_INTERRUPT_CHILD_VALUE))
-    {
-        return;
-    }
-
-    send_sigint();
-}
-
-fn send_sigint() {
-    nix::sys::signal::kill(nix::unistd::Pid::this(), nix::sys::signal::Signal::SIGINT)
-        .expect("send SIGINT to local submit test process");
-}
 
 #[tokio::test]
 async fn sigint_after_job_publication_uses_cancel_cleanup() {

@@ -17,8 +17,8 @@ mod observation;
 mod output;
 mod pool;
 mod sessions;
-#[cfg(test)]
-mod tests;
+runner_test_group!(network; #[cfg(test)]
+mod tests;);
 
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
 use serde::{Deserialize, Serialize};

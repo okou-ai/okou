@@ -7,8 +7,8 @@ use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
 
 use crate::cmd::service;
-#[cfg(test)]
-use crate::error::RunnerError;
+runner_test_support!(cmd_gc_build; #[cfg(test)]
+use crate::error::RunnerError;);
 use crate::error::RunnerResult;
 use crate::host_file;
 use crate::lock;
@@ -213,14 +213,14 @@ impl VersionGcAnalysis {
     }
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 pub(super) fn empty_complete_version_gc_analysis() -> VersionGcAnalysis {
     VersionGcAnalysis {
         entries: Vec::new(),
         binary_scan_complete: true,
         config_scan_complete: true,
     }
-}
+});
 
 pub(super) async fn analyze_version_gc(
     home: &HomePaths,
@@ -383,7 +383,7 @@ async fn analyze_version_gc_with_readers(
     })
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 pub(super) async fn analyze_version_gc_with_injected_scan_error(
     home: &HomePaths,
     protect: Option<&str>,
@@ -400,9 +400,9 @@ pub(super) async fn analyze_version_gc_with_injected_scan_error(
         &mut config_reader,
     )
     .await
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 pub(super) async fn analyze_version_gc_with_injected_config_scan_error(
     home: &HomePaths,
     protect: Option<&str>,
@@ -419,7 +419,7 @@ pub(super) async fn analyze_version_gc_with_injected_config_scan_error(
         &mut config_reader,
     )
     .await
-}
+});
 
 async fn version_retention_reason(
     home: &HomePaths,
@@ -516,21 +516,21 @@ async fn remove_version_dir(path: &Path, remove_dir_all: RemoveDirAllFn) -> bool
     }
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 fn successful_fake_uninstall_service_unit(
     _unit: &service::RunnerServiceUnit,
 ) -> ServiceUninstallFuture<'_> {
     Box::pin(async { Ok(()) })
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 fn failing_fake_uninstall_service_unit(
     _unit: &service::RunnerServiceUnit,
 ) -> ServiceUninstallFuture<'_> {
     Box::pin(async { Err(RunnerError::Internal("fake uninstall failed".to_string())) })
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 fn failing_fake_remove_config_dir(path: &Path) -> RemoveDirAllFuture<'_> {
     Box::pin(async move {
         if path
@@ -545,9 +545,9 @@ fn failing_fake_remove_config_dir(path: &Path) -> RemoveDirAllFuture<'_> {
             tokio::fs::remove_dir_all(path).await
         }
     })
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 async fn gc_versions(
     home: &HomePaths,
     dry_run: bool,
@@ -562,7 +562,7 @@ async fn gc_versions(
         successful_fake_uninstall_service_unit,
     )
     .await
-}
+});
 
 /// Remove old deployment version directories that are not actively running.
 ///
@@ -755,5 +755,5 @@ async fn gc_versions_with_analysis_and_operations(
     Ok(removed)
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod tests;);

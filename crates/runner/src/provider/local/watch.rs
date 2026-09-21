@@ -202,7 +202,7 @@ fn watcher_io_error(action: &str, kind: std::io::ErrorKind) -> RunnerError {
     RunnerError::Internal(format!("local queue watcher {action}: {kind:?}"))
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -272,4 +272,4 @@ mod tests {
             .expect("recreated directory should be watched again")
             .unwrap();
     }
-}
+});

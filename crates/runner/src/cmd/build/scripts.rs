@@ -9,8 +9,8 @@ use nix::fcntl::Flock;
 
 use crate::error::{RunnerError, RunnerResult};
 
-#[cfg(test)]
-mod process_tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod process_tests;);
 
 pub(super) const TEMPLATE_BUILD_SCRIPT: &str = include_str!("../../../scripts/build-template.sh");
 const VERIFY_SCRIPT: &str = include_str!("../../../scripts/verify-rootfs.sh");
@@ -58,7 +58,7 @@ impl RootfsScripts {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     pub(super) fn from_temp_dir(temp_dir: tempfile::TempDir) -> Self {
         let primary_lock = Arc::new(
             Flock::lock(
@@ -76,7 +76,7 @@ impl RootfsScripts {
             primary_lock,
             template_lock: None,
         }
-    }
+    });
 
     pub(super) fn release_template_lock(&mut self) {
         self.template_lock = None;
@@ -233,7 +233,7 @@ pub(super) async fn run_rootfs_script(
     result
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1271,4 +1271,4 @@ assert_check_error \
             "verify-rootfs.sh should reject customized resolver state in template mode"
         );
     }
-}
+});

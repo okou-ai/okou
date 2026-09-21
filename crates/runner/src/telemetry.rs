@@ -710,7 +710,7 @@ impl JobTelemetry {
         );
     }
 
-    /// Snapshot of buffered ops for tests. Returns `(action_type, success, error)`
+    runner_test_support!(platform_support; /// Snapshot of buffered ops for tests. Returns `(action_type, success, error)`
     /// tuples in insertion order.
     #[cfg(test)]
     pub(crate) fn pending_ops_snapshot(&self) -> Vec<(String, bool, Option<String>)> {
@@ -718,36 +718,36 @@ impl JobTelemetry {
             .iter()
             .map(|op| (op.action_type.clone(), op.success, op.error.clone()))
             .collect()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(storage; #[cfg(test)]
     pub(crate) fn pending_archive_connection_attempt_payloads(&self) -> Vec<serde_json::Value> {
         self.pending_ops
             .iter()
             .filter(|op| op.archive_connection_attempt.is_some())
             .map(|op| serde_json::to_value(op).expect("serialize archive connection attempt"))
             .collect()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) fn pending_workspace_history_restore_payloads(&self) -> Vec<serde_json::Value> {
         self.pending_ops
             .iter()
             .filter(|op| op.workspace_session_history.is_some())
             .map(|op| serde_json::to_value(op).expect("serialize workspace restore operation"))
             .collect()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) fn pending_history_transfer_payloads(&self) -> Vec<serde_json::Value> {
         self.pending_ops
             .iter()
             .filter(|op| op.history_transfer.is_some())
             .map(|op| serde_json::to_value(op).expect("serialize history transfer operation"))
             .collect()
-    }
+    });
 
-    /// Snapshot of buffered ops for tests that need to assert duration semantics.
+    runner_test_group!(executor, storage; /// Snapshot of buffered ops for tests that need to assert duration semantics.
     #[cfg(test)]
     pub(crate) fn pending_ops_with_duration_snapshot(
         &self,
@@ -763,9 +763,9 @@ impl JobTelemetry {
                 )
             })
             .collect()
-    }
+    });
 
-    /// Snapshot of buffered low-cardinality outcome dimensions for tests.
+    runner_test_group!(cmd_start, executor, storage; /// Snapshot of buffered low-cardinality outcome dimensions for tests.
     #[cfg(test)]
     pub(crate) fn pending_ops_with_outcome_snapshot(
         &self,
@@ -781,9 +781,9 @@ impl JobTelemetry {
                 )
             })
             .collect()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(platform_support, executor; #[cfg(test)]
     pub(crate) fn pending_ops_with_session_history_metadata_snapshot(
         &self,
     ) -> Vec<SessionHistoryTelemetrySnapshot> {
@@ -796,9 +796,9 @@ impl JobTelemetry {
                 session_history: op.session_history,
             })
             .collect()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) fn pending_ops_with_runner_startup_snapshot(
         &self,
     ) -> Vec<RunnerStartupTelemetrySnapshot> {
@@ -817,9 +817,9 @@ impl JobTelemetry {
                     .runner_resource_budget_lease_count_bucket,
             })
             .collect()
-    }
+    });
 
-    /// Rewind the oldest-pending marker to simulate a buffered op that has
+    runner_test_support!(platform_support; /// Rewind the oldest-pending marker to simulate a buffered op that has
     /// aged past the auto-flush threshold, without needing a real sleep or a
     /// paused tokio clock.
     #[cfg(test)]
@@ -827,7 +827,7 @@ impl JobTelemetry {
         if let Some(instant) = self.oldest_pending {
             self.oldest_pending = Some(instant - by);
         }
-    }
+    });
 
     /// Start an owned flush for auto-threshold flushes.
     fn start_auto_flush(&mut self) {
@@ -904,16 +904,16 @@ impl SandboxOpReporter {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support, executor; #[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SessionHistoryTelemetrySnapshot {
     pub(crate) action_type: String,
     pub(crate) success: bool,
     pub(crate) error: Option<String>,
     pub(crate) session_history: Option<SessionHistoryTelemetryFields>,
-}
+});
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RunnerStartupTelemetrySnapshot {
     pub(crate) action_type: String,
@@ -926,7 +926,7 @@ pub(crate) struct RunnerStartupTelemetrySnapshot {
         Option<RunnerResourceBudgetUtilizationBucket>,
     pub(crate) runner_resource_budget_lease_count_bucket:
         Option<RunnerResourceBudgetLeaseCountBucket>,
-}
+});
 
 fn sandbox_op(
     action_type: &str,
@@ -1036,7 +1036,7 @@ async fn send_telemetry(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
     use tracing::{Level, instrument::WithSubscriber};
@@ -1889,4 +1889,4 @@ mod tests {
         assert!(request.contains(r#""runnerHostname":"prod-1.aws.vm3.ai""#));
         assert!(request.contains(&format!(r#""runnerVersion":"{RUNNER_VERSION}""#)));
     }
-}
+});

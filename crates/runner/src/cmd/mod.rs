@@ -25,9 +25,9 @@ pub use setup::run_setup;
 pub use start::{StartArgs, run_start};
 pub use workspace_image_cache::{WorkspaceImageCacheArgs, run_workspace_image_cache};
 
-#[cfg(test)]
+runner_test_support!(cmd_other; #[cfg(test)]
 pub(crate) use local::input::{
     active_input_lock_attempt_for_test, active_input_publication_locked_for_test,
-};
-#[cfg(test)]
-pub(crate) use local::submit::abandon_cancelled_submit_for_test;
+};);
+runner_test_group!(provider; #[cfg(test)]
+pub(crate) use local::submit::abandon_cancelled_submit_for_test;);

@@ -230,7 +230,7 @@ impl ActiveRunReusePublisher {
         resolved
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(super) fn detached() -> Self {
         let (reuse_state, _reuse_state_rx) = watch::channel(ActiveRunReuseState::Pending);
         Self {
@@ -240,7 +240,7 @@ impl ActiveRunReusePublisher {
                 delivery: None,
             })),
         }
-    }
+    });
 }
 
 pub(super) struct ActiveRunGuard {
@@ -327,10 +327,10 @@ impl ActiveRuns {
         })
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(super) fn contains(&self, run_id: RunId) -> bool {
         lock_entries(&self.entries).contains_key(&run_id)
-    }
+    });
 }
 
 impl ActiveRunGuard {
@@ -385,7 +385,7 @@ fn lock_handoff(handoff: &Mutex<ActiveRunHandoffBroker>) -> MutexGuard<'_, Activ
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -716,4 +716,4 @@ mod tests {
         drop(lease);
         assert_eq!(budget.allocated(), (0, 0, 0));
     }
-}
+});

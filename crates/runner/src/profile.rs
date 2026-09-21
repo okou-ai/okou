@@ -45,7 +45,7 @@ pub fn validate_or_err(name: &str) -> RunnerResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -76,4 +76,4 @@ mod tests {
             "config error: invalid profile name: /etc (must be org/name format, lowercase alphanumeric + hyphens)"
         );
     }
-}
+});

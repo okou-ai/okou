@@ -28,8 +28,8 @@ use super::ownership::{OwnershipTransitions, RunSandbox};
 use super::sandbox_finalization::{
     FinalizeContext, finalize_sandbox_for_completion_with_telemetry,
 };
-#[cfg(test)]
-use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
+runner_test_support!(cmd_start; #[cfg(test)]
+use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};);
 use crate::error::RunnerError;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
@@ -914,7 +914,7 @@ pub(super) async fn handle_job_result(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use guest_contracts::diagnostics::{
@@ -1884,4 +1884,4 @@ mod tests {
         assert!(active_runs.is_empty());
         assert_eq!(fixture.orphans.len(), 0);
     }
-}
+});

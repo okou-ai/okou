@@ -95,7 +95,7 @@ pub(crate) fn validate_name(name: &str) -> bool {
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.')
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -233,4 +233,4 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("non-empty"), "got: {msg}");
     }
-}
+});

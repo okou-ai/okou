@@ -56,8 +56,8 @@ use crate::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
     ExecutionContext, HeartbeatState, Job, PollResponse,
 };
-#[cfg(test)]
-use crate::types::{SandboxReuseResult, WorkspaceReuseResult};
+runner_test_support!(provider; #[cfg(test)]
+use crate::types::{SandboxReuseResult, WorkspaceReuseResult};);
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
@@ -1530,7 +1530,7 @@ impl ApiClient {
         }))
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn claim_for_test(
         &self,
         candidate: &JobCandidate,
@@ -1539,7 +1539,7 @@ impl ApiClient {
             RunnerProcessIdentity::new("550e8400-e29b-41d4-a716-446655440000".parse().unwrap(), 7)
                 .unwrap();
         self.claim(candidate, &runner_identity, None).await
-    }
+    });
     /// Report job completion. Uses the per-job **sandbox token** for auth.
     async fn complete(&self, sandbox_token: &str, request: &CompleteRequest) -> RunnerResult<()> {
         let resp = send_api(
@@ -2023,7 +2023,7 @@ fn sanitized_json_error_detail(error: &serde_json::Error) -> String {
 // Tests
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
     use httpmock::{HttpMockRequest, HttpMockResponse, Method::POST, MockServer};
@@ -6528,4 +6528,4 @@ mod tests {
         assert_eq!(event_field(final_event, "status"), "500");
         assert_eq!(event_field(final_event, "failure_kind"), "http_status");
     }
-}
+});

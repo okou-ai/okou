@@ -636,7 +636,7 @@ fn normalize_private_dir_policy_path(path: &Path) -> RunnerResult<PathBuf> {
     Ok(normalize_path_lexically(&path))
 }
 
-#[cfg(test)]
+runner_test_support!(platform_support; #[cfg(test)]
 #[cfg(unix)]
 fn reject_reserved_private_dir_path_with_cwd(path: &Path, cwd: &Path) -> RunnerResult<()> {
     let normalized = normalize_path_lexically(&if path.is_relative() {
@@ -645,7 +645,7 @@ fn reject_reserved_private_dir_path_with_cwd(path: &Path, cwd: &Path) -> RunnerR
         path.to_path_buf()
     });
     reject_reserved_normalized_private_dir_path(path, &normalized)
-}
+});
 
 #[cfg(unix)]
 fn reject_reserved_normalized_private_dir_path(
@@ -694,7 +694,7 @@ fn normalize_path_lexically(path: &Path) -> PathBuf {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 #[cfg(unix)]
 mod tests {
     use super::*;
@@ -1216,4 +1216,4 @@ mod tests {
             "unexpected error: {error}"
         );
     }
-}
+});

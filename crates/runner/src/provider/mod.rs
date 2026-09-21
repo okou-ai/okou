@@ -12,13 +12,13 @@ mod api_direct_candidates;
 mod builtin_firewall_catalog;
 mod connector_runtime_sync;
 mod local;
-#[cfg(test)]
-pub mod mock;
+runner_test_support!(shared; #[cfg(test)]
+pub mod mock;);
 
 pub(crate) use api::ApiClient;
 pub use api::{ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths};
-#[cfg(test)]
-pub(crate) use api_ably_supervisor::testing::AblyTestEvents;
+runner_test_group!(network; #[cfg(test)]
+pub(crate) use api_ably_supervisor::testing::AblyTestEvents;);
 pub(crate) use connector_runtime_sync::{
     ConnectorRuntimeSyncHandle, ConnectorRuntimeSyncRegistration,
 };
@@ -121,7 +121,7 @@ impl ActiveRunnerPreference {
         self.runner_identity == runner_identity
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn ranked_for_test(
         runner_identity: RunnerProcessIdentity,
         tier: RunnerPreferenceTier,
@@ -132,7 +132,7 @@ impl ActiveRunnerPreference {
             tier,
             deadline,
         }
-    }
+    });
 }
 
 pub(crate) fn parse_runner_preference(
@@ -200,7 +200,7 @@ impl RunnerPreferenceContext {
         self.removal_reason = Some(removal_reason);
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn for_test(preference: ActiveRunnerPreference) -> Self {
         let runner_identity = preference.runner_identity;
         let tier = preference.tier;
@@ -217,16 +217,16 @@ impl RunnerPreferenceContext {
             active_preference: Some(preference),
             removal_reason: None,
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn no_preference_for_test(reason: RunnerNoPreferenceReason) -> Self {
         Self {
             runner_preference: RunnerPreference::NoPreference { reason },
             active_preference: None,
             removal_reason: None,
         }
-    }
+    });
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -418,16 +418,16 @@ impl JobCandidate {
         self
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn with_runner_preference_for_test(
         mut self,
         preference: ActiveRunnerPreference,
     ) -> Self {
         self.runner_preference_context = Some(RunnerPreferenceContext::for_test(preference));
         self
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn with_no_runner_preference_for_test(
         mut self,
         reason: RunnerNoPreferenceReason,
@@ -435,7 +435,7 @@ impl JobCandidate {
         self.runner_preference_context =
             Some(RunnerPreferenceContext::no_preference_for_test(reason));
         self
-    }
+    });
 
     pub(crate) fn runner_preference_claim_telemetry(
         &self,
@@ -500,7 +500,7 @@ impl JobCandidate {
         self
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn new_with_timing_for_test(
         run_id: RunId,
         profile_name: String,
@@ -511,7 +511,7 @@ impl JobCandidate {
             local_admission_started_at,
             ..Self::new_with_discovered_at(run_id, profile_name, discovered_at)
         }
-    }
+    });
 }
 
 /// Job claim result with the context and auth required for terminal completion.
@@ -622,13 +622,13 @@ impl ClaimedJob {
         })
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn local(
         expected_run_id: RunId,
         context: ExecutionContext,
     ) -> Result<Self, ClaimedJobRunIdMismatch> {
         Self::local_with_active_input_source(expected_run_id, context, None)
-    }
+    });
 
     pub(crate) fn local_with_active_input_source(
         expected_run_id: RunId,
@@ -658,10 +658,10 @@ impl ClaimedJob {
         self.api_claim_timing
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn active_input_source(&self) -> Option<&ActiveInputSource> {
         self.active_input_source.as_ref()
-    }
+    });
 }
 
 /// Auth material needed by a provider to report terminal completion.
@@ -703,7 +703,7 @@ impl CompletionAuth {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(crate) fn matches_sandbox_token_for_test(
         &self,
         expected_run_id: RunId,
@@ -714,7 +714,7 @@ impl CompletionAuth {
             CompletionAuthKind::Sandbox { run_id, token }
                 if *run_id == expected_run_id && token == expected_token
         )
-    }
+    });
 }
 
 /// Abstraction over job lifecycle — discovery, claiming, and completion reporting.
@@ -817,7 +817,7 @@ pub trait JobProvider: Send + Sync {
     async fn shutdown(&self);
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_fixtures::execution_context::execution_context_for_test;
@@ -882,4 +882,4 @@ mod tests {
 
         assert!(claimed.api_claim_timing().is_none());
     }
-}
+});

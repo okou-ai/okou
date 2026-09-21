@@ -521,7 +521,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
@@ -1766,4 +1766,4 @@ mod tests {
 
         assert_shared_failure_log_fields(&generic_event, &timeout_event);
     }
-}
+});

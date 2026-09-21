@@ -9,7 +9,7 @@ pub(super) fn status_field_preview(value: &str) -> String {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -30,4 +30,4 @@ mod tests {
             format!("{}...[truncated]", "界".repeat(128))
         );
     }
-}
+});

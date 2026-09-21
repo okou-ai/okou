@@ -2,8 +2,8 @@ use sandbox::{CodexSessionCleanupRequest, ExecResult, Sandbox};
 use tracing::info;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_CODEX_HOME_DIR;
-#[cfg(test)]
-use api_contracts::generated::constants::runners::paths::CANONICAL_CODEX_SESSIONS_DIR;
+runner_test_support!(executor; #[cfg(test)]
+use api_contracts::generated::constants::runners::paths::CANONICAL_CODEX_SESSIONS_DIR;);
 
 use super::{MaterializedResumeSession, SessionRestoreDiagnostics, write_session_history_file};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
@@ -193,7 +193,7 @@ fn is_canonical_codex_logical_path(path: &str, session_id: &str) -> bool {
         .is_some_and(|thread_id| is_canonical_codex_rollout_relative_path(relative, &thread_id))
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -379,4 +379,4 @@ mod tests {
             }
         }
     }
-}
+});

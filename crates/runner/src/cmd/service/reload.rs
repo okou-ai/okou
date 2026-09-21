@@ -179,7 +179,7 @@ pub(super) async fn coordinate_systemd_reload_bounded(
     .await
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::future::Future as _;
     use std::sync::Arc;
@@ -497,4 +497,4 @@ mod tests {
         assert!(error.to_string().contains("systemd daemon-reload lock"));
         assert_eq!(ops.reload_count.load(Ordering::SeqCst), 0);
     }
-}
+});

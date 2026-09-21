@@ -23,7 +23,7 @@ fn configure_parent_death_signal_for(command: &mut tokio::process::Command, expe
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -48,4 +48,4 @@ mod tests {
 
         assert_eq!(error.raw_os_error(), Some(nix::libc::ESRCH));
     }
-}
+});

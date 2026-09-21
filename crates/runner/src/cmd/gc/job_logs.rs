@@ -73,7 +73,7 @@ pub(super) async fn gc_job_logs(home: &HomePaths, dry_run: bool) -> RunnerResult
     Ok(GcReport::cleanup(removed, freed))
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cmd::gc::test_support::test_home;
@@ -243,4 +243,4 @@ mod tests {
         assert!(!metrics_log.exists());
         assert!(!sandbox_ops_log.exists());
     }
-}
+});

@@ -435,7 +435,7 @@ where
     .map_err(|error| TemplateUnpackError::Local(R2Error::Io(io_other(error))))?
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
@@ -547,4 +547,4 @@ mod tests {
 
         assert!(matches!(error, TemplateUnpackError::Local(_)));
     }
-}
+});

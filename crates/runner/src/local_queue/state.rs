@@ -1116,7 +1116,7 @@ fn validate_optional_cancel_dir(group_dir: &Path, cancel_dir: &Path) -> std::io:
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
     use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
@@ -2051,4 +2051,4 @@ mod tests {
 
         assert!(queue.collect_cancel_markers_sync().is_empty());
     }
-}
+});

@@ -858,7 +858,7 @@ async fn logs(args: ServiceLogsArgs) -> RunnerResult<()> {
     journalctl_logs_status(unit.service_name(), status)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
     use std::os::unix::fs::PermissionsExt;
@@ -1762,4 +1762,4 @@ profiles:
         assert_eq!(dir_mtime(rootfs.dir()), old_time);
         assert_eq!(dir_mtime(snapshot.dir()), old_time);
     }
-}
+});

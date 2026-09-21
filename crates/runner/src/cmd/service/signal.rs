@@ -126,7 +126,7 @@ fn systemctl_kill_error(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
@@ -350,4 +350,4 @@ exit 2
             unexpected => panic!("unexpected service signal scenario: {unexpected}"),
         }
     }
-}
+});

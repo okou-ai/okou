@@ -54,6 +54,33 @@ exceeds the available memory when serialized, use a larger execution profile or
 split the test target into smaller compilation units. A narrower local check
 does not replace required CI.
 
+Runner's inline tests are split into ten explicit Cargo test targets so a
+serialized build fits constrained hosts. Prepare the locked Python integration
+environment, then compile or run the complete partitioned suite with:
+
+```bash
+uv sync --locked --project crates/runner/mitm-addon
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner --tests --no-run
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner --tests -- --test-threads=1
+```
+
+Use `--test <target>` before a test-name filter when only one Runner domain is
+needed. The targets are `runner-cmd-start`, `runner-cmd-service`,
+`runner-cmd-gc-build`, `runner-cmd-other`, `runner-executor`, `runner-provider`,
+`runner-storage`, `runner-network`, `runner-runtime-control`, and
+`runner-platform-support`. For example, SSH tests belong to `runner-network`:
+
+```bash
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner --test runner-network ssh::tests::pooling -- --test-threads=1
+```
+
+The production `runner` binary test harness is disabled for ordinary `cargo
+test`; explicit `--bin runner` remains a compatibility fallback and rebuilds the
+original monolithic harness, so it is unsuitable for a memory-constrained host.
+
 Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
 files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
 use `cargo clippy --profile local --all-targets --all-features`.
@@ -107,6 +134,22 @@ mod tests {
         // ... setup and assertions
     }
 }
+```
+
+Runner keeps its production module tree private and selects inline test items at
+the source item boundary. New Runner test modules must be wrapped with
+`runner_test_group!(group; ...)` and assigned to the narrowest domain above.
+Test-only support items use `runner_test_support!(owner; ...)`; the deliberately
+shared support modules are allowlisted by the partition check. Do not add a
+crate-wide unused-code allowance or duplicate production source in a test root.
+
+Run the static ownership/target-registry check after changing Runner test
+organization. Add `--list` to compile the partitions and verify the exact-once
+3,999-test inventory:
+
+```bash
+.github/scripts/check-runner-test-partitions.py
+.github/scripts/check-runner-test-partitions.py --list
 ```
 
 ## Patterns

@@ -251,7 +251,7 @@ pub(super) async fn check_active_jobs_gate(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
     use std::os::unix::fs::PermissionsExt;
@@ -890,4 +890,4 @@ exit 2
                 .contains("cannot resolve a live runner instance")
         );
     }
-}
+});

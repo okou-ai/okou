@@ -1416,7 +1416,7 @@ impl RunControls {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(super) fn new(
         cancel: CancellationToken,
         active_input_source: Option<ActiveInputSource>,
@@ -1425,7 +1425,7 @@ impl RunControls {
             crate::run_cancellation::RunCancellationSignals::hard_only(cancel),
             active_input_source,
         )
-    }
+    });
 
     pub(super) fn from_cancellation(
         cancellation: crate::run_cancellation::RunCancellationSignals,
@@ -2152,7 +2152,7 @@ async fn prepare_guest_storage(
     result
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 pub(super) async fn run_in_sandbox(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
@@ -2172,7 +2172,7 @@ pub(super) async fn run_in_sandbox(
         super::PROCESS_CANCEL_TIMEOUTS,
     )
     .await
-}
+});
 
 /// Runs the inner guest-agent lifecycle with configurable cancellation timeouts.
 ///
@@ -3724,7 +3724,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     Ok(agent_result)
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 mod tests {
     use super::*;
     use guest_contracts::diagnostics::{
@@ -4094,4 +4094,4 @@ mod tests {
 
         assert!(error.contains("argv/env aggregate too large"));
     }
-}
+});

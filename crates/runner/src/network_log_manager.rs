@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use tokio::sync::mpsc::error::TrySendError;
-#[cfg(test)]
-use tokio::sync::{Barrier, Notify, Semaphore};
+runner_test_support!(network; #[cfg(test)]
+use tokio::sync::{Barrier, Notify, Semaphore};);
 use tracing::warn;
 
 use crate::ids::RunId;
@@ -17,8 +17,8 @@ mod writer;
 use state::NetworkLogState;
 use writer::{WriterConfig, WriterPool};
 
-#[cfg(test)]
-use writer::DEFAULT_MAX_BATCH_BYTES;
+runner_test_support!(network; #[cfg(test)]
+use writer::DEFAULT_MAX_BATCH_BYTES;);
 
 /// Coordinates Rust-side DNS/kmsg network log attribution and file writes.
 ///
@@ -43,20 +43,20 @@ struct Inner {
     close_gate: Option<CloseGate>,
 }
 
-#[cfg(test)]
+runner_test_support!(network; #[cfg(test)]
 #[derive(Clone)]
 struct WriteGate {
     started: Arc<Notify>,
     release: Arc<Semaphore>,
     blocking: bool,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(network; #[cfg(test)]
 #[derive(Clone)]
 struct CloseGate {
     before_flush: Arc<Notify>,
     release: Arc<Semaphore>,
-}
+});
 
 /// Owns a source-IP network-log attribution for one runner job.
 ///
@@ -175,7 +175,7 @@ impl NetworkLogManager {
         Self::default()
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) fn new_with_write_gate(started: Arc<Notify>, release: Arc<Semaphore>) -> Self {
         Self::new_for_test(
             Some(WriteGate {
@@ -186,9 +186,9 @@ impl NetworkLogManager {
             None,
             WriterConfig::default(),
         )
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     fn new_with_write_gate_and_config(
         started: Arc<Notify>,
         release: Arc<Semaphore>,
@@ -203,9 +203,9 @@ impl NetworkLogManager {
             None,
             writer_config,
         )
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     fn new_for_test(
         write_gate: Option<WriteGate>,
         close_gate: Option<CloseGate>,
@@ -220,9 +220,9 @@ impl NetworkLogManager {
                 close_gate,
             }),
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) fn new_with_close_gate(
         before_flush: Arc<Notify>,
         close_release: Arc<Semaphore>,
@@ -235,7 +235,7 @@ impl NetworkLogManager {
             }),
             WriterConfig::default(),
         )
-    }
+    });
 
     pub async fn register_source_ip(
         &self,
@@ -253,11 +253,11 @@ impl NetworkLogManager {
         }
     }
 
-    /// Remove a source mapping immediately.
+    runner_test_support!(network; /// Remove a source mapping immediately.
     #[cfg(test)]
     pub async fn unregister_source_ip(&self, source_ip: &str) {
         self.inner.state.unregister_source_ip(source_ip);
-    }
+    });
 
     /// Accept a JSON network-log row for a source IP.
     ///
@@ -350,17 +350,17 @@ impl NetworkLogManager {
         self.inner.state.flush_path(path).await;
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     async fn before_close_upload_flush_for_test(&self) {
         if let Some(gate) = self.inner.close_gate.as_ref() {
             gate.before_flush.notify_one();
             let permit = gate.release.acquire().await.expect("close gate closed");
             permit.forget();
         }
-    }
+    });
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use std::future::poll_fn;
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -1398,4 +1398,4 @@ mod tests {
                 .await
         );
     }
-}
+});

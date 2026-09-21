@@ -79,7 +79,7 @@ where
     }))
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -141,4 +141,4 @@ mod tests {
 
         assert_eq!(reservation.port(), free_port);
     }
-}
+});

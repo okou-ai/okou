@@ -335,7 +335,7 @@ fn resolve_by_sandbox_id<'a>(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::super::KillArgs;
     use super::super::test_support::{
@@ -607,4 +607,4 @@ mod tests {
 
         assert!(error.to_string().contains("changed identity"));
     }
-}
+});

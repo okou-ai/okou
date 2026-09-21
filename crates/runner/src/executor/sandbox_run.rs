@@ -427,7 +427,7 @@ fn fresh_sandbox_factory_nbd_cow_outcome_action(
     }
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 pub(super) async fn execute_new_sandbox(
     factory: &dyn SandboxFactory,
     context: &ExecutionContext,
@@ -453,7 +453,7 @@ pub(super) async fn execute_new_sandbox(
         },
     )
     .await
-}
+});
 
 pub(super) async fn prepare_storage(
     context: &ExecutionContext,

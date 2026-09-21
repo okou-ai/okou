@@ -132,7 +132,7 @@ fn remove_drain_restart_override_at(
     })
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -282,4 +282,4 @@ mod tests {
                 .is_symlink()
         );
     }
-}
+});

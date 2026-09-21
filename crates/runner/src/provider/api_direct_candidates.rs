@@ -6,8 +6,8 @@ use tokio::sync::{Mutex, Notify};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-#[cfg(test)]
-use super::ActiveRunnerPreference;
+runner_test_support!(provider; #[cfg(test)]
+use super::ActiveRunnerPreference;);
 use super::{JobCandidate, JobDiscoverySource, RunnerPreferenceContext};
 use crate::ids::RunId;
 
@@ -25,21 +25,21 @@ pub(super) struct DirectJobCandidate {
 }
 
 impl DirectJobCandidate {
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn new(run_id: RunId, profile_name: String) -> Self {
         Self::new_with_discovered_at(run_id, profile_name, StdInstant::now())
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn new_with_discovered_at(
         run_id: RunId,
         profile_name: String,
         discovered_at: StdInstant,
     ) -> Self {
         Self::new_with_routing_metadata(run_id, profile_name, discovered_at, None, None)
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn new_with_enqueued_at(
         run_id: RunId,
         profile_name: String,
@@ -50,7 +50,7 @@ impl DirectJobCandidate {
             Self::new_with_routing_metadata(run_id, profile_name, discovered_at, None, None);
         candidate.enqueued_at = Some(enqueued_at);
         candidate
-    }
+    });
 
     pub(super) fn new_with_routing_metadata(
         run_id: RunId,
@@ -78,15 +78,15 @@ impl DirectJobCandidate {
         &self.profile_name
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn discovered_at(&self) -> StdInstant {
         self.discovered_at
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn enqueued_at(&self) -> Option<StdInstant> {
         self.enqueued_at
-    }
+    });
 
     fn mark_enqueued_at(&mut self, enqueued_at: StdInstant) {
         if self.enqueued_at.is_none() {
@@ -156,13 +156,13 @@ pub(super) enum DirectCandidateInsertOutcome {
 }
 
 impl DirectCandidateInsertOutcome {
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn snapshot(self) -> DirectCandidateInboxSnapshot {
         match self {
             Self::Inserted { snapshot, .. } | Self::Updated { snapshot, .. } => snapshot,
             Self::Overflow { snapshot, .. } => snapshot,
         }
-    }
+    });
 
     pub(super) fn pruned(self) -> Option<DirectCandidatePruneSnapshot> {
         match self {
@@ -260,10 +260,10 @@ impl DirectCandidateInbox {
         DirectCandidateInsertOutcome::Inserted { snapshot, pruned }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) async fn try_pop(&self) -> Option<DirectJobCandidate> {
         self.try_pop_with_prune().await.candidate
-    }
+    });
 
     pub(super) async fn try_pop_with_prune(&self) -> DirectCandidatePopOutcome {
         let mut inner = self.inner.lock().await;
@@ -281,7 +281,7 @@ impl DirectCandidateInbox {
         DirectCandidatePopOutcome { candidate, pruned }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) async fn wait_pop(&self, cancel: &CancellationToken) -> Option<DirectJobCandidate> {
         loop {
             if let Some(candidate) = self.try_pop().await {
@@ -294,7 +294,7 @@ impl DirectCandidateInbox {
                 () = self.notify.notified() => {}
             }
         }
-    }
+    });
 
     pub(super) async fn wait_for_notification(&self, cancel: &CancellationToken) -> bool {
         let notified = self.notify.notified();
@@ -364,7 +364,7 @@ fn snapshot(depth: usize, capacity: usize) -> DirectCandidateInboxSnapshot {
     DirectCandidateInboxSnapshot { depth, capacity }
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
@@ -788,4 +788,4 @@ mod tests {
 
         assert!(inbox.wait_pop(&cancel).await.is_none());
     }
-}
+});

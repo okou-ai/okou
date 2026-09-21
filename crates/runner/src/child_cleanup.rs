@@ -41,11 +41,11 @@ impl ChildReaper {
         Ok(())
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn with_gate(mut self, gate: Option<ReapGate>) -> Self {
         self.gate = gate;
         self
-    }
+    });
 }
 
 impl Drop for ChildReaper {
@@ -54,15 +54,15 @@ impl Drop for ChildReaper {
     }
 }
 
-/// Controls completion at the real child wait boundary, not lifecycle logic.
+runner_test_support!(shared; /// Controls completion at the real child wait boundary, not lifecycle logic.
 #[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct ReapGate {
     pub(crate) entered: std::sync::Arc<tokio::sync::Notify>,
     pub(crate) release: std::sync::Arc<tokio::sync::Semaphore>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(shared; #[cfg(test)]
 impl ReapGate {
     pub(crate) fn new() -> Self {
         Self {
@@ -79,7 +79,7 @@ impl ReapGate {
             .expect("reap gate closed")
             .forget();
     }
-}
+});
 
 /// Kill a child from a synchronous drop fallback and reap it on the active runtime.
 ///
@@ -131,7 +131,7 @@ pub(crate) fn kill_and_reap_child_on_drop(
     });
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod tests {
     use super::*;
@@ -215,4 +215,4 @@ mod tests {
         assert!(child.is_none());
         wait_for_process_exit(pid, starttime).await;
     }
-}
+});

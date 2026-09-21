@@ -46,17 +46,17 @@ pub(super) use guest_files::{
     read_guest_cli_agent_session_id, read_guest_error_file, read_guest_failure_diagnostic_file,
 };
 pub(super) use guest_logs::copy_guest_logs;
-#[cfg(test)]
-pub(super) use guest_logs::{GuestLogCopyFailureKind, guest_log_copy_failure_kind};
-#[cfg(test)]
-pub(super) use oom::host_dmesg_indicates_oom;
+runner_test_support!(executor; #[cfg(test)]
+pub(super) use guest_logs::{GuestLogCopyFailureKind, guest_log_copy_failure_kind};);
+runner_test_support!(executor; #[cfg(test)]
+pub(super) use oom::host_dmesg_indicates_oom;);
 pub(super) use oom::{HostOomEvidenceSince, check_host_oom, host_oom_evidence_since_now};
 pub(super) use resource::collect_agent_abnormal_exit_diagnostics;
-#[cfg(test)]
-pub(super) use resource::parse_agent_abnormal_exit_resource_diagnostics;
+runner_test_support!(executor; #[cfg(test)]
+pub(super) use resource::parse_agent_abnormal_exit_resource_diagnostics;);
 pub(super) use stdout_stream::{
     AgentStdoutStreamDiagnostics, StdoutDrainReport,
     append_stdout_stream_diagnostics_to_stream_log, drain_stdout_to_file,
 };
-#[cfg(test)]
-pub(super) use stdout_stream::{StdoutDrainError, append_stdout_stream_diagnostics};
+runner_test_support!(executor; #[cfg(test)]
+pub(super) use stdout_stream::{StdoutDrainError, append_stdout_stream_diagnostics};);

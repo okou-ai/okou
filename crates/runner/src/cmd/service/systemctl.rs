@@ -224,7 +224,7 @@ impl SystemdReloadState {
             .any(|loaded| loaded == path.as_ref())
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_service; #[cfg(test)]
     pub(super) fn for_test(
         is_not_found: bool,
         need_daemon_reload: bool,
@@ -239,7 +239,7 @@ impl SystemdReloadState {
             need_daemon_reload,
             drop_in_paths,
         }
-    }
+    });
 }
 
 /// Read systemd's authoritative dirty state for reload coalescing.
@@ -293,13 +293,13 @@ impl CleanupUnitActiveState {
         self.active_like
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_service; #[cfg(test)]
     pub(super) fn for_test(active_state: &str, active_like: bool) -> Self {
         Self {
             active_state: active_state.to_string(),
             active_like,
         }
-    }
+    });
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -328,7 +328,7 @@ pub(super) struct ServiceUnitState {
 }
 
 impl ServiceUnitState {
-    #[cfg(test)]
+    runner_test_support!(cmd_service; #[cfg(test)]
     pub(super) fn for_test(
         load_state: &str,
         active_state: &str,
@@ -344,21 +344,21 @@ impl ServiceUnitState {
             result: result.to_string(),
             normalized_state,
         }
-    }
+    });
 
     fn active_like(&self) -> bool {
         self.normalized_state.is_active_like()
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_service; #[cfg(test)]
     fn active_state(&self) -> &str {
         &self.active_state
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(cmd_service; #[cfg(test)]
     fn is_active_like(&self) -> bool {
         self.active_like()
-    }
+    });
 }
 
 impl Serialize for ServiceUnitState {
@@ -1011,7 +1011,7 @@ fn unit_enablement_from_systemctl_is_enabled(
     }
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_service; #[cfg(test)]
 fn unit_enabled_from_systemctl_is_enabled(
     svc: &str,
     status: &ExitStatus,
@@ -1020,7 +1020,7 @@ fn unit_enabled_from_systemctl_is_enabled(
 ) -> RunnerResult<bool> {
     unit_enablement_from_systemctl_is_enabled(svc, status, stdout, stderr)
         .map(SystemdUnitEnablement::is_enabled)
-}
+});
 
 fn systemctl_is_enabled_status_error(svc: &str, status: &ExitStatus, stderr: &[u8]) -> RunnerError {
     let stderr = String::from_utf8_lossy(stderr);
@@ -1069,7 +1069,7 @@ fn systemctl_show_status_error(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
     fn systemctl_show_output(status: ExitStatus, stdout: &[u8], stderr: &[u8]) -> Output {
@@ -2190,4 +2190,4 @@ mod tests {
             );
         }
     }
-}
+});

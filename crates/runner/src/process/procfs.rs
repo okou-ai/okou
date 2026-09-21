@@ -367,12 +367,12 @@ impl ProcDirEntryReader {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     fn after_entry(after_entry: impl FnMut() -> std::io::Result<()> + Send + 'static) -> Self {
         Self {
             after_entry: Some(Box::new(after_entry)),
         }
-    }
+    });
 
     fn next_entry(
         &mut self,
@@ -503,7 +503,7 @@ fn scan_proc_cmdlines_blocking(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1145,4 +1145,4 @@ mod tests {
         let stat = stat_bytes_with_comm(b"bad \xff ) name", "S", "1100", "not-a-number");
         assert_eq!(parse_process_ppid(&stat), Some(1200));
     }
-}
+});

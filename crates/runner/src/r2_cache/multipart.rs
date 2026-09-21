@@ -320,7 +320,7 @@ async fn read_full<R: tokio::io::AsyncRead + Unpin>(
     Ok(total)
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use std::{
         io::{self, Cursor},
@@ -562,4 +562,4 @@ mod tests {
             }
         }
     }
-}
+});

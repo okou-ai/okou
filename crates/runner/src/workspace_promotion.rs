@@ -601,8 +601,8 @@ pub(crate) async fn abandon_unpublished_workspace_promotion(
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support;
+runner_test_support!(shared; #[cfg(test)]
+pub(crate) mod test_support;);
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(storage; #[cfg(test)]
+mod tests;);

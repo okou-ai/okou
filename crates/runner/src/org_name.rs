@@ -22,7 +22,7 @@ pub(crate) fn is_valid(name: &str) -> bool {
     valid_part(org) && valid_part(resource_name)
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -68,4 +68,4 @@ mod tests {
             assert!(!is_valid(name), "expected {name:?} to be invalid");
         }
     }
-}
+});

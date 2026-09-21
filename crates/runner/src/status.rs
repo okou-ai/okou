@@ -317,21 +317,21 @@ async fn continue_in_flight_status_write(
     }
 }
 
-#[cfg(test)]
+runner_test_support!(runtime_control; #[cfg(test)]
 #[derive(Clone)]
 struct StatusWriteGate {
     generation: u64,
     phase: StatusWriteGatePhase,
     started: std::sync::Arc<tokio::sync::Notify>,
     release: std::sync::Arc<tokio::sync::Semaphore>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(runtime_control; #[cfg(test)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StatusWriteGatePhase {
     BeforeWrite,
     AtomicWrite,
-}
+});
 
 /// Serialize as ISO 8601 with millisecond precision, matching JS `Date.toISOString()`.
 fn serialize_iso<S: serde::Serializer>(dt: &DateTime<Utc>, s: S) -> Result<S::Ok, S::Error> {
@@ -409,7 +409,7 @@ impl StatusTracker {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn new_with_write_gate(
         path: PathBuf,
         generation: u64,
@@ -424,9 +424,9 @@ impl StatusTracker {
             release,
         });
         tracker
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn new_with_atomic_write_gate(
         path: PathBuf,
         generation: u64,
@@ -441,17 +441,17 @@ impl StatusTracker {
             release,
         });
         tracker
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn idle_info_update_request_count(&self) -> u64 {
         self.idle_info_update_requests.load(Ordering::Relaxed)
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) async fn hold_state_for_test(&self) -> impl Drop + '_ {
         self.state.lock().await
-    }
+    });
 
     /// Transition the reported lifecycle mode and flush the status file.
     pub async fn set_mode(&self, mode: RunnerMode) -> StatusResult<()> {
@@ -463,14 +463,14 @@ impl StatusTracker {
         self.persist_snapshot(snapshot).await
     }
 
-    /// Register an active run as running and flush the status file.
+    runner_test_support!(runtime_control; /// Register an active run as running and flush the status file.
     ///
     /// This preserves the old helper semantics for tests and cleanup fixtures.
     /// Freshly claimed new-sandbox jobs should use [`add_preparing_run`].
     #[cfg(test)]
     pub async fn add_run(&self, run_id: RunId, sandbox_id: SandboxId) -> StatusResult<()> {
         self.add_running_run(run_id, sandbox_id).await
-    }
+    });
 
     /// Register an active run whose sandbox has not committed running ownership.
     /// Its Firecracker process may not exist yet or may still be parked.
@@ -483,12 +483,12 @@ impl StatusTracker {
             .await
     }
 
-    /// Register an active run whose Firecracker VM should already exist.
+    runner_test_support!(runtime_control; /// Register an active run whose Firecracker VM should already exist.
     #[cfg(test)]
     pub async fn add_running_run(&self, run_id: RunId, sandbox_id: SandboxId) -> StatusResult<()> {
         self.add_run_with_phase(run_id, sandbox_id, ActiveRunPhase::Running)
             .await
-    }
+    });
 
     async fn add_run_with_phase(
         &self,
@@ -832,7 +832,7 @@ fn apply_idle_snapshot(state: &mut MutableState, snapshot: IdlePoolSnapshot) -> 
     true
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use std::future::{Future, poll_fn};
     use std::sync::Arc;
@@ -1810,4 +1810,4 @@ mod tests {
             "empty idle_sandboxes should be omitted from JSON"
         );
     }
-}
+});

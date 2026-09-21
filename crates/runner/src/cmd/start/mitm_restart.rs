@@ -141,7 +141,7 @@ pub(super) async fn finish_mitm_restart_before_shutdown(
     Ok(())
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
     use std::time::Instant;
@@ -374,4 +374,4 @@ mod tests {
         assert!(retry.handle.is_none());
         assert!(mitm.usage_flush_target().is_none());
     }
-}
+});

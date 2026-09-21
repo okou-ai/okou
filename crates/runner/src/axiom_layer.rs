@@ -192,7 +192,7 @@ fn init_from_env_values(
     init_with_base_url_and_hostname(base_url, &token, &suffix, runner_hostname)
 }
 
-/// Core init with an explicit base URL. Exists so module tests can point
+runner_test_support!(platform_support; /// Core init with an explicit base URL. Exists so module tests can point
 /// at an `httpmock` server without leaking an `AXIOM_URL` override into the
 /// runner's production env surface — production code should always call
 /// [`init`], which hard-codes [`DEFAULT_AXIOM_URL`].
@@ -203,7 +203,7 @@ pub(crate) fn init_with_base_url(
     suffix: &str,
 ) -> Option<(AxiomLayer, AxiomGuard)> {
     init_with_base_url_and_hostname(base_url, token, suffix, None)
-}
+});
 
 fn init_with_base_url_and_hostname(
     base_url: &str,
@@ -479,5 +479,5 @@ fn serialize_event(event: &Event<'_>, runner_hostname: Option<&str>) -> Value {
     Value::Object(out)
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(platform_support; #[cfg(test)]
+mod tests;);

@@ -19,8 +19,8 @@ mod version_service_locks;
 mod versions;
 mod workspaces;
 
-#[cfg(test)]
-mod test_support;
+runner_test_support!(shared; #[cfg(test)]
+mod test_support;);
 
 use debootstrap::gc_debootstrap;
 use image_refs::{ProtectedImageRefs, protected_image_refs_for_gc};
@@ -294,7 +294,7 @@ fn record_gc_phase(total: &mut GcReport, domain: &str, phase: GcReport, dry_run:
     *total += phase;
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
@@ -677,4 +677,4 @@ mod tests {
         );
         assert_eq!(std::fs::read_dir(&locks_dir).unwrap().count(), 0);
     }
-}
+});

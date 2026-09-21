@@ -119,7 +119,7 @@ fn parse_host_env_file(content: &str) -> RunnerResult<RunnerHostEnv> {
     Ok(RunnerHostEnv { values })
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -256,4 +256,4 @@ OKOU_RUNNER_NET_RX_MIB_PER_SEC=250
 
         assert!(err.contains("expected KEY=VALUE"));
     }
-}
+});

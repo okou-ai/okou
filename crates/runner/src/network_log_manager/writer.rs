@@ -9,8 +9,8 @@ use tracing::warn;
 use super::file_append::append_lines;
 use super::state::{AcceptedAppend, PendingWriteCompletion};
 
-#[cfg(test)]
-use super::WriteGate;
+runner_test_support!(network; #[cfg(test)]
+use super::WriteGate;);
 
 const DEFAULT_WRITER_SHARDS: usize = 4;
 const DEFAULT_SHARD_QUEUE_CAPACITY: usize = 1024;
@@ -39,6 +39,7 @@ impl Default for WriterConfig {
 pub(super) struct WriterPool {
     shards: Vec<mpsc::Sender<AcceptedAppend>>,
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(super) tasks: Vec<tokio::task::AbortHandle>,
 }
 

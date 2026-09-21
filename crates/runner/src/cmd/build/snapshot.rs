@@ -140,7 +140,7 @@ async fn commit_or_discard_pending_snapshot(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{
@@ -867,4 +867,4 @@ mod tests {
             "phase timeout cleanup exceeded its local budget: {elapsed:?}"
         );
     }
-}
+});

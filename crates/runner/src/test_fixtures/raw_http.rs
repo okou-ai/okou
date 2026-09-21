@@ -367,7 +367,7 @@ fn fixture_timeout(index: usize, stage: &str) -> io::Error {
     )
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -566,4 +566,4 @@ mod tests {
 
         server.cancel_and_reap().await;
     }
-}
+});

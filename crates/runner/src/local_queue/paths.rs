@@ -61,7 +61,7 @@ pub(crate) fn active_input_path(group_dir: &Path, run_id: RunId, sequence: u64) 
     run_inputs_dir(group_dir, run_id).join(format!("{sequence:020}.json"))
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -81,4 +81,4 @@ mod tests {
         let err = profile_jobs_dir(root, "../etc/passwd").unwrap_err();
         assert!(err.to_string().contains("invalid profile name"));
     }
-}
+});

@@ -13,8 +13,8 @@ use super::target::KillTarget;
 const ORPHAN_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const ORPHAN_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-#[cfg(test)]
-mod identity_tests;
+runner_test_group!(cmd_other; #[cfg(test)]
+mod identity_tests;);
 
 #[derive(Debug)]
 pub(super) enum Outcome {
@@ -549,7 +549,7 @@ fn signal_process_group_with(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
     use std::path::PathBuf;
@@ -1237,4 +1237,4 @@ mod tests {
             "unexpected orphan kill outcome: {outcome:?}"
         );
     }
-}
+});

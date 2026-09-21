@@ -45,10 +45,10 @@ impl KmsgHandle {
         self.process.start_child_cleanup();
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
         self.process.set_reap_gate(gate);
-    }
+    });
 
     /// Stop the kmsg monitor and wait for cleanup.
     pub async fn stop(self) -> crate::error::RunnerResult<()> {
@@ -57,13 +57,13 @@ impl KmsgHandle {
         Ok(())
     }
 
-    /// Create a noop handle for testing. No `dmesg` process is spawned.
+    runner_test_group!(cmd_start; /// Create a noop handle for testing. No `dmesg` process is spawned.
     #[cfg(test)]
     pub fn noop() -> Self {
         Self {
             process: NetworkLogProcess::noop("dmesg", "kmsg"),
         }
-    }
+    });
 
     /// Return a clone of the kmsg network-log drain producer.
     ///
@@ -137,13 +137,13 @@ impl KmsgHandle {
         })
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn from_test_child(
         child: tokio::process::Child,
         network_log_manager: NetworkLogManager,
     ) -> std::io::Result<Self> {
         Self::from_child(child, network_log_manager)
-    }
+    });
 }
 
 /// Read kernel log lines from `dmesg -w` stdout, parse iptables LOG
@@ -278,7 +278,7 @@ fn network_log_row(entry: &LogEntry, timestamp: DateTime<Utc>) -> serde_json::Va
     })
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ids::RunId;
@@ -613,4 +613,4 @@ mod tests {
         let msg = "VM0:10.200.0.2:IN=eth0 SRC=10.200.0.2";
         assert!(parse_log_message(msg).is_none());
     }
-}
+});

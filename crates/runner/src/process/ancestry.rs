@@ -77,7 +77,7 @@ pub async fn is_orphan(pid: u32, runner_pids: &[u32]) -> bool {
     is_orphan_from_walk(walk_ppid_chain(pid, runner_pids, read_ppid).await)
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -237,4 +237,4 @@ mod tests {
         assert!(!is_orphan_from_walk(pid_one_walk));
         assert!(!is_orphan_from_walk(pid_zero_walk));
     }
-}
+});

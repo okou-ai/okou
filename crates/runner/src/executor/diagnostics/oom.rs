@@ -137,7 +137,7 @@ pub(in crate::executor) fn host_dmesg_indicates_oom(
     })
 }
 
-#[cfg(all(test, target_os = "linux"))]
+runner_test_group!(executor; #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 
@@ -187,4 +187,4 @@ mod tests {
             .await
         );
     }
-}
+});

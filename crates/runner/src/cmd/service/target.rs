@@ -124,7 +124,7 @@ pub(super) fn all_units_pattern() -> String {
     format!("{UNIT_PREFIX}*.service")
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -228,4 +228,4 @@ mod tests {
         );
         assert!(RunnerServiceUnit::from_lock_file_name("service-vm0-runner-UPPER.lock").is_none());
     }
-}
+});

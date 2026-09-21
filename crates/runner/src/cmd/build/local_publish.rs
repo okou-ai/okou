@@ -104,7 +104,7 @@ fn remove_file_if_exists_sync(path: &Path, label: &str) -> RunnerResult<()> {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::paths::HomePaths;
@@ -241,4 +241,4 @@ mod tests {
         let content = tokio::fs::read(rootfs.rootfs()).await.unwrap();
         assert_eq!(content, b"customized");
     }
-}
+});

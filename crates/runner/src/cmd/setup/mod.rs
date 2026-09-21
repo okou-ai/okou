@@ -202,7 +202,7 @@ fn create_setup_temp_file(target: &Path, kind: &str) -> RunnerResult<(TempPath, 
     )))
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_other; #[cfg(test)]
 fn create_setup_temp_file_at(path: &Path) -> RunnerResult<File> {
     ensure_setup_shared_dir(file_parent(path))?;
     let file = open_setup_temp_file_at(path).map_err(|e| {
@@ -213,7 +213,7 @@ fn create_setup_temp_file_at(path: &Path) -> RunnerResult<File> {
     })?;
     secure_setup_temp_file(&file, path)?;
     Ok(file)
-}
+});
 
 fn open_setup_temp_file_at(path: &Path) -> std::io::Result<File> {
     let mut options = File::options();
@@ -838,7 +838,7 @@ fn verify_sha256(actual_hex: &str, expected_hex: &str, label: &str) -> RunnerRes
 // Artifact downloads
 // ---------------------------------------------------------------------------
 
-/// Compute SHA256 of an existing file. Returns hex digest.
+runner_test_support!(cmd_other; /// Compute SHA256 of an existing file. Returns hex digest.
 #[cfg(test)]
 async fn file_sha256(path: &Path) -> RunnerResult<String> {
     let path = path.to_owned();
@@ -855,7 +855,7 @@ async fn file_sha256(path: &Path) -> RunnerResult<String> {
     })
     .await
     .map_err(|e| RunnerError::Internal(format!("sha256 task failed: {e}")))?
-}
+});
 
 /// Ensure an existing setup artifact matches its pinned identity and usable mode.
 async fn ensure_artifact_installed(
@@ -918,7 +918,7 @@ fn report_kvm_check(result: std::io::Result<()>) {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -1697,4 +1697,4 @@ mod tests {
             assert!(msg.contains("ca-certificates"), "error should suggest fix");
         }
     }
-}
+});

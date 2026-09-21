@@ -305,7 +305,7 @@ fn status_rank(status: WorkspaceImageCacheInspectionStatus) -> u8 {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -568,4 +568,4 @@ mod tests {
 
         assert!(tmp.exists());
     }
-}
+});

@@ -1506,13 +1506,13 @@ impl ResumeSession {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(platform_support; #[cfg(test)]
     pub fn session_history(&self) -> Option<&str> {
         match &self.history {
             ResumeSessionHistory::Inline { session_history } => Some(session_history),
             ResumeSessionHistory::Ref { .. } => None,
         }
-    }
+    });
 
     pub fn shared_session_history(&self) -> Option<Arc<String>> {
         match &self.history {
@@ -1771,7 +1771,7 @@ impl WorkspaceReuseResult {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -2808,4 +2808,4 @@ mod tests {
         assert_eq!(serialized["heldSandboxStates"], json!([]));
         assert_eq!(serialized["heldWorkspaceStates"], json!([]));
     }
-}
+});

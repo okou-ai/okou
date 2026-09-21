@@ -167,5 +167,5 @@ impl RunUsageSnapshot {
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(network; #[cfg(test)]
+mod tests;);

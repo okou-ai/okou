@@ -1081,12 +1081,12 @@ pub(super) fn prepare_run_payload_for_run(
     Ok(PreparedRunPayload { payload })
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 pub(super) fn build_run_payload_for_run(
     context: &ExecutionContext,
 ) -> RunnerResult<guest_contracts::env::RunPayload> {
     prepare_run_payload_for_run(context)?.into_run_payload(context)
-}
+});
 
 fn serialize_secret_values(context: &ExecutionContext) -> String {
     use base64::Engine as _;

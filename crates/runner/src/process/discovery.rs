@@ -398,10 +398,10 @@ pub fn firecracker_process_exists_for_sandbox_id(
         .any(|process| process.sandbox_id == sandbox_id)
 }
 
-#[cfg(test)]
-pub(crate) mod test_support;
+runner_test_support!(shared; #[cfg(test)]
+pub(crate) mod test_support;);
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
     use test_support::{FIRECRACKER_PID, ProcfsFixture, StatFault, UNCERTAIN_STAT_FAULTS};
@@ -1011,4 +1011,4 @@ mod tests {
             Some(&argv(&["firecracker"]))
         ));
     }
-}
+});

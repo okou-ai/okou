@@ -40,7 +40,7 @@ pub(super) fn guest_storage_apply_env<'a>(
     ]
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 pub(super) async fn download_storages(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
@@ -48,7 +48,7 @@ pub(super) async fn download_storages(
 ) -> RunnerResult<()> {
     let input = StorageInput::Json(manifest_json(manifest)?);
     apply_storage_input(sandbox, context, &input).await
-}
+});
 
 pub(super) async fn download_storages_with_files(
     sandbox: &dyn Sandbox,

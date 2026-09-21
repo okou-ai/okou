@@ -200,7 +200,7 @@ SSH peer and temporary filesystem. Run the independent OpenSSH lane explicitly
 where `/usr/lib/openssh/sftp-server` is installed:
 
 ```sh
-cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --test runner-network \
   ssh::tests::files::openssh_server_interoperability -- --ignored --exact
 ```
 
@@ -308,7 +308,7 @@ opened a separate process/channel for every sample.
 Rerun the optional measurement with:
 
 ```bash
-cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --test runner-network \
   ssh::tests::pooling::measure_cold_and_warm_repeated_exec \
   -- --ignored --exact --nocapture --test-threads=1
 ```
@@ -443,7 +443,7 @@ Set these inputs only for a target and credentials approved for this test:
 - `OKOU_TEST_CF_SSH_HOST_KEY`: the independently trusted OpenSSH public host key.
 
 Run the exact test with `cargo test --manifest-path crates/Cargo.toml --profile local
--p runner --bin runner ssh::tests::access::live::authorized_provider_exec_idle_session_rejection_and_cleanup
+-p runner --test runner-network ssh::tests::access::live::authorized_provider_exec_idle_session_rejection_and_cleanup
 -- --ignored --exact --nocapture`. It verifies exec, pooled reuse, bidirectional
 Session IO across 65 seconds of idle time, EOF, invalid-token rejection, notified
 credential replacement and actual socket shutdown. It neither changes Cloudflare

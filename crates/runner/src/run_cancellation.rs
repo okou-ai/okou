@@ -212,11 +212,11 @@ impl RunCancellationRegistry {
             .collect()
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start, provider; #[cfg(test)]
     /// Test whether a run ID currently has a registry entry.
     pub(crate) async fn contains(&self, run_id: RunId) -> bool {
         self.inner.lock().await.registrations.contains_key(&run_id)
-    }
+    });
 
     /// Return the run IDs in `run_ids` that are not currently registered.
     pub(crate) async fn missing_run_ids(&self, run_ids: &[RunId]) -> Vec<RunId> {
@@ -258,11 +258,11 @@ impl RunCancellationRegistration {
         self.handle.token()
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     /// Test whether either cancellation class has been requested.
     pub(crate) fn is_cancelled(&self) -> bool {
         self.handle.is_cancelled()
-    }
+    });
 
     /// Request hard cancellation for this registration's run.
     ///
@@ -483,7 +483,7 @@ impl RunCancellationSignals {
         self.hard.clone()
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     /// Build test signals that share one aggregate and hard token.
     pub(crate) fn hard_only(cancel: CancellationToken) -> Self {
         Self {
@@ -491,10 +491,10 @@ impl RunCancellationSignals {
             cooperative_user: CancellationToken::new(),
             hard: cancel,
         }
-    }
+    });
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -593,4 +593,4 @@ mod tests {
 
         assert!(replacement_token.is_cancelled());
     }
-}
+});

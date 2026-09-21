@@ -337,10 +337,10 @@ pub(super) struct RunnerSpawnTiming {
 }
 
 impl RunnerPreSpawnTiming {
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(crate) fn start_after_claim() -> Self {
         Self::start_at(Instant::now(), None, &RunnerPreSpawnConcurrency::default())
-    }
+    });
 
     pub(crate) fn start_at(
         claim_returned_at: Instant,

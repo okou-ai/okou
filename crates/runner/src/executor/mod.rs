@@ -24,8 +24,8 @@ use std::time::Duration;
 use futures_util::future::BoxFuture;
 use guest_contracts::diagnostics::FailureDiagnostic;
 use sandbox::{Sandbox, SandboxFactory, SandboxId};
-#[cfg(test)]
-use tokio_util::sync::CancellationToken;
+runner_test_support!(executor; #[cfg(test)]
+use tokio_util::sync::CancellationToken;);
 
 mod active_input;
 mod agent_run;
@@ -255,7 +255,7 @@ pub(crate) struct ExecutionHooks {
 }
 
 impl ExecutionHooks {
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     fn none() -> Self {
         Self {
             sandbox_prepared: None,
@@ -263,7 +263,7 @@ impl ExecutionHooks {
             pre_spawn_timing: None,
             session_history_restore_plan: SessionHistoryRestorePlan::Default,
         }
-    }
+    });
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -596,7 +596,7 @@ fn agent_exit_failure_message(exit_code: i32) -> String {
     format!("Agent exited with code {exit_code}")
 }
 
-/// uploads (~383 ms saved per job).
+runner_test_support!(executor; /// uploads (~383 ms saved per job).
 #[cfg(test)]
 pub async fn execute_job(
     factory: &dyn SandboxFactory,
@@ -616,7 +616,7 @@ pub async fn execute_job(
         ExecutionHooks::none(),
     )
     .await
-}
+});
 
 pub(crate) async fn execute_job_with_prepared_notifier(
     factory: &dyn SandboxFactory,
@@ -705,7 +705,7 @@ pub(crate) async fn execute_job_with_prepared_notifier(
     (outcome, telemetry)
 }
 
-/// Execute a single job inside a **reused** (kept-alive) sandbox.
+runner_test_support!(executor; /// Execute a single job inside a **reused** (kept-alive) sandbox.
 ///
 /// Skips create + start. Re-registers proxy, fixes clock, then runs the agent.
 /// Returns [`ExecuteOutcome`] with the sandbox still alive plus the pending
@@ -733,7 +733,7 @@ pub async fn execute_job_reuse(
         ExecutionHooks::none(),
     )
     .await
-}
+});
 
 pub(crate) struct ReusedSandboxDispatch<'a> {
     pub(crate) factory: &'a dyn SandboxFactory,
@@ -1046,5 +1046,5 @@ pub struct NewSandboxDispatch {
     pub reuse_result: SandboxReuseResult,
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(executor; #[cfg(test)]
+mod tests;);

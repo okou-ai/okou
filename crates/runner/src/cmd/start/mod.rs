@@ -54,8 +54,8 @@ use tracing::{Instrument, error, info, warn};
 use uuid::Uuid;
 
 use crate::duration::duration_ms as saturated_duration_ms;
-#[cfg(test)]
-use crate::ids::RunId;
+runner_test_support!(cmd_start; #[cfg(test)]
+use crate::ids::RunId;);
 
 use crate::config::{self, ProfileConfig};
 use crate::deps;
@@ -352,7 +352,7 @@ pub struct StartArgs {
     local: bool,
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 impl StartArgs {
     pub(crate) fn api_url_for_test(&self) -> Option<&str> {
         self.api_url.as_deref()
@@ -361,7 +361,7 @@ impl StartArgs {
     pub(crate) fn token_for_test(&self) -> Option<&str> {
         self.token.as_deref()
     }
-}
+});
 
 struct LiveRunnerPublishResources<'a> {
     provider: &'a dyn JobProvider,
@@ -1208,7 +1208,7 @@ struct OrphanReapState {
     process_discovery: Option<OrphanReapProcessDiscovery>,
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 struct RunTestHooks {
     outer_job_panic: Option<OuterJobPanicPoint>,
     test_observer: StartLoopTestObserver,
@@ -1216,7 +1216,7 @@ struct RunTestHooks {
     after_initial_workspace_cache_scan: Option<StartLoopTestGate>,
     manual_routine_heartbeat_rx: Option<mpsc::UnboundedReceiver<()>>,
     manual_workspace_cache_gc_rx: Option<mpsc::UnboundedReceiver<()>>,
-}
+});
 
 enum SignalSource {
     /// Real signals pre-registered at the top of `run_start`. `run()`
@@ -1225,11 +1225,11 @@ enum SignalSource {
     /// Test-supplied controller. `run()` does not spawn a handler task and
     /// the caller drives `mode_tx` itself. Constructed only by `mod tests`
     /// below; non-test code matches on it but never builds it.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     Override(SignalController),
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 enum StartLoopEvent {
     BudgetExhaustedReactorEntered,
@@ -1245,20 +1245,20 @@ enum StartLoopEvent {
     BeforeIdlePoolOwnershipTransfer { run_id: RunId },
     SandboxParkedForReuse { run_id: RunId, reuse_key: String },
     UsageFlushRequested,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct StartLoopCursor(usize);
+struct StartLoopCursor(usize););
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 #[derive(Clone, Default)]
 struct StartLoopTestGate {
     entered: Arc<tokio::sync::Notify>,
     release: Arc<tokio::sync::Notify>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 impl StartLoopTestGate {
     async fn enter_and_wait(&self) {
         self.entered.notify_one();
@@ -1274,23 +1274,23 @@ impl StartLoopTestGate {
     fn release(&self) {
         self.release.notify_one();
     }
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 #[derive(Clone, Default)]
 struct StartLoopTestObserver {
     inner: Arc<StartLoopTestObserverInner>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 #[derive(Default)]
 struct StartLoopTestObserverInner {
     events: std::sync::Mutex<Vec<StartLoopEvent>>,
     notify: tokio::sync::Notify,
     reserved_preparing_gate: std::sync::Mutex<Option<StartLoopTestGate>>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 impl StartLoopTestObserver {
     fn record(&self, event: StartLoopEvent) {
         self.inner
@@ -1550,9 +1550,9 @@ impl StartLoopTestObserver {
         })
         .await
     }
-}
+});
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod start_loop_observer_tests {
     use super::*;
 
@@ -1641,9 +1641,9 @@ mod start_loop_observer_tests {
             .wait_before_idle_pool_ownership_transfer(run_id, Duration::ZERO)
             .await;
     }
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OuterJobPanicPoint {
     ClaimedWithoutSandbox,
@@ -1652,9 +1652,9 @@ enum OuterJobPanicPoint {
     IdlePoolOwned,
     HandoffOwned,
     DestroyCompleted,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 fn maybe_panic_outer_job(
     configured: Option<OuterJobPanicPoint>,
     point: OuterJobPanicPoint,
@@ -1663,7 +1663,7 @@ fn maybe_panic_outer_job(
     if configured == Some(point) {
         panic!("simulated outer job panic at {point:?} for {run_id}");
     }
-}
+});
 
 #[derive(Clone, Copy)]
 enum RequiredNetworkLogComponent {
@@ -2881,5 +2881,5 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_start; #[cfg(test)]
+mod tests;);

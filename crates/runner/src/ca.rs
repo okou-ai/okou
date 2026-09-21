@@ -283,7 +283,7 @@ fn openssl_error(args: &[&str], output: &std::process::Output) -> RunnerError {
     ))
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::paths::HomePaths;
@@ -701,4 +701,4 @@ mod tests {
 
         assert_ca_eq(&read_ca(&home.ca_dir()), standalone);
     }
-}
+});

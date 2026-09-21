@@ -27,8 +27,8 @@ use crate::process;
 
 mod orphan;
 mod target;
-#[cfg(test)]
-mod test_support;
+runner_test_support!(shared; #[cfg(test)]
+mod test_support;);
 
 use orphan::{OrphanExitFailure, Outcome as OrphanOutcome};
 use target::{
@@ -494,7 +494,7 @@ async fn confirm() -> bool {
     })
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::path::Path;
@@ -939,4 +939,4 @@ mod tests {
         assert!(results[0].1, "workspace cleanup should succeed");
         assert!(results[1].1, "socket cleanup should succeed");
     }
-}
+});

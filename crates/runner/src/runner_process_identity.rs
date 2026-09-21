@@ -53,7 +53,7 @@ impl TryFrom<RunnerProcessIdentityInput> for RunnerProcessIdentity {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -111,4 +111,4 @@ mod tests {
             .is_err()
         );
     }
-}
+});

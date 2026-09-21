@@ -325,14 +325,14 @@ async fn acquire_with_contention_timeout_after_busy(
     }
 }
 
-#[cfg(test)]
+runner_test_support!(platform_support; #[cfg(test)]
 pub(crate) async fn acquire_with_contention_timeout_after_busy_for_test(
     path: PathBuf,
     contention_timeout: Duration,
     after_busy: impl std::future::Future<Output = ()>,
 ) -> RunnerResult<TryLock> {
     acquire_with_contention_timeout_after_busy(path, contention_timeout, after_busy).await
-}
+});
 
 /// Try to acquire an exclusive flock without waiting for contention.
 ///
@@ -421,7 +421,7 @@ pub(crate) fn try_acquire_existing_shared_or_missing_blocking(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
     use std::future::{Future as _, poll_fn};
@@ -1018,4 +1018,4 @@ mod tests {
         let result = acquire(path).await;
         assert!(result.is_err());
     }
-}
+});

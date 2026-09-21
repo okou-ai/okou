@@ -122,8 +122,8 @@ mod keys;
 mod multipart;
 mod upload;
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(storage; #[cfg(test)]
+mod tests;);
 
 #[derive(Debug, thiserror::Error)]
 pub enum R2Error {
@@ -183,7 +183,7 @@ pub(super) fn io_other<E: std::fmt::Display>(e: E) -> std::io::Error {
     std::io::Error::other(e.to_string())
 }
 
-#[cfg(test)]
+runner_test_support!(storage; #[cfg(test)]
 impl R2ImageCache {
     /// Test-only constructor. Lets unit tests inject a mock `aws_sdk_s3::Client`
     /// (built via `aws_smithy_mocks::mock_client!`) without going through
@@ -192,4 +192,4 @@ impl R2ImageCache {
     pub(crate) fn with_client(client: aws_sdk_s3::Client, bucket: String) -> Self {
         Self { client, bucket }
     }
-}
+});

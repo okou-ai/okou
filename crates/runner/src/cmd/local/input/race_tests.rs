@@ -1,7 +1,3 @@
-use std::ffi::OsStr;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
 use std::panic::{AssertUnwindSafe, resume_unwind};
 use std::path::Path;
 use std::process::ExitCode;
@@ -9,10 +5,13 @@ use std::time::Duration;
 
 use clap::Parser;
 use futures_util::FutureExt;
-use nix::fcntl::{Flock, FlockArg};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener;
 
+use super::input_test_support::{
+    CHILD_SCENARIO, CHILD_SOCKET, CLEANUP_CONTENDED, CLEANUP_FIRST, PUBLISHER_FIRST,
+    RENDEZVOUS_TIMEOUT,
+};
 use super::run_input_with_home;
 use crate::ids::RunId;
 use crate::local_queue::{self, ActiveInputEntry, JobRequest, LocalQueue};
@@ -23,14 +22,8 @@ use crate::test_fixtures::ignored_child::{
 
 const CHILD_TEST: &str = "cmd::local::input::race_tests::external_publisher_child";
 const CLEANUP_CHILD_TEST: &str = "cmd::local::input::race_tests::external_cleanup_child";
-const CHILD_SCENARIO: &str = "OKOU_LOCAL_INPUT_RACE_SCENARIO";
 const CHILD_HOME: &str = "OKOU_LOCAL_INPUT_RACE_HOME";
 const CHILD_RUN: &str = "OKOU_LOCAL_INPUT_RACE_RUN";
-const CHILD_SOCKET: &str = "OKOU_LOCAL_INPUT_RACE_SOCKET";
-const CLEANUP_FIRST: &str = "cleanup-first";
-const PUBLISHER_FIRST: &str = "publisher-first";
-const CLEANUP_CONTENDED: &str = "cleanup-contended";
-const RENDEZVOUS_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_TIMEOUT: Duration = Duration::from_secs(15);
 const GROUP: &str = "test/group";
 const PROFILE: &str = "test/custom";
@@ -139,44 +132,6 @@ async fn accept_checkpoint(listener: &UnixListener) -> tokio::net::UnixStream {
     socket.read_exact(&mut ready).await.unwrap();
     assert_eq!(ready, [1]);
     socket
-}
-
-pub(super) fn pre_publication_checkpoint() {
-    checkpoint(CLEANUP_FIRST);
-}
-
-pub(super) fn publication_locked_checkpoint() {
-    checkpoint(PUBLISHER_FIRST);
-}
-
-pub(super) fn lock_attempt_checkpoint(file: &File) {
-    if std::env::var_os(CHILD_SCENARIO).as_deref() != Some(OsStr::new(CLEANUP_CONTENDED)) {
-        return;
-    }
-    // This executes in the real cleanup's lock helper. Its descriptor must
-    // observe the publisher's cross-process lock before either child is
-    // released. Submit's later uncontended cleanup skips this.
-    match Flock::lock(file.try_clone().unwrap(), FlockArg::LockExclusiveNonblock) {
-        Ok(guard) => drop(guard),
-        Err((_, error)) => {
-            assert_eq!(error, nix::errno::Errno::EWOULDBLOCK);
-            checkpoint(CLEANUP_CONTENDED);
-        }
-    }
-}
-
-fn checkpoint(scenario: &str) {
-    if std::env::var_os(CHILD_SCENARIO).as_deref() != Some(OsStr::new(scenario)) {
-        return;
-    }
-    let socket_path = std::env::var_os(CHILD_SOCKET).expect("child rendezvous socket");
-    let mut socket = UnixStream::connect(socket_path).expect("connect child rendezvous socket");
-    socket.set_read_timeout(Some(RENDEZVOUS_TIMEOUT)).unwrap();
-    socket.set_write_timeout(Some(RENDEZVOUS_TIMEOUT)).unwrap();
-    socket.write_all(&[1]).unwrap();
-    let mut resume = [0];
-    socket.read_exact(&mut resume).unwrap();
-    assert_eq!(resume, [2]);
 }
 
 #[tokio::test]

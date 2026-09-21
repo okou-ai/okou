@@ -580,7 +580,7 @@ async fn verify_cleanup_inactive(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
     use std::path::PathBuf;
@@ -1630,4 +1630,4 @@ mod tests {
         assert!(err.to_string().contains("lock busy"));
         assert_eq!(ops.events, ["acquire_cleanup_lock"]);
     }
-}
+});

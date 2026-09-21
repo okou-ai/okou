@@ -516,7 +516,7 @@ fn watcher_io_error(action: &str, kind: std::io::ErrorKind) -> RunnerError {
     RunnerError::Internal(format!("workspace cache watcher {action}: {kind:?}"))
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use super::super::fs::allocated_bytes;
     use super::super::metadata::{
@@ -908,4 +908,4 @@ mod tests {
         assert!(message.contains("workspace cache watcher prepare root"));
         assert!(!message.contains(&cache_root.display().to_string()));
     }
-}
+});

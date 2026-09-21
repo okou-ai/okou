@@ -49,7 +49,7 @@ impl ManagedMitmdump {
         })
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) fn unmanaged(child: tokio::process::Child) -> Self {
         Self {
             child: Some(child),
@@ -59,7 +59,7 @@ impl ManagedMitmdump {
             runtime: None,
             reap_gate: None,
         }
-    }
+    });
 
     pub(super) fn id(&self) -> Option<u32> {
         self.child.as_ref()?.id()
@@ -167,10 +167,10 @@ impl ManagedMitmdump {
         Ok(())
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(super) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
         self.reap_gate = Some(gate);
-    }
+    });
 
     async fn close_launch(&mut self) -> RunnerResult<()> {
         let Some(launch) = self.launch.take() else {

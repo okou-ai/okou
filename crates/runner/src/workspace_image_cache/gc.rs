@@ -386,19 +386,19 @@ impl WorkspaceImageCache {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(super) fn reset_gc_root_scan_count(&self) {
         self.inner
             .gc_root_scan_count
             .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(super) fn gc_root_scan_count(&self) -> usize {
         self.inner
             .gc_root_scan_count
             .load(std::sync::atomic::Ordering::Relaxed)
-    }
+    });
 
     async fn next_gc_cache_entry(entries: &mut fs::ReadDir) -> RunnerResult<Option<GcCacheEntry>> {
         while let Some(entry) = entries.next_entry().await? {
@@ -514,7 +514,7 @@ impl WorkspaceImageCache {
         Ok(freed)
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(super) async fn gc_candidates(&self) -> RunnerResult<Vec<GcCandidate>> {
         let Some(mut entries) = self.gc_cache_entry_reader().await? else {
             return Ok(Vec::new());
@@ -527,7 +527,7 @@ impl WorkspaceImageCache {
             candidates.push(candidate);
         }
         Ok(candidates)
-    }
+    });
 
     async fn gc_candidate_from_observation(
         &self,

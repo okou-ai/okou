@@ -42,11 +42,11 @@ struct ProcessSnapshot {
     same_uid: usize,
 }
 
-#[cfg(test)]
+runner_test_support!(network; #[cfg(test)]
 struct TestEnvironmentReadError {
     pid: u32,
     error: Box<dyn FnOnce() -> std::io::Error + Send>,
-}
+});
 
 /// Serializes owners of the runner-local proxy resources and scopes every
 /// PyInstaller extraction to one private launch directory.
@@ -261,7 +261,7 @@ impl MitmdumpRuntime {
         tokio::fs::read(format!("/proc/{pid}/environ")).await
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     fn set_test_environment_read_error(
         &self,
         pid: u32,
@@ -276,7 +276,7 @@ impl MitmdumpRuntime {
             pid,
             error: Box::new(error),
         });
-    }
+    });
 }
 
 fn scan_marked_processes(root: &Path, exact_path: Option<&Path>) -> RunnerResult<ProcessSnapshot> {
@@ -666,7 +666,7 @@ pub(super) fn preserve_launch(launch: tempfile::TempDir, error: &impl std::fmt::
     warn!(path = %path.display(), error = %error, "preserving mitmdump launch directory for later reconciliation");
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use std::io::{BufRead, BufReader, Write};
     use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -890,4 +890,4 @@ mod tests {
         assert!(launch.exists());
         child.assert_responds();
     }
-}
+});

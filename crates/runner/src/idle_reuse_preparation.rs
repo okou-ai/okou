@@ -204,7 +204,7 @@ fn compose_reuse_preparation_command(helper_command: &str, mount_command: &str) 
     )
 }
 
-#[cfg(test)]
+runner_test_support!(runtime_control; #[cfg(test)]
 pub(crate) fn healthy_reuse_preparation_report() -> ReusePreparationReport {
     use guest_contracts::reuse_preparation::RootFilesystemCapacity;
 
@@ -219,9 +219,9 @@ pub(crate) fn healthy_reuse_preparation_report() -> ReusePreparationReport {
         },
         removed_entries: 0,
     }
-}
+});
 
-#[cfg(test)]
+runner_test_support!(runtime_control; #[cfg(test)]
 pub(crate) fn add_healthy_reuse_preparation_matcher(
     overrides: &sandbox_mock::MockSandboxOverrides,
 ) {
@@ -231,16 +231,16 @@ pub(crate) fn add_healthy_reuse_preparation_matcher(
         stdout: serde_json::to_vec(&healthy_reuse_preparation_report()).unwrap(),
         stderr: Vec::new(),
     });
-}
+});
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 pub(crate) fn mock_sandbox_ready_for_idle_reuse(
     name: impl Into<String>,
 ) -> sandbox_mock::MockSandbox {
     let overrides = std::sync::Arc::new(sandbox_mock::MockSandboxOverrides::new());
     add_healthy_reuse_preparation_matcher(&overrides);
     sandbox_mock::MockSandbox::with_overrides(name, overrides)
-}
+});
 
 fn helper_failure_reason(result: &ExecResult) -> ReuseRejectionReason {
     match result.termination {
@@ -360,7 +360,7 @@ fn log_report(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -736,4 +736,4 @@ mod tests {
             Some("helper_failed")
         );
     }
-}
+});

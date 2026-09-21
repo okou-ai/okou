@@ -105,7 +105,7 @@ pub(super) fn log_gc_phase_summary(domain: &str, report: &GcReport, dry_run: boo
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
     use tracing_subscriber::prelude::*;
@@ -213,4 +213,4 @@ mod tests {
             ["gc orphaned locks complete: would_clean=2, would_free=1.0 KiB"]
         );
     }
-}
+});

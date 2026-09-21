@@ -36,10 +36,10 @@ impl RunId {
         Self(Uuid::new_v4())
     }
 
-    #[cfg(test)]
+    runner_test_support!(platform_support; #[cfg(test)]
     pub fn nil() -> Self {
         Self(Uuid::nil())
-    }
+    });
 }
 
 impl fmt::Display for RunId {
@@ -61,7 +61,7 @@ impl From<Uuid> for RunId {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -93,4 +93,4 @@ mod tests {
     fn from_str_invalid() {
         assert!("not-a-uuid".parse::<RunId>().is_err());
     }
-}
+});

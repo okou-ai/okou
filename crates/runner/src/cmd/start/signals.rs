@@ -247,7 +247,7 @@ async fn dispatch_hard_cancellations(
     .await;
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use std::sync::Arc;
     use std::time::Duration;
@@ -516,4 +516,4 @@ mod tests {
         assert_eq!(gate.state(), ParkingState::Closed);
         assert!(cancel.is_cancelled());
     }
-}
+});

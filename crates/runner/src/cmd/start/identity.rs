@@ -59,7 +59,7 @@ pub(super) async fn load_runner_process_identity(
     Ok(identity)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -195,4 +195,4 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(tokio::fs::read_to_string(&target).await.unwrap(), "41");
     }
-}
+});

@@ -56,7 +56,7 @@ fn unit_state_entry(unit: RunnerServiceUnit, state: ServiceUnitState) -> UnitSta
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use serde_json::json;
 
@@ -116,4 +116,4 @@ mod tests {
         assert_eq!(value["services"][0]["activeLike"], true);
         assert_eq!(value["services"][1]["activeLike"], false);
     }
-}
+});

@@ -193,12 +193,12 @@ impl WorkspaceSessionHistorySidecarMetadata {
 }
 
 impl WorkspaceImageCache {
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(super) fn fail_next_session_history_sidecar_metadata_commit(&self) {
         self.inner
             .fail_next_session_history_sidecar_metadata_commit
             .store(true, std::sync::atomic::Ordering::Relaxed);
-    }
+    });
 
     async fn commit_session_history_sidecar_metadata(
         &self,

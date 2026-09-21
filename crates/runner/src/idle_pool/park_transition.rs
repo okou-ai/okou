@@ -313,10 +313,10 @@ impl IdleParkRequest {
         Self { parts }
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) async fn park_for_idle(self) -> Result<IdleParkOutcome, IdleParkFailure> {
         self.park_for_idle_with_optional_observer(None).await
-    }
+    });
 
     /// Run reuse preparation and physical parking, optionally producing an
     /// immediate exact-successor handoff.
@@ -739,7 +739,7 @@ impl IdleParkOutcome {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn expect_reusable(self) -> ParkedIdleCandidate {
         match self {
             Self::Reusable(candidate) => candidate,
@@ -751,7 +751,7 @@ impl IdleParkOutcome {
                 )
             }
         }
-    }
+    });
 }
 
 impl IdleParkFailure {
@@ -852,12 +852,12 @@ impl IdleParkFailure {
         }
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start, executor; #[cfg(test)]
     pub(crate) fn into_error(self) -> String {
         match self.into_parts() {
             IdleParkFailureParts::Active { error, .. }
             | IdleParkFailureParts::Parked { error, .. }
             | IdleParkFailureParts::RunningHandoff { error, .. } => error,
         }
-    }
+    });
 }

@@ -197,7 +197,7 @@ fn mitmdump_artifact(paths: &HomePaths, arch: &str) -> SetupArtifact {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
@@ -820,4 +820,4 @@ mod tests {
         assert!(!target.exists());
         assert!(setup_temp_files(dir.path()).is_empty());
     }
-}
+});

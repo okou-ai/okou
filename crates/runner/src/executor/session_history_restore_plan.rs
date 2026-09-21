@@ -297,7 +297,7 @@ pub(crate) fn build_session_history_restore_plan(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -707,4 +707,4 @@ mod tests {
             _ => panic!("mismatched framework should fall back to restore"),
         }
     }
-}
+});

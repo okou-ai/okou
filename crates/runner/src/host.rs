@@ -162,7 +162,7 @@ pub fn memory_mb() -> RunnerResult<usize> {
     ))
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -290,4 +290,4 @@ mod tests {
             assert!(memory_mb().unwrap() > 0);
         }
     }
-}
+});

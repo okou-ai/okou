@@ -150,7 +150,7 @@ fn is_debootstrap_temp_tarball_name(name: &str) -> bool {
         })
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
@@ -443,4 +443,4 @@ mod tests {
             "pid-suffixed debootstrap temp tarball should be removed"
         );
     }
-}
+});

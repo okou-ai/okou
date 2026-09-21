@@ -452,7 +452,7 @@ fn network_log_row(entry: &DnsLogEntry<'_>, timestamp: DateTime<Utc>) -> serde_j
     json
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1007,4 +1007,4 @@ mod tests {
         assert!(matches!(exit, DrainableLineReaderExit::Cancelled));
         drop(writer);
     }
-}
+});

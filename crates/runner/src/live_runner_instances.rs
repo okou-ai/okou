@@ -297,13 +297,13 @@ impl LiveRunnerInstanceHandle {
     }
 }
 
-#[cfg(test)]
+runner_test_support!(runtime_control; #[cfg(test)]
 async fn read_valid_record(path: &Path) -> Option<LiveRunnerInstanceRecord> {
     match read_record(path).await.expect("read live runner record") {
         RecordRead::Valid(record) => Some(record),
         RecordRead::Missing | RecordRead::InvalidFile | RecordRead::NotLive => None,
     }
-}
+});
 
 async fn read_record(path: &Path) -> RunnerResult<RecordRead> {
     let liveness = LivenessContext::new();
@@ -641,7 +641,7 @@ fn current_euid() -> u32 {
     0
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1499,4 +1499,4 @@ mod tests {
         assert!(removed);
         assert!(!handle.path.exists());
     }
-}
+});

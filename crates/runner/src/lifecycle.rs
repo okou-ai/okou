@@ -66,10 +66,10 @@ impl LifecycleController {
         *self.mode_tx.borrow()
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn mode_tx(&self) -> &tokio::sync::watch::Sender<RunnerMode> {
         &self.mode_tx
-    }
+    });
 
     pub(crate) fn enter_soft_drain(&self) -> SoftDrainOutcome {
         let gate = self.parking_gate.clone();
@@ -169,7 +169,7 @@ impl LifecycleController {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::idle_pool::ParkingState;
@@ -331,4 +331,4 @@ mod tests {
         assert_eq!(lifecycle.current_mode(), RunnerMode::Stopped);
         assert_eq!(gate.state(), ParkingState::Closed);
     }
-}
+});

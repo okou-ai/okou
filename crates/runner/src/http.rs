@@ -128,14 +128,14 @@ impl ApiRequestBuilder {
         Ok(self.finalize("build")?.request)
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub fn build_with_context_for_test(
         self,
         endpoint_label: &'static str,
     ) -> RunnerResult<(Request, ApiRequestContext)> {
         let finalized = self.finalize(endpoint_label)?;
         Ok((finalized.request, finalized.context))
-    }
+    });
 
     fn finalize(self, endpoint_label: &'static str) -> RunnerResult<FinalizedApiRequest> {
         let mut request = self
@@ -154,7 +154,7 @@ impl ApiRequestBuilder {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {
             client,
@@ -166,7 +166,7 @@ impl ApiRequestBuilder {
             builder: builder.header(name, value),
             client_headers,
         }
-    }
+    });
 }
 
 impl PreparedApiRequest {
@@ -481,7 +481,7 @@ fn sanitize_api_error_summary(summary: String) -> String {
     sanitized
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use api_contracts::generated::routes;
     use reqwest::header::AUTHORIZATION;
@@ -928,4 +928,4 @@ mod tests {
         assert!(request.headers().get(CLIENT_SESSION_ID_HEADER).is_none());
         assert!(request.headers().get(CLIENT_REQUEST_ID_HEADER).is_none());
     }
-}
+});

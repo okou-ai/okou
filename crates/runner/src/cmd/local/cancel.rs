@@ -205,7 +205,7 @@ fn validated_claims_dir(group_dir: &std::path::Path) -> RunnerResult<Option<std:
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -471,4 +471,4 @@ mod tests {
             "got: {err}"
         );
     }
-}
+});

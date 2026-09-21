@@ -15,8 +15,8 @@ use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(storage; #[cfg(test)]
+mod tests;);
 
 const INDEX_LIMIT: usize = 256 * 1024;
 
@@ -77,10 +77,10 @@ fn check_cancel(cancel: &CancellationToken) -> io::Result<()> {
     }
 }
 
-#[cfg(test)]
+runner_test_support!(storage; #[cfg(test)]
 pub(super) fn paths(home: &HomePaths, name: &str, version: &str) -> (PathBuf, PathBuf) {
     entry_paths(home, name, version, false)
-}
+});
 
 fn version_key(version: &str, rejected: bool) -> String {
     let kind = if rejected { "rejected-" } else { "" };

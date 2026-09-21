@@ -142,7 +142,7 @@ pub(super) async fn shutdown_runtime(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Mutex;
@@ -398,4 +398,4 @@ mod tests {
 
         assert_eq!(runtime.runtime_shutdowns.load(Ordering::SeqCst), 1);
     }
-}
+});

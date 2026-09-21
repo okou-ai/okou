@@ -198,7 +198,7 @@ pub(super) async fn reconcile_drain_restart_override_removal(
     .await
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
 
@@ -463,4 +463,4 @@ mod tests {
         assert!(error.to_string().contains("reload failed"));
         assert!(error.to_string().contains("restore failed"));
     }
-}
+});

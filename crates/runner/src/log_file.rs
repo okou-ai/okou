@@ -15,7 +15,7 @@ pub(crate) fn validate_copy_destination(path: &Path) -> io::Result<()> {
     host_file::validate_private_file_destination(path, "guest log destination")
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use std::io::Write;
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -129,4 +129,4 @@ mod tests {
         );
         assert!(!path.exists());
     }
-}
+});

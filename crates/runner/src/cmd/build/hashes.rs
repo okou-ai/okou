@@ -187,7 +187,7 @@ pub(super) fn compute_snapshot_hash(
     hex::encode(hasher.finalize())
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -502,4 +502,4 @@ mod tests {
             "must change with provider_config_hash"
         );
     }
-}
+});

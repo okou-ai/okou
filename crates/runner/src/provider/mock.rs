@@ -707,7 +707,7 @@ impl JobProvider for MockJobProvider {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_fixtures::execution_context::execution_context_for_test;
@@ -803,4 +803,4 @@ mod tests {
         assert!(cancelled.await.unwrap_err().is_cancelled());
         assert_eq!(handle.completion_in_flight(), 0);
     }
-}
+});

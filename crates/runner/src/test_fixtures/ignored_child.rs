@@ -708,7 +708,7 @@ fn format_child_output(stream_name: &str, output: ChildOutput) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     #[cfg(target_os = "linux")]
     use std::os::unix::process::CommandExt as _;
@@ -1171,4 +1171,4 @@ mod tests {
             starttime,
         }
     }
-}
+});

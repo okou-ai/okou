@@ -261,7 +261,7 @@ impl NetworkLogUploadHealthTracker {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     fn record_at(
         &self,
         now: Instant,
@@ -271,7 +271,7 @@ impl NetworkLogUploadHealthTracker {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .observe(now, outcome)
-    }
+    });
 }
 
 fn eligible_upload_outcome(
@@ -947,7 +947,7 @@ fn truncate_log_field(value: String) -> String {
     value
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
     use std::sync::Arc;
@@ -2575,4 +2575,4 @@ mod tests {
         assert_same_request_correlation(started, failed);
         assert!(path.exists());
     }
-}
+});

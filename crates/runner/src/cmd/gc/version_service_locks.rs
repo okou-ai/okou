@@ -104,7 +104,7 @@ async fn gc_orphaned_version_service_locks_with_observer(
     Ok(GcReport::version_service_locks_removed(removed))
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
@@ -356,4 +356,4 @@ mod tests {
             "dry-run should count but not remove stale service locks"
         );
     }
-}
+});

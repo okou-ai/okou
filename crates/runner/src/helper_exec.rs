@@ -146,7 +146,7 @@ fn find_url_token_end(input: &str, start: usize) -> usize {
         .unwrap_or(input.len())
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -315,4 +315,4 @@ mod tests {
             "wait_failed"
         );
     }
-}
+});

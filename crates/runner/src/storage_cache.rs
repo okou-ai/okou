@@ -714,7 +714,7 @@ impl StorageCacheBackgroundFillCoordinator {
         self.lifecycle.inner.classifiers.wait().await;
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     fn is_closed_for_test(&self) -> bool {
         self.lifecycle
             .inner
@@ -722,9 +722,9 @@ impl StorageCacheBackgroundFillCoordinator {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .closed
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) async fn wait_idle_for_test(&self) {
         loop {
             let (send, receive) = oneshot::channel();
@@ -741,7 +741,7 @@ impl StorageCacheBackgroundFillCoordinator {
             // blocking filesystem worker is active. This is test-only polling.
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
-    }
+    });
 }
 
 impl Drop for BackgroundFillCoordinatorLifecycle {
@@ -1469,10 +1469,10 @@ pub(crate) struct DeferredBackgroundFill {
 }
 
 impl DeferredBackgroundFill {
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     async fn run(self) -> Vec<SandboxOpRecord> {
         run_background_fill_groups(self.groups, self.home).await
-    }
+    });
 
     pub(crate) fn start(
         self,
@@ -2158,7 +2158,7 @@ async fn stage_joined_processed_group(
     Ok(())
 }
 
-/// Resolves eligible archive sources against the runner-side cache.
+runner_test_support!(storage; /// Resolves eligible archive sources against the runner-side cache.
 ///
 /// Warm hits are staged into the guest over vsock, and their sources in
 /// `plan` are rewritten to guest-local `file://` URLs before this function
@@ -2185,7 +2185,7 @@ pub async fn populate_cache(
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
     populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None, None).await
-}
+});
 
 pub(crate) async fn populate_cache_with_fresh_delivery(
     plan: &mut StoragePlan,
@@ -2398,7 +2398,7 @@ fn should_background_fill(outcome: &TargetOutcome) -> bool {
     matches!(outcome, TargetOutcome::MissPassthrough { .. })
 }
 
-#[cfg(test)]
+runner_test_support!(storage; #[cfg(test)]
 async fn run_background_fill_groups(
     groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
     home: HomePaths,
@@ -2448,9 +2448,9 @@ async fn run_background_fill_groups(
         }
     }
     reports
-}
+});
 
-#[cfg(test)]
+runner_test_support!(storage; #[cfg(test)]
 async fn join_next_background_fill(
     fills: &mut JoinSet<BackgroundFillReport>,
 ) -> Option<BackgroundFillReport> {
@@ -2462,7 +2462,7 @@ async fn join_next_background_fill(
             Some(BackgroundFillReport::failed(Duration::ZERO))
         }
     }
-}
+});
 
 fn group_targets(targets: Vec<CacheTarget>) -> Vec<CacheTargetGroup> {
     let mut group_order = Vec::new();
@@ -4132,7 +4132,7 @@ fn rewrite_url(plan: &mut StoragePlan, target: &CacheTarget) {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -10898,4 +10898,4 @@ mod tests {
             assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
         }
     }
-}
+});

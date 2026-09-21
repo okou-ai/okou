@@ -30,10 +30,10 @@ impl WorkspaceImageCache {
         }
     }
 
-    pub(super) async fn query_fs_stats(&self) -> RunnerResult<FsStats> {
+    runner_test_support!(storage; pub(super) async fn query_fs_stats(&self) -> RunnerResult<FsStats> {
         let path = self.workspace_image_cache_fs_stats_path();
         statvfs_bytes(&path).await
-    }
+    });
 
     pub(super) async fn ensure_workspace_cache_entry_dir(
         &self,
@@ -76,7 +76,7 @@ pub(super) fn fs_stats_with_additional_available(stats: FsStats, bytes: u64) -> 
     }
 }
 
-pub(super) fn existing_fs_stats_path(path: &Path) -> PathBuf {
+runner_test_support!(storage; pub(super) fn existing_fs_stats_path(path: &Path) -> PathBuf {
     let mut current = Some(path);
     while let Some(candidate) = current {
         match std::fs::metadata(candidate) {
@@ -88,7 +88,7 @@ pub(super) fn existing_fs_stats_path(path: &Path) -> PathBuf {
         }
     }
     path.to_path_buf()
-}
+});
 
 pub(super) async fn workspace_cache_path_allocated_bytes(path: &Path) -> u64 {
     match workspace_cache_existing_path_allocated_bytes(path).await {
@@ -205,12 +205,12 @@ fn cp_command_error(error: BoundedCommandError) -> RunnerError {
     }
 }
 
-pub(super) async fn statvfs_bytes(path: &Path) -> RunnerResult<FsStats> {
+runner_test_support!(storage; pub(super) async fn statvfs_bytes(path: &Path) -> RunnerResult<FsStats> {
     let path = path.to_owned();
     tokio::task::spawn_blocking(move || statvfs_bytes_sync(&path))
         .await
         .map_err(|e| RunnerError::Internal(format!("statvfs task failed: {e}")))?
-}
+});
 
 pub(super) async fn entry_file_type_is_dir(entry: &fs::DirEntry) -> RunnerResult<bool> {
     entry_file_type_matches(entry, std::fs::FileType::is_dir).await
@@ -235,12 +235,12 @@ pub(super) async fn entry_file_type_matches(
     }
 }
 
-pub(super) fn statvfs_bytes_sync(path: &Path) -> RunnerResult<FsStats> {
+runner_test_support!(storage; pub(super) fn statvfs_bytes_sync(path: &Path) -> RunnerResult<FsStats> {
     let stats = statvfs_for_path(path)?;
     Ok(fs_stats_from_statvfs(&stats))
-}
+});
 
-pub(super) fn statvfs_for_path(path: &Path) -> RunnerResult<libc::statvfs> {
+runner_test_support!(storage; pub(super) fn statvfs_for_path(path: &Path) -> RunnerResult<libc::statvfs> {
     let bytes = path.as_os_str().as_bytes();
     let c_path = std::ffi::CString::new(bytes)
         .map_err(|_| RunnerError::Internal("statvfs path contains nul byte".to_owned()))?;
@@ -250,15 +250,15 @@ pub(super) fn statvfs_for_path(path: &Path) -> RunnerResult<libc::statvfs> {
         return Err(std::io::Error::last_os_error().into());
     }
     Ok(unsafe { stats.assume_init() })
-}
+});
 
-pub(super) fn fs_stats_from_statvfs(stats: &libc::statvfs) -> FsStats {
+runner_test_support!(storage; pub(super) fn fs_stats_from_statvfs(stats: &libc::statvfs) -> FsStats {
     let block_size = stats.f_frsize;
     FsStats {
         total_bytes: stats.f_blocks.saturating_mul(block_size),
         available_bytes: stats.f_bavail.saturating_mul(block_size),
     }
-}
+});
 
 async fn path_tree_allocated_bytes(path: &Path, metadata: std::fs::Metadata) -> u64 {
     let mut total = allocated_bytes(&metadata);

@@ -31,10 +31,10 @@ impl DnsProxy {
         self.process.start_child_cleanup();
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(crate) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
         self.process.set_reap_gate(gate);
-    }
+    });
 
     /// Stop the DNS proxy and wait for cleanup.
     pub async fn stop(self) -> crate::error::RunnerResult<()> {
@@ -56,19 +56,19 @@ impl DnsProxy {
         self.process.drain_producer()
     }
 
-    /// Create a noop handle for testing. No `dnsmasq` process is spawned.
+    runner_test_support!(cmd_start; /// Create a noop handle for testing. No `dnsmasq` process is spawned.
     #[cfg(test)]
     pub fn noop() -> Self {
         Self::noop_on_port(0)
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(crate) fn noop_on_port(port: u16) -> Self {
         Self {
             process: NetworkLogProcess::noop("dnsmasq", "dns"),
             port,
         }
-    }
+    });
 
     async fn from_started_child(
         mut child: tokio::process::Child,
@@ -92,15 +92,15 @@ impl DnsProxy {
         })
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(crate) async fn from_test_child(
         child: tokio::process::Child,
         network_log_manager: NetworkLogManager,
     ) -> std::io::Result<Self> {
         Self::from_started_child(child, 0, network_log_manager).await
-    }
+    });
 
-    /// Replace the stderr monitor with a task that panics when triggered.
+    runner_test_support!(cmd_start; /// Replace the stderr monitor with a task that panics when triggered.
     #[cfg(test)]
     pub(crate) async fn replace_monitor_with_panic_trigger_for_test(
         &mut self,
@@ -108,7 +108,7 @@ impl DnsProxy {
         self.process
             .replace_monitor_with_panic_trigger_for_test("dns")
             .await
-    }
+    });
 }
 
 /// Start dnsmasq and spawn a background task to parse its query log.
@@ -237,7 +237,7 @@ fn dnsmasq_args(port: u16, interface_pattern: &str) -> Vec<String> {
     ]
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -390,4 +390,4 @@ mod tests {
             "stopped DNS proxy should reap its child"
         );
     }
-}
+});

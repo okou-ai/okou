@@ -323,7 +323,7 @@ fn per_sandbox_capacity(
     (capacity >= minimum_per_sandbox).then_some(capacity)
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -641,4 +641,4 @@ mod tests {
         };
         assert_eq!(denominator, 1);
     }
-}
+});

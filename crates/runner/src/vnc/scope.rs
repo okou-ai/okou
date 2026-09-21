@@ -66,7 +66,7 @@ impl Scope {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -89,4 +89,4 @@ mod tests {
 
         assert_eq!(result, Ok(Err("staged timeout")));
     }
-}
+});

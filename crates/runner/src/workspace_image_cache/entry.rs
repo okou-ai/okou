@@ -98,9 +98,9 @@ impl WorkspaceImageCache {
         &self.inner.cache_dir
     }
 
-    pub(super) fn workspace_image_cache_fs_stats_path(&self) -> PathBuf {
+    runner_test_support!(storage; pub(super) fn workspace_image_cache_fs_stats_path(&self) -> PathBuf {
         super::fs::existing_fs_stats_path(self.workspace_image_cache_dir())
-    }
+    });
 
     pub(super) fn workspace_image_cache_entry_dir(&self, cache_key: &str) -> PathBuf {
         CacheEntryPaths::entry_dir_for(self.workspace_image_cache_dir(), cache_key)

@@ -152,7 +152,7 @@ pub(crate) fn resolve_run_mapping(
     }
 }
 
-/// Resolve a full `run_id` or prefix to a `sandbox_id` using the same exact-ID,
+runner_test_support!(runtime_control; /// Resolve a full `run_id` or prefix to a `sandbox_id` using the same exact-ID,
 /// prefix-uniqueness, and incomplete-scan rules as [`resolve_run_mapping`].
 #[cfg(test)]
 pub(crate) fn resolve_run_to_sandbox(
@@ -160,9 +160,9 @@ pub(crate) fn resolve_run_to_sandbox(
     mappings: &ActiveRunMappings,
 ) -> RunnerResult<String> {
     Ok(resolve_run_mapping(input, mappings)?.sandbox_id)
-}
+});
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -554,4 +554,4 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("no trusted live runner status"), "{msg}");
     }
-}
+});

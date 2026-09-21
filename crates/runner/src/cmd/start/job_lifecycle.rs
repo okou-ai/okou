@@ -277,7 +277,7 @@ impl FinalizationReady {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
@@ -545,4 +545,4 @@ mod tests {
         state.mark_destroy_completed();
         assert_eq!(state.disposition(), RunCleanupDisposition::HandoffOwned);
     }
-}
+});

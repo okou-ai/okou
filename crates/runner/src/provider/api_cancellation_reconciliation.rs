@@ -533,5 +533,5 @@ fn decode(body: &[u8], expected_run_id: &str) -> Result<Option<Mode>, ReadError>
     Ok(mode)
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(provider; #[cfg(test)]
+mod tests;);

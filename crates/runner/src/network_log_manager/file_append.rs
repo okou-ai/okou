@@ -39,7 +39,7 @@ fn write_lines_vectored(writer: &mut impl Write, lines: &[String]) -> io::Result
     Ok(())
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use std::io::{self, IoSlice, Write};
 
@@ -137,4 +137,4 @@ mod tests {
         assert!(writer.bytes.is_empty());
         assert!(writer.zero_once);
     }
-}
+});

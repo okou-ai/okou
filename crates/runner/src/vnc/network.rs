@@ -87,7 +87,7 @@ pub(super) async fn destination(
     addresses.first().copied().ok_or(Failure::UnsafeDestination)
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -176,4 +176,4 @@ mod tests {
             );
         }
     }
-}
+});

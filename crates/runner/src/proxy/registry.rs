@@ -605,15 +605,15 @@ impl ProxyRegistryHandle {
         self.control.observe_registry(publication);
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) fn set_control_target_for_test(&self, directory: PathBuf, generation: String) {
         self.control.set_target(Some(super::control::ControlTarget {
             directory,
             generation,
         }));
-    }
+    });
 
-    /// Create a handle from explicit paths (for testing).
+    runner_test_support!(network; /// Create a handle from explicit paths (for testing).
     #[cfg(test)]
     pub fn new(registry_path: PathBuf, lock_path: PathBuf) -> Self {
         Self {
@@ -622,16 +622,16 @@ impl ProxyRegistryHandle {
             control: ControlHandle::default(),
             connector_runtime_update_attempt_tx: None,
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(provider; #[cfg(test)]
     pub(crate) fn with_connector_runtime_update_attempt_tx(
         mut self,
         tx: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Self {
         self.connector_runtime_update_attempt_tx = Some(tx);
         self
-    }
+    });
 
     /// Register a sandbox in the proxy registry.
     pub async fn register_sandbox(
@@ -714,7 +714,7 @@ impl ProxyRegistryHandle {
         })
     }
 
-    /// Publish validated Builtin and Custom candidate updates in one registry
+    runner_test_support!(network; /// Publish validated Builtin and Custom candidate updates in one registry
     /// transaction. `None` means the sandbox disappeared or now belongs to another
     /// run; otherwise each boolean reports whether the same-index update was
     /// accepted. Accepted batches persist only when the resulting sandbox state
@@ -731,7 +731,7 @@ impl ProxyRegistryHandle {
             .apply_updates_if_run_matches(source_ip, run_id, updates)
             .await
             .map(|result| result.map(|result| result.outcomes))
-    }
+    });
 
     pub(crate) async fn connector_runtime_registry_transaction(
         &self,
@@ -749,7 +749,7 @@ impl ProxyRegistryHandle {
         })
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) async fn replace_custom_connector_runtime_target_if_run_matches(
         &self,
         source_ip: &str,
@@ -768,9 +768,9 @@ impl ProxyRegistryHandle {
             )
             .await?;
         Ok(outcomes.is_some_and(|outcomes| outcomes == [true]))
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub async fn patch_network_policy_if_run_matches(
         &self,
         source_ip: &str,
@@ -789,9 +789,9 @@ impl ProxyRegistryHandle {
             )
             .await?;
         Ok(outcomes.is_some_and(|outcomes| outcomes == [true]))
-    }
+    });
 
-    /// Fail-close all matching connector runtime targets in one registry
+    runner_test_support!(network; /// Fail-close all matching connector runtime targets in one registry
     /// transaction. `None` means the sandbox disappeared or now belongs to another
     /// run; otherwise each outcome corresponds to the same-index target.
     #[cfg(test)]
@@ -806,7 +806,7 @@ impl ProxyRegistryHandle {
             .fail_closed_targets_if_run_matches(source_ip, run_id, targets)
             .await
             .map(|result| result.map(|result| result.outcomes))
-    }
+    });
 }
 
 impl ConnectorRuntimeRegistryTransaction<'_> {
@@ -1032,7 +1032,7 @@ pub(super) async fn write_empty_registry(path: &Path) -> RunnerResult<()> {
     write_registry(path, &empty_registry).await.map(|_| ())
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{Firewall, FirewallApi, FirewallAuth, FirewallEntry, FirewallPermission};
@@ -3069,4 +3069,4 @@ mod tests {
         assert_eq!(api["auth"]["headers"], serde_json::json!({}));
         assert_eq!(api["auth"]["base"], serde_json::Value::Null);
     }
-}
+});

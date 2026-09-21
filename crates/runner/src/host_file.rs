@@ -38,8 +38,8 @@ use std::path::{Component, Path, PathBuf};
 use nix::fcntl::{OFlag, open, openat};
 use nix::sys::stat::{Mode, SFlag, fstat, mkdirat};
 
-#[cfg(test)]
-pub(crate) mod atomic_write_test;
+runner_test_support!(shared; #[cfg(test)]
+pub(crate) mod atomic_write_test;);
 
 pub(crate) const PRIVATE_DIR_MODE: u32 = 0o700;
 pub(crate) const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -775,7 +775,7 @@ fn wrap_io(error: io::Error, context: String) -> io::Error {
     io::Error::new(error.kind(), format!("{context}: {error}"))
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use std::io;
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -1198,4 +1198,4 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert!(!target.join("log.jsonl").exists());
     }
-}
+});

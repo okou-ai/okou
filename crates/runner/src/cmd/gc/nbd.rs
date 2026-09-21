@@ -71,7 +71,7 @@ where
     Ok(GcReport::cleanup(u64::from(cleaned), 0))
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use std::sync::{
         Arc,
@@ -184,4 +184,4 @@ mod tests {
         assert_eq!(attempts.load(Ordering::Relaxed), 2);
         assert_eq!(report, GcReport::cleanup(1, 0));
     }
-}
+});

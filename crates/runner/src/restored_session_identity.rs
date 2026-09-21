@@ -207,7 +207,7 @@ impl RestoredSessionIdentity {
             .then_some(identity)
     }
 
-    #[cfg(test)]
+    runner_test_support!(shared; #[cfg(test)]
     pub(crate) fn claude_code_for_test(history_hash: impl Into<String>) -> Self {
         Self::new(
             SessionHistoryFramework::ClaudeCode,
@@ -216,19 +216,19 @@ impl RestoredSessionIdentity {
             history_hash,
             None,
         )
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(shared; #[cfg(test)]
     pub(crate) fn history_hash(&self) -> &str {
         &self.history_hash
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(shared; #[cfg(test)]
     pub(crate) fn history_size_bytes(&self) -> Option<u64> {
         self.history_size_bytes
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(shared; #[cfg(test)]
     pub(crate) fn final_metadata_path(&self) -> Option<&str> {
         match &self.verifier {
             Some(RestoredSessionIdentityVerifier::FinalIdentityMetadata {
@@ -236,7 +236,7 @@ impl RestoredSessionIdentity {
             }) => Some(metadata_path),
             _ => None,
         }
-    }
+    });
 
     /// Returns the inputs needed to verify final metadata inside the guest.
     ///
@@ -388,13 +388,13 @@ impl RestoredSessionIdentity {
 }
 
 impl RestoredSessionHistoryPrefixAttribution {
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) fn for_test(history_hash: String, history_size_bytes: u64) -> Self {
         Self {
             history_hash,
             history_size_bytes,
         }
-    }
+    });
 
     /// Consumes the attribution into the possible prefix hash and size.
     pub(crate) fn into_parts(self) -> (String, u64) {

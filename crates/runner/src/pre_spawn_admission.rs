@@ -209,7 +209,7 @@ fn lock_background(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::panic::AssertUnwindSafe;
@@ -385,4 +385,4 @@ mod tests {
 
         assert!(admission.try_acquire_background(1).unwrap().is_some());
     }
-}
+});

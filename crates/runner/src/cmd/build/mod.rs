@@ -284,15 +284,15 @@ enum RootfsImageLock {
 }
 
 impl RootfsImageLock {
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     fn is_exclusive(&self) -> bool {
         matches!(self, Self::Exclusive { .. })
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     fn is_shared(&self) -> bool {
         matches!(self, Self::Shared { .. })
-    }
+    });
 }
 
 async fn acquire_rootfs_lock_for_image_build(
@@ -361,13 +361,13 @@ struct TemplateLockRelease {
 }
 
 impl TemplateLockRelease {
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     fn none() -> Self {
         Self {
             guard: None,
             callback: None,
         }
-    }
+    });
 
     fn from_lock(guard: Flock<File>) -> Self {
         Self {
@@ -377,13 +377,13 @@ impl TemplateLockRelease {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     fn from_release(release: impl FnOnce() + Send + 'static) -> Self {
         Self {
             guard: None,
             callback: Some(Box::new(release)),
         }
-    }
+    });
 
     fn release(&mut self) {
         self.guard = None;
@@ -1196,5 +1196,5 @@ async fn is_rootfs_present(rootfs: &RootfsPaths) -> RunnerResult<bool> {
         .map_err(|e| RunnerError::Internal(format!("check {}: {e}", rootfs.rootfs().display())))
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod tests;);

@@ -193,7 +193,7 @@ impl StorageFingerprints {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use serde_json::json;
 
@@ -290,4 +290,4 @@ mod tests {
                 .is_tainted()
         );
     }
-}
+});

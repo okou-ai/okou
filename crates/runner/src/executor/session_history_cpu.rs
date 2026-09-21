@@ -37,8 +37,8 @@ use std::io::{self, BufReader, Read};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-#[cfg(test)]
-use std::sync::{Condvar, Mutex};
+runner_test_support!(executor; #[cfg(test)]
+use std::sync::{Condvar, Mutex};);
 
 use api_contracts::generated::constants::runners::RESUME_SESSION_HISTORY_MAX_BYTES;
 use flate2::read::MultiGzDecoder;
@@ -203,7 +203,7 @@ impl SessionHistoryCpuPool {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(in crate::executor) fn with_test_gates(
         capacity: usize,
         cpu_gate: Option<SessionHistoryCpuTestGate>,
@@ -218,9 +218,9 @@ impl SessionHistoryCpuPool {
                 codex_raw_restore_threshold: None,
             },
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(in crate::executor) fn with_test_codex_timestamp_record_max_bytes(
         capacity: usize,
         max_record_bytes: usize,
@@ -234,9 +234,9 @@ impl SessionHistoryCpuPool {
                 codex_raw_restore_threshold: None,
             },
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(in crate::executor) fn with_test_codex_raw_restore_threshold(
         capacity: usize,
         threshold: u64,
@@ -250,7 +250,7 @@ impl SessionHistoryCpuPool {
                 codex_raw_restore_threshold: Some(threshold),
             },
         }
-    }
+    });
 
     pub(super) async fn materialize(
         &self,
@@ -1160,7 +1160,7 @@ fn scan_raw_codex_history(
     scan_valid_utf8_history(history, cancel, hooks)
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 pub(super) fn codex_timestamp_for_test(history: &[u8]) -> Option<chrono::DateTime<chrono::Utc>> {
     scan_raw_codex_history(
         history,
@@ -1168,7 +1168,7 @@ pub(super) fn codex_timestamp_for_test(history: &[u8]) -> Option<chrono::DateTim
         &SessionHistoryCpuHooks::default(),
     )
     .unwrap()
-}
+});
 
 fn scan_valid_utf8_history(
     history: &str,
@@ -1338,13 +1338,13 @@ fn cpu_cancelled_error() -> RunnerError {
     RunnerError::Cancelled
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 #[derive(Clone)]
 pub(in crate::executor) struct SessionHistoryCpuTestGate {
     inner: Arc<SessionHistoryCpuTestGateInner>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 struct SessionHistoryCpuTestGateInner {
     mode: SessionHistoryCpuTestGateMode,
     state: Mutex<SessionHistoryCpuTestGateState>,
@@ -1352,23 +1352,23 @@ struct SessionHistoryCpuTestGateInner {
     submitted: Semaphore,
     entered: Semaphore,
     completed: Semaphore,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 #[derive(Clone, Copy)]
 enum SessionHistoryCpuTestGateMode {
     Every,
     Entry(usize),
-}
+});
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 #[derive(Default)]
 struct SessionHistoryCpuTestGateState {
     entries: usize,
     releases: usize,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 impl SessionHistoryCpuTestGate {
     pub(in crate::executor) fn every_entry() -> Self {
         Self::new(SessionHistoryCpuTestGateMode::Every)
@@ -1469,7 +1469,7 @@ impl SessionHistoryCpuTestGate {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .entries
     }
-}
+});
 
 struct CancellationReader<R> {
     inner: R,
@@ -1501,7 +1501,7 @@ impl<R: Read> Read for CancellationReader<R> {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::io::Write;
@@ -1939,4 +1939,4 @@ mod tests {
         );
         assert!(!outcome.timings.validation().unwrap().success());
     }
-}
+});

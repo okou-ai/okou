@@ -177,7 +177,7 @@ async fn write_frame<T: Serialize>(stream: &mut UnixStream, value: &T) -> io::Re
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "runner control write timed out"))?
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -246,4 +246,4 @@ mod tests {
             io::ErrorKind::InvalidData
         );
     }
-}
+});

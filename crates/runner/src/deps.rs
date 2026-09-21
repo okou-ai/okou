@@ -72,7 +72,7 @@ pub fn mitmdump_url(arch: &str) -> String {
     )
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -140,4 +140,4 @@ mod tests {
             "mitmproxy test dependencies must contain exactly one version matching MITMPROXY_VERSION"
         );
     }
-}
+});

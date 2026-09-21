@@ -49,12 +49,12 @@ impl GcDirEntryReader {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     pub(super) const fn failing_after(successful_entries: usize) -> Self {
         Self {
             entries_before_error: Some(successful_entries),
         }
-    }
+    });
 
     pub(super) async fn next_entry_warn(
         &mut self,
@@ -171,12 +171,12 @@ impl DirStatsEntryReader {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     fn after_entry(after_entry: impl FnMut() -> std::io::Result<()> + Send + 'static) -> Self {
         Self {
             after_entry: Some(Box::new(after_entry)),
         }
-    }
+    });
 
     fn next_entry_warn(
         &mut self,
@@ -372,7 +372,7 @@ fn collect_dir_stats_blocking(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -513,4 +513,4 @@ mod tests {
         resume_tx.send(()).unwrap();
         assert_eq!(finished_rx.recv_timeout(WAIT_TIMEOUT).unwrap(), 1);
     }
-}
+});

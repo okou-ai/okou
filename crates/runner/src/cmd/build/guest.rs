@@ -102,7 +102,7 @@ async fn resolve_guest(
     Ok(dest)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -122,4 +122,4 @@ mod tests {
         assert!(resolved.starts_with(tmp_dir.path()));
         assert_ne!(resolved, source);
     }
-}
+});

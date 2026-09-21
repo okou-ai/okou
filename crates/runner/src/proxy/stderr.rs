@@ -85,7 +85,7 @@ pub(super) fn log_mitmdump_stderr_line(line: &str) {
     warn!(target: "mitmdump", "stderr: {line}");
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
     use tracing::Level;
@@ -304,4 +304,4 @@ mod tests {
         assert_eq!(event.level, Level::WARN);
         assert_event_field(&event, "message", "stderr: ordinary mitmdump warning");
     }
-}
+});

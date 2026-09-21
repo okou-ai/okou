@@ -48,7 +48,7 @@ impl JobTelemetry {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use std::time::{Duration, SystemTime};
 
@@ -122,4 +122,4 @@ mod tests {
         }
         server.assert_finished().await;
     }
-}
+});

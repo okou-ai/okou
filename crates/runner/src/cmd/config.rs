@@ -49,7 +49,7 @@ pub struct ConfigArgs {
     token: String,
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 impl ConfigArgs {
     pub(crate) fn api_url_for_test(&self) -> &str {
         &self.api_url
@@ -58,7 +58,7 @@ impl ConfigArgs {
     pub(crate) fn token_for_test(&self) -> &str {
         &self.token
     }
-}
+});
 
 pub async fn run_config(args: ConfigArgs) -> RunnerResult<()> {
     let paths = HomePaths::new()?;
@@ -161,7 +161,7 @@ async fn run_config_with_home(args: ConfigArgs, paths: HomePaths) -> RunnerResul
     Ok(())
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -519,4 +519,4 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("concurrency_factor"), "got: {msg}");
     }
-}
+});

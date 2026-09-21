@@ -236,7 +236,7 @@ fn custom_roots(bundle: Zeroizing<String>) -> Result<TrustRoots, Failure> {
     TrustRoots::custom(certificates).map_err(|_| Failure::InvalidCredential)
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -271,4 +271,4 @@ mod tests {
             ));
         }
     }
-}
+});

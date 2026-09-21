@@ -330,6 +330,9 @@ jobs:
           cd crates
           cargo xtask check-rust-path-attributes
 
+      - name: Check Runner test partitions
+        run: .github/scripts/check-runner-test-partitions.py
+
       - name: Check formatting
         run: |
           cd crates
@@ -575,7 +578,7 @@ jobs:
 
       - name: Check runner firewall base URL contract
         working-directory: crates
-        run: cargo test -p runner types::tests::firewall_base_url_validation_matches_shared_contract -- --exact
+        run: cargo test -p runner --test runner-platform-support types::tests::firewall_base_url_validation_matches_shared_contract -- --exact
 
       - name: Report peak memory
         if: always()
@@ -768,8 +771,8 @@ jobs:
         working-directory: crates
         run: |
           TEST_BIN=$(cargo test --no-run --profile local --target "$TARGET_TRIPLE" \
-            -p runner --bin runner --message-format=json | \
-            jq -r 'select(.reason == "compiler-artifact" and .target.name == "runner" and .profile.test) | .executable // empty')
+            -p runner --test runner-cmd-gc-build --message-format=json | \
+            jq -r 'select(.reason == "compiler-artifact" and .target.name == "runner-cmd-gc-build" and .profile.test) | .executable // empty')
           test -n "$TEST_BIN"
           echo "Rootfs process test executable: $(stat -c '%s' "$TEST_BIN") bytes ($TEST_BIN)"
           cp "$TEST_BIN" target/runner-rootfs-process-test

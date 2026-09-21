@@ -3,6 +3,51 @@ name = "runner"
 version = "0.207.3"
 edition.workspace = true
 
+[[bin]]
+name = "runner"
+path = "src/main.rs"
+test = false
+
+[[test]]
+name = "runner-cmd-start"
+path = "test_targets/cmd_start.rs"
+
+[[test]]
+name = "runner-cmd-service"
+path = "test_targets/cmd_service.rs"
+
+[[test]]
+name = "runner-cmd-gc-build"
+path = "test_targets/cmd_gc_build.rs"
+
+[[test]]
+name = "runner-cmd-other"
+path = "test_targets/cmd_other.rs"
+
+[[test]]
+name = "runner-executor"
+path = "test_targets/executor.rs"
+
+[[test]]
+name = "runner-provider"
+path = "test_targets/provider.rs"
+
+[[test]]
+name = "runner-storage"
+path = "test_targets/storage.rs"
+
+[[test]]
+name = "runner-network"
+path = "test_targets/network.rs"
+
+[[test]]
+name = "runner-runtime-control"
+path = "test_targets/runtime_control.rs"
+
+[[test]]
+name = "runner-platform-support"
+path = "test_targets/platform_support.rs"
+
 [dependencies]
 ably-subscriber = { workspace = true }
 api-contracts.workspace = true

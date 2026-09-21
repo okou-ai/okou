@@ -742,19 +742,19 @@ impl SubmitPlan {
     }
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_other; #[cfg(test)]
 pub(super) fn cleanup_completed_for_test(group_dir: &Path, profile: &str, job_id: RunId) {
     SubmitQueueEntry::for_job(group_dir, profile, job_id)
         .unwrap()
         .cleanup_completed();
-}
+});
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 pub(crate) fn abandon_cancelled_submit_for_test(group_dir: &Path, job_id: RunId) {
     SubmitQueueEntry::for_job(group_dir, crate::profile::DEFAULT_PROFILE, job_id)
         .unwrap()
         .abandon_cancelled();
-}
+});
 
 pub async fn run_submit(args: SubmitArgs) -> RunnerResult<ExitCode> {
     run_submit_with_home(args, HomePaths::new()?).await
@@ -766,7 +766,7 @@ async fn run_submit_with_home(args: SubmitArgs, home: HomePaths) -> RunnerResult
         .map_err(|e| RunnerError::Internal(format!("register local submit SIGINT handler: {e}")))?;
     plan.write_job_file()?;
     #[cfg(test)]
-    tests::post_publish_test_checkpoint();
+    submit_test_support::post_publish_test_checkpoint();
     let producer = plan.start_active_input_producer();
     let outcome = plan.wait_for_result(&mut sigint).await;
     if let Some(producer) = producer {
@@ -781,5 +781,7 @@ async fn run_submit_with_home(args: SubmitArgs, home: HomePaths) -> RunnerResult
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_support!(shared; #[cfg(test)]
+mod submit_test_support;);
+
+runner_test_group!(cmd_other; #[cfg(test)] mod tests;);

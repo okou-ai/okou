@@ -211,7 +211,7 @@ fn write_remote_exec_warning(stderr: &mut impl Write, line_open: &mut bool, mess
     let _ = writeln!(stderr, "{message}");
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use std::path::Path;
 
@@ -761,4 +761,4 @@ mod tests {
 
         assert_recorded_command(&control, "'if'");
     }
-}
+});

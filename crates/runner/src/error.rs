@@ -265,7 +265,7 @@ impl std::fmt::Display for ApiBodyReadError {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -339,4 +339,4 @@ mod tests {
             "should not suggest drain when already draining; got:\n{s}"
         );
     }
-}
+});

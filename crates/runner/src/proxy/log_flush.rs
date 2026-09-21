@@ -53,10 +53,10 @@ impl MitmJsonlFlushHandle {
         Self { control }
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(super) fn set_target(&self, target: Option<ControlTarget>) {
         self.control.set_target(target);
-    }
+    });
 
     pub fn for_run(&self, run_id: RunId, path: PathBuf) -> MitmRunLogFlush {
         let target = self.control.target();
@@ -106,5 +106,5 @@ impl MitmRunLogFlush {
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(network; #[cfg(test)]
+mod tests;);

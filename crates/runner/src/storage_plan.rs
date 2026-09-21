@@ -170,21 +170,21 @@ impl ArchiveHandle {
         (kind, self.index)
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) const fn storage(index: usize) -> Self {
         Self {
             kind: ArchiveKind::Storage,
             index,
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) const fn artifact(index: usize) -> Self {
         Self {
             kind: ArchiveKind::Artifact,
             index,
         }
-    }
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -671,7 +671,7 @@ impl StoragePlan {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) fn archive_source_url_for_test(&self, handle: ArchiveHandle) -> Option<&str> {
         let source = match handle.kind {
             ArchiveKind::Storage => {
@@ -694,7 +694,7 @@ impl StoragePlan {
         Some(match source {
             ArchiveSource::Remote(url) | ArchiveSource::GuestStaged(url) => url,
         })
-    }
+    });
 }
 
 fn record_removed_storages<'a>(
@@ -759,7 +759,7 @@ fn missing_root_policy_wire_value(policy: ArtifactEntryMissingRootPolicy) -> Str
     .to_string()
 }
 
-#[cfg(test)]
-mod contract_tests;
-#[cfg(test)]
-mod tests;
+runner_test_group!(storage; #[cfg(test)]
+mod contract_tests;);
+runner_test_group!(storage; #[cfg(test)]
+mod tests;);

@@ -64,7 +64,7 @@ fn concurrency_factor_error_source() -> String {
     )
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -120,4 +120,4 @@ mod tests {
 
         assert!(err.contains(host_env::RUNNER_HOST_ENV_FILE));
     }
-}
+});

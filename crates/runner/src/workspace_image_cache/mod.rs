@@ -63,8 +63,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-#[cfg(test)]
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+runner_test_support!(storage; #[cfg(test)]
+use std::sync::atomic::{AtomicBool, AtomicUsize};);
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -83,11 +83,11 @@ mod sidecar;
 mod types;
 mod watcher;
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(storage; #[cfg(test)]
+mod tests;);
 
-#[cfg(test)]
-pub(crate) use entry::CacheEntryPaths;
+runner_test_group!(cmd_other; #[cfg(test)]
+pub(crate) use entry::CacheEntryPaths;);
 pub(crate) use lifecycle::{
     WorkspaceImageLease, WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityFailure,
     WorkspaceImagePromotionOutcome, WorkspaceSessionHistorySidecarEntryGuard,
@@ -112,10 +112,10 @@ const MIN_FREE_BYTES_FLOOR: u64 = 50 * GIB;
 const MAX_ENTRY_BYTES_CAP: u64 = 32 * GIB;
 const MAX_WORKSPACE_PROMOTION_CONCURRENCY: usize = 4;
 
-#[cfg(test)]
-const TEST_FS_TOTAL_BYTES: u64 = 2_000 * GIB;
-#[cfg(test)]
-const TEST_FS_AVAILABLE_BYTES: u64 = 1_000 * GIB;
+runner_test_support!(storage; #[cfg(test)]
+const TEST_FS_TOTAL_BYTES: u64 = 2_000 * GIB;);
+runner_test_support!(storage; #[cfg(test)]
+const TEST_FS_AVAILABLE_BYTES: u64 = 1_000 * GIB;);
 
 #[derive(Clone)]
 pub(crate) struct WorkspaceImageCache {
@@ -128,14 +128,14 @@ pub(crate) struct WorkspaceImageCache {
     routine_gc_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
 }
 
-#[cfg(test)]
+runner_test_support!(storage; #[cfg(test)]
 #[derive(Clone, Default)]
 pub(crate) struct WorkspaceImagePrepareLockTestGate {
     entered: Arc<tokio::sync::Notify>,
     release: Arc<tokio::sync::Notify>,
-}
+});
 
-#[cfg(test)]
+runner_test_support!(storage; #[cfg(test)]
 impl WorkspaceImagePrepareLockTestGate {
     pub(crate) async fn enter_and_wait(&self) {
         self.entered.notify_one();
@@ -151,7 +151,7 @@ impl WorkspaceImagePrepareLockTestGate {
     pub(crate) fn release(&self) {
         self.release.notify_one();
     }
-}
+});
 
 struct WorkspaceImageCacheInner {
     paths: RunnerPaths,
@@ -184,19 +184,19 @@ struct TemporaryPathStats {
 }
 
 impl WorkspaceImageCache {
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) fn new(paths: RunnerPaths) -> Self {
         let cache_dir = paths.workspace_image_cache_dir();
         let lock_dir = paths.base_dir().join("locks");
         Self::with_cache_dirs(paths, cache_dir, lock_dir, "")
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     fn new_with_fs_stats(paths: RunnerPaths, fs_stats: FsStats) -> Self {
         let cache_dir = paths.workspace_image_cache_dir();
         let lock_dir = paths.base_dir().join("locks");
         Self::with_cache_dirs_and_fs_stats(paths, cache_dir, lock_dir, "", fs_stats)
-    }
+    });
 
     pub(crate) fn shared(paths: RunnerPaths, home: &HomePaths, cache_scope: &str) -> Self {
         Self::with_cache_dirs(
@@ -247,7 +247,7 @@ impl WorkspaceImageCache {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     fn with_cache_dirs_and_fs_stats(
         paths: RunnerPaths,
         cache_dir: PathBuf,
@@ -277,7 +277,7 @@ impl WorkspaceImageCache {
             prepare_lock_test_gate: None,
             routine_gc_test_gate: None,
         }
-    }
+    });
 
     fn with_promotion_capacity(mut self, capacity: usize) -> Self {
         self.session_history_sidecar_export_permits = Arc::new(Semaphore::new(capacity.max(1)));
@@ -289,10 +289,10 @@ impl WorkspaceImageCache {
         self.with_promotion_capacity((host_cpus / 2).clamp(1, MAX_WORKSPACE_PROMOTION_CONCURRENCY))
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) fn with_promotion_capacity_for_test(self, capacity: usize) -> Self {
         self.with_promotion_capacity(capacity)
-    }
+    });
 
     async fn acquire_idle_workspace_reclamation_permit(
         &self,
@@ -324,7 +324,7 @@ impl WorkspaceImageCache {
         &self.inner.paths
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn with_routine_gc_test_gate(
         mut self,
         entered: Arc<tokio::sync::Notify>,
@@ -332,14 +332,14 @@ impl WorkspaceImageCache {
     ) -> Self {
         self.routine_gc_test_gate = Some((entered, release));
         self
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) fn with_prepare_lock_test_gate(
         mut self,
         gate: WorkspaceImagePrepareLockTestGate,
     ) -> Self {
         self.prepare_lock_test_gate = Some(gate);
         self
-    }
+    });
 }

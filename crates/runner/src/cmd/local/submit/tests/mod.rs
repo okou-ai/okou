@@ -8,7 +8,3 @@ mod result_markers;
 mod support;
 mod timezone;
 mod validation;
-
-pub(super) fn post_publish_test_checkpoint() {
-    interrupt::post_publish_test_checkpoint();
-}

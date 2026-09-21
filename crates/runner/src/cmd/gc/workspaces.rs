@@ -519,5 +519,5 @@ async fn gc_workspace_orphans_in_base_dir(
     (cleaned, freed, lock_decision)
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod tests;);

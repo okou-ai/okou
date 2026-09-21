@@ -1604,7 +1604,7 @@ fn format_uptime(started_at: &str) -> String {
 // Tests
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use std::cell::Cell;
     use std::os::unix::fs::PermissionsExt;
@@ -4384,4 +4384,4 @@ printf '%s\n' \
             .expect("failed to acquire test lock");
         assert!(!super::is_lock_free(&path).await);
     }
-}
+});

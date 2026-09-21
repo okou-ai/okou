@@ -73,6 +73,10 @@ jq -e '
     .name == "Configure Git safe directory" and
     .run == "git config --global --add safe.directory \"$GITHUB_WORKSPACE\""
   ) and
+  any($check.steps[]?;
+    .name == "Check Runner test partitions" and
+    .run == ".github/scripts/check-runner-test-partitions.py"
+  ) and
   $bindings.container.image == $check.container.image and
   any($bindings.steps[]?;
     .name == "Check API Contracts Bindings" and
@@ -143,9 +147,11 @@ jq -e '
   any($rootfs_process.steps[]?;
     (.name // "" | startswith("Cross-compile rootfs process tests")) and
     (.run | contains("--profile local")) and
+    (.run | contains("--test runner-cmd-gc-build")) and
     (.run | contains("stat -c")) and
     (.run | contains("%s")) and
-    (.run | contains(".target.name == \"runner\" and .profile.test"))
+    (.run | contains(".target.name == \"runner-cmd-gc-build\" and .profile.test")) and
+    (.run | contains("--bin runner") | not)
   ) and
   any($rootfs_process.steps[]?;
     .name == "Run rootfs process ownership tests on metal" and

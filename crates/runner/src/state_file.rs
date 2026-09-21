@@ -248,7 +248,7 @@ pub(crate) async fn write_private_atomic(path: &Path, content: &[u8]) -> RunnerR
         .map_err(|e| RunnerError::Internal(e.to_string()))
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 #[cfg(unix)]
 mod tests {
     use super::*;
@@ -392,4 +392,4 @@ mod tests {
         let file = std::fs::File::open(&path).unwrap();
         validate_open_state_file(&file, &path, OwnerCheck::CurrentEuid).unwrap();
     }
-}
+});

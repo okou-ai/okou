@@ -103,7 +103,7 @@ pub(crate) async fn recv_retry<T, E: std::fmt::Display>(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -222,4 +222,4 @@ mod tests {
             assert!(rs.on_failure());
         }
     }
-}
+});

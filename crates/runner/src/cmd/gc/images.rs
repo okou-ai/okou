@@ -351,7 +351,7 @@ async fn gc_rootfs_action(
     report
 }
 
-/// GC for the nested image layout: `<images>/<rootfs>/snapshots/<snapshot>/`.
+runner_test_support!(cmd_gc_build; /// GC for the nested image layout: `<images>/<rootfs>/snapshots/<snapshot>/`.
 ///
 /// Three phases, with **global** top-N semantics across all rootfs:
 ///
@@ -380,7 +380,7 @@ async fn gc_nested_images(
         gc_nested_images_with_protected_refs(home, keep_latest, dry_run, &protected_image_refs)
             .await?;
     Ok(report.freed_bytes)
-}
+});
 
 pub(super) async fn gc_nested_images_with_protected_refs(
     home: &HomePaths,
@@ -631,7 +631,7 @@ async fn gc_nested_images_with_protected_refs_and_readers(
     Ok(report)
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 async fn gc_nested_images_with_injected_snapshot_scan_error(
     home: &HomePaths,
     keep_latest: Option<usize>,
@@ -650,9 +650,9 @@ async fn gc_nested_images_with_injected_snapshot_scan_error(
         &mut action_entry_reader,
     )
     .await
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 async fn gc_nested_images_with_injected_action_scan_error(
     home: &HomePaths,
     keep_latest: Option<usize>,
@@ -671,7 +671,7 @@ async fn gc_nested_images_with_injected_action_scan_error(
         &mut action_entry_reader,
     )
     .await
-}
+});
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod tests;);

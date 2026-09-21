@@ -212,7 +212,7 @@ impl From<SessionHistoryTelemetryMetadata> for SessionHistoryTelemetryFields {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 impl SessionHistoryTelemetryFields {
     pub(crate) const fn encoding(self) -> &'static str {
         self.encoding
@@ -241,7 +241,7 @@ impl SessionHistoryTelemetryFields {
     pub(crate) const fn download_source(self) -> Option<&'static str> {
         self.download_source
     }
-}
+});
 
 impl SessionHistoryCacheProbeMetadata {
     pub(crate) const fn new(seen_recently: bool, download_inflight: bool) -> Self {
@@ -273,20 +273,20 @@ impl SessionHistoryResponseTelemetryMetadata {
         }
     }
 
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) const fn content_length_state(self) -> SessionHistoryContentLengthState {
         self.content_length_state
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) const fn content_encoding_state(self) -> SessionHistoryContentEncodingState {
         self.content_encoding_state
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(executor; #[cfg(test)]
     pub(crate) const fn transfer_encoding_state(self) -> SessionHistoryTransferEncodingState {
         self.transfer_encoding_state
-    }
+    });
 
     fn content_length_value(self) -> &'static str {
         self.content_length_state.value()
@@ -418,7 +418,7 @@ const fn bool_string_value(value: bool) -> &'static str {
     if value { "true" } else { "false" }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::ResumeSessionHistoryRefKind;
@@ -606,4 +606,4 @@ mod tests {
             })
         );
     }
-}
+});

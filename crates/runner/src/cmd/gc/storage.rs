@@ -96,7 +96,7 @@ pub(super) async fn gc_storage_cache(home: &HomePaths, dry_run: bool) -> RunnerR
     .await
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 async fn gc_storage_cache_with_cap(
     home: &HomePaths,
     max_bytes: u64,
@@ -104,9 +104,9 @@ async fn gc_storage_cache_with_cap(
 ) -> RunnerResult<u64> {
     let report = gc_storage_cache_with_limits_report(home, max_bytes, u64::MAX, dry_run).await?;
     Ok(report.freed_bytes)
-}
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_gc_build; #[cfg(test)]
 async fn gc_storage_cache_with_limits(
     home: &HomePaths,
     max_bytes: u64,
@@ -115,7 +115,7 @@ async fn gc_storage_cache_with_limits(
 ) -> RunnerResult<u64> {
     let report = gc_storage_cache_with_limits_report(home, max_bytes, max_entries, dry_run).await?;
     Ok(report.freed_bytes)
-}
+});
 
 async fn gc_storage_cache_with_limits_report(
     home: &HomePaths,
@@ -520,5 +520,5 @@ async fn gc_storage_staging_dir(
     Some(size)
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod tests;);

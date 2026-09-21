@@ -299,7 +299,7 @@ fn open_private_file(
     Ok(file)
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use std::os::unix::fs::{PermissionsExt, symlink};
 
@@ -381,4 +381,4 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert!(!target.join("group").exists());
     }
-}
+});

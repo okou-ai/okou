@@ -62,7 +62,7 @@ async fn run_with_home(args: PruneIdleArgs, home: &HomePaths) -> RunnerResult<()
     Ok(())
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_fixtures::ignored_child::{
@@ -181,4 +181,4 @@ mod tests {
         }
         server.await.unwrap();
     }
-}
+});

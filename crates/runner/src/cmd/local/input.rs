@@ -93,7 +93,7 @@ fn run_input_with_home(args: InputArgs, home: HomePaths) -> RunnerResult<ExitCod
     }
 
     #[cfg(test)]
-    race_tests::pre_publication_checkpoint();
+    input_test_support::pre_publication_checkpoint();
 
     queue
         .write_active_input_sync(&ActiveInputEntry {
@@ -107,20 +107,23 @@ fn run_input_with_home(args: InputArgs, home: HomePaths) -> RunnerResult<ExitCod
     Ok(ExitCode::SUCCESS)
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_other; #[cfg(test)]
 pub(crate) fn active_input_publication_locked_for_test() {
-    race_tests::publication_locked_checkpoint();
-}
+    input_test_support::publication_locked_checkpoint();
+});
 
-#[cfg(test)]
+runner_test_support!(cmd_other; #[cfg(test)]
 pub(crate) fn active_input_lock_attempt_for_test(file: &std::fs::File) {
-    race_tests::lock_attempt_checkpoint(file);
-}
+    input_test_support::lock_attempt_checkpoint(file);
+});
 
-#[cfg(test)]
-mod race_tests;
+runner_test_support!(shared; #[cfg(test)]
+mod input_test_support;);
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
+mod race_tests;);
+
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
@@ -345,4 +348,4 @@ mod tests {
 
         fixture.assert_rejected("no claimed local job found");
     }
-}
+});

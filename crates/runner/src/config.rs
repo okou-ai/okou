@@ -207,14 +207,14 @@ pub(crate) async fn read_diagnostic_config_to_string(path: &Path) -> RunnerResul
     .await
 }
 
-#[cfg(test)]
+runner_test_support!(platform_support; #[cfg(test)]
 async fn load_with_home(
     path: &Path,
     home: &HomePaths,
     validate_image_artifacts: bool,
 ) -> RunnerResult<RunnerConfig> {
     load_with_home_inner(path, home, validate_image_artifacts, None).await
-}
+});
 
 async fn load_with_home_inner(
     path: &Path,
@@ -698,5 +698,5 @@ impl RunnerConfig {
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(platform_support; #[cfg(test)]
+mod tests;);

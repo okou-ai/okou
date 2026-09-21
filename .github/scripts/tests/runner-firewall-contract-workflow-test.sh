@@ -22,6 +22,13 @@ gate_step = next(step for step in gate['steps'] if step.get('name') == 'Validate
 standalone = 'runner-firewall-contract-test'
 corpus = 'turbo/packages/connectors/src/__tests__/firewall-base-url-validation-contract.json'
 
+standalone_command = next(
+    step['run'] for step in jobs[standalone]['steps']
+    if step.get('name') == 'Check runner firewall base URL contract')
+assert standalone_command == (
+    'cargo test -p runner --test runner-platform-support '
+    'types::tests::firewall_base_url_validation_matches_shared_contract -- --exact')
+
 
 def run(args, cwd, env=None):
     result = subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=True)

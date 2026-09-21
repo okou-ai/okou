@@ -368,7 +368,7 @@ pub(super) fn remove_unit_file_if_exists(path: &Path) -> RunnerResult<()> {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1005,4 +1005,4 @@ mod tests {
             "staging files must be cleaned up: {staging_files:?}"
         );
     }
-}
+});

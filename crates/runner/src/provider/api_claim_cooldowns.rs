@@ -121,7 +121,7 @@ fn prune_expired(state: &mut ClaimCooldownState, now: Instant) {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -251,4 +251,4 @@ mod tests {
             Some(Duration::from_secs(20))
         );
     }
-}
+});

@@ -194,18 +194,18 @@ impl NetworkLogState {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(super) fn unregister_source_ip(&self, source_ip: &str) {
         let mut state = self.lock();
         state.source_paths.remove(source_ip);
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(super) fn source_ip_registered(&self, source_ip: &str) -> bool {
         self.lock().source_paths.contains_key(source_ip)
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(super) fn source_and_pending_path_share_identity(
         &self,
         source_ip: &str,
@@ -219,7 +219,7 @@ impl NetworkLogState {
             return false;
         };
         Arc::ptr_eq(source.path(), pending_path)
-    }
+    });
 
     pub(super) fn source_snapshot(&self, source_ip: &str) -> Option<SourceSnapshot> {
         let state = self.lock();

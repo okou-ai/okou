@@ -67,8 +67,8 @@ use super::job_discovery::{
     reserve_exact_idle_for_spawn, rollback_reserved_idle_for_spawn,
 };
 use super::job_spawn::{SpawnContext, run_job};
-#[cfg(test)]
-use super::{OuterJobPanicPoint, maybe_panic_outer_job};
+runner_test_support!(cmd_start; #[cfg(test)]
+use super::{OuterJobPanicPoint, maybe_panic_outer_job};);
 use crate::executor::{
     ExecutionFailure, FinalizingDiagnostics, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
     FinalizingHandoffReason, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
@@ -1013,7 +1013,7 @@ async fn complete_claimed_without_sandbox(
     cancellation
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
@@ -1107,4 +1107,4 @@ mod tests {
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(budget.allocated(), (0, 0, 0));
     }
-}
+});

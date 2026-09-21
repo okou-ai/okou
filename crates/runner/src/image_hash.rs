@@ -31,7 +31,7 @@ fn validate_name(hash: &str) -> bool {
             .all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -108,4 +108,4 @@ mod tests {
         assert!(msg.contains("invalid image hash"), "got: {msg}");
         assert!(msg.contains("../etc"), "got: {msg}");
     }
-}
+});

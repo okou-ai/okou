@@ -734,7 +734,7 @@ async fn destroy_candidate(candidate: ParkedIdleCandidate, context: &'static str
     drop(lease);
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1068,4 +1068,4 @@ mod tests {
         replenisher.shutdown().await;
         idle_destroy_tracker.close_and_wait().await;
     }
-}
+});

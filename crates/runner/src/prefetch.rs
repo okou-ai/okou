@@ -119,13 +119,13 @@ impl MemoryPrefetchTasks {
         Self { cancel, handles }
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn empty() -> Self {
         Self {
             cancel: CancellationToken::new(),
             handles: Vec::new(),
         }
-    }
+    });
 
     pub(crate) fn cancel(&self) {
         self.cancel.cancel();
@@ -139,18 +139,18 @@ impl MemoryPrefetchTasks {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn task_count(&self) -> usize {
         self.handles.len()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn from_test_handle(cancel: CancellationToken, handle: JoinHandle<()>) -> Self {
         Self {
             cancel,
             handles: vec![handle],
         }
-    }
+    });
 }
 
 async fn run_prefetches<F>(
@@ -257,7 +257,7 @@ fn prefetch_reader<R: Read>(reader: &mut R, cancel: &CancellationToken) -> Prefe
     }
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Condvar, Mutex};
@@ -594,4 +594,4 @@ mod tests {
             Ok(1)
         }
     }
-}
+});

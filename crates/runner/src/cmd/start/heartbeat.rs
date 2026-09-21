@@ -803,7 +803,7 @@ pub(super) fn collect_heartbeat_state(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config;
@@ -1552,4 +1552,4 @@ mod tests {
         );
         assert_eq!(state.running_count, 0);
     }
-}
+});

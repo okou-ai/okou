@@ -56,7 +56,7 @@ pub(crate) fn base_dir_lock_name(base_dir: &Path) -> String {
     format!("base-dir-{hash}.lock")
 }
 
-/// Versioned digest key for host-shared reuse-key workspace image baselines.
+runner_test_group!(cmd_other, storage; /// Versioned digest key for host-shared reuse-key workspace image baselines.
 ///
 /// The raw reuse key is untrusted and must not be embedded directly in
 /// host paths. The working-dir argument is intentionally ignored: workspace
@@ -66,7 +66,7 @@ pub(crate) fn base_dir_lock_name(base_dir: &Path) -> String {
 #[cfg(test)]
 pub(crate) fn workspace_image_cache_key(reuse_key: &str, working_dir: &str) -> String {
     scoped_workspace_image_cache_key("", "vm0/default", reuse_key, working_dir, 5)
-}
+});
 
 pub(crate) fn scoped_workspace_image_cache_key(
     cache_scope: &str,
@@ -118,10 +118,10 @@ impl RunnerPaths {
         Self { base_dir }
     }
 
-    #[cfg(test)]
+    runner_test_support!(platform_support; #[cfg(test)]
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
-    }
+    });
 
     pub fn status(&self) -> PathBuf {
         self.base_dir.join("status.json")
@@ -168,10 +168,10 @@ impl RunnerPaths {
         self.workspace_dir(sandbox_id).join("workspace.ext4")
     }
 
-    #[cfg(test)]
+    runner_test_support!(platform_support; #[cfg(test)]
     pub fn workspace_image_cache_dir(&self) -> PathBuf {
         self.base_dir.join("workspace-image-cache")
-    }
+    });
 }
 
 /// Paths rooted at /var/lib/vm0-runner/.
@@ -187,10 +187,10 @@ impl HomePaths {
         })
     }
 
-    #[cfg(test)]
+    runner_test_support!(platform_support; #[cfg(test)]
     pub fn with_root(root: PathBuf) -> Self {
         Self { root }
-    }
+    });
 
     pub fn bin_dir(&self) -> PathBuf {
         self.root.join("bin")
@@ -392,11 +392,11 @@ impl RootfsPaths {
         SnapshotPaths::new(self.dir.join("snapshots").join(snapshot_hash))
     }
 
-    /// Parent directory for all snapshots under this rootfs.
+    runner_test_support!(platform_support; /// Parent directory for all snapshots under this rootfs.
     #[cfg(test)]
     pub fn snapshots_dir(&self) -> PathBuf {
         self.dir.join("snapshots")
-    }
+    });
 }
 
 /// Log file paths derived from `HomePaths::logs_dir()`.
@@ -497,7 +497,7 @@ impl LogPaths {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -858,4 +858,4 @@ mod tests {
             home.storage_cache_dir("foo", "v2")
         );
     }
-}
+});

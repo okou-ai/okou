@@ -477,7 +477,7 @@ async fn kill_and_reap_child(program: &str, child: &mut BoundedChild) -> Result<
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -846,4 +846,4 @@ mod tests {
             matches!(error, BoundedCommandError::Lifecycle(message) if message.contains("read test-command stdout: read failed"))
         );
     }
-}
+});

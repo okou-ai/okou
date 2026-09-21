@@ -26,8 +26,8 @@ use super::job_lifecycle::{
     ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
 };
 use super::ownership::OwnershipTransitions;
-#[cfg(test)]
-use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
+runner_test_support!(cmd_start; #[cfg(test)]
+use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};);
 use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_pool::{
@@ -67,13 +67,13 @@ impl<'a> FinalizationTelemetry<'a> {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     fn disabled() -> Self {
         Self {
             telemetry: None,
             physical_park_completed_at: None,
         }
-    }
+    });
 
     fn record_idle_publication(&mut self, success: bool, error: Option<&'static str>) {
         let Some(started_at) = self.physical_park_completed_at else {
@@ -314,7 +314,7 @@ pub(super) async fn finalize_sandbox_for_completion_with_telemetry(
     .await
 }
 
-#[cfg(test)]
+runner_test_support!(cmd_start; #[cfg(test)]
 async fn finalize_sandbox_for_completion(
     sandbox: Option<Box<dyn Sandbox>>,
     active_lease: ActiveBudgetLease,
@@ -327,7 +327,7 @@ async fn finalize_sandbox_for_completion(
         ctx,
     )
     .await
-}
+});
 
 async fn finalize_sandbox_for_completion_inner(
     sandbox: Option<Box<dyn Sandbox>>,
@@ -1228,7 +1228,7 @@ async fn stop_and_destroy_sandbox(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::{HashMap, HashSet};
@@ -3305,4 +3305,4 @@ mod tests {
         );
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
     }
-}
+});

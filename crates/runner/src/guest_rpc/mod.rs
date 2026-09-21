@@ -1,7 +1,7 @@
 //! One assignment-bound guest RPC owner; each consumer retains its business authority.
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(platform_support; #[cfg(test)]
+mod tests;);
 
 use std::{sync::Arc, time::Duration};
 
@@ -60,7 +60,7 @@ impl Runtime {
         ))
     }
 
-    #[cfg(test)]
+    runner_test_group!(network; #[cfg(test)]
     pub(crate) fn start(
         &self,
         acceptor: Arc<dyn GuestRpcAcceptor>,
@@ -69,7 +69,7 @@ impl Runtime {
         cancel: &CancellationToken,
     ) -> Run {
         self.start_with_usage(acceptor, sandbox, run, cancel, None)
-    }
+    });
 
     fn start_with_usage(
         &self,

@@ -177,10 +177,10 @@ impl BuiltinFirewallCatalogRefreshController {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn disabled() -> Self {
         Self { inner: None }
-    }
+    });
 
     pub(super) async fn prepare_startup_readiness(&self) -> RunnerResult<()> {
         let Some(inner) = &self.inner else {
@@ -666,7 +666,7 @@ fn validate_catalog_digest(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     mod send_timeout;
 
@@ -2524,4 +2524,4 @@ mod tests {
             "unexpected error: {error}"
         );
     }
-}
+});

@@ -464,7 +464,7 @@ fn sandbox_proxy_source(snapshot: io::Result<RunUsageObservation>) -> SandboxPro
     }
 }
 
-#[cfg(test)]
+runner_test_group!(platform_support; #[cfg(test)]
 pub(crate) fn test_run(run_id: RunId) -> Arc<Run> {
     let (proxy, _crash_rx) = crate::proxy::MitmProxy::noop();
     Arc::new(Run {
@@ -472,7 +472,7 @@ pub(crate) fn test_run(run_id: RunId) -> Arc<Run> {
         api: ApiFirstTurnSource::NoInference { sampled_at: 0 },
         mitm: MitmUsageHandle::from(&proxy).for_run(run_id),
     })
-}
+});
 
 fn combine(api: &ApiFirstTurnSource, sandbox: &SandboxProxySource) -> Combined {
     let mut values = [0_u128; 4];
@@ -542,5 +542,5 @@ fn combine(api: &ApiFirstTurnSource, sandbox: &SandboxProxySource) -> Combined {
     }
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(runtime_control; #[cfg(test)]
+mod tests;);

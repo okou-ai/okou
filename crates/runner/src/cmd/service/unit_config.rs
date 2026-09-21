@@ -202,7 +202,7 @@ fn tokenize_systemd_exec_start(input: &str) -> Option<Vec<String>> {
     Some(tokens)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -595,4 +595,4 @@ ExecStart="/usr/bin/runner" start --config "/etc/runtime-runner.yaml"
             Some(PathBuf::from("/etc/runtime-runner.yaml"))
         );
     }
-}
+});

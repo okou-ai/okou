@@ -517,7 +517,7 @@ impl MitmProxy {
     }
 }
 
-#[cfg(test)]
+runner_test_support!(network; #[cfg(test)]
 impl MitmProxy {
     /// Create a noop proxy for testing. No real process is spawned.
     ///
@@ -573,7 +573,7 @@ impl MitmProxy {
             .expect("test child installed")
             .set_reap_gate(gate);
     }
-}
+});
 
 impl Drop for MitmProxy {
     fn drop(&mut self) {
@@ -910,7 +910,7 @@ fn find_available_port() -> RunnerResult<u16> {
     Ok(port)
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::paths::HomePaths;
@@ -2453,4 +2453,4 @@ exit 42
 
         assert!(current.load(Ordering::Acquire));
     }
-}
+});

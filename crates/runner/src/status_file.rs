@@ -136,7 +136,7 @@ pub(crate) struct StatusBlankSandbox {
     pub(crate) sandbox_id: String,
 }
 
-#[cfg(test)]
+runner_test_group!(runtime_control; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -419,4 +419,4 @@ mod tests {
 
         assert!(matches!(error, StatusFileReadError::Read { .. }));
     }
-}
+});

@@ -22,8 +22,8 @@ use crate::ids::RunId;
 
 mod read_failures;
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(executor; #[cfg(test)]
+mod tests;);
 
 use read_failures::ReadFailures;
 

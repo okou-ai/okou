@@ -222,7 +222,7 @@ where
     }
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
     use std::future::{Pending, Ready, pending, ready};
@@ -339,4 +339,4 @@ mod tests {
         assert_eq!(duration, u32::MAX);
         assert!(saturated);
     }
-}
+});

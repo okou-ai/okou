@@ -30,10 +30,10 @@ impl ProtectedImageRefs {
         matches!(self, Self::Complete(_))
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_gc_build; #[cfg(test)]
     pub(super) const fn incomplete() -> Self {
         Self::Incomplete
-    }
+    });
 }
 
 impl Default for ProtectedImageRefs {
@@ -325,5 +325,5 @@ async fn collect_config_image_refs(
     true
 }
 
-#[cfg(test)]
-mod tests;
+runner_test_group!(cmd_gc_build; #[cfg(test)]
+mod tests;);

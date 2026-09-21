@@ -1,8 +1,8 @@
 //! Persistent extracted files with bounded in-flight memory and worker ownership.
 
 use crate::paths::HomePaths;
-#[cfg(test)]
-use bytes::Bytes;
+runner_test_support!(storage; #[cfg(test)]
+use bytes::Bytes;);
 use guest_contracts::storage_files::{self, StorageFile};
 use std::io::{self, Read};
 use std::sync::{Arc, Mutex};
@@ -133,7 +133,7 @@ impl DecodedCache {
         })
     }
 
-    /// Read already extracted files, without opening or decoding their archive.
+    runner_test_support!(storage; /// Read already extracted files, without opening or decoding their archive.
     /// Missing/busy/ineligible entries retain ordinary archive delivery.
     #[cfg(test)]
     pub(crate) async fn get_ready(
@@ -146,7 +146,7 @@ impl DecodedCache {
             .await?
             .pop()
             .flatten())
-    }
+    });
 
     /// Amortize blocking-task dispatch without retaining contents between runs.
     pub(crate) async fn get_ready_batch(
@@ -315,7 +315,7 @@ impl DecodedCache {
             .unwrap_or(false))
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     async fn resolve(
         &self,
         name: &str,
@@ -343,7 +343,7 @@ impl DecodedCache {
         })
         .await
         .map(Option::flatten)
-    }
+    });
 }
 
 fn cached_files(
@@ -436,7 +436,7 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
     Ok(Some(files))
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -919,4 +919,4 @@ mod tests {
         tokio::join!(biased; lookups, peer);
         cache.shutdown().await;
     }
-}
+});

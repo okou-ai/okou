@@ -137,7 +137,7 @@ fn workspace_freeze_command_for(
     )
 }
 
-#[cfg(test)]
+runner_test_group!(storage; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -459,4 +459,4 @@ log_call() {{
             assert_eq!(lines[3], format!("fsfreeze\t--freeze\t{descriptor}"));
         }
     }
-}
+});

@@ -116,8 +116,8 @@ use super::idle_lifecycle::{
 };
 use super::job_spawn::{JobProfile, SpawnContext, SpawnJobRequest, spawn_job};
 use super::ownership::{OwnershipTransitions, RunSandbox};
-#[cfg(test)]
-use super::{OuterJobPanicPoint, maybe_panic_outer_job};
+runner_test_support!(cmd_start; #[cfg(test)]
+use super::{OuterJobPanicPoint, maybe_panic_outer_job};);
 use crate::config::ProfileConfig;
 use crate::executor::{
     ExactReuseSpeculationTiming, GuestTimezoneSyncOutcome, RunnerPreSpawnOperationTiming,
@@ -2923,7 +2923,7 @@ async fn try_reuse_from_pool(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -3031,4 +3031,4 @@ mod tests {
 
         assert_eq!(read_active_run_phase(&status_path), "running");
     }
-}
+});

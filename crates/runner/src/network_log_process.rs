@@ -110,7 +110,7 @@ impl NetworkLogProcess {
         self.drain.clone()
     }
 
-    /// Create a lifecycle owner without a child process for runner tests.
+    runner_test_support!(network; /// Create a lifecycle owner without a child process for runner tests.
     #[cfg(test)]
     pub(crate) fn noop(child_label: &'static str, drain_source: &'static str) -> Self {
         let cancel = CancellationToken::new();
@@ -139,14 +139,14 @@ impl NetworkLogProcess {
             reap_gate: None,
             drain,
         }
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(crate) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
         self.reap_gate = Some(gate);
-    }
+    });
 
-    /// Replace the monitor with a task that panics when triggered.
+    runner_test_support!(cmd_start; /// Replace the monitor with a task that panics when triggered.
     #[cfg(test)]
     pub(crate) async fn replace_monitor_with_panic_trigger_for_test(
         &mut self,
@@ -186,7 +186,7 @@ impl NetworkLogProcess {
             }
         }));
         trigger
-    }
+    });
 }
 
 impl Drop for NetworkLogProcess {
@@ -199,7 +199,7 @@ impl Drop for NetworkLogProcess {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 #[cfg(target_os = "linux")]
 mod tests {
     use super::*;
@@ -237,4 +237,4 @@ mod tests {
         .await
         .expect("dropped network-log process should reap its child");
     }
-}
+});

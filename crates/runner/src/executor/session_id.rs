@@ -13,7 +13,7 @@ pub(super) fn invalid_session_id_diagnostic_preview(id: &str) -> String {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -74,4 +74,4 @@ mod tests {
             "preview should not contain the full invalid id: {preview}"
         );
     }
-}
+});

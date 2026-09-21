@@ -19,7 +19,7 @@ pub(super) async fn file_sizes(path: &Path) -> (String, String) {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use std::os::unix::fs::MetadataExt;
 
@@ -62,4 +62,4 @@ mod tests {
         assert_eq!(logical, "?");
         assert_eq!(disk, "?");
     }
-}
+});

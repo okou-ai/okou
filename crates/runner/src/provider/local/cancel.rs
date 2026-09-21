@@ -12,12 +12,12 @@ use tracing::{info, warn};
 use crate::ids::RunId;
 use crate::local_queue;
 use crate::local_queue::{CancelTargetState, LocalQueue};
-#[cfg(test)]
-use crate::run_cancellation::RunCancellationRegistration;
+runner_test_support!(provider; #[cfg(test)]
+use crate::run_cancellation::RunCancellationRegistration;);
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
 
-#[cfg(test)]
-use super::ScanObserver;
+runner_test_support!(provider; #[cfg(test)]
+use super::ScanObserver;);
 use super::watch::{QueueFileKind, RECONCILE_INTERVAL, ensure_watcher, next_change_or_pending};
 
 #[derive(Clone)]
@@ -258,15 +258,15 @@ impl LocalCancelScanner {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) async fn wait_for_scan_count(&self, expected: usize) {
         self.scan_observer.wait_for_count(expected).await;
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     pub(super) fn scan_count(&self) -> usize {
         self.scan_observer.count()
-    }
+    });
 }
 
 impl LocalCancelWatcher {
@@ -374,7 +374,7 @@ impl Drop for LocalCancelWatcher {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
@@ -917,4 +917,4 @@ mod tests {
             "cancel file should be deleted after trigger"
         );
     }
-}
+});

@@ -26,11 +26,11 @@ pub(crate) use park_transition::{
     IdleParkRequestParts, SpeculativeReparkResult,
 };
 pub(crate) use parking_gate::ParkingGate;
-#[cfg(test)]
-pub(crate) use parking_gate::ParkingState;
+runner_test_support!(runtime_control; #[cfg(test)]
+pub(crate) use parking_gate::ParkingState;);
 
-#[cfg(test)]
-pub(crate) mod test_support;
+runner_test_support!(shared; #[cfg(test)]
+pub(crate) mod test_support;);
 
 /// Configuration for the idle sandbox pool.
 #[derive(Debug, Clone, Default)]
@@ -91,10 +91,10 @@ impl ExactIdleReservationMiss {
 }
 
 impl IdlePool {
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn new(config: IdlePoolConfig) -> Self {
         Self::new_with_parking_gate(config, ParkingGate::new_open())
-    }
+    });
 
     pub(crate) fn new_with_parking_gate(config: IdlePoolConfig, parking_gate: ParkingGate) -> Self {
         let (changes, _changes_rx) = watch::channel(0);
@@ -125,14 +125,14 @@ impl IdlePool {
         self.park_at(candidate, Instant::now())
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn park_at_for_test(
         &mut self,
         candidate: ParkedIdleCandidate,
         parked_at: Instant,
     ) -> ParkResult {
         self.park_at(candidate, parked_at)
-    }
+    });
 
     fn park_at(&mut self, candidate: ParkedIdleCandidate, parked_at: Instant) -> ParkResult {
         let identity = &candidate.metadata.identity;
@@ -424,13 +424,13 @@ impl IdlePool {
             .any(|entry| entry.metadata.sandbox_id == sandbox_id)
     }
 
-    /// Return a reuse-key-sorted snapshot of the idle pool suitable
+    runner_test_support!(runtime_control; /// Return a reuse-key-sorted snapshot of the idle pool suitable
     /// for status.json. Produced in a single iteration so `reuse_key` and
     /// `sandbox_id` can never drift out of pairing.
     #[cfg(test)]
     pub fn held_snapshot(&self) -> Vec<IdleSandbox> {
         self.status_snapshot().idle_sandboxes
-    }
+    });
 
     /// Return every reusable sandbox currently held in the pool, sorted by
     /// reuse key for deterministic heartbeat output.
@@ -460,12 +460,12 @@ impl IdlePool {
         states
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn held_reuse_keys(&self) -> Vec<String> {
         let mut reuse_keys: Vec<String> = self.exact_entries.keys().cloned().collect();
         reuse_keys.sort_unstable();
         reuse_keys
-    }
+    });
 
     /// Total exact and blank sandboxes owned by the pool.
     pub fn len(&self) -> usize {
@@ -479,17 +479,17 @@ impl IdlePool {
         self.changes.subscribe()
     }
 
-    /// Current lifecycle parking state.
+    runner_test_support!(runtime_control; /// Current lifecycle parking state.
     #[cfg(test)]
     pub fn parking_state(&self) -> ParkingState {
         self.parking_gate.state()
-    }
+    });
 
-    /// Shared lifecycle parking gate.
+    runner_test_support!(runtime_control; /// Shared lifecycle parking gate.
     #[cfg(test)]
     pub fn parking_gate(&self) -> ParkingGate {
         self.parking_gate.clone()
-    }
+    });
 
     /// Detach only the currently pool-owned exact entries. Reservations and
     /// blanks are not part of this one-shot operation; later parking stays open.
@@ -572,14 +572,14 @@ pub enum ParkResult {
     Rejected(RejectedParkedIdleCandidate),
 }
 
-#[cfg(test)]
-mod destroy_tests;
+runner_test_group!(runtime_control; #[cfg(test)]
+mod destroy_tests;);
 
-#[cfg(test)]
-mod reclamation_tests;
+runner_test_group!(runtime_control; #[cfg(test)]
+mod reclamation_tests;);
 
-#[cfg(test)]
-mod park_transition_tests;
+runner_test_group!(runtime_control; #[cfg(test)]
+mod park_transition_tests;);
 
-#[cfg(test)]
-mod pool_tests;
+runner_test_group!(runtime_control; #[cfg(test)]
+mod pool_tests;);

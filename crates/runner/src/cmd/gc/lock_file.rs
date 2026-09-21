@@ -84,7 +84,7 @@ async fn remove_lock_file(lock_path: &Path) -> bool {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_gc_build; #[cfg(test)]
 mod tests {
     use super::*;
     use nix::fcntl::FlockArg;
@@ -245,4 +245,4 @@ mod tests {
             "a concurrently removed lock path must not produce a warning"
         );
     }
-}
+});

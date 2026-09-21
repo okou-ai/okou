@@ -72,7 +72,7 @@ impl NetworkLogDrainCoordinator {
         Self::new(Vec::new())
     }
 
-    #[cfg(test)]
+    runner_test_support!(network; #[cfg(test)]
     pub(crate) fn new_with_timeout_for_test(
         producers: Vec<NetworkLogDrainProducer>,
         timeout: Duration,
@@ -81,7 +81,7 @@ impl NetworkLogDrainCoordinator {
             producers: Arc::new(producers),
             timeout,
         }
-    }
+    });
 
     pub async fn drain(&self, context: NetworkLogDrainContext<'_>) -> NetworkLogDrainReport {
         let outcomes = join_all(
@@ -362,10 +362,10 @@ where
     }
 }
 
-#[cfg(test)]
-mod cooperative_tests;
+runner_test_group!(network; #[cfg(test)]
+mod cooperative_tests;);
 
-#[cfg(test)]
+runner_test_group!(network; #[cfg(test)]
 mod tests {
     use std::io;
     use std::path::Path;
@@ -873,4 +873,4 @@ mod tests {
 
         fn consume(self: Pin<&mut Self>, _amt: usize) {}
     }
-}
+});

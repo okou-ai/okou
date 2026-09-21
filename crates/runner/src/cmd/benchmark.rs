@@ -537,7 +537,7 @@ async fn run_in_sandbox(
     (result, timing)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_other; #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -1201,4 +1201,4 @@ mod tests {
             snapshot: None,
         }
     }
-}
+});

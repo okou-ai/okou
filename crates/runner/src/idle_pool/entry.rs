@@ -164,15 +164,15 @@ pub(crate) struct FinalizingHandoffCandidate {
 }
 
 impl ParkedIdleCandidate {
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn reuse_key(&self) -> Option<&str> {
         self.metadata.reuse_key()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub(crate) fn sandbox_id(&self) -> SandboxId {
         self.metadata.sandbox_id
-    }
+    });
 
     pub(crate) fn with_last_completed_at(mut self, last_completed_at: String) -> Self {
         self.metadata = self.metadata.with_last_completed_at(last_completed_at);
@@ -559,13 +559,13 @@ pub(crate) struct RetainedIdleDestroyResult {
 }
 
 impl IdleDestroyPayload {
-    /// Finalize the idle sandbox and destroy it via its factory.
+    runner_test_support!(runtime_control; /// Finalize the idle sandbox and destroy it via its factory.
     #[cfg(test)]
     pub(crate) async fn stop_and_destroy(self) -> DestroyOutcome {
         self.finalize_workspace_and_destroy("idle_destroy")
             .await
             .outcome
-    }
+    });
 
     pub(crate) async fn finalize_workspace_and_destroy(
         self,
@@ -665,10 +665,10 @@ pub struct IdleDestroyJob {
 }
 
 impl IdleDestroyJob {
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub async fn run(self) {
         let _ = self.run_with_context("idle_destroy").await;
-    }
+    });
 
     pub async fn run_with_context(self, context: &'static str) -> bool {
         let result = self.run_retaining_lease(context).await;
@@ -712,15 +712,15 @@ impl IdleDestroyJob {
         &self.profile_name
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn budget_vcpu(&self) -> u32 {
         self.budget_lease.vcpu()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn budget_memory_mb(&self) -> u32 {
         self.budget_lease.memory_mb()
-    }
+    });
 }
 
 /// Park was rejected before the idle pool accepted ownership.
@@ -776,15 +776,15 @@ impl IdleEntry {
         self.metadata.is_blank()
     }
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn budget_vcpu(&self) -> u32 {
         self.budget_lease.vcpu()
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(runtime_control; #[cfg(test)]
     pub fn budget_memory_mb(&self) -> u32 {
         self.budget_lease.memory_mb()
-    }
+    });
 
     /// Bind the next run identity while parked, then unpark and consume this
     /// idle entry. On failure the entry becomes an idle-owned destroy job so

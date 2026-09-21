@@ -688,7 +688,7 @@ impl ConnectorRuntimeSyncCore {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn sync_builtin_connector_runtime_now(
         &self,
         run_id: RunId,
@@ -700,7 +700,7 @@ impl ConnectorRuntimeSyncCore {
         let targets = self.current_sync_targets(run_id, connector_slugs).await;
         self.sync_connector_runtime_targets_now(run_id, targets, &registration_cancel)
             .await;
-    }
+    });
 
     async fn sync_connector_runtime_targets_now(
         &self,
@@ -735,7 +735,7 @@ impl ConnectorRuntimeSyncCore {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn sync_connector_runtime_batch_now(
         &self,
         run_id: RunId,
@@ -750,7 +750,7 @@ impl ConnectorRuntimeSyncCore {
             &registration_cancel,
         )
         .await
-    }
+    });
 
     async fn sync_connector_runtime_batch_for_registration(
         &self,
@@ -1332,7 +1332,7 @@ impl ConnectorRuntimeSyncCore {
         );
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn current_registration_cancel(&self, run_id: RunId) -> Option<CancellationToken> {
         self.inner
             .active_runs
@@ -1340,7 +1340,7 @@ impl ConnectorRuntimeSyncCore {
             .await
             .get(&run_id)
             .map(|active| active.cancel.clone())
-    }
+    });
 
     async fn registration_is_current(
         &self,
@@ -1355,7 +1355,7 @@ impl ConnectorRuntimeSyncCore {
             .is_some_and(|active| &active.cancel == registration_cancel)
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn current_sync_target(
         &self,
         run_id: RunId,
@@ -1371,9 +1371,9 @@ impl ConnectorRuntimeSyncCore {
             target: runtime_target,
             generation: connector.generation,
         })
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn current_sync_targets(
         &self,
         run_id: RunId,
@@ -1398,7 +1398,7 @@ impl ConnectorRuntimeSyncCore {
                 })
             })
             .collect()
-    }
+    });
 
     async fn active_sync_targets(
         &self,
@@ -1661,7 +1661,7 @@ impl ConnectorRuntimeSyncCore {
         summary
     }
 
-    #[cfg(test)]
+    runner_test_support!(provider; #[cfg(test)]
     async fn replace_sync_deadline_if_current(
         &self,
         run_id: RunId,
@@ -1673,7 +1673,7 @@ impl ConnectorRuntimeSyncCore {
         };
         self.replace_sync_deadline_for_registration(run_id, target, deadline, &registration_cancel)
             .await
-    }
+    });
 
     async fn replace_sync_deadline_for_registration(
         &self,
@@ -2069,7 +2069,7 @@ fn abort_tasks(tasks: impl IntoIterator<Item = tokio::task::JoinHandle<()>>) {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(provider; #[cfg(test)]
 mod tests {
     use super::*;
 
@@ -6936,4 +6936,4 @@ mod tests {
 
         harness.shutdown().await;
     }
-}
+});

@@ -86,15 +86,15 @@ pub(crate) struct StorageBaselineObserver {
     test_probe: Option<Box<dyn Fn(BaselineObservationTestEvent) + Send + Sync>>,
 }
 
-#[cfg(test)]
+runner_test_support!(executor; #[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum BaselineObservationTestEvent {
     BeforeLock { contended: bool },
     BeforeFirstInsert,
-}
+});
 
 impl StorageBaselineObserver {
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(super) fn with_test_probe(
         probe: impl Fn(BaselineObservationTestEvent) + Send + Sync + 'static,
     ) -> Self {
@@ -102,7 +102,7 @@ impl StorageBaselineObserver {
             test_probe: Some(Box::new(probe)),
             ..Self::default()
         }
-    }
+    });
 
     /// Record the current baseline-candidate observation and its bounded telemetry dimensions.
     ///

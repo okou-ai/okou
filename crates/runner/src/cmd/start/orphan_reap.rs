@@ -90,10 +90,10 @@ impl OrphanedActiveRuns {
             .collect()
     }
 
-    #[cfg(test)]
+    runner_test_support!(cmd_start; #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.lock().len()
-    }
+    });
 
     fn lock(&self) -> MutexGuard<'_, BTreeMap<RunId, OrphanedActiveRunState>> {
         self.inner
@@ -318,7 +318,7 @@ async fn reap_orphaned_active_runs_with_firecrackers(
     }
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::idle_pool::{
@@ -1063,4 +1063,4 @@ mod tests {
         fixture.assert_status(&[], &[(run_id, sandbox_id)]).await;
         fixture.assert_orphan_count(1).await;
     }
-}
+});

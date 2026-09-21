@@ -862,13 +862,13 @@ impl WorkspaceImageCache {
         .states
     }
 
-    /// Inspect cache state without a running profile configuration in tests.
+    runner_test_support!(storage; /// Inspect cache state without a running profile configuration in tests.
     #[cfg(test)]
     pub(crate) async fn held_workspace_states(&self) -> Vec<HeldWorkspaceState> {
         self.held_workspace_states_matching_profiles(None, None, false)
             .await
             .states
-    }
+    });
 
     async fn held_workspace_states_matching_profiles(
         &self,
@@ -1002,21 +1002,21 @@ impl WorkspaceImageCache {
         }
     }
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn reset_held_state_root_scan_count(&self) {
         self.inner
             .held_state_root_scan_count
             .store(0, std::sync::atomic::Ordering::Relaxed);
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) fn held_state_root_scan_count(&self) -> usize {
         self.inner
             .held_state_root_scan_count
             .load(std::sync::atomic::Ordering::Relaxed)
-    }
+    });
 
-    #[cfg(test)]
+    runner_test_group!(cmd_start; #[cfg(test)]
     pub(crate) async fn wait_for_held_state_root_scan_after(
         &self,
         previous_count: usize,
@@ -1046,7 +1046,7 @@ impl WorkspaceImageCache {
                     )
                 });
         }
-    }
+    });
 
     async fn publishable_held_workspace_state(
         &self,
@@ -1419,10 +1419,10 @@ struct HeldWorkspaceStateScan {
 }
 
 impl WorkspaceImageLease {
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) fn working_dir(&self) -> &str {
         &self.working_dir
-    }
+    });
 
     pub(crate) fn result(&self) -> WorkspaceCacheCheckoutResult {
         self.result
@@ -1487,7 +1487,7 @@ impl WorkspaceImageLease {
             .await
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) async fn promote(
         self,
         run_id: RunId,
@@ -1507,7 +1507,7 @@ impl WorkspaceImageLease {
         };
         let outcome = promotion.promote().await?;
         Ok(matches!(outcome, WorkspaceImagePromotionOutcome::Promoted))
-    }
+    });
 
     fn promotion_target(&self) -> Option<WorkspaceImagePromotionTarget> {
         if !self.workspace_drive_enabled || !is_safe_guest_working_dir(&self.working_dir) {
@@ -1659,10 +1659,10 @@ impl WorkspaceImagePromotionContext {
         self.validate_expected_identity(&self.cache, request)
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) async fn promote(&self) -> RunnerResult<WorkspaceImagePromotionOutcome> {
         self.promote_without_session_history_sidecar().await
-    }
+    });
 
     pub(crate) async fn try_acquire_session_history_sidecar_entry_guard(
         &self,
@@ -1846,7 +1846,7 @@ impl WorkspaceImagePromotionContext {
             .await
     }
 
-    #[cfg(test)]
+    runner_test_support!(storage; #[cfg(test)]
     pub(crate) fn try_into_active_lease(
         self,
         expected: &WorkspaceImagePromotionIdentity,
@@ -1854,7 +1854,7 @@ impl WorkspaceImagePromotionContext {
     ) -> Result<WorkspaceImageLease, WorkspaceImagePromotionIdentityMismatch> {
         self.validate_identity(expected)?;
         Ok(self.into_active_lease_unchecked(workspace_drive_available))
-    }
+    });
 
     pub(crate) fn try_into_active_lease_preserving_context(
         self,

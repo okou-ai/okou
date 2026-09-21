@@ -1323,7 +1323,7 @@ pub(super) async fn run_resume(args: ResumeArgs) -> RunnerResult<()> {
     resume_with_ops(&unit, &home, &mut RealServiceResumeOps).await
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_service; #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
     use std::path::{Path, PathBuf};
@@ -3336,4 +3336,4 @@ mod tests {
         let unknown = ensure_resume_mode_is_draining(&unit, "paused").unwrap_err();
         assert!(unknown.to_string().contains("unknown mode"));
     }
-}
+});

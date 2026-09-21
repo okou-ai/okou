@@ -165,7 +165,7 @@ fn idle_snapshot_contains_sandbox_id(
             .any(|blank| blank.sandbox_id == sandbox_id)
 }
 
-#[cfg(test)]
+runner_test_group!(cmd_start; #[cfg(test)]
 mod tests {
     use super::*;
     use crate::status::{BlankSandbox, IdleSandbox};
@@ -410,4 +410,4 @@ mod tests {
             serde_json::json!([{ "sandbox_id": sandbox_id.to_string() }])
         );
     }
-}
+});

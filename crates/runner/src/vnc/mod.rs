@@ -6,8 +6,8 @@ mod operations;
 mod protocol;
 mod scope;
 mod sessions;
-#[cfg(test)]
-mod tests;
+runner_test_group!(network; #[cfg(test)]
+mod tests;);
 
 use serde::Serialize;
 use std::sync::Arc;

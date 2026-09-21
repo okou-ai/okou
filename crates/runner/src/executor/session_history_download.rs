@@ -171,10 +171,10 @@ pub(super) struct SessionHistoryDownloadPhaseTiming {
 }
 
 impl SessionHistoryDownloadTimings {
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(super) fn encoding(&self) -> Option<&'static str> {
         self.metadata.map(SessionHistoryTelemetryMetadata::encoding)
-    }
+    });
 
     pub(super) fn metadata(&self) -> Option<SessionHistoryTelemetryMetadata> {
         self.metadata
@@ -204,11 +204,11 @@ impl SessionHistoryDownloadTimings {
         self.request_status = Some(SessionHistoryDownloadPhaseTiming { elapsed, success });
     }
 
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     pub(super) fn response_metadata(&self) -> Option<SessionHistoryResponseTelemetryMetadata> {
         self.metadata
             .and_then(SessionHistoryTelemetryMetadata::response)
-    }
+    });
 
     fn for_metadata(metadata: SessionHistoryTelemetryMetadata) -> Self {
         Self {
@@ -293,10 +293,10 @@ impl SessionHistoryProbe {
         }
     }
 
-    #[cfg(test)]
+    runner_test_support!(executor; #[cfg(test)]
     fn with_limits_for_test(ttl: Duration, capacity: usize) -> Self {
         Self::new(ttl, capacity)
-    }
+    });
 
     fn observe(&self, history_ref: &ResumeSessionHistoryRef) -> SessionHistoryProbeRegistration {
         let now = Instant::now();
@@ -1129,7 +1129,7 @@ fn redact_url_query(url: &str) -> String {
     }
 }
 
-#[cfg(test)]
+runner_test_group!(executor; #[cfg(test)]
 mod tests {
     use std::io::{self, Write};
 
@@ -2951,4 +2951,4 @@ mod tests {
             _ => panic!("expected cancelled download"),
         }
     }
-}
+});
