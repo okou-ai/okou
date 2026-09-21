@@ -2986,3 +2986,23 @@ while jobs or usage receipts remain outstanding. Disable new admissions,
 finish or cancel admitted jobs, and verify durable settlement receipts before
 such a rollback. Database expansion is retained. A merged PR does not prove
 fleet parity, the drain, or paid-provider readiness.
+
+## Browser native input foundation (#35821)
+
+The `browser_user_action_requests` table must exist before an API instance that
+serves `browserNativeInput` starts. The schema is additive: older APIs ignore
+the table, and rollback leaves it in place. There is no backfill or production
+data operation.
+
+Keep `browserNativeInput` globally disabled during mixed-version deployment.
+Its initial registry policy is staff-only, but an explicit override must not be
+enabled until every serving API instance and Clerk account-cleanup worker has
+this implementation. Older API instances reject the new routes and older
+cleanup workers do not explicitly remove outstanding requests.
+
+The API rejects unknown persisted payload versions instead of guessing. New
+terminal requests remain readable after their Browser lease expires so the
+Platform can retry notification only; values are never stored and Browser
+mutation is never retried. Rolling back the API requires disabling the switch
+first. The retained expansion table needs no contraction until all requests
+created by the newer API are outside their product retention window.

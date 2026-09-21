@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+  browserUserActionApplyRequestSchema,
+  browserUserActionCreateRequestSchema,
+  browserUserActionResponseSchema,
+} from "./browser-user-actions";
+
+const uuid = (digit: string) => {
+  return `${digit.repeat(8)}-${digit.repeat(4)}-4${digit.repeat(3)}-8${digit.repeat(3)}-${digit.repeat(12)}`;
+};
+
+describe("Browser user-action contracts", () => {
+  it("accepts a strict bounded input request", () => {
+    expect(
+      browserUserActionCreateRequestSchema.parse({
+        kind: "input",
+        callbackPrompt: "Continue after the user supplies the code",
+        fields: [
+          {
+            key: "code",
+            label: "Verification code",
+            fieldKind: "one_time_code",
+            required: true,
+            selector: "input[autocomplete=one-time-code]",
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "input", fields: [{ key: "code" }] });
+  });
+
+  it("rejects duplicate field and submitted-value keys", () => {
+    const field = {
+      key: "username",
+      label: "Username",
+      fieldKind: "username" as const,
+      required: true,
+      selector: "#username",
+    };
+    expect(
+      browserUserActionCreateRequestSchema.safeParse({
+        kind: "input",
+        callbackPrompt: "Enter credentials",
+        fields: [field, field],
+      }).success,
+    ).toBe(false);
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [
+          { key: "username", value: "one" },
+          { key: "username", value: "two" },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unknown properties and oversized values", () => {
+    expect(
+      browserUserActionCreateRequestSchema.safeParse({
+        kind: "direct_interaction",
+        callbackPrompt: "Finish verification",
+        reason: "Complete the site challenge",
+        selector: "#must-not-be-accepted",
+      }).success,
+    ).toBe(false);
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [
+          {
+            key: "password",
+            value: "x".repeat(BROWSER_USER_ACTION_MAX_VALUE_LENGTH + 1),
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps exact target and value data out of public responses", () => {
+    const safe = {
+      requestToken: "vm0_browser_user_action_public-token",
+      kind: "input" as const,
+      state: "pending" as const,
+      siteOrigin: "https://example.com",
+      expiresAt: "2026-09-21T10:00:00.000Z",
+      completedAt: null,
+      agentId: uuid("1"),
+      threadId: uuid("2"),
+      callbackIds: {
+        success: {
+          clientEventId: uuid("3"),
+          chatThreadSortEventId: uuid("4"),
+        },
+        cancellation: {
+          clientEventId: uuid("5"),
+          chatThreadSortEventId: uuid("6"),
+        },
+      },
+      fields: [
+        {
+          key: "password",
+          label: "Password",
+          fieldKind: "password" as const,
+          required: true,
+        },
+      ],
+    };
+    expect(browserUserActionResponseSchema.parse(safe)).toStrictEqual(safe);
+    expect(
+      browserUserActionResponseSchema.safeParse({
+        ...safe,
+        pageTargetId: "target",
+        selector: "#password",
+        value: "secret",
+      }).success,
+    ).toBe(false);
+  });
+});

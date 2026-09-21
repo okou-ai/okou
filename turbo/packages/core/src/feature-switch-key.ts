@@ -89,4 +89,5 @@ export enum FeatureSwitchKey {
   OnboardingSourcesFirst = "onboardingSourcesFirst",
   OptimisticMessageSpinner = "optimisticMessageSpinner",
   UserMessageLinks = "userMessageLinks",
+  BrowserNativeInput = "browserNativeInput",
 }

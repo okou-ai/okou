@@ -220,6 +220,7 @@ export {
   type TestTeamsDispatchProbeResponse,
 } from "./test-teams-dispatch-probe";
 export { emailInboundContract } from "./email";
+export * from "./browser-user-actions";
 export {
   webhookClerkContract,
   webhookEventsContract,

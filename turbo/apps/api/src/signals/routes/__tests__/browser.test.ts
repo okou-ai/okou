@@ -8,6 +8,7 @@ import {
   browserAuthorizationRequestsContract,
   browserContract,
 } from "@okouai/api-contracts/contracts/browser";
+import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
 import {
   chatThreadComputerUseHostContract,
   chatThreadsContract,
@@ -42,6 +43,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { testBrowserReconcileRoutes } from "../test-browser-reconcile";
 import { browserRoutes } from "../browser";
 import { browserAuthorizationRoutes } from "../browser-authorization";
+import { browserUserActionRoutes } from "../browser-user-actions";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadComputerUseHostRoutes } from "../chat-threads-computer-use-host";
 
@@ -75,6 +77,296 @@ aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);
 });
 
+describe("Browser user-action route", () => {
+  it("creates and applies native Browser input without exposing selector or value data", async () => {
+    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Ask for credentials on the current Browser page",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    context.mocks.browserUseCdp.command.mockImplementation((command) => {
+      if (command.method === "Target.getTargets") {
+        return {
+          targetInfos: [
+            {
+              targetId: "native-input-target",
+              type: "page",
+              url: "https://example.com/login",
+            },
+          ],
+        };
+      }
+      if (command.method === "Browser.getWindowForTarget") {
+        return { windowId: 7 };
+      }
+      if (command.method === "Target.attachToTarget") {
+        return { sessionId: "native-input-session" };
+      }
+      if (command.method === "Runtime.evaluate") {
+        return { result: { value: true } };
+      }
+      if (command.method === "Page.getFrameTree") {
+        return {
+          frameTree: {
+            frame: {
+              id: "main-frame",
+              loaderId: "native-input-loader",
+              url: "https://example.com/login",
+            },
+          },
+        };
+      }
+      if (command.method === "DOM.getDocument") {
+        return { root: { nodeId: 1 } };
+      }
+      if (command.method === "DOM.querySelectorAll") {
+        return { nodeIds: [11] };
+      }
+      if (command.method === "DOM.describeNode") {
+        return { node: { backendNodeId: 42 } };
+      }
+      if (command.method === "DOM.resolveNode") {
+        return { object: { objectId: "native-input-object" } };
+      }
+      if (command.method === "Runtime.callFunctionOn") {
+        const declaration =
+          typeof command.params.functionDeclaration === "string"
+            ? command.params.functionDeclaration
+            : "";
+        if (declaration.includes("expected")) {
+          return { result: { value: true } };
+        }
+        if (declaration.includes("nextValue")) {
+          return { result: {} };
+        }
+        return {
+          result: {
+            value: {
+              tagName: "INPUT",
+              inputType: "password",
+              connected: true,
+              mainDocument: true,
+              writable: true,
+            },
+          },
+        };
+      }
+      if (command.method === "Page.getLayoutMetrics") {
+        return {
+          cssVisualViewport: {
+            pageX: 0,
+            pageY: 0,
+            clientWidth: 1440,
+            clientHeight: 900,
+          },
+        };
+      }
+      if (command.method === "Page.captureScreenshot") {
+        return { data: Buffer.from("screenshot").toString("base64") };
+      }
+      return {};
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    const created = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after password entry",
+          fields: [
+            {
+              key: "password",
+              label: "Password",
+              fieldKind: "password",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    expect(created.body.actionUrl).toContain("/browser/actions/");
+    expect(created.body.action).toMatchObject({
+      kind: "input",
+      state: "pending",
+      siteOrigin: "https://example.com",
+      fields: [{ key: "password", fieldKind: "password", required: true }],
+    });
+    expect(created.body.action).not.toHaveProperty("selector");
+
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: created.body.action.requestToken },
+        body: {
+          values: [{ key: "password", value: "request-memory-only" }],
+        },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+
+    const readBack = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: created.body.action.requestToken },
+      }),
+      [200],
+    );
+    const serializedReadBack = JSON.stringify(readBack.body);
+    expect(serializedReadBack).not.toContain("#password");
+    expect(serializedReadBack).not.toContain("request-memory-only");
+
+    const duplicateApply = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+      body: {
+        values: [{ key: "password", value: "must-not-be-written" }],
+      },
+    });
+    expect(duplicateApply).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+    });
+
+    const direct = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "direct_interaction",
+          callbackPrompt: "Continue after verification",
+          reason: "Complete the verification in the Browser",
+        },
+      }),
+      [201],
+    );
+    const opened = await accept(
+      userActionClient().open({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: direct.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(opened.body.state).toBe("pending");
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
+        return command.method === "Target.activateTarget";
+      }),
+    ).toBeTruthy();
+    const completed = await accept(
+      userActionClient().complete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: direct.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    const completedAgain = await accept(
+      userActionClient().complete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: direct.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(completed.body.state).toBe("succeeded");
+    expect(completedAgain.body.callbackIds).toStrictEqual(
+      completed.body.callbackIds,
+    );
+
+    const cancellable = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "direct_interaction",
+          callbackPrompt: "Continue after cancellation",
+          reason: "Complete or cancel the verification",
+        },
+      }),
+      [201],
+    );
+    const cancelled = await accept(
+      userActionClient().cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: cancellable.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    const cancelledAgain = await accept(
+      userActionClient().cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: cancellable.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(cancelled.body.state).toBe("cancelled");
+    expect(cancelledAgain.body.callbackIds).toStrictEqual(
+      cancelled.body.callbackIds,
+    );
+
+    const writes = context.mocks.browserUseCdp.command.mock.calls.filter(
+      ([command]) => {
+        return (
+          command.method === "Runtime.callFunctionOn" &&
+          typeof command.params.functionDeclaration === "string" &&
+          command.params.functionDeclaration.includes("nextValue")
+        );
+      },
+    );
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.[0].params.functionDeclaration).toContain(
+      'new Event("input"',
+    );
+    expect(writes[0]?.[0].params.functionDeclaration).toContain(
+      'new Event("change"',
+    );
+    expect(writes[0]?.[0].params.functionDeclaration).not.toContain("submit");
+
+    await deleteChatThreadRootFixture(current.threadId);
+    const erased = await userActionClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+    });
+    expect(erased).toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+  }, 120_000);
+});
+
 function isoAt(offsetMs: number): string {
   return new Date(STARTED_AT_MS + offsetMs).toISOString();
 }
@@ -89,6 +381,14 @@ function authorizationClient(baseUrl = "http://api.test") {
     context,
     routes: browserAuthorizationRoutes,
   })(browserAuthorizationRequestsContract);
+}
+
+function userActionClient(baseUrl = "http://api.test") {
+  return setupApp({
+    baseUrl,
+    context,
+    routes: browserUserActionRoutes,
+  })(browserUserActionsContract);
 }
 
 function chatThreadsClient() {
