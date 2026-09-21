@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.348.8](https://github.com/okou-ai/okou/compare/cli-v9.348.7...cli-v9.348.8) (2026-09-21)
+
+
+### Bug Fixes
+
+* **cli:** repair presentation convert layout, tables, and hosted decks ([#35713](https://github.com/okou-ai/okou/issues/35713)) ([0e8ed9e](https://github.com/okou-ai/okou/commit/0e8ed9ee764b480d8c5dee1d45e272a7f97987ba))
+
 ## [9.348.7](https://github.com/okou-ai/okou/compare/cli-v9.348.6...cli-v9.348.7) (2026-09-21)
 
 

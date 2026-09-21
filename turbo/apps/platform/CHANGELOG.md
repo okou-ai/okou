@@ -11,6 +11,15 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.929.3](https://github.com/okou-ai/okou/compare/app-v0.929.2...app-v0.929.3) (2026-09-21)
+
+
+### Bug Fixes
+
+* **artifacts:** cover blank catalog tiles with their artifact kind ([#35648](https://github.com/okou-ai/okou/issues/35648)) ([fc0da37](https://github.com/okou-ai/okou/commit/fc0da3721b0117dfe166cbc4899c82ade507e8a5))
+* **platform:** keep the passage toolbar through its own gesture ([#35716](https://github.com/okou-ai/okou/issues/35716)) ([1986050](https://github.com/okou-ai/okou/commit/1986050e6bd3a47415be8fa5d96aad23ed450eda))
+* **platform:** resolve each attachment preview graph once per owner ([#35714](https://github.com/okou-ai/okou/issues/35714)) ([2d5d122](https://github.com/okou-ai/okou/commit/2d5d1228513776196161eeae12f2de4635681d87))
+
 ## [0.929.2](https://github.com/okou-ai/okou/compare/app-v0.929.1...app-v0.929.2) (2026-09-21)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.113](https://github.com/okou-ai/okou/compare/desktop-v0.48.112...desktop-v0.48.113) (2026-09-21)
+
+
+### Bug Fixes
+
+* **desktop:** abort the auth session lifetime on app quit ([#35719](https://github.com/okou-ai/okou/issues/35719)) ([84331a2](https://github.com/okou-ai/okou/commit/84331a2eff0e42be50a893a0bc3ba63e2d0921a3)), closes [#35717](https://github.com/okou-ai/okou/issues/35717)
+
 ## [0.48.112](https://github.com/okou-ai/okou/compare/desktop-v0.48.111...desktop-v0.48.112) (2026-09-20)
 
 
