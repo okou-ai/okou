@@ -83,6 +83,7 @@ import {
   updateChatSearchSourceThreadFixture,
 } from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
@@ -644,7 +645,7 @@ describe("MCP chat discovery and creation", () => {
   });
 
   it.each([false, true])(
-    "reports pending model setup after a plan downgrade with personal priority %s",
+    "keeps a member subscription route selectable after a plan downgrade with personal priority %s",
     async (personalSubscriptionPriority) => {
       const f = await threadFixture();
       const runs = createRunsApi(context);
@@ -683,25 +684,8 @@ describe("MCP chat discovery and creation", () => {
         [200],
       );
 
-      const pending = await callTool(token, "list_models");
-      expect(pending.isError).toBeTruthy();
-      structuredToolError(pending);
-      expect(pending.content).toContainEqual({
-        type: "text",
-        text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
-      });
-      await expect(callTool(token, "list_models")).resolves.toStrictEqual(
-        pending,
-      );
-
-      createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
-      const settings = await accept(
-        setupApp({ context, routes: modelPoliciesRoutes })(
-          modelPoliciesMainContract,
-        ).list({ headers: { authorization: "Bearer clerk-session" } }),
-        [200],
-      );
-      expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+      // Every runnable plan supports BYOK, so the member subscription route
+      // survives the downgrade and the policies need no synchronization.
       const models = await listModels(token);
       expect(models.defaultModel).toStrictEqual({
         model: "gpt-5.6-luna",
@@ -722,6 +706,59 @@ describe("MCP chat discovery and creation", () => {
       ).toStrictEqual([]);
     },
   );
+
+  it("reports pending model setup when a restricted plan keeps a Pro-only built-in default", async () => {
+    const f = await threadFixture();
+    const runs = createRunsApi(context);
+    await runs.grantProEntitlement(f.actor);
+    await runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const token = f.auth.token({ scope: defaultScopes });
+    const billing = await runs.readBillingStatus(f.actor);
+    if (!f.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    // "limited-free-1" is the only plan that still restricts Built-in models,
+    // and it is assigned by the org-creation bootstrap rather than any product
+    // API, so seed the tier directly while keeping the balance.
+    await seedOrgMetadata({
+      orgId: f.actor.orgId,
+      tier: "limited-free-1",
+      credits: billing.credits,
+    });
+
+    const pending = await callTool(token, "list_models");
+    expect(pending.isError).toBeTruthy();
+    structuredToolError(pending);
+    expect(pending.content).toContainEqual({
+      type: "text",
+      text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
+    });
+    await expect(callTool(token, "list_models")).resolves.toStrictEqual(
+      pending,
+    );
+
+    createRouteMocks(context).clerk.session(f.auth.userId, f.auth.orgId);
+    const settings = await accept(
+      setupApp({ context, routes: modelPoliciesRoutes })(
+        modelPoliciesMainContract,
+      ).list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    const models = await listModels(token);
+    expect(models.defaultModel).toStrictEqual({
+      model: "gpt-5.6-luna",
+      source: "org_default",
+    });
+  });
 
   it("distinguishes configured models, missing member credentials and the member default", async () => {
     const f = await creationFixture();
