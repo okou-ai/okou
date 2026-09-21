@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.351.0](https://github.com/okou-ai/okou/compare/cli-v9.350.0...cli-v9.351.0) (2026-09-21)
+
+
+### Features
+
+* add threads and wechat saved social data jobs ([#35789](https://github.com/okou-ai/okou/issues/35789)) ([f753cf4](https://github.com/okou-ai/okou/commit/f753cf44d4f89d5d23be5905973987df8480255c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.484.0
+    * @okouai/core bumped to 8.692.0
+    * @okouai/pi-agent-runtime bumped to 1.34.4
+
 ## [9.350.0](https://github.com/okou-ai/okou/compare/cli-v9.349.3...cli-v9.350.0) (2026-09-21)
 
 

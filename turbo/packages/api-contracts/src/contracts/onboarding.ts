@@ -29,6 +29,32 @@ export type OnboardingStatusResponse = z.infer<
 >;
 
 /**
+ * The fields the source-first onboarding flow offers as its first question.
+ *
+ * The list lives here so the completion body validates against exactly what
+ * the screens offer. `@okouai/core/onboarding-industry` re-exports it for the
+ * browser, because that package depends on this one and not the other way
+ * round.
+ */
+export const ONBOARDING_INDUSTRY_IDS = [
+  "marketing",
+  "design",
+  "consulting",
+  "coaching",
+  "finance",
+  "operations",
+  "sales",
+  "software",
+  "research",
+  "investing",
+  "other",
+] as const;
+
+export const onboardingIndustrySchema = z.enum(ONBOARDING_INDUSTRY_IDS);
+
+export type OnboardingIndustry = z.infer<typeof onboardingIndustrySchema>;
+
+/**
  * Onboarding status contract for GET /api/onboarding/status
  */
 export const onboardingStatusContract = c.router({
@@ -54,6 +80,9 @@ export const onboardingCompleteContract = c.router({
         // Semantic IANA validation happens after core completion so an invalid
         // optional fallback cannot roll back the onboarding transition.
         timezone: z.string().optional(),
+        // The field answered in the source-first flow. Only that flow asks the
+        // question, so an absent industry completes onboarding unchanged.
+        industry: onboardingIndustrySchema.optional(),
       })
       .strict(),
     responses: {

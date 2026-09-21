@@ -8,6 +8,10 @@ import {
   sourcesFirstInviteSendable,
 } from "../../signals/onboarding/onboarding-sources-first-invite.ts";
 import {
+  ONBOARDING_INDUSTRY_IDS,
+  type OnboardingIndustry,
+} from "@okouai/core/onboarding-industry";
+import {
   captureSourceOnboardingExperienceAnswered$,
   captureSourceOnboardingIndustrySelected$,
   captureSourceOnboardingInviteAdded$,
@@ -28,10 +32,6 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { PersonalClaudeCodeDeviceAuthDialog } from "../okou-page/components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "../okou-page/components/settings/codex-device-auth-dialog.tsx";
-import {
-  INDUSTRY_IDS,
-  type IndustryId,
-} from "./onboarding-sources-first-data.ts";
 import {
   OnboardingChoiceCard,
   OnboardingIllustration,
@@ -70,13 +70,13 @@ export function OnboardingIndustryPage() {
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
-          const industry = value as IndustryId;
+          const industry = value as OnboardingIndustry;
           updateDraft({ industry });
           captureIndustrySelected(industry);
         }}
         className="grid gap-3 sm:grid-cols-2"
       >
-        {INDUSTRY_IDS.map((id) => {
+        {ONBOARDING_INDUSTRY_IDS.map((id) => {
           return (
             <OnboardingChoiceCard
               key={id}

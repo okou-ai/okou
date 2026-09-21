@@ -17,6 +17,7 @@ import {
   resetOnboardingDraft$,
   storeOnboardingCheckoutDraft$,
 } from "./onboarding-state.ts";
+import { sourcesFirstDraft$ } from "./onboarding-sources-first-state.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
@@ -48,9 +49,13 @@ export const completeOnboarding$ = command(
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    // Only the source-first flow asks for a field, and only an answered one is
+    // sent: the make-something flow leaves the draft empty, and the ready
+    // step's display fallback is not an answer worth storing.
+    const industry = get(sourcesFirstDraft$).industry;
     await accept(
       onboardingClient.complete({
-        body: { timezone },
+        body: industry === null ? { timezone } : { timezone, industry },
         fetchOptions: { signal },
       }),
       [200],
