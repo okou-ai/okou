@@ -35,11 +35,11 @@ function fixtureJson<T>(name: string): T {
 }
 
 function manifestFixture(): AwsSemanticManifest {
-  return awsSemanticManifestSchema.parse(fixtureJson("manifest.json"));
+  return awsSemanticManifestSchema.parse(fixtureJson("manifest.jsonl"));
 }
 
 function shardFixture(service: AwsSemanticService): AwsSemanticServiceShard {
-  return awsSemanticServiceShardSchema.parse(fixtureJson(`${service}.json`));
+  return awsSemanticServiceShardSchema.parse(fixtureJson(`${service}.jsonl`));
 }
 
 function expectValidationFailure(
@@ -58,7 +58,7 @@ function expectValidationFailure(
 
 describe("AWS semantic sidecar contract", () => {
   it("round-trips the canonical manifest and three portable service fixtures", () => {
-    const manifestBytes = fixtureBytes("manifest.json");
+    const manifestBytes = fixtureBytes("manifest.jsonl");
     const manifest = decodeAwsSemanticManifest({
       bytes: manifestBytes,
       identity: {
@@ -77,7 +77,7 @@ describe("AWS semantic sidecar contract", () => {
     ).toEqual(["ec2", "iam", "s3"]);
 
     for (const reference of manifest.shards) {
-      const bytes = fixtureBytes(`${reference.service}.json`);
+      const bytes = fixtureBytes(`${reference.service}.jsonl`);
       const shard = decodeAwsSemanticServiceShard({ bytes, reference });
       expect(shard.service).toBe(reference.service);
       expect(encodeAwsSemanticServiceShard(shard)).toEqual(bytes);
@@ -100,7 +100,7 @@ describe("AWS semantic sidecar contract", () => {
   });
 
   it("binds manifest and shard bytes to identity, length, digest, and service", () => {
-    const manifestBytes = fixtureBytes("manifest.json");
+    const manifestBytes = fixtureBytes("manifest.jsonl");
     const manifestDigest = awsSemanticArtifactDigest(manifestBytes);
     for (const identity of [
       {
@@ -142,7 +142,7 @@ describe("AWS semantic sidecar contract", () => {
     }, "digest-mismatch");
 
     const reference = manifestFixture().shards[0]!;
-    const shardBytes = fixtureBytes(`${reference.service}.json`);
+    const shardBytes = fixtureBytes(`${reference.service}.jsonl`);
     for (const changedReference of [
       { ...reference, byteLength: reference.byteLength + 1 },
       { ...reference, service: "iam" as const },
@@ -390,7 +390,7 @@ describe("AWS semantic sidecar contract", () => {
     } as AwsSemanticShardReference;
     expectValidationFailure(() => {
       return decodeAwsSemanticServiceShard({
-        bytes: fixtureBytes("ec2.json"),
+        bytes: fixtureBytes("ec2.jsonl"),
         reference: mismatchedReference,
       });
     }, "invalid-artifact");
