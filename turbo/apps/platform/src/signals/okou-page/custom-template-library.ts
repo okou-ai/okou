@@ -5,17 +5,54 @@ import {
   type UserTemplateCatalogEntry,
   type UserTemplateDetail,
   type UserTemplateKind,
+  type UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { waitForOperation } from "../utils.ts";
+import { rootVersion$ } from "../root-signal.ts";
 
 const catalogVersion$ = state(0);
+
+type ConfirmedTemplateChange = Pick<
+  UserTemplateSummary,
+  "id" | "title" | "visibility" | "updatedAt"
+> | null;
+
+/**
+ * Only server-confirmed changes, owned by this authenticated app session.
+ * Metadata cannot replace preview assets, and a successful deletion must not
+ * be undone by an older catalog response. A new identity or app root releases
+ * these records; they do not retain catalogs, images or detail resources.
+ */
+const confirmedTemplateChangesState$ = computed((get) => {
+  get(authenticatedSessionKey$);
+  get(rootVersion$);
+  return state<ReadonlyMap<string, ConfirmedTemplateChange>>(new Map());
+});
+
+/** Also project onto retained view data while its next request is pending. */
+export const projectCustomTemplate$ = computed((get) => {
+  const changes = get(get(confirmedTemplateChangesState$));
+  return <T extends UserTemplateSummary>(template: T): T | null => {
+    const change = changes.get(template.id);
+    if (change === null) {
+      return null;
+    }
+    if (
+      change === undefined ||
+      Date.parse(change.updatedAt) < Date.parse(template.updatedAt)
+    ) {
+      return template;
+    }
+    return { ...template, ...change };
+  };
+});
 
 /**
  * Every custom template this workspace member can reach: their own, plus the
@@ -23,7 +60,7 @@ const catalogVersion$ = state(0);
  * recency order, so nothing is re-sorted here — ownership is read from each
  * row rather than expressed as position.
  */
-export const customTemplateCatalog$ = computed(
+const serverCustomTemplateCatalog$ = computed(
   async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
     get(catalogVersion$);
     // A member without the feature has no catalog, and the routes refuse them
@@ -37,6 +74,16 @@ export const customTemplateCatalog$ = computed(
     const client = get(apiClient$)(userTemplatesContract);
     const result = await accept(client.list(), [200]);
     return result.body;
+  },
+);
+
+export const customTemplateCatalog$ = computed(
+  async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
+    const project = get(projectCustomTemplate$);
+    return (await get(serverCustomTemplateCatalog$)).flatMap((template) => {
+      const projected = project(template);
+      return projected === null ? [] : [projected];
+    });
   },
 );
 
@@ -88,14 +135,6 @@ export const subscribeCustomTemplatesChanged$ = command(
   },
 );
 
-const reloadAndAwaitCustomTemplates$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    set(reloadCustomTemplates$);
-    await waitForOperation(get(customTemplateCatalog$), signal);
-    signal.throwIfAborted();
-  },
-);
-
 const internalSearchQuery$ = state("");
 
 export const customTemplateSearchQuery$ = computed((get) => {
@@ -128,15 +167,20 @@ function matchesCustomTemplateQuery(
   );
 }
 
-export const visibleCustomTemplates$ = computed(
-  async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
-    const templates = await get(customTemplateCatalog$);
-    const query = get(internalSearchQuery$);
-    return templates.filter((template) => {
-      return matchesCustomTemplateQuery(template, query);
+export const projectVisibleCustomTemplates$ = computed((get) => {
+  const project = get(projectCustomTemplate$);
+  const query = get(internalSearchQuery$);
+  return (
+    templates: readonly UserTemplateCatalogEntry[],
+  ): readonly UserTemplateCatalogEntry[] => {
+    return templates.flatMap((template) => {
+      const projected = project(template);
+      return projected !== null && matchesCustomTemplateQuery(projected, query)
+        ? [projected]
+        : [];
     });
-  },
-);
+  };
+});
 
 /**
  * The open template, with the kind that decides what looking at it shows.
@@ -175,8 +219,8 @@ export const closeCustomTemplate$ = command(({ set }) => {
 });
 
 /**
- * The open template's pages. The catalog carries a cover but not the rest, so
- * the detail request only happens once something is actually opened.
+ * The source URL belongs to the open detail rather than the catalog. Realtime
+ * changes revalidate it, while the view retains the currently loaded preview.
  */
 export const openCustomTemplateDetail$ = computed(
   async (get): Promise<UserTemplateDetail | null> => {
@@ -192,12 +236,9 @@ export const openCustomTemplateDetail$ = computed(
 );
 
 /**
- * One save, start to finish. The caller's loadable is what decides whether the
- * editor is still accepting input, so this resolves only once the surfaces that
- * editor can see are carrying the new value — the catalog behind the panel, and
- * the detail the editor itself reads. Resolving at the PATCH would reopen the
- * field on the title the server has already replaced, which is the edit the
- * member would then be correcting.
+ * The PATCH response is authoritative for this row's metadata. Apply it to the
+ * catalog and the open editor without waiting for unrelated catalog or preview
+ * requests. Realtime still reconciles external changes with the server.
  */
 export const updateCustomTemplate$ = command(
   async (
@@ -209,7 +250,8 @@ export const updateCustomTemplate$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const client = get(apiClient$)(userTemplatesContract);
-    await accept(
+    const changesState = get(confirmedTemplateChangesState$);
+    const result = await accept(
       client.update({
         params: { templateId: args.templateId },
         body: args.body,
@@ -218,15 +260,18 @@ export const updateCustomTemplate$ = command(
       [200],
     );
     signal.throwIfAborted();
-    await set(reloadAndAwaitCustomTemplates$, signal);
-    // Only the template still on screen has an editor waiting on its readback.
-    // A visibility change made from a card, or a rename the member walked away
-    // from, has no such reader — and waiting for a detail nobody is showing
-    // would keep a save open on a request that is never made.
-    if (get(openCustomTemplateId$) === args.templateId) {
-      await waitForOperation(get(openCustomTemplateDetail$), signal);
-      signal.throwIfAborted();
-    }
+    set(changesState, (changes) => {
+      const { id, title, visibility, updatedAt } = result.body;
+      const previous = changes.get(id);
+      if (
+        previous === null ||
+        (previous !== undefined &&
+          Date.parse(previous.updatedAt) > Date.parse(updatedAt))
+      ) {
+        return changes;
+      }
+      return new Map(changes).set(id, { id, title, visibility, updatedAt });
+    });
   },
 );
 
@@ -238,6 +283,7 @@ export const updateCustomTemplate$ = command(
 export const deleteCustomTemplate$ = command(
   async ({ get, set }, templateId: string, signal: AbortSignal) => {
     const client = get(apiClient$)(userTemplatesContract);
+    const changesState = get(confirmedTemplateChangesState$);
     await accept(
       client.delete({
         params: { templateId },
@@ -246,10 +292,13 @@ export const deleteCustomTemplate$ = command(
       [204],
     );
     signal.throwIfAborted();
+    set(changesState, (changes) => {
+      return new Map(changes).set(templateId, null);
+    });
     if (get(openCustomTemplateId$) === templateId) {
       set(internalOpenTemplate$, null);
     }
-    await set(reloadAndAwaitCustomTemplates$, signal);
+    set(reloadCustomTemplates$);
   },
 );
 
