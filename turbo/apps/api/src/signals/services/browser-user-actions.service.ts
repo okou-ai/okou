@@ -23,7 +23,7 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { safeSync, settle, settleIncludingAbort, throwIfAbort } from "../utils";
+import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
   activateBrowserUseUserActionTarget,
   applyBrowserUseUserAction,
@@ -797,11 +797,9 @@ function submittedValues(
   };
 }
 
-async function applyClaimedBrowserUserAction(
+async function claimBrowserUserAction(
   db: Db,
   located: RequestRow,
-  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
-  values: ReadonlyMap<string, string>,
   signal: AbortSignal,
 ): Promise<ServiceResult<RequestRow>> {
   const admitted = await withChatThreadContentWrite(
@@ -813,14 +811,9 @@ async function applyClaimedBrowserUserAction(
       },
       threadLock: "update",
     },
-    async (): Promise<ServiceResult<RequestRow>> => {
-      // Deliberately use `db`, not the admission callback's transaction. The
-      // outer transaction retains the canonical erasure/Agent/thread locks,
-      // while this connection must commit the one-attempt claim before any
-      // CDP write and commit its terminal result before those locks release.
-      // Reusing the outer transaction would make `applying` invisible until
-      // after the Browser mutation and defeat crash recovery and no-replay.
-      const current = await loadExactRequest(db, located);
+    async (tx): Promise<ServiceResult<RequestRow>> => {
+      const operationDb = tx as Db;
+      const current = await loadExactRequest(operationDb, located);
       if (!current) {
         return notFound();
       }
@@ -831,7 +824,7 @@ async function applyClaimedBrowserUserAction(
         return conflict("Browser input has already been claimed");
       }
       const startedAt = nowDate();
-      const [claimed] = await db
+      const [claimed] = await operationDb
         .update(browserUserActionRequests)
         .set({
           status: "applying",
@@ -848,11 +841,50 @@ async function applyClaimedBrowserUserAction(
       if (!claimed) {
         return conflict("Browser input has already been claimed");
       }
-      const leased = await touchExactProvider(db, claimed);
+      return { kind: "ok", value: claimed };
+    },
+    signal,
+  );
+  return admitted.outcome === "written" ? admitted.value : notFound();
+}
+
+async function applyClaimedBrowserUserAction(
+  db: Db,
+  claimed: RequestRow,
+  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+  values: ReadonlyMap<string, string>,
+  signal: AbortSignal,
+): Promise<ServiceResult<RequestRow>> {
+  // The claim above is already visible. Re-enter canonical admission before
+  // the Browser effect so closure in the gap prevents mutation, while this
+  // transaction retains its barriers until the terminal state commits. The
+  // sequential transactions never reserve one pool connection while waiting
+  // to acquire a second one.
+  const commitSignal = new AbortController().signal;
+  const admitted = await withChatThreadContentWrite(
+    db,
+    {
+      chatThreadId: claimed.chatThreadId,
+      authorize: (identity) => {
+        return authorized(claimed, identity);
+      },
+      threadLock: "update",
+    },
+    async (tx): Promise<ServiceResult<RequestRow>> => {
+      const operationDb = tx as Db;
+      const current = await loadExactRequest(operationDb, claimed);
+      if (
+        !current ||
+        current.status !== "applying" ||
+        current.applyStartedAt?.getTime() !== claimed.applyStartedAt?.getTime()
+      ) {
+        return conflict("Browser input state changed during application");
+      }
+      const leased = await touchExactProvider(operationDb, current);
       if (!leased) {
         const terminal = await finalize(
-          db,
-          claimed.id,
+          operationDb,
+          current.id,
           "stale",
           "provider_replaced",
         );
@@ -861,24 +893,23 @@ async function applyClaimedBrowserUserAction(
           : conflict("Browser input state changed during application");
       }
       const provider = await settleIncludingAbort(
-        getBrowserUseSession(claimed.providerSessionId, signal),
+        getBrowserUseSession(current.providerSessionId, signal),
       );
       if (!provider.ok) {
-        await restorePending(db, claimed.id);
-        throwIfAbort(provider.error);
+        await restorePending(operationDb, current.id);
         return providerFailure(provider.error);
       }
       if (provider.value.status !== "active" || !provider.value.cdpUrl) {
-        await restorePending(db, claimed.id);
+        await restorePending(operationDb, current.id);
         return providerFailure(new Error("Browser provider is not active"));
       }
       const operation = await settle(
         applyBrowserUseUserAction(
           provider.value.cdpUrl,
           {
-            pageTargetId: claimed.pageTargetId,
-            documentLoaderId: claimed.documentLoaderId,
-            pageUrlHash: claimed.pageUrlHash,
+            pageTargetId: current.pageTargetId,
+            documentLoaderId: current.documentLoaderId,
+            pageUrlHash: current.pageUrlHash,
             fields: payload.fields.map((field) => {
               const value = values.get(field.key);
               return {
@@ -897,8 +928,8 @@ async function applyClaimedBrowserUserAction(
           operation.error.writeStarted
         ) {
           const terminal = await finalize(
-            db,
-            claimed.id,
+            operationDb,
+            current.id,
             "uncertain",
             "possible_partial_write",
           );
@@ -906,12 +937,12 @@ async function applyClaimedBrowserUserAction(
             ? { kind: "ok", value: terminal }
             : conflict("Browser input state changed during application");
         }
-        await restorePending(db, claimed.id);
+        await restorePending(operationDb, current.id);
         return providerFailure(operation.error);
       }
       const terminal = await finalize(
-        db,
-        claimed.id,
+        operationDb,
+        current.id,
         operation.value,
         operation.value === "stale" ? "target_stale" : "verified",
       );
@@ -919,8 +950,9 @@ async function applyClaimedBrowserUserAction(
         ? { kind: "ok", value: terminal }
         : conflict("Browser input state changed during application");
     },
-    signal,
+    commitSignal,
   );
+  signal.throwIfAborted();
   return admitted.outcome === "written" ? admitted.value : notFound();
 }
 
@@ -956,9 +988,13 @@ export const applyBrowserUserAction$ = command(
       return valuesResult;
     }
 
+    const claimed = await claimBrowserUserAction(db, located, signal);
+    if (claimed.kind === "error") {
+      return claimed;
+    }
     const applied = await applyClaimedBrowserUserAction(
       db,
-      located,
+      claimed.value,
       payload,
       valuesResult.value,
       signal,
