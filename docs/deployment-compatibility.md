@@ -2240,10 +2240,11 @@ widened API before the Runner. Old Runners continue advertising only X509Vnc and
 the new API returns their existing response shape. New Runners against an older
 API fail closed; they do not retry a saved X509Plain connection as X509Vnc.
 
-The response decoder remains strict and rejects unknown or cross-paired
-authentication and security variants before DNS or socket creation. The common
-generated secret wrapper enforces the largest wire bound and zeroizes its value;
-the selected engine authentication type enforces the profile-specific bound.
+The response decoder remains strict and rejects unknown fields and tags. The
+Runner then rejects cross-paired authentication and security variants before
+DNS or socket creation. The common generated secret wrapper enforces the largest
+wire bound and zeroizes its value; the selected engine authentication type
+enforces the profile-specific bound.
 Future authentication support adds another explicit method/profile pair and its
 typed fields rather than widening an existing discriminator's meaning.
 
