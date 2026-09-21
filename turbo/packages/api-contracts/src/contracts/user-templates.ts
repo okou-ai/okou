@@ -236,11 +236,12 @@ const publishUserTemplateBaseSchema = z.object({
  * reverse run that already opened the file is the only place that number is
  * free to read.
  *
- * Both are optional, and separately so. A document compiled before there was
- * anything to render it with stays publishable and is named by its file
- * instead, a cover that arrives without a count is drawn as a single sheet,
- * and a count that arrives without a cover has nothing to draw. Pairing them
- * into one object would make each of those a rejection rather than the
+ * Both are optional, and separately so. Rendering the first page needs a
+ * converter the reverse run installs while it runs, so a run that cannot
+ * render one still publishes a usable template and the catalog names it by its
+ * file instead. A cover that arrives without a count is drawn as a single
+ * sheet, and a count that arrives without a cover has nothing to draw. Pairing
+ * them into one object would make each of those a rejection rather than the
  * appearance it already has.
  *
  * An illustration carries neither, for the opposite reason: its source is

@@ -27,12 +27,13 @@ export interface UserTemplatePresentationManifest {
  * can show the document rather than the icon of its file format, and how long
  * that source was.
  *
- * Both are optional and independently so. Rows published before a reverse run
- * rendered anything carry neither and decode unchanged, which is why this
- * needed no migration; a row with a cover and no count is one the run could
- * draw but not count. Storing the count rather than the "has more pages"
- * boolean the catalog reads keeps the answer to a question nobody has asked
- * yet — how long was it — out of a second reverse run.
+ * Both are optional and independently so, because a reverse run that cannot
+ * render the first page still publishes a usable template: the catalog names
+ * that row by its file, which is what it does for every template with no
+ * cover. A row with a cover and no count is one the run could draw but not
+ * count. Storing the count rather than the "has more pages" boolean the
+ * catalog reads keeps the answer to a question nobody has asked yet — how long
+ * was it — out of a second reverse run.
  */
 export interface UserTemplateDocumentManifest {
   readonly kind: "document";

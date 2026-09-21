@@ -73,13 +73,15 @@ const CARD_MEDIA =
  * percentage against the sheet, which is why the two are written against
  * different denominators.
  *
- * White rather than a surface token: this is paper, and paper stays white when
- * the rest of the application goes dark. A `bg-card` sheet would sit behind a
- * white page image and read as a hole rather than as the next sheet down.
+ * The literal `#ffffff` rather than `bg-white` or a surface token: this is
+ * paper, and it stays paper-coloured in Dark. `--color-white` is theme-flipped
+ * and resolves to Ink there, so `bg-white` would paint these sheets near-black
+ * behind a white page image — a hole rather than the next sheet down. A
+ * `bg-card` sheet does the same thing.
  */
 const DOCUMENT_SHEET =
   "absolute left-1/2 top-[8%] ml-[-30.5%] aspect-[210/297] w-[61%] " +
-  "overflow-hidden rounded-[2px] bg-white " +
+  "overflow-hidden rounded-[2px] bg-[#ffffff] " +
   "shadow-[0_1px_2px_hsl(220_12%_50%/0.16),0_7px_18px_hsl(220_12%_50%/0.07)]";
 
 /**
@@ -126,7 +128,9 @@ function DocumentTemplateCover({
           />
         </>
       ) : null}
-      <span className={cn(DOCUMENT_SHEET, "z-[1]")}>
+      {/* No z-index: the sheets are positioned siblings at `z-index: auto`, so
+          tree order already paints this one over them. */}
+      <span className={DOCUMENT_SHEET}>
         <img
           src={coverUrl}
           alt=""
