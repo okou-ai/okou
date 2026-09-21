@@ -376,28 +376,49 @@ def test_unavailable_aws_inspection_rejects_presigned_query_rule() -> None:
 
 def test_denied_duplicate_aws_semantic_identity_takes_priority() -> None:
     rule = "POST / AWS sigv4=ec2 action=DescribeInstances"
-    for alias_rule in (
-        rule,
-        "ANY / AWS sigv4=ec2 action=DescribeInstances",
-    ):
-        permissions = [
-            firewall_permission("describe-primary", rule),
-            firewall_permission("describe-alias", alias_rule),
-        ]
+    permissions = [
+        firewall_permission("describe-primary", rule),
+        firewall_permission("describe-alias", rule),
+    ]
 
-        result = _match(
-            base="https://ec2.amazonaws.com",
-            permissions=permissions,
-            url="https://ec2.amazonaws.com/?Action=DescribeInstances",
-            method="POST",
-            headers=_headers(host="ec2.amazonaws.com", service="ec2"),
-            allow=("describe-primary",),
-            deny=("describe-alias",),
-        )
+    result = _match(
+        base="https://ec2.amazonaws.com",
+        permissions=permissions,
+        url="https://ec2.amazonaws.com/?Action=DescribeInstances",
+        method="POST",
+        headers=_headers(host="ec2.amazonaws.com", service="ec2"),
+        allow=("describe-primary",),
+        deny=("describe-alias",),
+    )
 
-        assert isinstance(result, matching.FirewallBlock)
-        assert result.reason == "permission_denied"
-        assert result.permissions == ("describe-alias",)
+    assert isinstance(result, matching.FirewallBlock)
+    assert result.reason == "permission_denied"
+    assert result.permissions == ("describe-alias",)
+
+
+def test_aws_semantic_identity_preserves_rule_method() -> None:
+    permissions = [
+        firewall_permission(
+            "describe-primary",
+            "POST / AWS sigv4=ec2 action=DescribeInstances",
+        ),
+        firewall_permission(
+            "describe-any",
+            "ANY / AWS sigv4=ec2 action=DescribeInstances",
+        ),
+    ]
+
+    result = _match(
+        base="https://ec2.amazonaws.com",
+        permissions=permissions,
+        url="https://ec2.amazonaws.com/?Action=DescribeInstances",
+        method="POST",
+        headers=_headers(host="ec2.amazonaws.com", service="ec2"),
+        allow=("describe-primary",),
+        deny=("describe-any",),
+    )
+
+    _assert_allowed(result, "describe-primary")
 
 
 def test_aws_rule_on_non_sigv4_api_is_malformed_firewall_config() -> None:
