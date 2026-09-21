@@ -70,7 +70,9 @@ const completeBody$ = bodyResultOf(browserUserActionsContract.complete);
 
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return disabled;
   }
   if (auth.tokenType !== "agent" && auth.tokenType !== "sandbox") {
@@ -98,7 +100,9 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return disabled;
   }
   const result = await set(
@@ -117,7 +121,9 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return disabled;
   }
   const body = await get(applyBody$);
@@ -142,7 +148,9 @@ const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return disabled;
   }
   const body = await get(cancelBody$);
@@ -166,7 +174,9 @@ const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const openInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return disabled;
   }
   const body = await get(openBody$);
@@ -190,7 +200,9 @@ const openInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(browserNativeInputEnabled$))) {
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
     return disabled;
   }
   const body = await get(completeBody$);

@@ -650,6 +650,24 @@ function safeControlInspection(value: unknown):
   };
 }
 
+function browserUseControlInspectionFunction(): string {
+  return `function () {
+    const input = this instanceof HTMLInputElement;
+    const textarea = this instanceof HTMLTextAreaElement;
+    const supportedInputTypes = new Set([
+      "text", "password", "email", "tel", "url", "search", "number"
+    ]);
+    const supported = textarea || (input && supportedInputTypes.has(this.type));
+    return {
+      tagName: this.tagName,
+      inputType: input ? this.type : textarea ? "textarea" : "",
+      connected: this.isConnected,
+      mainDocument: this.ownerDocument === document,
+      writable: supported && !this.readOnly && !this.disabled,
+    };
+  }`;
+}
+
 async function inspectBrowserUseControl(
   socket: WebSocket,
   sessionId: string,
@@ -678,21 +696,7 @@ async function inspectBrowserUseControl(
         method: "Runtime.callFunctionOn",
         params: {
           objectId: remote.object.objectId,
-          functionDeclaration: `function () {
-            const input = this instanceof HTMLInputElement;
-            const textarea = this instanceof HTMLTextAreaElement;
-            const supportedInputTypes = new Set([
-              "text", "password", "email", "tel", "url", "search", "number"
-            ]);
-            const supported = textarea || (input && supportedInputTypes.has(this.type));
-            return {
-              tagName: this.tagName,
-              inputType: input ? this.type : textarea ? "textarea" : "",
-              connected: this.isConnected,
-              mainDocument: this.ownerDocument === document,
-              writable: supported && !this.readOnly && !this.disabled,
-            };
-          }`,
+          functionDeclaration: browserUseControlInspectionFunction(),
           returnByValue: true,
         },
         sessionId,
@@ -1026,21 +1030,7 @@ async function resolveBrowserUseApplyField(
         method: "Runtime.callFunctionOn",
         params: {
           objectId: remote.data.object.objectId,
-          functionDeclaration: `function () {
-            const input = this instanceof HTMLInputElement;
-            const textarea = this instanceof HTMLTextAreaElement;
-            const supportedInputTypes = new Set([
-              "text", "password", "email", "tel", "url", "search", "number"
-            ]);
-            return {
-              tagName: this.tagName,
-              inputType: input ? this.type : textarea ? "textarea" : "",
-              connected: this.isConnected,
-              mainDocument: this.ownerDocument === document,
-              writable: (textarea || (input && supportedInputTypes.has(this.type))) &&
-                !this.readOnly && !this.disabled,
-            };
-          }`,
+          functionDeclaration: browserUseControlInspectionFunction(),
           returnByValue: true,
         },
         sessionId: args.sessionId,

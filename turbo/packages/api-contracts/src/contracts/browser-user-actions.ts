@@ -165,7 +165,10 @@ export const browserUserActionResponseSchema = z.discriminatedUnion("kind", [
   responseBaseSchema
     .extend({
       kind: z.literal("input"),
-      fields: z.array(browserUserActionDisplayFieldSchema).min(1).max(8),
+      fields: z
+        .array(browserUserActionDisplayFieldSchema)
+        .min(1)
+        .max(BROWSER_USER_ACTION_MAX_FIELDS),
     })
     .strict(),
   responseBaseSchema

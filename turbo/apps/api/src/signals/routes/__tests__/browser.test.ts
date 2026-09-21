@@ -79,7 +79,8 @@ aroundEach(async (runTest) => {
 
 describe("Browser user-action route", () => {
   it("creates and applies native Browser input without exposing selector or value data", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
     const current = await createClaimedChatRun(
       chat,
       runs,
@@ -224,6 +225,59 @@ describe("Browser user-action route", () => {
     });
     expect(created.body.action).not.toHaveProperty("selector");
 
+    const otherUser = createBddApi(context).user({ orgId: actor.orgId });
+    routeMocks.clerk.session(
+      otherUser.userId,
+      otherUser.orgId,
+      otherUser.orgRole,
+    );
+    const featureDisabled = await userActionClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+    });
+    expect(featureDisabled).toMatchObject({
+      status: 403,
+      body: { error: { code: "FORBIDDEN" } },
+    });
+    if (!otherUser.orgId) {
+      throw new Error("Expected the second user to share the organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...otherUser, orgId: otherUser.orgId },
+      { [FeatureSwitchKey.BrowserNativeInput]: true },
+    );
+    const foreignOwner = await userActionClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+    });
+    expect(foreignOwner).toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const emptyRequired = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+      body: { values: [{ key: "password", value: "" }] },
+    });
+    expect(emptyRequired).toMatchObject({
+      status: 400,
+      body: {
+        error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" },
+      },
+    });
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.some(([command]) => {
+        return (
+          command.method === "Runtime.callFunctionOn" &&
+          typeof command.params.functionDeclaration === "string" &&
+          command.params.functionDeclaration.includes("nextValue")
+        );
+      }),
+    ).toBeFalsy();
+
     const applied = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -355,7 +409,7 @@ describe("Browser user-action route", () => {
     );
     expect(writes[0]?.[0].params.functionDeclaration).not.toContain("submit");
 
-    await deleteChatThreadRootFixture(current.threadId);
+    await chat.deleteThread(actor, current.threadId);
     const erased = await userActionClient().get({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: created.body.action.requestToken },

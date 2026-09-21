@@ -22,7 +22,7 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { safeSync, settle } from "../utils";
+import { safeSync, settle, settleIncludingAbort, throwIfAbort } from "../utils";
 import {
   activateBrowserUseUserActionTarget,
   applyBrowserUseUserAction,
@@ -530,6 +530,9 @@ async function persistBrowserUserAction(
       const expiresAt = new Date(
         Math.min(leased.timeoutAt.getTime(), leased.idleExpiresAt.getTime()),
       );
+      if (expiresAt <= now) {
+        return null;
+      }
       const [created] = await tx
         .insert(browserUserActionRequests)
         .values({
@@ -752,7 +755,10 @@ function submittedValues(
   }
   if (
     payload.fields.some((field) => {
-      return field.required && !values.has(field.key);
+      return (
+        field.required &&
+        (!values.has(field.key) || values.get(field.key)?.length === 0)
+      );
     })
   ) {
     return failure(
@@ -821,18 +827,17 @@ async function applyClaimedBrowserUserAction(
           ? { kind: "ok", value: terminal }
           : conflict("Browser input state changed during application");
       }
-      const provider = await settle(
+      const provider = await settleIncludingAbort(
         getBrowserUseSession(claimed.providerSessionId, signal),
       );
-      if (
-        !provider.ok ||
-        provider.value.status !== "active" ||
-        !provider.value.cdpUrl
-      ) {
+      if (!provider.ok) {
         await restorePending(db, claimed.id);
-        return provider.ok
-          ? providerFailure(new Error("Browser provider is not active"))
-          : providerFailure(provider.error);
+        throwIfAbort(provider.error);
+        return providerFailure(provider.error);
+      }
+      if (provider.value.status !== "active" || !provider.value.cdpUrl) {
+        await restorePending(db, claimed.id);
+        return providerFailure(new Error("Browser provider is not active"));
       }
       const operation = await settle(
         applyBrowserUseUserAction(

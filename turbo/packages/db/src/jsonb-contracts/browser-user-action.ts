@@ -1,4 +1,10 @@
-import type { BrowserUserActionFieldKind } from "@okouai/api-contracts/contracts/browser-user-actions";
+import {
+  BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH,
+  BROWSER_USER_ACTION_MAX_FIELDS,
+  BROWSER_USER_ACTION_MAX_KEY_LENGTH,
+  BROWSER_USER_ACTION_MAX_LABEL_LENGTH,
+  type BrowserUserActionFieldKind,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
 
 export interface BrowserUserActionInputTarget {
   readonly key: string;
@@ -67,10 +73,14 @@ function decodeField(value: unknown): BrowserUserActionInputTarget | null {
       "backendNodeId",
       "fingerprint",
     ]) ||
-    !boundedString(field.key, 1, 64) ||
-    !boundedString(field.label, 1, 128) ||
+    !boundedString(field.key, 1, BROWSER_USER_ACTION_MAX_KEY_LENGTH) ||
+    !boundedString(field.label, 1, BROWSER_USER_ACTION_MAX_LABEL_LENGTH) ||
     (field.description !== undefined &&
-      !boundedString(field.description, 0, 512)) ||
+      !boundedString(
+        field.description,
+        0,
+        BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH,
+      )) ||
     !["text", "username", "password", "one_time_code"].includes(
       String(field.fieldKind),
     ) ||
@@ -111,7 +121,7 @@ export function parseBrowserUserActionPayload(
   if (
     payload.kind === "direct_interaction" &&
     hasOnlyKeys(payload, ["version", "kind", "reason"]) &&
-    boundedString(payload.reason, 1, 512)
+    boundedString(payload.reason, 1, BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH)
   ) {
     return { version: 1, kind: payload.kind, reason: payload.reason };
   }
@@ -120,7 +130,7 @@ export function parseBrowserUserActionPayload(
     hasOnlyKeys(payload, ["version", "kind", "fields"]) &&
     Array.isArray(payload.fields) &&
     payload.fields.length >= 1 &&
-    payload.fields.length <= 8
+    payload.fields.length <= BROWSER_USER_ACTION_MAX_FIELDS
   ) {
     const fields = payload.fields.map(decodeField);
     if (
