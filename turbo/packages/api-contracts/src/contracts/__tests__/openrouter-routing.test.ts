@@ -8,7 +8,7 @@ import {
   getModelProviderPiEndpoint,
 } from "../model-provider-firewalls";
 
-const verified: readonly (readonly [OpenRouterApi, string])[] = [
+const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
   ["messages", "anthropic/claude-opus-5"],
   ["messages", "anthropic/claude-opus-4.8"],
   ["messages", "anthropic/claude-sonnet-5"],
@@ -20,8 +20,8 @@ const verified: readonly (readonly [OpenRouterApi, string])[] = [
 ];
 
 describe("platform OpenRouter regional selection", () => {
-  it.each(verified)(
-    "gates verified %s %s by switch and credential ownership",
+  it.each(usRouted)(
+    "gates product-approved US %s %s by switch and credential ownership",
     (api, model) => {
       const path = api === "messages" ? "/api" : "/api/v1";
       for (const credentialOwner of [
@@ -54,7 +54,7 @@ describe("platform OpenRouter regional selection", () => {
     ["chat/completions", "google/gemini-3.8-flash"],
     ["audio/transcriptions", "openai/gpt-4o-transcribe"],
     ["responses", "new/unverified-model"],
-  ] as const)("keeps unverified %s %s global when enabled", (api, model) => {
+  ] as const)("keeps non-US-routed %s %s global when enabled", (api, model) => {
     expect(
       getOpenRouterBaseUrl(api, {
         model,
