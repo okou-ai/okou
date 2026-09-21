@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { mockEnv } from "../../../lib/env";
 import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
@@ -337,6 +338,9 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("retains the reused session through queued admission and promotion", async () => {
+    // Two blockers keep the next send queued, independent of the plan's own
+    // concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const first = await sendChatRun(actor, {

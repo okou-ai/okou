@@ -5184,6 +5184,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   it.each(["claude-fable-5", "anthropic/claude-fable-5"])(
     "fails a pre-deployment queued %s selection when capacity becomes available",
     async (selectedModel) => {
+      // Two admitted runs keep the next one queued, independent of the plan.
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       const api = createRunsApi(context);
       const { actor, agentId } = await entitledRunActor();
       const first = await api.createRun(actor, {
@@ -5465,6 +5467,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   });
 
   it("queues runs over the concurrency limit and promotes them after cancellation", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const kms = useSecretKmsProbe();
@@ -5539,6 +5543,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   });
 
   it("counts promoted queued runs by promotion heartbeat for admission", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
@@ -5606,6 +5612,8 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
   });
 
   it("keeps a queued launch visible when enqueue telemetry fails", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
 
@@ -13327,6 +13335,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   });
 
   it("does not classify queued or pending runs as terminal", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
     const runnerKey = await api.createCliToken(actor);
@@ -14300,6 +14310,8 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
   });
 
   it("promotes queued runs with feature flags and a fresh api start time", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const computerUse = createComputerUseBddApi(context);
     const connectors = createConnectorBddApi(context);
@@ -16076,6 +16088,8 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
   });
 
   it("uses the promoted api start for the runner claim", async () => {
+    // Two admitted runs keep the next one queued, independent of the plan.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
