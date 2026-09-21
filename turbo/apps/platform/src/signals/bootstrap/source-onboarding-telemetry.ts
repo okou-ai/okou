@@ -6,8 +6,8 @@
 // carries counts, lengths, connector slugs and the enum answers instead.
 import { command, state } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { captureOnboardingEvent } from "../../lib/posthog.ts";
-import type { IndustryId } from "../../views/onboarding-sources-first/onboarding-sources-first-data.ts";
 import {
   sourcesFirstDraft$,
   sourcesFirstFlow$,
@@ -67,7 +67,7 @@ export const captureSourceOnboardingSkipped$ = command(
 );
 
 export const captureSourceOnboardingIndustrySelected$ = command(
-  ({ set }, industry: IndustryId): void => {
+  ({ set }, industry: OnboardingIndustry): void => {
     set(captureStepEvent$, "industry", "IndustrySelected", { industry });
   },
 );
