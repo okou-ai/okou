@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.690.0](https://github.com/okou-ai/okou/compare/core-v8.689.3...core-v8.690.0) (2026-09-21)
+
+
+### Features
+
+* **model-provider:** gate alternative deepseek routing ([#35775](https://github.com/okou-ai/okou/issues/35775)) ([8cffdc6](https://github.com/okou-ai/okou/commit/8cffdc6ecfd86b58ac65c61c62d20bed6ece2d8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.2
+
 ## [8.689.3](https://github.com/okou-ai/okou/compare/core-v8.689.2...core-v8.689.3) (2026-09-21)
 
 
