@@ -177,7 +177,7 @@ export function AppSkeleton({
           onHidden?.();
         }
       }}
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-background ${
+      className={`fixed inset-0 z-30 flex items-center justify-center bg-background ${
         visible
           ? "opacity-100"
           : "opacity-0 pointer-events-none transition-opacity duration-300"

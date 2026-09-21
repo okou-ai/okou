@@ -87,8 +87,10 @@ function restoreScrollAnchor(snapshot: ScrollAnchorSnapshot) {
 }
 
 function movePortal(mount: FullscreenPanelMount, fullscreen: boolean) {
-  // Escape workspace stacking contexts, while remaining below body-level
-  // dialogs and menus inside the isolated app root.
+  // Escape workspace stacking contexts by joining the app root's own. The
+  // panel takes the shell's `cover` rung there; body-level dialogs and menus
+  // stay above it because the app root is a stacking context of its own, not
+  // because of the number. See "Stacking ownership" in docs/styles.md.
   const target = fullscreen
     ? mount.inline.ownerDocument.getElementById("root")
     : mount.inline;
@@ -178,7 +180,7 @@ class FullscreenPanelPortal extends Component<
         {...props}
         className={cn(
           fullscreen
-            ? "fixed inset-0 z-40 flex min-h-0 flex-col bg-background p-safe"
+            ? "fixed inset-0 z-20 flex min-h-0 flex-col bg-background p-safe"
             : "flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0",
           className,
         )}

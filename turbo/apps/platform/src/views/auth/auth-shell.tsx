@@ -45,7 +45,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
           setTheme(nextTheme);
         }}
         className={cn(
-          "fixed z-50 border-border bg-card text-foreground hover:bg-card-hover",
+          "fixed z-20 border-border bg-card text-foreground hover:bg-card-hover",
           "right-safe-offset-6 top-safe-offset-6",
         )}
         aria-label={t(($) => {

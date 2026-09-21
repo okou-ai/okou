@@ -237,7 +237,7 @@ function ExpandedSidebar() {
         // A fixed mobile drawer escapes the page shell, so its content owns an
         // immutable safe-area boundary.
         "max-md:box-border max-md:p-safe",
-        "h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
+        "h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-20 max-md:h-auto max-md:shadow-xl",
         "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
       )}
     >

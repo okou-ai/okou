@@ -745,15 +745,34 @@ A row's background already paints behind its children; a button does not need
 `relative z-10` to sit above it. Event propagation is handled by event handlers,
 not by raising the button's paint order.
 
-- Shared floating primitives follow shadcn's flat `z-50` convention. Their
-  portals and stacking utilities stay inside `@okouai/ui`; callers do not
+- Shared floating primitives follow shadcn's flat `z-50` convention, carried on
+  the backdrop and the positioned element inside `@okouai/ui`; callers do not
   override them. Peer surfaces at the same stack level in the same stacking
-  context follow DOM order, so preserve the primitive's portal structure.
+  context follow DOM order, so preserve the primitive's portal structure. The
+  number is the convention, not the mechanism: these portals are body-level
+  siblings appended after an app root that is itself a stacking context, so
+  they already outrank everything inside it. `z-50` states the intent and
+  ranks them against future body-level content.
 - The shell owns app-wide non-portal layers such as drawers, scrims and
-  fullscreen panels. Keep a small fixed set of literal Tailwind z-index
-  utilities in shell-owned files, below the shared floating layer in the
-  stacking context where they compete. Document each layer's host, the context
-  it participates in and the siblings it must cover.
+  fullscreen panels. They are the elements that participate directly in the app
+  root's stacking context, and they are the only App code that ranks itself
+  against another region. The whole set is four rungs:
+
+  | Rung     | Value  | Host                                                  | Covers                                       |
+  | -------- | ------ | ----------------------------------------------------- | -------------------------------------------- |
+  | `scrim`  | `z-10` | `sidebar-layout.tsx`                                  | the shell behind the mobile drawer           |
+  | `cover`  | `z-20` | `sidebar.tsx` (mobile drawer), `fullscreen-panel.tsx` | the shell and its scrim                      |
+  | `boot`   | `z-30` | `app-skeleton.tsx`                                    | everything, while the app is still resolving |
+  | `notice` | `z-40` | `instatus-status-notice.tsx`                          | a service incident outranks the app          |
+
+  Adding a rung means naming its host and what it must cover, here. The drawer
+  and the fullscreen panel deliberately share `cover`: they are alternatives
+  rather than a stack, and DOM order settles the case where both are open.
+
+- A layer that is not in that table is not a shell layer. A `fixed` surface
+  written inside a route or a card still resolves inside whatever context its
+  ancestors establish, so its number ranks it against its siblings only —
+  keep it small and local rather than borrowing a shell rung.
 - Necessary overlap _inside_ a component is a local exception. Establish an
   explicit `isolate` host around the participating elements in the same change,
   and document why their order is needed. Keep the z-index inside that host;
@@ -780,12 +799,22 @@ Lowering 100 below 50 or removing only `#root`'s isolation cannot repair that
 boundary. The artifact catalog's portal to `#root` escaped it, so removing that
 portal before correcting the host would expose the same bug on that path.
 
-The primitive `z-50` restoration, root-isolation removal, shell-host migration
-and z-index lint are tracked in #35387. Existing z-index declarations are
-migration debt to audit under these ownership rules, including zero, negative
-values and values below 50; passing today's lint does not establish correct
-stacking. Regression coverage must verify that fullscreen content paints above
-sidebar actions and that toggling fullscreen preserves the panel's DOM state.
+The app root keeps its `isolation: isolate`. Removing it was part of the
+original plan and is not happening: `#root` also carries `position: fixed`,
+which establishes the same stacking context on its own, so the declaration
+changes nothing in a browser tab. It is load-bearing in exactly one place —
+the standalone block swaps the app root to `position: absolute`, and there
+`isolate` is the only thing establishing the context. Dropping it would let an
+in-root z-index escape to body level and outrank every dialog, in the PWA only.
+Read the two declarations in `index.css` together before touching either.
+
+The shell-host migration and the primitive `z-50` restoration are done. The
+z-index lint and the remaining call-site cleanup are tracked in #35387.
+Existing z-index declarations are migration debt to audit under these ownership
+rules, including zero, negative values and values below 50; passing today's
+lint does not establish correct stacking. Regression coverage must verify that
+fullscreen content paints above sidebar actions and that toggling fullscreen
+preserves the panel's DOM state.
 
 ### Horizontal hairline rules
 

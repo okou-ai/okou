@@ -190,6 +190,11 @@ describe("FullscreenPanel", () => {
     expect(document.getElementById("root")).toContainElement(
       screen.getByRole("complementary", { name: "Preview" }),
     );
+    // Its rung is read against the other shell layers it now sits beside, so
+    // it must stay below the floating primitives rather than tie with them.
+    expect(screen.getByRole("complementary", { name: "Preview" })).toHaveClass(
+      "z-20",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Exit fullscreen" }));
     expect(

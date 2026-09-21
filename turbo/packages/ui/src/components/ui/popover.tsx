@@ -127,6 +127,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
           alignOffset={alignOffset}
           anchor={anchor}
           className={cn(
+            "z-50",
             hideWhenDetached && "data-anchor-hidden:invisible",
             positionerClassName,
           )}

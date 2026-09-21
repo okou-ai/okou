@@ -102,6 +102,7 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
         <TooltipPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
+          className="z-50"
           collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
           collisionPadding={resolveCollisionPadding(collisionPadding)}

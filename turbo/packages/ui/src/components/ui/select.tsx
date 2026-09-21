@@ -268,6 +268,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
           alignItemWithTrigger={resolvedAlignItemWithTrigger}
           alignOffset={alignOffset}
           anchor={anchor}
+          className="z-50"
           collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
           collisionPadding={resolveCollisionPadding(collisionPadding)}

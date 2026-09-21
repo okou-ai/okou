@@ -474,8 +474,17 @@ body {
 #root {
   box-sizing: border-box;
   /* Base UI appends top-level portals after #root and nests descendant portals
-     under their owning portal. Isolating the app lets that DOM order define
-     floating-layer priority without global z-index values on every primitive. */
+     under their owning portal. The app root is a stacking context, so those
+     body-level siblings paint above everything inside it regardless of the
+     numbers in here — which is what keeps the shell's ladder short enough to
+     read, and what makes the primitives' z-50 a written convention rather than
+     the mechanism.
+
+     `position: fixed` below already establishes that context. This declaration
+     is not redundant: the standalone block swaps the app root to
+     `position: absolute`, and there it is the only thing establishing it.
+     Removing it would let an in-root z-index escape and outrank every dialog,
+     in the PWA only. */
   isolation: isolate;
   position: fixed;
   top: 0;
@@ -491,7 +500,9 @@ body {
   /* Keep editable content in document coordinates. iOS can paint a stale
      caret when a focused editor is inside a fixed-position ancestor. Keep
      keyboard-reserve scrolling programmatic so touch gestures cannot move
-     the app shell into the reserved space. */
+     the app shell into the reserved space. Dropping `position` here would
+     leave `isolation: isolate` above as the app root's only stacking
+     context. */
   #root {
     position: absolute;
     overflow-y: hidden;
