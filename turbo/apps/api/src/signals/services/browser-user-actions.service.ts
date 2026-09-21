@@ -224,8 +224,6 @@ async function loadLiveBrowser(
     .select({
       runId: browserSessions.runId,
       providerSessionId: browserSessionInstances.providerSessionId,
-      timeoutAt: browserSessionInstances.timeoutAt,
-      idleExpiresAt: browserSessionInstances.idleExpiresAt,
     })
     .from(browserSessions)
     .innerJoin(
@@ -269,10 +267,7 @@ async function requestHasLiveBrowser(
   return live !== undefined;
 }
 
-async function touchExactProvider(
-  db: Db,
-  row: RequestRow,
-): Promise<{ readonly timeoutAt: Date; readonly idleExpiresAt: Date } | null> {
+async function touchExactProvider(db: Db, row: RequestRow): Promise<boolean> {
   const now = nowDate();
   const [touched] = await db
     .update(browserSessionInstances)
@@ -291,10 +286,9 @@ async function touchExactProvider(
       ),
     )
     .returning({
-      timeoutAt: browserSessionInstances.timeoutAt,
-      idleExpiresAt: browserSessionInstances.idleExpiresAt,
+      providerSessionId: browserSessionInstances.providerSessionId,
     });
-  return touched ?? null;
+  return touched !== undefined;
 }
 
 async function restorePending(db: Db, requestTokenHash: string): Promise<void> {
