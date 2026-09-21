@@ -11,6 +11,7 @@ import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "./teams-prompt";
 
 export interface TeamsQueuedLaunchMaterial {
@@ -213,6 +214,10 @@ export async function loadTeamsQueuedLaunchMaterial(
       teamsAppId: context.teamsAppId,
       botId,
       botName,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "teams",
+        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+      }),
       threadContext: context.threadContext,
     }),
     publicBrand: context.publicBrand,

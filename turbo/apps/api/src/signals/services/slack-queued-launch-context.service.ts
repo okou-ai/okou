@@ -13,6 +13,7 @@ import {
 } from "../../lib/slack-webhook-context";
 import type { SlackUserInfo } from "../external/slack-message-client";
 import type { Db } from "../external/db";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface SlackQueuedLaunchMaterial {
   readonly prompt: string;
@@ -188,6 +189,10 @@ export async function loadSlackQueuedLaunchMaterial(
       channelId: context.channelId,
       channelType: context.channelType,
       threadTs: context.threadTs,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "slack",
+        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+      }),
       executionContext: context.conversationContext,
     }),
     publicBrand: context.publicBrand,

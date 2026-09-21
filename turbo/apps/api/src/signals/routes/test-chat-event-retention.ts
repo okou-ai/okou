@@ -64,6 +64,7 @@ const resolveSessionPromptFixturesRoute$ = command(
         computerUseHostDisplayName: null,
         triggerSource: "web",
         agentRunSource: null,
+        integrationNote: "",
       },
     });
     signal.throwIfAborted();

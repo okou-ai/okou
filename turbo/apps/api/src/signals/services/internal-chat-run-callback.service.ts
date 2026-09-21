@@ -147,6 +147,7 @@ import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { buildWebChatAppendSystemPrompt } from "./web-chat-session-prompt.service";
 import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
@@ -2909,8 +2910,9 @@ type LaunchLoader = (
  */
 const loadWebQueuedLaunchMaterial: LaunchLoader = (_db, args) => {
   const publicBrand = args.publicBrand ?? undefined;
+  const triggerSource = args.contextType === "agent_run" ? "agent" : "web";
   return Promise.resolve({
-    triggerSource: args.contextType === "agent_run" ? "agent" : "web",
+    triggerSource,
     prompt: args.userMessageProjection.agentPrompt,
     appendSystemPrompt: buildWebChatAppendSystemPrompt({
       threadId: args.chatThreadId,
@@ -2919,8 +2921,12 @@ const loadWebQueuedLaunchMaterial: LaunchLoader = (_db, args) => {
       context: {
         generationTemplatePrompt: "",
         computerUseHostDisplayName: null,
-        triggerSource: args.contextType === "agent_run" ? "agent" : "web",
+        triggerSource,
         agentRunSource: args.agentRunSource,
+        integrationNote: resolveIntegrationNotePrompt({
+          triggerSource,
+          featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+        }),
       },
     }),
     delivery: {},

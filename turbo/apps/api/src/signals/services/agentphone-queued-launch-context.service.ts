@@ -13,6 +13,7 @@ import {
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
 import { buildAgentPhonePrompt } from "./agentphone-prompt";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface AgentPhoneQueuedLaunchMaterial {
   readonly prompt: string;
@@ -166,6 +167,10 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
         messageId: context.messageId,
         agentphoneAgentId: context.agentphoneAgentId,
       },
+      resolveIntegrationNotePrompt({
+        triggerSource: "agentphone",
+        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+      }),
       context.threadContext,
     ),
     publicBrand: context.publicBrand,

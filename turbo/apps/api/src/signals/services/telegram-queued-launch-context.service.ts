@@ -15,6 +15,7 @@ import {
   telegramDeliveryTargetSchema,
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { buildTelegramPrompt } from "./telegram-prompt";
 
 export interface TelegramQueuedLaunchMaterial {
@@ -240,6 +241,10 @@ export async function loadTelegramQueuedLaunchMaterial(
         rootMessageId: context.rootMessageId,
         messageThreadId: context.messageThreadId,
       },
+      resolveIntegrationNotePrompt({
+        triggerSource: "telegram",
+        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+      }),
       context.threadContext,
     ),
     publicBrand,

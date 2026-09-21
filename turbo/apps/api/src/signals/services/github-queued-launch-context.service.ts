@@ -13,6 +13,7 @@ import {
   type GitHubDeliveryTarget,
 } from "./github-chat-callback-payload";
 import { buildGitHubPrompt } from "./github-chat-prompt.service";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface GitHubQueuedLaunchMaterial {
   readonly prompt: string;
@@ -144,6 +145,10 @@ export async function loadGitHubQueuedLaunchMaterial(
       subjectKind: context.subjectKind,
       appId: context.appId,
       appSlug: context.appSlug,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "github",
+        featureSwitchContext: { orgId: args.orgId, userId: args.userId },
+      }),
     }),
     githubDelivery: githubDeliveryTargetSchema.parse({
       installationId: context.installationId,
