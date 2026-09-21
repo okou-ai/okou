@@ -11,6 +11,30 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.934.0](https://github.com/okou-ai/okou/compare/app-v0.933.0...app-v0.934.0) (2026-09-21)
+
+
+### Features
+
+* **platform:** always include archived chats in unread only ([#35804](https://github.com/okou-ai/okou/issues/35804)) ([2f55fcb](https://github.com/okou-ai/okou/commit/2f55fcbee429e5567535aec25d15d715ec6a53d3))
+* **platform:** connect a real subscription from the onboarding step ([#35808](https://github.com/okou-ai/okou/issues/35808)) ([d706cf3](https://github.com/okou-ai/okou/commit/d706cf36967f16f5f82329b7608a0d29b7c5ef0d))
+* **platform:** hide video discovery entries for new accounts ([#35790](https://github.com/okou-ai/okou/issues/35790)) ([c8dd8ba](https://github.com/okou-ai/okou/commit/c8dd8ba9e605f13c97a011728fb881834b9f343e))
+* **platform:** report source-first onboarding funnel events ([#35802](https://github.com/okou-ai/okou/issues/35802)) ([b1d1e6d](https://github.com/okou-ai/okou/commit/b1d1e6d1bfe8623bc3e32dc6f5db98bdca463715))
+* **platform:** send real invitations from the onboarding team step ([#35810](https://github.com/okou-ai/okou/issues/35810)) ([5321d99](https://github.com/okou-ai/okou/commit/5321d99197da6cb7df2d75ca5e99631d4d2c4ccf))
+
+
+### Bug Fixes
+
+* **app:** simplify slash template flyout headers ([#35814](https://github.com/okou-ai/okou/issues/35814)) ([800a878](https://github.com/okou-ai/okou/commit/800a8785291540a11177da73dd79b3dc300e22c9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.484.0
+    * @okouai/core bumped to 8.692.0
+
 ## [0.933.0](https://github.com/okou-ai/okou/compare/app-v0.932.1...app-v0.933.0) (2026-09-21)
 
 

@@ -8,6 +8,36 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.649.0](https://github.com/okou-ai/okou/compare/api-v1.648.0...api-v1.649.0) (2026-09-21)
+
+
+### Features
+
+* add threads and wechat saved social data jobs ([#35789](https://github.com/okou-ai/okou/issues/35789)) ([f753cf4](https://github.com/okou-ai/okou/commit/f753cf44d4f89d5d23be5905973987df8480255c))
+* **api:** add the token-authenticated skill import service ([#35813](https://github.com/okou-ai/okou/issues/35813)) ([8b54e49](https://github.com/okou-ai/okou/commit/8b54e494a7115ac3c5fa3125c7ef425d7bbf1f8e))
+* **api:** move surface delivery rules into an integration note section ([#35797](https://github.com/okou-ai/okou/issues/35797)) ([40f835e](https://github.com/okou-ai/okou/commit/40f835eb8fd5ed28564680f0b79e97db5fd5c652))
+
+
+### Bug Fixes
+
+* **api:** point built-in pi memory extraction at the served deepseek flash model ([#35800](https://github.com/okou-ai/okou/issues/35800)) ([e07fe0b](https://github.com/okou-ai/okou/commit/e07fe0b3f2e06d34b64abd84efd86d649319913e))
+* **artifacts:** upload synced artifacts through a resumable session ([#35753](https://github.com/okou-ai/okou/issues/35753)) ([3914c10](https://github.com/okou-ai/okou/commit/3914c10ff851960ddbef9d7da8310d77fe942937))
+
+
+### Documentation
+
+* **mcp:** clarify deferred default-model pinning ([#35822](https://github.com/okou-ai/okou/issues/35822)) ([cd09ff4](https://github.com/okou-ai/okou/commit/cd09ff48b6f72577c7e26964240c6fcc18680c86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.484.0
+    * @okouai/core bumped to 8.692.0
+    * @okouai/db bumped to 1.282.1
+    * @okouai/pi-agent-runtime bumped to 1.34.4
+
 ## [1.648.0](https://github.com/okou-ai/okou/compare/api-v1.647.0...api-v1.648.0) (2026-09-21)
 
 
