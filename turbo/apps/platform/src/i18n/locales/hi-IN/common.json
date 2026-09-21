@@ -602,13 +602,13 @@
       "loadFailed": "अनुमतियाँ लोड नहीं हो सकीं",
       "loadingPermissions": "अनुमतियाँ लोड हो रही हैं",
       "onlyMe": "केवल मैं",
-      "onlyMeDescription": "केवल आप यह आर्टिफ़ैक्ट देख सकते हैं",
+      "onlyMeOption": "केवल मैं",
       "organization": "संगठन",
-      "organizationDescription": "{{organization}} में लिंक वाला कोई भी व्यक्ति",
-      "organizationDescriptionUnnamed": "आपके संगठन में लिंक रखने वाला कोई भी व्यक्ति",
+      "organizationOption": "{{organization}} में कोई भी व्यक्ति",
+      "organizationOptionUnnamed": "आपके संगठन में कोई भी व्यक्ति",
       "permissionsUpdated": "पहुँच अपडेट हो गई",
       "publicAccess": "सार्वजनिक ऐक्सेस",
-      "publicDescription": "लिंक वाला कोई भी व्यक्ति देख सकता है",
+      "publicOption": "लिंक वाला कोई भी व्यक्ति",
       "retry": "फिर से कोशिश करें"
     },
     "sidebar": {

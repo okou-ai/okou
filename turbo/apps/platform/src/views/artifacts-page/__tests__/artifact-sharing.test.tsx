@@ -8,7 +8,7 @@ import {
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   click,
@@ -50,12 +50,14 @@ function action(
 }
 
 function permission(label: "Only me" | "Organization" | "Public access") {
-  const descriptions = {
-    "Only me": "Only you can view this artifact",
-    Organization: "Anyone in Acme with the link",
-    "Public access": "Anyone with the link can view",
+  // Each row now states its audience in one line, so the label the row carries
+  // is no longer the audience's short name.
+  const rows = {
+    "Only me": "Only me",
+    Organization: "Anyone at Acme",
+    "Public access": "Anyone with the link",
   };
-  return action("radio", `${label}${descriptions[label]}`);
+  return action("radio", rows[label]);
 }
 
 const deploymentId = "00000000-0000-4000-8000-000000000009";
@@ -169,11 +171,7 @@ test("owners can change three access levels separately from copying the stable a
     queryAllByRoleFast("radio").map((element) => {
       return element.textContent;
     }),
-  ).toStrictEqual([
-    "Only meOnly you can view this artifact",
-    "OrganizationAnyone in Acme with the link",
-    "Public accessAnyone with the link can view",
-  ]);
+  ).toStrictEqual(["Only me", "Anyone at Acme", "Anyone with the link"]);
   expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
@@ -225,6 +223,26 @@ test("a recipient's share button copies directly without a permissions menu or m
   expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   expect(screen.queryByText("Copy link")).not.toBeInTheDocument();
   await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+});
+
+test("the menu shows the link Copy link will put on the clipboard", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, sharingStatus());
+  });
+  await openArtifact();
+  await openShareMenu();
+  const copied = new URL(canonical, location.origin);
+  const menu = screen.getByRole("dialog", { name: "Share" });
+  // The row states the destination so the owner can see what they are about to
+  // hand out; the copy below is what proves the two are the same link.
+  expect(
+    within(menu).getByText(`${copied.host}${copied.pathname}`),
+  ).toBeInTheDocument();
+  click(action("button", "Copy link"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual([copied.href]);
+  });
 });
 
 test("copying Only me does not create a share", async () => {
@@ -377,14 +395,11 @@ test("closing a pending share cancels copying and reopening reuses the prefetche
   await openArtifact();
   click(action("button", "Share"));
   await screen.findByRole("status", { name: "Loading permissions" });
-  const menu = screen.getByRole("dialog", { name: "Share" });
-  const close = queryAllByRoleFast("button", menu).find((button) => {
-    return button.getAttribute("aria-label") === "Close";
+  // A share menu is a popover, so Escape is how it closes; it carries no
+  // dialog-style close button of its own.
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Share" }), {
+    key: "Escape",
   });
-  if (!close) {
-    throw new Error("Missing menu close action");
-  }
-  click(close);
   await waitFor(() => {
     return expect(
       screen.queryByRole("dialog", { name: "Share" }),
@@ -517,7 +532,7 @@ test("status errors do not treat an owner as a recipient, and the action can be 
   // The organization is named by the permission read that just failed, so the
   // row falls back to wording that does not invent one.
   expect(
-    within(choices).getByText("Anyone in your organization with the link"),
+    within(choices).getByText("Anyone in your organization"),
   ).toBeInTheDocument();
   expect(within(choices).queryByText(/Acme/u)).not.toBeInTheDocument();
 

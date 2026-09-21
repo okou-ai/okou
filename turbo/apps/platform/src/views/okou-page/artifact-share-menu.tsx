@@ -1,23 +1,27 @@
-import type { KeyboardEvent } from "react";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+// The shared `Radio` is the 16px circle meant to sit beside a label. Here the
+// whole row is the control and the trailing check marks it, the way
+// `DropdownMenu` and `Select` mark theirs, so the row composes `Radio.Root`
+// directly and keeps Base UI's roving focus and arrow-key selection.
+import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import {
   Check,
-  Copy,
   Globe,
+  Link2,
   Loader2,
   LockKeyhole,
   Share2,
   Users,
-  X,
 } from "lucide-react";
 import {
   Button,
+  MENU_ROW_HEIGHT_CLASS,
   Popover,
-  PopoverClose,
   PopoverContent,
   PopoverTrigger,
+  RadioGroup,
   Skeleton,
   cn,
 } from "@okouai/ui";
@@ -31,43 +35,17 @@ import type {
   AttachmentPreviewSignals,
 } from "../../signals/attachment-resource-url.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { publicAttachmentUrl } from "./attachment-url.ts";
 
-function navigatePermissions(event: KeyboardEvent<HTMLDivElement>) {
-  if (
-    ![
-      "ArrowDown",
-      "ArrowRight",
-      "ArrowUp",
-      "ArrowLeft",
-      "Home",
-      "End",
-    ].includes(event.key)
-  ) {
-    return;
-  }
-  const items = [
-    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="radio"]:not(:disabled)',
-    ),
-  ];
-  const index = items.findIndex((item) => {
-    return item === event.target;
-  });
-  if (index === -1) {
-    return;
-  }
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? items.length - 1
-        : (index +
-            (event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1) +
-            items.length) %
-          items.length;
-  event.preventDefault();
-  items[next]?.focus();
-  items[next]?.click();
+/**
+ * What Copy link actually puts on the clipboard, minus the scheme. Showing it
+ * is the only way the menu answers "which link am I about to hand out?", so it
+ * goes through the same `publicAttachmentUrl` the copy command uses rather than
+ * rendering `copyUrl` and hoping the two agree.
+ */
+function shareLinkLabel(copyUrl: string): string {
+  const url = new URL(publicAttachmentUrl(copyUrl), location.origin);
+  return `${url.host}${url.pathname}${url.search}${url.hash}`;
 }
 
 function PermissionChoices({
@@ -89,28 +67,22 @@ function PermissionChoices({
       audience: "private",
       Icon: LockKeyhole,
       label: t(($) => {
-        return $.artifacts.sharing.onlyMe;
-      }),
-      description: t(($) => {
-        return $.artifacts.sharing.onlyMeDescription;
+        return $.artifacts.sharing.onlyMeOption;
       }),
     },
     {
       audience: "organization",
       Icon: Users,
-      label: t(($) => {
-        return $.artifacts.sharing.organization;
-      }),
       // A failed permission read still knows the option exists, but not which
       // workspace it names, so the unnamed wording stands in for it.
-      description:
+      label:
         organizationName === null
           ? t(($) => {
-              return $.artifacts.sharing.organizationDescriptionUnnamed;
+              return $.artifacts.sharing.organizationOptionUnnamed;
             })
           : t(
               ($) => {
-                return $.artifacts.sharing.organizationDescription;
+                return $.artifacts.sharing.organizationOption;
               },
               {
                 organization: organizationName,
@@ -121,118 +93,119 @@ function PermissionChoices({
       audience: "public",
       Icon: Globe,
       label: t(($) => {
-        return $.artifacts.sharing.publicAccess;
-      }),
-      description: t(($) => {
-        return $.artifacts.sharing.publicDescription;
+        return $.artifacts.sharing.publicOption;
       }),
     },
   ] as const;
   return (
-    <div
-      role="radiogroup"
-      onKeyDown={navigatePermissions}
+    <RadioGroup
       aria-label={t(($) => {
         return $.artifacts.sharing.accessLabel;
       })}
-      className="space-y-1"
+      disabled={unavailable}
+      value={selected ?? null}
+      onValueChange={(value) => {
+        return onChange(value as ArtifactShareStatus["audience"]);
+      }}
     >
-      {options.map(({ audience, Icon, label, description }) => {
+      {options.map(({ audience, Icon, label }) => {
+        const isSelected = selected === audience;
         return (
-          <button
+          <RadioPrimitive.Root
             key={audience}
-            type="button"
-            role="radio"
-            aria-checked={selected === audience}
-            disabled={unavailable}
-            tabIndex={selected === audience ? 0 : -1}
-            aria-busy={selected === audience && saving}
+            value={audience}
+            nativeButton
+            render={<button type="button" />}
+            aria-busy={isSelected && saving}
             className={cn(
-              "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-              unavailable ? "opacity-50" : "hover:bg-state-hover",
-              selected === audience && "bg-state-hover",
+              "flex w-full select-none items-center gap-2 rounded-lg px-2 text-left outline-none transition-colors",
+              MENU_ROW_HEIGHT_CLASS,
+              unavailable && "opacity-50",
+              // `state-hover` says "the pointer is here"; selection owns
+              // `state-selected`. Painting both with the hover layer made a
+              // hovered row and the current audience the same fill.
+              isSelected
+                ? "bg-state-selected hover:bg-state-selected-hover"
+                : "hover:bg-state-hover",
+              unavailable && "hover:bg-transparent",
             )}
-            onClick={() => {
-              return onChange(audience);
-            }}
           >
-            <Icon size={18} className="shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">{label}</span>
-              <span className="block text-xs text-muted-foreground">
-                {description}
-              </span>
+            <Icon size={16} className="shrink-0 text-muted-foreground" />
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate",
+                isSelected && "font-medium",
+              )}
+            >
+              {label}
             </span>
-            {selected === audience &&
+            {isSelected &&
               (saving ? (
                 <Loader2 size={16} className="shrink-0 animate-spin" />
               ) : (
                 <Check size={16} className="shrink-0" />
               ))}
-          </button>
+          </RadioPrimitive.Root>
         );
       })}
-    </div>
+    </RadioGroup>
   );
 }
 
-function ShareFooter({
-  failed,
+function ShareLinkRow({
   copying,
-  ready,
-  onRetry,
+  link,
   onCopy,
 }: {
-  readonly failed: boolean;
   readonly copying: boolean;
-  readonly ready: boolean;
-  readonly onRetry: () => void;
+  readonly link: string | null;
   readonly onCopy: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div
-      className={cn(
-        "mt-2 flex items-center gap-3 border-t border-divider px-3 pb-2 pt-4",
-        failed ? "justify-between" : "justify-end",
-      )}
-    >
-      {failed && (
-        <span className="text-xs text-muted-foreground" role="status">
-          {t(($) => {
-            return $.artifacts.sharing.loadFailed;
-          })}
-        </span>
-      )}
-      {failed ? (
-        <Button
-          size="sm"
-          onClick={() => {
-            return onRetry();
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.sharing.retry;
-          })}
-        </Button>
-      ) : (
-        <Button
-          size="sm"
-          disabled={copying || !ready}
-          onClick={() => {
-            return onCopy();
-          }}
-        >
-          {copying ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Copy size={14} />
-          )}
-          {t(($) => {
-            return $.artifacts.sharing.copyLink;
-          })}
-        </Button>
-      )}
+    <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1">
+      <Link2 size={14} className="shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        {link}
+      </span>
+      <Button
+        variant="quiet"
+        size="sm"
+        className="shrink-0"
+        disabled={copying || link === null}
+        onClick={() => {
+          return onCopy();
+        }}
+      >
+        {copying && <Loader2 size={14} className="animate-spin" />}
+        {t(($) => {
+          return $.artifacts.sharing.copyLink;
+        })}
+      </Button>
+    </div>
+  );
+}
+
+function ShareRetryRow({ onRetry }: { readonly onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-1.5 flex items-center justify-between gap-3 px-2 py-1">
+      <span className="text-xs text-muted-foreground" role="status">
+        {t(($) => {
+          return $.artifacts.sharing.loadFailed;
+        })}
+      </span>
+      <Button
+        size="sm"
+        variant="neutral"
+        onClick={() => {
+          return onRetry();
+        }}
+      >
+        {t(($) => {
+          return $.artifacts.sharing.retry;
+        })}
+      </Button>
     </div>
   );
 }
@@ -245,21 +218,25 @@ function ShareSkeleton() {
       aria-label={t(($) => {
         return $.artifacts.sharing.loadingPermissions;
       })}
-      className="space-y-1"
     >
       {[0, 1, 2].map((index) => {
         return (
-          <div key={index} className="flex items-center gap-3 px-3 py-3">
-            <Skeleton className="size-[18px] rounded" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-24 rounded" />
-              <Skeleton className="h-3 w-48 rounded" />
-            </div>
+          <div
+            key={index}
+            className={cn(
+              "flex items-center gap-2 px-2",
+              MENU_ROW_HEIGHT_CLASS,
+            )}
+          >
+            <Skeleton className="size-4 rounded" />
+            <Skeleton className="h-4 w-40 rounded" />
           </div>
         );
       })}
-      <div className="flex justify-end border-t border-divider px-3 pb-2 pt-4">
-        <Skeleton className="h-8 w-28 rounded-lg" />
+      <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-muted/30 py-1 pl-2.5 pr-1">
+        <Skeleton className="size-3.5 rounded" />
+        <Skeleton className="h-3 flex-1 rounded" />
+        <Skeleton className="h-8 w-20 rounded-lg" />
       </div>
     </div>
   );
@@ -319,6 +296,8 @@ function ShareSessionMenu({
     throw new Error("Artifact sharing session is not mounted");
   }
   const recipient = loadable.state === "hasData" && !loadable.data?.status;
+  const failed = loadable.state === "hasError";
+  const loading = !details && loadable.state === "loading";
   return (
     <Popover
       open={requestedOpen && !recipient}
@@ -336,23 +315,22 @@ function ShareSessionMenu({
       >
         <Share2 size={iconSize} />
       </PopoverTrigger>
+      {/* Corner, stroke and shadow stay with `PopoverContent`; a share menu is
+          not a dialog and gets no title bar, close button or footer rule. */}
       <PopoverContent
         aria-label={title}
         align="end"
-        className="w-[368px] max-w-[calc(100vw-32px)] rounded-3xl border border-divider bg-card p-2"
+        className="w-80 max-w-[calc(100vw-32px)] p-1.5"
       >
-        <div className="flex items-center justify-between px-3 pb-2 pt-2">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <PopoverClose
-            aria-label={t(($) => {
-              return $.artifacts.actions.close;
-            })}
-            render={<Button variant="quiet" size="icon-sm" />}
-          >
-            <X size={16} />
-          </PopoverClose>
+        <div
+          aria-hidden="true"
+          className="px-2 pb-1 pt-1 text-xs font-medium text-muted-foreground"
+        >
+          {t(($) => {
+            return $.artifacts.sharing.accessLabel;
+          })}
         </div>
-        {!details && loadable.state === "loading" ? (
+        {loading ? (
           <ShareSkeleton />
         ) : (
           <>
@@ -369,7 +347,7 @@ function ShareSessionMenu({
               /* A failed read leaves the audience unknown, not absent. Keeping
                  the choices in place, inert and unselected, holds the menu's
                  shape and shows what Retry will restore. */
-              loadable.state === "hasError" && (
+              failed && (
                 <PermissionChoices
                   selected={undefined}
                   organizationName={null}
@@ -381,17 +359,21 @@ function ShareSessionMenu({
                 />
               )
             )}
-            <ShareFooter
-              failed={loadable.state === "hasError"}
-              copying={copying.state === "loading"}
-              ready={Boolean(details?.status)}
-              onRetry={() => {
-                return detach(refresh(signal), Reason.DomCallback);
-              }}
-              onCopy={() => {
-                return detach(copy(signal), Reason.DomCallback);
-              }}
-            />
+            {failed ? (
+              <ShareRetryRow
+                onRetry={() => {
+                  return detach(refresh(signal), Reason.DomCallback);
+                }}
+              />
+            ) : (
+              <ShareLinkRow
+                copying={copying.state === "loading"}
+                link={details?.status ? shareLinkLabel(details.copyUrl) : null}
+                onCopy={() => {
+                  return detach(copy(signal), Reason.DomCallback);
+                }}
+              />
+            )}
           </>
         )}
       </PopoverContent>
