@@ -9,7 +9,6 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
-import { db$ } from "../external/db";
 import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
 import {
@@ -78,7 +77,6 @@ const resolveFileReference$ = command(
     return null;
   },
 );
-
 
 const resolveReference$ = command(
   async (

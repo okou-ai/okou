@@ -297,9 +297,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       publications.map((site) => {
         return site.publicSlug;
       }),
-    ).toStrictEqual(Array.from({ length: 8 }, () => {
-      return body.site;
-    }));
+    ).toStrictEqual(
+      Array.from({ length: 8 }, () => {
+        return body.site;
+      }),
+    );
     expect(
       publications.map((site) => {
         return site.deploymentVersion;

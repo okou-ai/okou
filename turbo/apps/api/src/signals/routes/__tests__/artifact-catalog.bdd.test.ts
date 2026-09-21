@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -8,13 +7,11 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
-import { hostRoutes } from "../host";
 import { sharedThreadRoutes } from "../shared-threads";
 import {
   createBddApi,
@@ -385,45 +382,6 @@ async function publishHostedSite(args: {
       : { deploymentVersion: prepared.deploymentVersion }),
     runId: run.runId,
     threadId: run.threadId,
-  };
-}
-
-async function publishHostedSiteFromDirectRun(args: {
-  readonly owner: CatalogActor;
-  readonly site: string;
-  readonly artifactKind?: "hosted-site" | "presentation-html";
-  readonly runId?: string;
-}): Promise<{
-  readonly url: string;
-  readonly siteId: string;
-  readonly publicSlug: string;
-  readonly runId: string;
-}> {
-  const runId =
-    args.runId ??
-    (
-      await api.createDirectRun(args.owner.actor, {
-        agentId: args.owner.agentId,
-        prompt: `publish ${args.site}`,
-        modelProviderType: "anthropic-api-key",
-        triggerSource: "automation-schedule",
-        vars: { OKOU_AGENT_ID: args.owner.agentId },
-        secrets: { OKOU_TOKEN: "bdd-artifact-catalog-token" },
-      })
-    ).runId;
-  const bearer = `Bearer ${scopedOkouToken(args.owner, runId, ["host:write"])}`;
-  const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
-    site: args.site,
-    artifactKind: args.artifactKind ?? "hosted-site",
-    spaFallback: false,
-    files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
-  });
-  await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  return {
-    url: prepared.url,
-    siteId: prepared.siteId,
-    publicSlug: prepared.publicSlug,
-    runId,
   };
 }
 
@@ -893,7 +851,6 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual(expect.arrayContaining([first.siteId, secondChat.siteId]));
   }, 180_000);
 
-
   it("catalogues a published deck as a presentation", async () => {
     const owner = await catalogActor("Artifact catalog deck owner");
     const site = `catalog-deck-${randomUUID().slice(0, 8)}`;
@@ -946,7 +903,6 @@ describe("GET /api/artifacts/catalog", () => {
       ]),
     );
   }, 180_000);
-
 
   it("filters by kind without leaking other kinds", async () => {
     const owner = await catalogActor("Artifact catalog filter owner");

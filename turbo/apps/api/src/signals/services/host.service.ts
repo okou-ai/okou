@@ -741,9 +741,10 @@ async function maxHostedDeploymentVersion(
 ): Promise<number> {
   const publicVersion = await db
     .select({
-      version: sql`max((${hostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
-        nullableDriverValueDecoder(pgIntegerDecoder),
-      ),
+      version:
+        sql`max((${hostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
     })
     .from(hostedDeployments)
     .where(
@@ -756,9 +757,10 @@ async function maxHostedDeploymentVersion(
     );
   const privateVersion = await db
     .select({
-      version: sql`max((${privateHostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
-        nullableDriverValueDecoder(pgIntegerDecoder),
-      ),
+      version:
+        sql`max((${privateHostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
     })
     .from(privateHostedDeployments)
     .where(

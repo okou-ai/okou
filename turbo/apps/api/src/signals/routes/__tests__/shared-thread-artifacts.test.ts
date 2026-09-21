@@ -17,7 +17,6 @@ import { completeHostedSiteWithoutDependencyIndex } from "../../../test-fixtures
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
   artifactReferencePath,
@@ -35,7 +34,6 @@ import { artifactShareRoutes } from "../artifact-shares";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { hostRoutes } from "../host";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -927,7 +925,6 @@ test("snapshot reference collisions preserve the existing owner reference", asyn
   expect(snapshot.body.url).toContain(`/thread-shares/${created.body.id}/`);
 });
 
-
 test.each(["short", "legacy"] as const)(
   "%s organization share references cannot authorize a recipient to publish a thread snapshot",
   async (format) => {
@@ -1229,17 +1226,6 @@ test("publication rechecks current ownership after allocating its durable snapsh
   expect(catalog.artifacts).toStrictEqual([]);
 });
 
-function hostedSourceReads(deploymentId: string): string[] {
-  return context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-    return command instanceof GetObjectCommand &&
-      command.input.Key?.startsWith(`private-sites/okou/${deploymentId}/`)
-      ? [command.input.Key]
-      : [];
-  });
-}
-
-
-
 test.each(["publish", "delete", "cancel"] as const)(
   "copies while the title is pending and respects the final action: %s",
   async (action) => {
@@ -1440,4 +1426,3 @@ test("registers independent dependency aliases concurrently and deduplicates rep
   expect(registrations).toBe(2);
   expect(f.copies).toHaveLength(2);
 });
-

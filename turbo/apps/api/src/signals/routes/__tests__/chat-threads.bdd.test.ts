@@ -4061,18 +4061,13 @@ describe("CHAT-01 chat search index", () => {
 
 describe("CHAT-03 thread artifacts and google drive status", () => {
   it.each(["hosted-site", "presentation-html"] as const)(
-    "exports private %s as an owned bundle to Google Drive",
+    "exports a hosted %s as an owned bundle to Google Drive",
     async (artifactKind) => {
-      const { actor, agentId } = await entitledChatActor(
-        "Private HTML Drive owner",
-      );
+      const { actor, agentId } = await entitledChatActor("HTML Drive owner");
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PrivateArtifacts]: true,
-      });
       const run = await sendChatRun(actor, {
         agentId,
-        prompt: "Create a private HTML artifact",
+        prompt: "Create a hosted HTML artifact",
       });
       const objectStore = chatCallbacks.acceptChatObjectStorage();
       context.mocks.s3.getSignedUrl.mockResolvedValue(
@@ -4099,7 +4094,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       ] as const) {
         objectStore.addObject({
           bucket: "test-hosted-sites",
-          key: `private-sites/okou/${prepared.deploymentId}${path}`,
+          key: `sites/brands/okou/publications/${prepared.deploymentId}${path}`,
           size: Buffer.byteLength(body),
           body: Buffer.from(body),
         });
@@ -4111,10 +4106,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           return item.files;
         })
         .find((file) => {
-          return file.url === prepared.url;
+          return file.url === prepared.artifactUrl;
         });
       if (!artifact) {
-        throw new Error("Expected private hosted artifact");
+        throw new Error("Expected hosted artifact");
       }
       mockGoogleDriveConnectorOAuth();
       const start = await connectorsApi.startOauth(
@@ -4268,9 +4263,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Single page Drive owner",
     );
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-    });
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "Create a self-contained HTML artifact",
@@ -4292,7 +4284,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     objectStore.addObject({
       bucket: "test-hosted-sites",
-      key: `private-sites/okou/${prepared.deploymentId}/index.html`,
+      key: `sites/brands/okou/publications/${prepared.deploymentId}/index.html`,
       size: Buffer.byteLength(index),
       body: Buffer.from(index),
     });
@@ -4303,7 +4295,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         return item.files;
       })
       .find((file) => {
-        return file.url === prepared.url;
+        return file.url === prepared.artifactUrl;
       });
     if (!artifact) {
       throw new Error("Expected a hosted artifact");

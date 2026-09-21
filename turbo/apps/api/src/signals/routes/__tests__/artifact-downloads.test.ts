@@ -11,10 +11,7 @@ import {
   artifactSharesContract,
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import {
-  hostContract,
-  type HostedSiteFilesResponse,
-} from "@okouai/api-contracts/contracts/host";
+import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
@@ -120,8 +117,16 @@ async function rejectDownload(actor: ApiTestUser, url: string) {
 const siteFiles = Object.freeze([
   hostedTextFile("/index.html", '<a href="pages/report.html">Report</a>'),
   hostedTextFile("/pages/report.html", "<main>Report details</main>"),
-  hostedTextFile("/assets/site-1a9b3c57.css", "main { color: green }", "text/css"),
-  hostedTextFile("/assets/site-6d2e8f31.js", "console.log('report')", "text/javascript"),
+  hostedTextFile(
+    "/assets/site-1a9b3c57.css",
+    "main { color: green }",
+    "text/css",
+  ),
+  hostedTextFile(
+    "/assets/site-6d2e8f31.js",
+    "console.log('report')",
+    "text/javascript",
+  ),
   hostedTextFile("/assets/chart-2b7e10d4.svg", "<svg></svg>", "image/svg+xml"),
 ]);
 
@@ -275,25 +280,6 @@ function expectCompleteSite(
   );
 }
 
-function expectSharedSnapshot(site: HostedSiteFilesResponse) {
-  const prefix = storageKey(site.files[0]!.downloadUrl).slice(
-    0,
-    -site.files[0]!.path.length,
-  );
-  expect(prefix).toMatch(
-    /^shared-artifacts\/okou\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/u,
-  );
-  expect(prefix.endsWith(`/${site.deploymentId}`)).toBeTruthy();
-  for (const file of site.files) {
-    expect(storageKey(file.downloadUrl)).toBe(`${prefix}${file.path}`);
-  }
-}
-
-
-
-
-
-
 test.each([
   { filename: "report.pdf", contentType: "application/pdf" },
   { filename: "standalone.html", contentType: "text/html" },
@@ -366,4 +352,3 @@ test("legacy public sites are cloneable outside their originating organization",
     }
   }
 });
-

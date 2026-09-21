@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactShareStatus } from "@okouai/api-contracts/contracts/artifact-shares";
 import { server } from "../../../mocks/server";
 import { uploadFileCommand } from "../../web/upload-file";
-import { hostCommand } from "../../host";
 
 const API = "http://localhost:3000";
 const ID = "00000000-0000-4000-8000-000000000001";
@@ -25,16 +24,6 @@ const surfaces = [
     completePath: "/api/uploads/complete",
     args: (dir: string) => {
       return ["-f", join(dir, "report-b7f3c91a.txt")];
-    },
-  },
-  {
-    label: "host",
-    kind: "html" as const,
-    command: hostCommand,
-    preparePath: "/api/host/deployments/prepare",
-    completePath: `/api/host/deployments/${ID}/complete`,
-    args: (dir: string) => {
-      return [dir, "--site", "visibility-test"];
     },
   },
 ];
@@ -79,17 +68,6 @@ describe.each(surfaces)("$label visibility", (surface) => {
       size: 14,
       url,
     };
-    const deployment = {
-      siteId: SITE_ID,
-      deploymentId: ID,
-      publicSlug: "visibility-test",
-      deploymentVersion: 2,
-      artifactUrl: url,
-      url,
-      isActive: false,
-      activeDeploymentVersion: 1,
-      status: "ready",
-    };
     server.use(
       http.post(
         `${API}${surface.preparePath}${options.guarded ? "/private" : ""}`,
@@ -101,25 +79,14 @@ describe.each(surfaces)("$label visibility", (surface) => {
           if (!options.guarded) {
             expect(body).not.toHaveProperty("requirePrivateArtifact");
           }
-          return HttpResponse.json(
-            surface.kind === "file"
-              ? { ...file, uploadUrl: PUT_URL }
-              : {
-                  ...deployment,
-                  uploads: [
-                    { path: "/index.html", uploadUrl: PUT_URL },
-                    { path: "/report-b7f3c91a.txt", uploadUrl: PUT_URL },
-                    { path: "/robots.txt", uploadUrl: PUT_URL },
-                  ],
-                },
-          );
+          return HttpResponse.json({ ...file, uploadUrl: PUT_URL });
         },
       ),
       http.put(PUT_URL, () => {
         return new HttpResponse(null, { status: 200 });
       }),
       http.post(`${API}${surface.completePath}`, () => {
-        return HttpResponse.json(surface.kind === "file" ? file : deployment);
+        return HttpResponse.json(file);
       }),
     );
     return target;
@@ -142,7 +109,7 @@ describe.each(surfaces)("$label visibility", (surface) => {
       organization: { id: "org_original", name: "Original organization" },
       selectedTarget: null,
       selectedVersion: null,
-      candidateVersion: surface.kind === "html" ? 2 : null,
+      candidateVersion: null,
       url: null,
       shortUrl: null,
     };

@@ -1,5 +1,4 @@
 import { mockNow, now } from "../../../lib/time";
-import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -34,10 +33,6 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
-import { createBddApi } from "./helpers/api-bdd";
-import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
-import { createRunsApi } from "./helpers/api-bdd-runs";
-import { hostedTextFile } from "./helpers/api-bdd-host-files";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -234,23 +229,6 @@ async function fixture() {
   session();
   await flag(true);
   return { owner, org, organization, members, objects, session };
-}
-
-async function hostedFixture() {
-  const sharing = await fixture();
-  const organizationMemberships =
-    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
-  const actor = createBddApi(context).user({
-    userId: sharing.owner,
-    orgId: sharing.org,
-  });
-  await createRunsApi(context).grantProEntitlement(actor);
-  // Entitlement setup installs its own Clerk fixture. Restore the sharing
-  // directory before any share request needs organization names or members.
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-    organizationMemberships,
-  );
-  return { ...sharing, actor };
 }
 
 test.each(["private", "organization", "public"] as const)(
@@ -1014,7 +992,6 @@ describe("GET /api/artifact-references/:reference/read", () => {
     }
   });
 
-
   it("even public references require authentication and artifact read capability", async () => {
     const { owner, org } = await fixture();
     const target = await file();
@@ -1559,10 +1536,6 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
   });
 });
 
-
-
-
-
 test("organization short-reference collisions retry without taking another share's address", async () => {
   const { objects } = await fixture();
   const original = await file();
@@ -1870,4 +1843,3 @@ test("canonical file links disclose public previews only while explicitly public
     [404],
   );
 });
-

@@ -1,16 +1,5 @@
-import { createHash } from "node:crypto";
 import { command, computed } from "ccstate";
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
-import { z } from "zod";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactShareReferencePath,
@@ -22,22 +11,14 @@ import {
   sharedThreadArtifactPolicySchema,
   type SharedThreadArtifactPolicy,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
-import {
-  hostedSites,
-  privateHostedDeployments,
-} from "@okouai/db/runtime/hosted-site";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
-import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
 import { db$ } from "../external/db";
 import {
   copyArtifactShareObject,
-  readHostedSiteSnapshotSource,
   putHostedSitesS3Object,
-  readArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
 import { mapConcurrent } from "../../lib/map-concurrent";
@@ -47,16 +28,8 @@ import {
 } from "./shared-thread-telemetry";
 import {
   ARTIFACT_REFERENCE_PATTERN as REFERENCE_PATTERN,
-  artifactTextContentType,
   artifactTextReferences,
-  MAX_ARTIFACT_TEXT_BYTES as MAX_TEXT_BYTES,
-  MAX_ARTIFACT_TOTAL_TEXT_BYTES as MAX_TOTAL_TEXT_BYTES,
 } from "../../lib/artifact-text-references";
-import {
-  collectHostedSiteDependencies$,
-  hostedSiteDeliveryManifest,
-} from "./hosted-site-dependencies.service";
-
 import {
   artifactFileReference,
   privateArtifactRecord,
@@ -474,7 +447,7 @@ function replaceSnapshotReferences(
 
 const rewriteSnapshotContent$ = command(
   async (
-    { get, set },
+    { get },
     args: SnapshotOwner & {
       readonly content: string;
       readonly delivery: "reference" | "bytes";
@@ -542,7 +515,6 @@ export const prepareSharedThreadArtifacts$ = command(
     const pendingResources = new Map<string, Promise<SnapshotResource>>();
     const reservedTokens = new Set<string>();
     const copies: SnapshotCopy[] = [];
-    const budget = { sourceBytes: 0, outputBytes: 0 };
 
     async function allocate(
       reference: ResourceReference,

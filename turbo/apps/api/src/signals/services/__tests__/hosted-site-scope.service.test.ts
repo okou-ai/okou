@@ -551,9 +551,9 @@ describe.each([true, false])(
           ],
         },
       };
-      await expect(
-        createDeployment(harness.db, invalid),
-      ).rejects.toMatchObject({ cause: { code: "23514" } });
+      await expect(createDeployment(harness.db, invalid)).rejects.toMatchObject(
+        { cause: { code: "23514" } },
+      );
       await expect(
         harness.db.select().from(hostedSites),
       ).resolves.toStrictEqual([]);
