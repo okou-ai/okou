@@ -124,8 +124,8 @@ and owner admission. KMS and Clerk calls never run under these locks.
 
 Apply the generated VNC authority migration before the new API. It adds the
 Agent grant table; the existing connection schema and public responses stay
-unchanged. Old Runners make no VNC calls; missing endpoints cannot authorize a new
-Runner operation.
+unchanged. Runners predating the original VNC runtime make no VNC calls; missing
+endpoints cannot authorize a new Runner operation.
 
 Deploy the API decoder before Runners that advertise X509Plain. The widened API
 continues serving older X509Vnc-only Runners. A new Runner against an older API
