@@ -6273,15 +6273,15 @@
       }
     },
     "paidTools": {
-      "description": "Pilih alat bawaan berbayar yang dapat Anda gunakan.",
-      "descriptionInWorkspace": "Pilih alat bawaan berbayar yang dapat Anda gunakan di {{workspace}}.",
+      "description": "Pilih alat berbayar yang dapat digunakan Okou dalam tugas Anda. Setiap penggunaan memakai kredit.",
       "disabledForCreation": "{{tool}} dinonaktifkan di pengaturan alat berbayar Anda.",
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
-      "openSettings": "Buka pengaturan alat berbayar",
+      "openSettings": "Buka pengaturan",
       "retry": "Coba lagi",
       "saveError": "Perubahan Anda tidak tersimpan.",
       "saving": "Menyimpan…",
+      "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
       "title": "Alat berbayar",
       "tools": {

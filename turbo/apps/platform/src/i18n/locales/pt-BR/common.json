@@ -6348,15 +6348,15 @@
       }
     },
     "paidTools": {
-      "description": "Escolha quais ferramentas pagas integradas você pode usar.",
-      "descriptionInWorkspace": "Escolha quais ferramentas pagas integradas você pode usar em {{workspace}}.",
+      "description": "Escolha as ferramentas pagas que o Okou pode usar nas suas tarefas. Cada uso consome créditos.",
       "disabledForCreation": "{{tool}} está desativado nas suas configurações de ferramentas pagas.",
       "loadError": "Não foi possível carregar suas configurações.",
       "loading": "Carregando suas configurações…",
-      "openSettings": "Abrir configurações de ferramentas pagas",
+      "openSettings": "Abrir configurações",
       "retry": "Tentar novamente",
       "saveError": "Sua alteração não foi salva.",
       "saving": "Salvando…",
+      "scope": "Estas configurações se aplicam apenas a você em {{workspace}}.",
       "timing": "As alterações valem para execuções futuras. Tarefas em andamento ou já preparadas podem manter as configurações anteriores.",
       "title": "Ferramentas pagas",
       "tools": {

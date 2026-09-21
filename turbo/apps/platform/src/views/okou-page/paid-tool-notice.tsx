@@ -32,9 +32,12 @@ function PaidToolNoticeContent({
     return null;
   }
   return (
+    // Composer chrome, not composer content: the notice reads at the same
+    // weight as the temporary-model notice below the card, so the disabled
+    // state never competes with the draft the member is writing.
     <div
       role="status"
-      className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm text-muted-foreground"
+      className="flex flex-wrap items-center gap-1 px-4 py-1 text-xs text-muted-foreground"
     >
       {disabled.state === "loading" ? (
         t(($) => {
@@ -42,14 +45,15 @@ function PaidToolNoticeContent({
         })
       ) : disabled.state === "hasError" ? (
         <>
-          <span>
+          <span className="min-w-0">
             {t(($) => {
               return $.settings.paidTools.loadError;
             })}
           </span>
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
+            className="shrink-0 text-xs font-medium text-foreground"
             onClick={() => {
               return retry();
             }}
@@ -61,7 +65,7 @@ function PaidToolNoticeContent({
         </>
       ) : (
         <>
-          <span>
+          <span className="min-w-0">
             {tools
               .filter((tool) => {
                 return disabled.data.includes(tool);
@@ -71,7 +75,8 @@ function PaidToolNoticeContent({
           </span>
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
+            className="shrink-0 text-xs font-medium text-foreground"
             onClick={() => {
               return detach(openSettings("chat", signal), Reason.DomCallback);
             }}

@@ -98,9 +98,7 @@ test.each(["image", "video"] as const)(
     const editor = await setupComposer(false);
     await selectCreation(mode);
     await fill(editor, "Create a launch scene");
-    expect(
-      screen.queryByText("Open paid tool settings"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Open settings")).not.toBeInTheDocument();
     click(button("Send"));
     await screen.findByText(
       `${mode === "image" ? "Image" : "Video"} generation is disabled in your paid tool settings.`,
@@ -129,7 +127,7 @@ test("An image creation notice opens settings and a confirmed save restores crea
   await screen.findByText(
     "Image generation is disabled in your paid tool settings.",
   );
-  click(button("Open paid tool settings"));
+  click(button("Open settings"));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const toggle = await within(dialog).findByRole("switch", {
     name: "Image generation",

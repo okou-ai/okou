@@ -21,6 +21,7 @@ import {
   type PaidToolsSettings,
   type PaidToolSettings,
 } from "../../../../../signals/okou-page/settings/paid-tools.ts";
+import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
@@ -110,6 +111,7 @@ function PaidToolsContent({
 }) {
   const { t } = useTranslation();
   const loadable = useLoadable(settings.disabledTools$);
+  const workspace = useLoadable(currentOrgInfo$);
   const retry = useSet(settings.retry$);
   return (
     <div className="flex flex-col gap-4">
@@ -146,9 +148,25 @@ function PaidToolsContent({
             })}
           </div>
           <p className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.settings.paidTools.timing;
-            })}
+            {workspace.state === "hasData" && workspace.data && (
+              <>
+                <span>
+                  {t(
+                    ($) => {
+                      return $.settings.paidTools.scope;
+                    },
+                    {
+                      workspace: workspace.data.name,
+                    },
+                  )}
+                </span>{" "}
+              </>
+            )}
+            <span>
+              {t(($) => {
+                return $.settings.paidTools.timing;
+              })}
+            </span>
           </p>
         </>
       )}
