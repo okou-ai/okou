@@ -156,7 +156,10 @@ import {
   getSkillStorageName,
   MEMORY_ARTIFACT_NAME,
 } from "@okouai/core/storage-names";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  EXTRACT_TEMPLATE_SKILL_NAME,
+  SEED_SKILLS,
+} from "@okouai/core/seed-skills";
 import {
   expandVariables,
   expandVariablesInString,
@@ -1485,6 +1488,7 @@ function buildCustomConnectorSkillVolumes(
 function buildInjectedSkillVolumes(
   args: {
     readonly injectSkillVolumes: CreateAgentRunArgs["injectSkillVolumes"];
+    readonly customTemplatesEnabled: boolean;
     readonly systemSkillStorageResolution: SystemSkillStorageResolution;
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
     readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -1508,6 +1512,22 @@ function buildInjectedSkillVolumes(
       }),
       "system_skill",
     ) ?? []),
+    // The guide the custom template import names, carried by the same switch
+    // that decides which catalog that import publishes to. Seeding it instead
+    // would mount it for members who have no Custom pane to publish into, and
+    // whose deck import reaches the separate pinned presentation guide by its
+    // own route. It is not a baseline candidate for the same reason: the
+    // baseline describes what every run mounts, and most runs do not mount it.
+    ...(args.customTemplatesEnabled
+      ? (prepareAdditionalVolumesWithSource(
+          buildLegacySystemSkillVolumes(
+            [EXTRACT_TEMPLATE_SKILL_NAME],
+            skillsRoot,
+            args.systemSkillStorageResolution,
+          ),
+          "system_skill",
+        ) ?? [])
+      : []),
     ...(args.connectorCatalogSelection.kind === "scoped"
       ? buildConnectorSkillVolumes(
           args.allowedConnectorSlugs,
@@ -9862,6 +9882,7 @@ function preparedRunAdditionalVolumes(args: {
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly skillsRoot: string;
   readonly body: CreateRunBody;
   readonly resolved: ResolvedRunExecution;
@@ -9871,6 +9892,10 @@ function preparedRunAdditionalVolumes(args: {
   const injectedSkillVolumes = buildInjectedSkillVolumes(
     {
       injectSkillVolumes: args.createArgs.injectSkillVolumes,
+      customTemplatesEnabled: isFeatureEnabled(
+        FeatureSwitchKey.CustomTemplates,
+        args.featureSwitchContext,
+      ),
       systemSkillStorageResolution: args.systemSkillStorageResolution,
       allowedConnectorSlugs: args.connectorScope.allowedConnectorSlugs,
       connectorCatalogSelection: args.connectorCatalogSelection,
@@ -10735,6 +10760,7 @@ function prepareRunOutputMetadata(args: {
     connectorScope: args.connectorScope,
     connectorCatalogSelection: args.connectorCatalogSelection,
     customConnectorContext: args.customConnectorContext,
+    featureSwitchContext: args.featureSwitchContext,
     skillsRoot: skillsRootForRun(args.framework, args.piSandbox),
     body: args.body,
     resolved: args.resolved,

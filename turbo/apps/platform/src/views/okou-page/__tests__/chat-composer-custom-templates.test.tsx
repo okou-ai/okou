@@ -37,7 +37,7 @@ const PROMPT = "Analyse this file and save it as a reusable template.";
  * the result belongs in.
  */
 const GUIDANCE =
-  "Analyse this file with the `extract-template` dispatcher in `okou-ai/vm0-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
+  "Analyse this file with the `extract-template` skill from `okou-ai/vm0-skills`: take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 
 function additionalInfo(message: UserMessageDocument): string[] {
   return message.parts.flatMap((part) => {
@@ -1382,8 +1382,9 @@ test("Every source is sent with one message that lets the guide sort it", async 
   // The catalog still has to be said, because the guide's presentation branch
   // names the other one — so it is said where only the run reads it, along
   // with the `--kind` a document needs to avoid the flag's presentation
-  // default, and the repository that tells the dispatcher apart from the
-  // registry's presentation-only copy.
+  // default. The dispatcher is named as a skill because the switch that
+  // produces this sentence also mounts it; its repository stays in the
+  // sentence as what it degrades to if that mount is ever missing.
   expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 

@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-templates";
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { EXTRACT_TEMPLATE_SKILL_NAME } from "@okouai/core/seed-skills";
 
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
@@ -102,8 +103,18 @@ function customTemplateImportPrompt(): string {
  * Which guide and which catalog, and nothing else.
  *
  * Custom imports explicitly select the four-branch `extract-template`
- * dispatcher in `okou-ai/vm0-skills`. The standing agent-tools prompt points
- * deck imports to the separate presentation-only registry guide.
+ * dispatcher. The standing agent-tools prompt points deck imports to the
+ * separate presentation-only registry guide.
+ *
+ * Named as a skill because the same switch that produces this sentence mounts
+ * it, so the run has the dispatcher in hand and nothing to fetch. Its
+ * repository is still said: it costs four words, and it is what the sentence
+ * degrades to if the mount ever goes missing, which is the whole of what this
+ * import could do before.
+ *
+ * The name is the shared constant rather than a literal. The instruction and
+ * the mount drifted apart once already, while this dispatcher was still called
+ * `reverse-template`, and neither side could see the other to notice.
  *
  * The catalog still has to be said because the presentation branch ends in
  * `okou presentation-template publish`, which writes to the presentation table
@@ -118,7 +129,7 @@ function customTemplateImportPrompt(): string {
  * second answer to disagree with.
  */
 function customTemplateImportGuidance(): string {
-  return "Analyse this file with the `extract-template` dispatcher in `okou-ai/vm0-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
+  return `Analyse this file with the \`${EXTRACT_TEMPLATE_SKILL_NAME}\` skill from \`okou-ai/vm0-skills\`: take the branch it routes this file to, and follow that branch. Publish with \`okou user-template publish\` and the \`--kind\` that branch produced, so it appears under Custom.`;
 }
 
 /** One import's message: what the member reads, and what only the run reads. */

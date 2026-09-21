@@ -40,7 +40,10 @@ import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 } from "@okouai/api-contracts/contracts/paid-tools";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  EXTRACT_TEMPLATE_SKILL_NAME,
+  SEED_SKILLS,
+} from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
@@ -1104,6 +1107,74 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(claim.appendSystemPrompt).not.toContain("# Thread Goal");
     await api.requestCancelRun(actor, run.runId, [200]);
   });
+
+  it.each([false, true])(
+    "mounts the extract-template guide only while custom templates are on (%s)",
+    async (enabled) => {
+      const fullPath = `okou-ai/vm0-skills/tree/fixture-${randomUUID()}/${EXTRACT_TEMPLATE_SKILL_NAME}`;
+      const url = `https://github.com/${fullPath}`;
+      const storageName = `agent-skills@${fullPath}`;
+      const mountPath = `/home/user/.claude/skills/${EXTRACT_TEMPLATE_SKILL_NAME}`;
+      onTestFinished(async () => {
+        await cleanupOwnedSkillsState(context, {
+          skillUrls: [url],
+          storageNames: [storageName],
+        });
+      });
+      await seedCurrentSkillVersionsState(context, {
+        staleCommitSha: "extract-template-rollout-fixture",
+        versions: [
+          {
+            name: EXTRACT_TEMPLATE_SKILL_NAME,
+            url,
+            full_path: fullPath,
+            storage_name: storageName,
+            version_hash: createHash("sha256")
+              .update(randomUUID())
+              .digest("hex"),
+            size: 1024,
+            archive_size: 1024,
+            file_count: 1,
+            frontmatter: {
+              name: EXTRACT_TEMPLATE_SKILL_NAME,
+              description:
+                "Decide what an uploaded file is and follow the branch that matches",
+            },
+          },
+        ],
+      });
+      const api = createRunsApi(context, {
+        [EXTRACT_TEMPLATE_SKILL_NAME]: storageName,
+      });
+      const connectors = createConnectorBddApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.CustomTemplates]: enabled,
+      });
+
+      // The message a Custom import sends, which is the only thing that asks
+      // for this guide.
+      const created = await api.createRun(actor, {
+        agentId,
+        prompt: "Analyse this file and save it as a reusable template.",
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(created.runId);
+      const guideMounts = (
+        expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts ??
+        []
+      ).filter((mount) => {
+        return mount.mountPath === mountPath;
+      });
+
+      expect(guideMounts).toHaveLength(enabled ? 1 : 0);
+      // The baseline describes what every run mounts. A guide half the runs go
+      // without cannot join it, or the baseline stops matching either half.
+      expect(guideMounts[0]?.baselineCandidate).toBeUndefined();
+      await api.requestCancelRun(actor, created.runId, [200]);
+    },
+  );
 
   it("advertises artifact sharing only when private artifacts are enabled", async () => {
     const api = createRunsApi(context);

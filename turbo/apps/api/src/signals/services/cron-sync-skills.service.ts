@@ -21,7 +21,10 @@ import {
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  EXTRACT_TEMPLATE_SKILL_NAME,
+  SEED_SKILLS,
+} from "@okouai/core/seed-skills";
 import { skills } from "@okouai/db/schema/skill";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command, computed, type Computed } from "ccstate";
@@ -745,7 +748,7 @@ function removeOrphanedSkills(
   });
 }
 
-function validateSeedSkills(
+function validateRequiredSkills(
   extractedSkills: readonly ExtractedSkill[],
   requiredSkillNames: readonly string[],
 ): void {
@@ -759,7 +762,7 @@ function validateSeedSkills(
   });
 
   if (missingSkills.length > 0) {
-    log.error("SEED_SKILLS references skills not found in repository", {
+    log.error("Mounted skills not found in repository", {
       missingSkills: missingSkills.map((name) => {
         return resolveSkillRef(name);
       }),
@@ -851,7 +854,7 @@ export const syncSkillsForScope$ = command(
       removeOrphanedSkills(db, extractedSkills, urlPrefix, signal),
     );
     signal.throwIfAborted();
-    validateSeedSkills(extractedSkills, scope.requiredSkillNames);
+    validateRequiredSkills(extractedSkills, scope.requiredSkillNames);
 
     log.debug("Skills sync completed", {
       commitSha: headSha,
@@ -877,7 +880,13 @@ export const syncSkills$ = command(
   async ({ set }, signal: AbortSignal): Promise<SyncSkillsResult> => {
     return await set(
       syncSkillsForScope$,
-      { skillNamePrefix: null, requiredSkillNames: SEED_SKILLS },
+      {
+        skillNamePrefix: null,
+        // Every skill a run can be given by name, not only the seeded ones. A
+        // name that stops matching the repository resolves to no storage and
+        // the mount is dropped, which is silent everywhere else.
+        requiredSkillNames: [...SEED_SKILLS, EXTRACT_TEMPLATE_SKILL_NAME],
+      },
       signal,
     );
   },
