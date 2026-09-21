@@ -206,6 +206,20 @@ export function capturePaidOnboardingEvent(
   });
 }
 
+/**
+ * Source-first onboarding product events. A prefix of its own, so the
+ * `PaidOnboarding: ` dashboards keep counting only the flow they were built
+ * for.
+ */
+export function captureOnboardingEvent(
+  name: string,
+  properties: Record<string, string | number | boolean>,
+): void {
+  runPostHog(() => {
+    posthog.capture(`Onboarding: ${name}`, properties);
+  });
+}
+
 // ── Navigation timing (ccstate-based) ──────────────────────────────
 //
 // Timing marks are ccstate signals so they compose naturally with the
