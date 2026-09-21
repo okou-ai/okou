@@ -46,7 +46,7 @@ jq -e '
     .with.tool == "cargo-llvm-cov@0.9.1"
   ) and
   any($coverage.steps[];
-    .uses == "astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d" and
+    .uses == "astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4" and
     .with["working-directory"] == "crates/runner/mitm-addon" and
     .with["enable-cache"] == true
   ) and
@@ -71,7 +71,7 @@ jq -e '
     .if == "success() || failure()" and
     .["continue-on-error"] == true and
     .["timeout-minutes"] == 1 and
-    .uses == "codecov/codecov-action@v7" and
+    .uses == "codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5" and
     .with.files == "crates/lcov.info" and
     .with.flags == "rust"
   ) and

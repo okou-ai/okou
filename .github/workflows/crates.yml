@@ -470,7 +470,7 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.9.1
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           working-directory: crates/runner/mitm-addon
           enable-cache: true
@@ -521,7 +521,7 @@ jobs:
         if: success() || failure()
         continue-on-error: true
         timeout-minutes: 1
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: crates/lcov.info
@@ -597,7 +597,7 @@ jobs:
         with:
           python-version-file: crates/runner/mitm-addon/.python-version
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           working-directory: crates/runner/mitm-addon
           enable-cache: true
@@ -635,7 +635,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version-file: crates/runner/mitm-addon/.python-version
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           working-directory: crates/runner/mitm-addon
           enable-cache: true
