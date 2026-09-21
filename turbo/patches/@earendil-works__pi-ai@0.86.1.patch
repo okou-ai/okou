@@ -176,7 +176,7 @@ index a08fefd..0654751 100644
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index 6538c63..119dccf 100644
+index 6538c63..b84d8fa 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -184,7 +184,56 @@ index 6538c63..119dccf 100644
  function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
-@@ -176,6 +177,8 @@ export function isRetryableAssistantError(message) {
+@@ -163,6 +164,48 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+         await callbacks?.onRetryAttemptStart?.();
+     }
+ }
++/**
++ * Retry reasons Okou's model-request diagnostic identifies structurally.
++ *
++ * Each is transient by construction of `classifyProviderFailure`: a specific
++ * terminal condition in the provider body always outranks the transport status,
++ * so a usage limit, credential failure, billing exhaustion, context/output
++ * limit, unsupported model, safety refusal or queue expiry never reaches this
++ * set even when it arrives as a 429 or 5xx.
++ */
++const OKOU_RETRYABLE_MODEL_REQUEST_REASONS = new Set([
++    "provider_rate_limited",
++    "provider_overloaded",
++    "provider_server_error",
++    "provider_stream_timeout",
++    "response_connection_lost",
++]);
++/**
++ * Read the transient verdict Okou already recorded for the failed request.
++ *
++ * A provider may author an error body carrying none of the text below: the
++ * incident in okou-ai/okou#35577 was an HTTP 503 whose entire body was
++ * `{"detail":"Unable to verify Daybreak Blue access. Please try again."}`.
++ * Okou's runtime observes the HTTP status and the body at the transport
++ * boundary and appends an `okou_model_request` diagnostic, so the classification
++ * exists on the message before this runs. Reading it keeps a transient failure
++ * retryable without widening the text patterns, and the last diagnostic wins so
++ * a retried turn is judged on its own final attempt.
++ *
++ * Remove once upstream classifies structurally rather than by error text.
++ */
++function isOkouRetryableModelRequest(message) {
++    const diagnostics = message.diagnostics;
++    if (!Array.isArray(diagnostics))
++        return false;
++    for (let index = diagnostics.length - 1; index >= 0; index--) {
++        const diagnostic = diagnostics[index];
++        if (diagnostic?.type !== "okou_model_request")
++            continue;
++        return OKOU_RETRYABLE_MODEL_REQUEST_REASONS.has(diagnostic.details?.failureReason);
++    }
++    return false;
++}
+ /**
+  * Classifies whether a failed assistant message looks like a transient provider
+  * or transport error, so callers can decide if the last assistant turn should be
+@@ -176,8 +219,14 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;
@@ -192,4 +241,11 @@ index 6538c63..119dccf 100644
 +        return false;
      if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))
          return false;
++    // After both terminal guards, so a known-terminal body stays terminal, and
++    // before the text patterns, which the structured verdict supersedes.
++    if (isOkouRetryableModelRequest(message))
++        return true;
      return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
+ }
+ //# sourceMappingURL=retry.js.map
+\ No newline at end of file

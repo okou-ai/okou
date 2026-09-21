@@ -24,7 +24,7 @@ patchedDependencies:
     hash: 5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007
     path: patches/@earendil-works__pi-agent-core@0.86.1.patch
   '@earendil-works/pi-ai@0.86.1':
-    hash: 3409658e1acdc7f60f2a9b5630dc4a4a6341930c5103590b4db66ffe9b81e12e
+    hash: 8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693
     path: patches/@earendil-works__pi-ai@0.86.1.patch
   '@earendil-works/pi-coding-agent@0.86.1':
     hash: 23ebb31d80698e2caea94394518ba3581ef6b1ed1efd4cda16b8561118facad0
@@ -1143,7 +1143,7 @@ importers:
     dependencies:
       '@earendil-works/pi-ai':
         specifier: 0.86.1
-        version: 0.86.1(patch_hash=3409658e1acdc7f60f2a9b5630dc4a4a6341930c5103590b4db66ffe9b81e12e)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        version: 0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-coding-agent':
         specifier: 0.86.1
         version: 0.86.1(patch_hash=23ebb31d80698e2caea94394518ba3581ef6b1ed1efd4cda16b8561118facad0)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
@@ -11551,7 +11551,7 @@ snapshots:
   '@earendil-works/pi-agent-core@0.86.1(patch_hash=5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
       '@earendil-works/chord': 0.86.1
-      '@earendil-works/pi-ai': 0.86.1(patch_hash=3409658e1acdc7f60f2a9b5630dc4a4a6341930c5103590b4db66ffe9b81e12e)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-ai': 0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-telemetry': 0.86.1
       diff: 8.0.4
       ignore: 7.0.8
@@ -11566,7 +11566,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.86.1(patch_hash=3409658e1acdc7f60f2a9b5630dc4a4a6341930c5103590b4db66ffe9b81e12e)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
+  '@earendil-works/pi-ai@0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
       '@anthropic-ai/sdk': 0.124.0(zod@4.5.4)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
@@ -11591,7 +11591,7 @@ snapshots:
     dependencies:
       '@earendil-works/chord': 0.86.1
       '@earendil-works/pi-agent-core': 0.86.1(patch_hash=5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
-      '@earendil-works/pi-ai': 0.86.1(patch_hash=3409658e1acdc7f60f2a9b5630dc4a4a6341930c5103590b4db66ffe9b81e12e)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-ai': 0.86.1(patch_hash=8e9ef48ef67f3d1cb767108e28fa3b34e87a25373042dd1b3e9ed8d8dc044693)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-tui': 0.86.1
       '@silvia-odwyer/photon-node': 0.3.4
       chalk: 6.0.0
