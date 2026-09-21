@@ -10,6 +10,8 @@ import {
   skillImportSkillsContract,
   type SkillImportRequest,
 } from "@okouai/api-contracts/contracts/skill-import";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
@@ -26,6 +28,7 @@ import { authorization$, request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
+import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import {
   countSkillsImportedInSession,
   findOwnPrivateWorkflowIdByName,
@@ -82,9 +85,49 @@ function uploadUrl(): string {
   ).toString();
 }
 
+function skillImportDisabled() {
+  return {
+    status: 403 as const,
+    body: {
+      error: { message: "Skill import is not enabled", code: "FORBIDDEN" },
+    },
+  };
+}
+
+/**
+ * Skill import is the onboarding skills step's backend, so it rolls out with
+ * that flow. Both routes check it: the session route so no token can be minted
+ * while the flow is off, and the upload route so turning it off also stops a
+ * session that already holds one.
+ */
+const skillImportEnabled$ = command(
+  async (
+    { get },
+    identity: { readonly orgId: string; readonly userId: string },
+  ): Promise<boolean> => {
+    const overrides = await get(
+      userFeatureSwitchOverrides(identity.orgId, identity.userId),
+    );
+    return isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, {
+      orgId: identity.orgId,
+      userId: identity.userId,
+      overrides,
+    });
+  },
+);
+
 const createSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
+    const enabled = await set(skillImportEnabled$, {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    });
+    signal.throwIfAborted();
+    if (!enabled) {
+      return skillImportDisabled();
+    }
+
     const agentId = await resolveSkillImportAgentId(get(db$), {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -127,13 +170,22 @@ function isImportableText(value: string): boolean {
 }
 
 /**
- * Text-only v1: report the first field carrying content a text skill file
- * cannot hold. A non-text path is named by position so the reply never echoes
- * the offending bytes.
+ * Text-only v1: report the first field carrying content a text skill cannot
+ * hold. This covers the metadata as well, because PostgreSQL rejects a NUL in a
+ * text value and rewrites an unpaired surrogate, so an unchecked field would
+ * turn this documented refusal into a failed write or altered content. A
+ * non-text path is named by position so the reply never echoes the bytes.
  */
 function firstBinaryField(body: SkillImportRequest): string | null {
-  if (!isImportableText(body.instruction)) {
-    return "instruction";
+  const textFields = [
+    ["instruction", body.instruction],
+    ["displayName", body.displayName],
+    ["description", body.description],
+  ] as const;
+  for (const [field, value] of textFields) {
+    if (value !== undefined && !isImportableText(value)) {
+      return field;
+    }
   }
   for (const [index, file] of (body.files ?? []).entries()) {
     if (!isImportableText(file.path)) {
@@ -222,6 +274,15 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return sessionInvalid(
       "Skill import session is missing, invalid, or expired",
     );
+  }
+
+  const enabled = await set(skillImportEnabled$, {
+    orgId: session.orgId,
+    userId: session.userId,
+  });
+  signal.throwIfAborted();
+  if (!enabled) {
+    return skillImportDisabled();
   }
 
   // Reject an oversize upload on its declared length before buffering it.

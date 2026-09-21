@@ -19,6 +19,7 @@ import {
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -31,6 +32,7 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -139,10 +141,24 @@ function skillBody(
   };
 }
 
-async function openSession(): Promise<{
+/**
+ * The import rolls out with the onboarding step it serves, so every case that
+ * exercises the service enables that switch for its own user first.
+ */
+async function setSkillImportSwitch(
+  actor: OrgActor,
+  enabled: boolean,
+): Promise<void> {
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+    { [FeatureSwitchKey.OnboardingSourcesFirst]: enabled },
+  );
+}
+
+async function bootstrapActor(): Promise<{
   readonly actor: OrgActor;
   readonly agentId: string;
-  readonly session: SkillImportSessionResponse;
 }> {
   const actor = bdd.user();
   if (!actor.orgId) {
@@ -154,17 +170,26 @@ async function openSession(): Promise<{
   if (!status.defaultAgentId) {
     throw new Error("Expected onboarding to bootstrap a default agent");
   }
+  return {
+    actor: { ...actor, orgId: actor.orgId },
+    agentId: status.defaultAgentId,
+  };
+}
+
+async function openSession(): Promise<{
+  readonly actor: OrgActor;
+  readonly agentId: string;
+  readonly session: SkillImportSessionResponse;
+}> {
+  const { actor, agentId } = await bootstrapActor();
+  await setSkillImportSwitch(actor, true);
 
   const response = await accept(
     sessionsClient().create({ headers: clerkHeaders(actor) }),
     [200],
   );
 
-  return {
-    actor: { ...actor, orgId: actor.orgId },
-    agentId: status.defaultAgentId,
-    session: response.body,
-  };
+  return { actor, agentId, session: response.body };
 }
 
 describe("POST /api/skill-import/sessions", () => {
@@ -179,6 +204,18 @@ describe("POST /api/skill-import/sessions", () => {
     const remainingMs = Date.parse(session.expiresAt) - now();
     expect(remainingMs).toBeGreaterThan(55 * 60 * 1000);
     expect(remainingMs).toBeLessThanOrEqual(60 * 60 * 1000);
+  });
+
+  it("refuses a caller whose onboarding flow switch is off", async () => {
+    const { actor } = await bootstrapActor();
+
+    const response = await accept(
+      sessionsClient().create({ headers: clerkHeaders(actor) }),
+      [403],
+    );
+
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("FORBIDDEN");
   });
 
   it("refuses an unauthenticated caller", async () => {
@@ -349,6 +386,37 @@ describe("POST /api/skill-import/skills", () => {
     });
 
     expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
+  });
+
+  it("stops an open session once the switch is turned off", async () => {
+    const { actor, session } = await openSession();
+    await setSkillImportSwitch(actor, false);
+
+    const response = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(session.token),
+        body: skillBody(),
+      }),
+      [403],
+    );
+
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("rejects metadata that carries binary content", async () => {
+    const { session } = await openSession();
+
+    const response = await accept(
+      uploadClient().upload({
+        headers: tokenHeaders(session.token),
+        body: skillBody({ description: "drafts\u0000notes" }),
+      }),
+      [400],
+    );
+
     expectApiError(response.body);
     expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
   });

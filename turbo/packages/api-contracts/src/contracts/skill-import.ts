@@ -14,6 +14,9 @@ const c = initContract();
  * the Platform mints a short-lived session, and the user's agent uploads one
  * skill per request with the session token.
  *
+ * Both routes are gated by `FeatureSwitchKey.OnboardingSourcesFirst`, the same
+ * switch as the onboarding step they serve, and answer `403` while it is off.
+ *
  * Binary content is deliberately out of scope for this version. A later version
  * can add an explicit encoding to the upload body without touching the shared
  * workflow contract.
@@ -143,6 +146,7 @@ export const skillImportSessionsContract = c.router({
     responses: {
       200: skillImportSessionResponseSchema,
       401: apiErrorSchema,
+      403: apiErrorSchema,
       404: apiErrorSchema,
     },
     summary: "Open a skill import session for the org's default agent",
@@ -160,6 +164,7 @@ export const skillImportSkillsContract = c.router({
       201: skillImportCreatedResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
+      403: apiErrorSchema,
       409: apiErrorSchema,
       413: apiErrorSchema,
       429: apiErrorSchema,
