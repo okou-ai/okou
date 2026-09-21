@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   AWS_SEMANTIC_MANIFEST_MAX_BYTES,
   AWS_SEMANTIC_RELEASE_MAX_SHARD_BYTES,
+  AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
   AwsSemanticSidecarValidationError,
   awsSemanticArtifactDigest,
   awsSemanticManifestSchema,
@@ -62,6 +63,8 @@ describe("AWS semantic sidecar contract", () => {
       bytes: manifestBytes,
       identity: {
         sourceSha: SOURCE_SHA,
+        connectorCatalogSchemaVersion:
+          AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
         connectorCatalogVersion: CATALOG_VERSION,
         digest: awsSemanticArtifactDigest(manifestBytes),
       },
@@ -102,12 +105,22 @@ describe("AWS semantic sidecar contract", () => {
     for (const identity of [
       {
         sourceSha: "b".repeat(40),
+        connectorCatalogSchemaVersion:
+          AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
         connectorCatalogVersion: CATALOG_VERSION,
         digest: manifestDigest,
       },
       {
         sourceSha: SOURCE_SHA,
+        connectorCatalogSchemaVersion:
+          AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
         connectorCatalogVersion: "another-release",
+        digest: manifestDigest,
+      },
+      {
+        sourceSha: SOURCE_SHA,
+        connectorCatalogSchemaVersion: 3,
+        connectorCatalogVersion: CATALOG_VERSION,
         digest: manifestDigest,
       },
     ]) {
@@ -120,6 +133,8 @@ describe("AWS semantic sidecar contract", () => {
         bytes: manifestBytes,
         identity: {
           sourceSha: SOURCE_SHA,
+          connectorCatalogSchemaVersion:
+            AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
           connectorCatalogVersion: CATALOG_VERSION,
           digest: `sha256:${"0".repeat(64)}`,
         },
@@ -151,6 +166,8 @@ describe("AWS semantic sidecar contract", () => {
         bytes: unsupported,
         identity: {
           sourceSha: SOURCE_SHA,
+          connectorCatalogSchemaVersion:
+            AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
           connectorCatalogVersion: CATALOG_VERSION,
           digest: awsSemanticArtifactDigest(unsupported),
         },
@@ -163,6 +180,8 @@ describe("AWS semantic sidecar contract", () => {
         bytes: invalidJson,
         identity: {
           sourceSha: SOURCE_SHA,
+          connectorCatalogSchemaVersion:
+            AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
           connectorCatalogVersion: CATALOG_VERSION,
           digest: awsSemanticArtifactDigest(invalidJson),
         },
@@ -175,6 +194,8 @@ describe("AWS semantic sidecar contract", () => {
         bytes: noncanonical,
         identity: {
           sourceSha: SOURCE_SHA,
+          connectorCatalogSchemaVersion:
+            AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
           connectorCatalogVersion: CATALOG_VERSION,
           digest: awsSemanticArtifactDigest(noncanonical),
         },
@@ -187,6 +208,8 @@ describe("AWS semantic sidecar contract", () => {
         bytes: oversized,
         identity: {
           sourceSha: SOURCE_SHA,
+          connectorCatalogSchemaVersion:
+            AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
           connectorCatalogVersion: CATALOG_VERSION,
           digest: awsSemanticArtifactDigest(oversized),
         },
@@ -200,6 +223,17 @@ describe("AWS semantic sidecar contract", () => {
       return encodeAwsSemanticManifest({
         ...manifest,
         shards: [...manifest.shards].reverse(),
+      });
+    }).toThrow("invalid-artifact");
+    expect(() => {
+      return encodeAwsSemanticManifest({
+        ...manifest,
+        shards: [
+          {
+            ...manifest.shards[0],
+            digest: "not-a-digest",
+          },
+        ],
       });
     }).toThrow("invalid-artifact");
     expect(() => {

@@ -9,6 +9,7 @@ import {
 } from "./artifacts/common";
 
 export const AWS_SEMANTIC_SIDECAR_SCHEMA_VERSION = 1;
+export const AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION = 4;
 export const AWS_SEMANTIC_MANIFEST_MAX_BYTES = 64 * 1024;
 export const AWS_SEMANTIC_SERVICE_SHARD_MAX_BYTES = 2 * 1024 * 1024;
 export const AWS_SEMANTIC_RELEASE_MAX_SHARD_BYTES = 4 * 1024 * 1024;
@@ -264,7 +265,11 @@ export const awsSemanticShardReferenceSchema = z
   })
   .strict()
   .superRefine((reference, context) => {
-    if (reference.key !== awsSemanticShardKey(reference.digest)) {
+    const parsedDigest = digestSchema.safeParse(reference.digest);
+    if (
+      parsedDigest.success &&
+      reference.key !== awsSemanticShardKey(parsedDigest.data)
+    ) {
       context.addIssue({
         code: "custom",
         path: ["key"],
@@ -279,6 +284,9 @@ export const awsSemanticManifestSchema = z
     kind: z.literal("aws-semantic-manifest"),
     connector: z.literal("aws"),
     sourceSha: z.string().regex(GIT_SHA_PATTERN),
+    connectorCatalogSchemaVersion: z.literal(
+      AWS_SEMANTIC_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    ),
     connectorCatalogVersion: connectorCatalogVersionSchema,
     shards: z.array(awsSemanticShardReferenceSchema).min(1).max(3),
   })
@@ -338,6 +346,7 @@ export class AwsSemanticSidecarValidationError extends Error {
 
 export interface AwsSemanticManifestIdentity {
   readonly sourceSha: string;
+  readonly connectorCatalogSchemaVersion: number;
   readonly connectorCatalogVersion: string;
   readonly digest: string;
 }
@@ -347,7 +356,7 @@ export function awsSemanticShardKey(digest: string): string {
   if (!parsedDigest.success) {
     throw new AwsSemanticSidecarValidationError("invalid-reference");
   }
-  return `connectors/aws-semantic/v1/shards/${parsedDigest.data.slice("sha256:".length)}.json`;
+  return `connectors/aws-semantic/v${AWS_SEMANTIC_SIDECAR_SCHEMA_VERSION}/shards/${parsedDigest.data.slice("sha256:".length)}.json`;
 }
 
 export function encodeAwsSemanticManifest(value: unknown): Buffer {
@@ -378,6 +387,8 @@ export function decodeAwsSemanticManifest(args: {
   const manifest = decodeCanonicalArtifact(bytes, awsSemanticManifestSchema);
   if (
     manifest.sourceSha !== args.identity.sourceSha ||
+    manifest.connectorCatalogSchemaVersion !==
+      args.identity.connectorCatalogSchemaVersion ||
     manifest.connectorCatalogVersion !== args.identity.connectorCatalogVersion
   ) {
     fail("invalid-reference");
