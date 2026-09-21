@@ -1929,12 +1929,16 @@ def _aws_predicates_match(
     )
 
 
-def _aws_rule_identity(rule: _CompiledRule) -> _AwsRuleIdentity | None:
+def _aws_rule_identity(
+    rule: _CompiledRule,
+    *,
+    upper_method: str,
+) -> _AwsRuleIdentity | None:
     predicates = rule.aws_predicates
     if predicates is None:
         return None
     return (
-        rule.method,
+        upper_method,
         tuple(_aws_path_segment_identity(segment) for segment in rule.path.segments),
         tuple(sorted(rule.query_requirements, key=lambda item: item[0])),
         tuple(sorted(predicates.items())),
@@ -2191,7 +2195,7 @@ def _evaluate_selected_rule_entries(
         for entry in rule_entries:
             if entry.order not in matched_aws_entries:
                 continue
-            identity = _aws_rule_identity(entry.rule)
+            identity = _aws_rule_identity(entry.rule, upper_method=upper_method)
             if identity is not None and entry.permission in policy.blocked_permissions:
                 blocked_aws_permissions.setdefault(identity, []).append(entry.permission)
 
@@ -2216,7 +2220,7 @@ def _evaluate_selected_rule_entries(
             params = matched_aws_entries.get(entry.order)
             if params is None:
                 continue
-            identity = _aws_rule_identity(rule)
+            identity = _aws_rule_identity(rule, upper_method=upper_method)
             blocked_aliases = (
                 blocked_aws_permissions.get(identity) if identity is not None else None
             )
@@ -2238,7 +2242,7 @@ def _evaluate_selected_rule_entries(
                     rule.raw,
                     rule.specificity,
                     {**api_match.base_params, **params},
-                    _aws_rule_identity(rule),
+                    _aws_rule_identity(rule, upper_method=upper_method),
                 ),
             )
         )
