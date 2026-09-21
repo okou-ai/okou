@@ -6895,6 +6895,7 @@
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
+    "sharedByMember": "Dibagikan oleh anggota organisasi",
     "visibility": {
       "change": "Ubah",
       "organization": "Organisasi",

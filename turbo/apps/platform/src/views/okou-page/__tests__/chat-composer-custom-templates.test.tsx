@@ -53,6 +53,7 @@ function customTemplate(
     pageCount: 18,
     visibility: "private",
     ownerUserId: "user_self",
+    ownerDisplayName: "Dana Self",
     canManage: true,
     createdAt: "2026-01-02T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
@@ -289,6 +290,7 @@ test("The Custom category lists every reachable template", async () => {
       sourceFilename: "partner-qbr-q3.pptx",
       visibility: "organization",
       ownerUserId: "user_colleague",
+      ownerDisplayName: "Robin Ito",
       canManage: false,
     }),
   ]);
@@ -363,6 +365,31 @@ test("A colleague's template names its owner and offers no management", async ()
       id: "22222222-2222-4222-8222-222222222222",
       title: "Theirs",
       ownerUserId: "user_colleague",
+      ownerDisplayName: "Robin Ito",
+      canManage: false,
+    }),
+  ]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await expect(
+    within(dialog).findByText("Theirs"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByText("Shared by Robin Ito")).toBeInTheDocument();
+  // The identity-provider handle is what the row used to show in its place.
+  expect(within(dialog).queryByText(/user_colleague/u)).not.toBeInTheDocument();
+  expect(buttonByName("Actions for Theirs", dialog)).toBeUndefined();
+  expect(buttonByName("Actions for Mine", dialog)).toBeTruthy();
+});
+
+test("An owner the provider cannot name still reads as a person", async () => {
+  mockCustomTemplates([
+    customTemplate({
+      id: "22222222-2222-4222-8222-222222222222",
+      title: "Theirs",
+      ownerUserId: "user_colleague",
+      ownerDisplayName: null,
       canManage: false,
     }),
   ]);
@@ -374,10 +401,9 @@ test("A colleague's template names its owner and offers no management", async ()
     within(dialog).findByText("Theirs"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(dialog).getByText("Shared by user_colleague"),
+    within(dialog).getByText("Shared by an organization member"),
   ).toBeInTheDocument();
-  expect(buttonByName("Actions for Theirs", dialog)).toBeUndefined();
-  expect(buttonByName("Actions for Mine", dialog)).toBeTruthy();
+  expect(within(dialog).queryByText(/user_colleague/u)).not.toBeInTheDocument();
 });
 
 test("Search matches the source file name, not only the title", async () => {

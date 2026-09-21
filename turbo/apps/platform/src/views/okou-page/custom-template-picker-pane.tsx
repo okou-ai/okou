@@ -28,6 +28,7 @@ import type {
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import {
+  SharedByLabel,
   VISIBILITY_OPTIONS,
   VisibilityLabel,
 } from "./custom-template-detail-sidebar.tsx";
@@ -157,7 +158,6 @@ function CustomTemplateMeta({
 }: {
   readonly template: UserTemplateCatalogEntry;
 }) {
-  const { t } = useTranslation();
   return (
     <div className="min-w-0 text-xs text-muted-foreground">
       {template.canManage ? (
@@ -165,12 +165,7 @@ function CustomTemplateMeta({
       ) : (
         <span className="inline-flex items-center gap-1.5">
           <User size={13} className="shrink-0" aria-hidden />
-          {t(
-            ($) => {
-              return $.templates.sharedBy;
-            },
-            { owner: template.ownerUserId },
-          )}
+          <SharedByLabel ownerDisplayName={template.ownerDisplayName} />
         </span>
       )}
     </div>

@@ -157,6 +157,21 @@ const userTemplateSummarySchema = z.object({
    * has to say whose it is.
    */
   ownerUserId: z.string(),
+  /**
+   * That owner's name, as a colleague would recognise it.
+   *
+   * Resolved here rather than by the reader, because `ownerUserId` is an
+   * identity-provider handle and nothing in the browser can turn one into a
+   * person: the catalog shipped rendering the raw `user_…` handle where a name
+   * belonged.
+   *
+   * Null when the provider has no name and no address to fall back to — an
+   * account removed since the upload, or one reachable only while the provider
+   * is. The row is still listed: who owns a template decides nothing about who
+   * may read it, so a surface words the missing name instead of hiding the
+   * template behind it.
+   */
+  ownerDisplayName: z.string().nullable(),
   canManage: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),

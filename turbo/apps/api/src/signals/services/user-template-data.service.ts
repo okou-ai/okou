@@ -174,22 +174,26 @@ function userTemplateKind(row: UserTemplateRow): UserTemplateKind {
   return row.manifest.kind;
 }
 
-export function userTemplateSummary(
-  row: UserTemplateRow,
-  coverUrl: string | null,
-  userId: string,
-): UserTemplateSummary {
+export function userTemplateSummary(args: {
+  readonly row: UserTemplateRow;
+  readonly coverUrl: string | null;
+  readonly userId: string;
+  /** Resolved by the route from the identity provider; null when it has none. */
+  readonly ownerDisplayName: string | null;
+}): UserTemplateSummary {
+  const { row } = args;
   return {
     id: row.id,
     title: row.title,
     sourceFilename: row.sourceFilename,
     kind: userTemplateKind(row),
-    coverUrl,
+    coverUrl: args.coverUrl,
     coverHasMorePages: userTemplateCoverHasMorePages(row),
     pageCount: userTemplatePageCount(row),
     visibility: row.visibility,
     ownerUserId: row.ownerUserId,
-    canManage: row.ownerUserId === userId,
+    ownerDisplayName: args.ownerDisplayName,
+    canManage: row.ownerUserId === args.userId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

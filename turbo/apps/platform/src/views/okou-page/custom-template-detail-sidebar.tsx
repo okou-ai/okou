@@ -59,6 +59,37 @@ export function VisibilityLabel({
   );
 }
 
+/**
+ * Whose template this is, for a reader who cannot manage it.
+ *
+ * The name comes resolved from the catalog because the browser holds no
+ * directory: `ownerUserId` is an identity-provider handle, and rendering it is
+ * what put a raw `user_…` string on a tile. When the provider has no name for
+ * the owner the row still belongs to someone reachable, so the line says that
+ * much rather than falling back to the handle.
+ */
+export function SharedByLabel({
+  ownerDisplayName,
+}: {
+  readonly ownerDisplayName: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {ownerDisplayName === null
+        ? t(($) => {
+            return $.templates.sharedByMember;
+          })
+        : t(
+            ($) => {
+              return $.templates.sharedBy;
+            },
+            { owner: ownerDisplayName },
+          )}
+    </>
+  );
+}
+
 function VisibilityOptionList({
   visibility,
   onChange,
@@ -302,12 +333,7 @@ export function CustomTemplateDetailSidebar({
         ) : (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <User size={14} className="shrink-0" aria-hidden />
-            {t(
-              ($) => {
-                return $.templates.sharedBy;
-              },
-              { owner: detail.ownerUserId },
-            )}
+            <SharedByLabel ownerDisplayName={detail.ownerDisplayName} />
           </p>
         )}
         <Button

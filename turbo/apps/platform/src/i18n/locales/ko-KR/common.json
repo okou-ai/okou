@@ -6895,6 +6895,7 @@
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "retry": "다시 시도",
     "sharedBy": "{{owner}} 님이 공유함",
+    "sharedByMember": "조직 구성원이 공유함",
     "visibility": {
       "change": "변경",
       "organization": "조직",

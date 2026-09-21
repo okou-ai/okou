@@ -10,8 +10,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { ClerkRateLimitError } from "../../external/clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -78,6 +80,21 @@ function guidance(
 }
 
 /** Signs a member in and turns the switch on for them. */
+/** A directory entry with a name of its own, to tell two members apart. */
+function clerkProfile(userId: string, firstName: string, lastName: string) {
+  const emailId = `email_${userId}`;
+  return {
+    id: userId,
+    emailAddresses: [{ id: emailId, emailAddress: `${userId}@example.test` }],
+    primaryEmailAddressId: emailId,
+    firstName,
+    lastName,
+    username: null,
+    imageUrl: "",
+    privateMetadata: {},
+  };
+}
+
 async function enableFor(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("User template tests require an organization");
@@ -966,5 +983,89 @@ describe("POST /api/user-templates", () => {
       }),
       [404],
     );
+  });
+
+  it("names a colleague's template after the person, not the account id", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    // Two members with different names, so the answer has to be the owner's
+    // rather than whichever profile the directory happened to return.
+    mockClerkUsers(context, [
+      clerkProfile(owner.userId, "Mina", "Okafor"),
+      clerkProfile(colleague.userId, "Sam", "Reader"),
+    ]);
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body[0]).toMatchObject({
+      ownerUserId: owner.userId,
+      ownerDisplayName: "Mina Okafor",
+    });
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+    expect(detail.body).toMatchObject({ ownerDisplayName: "Mina Okafor" });
+  });
+
+  it("still lists a template whose owner the provider cannot name", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    // Who owns a template decides nothing about who may read it, so a provider
+    // that cannot answer costs the name and not the row.
+    context.mocks.clerk.users.getUserList.mockRejectedValue(
+      new ClerkRateLimitError("Clerk is rate limiting reads", 30),
+    );
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    expect(listed.body).toHaveLength(1);
+    expect(listed.body[0]).toMatchObject({
+      id: published.body.id,
+      ownerUserId: owner.userId,
+      ownerDisplayName: null,
+      canManage: false,
+    });
   });
 });

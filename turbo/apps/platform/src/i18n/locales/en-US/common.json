@@ -6906,6 +6906,7 @@
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",
+    "sharedByMember": "Shared by an organization member",
     "visibility": {
       "change": "Change",
       "organization": "Organization",

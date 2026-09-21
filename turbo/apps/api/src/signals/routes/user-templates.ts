@@ -13,6 +13,7 @@ import { nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
+import { clerk$, createClerkReadContext } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishPresentationTemplatesChangedForOrgSafely,
@@ -39,6 +40,7 @@ import {
   type PresentationTemplatePreviewPresignedUrlRequest,
 } from "../services/system-storage-presigned-url-cache.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserDisplayNames } from "../services/user-profile-directory.service";
 import type { RouteEntry } from "../route-entry";
 
 const templateReadAuth = {
@@ -214,6 +216,45 @@ function accessibleUserTemplatePreviewAssets(args: {
   });
 }
 
+/**
+ * Who owns these rows, named.
+ *
+ * Resolved per response rather than stored on the row: the identity provider
+ * owns the name, so a copy taken at upload would keep showing the name someone
+ * has since changed. One call covers every owner in the response, and the
+ * 15-minute profile cache it reads means a catalog costs the provider nothing
+ * for most of that window.
+ */
+const ownerDisplayNames$ = command(
+  async (
+    { get, set },
+    rows: readonly UserTemplateRow[],
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, string>> => {
+    return await loadUserDisplayNames(
+      set(writeDb$),
+      get(clerk$),
+      rows.map((row) => {
+        return row.ownerUserId;
+      }),
+      createClerkReadContext(),
+      signal,
+    );
+  },
+);
+
+/** One owner name, for the summary shapes that answer about a single row. */
+const ownerDisplayNameFor$ = command(
+  async (
+    { set },
+    row: UserTemplateRow,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const names = await set(ownerDisplayNames$, [row], signal);
+    return names.get(row.ownerUserId) ?? null;
+  },
+);
+
 /** One cover URL, for the summary shapes that carry a cover and nothing else. */
 const coverUrlFor$ = command(
   async (
@@ -266,12 +307,19 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const coverUrl = await set(coverUrlFor$, { row, orgId: auth.orgId });
   signal.throwIfAborted();
+  const ownerDisplayName = await set(ownerDisplayNameFor$, row, signal);
+  signal.throwIfAborted();
   // A fresh template is private, so only its owner needs to learn about it.
   await publishPresentationTemplatesChangedForUserSafely(auth.userId);
   signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: userTemplateSummary(row, coverUrl, auth.userId),
+    body: userTemplateSummary({
+      row,
+      coverUrl,
+      userId: auth.userId,
+      ownerDisplayName,
+    }),
   };
 });
 
@@ -305,13 +353,20 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     }),
   );
   signal.throwIfAborted();
+  const ownerNames = await set(ownerDisplayNames$, rows, signal);
+  signal.throwIfAborted();
   const catalog = rows.map((row) => {
     const previewAssets = resolvedUserTemplatePreviewAssets(
       previewAssetsByTemplateId.get(row.id) ?? [],
       urlsByCacheKey,
     );
     return {
-      ...userTemplateSummary(row, previewAssets[0]?.url ?? null, auth.userId),
+      ...userTemplateSummary({
+        row,
+        coverUrl: previewAssets[0]?.url ?? null,
+        userId: auth.userId,
+        ownerDisplayName: ownerNames.get(row.ownerUserId) ?? null,
+      }),
       previewAssets,
     };
   });
@@ -373,17 +428,20 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (source === undefined) {
     throw new Error(`Source URL not resolved: ${row.id}`);
   }
+  const ownerDisplayName = await set(ownerDisplayNameFor$, row, signal);
+  signal.throwIfAborted();
   return {
     status: 200 as const,
     body: {
       // The cover comes from the resolved covers, not from the pages: they are
       // the same picture for a deck, and for an illustration only the former
       // has one.
-      ...userTemplateSummary(
+      ...userTemplateSummary({
         row,
-        resolvedPreviewAssets[0]?.url ?? null,
-        auth.userId,
-      ),
+        coverUrl: resolvedPreviewAssets[0]?.url ?? null,
+        userId: auth.userId,
+        ownerDisplayName,
+      }),
       pageUrls,
       sourceUrl: source.url,
       previewAssets: resolvedPreviewAssets,
@@ -473,6 +531,12 @@ const replacePackageInner$ = command(
       orgId: auth.orgId,
     });
     signal.throwIfAborted();
+    const ownerDisplayName = await set(
+      ownerDisplayNameFor$,
+      result.row,
+      signal,
+    );
+    signal.throwIfAborted();
     // The guidance changed, not who can see it, so the same readers are told
     // as would be told about any other edit to this row.
     if (result.row.visibility === "organization") {
@@ -483,7 +547,12 @@ const replacePackageInner$ = command(
     signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: userTemplateSummary(result.row, coverUrl, auth.userId),
+      body: userTemplateSummary({
+        row: result.row,
+        coverUrl,
+        userId: auth.userId,
+        ownerDisplayName,
+      }),
     };
   },
 );
@@ -546,6 +615,8 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { row, organizationVisible } = mutation;
   const coverUrl = await set(coverUrlFor$, { row, orgId: auth.orgId });
   signal.throwIfAborted();
+  const ownerDisplayName = await set(ownerDisplayNameFor$, row, signal);
+  signal.throwIfAborted();
   if (organizationVisible) {
     await publishPresentationTemplatesChangedForOrgSafely(auth.orgId);
   } else {
@@ -554,7 +625,12 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: userTemplateSummary(row, coverUrl, auth.userId),
+    body: userTemplateSummary({
+      row,
+      coverUrl,
+      userId: auth.userId,
+      ownerDisplayName,
+    }),
   };
 });
 
