@@ -4,7 +4,13 @@ import {
   type UserTemplateDetail,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -83,7 +89,7 @@ function mockCustomTemplates(templates: readonly UserTemplateDetail[]): void {
 type RequestOutcome = Promise<void> | "fail" | undefined;
 
 /**
- * List, detail and update served from one mutable array, so a mutation is
+ * List, detail, update and delete served from one mutable array, so a mutation is
  * observable the only way a user can observe it: by looking at the panel again.
  *
  * Each hook receives that request's 1-based number and chooses its outcome.
@@ -93,32 +99,53 @@ type RequestOutcome = Promise<void> | "fail" | undefined;
 function mockCustomTemplateStore(
   initial: readonly UserTemplateDetail[],
   outcomes: {
+    readonly list?: (call: number) => RequestOutcome;
     readonly update?: (call: number) => RequestOutcome;
     readonly detail?: (call: number) => RequestOutcome;
+    readonly delete?: (call: number) => RequestOutcome;
   } = {},
-): void {
-  const templates = [...initial];
+) {
+  let templates = [...initial];
+  let listCalls = 0;
   let detailCalls = 0;
   let updateCalls = 0;
+  let deleteCalls = 0;
   const serverError = {
     error: {
       code: "INTERNAL_SERVER_ERROR" as const,
-      message: "User template update failed",
+      message: "User template request failed",
     },
   };
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(
-      200,
-      templates.map(
+  context.mocks.api(
+    userTemplatesContract.list,
+    async ({ respond, withSignal }) => {
+      // Capture what this read saw before its response is delayed. A later
+      // PATCH cannot retroactively change an already-running list or detail.
+      const catalog = templates.map(
         ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
           return entry;
         },
-      ),
-    );
-  });
+      );
+      listCalls += 1;
+      const outcome = outcomes.list?.(listCalls);
+      if (outcome === "fail") {
+        return respond(500, serverError);
+      }
+      if (outcome) {
+        await withSignal(outcome);
+      }
+      return respond(200, catalog);
+    },
+  );
   context.mocks.api(
     userTemplatesContract.get,
     async ({ params, respond, withSignal }) => {
+      const template = templates.find((candidate) => {
+        return candidate.id === params.templateId;
+      });
+      if (!template) {
+        throw new Error(`No template mocked for ${params.templateId}`);
+      }
       detailCalls += 1;
       const outcome = outcomes.detail?.(detailCalls);
       if (outcome === "fail") {
@@ -126,12 +153,6 @@ function mockCustomTemplateStore(
       }
       if (outcome) {
         await withSignal(outcome);
-      }
-      const template = templates.find((candidate) => {
-        return candidate.id === params.templateId;
-      });
-      if (!template) {
-        throw new Error(`No template mocked for ${params.templateId}`);
       }
       return respond(200, template);
     },
@@ -156,6 +177,7 @@ function mockCustomTemplateStore(
       }
       const updated: UserTemplateDetail = {
         ...current,
+        updatedAt: new Date(Date.parse(current.updatedAt) + 1000).toISOString(),
         ...(body.title === undefined ? {} : { title: body.title }),
         ...(body.visibility === undefined
           ? {}
@@ -171,6 +193,28 @@ function mockCustomTemplateStore(
       return respond(200, summary);
     },
   );
+  context.mocks.api(
+    userTemplatesContract.delete,
+    async ({ params, respond, withSignal }) => {
+      deleteCalls += 1;
+      const outcome = outcomes.delete?.(deleteCalls);
+      if (outcome === "fail") {
+        return respond(500, serverError);
+      }
+      if (outcome) {
+        await withSignal(outcome);
+      }
+      templates = templates.filter((template) => {
+        return template.id !== params.templateId;
+      });
+      return respond(204);
+    },
+  );
+  return {
+    replace: (next: readonly UserTemplateDetail[]) => {
+      templates = [...next];
+    },
+  };
 }
 
 function queryTabByText(text: string): HTMLElement | undefined {
@@ -336,6 +380,102 @@ test("A template published while the panel is open appears in it", async () => {
   await expect(
     within(dialog).findByText("Party invitation"),
   ).resolves.toBeInTheDocument();
+});
+
+test("A slow catalog refresh keeps browsing and search available", async () => {
+  const refreshStarted = context.mocks.deferred<void>();
+  const refresh = context.mocks.deferred<void>();
+  let refreshing = false;
+  const board = customTemplate();
+  const renewal = customTemplate({
+    id: "22222222-2222-4222-8222-222222222222",
+    title: "Renewal deck",
+    sourceFilename: "renewal.pptx",
+  });
+  const library = mockCustomTemplateStore([board, renewal], {
+    list: () => {
+      if (refreshing) {
+        if (!refreshStarted.settled()) {
+          refreshStarted.resolve();
+        }
+        return refresh.promise;
+      }
+      return undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText(board.title);
+  await fill(within(dialog).getByLabelText("Search templates"), "board");
+  await waitFor(() => {
+    expect(within(dialog).queryByText(renewal.title)).not.toBeInTheDocument();
+  });
+  const scrollSurface = () => {
+    const surface = within(dialog)
+      .getByLabelText("Search templates")
+      .closest<HTMLElement>(".overflow-y-auto");
+    if (!surface) {
+      throw new Error("Custom template catalog scroll surface not found");
+    }
+    return surface;
+  };
+  fireEvent.scroll(scrollSurface(), { target: { scrollTop: 240 } });
+
+  library.replace([board, { ...renewal, title: "Renewal deck revised" }]);
+  refreshing = true;
+  await act(async () => {
+    context.mocks.ably.trigger("presentationTemplatesChanged");
+    await refreshStarted.promise;
+  });
+
+  expect(within(dialog).getByText(board.title)).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Search templates")).toHaveValue(
+    "board",
+  );
+  expect(within(dialog).getByLabelText("Search templates")).toHaveFocus();
+  expect(scrollSurface().scrollTop).toBe(240);
+  expect(
+    buttonByName(`Preview ${board.title}`, dialog)?.querySelector("img"),
+  ).toHaveAttribute("src", board.coverUrl);
+
+  // Filtering is local even while the server is refreshing the catalog.
+  await fill(within(dialog).getByLabelText("Search templates"), "renewal");
+  await expect(
+    within(dialog).findByText(renewal.title),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
+
+  refresh.resolve();
+  await expect(
+    within(dialog).findByText("Renewal deck revised"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Search templates")).toHaveValue(
+    "renewal",
+  );
+  expect(scrollSurface().scrollTop).toBe(240);
+});
+
+test("A colleague withdrawing a shared template removes it from the catalog", async () => {
+  const own = customTemplate();
+  const shared = customTemplate({
+    id: "22222222-2222-4222-8222-222222222222",
+    title: "Partner QBR",
+    visibility: "organization",
+    ownerUserId: "user_colleague",
+    canManage: false,
+  });
+  const library = mockCustomTemplateStore([own, shared]);
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText(shared.title);
+
+  library.replace([{ ...own, title: "Updated board review" }]);
+  context.mocks.ably.trigger("presentationTemplatesChanged", shared.id);
+
+  await expect(
+    within(dialog).findByText("Updated board review"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText(shared.title)).not.toBeInTheDocument();
 });
 
 test("A card carries who can see the template and nothing else about it", async () => {
@@ -815,6 +955,20 @@ function renameField(): HTMLElement {
   return screen.getByLabelText("Rename template");
 }
 
+async function shareWithOrganization(): Promise<void> {
+  click(buttonByName("Change")!);
+  const organization = await waitFor(() => {
+    const option = queryAllByRoleFast("radio").find((candidate) => {
+      return candidate.textContent?.startsWith("Organization");
+    });
+    if (!option) {
+      throw new Error("Expected an Organization visibility option");
+    }
+    return option;
+  });
+  click(organization);
+}
+
 test("A second rename waits for the one already sent", async () => {
   const stored = context.mocks.deferred<void>();
   mockCustomTemplateStore([customTemplate()], {
@@ -858,39 +1012,107 @@ test("A second rename waits for the one already sent", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("The editor is not taken away by the readback its own save causes", async () => {
-  const readback = context.mocks.deferred<void>();
-  let detailRequests = 0;
-  mockCustomTemplateStore([customTemplate()], {
-    detail: (call) => {
-      detailRequests = call;
-      // The first request opens the editor; the second is the readback the
-      // rename invalidated.
-      return call === 2 ? readback.promise : undefined;
+test("Confirmed edits finish before readback and survive an older catalog response", async () => {
+  const catalogStarted = context.mocks.deferred<void>();
+  const catalogReadback = context.mocks.deferred<void>();
+  const detailReadback = context.mocks.deferred<void>();
+  let refreshing = false;
+  const board = customTemplate();
+  const renewal = customTemplate({
+    id: "22222222-2222-4222-8222-222222222222",
+    title: "Renewal deck",
+  });
+  const library = mockCustomTemplateStore([board, renewal], {
+    list: () => {
+      if (refreshing) {
+        if (!catalogStarted.settled()) {
+          catalogStarted.resolve();
+        }
+        return catalogReadback.promise;
+      }
+      return undefined;
+    },
+    detail: () => {
+      return refreshing ? detailReadback.promise : undefined;
     },
   });
 
   const { dialog } = await openCustomPanel();
-  const input = await openDetail(dialog, "Q3 board review");
+  await openDetail(dialog, board.title);
 
-  await fill(input, "Board review FY26");
-  fireEvent.blur(input);
-
-  await waitFor(() => {
-    expect(detailRequests).toBe(2);
+  // This external update began before either local edit. Its response carries
+  // the old title and visibility, even though PATCH will confirm newer values.
+  const beforeEdits = {
+    ...board,
+    sourceFilename: "q3-board-refreshed.pptx",
+    updatedAt: "2026-01-02T00:00:01.000Z",
+  };
+  library.replace([
+    beforeEdits,
+    { ...renewal, title: "External catalog update" },
+  ]);
+  refreshing = true;
+  await act(async () => {
+    context.mocks.ably.trigger("presentationTemplatesChanged");
+    await catalogStarted.promise;
   });
-  // A query refreshing underneath the editor is not a reason to remove the
-  // field the member is waiting to get back. This is the element they were
-  // typing into, not a replacement mounted in its place.
-  expect(input).toBeInTheDocument();
-  expect(input).toBeDisabled();
 
-  readback.resolve();
+  await fill(renameField(), "  Board   review FY26  ");
+  fireEvent.blur(renameField());
 
+  await expect(
+    within(dialog).findByText("Board review FY26"),
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(renameField()).toBeEnabled();
   });
   expect(renameField()).toHaveValue("Board review FY26");
+
+  await shareWithOrganization();
+  await expect(
+    screen.findByText("Anyone in this organization can use it"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByText("Organization")).toBeInTheDocument();
+  expect(screen.getByAltText("Page 1")).toHaveAttribute(
+    "src",
+    board.pageUrls[0],
+  );
+
+  catalogReadback.resolve();
+  // The unrelated row proves the old catalog response has reached the page.
+  await within(dialog).findByText("External catalog update");
+  expect(within(dialog).getByText("Board review FY26")).toBeInTheDocument();
+  expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
+  expect(within(dialog).getByText("Organization")).toBeInTheDocument();
+  expect(within(dialog).getByText("Private")).toBeInTheDocument();
+  expect(renameField()).toHaveValue("Board review FY26");
+  expect(renameField()).toBeEnabled();
+  expect(
+    screen.getByText("Anyone in this organization can use it"),
+  ).toBeInTheDocument();
+
+  detailReadback.resolve();
+  await screen.findByText("From q3-board-refreshed.pptx");
+  expect(renameField()).toHaveValue("Board review FY26");
+  expect(
+    screen.getByText("Anyone in this organization can use it"),
+  ).toBeInTheDocument();
+
+  // A later edit from another tab must still supersede our confirmed edits.
+  library.replace([
+    {
+      ...beforeEdits,
+      title: "Latest board review",
+      visibility: "private",
+      updatedAt: "2026-01-02T00:00:04.000Z",
+    },
+    renewal,
+  ]);
+  refreshing = false;
+  context.mocks.ably.trigger("presentationTemplatesChanged", board.id);
+  await within(dialog).findByText("Latest board review");
+  await screen.findByText("Only you can see and use it");
+  expect(renameField()).toHaveValue("Latest board review");
 });
 
 test("A rename left behind by going back still reaches the list", async () => {
@@ -953,17 +1175,7 @@ test("Changing visibility updates the card's meta line", async () => {
   const { dialog } = await openCustomPanel();
   await openDetail(dialog, "Q3 board review");
 
-  click(buttonByName("Change")!);
-  const organization = await waitFor(() => {
-    const option = queryAllByRoleFast("radio").find((candidate) => {
-      return candidate.textContent?.startsWith("Organization");
-    });
-    if (!option) {
-      throw new Error("Expected an Organization visibility option");
-    }
-    return option;
-  });
-  click(organization);
+  await shareWithOrganization();
   closeDetail();
 
   await expect(
@@ -972,48 +1184,108 @@ test("Changing visibility updates the card's meta line", async () => {
   expect(within(dialog).queryByText("Private")).not.toBeInTheDocument();
 });
 
-test("Deleting a custom template removes it from the panel", async () => {
-  let templates = [
-    customTemplate(),
-    customTemplate({
-      id: "22222222-2222-4222-8222-222222222222",
-      title: "Renewal deck",
-    }),
-  ];
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(
-      200,
-      templates.map(
+test("A confirmed deletion removes only its card while an older catalog is pending", async () => {
+  const refreshStarted = context.mocks.deferred<void>();
+  const refresh = context.mocks.deferred<void>();
+  const deleted = context.mocks.deferred<void>();
+  let refreshing = false;
+  const board = customTemplate();
+  const renewal = customTemplate({
+    id: "22222222-2222-4222-8222-222222222222",
+    title: "Renewal deck",
+  });
+  mockCustomTemplateStore([board, renewal], {
+    delete: () => {
+      return deleted.promise;
+    },
+  });
+  let catalog = [board, renewal];
+  context.mocks.api(
+    userTemplatesContract.list,
+    async ({ respond, withSignal }) => {
+      const snapshot = catalog.map(
         ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
           return entry;
         },
-      ),
-    );
-  });
-  context.mocks.api(userTemplatesContract.delete, ({ params, respond }) => {
-    templates = templates.filter((candidate) => {
-      return candidate.id !== params.templateId;
-    });
-    return respond(204);
-  });
+      );
+      if (refreshing) {
+        if (!refreshStarted.settled()) {
+          refreshStarted.resolve();
+        }
+        await withSignal(refresh.promise);
+      }
+      return respond(200, snapshot);
+    },
+  );
 
   const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
-  await within(dialog).findByText("Q3 board review");
+  await within(dialog).findByText(board.title);
+
+  catalog = [
+    board,
+    renewal,
+    customTemplate({
+      id: "33333333-3333-4333-8333-333333333333",
+      title: "Published during deletion",
+    }),
+  ];
+  refreshing = true;
+  await act(async () => {
+    context.mocks.ably.trigger("presentationTemplatesChanged");
+    await refreshStarted.promise;
+  });
 
   click(buttonByName("Actions for Q3 board review", dialog)!);
   await waitFor(() => {
     expect(menuItemByName("Delete")).toBeInTheDocument();
   });
   click(menuItemByName("Delete"));
+  expect(within(dialog).getByText(board.title)).toBeInTheDocument();
+  expect(within(dialog).getByText(renewal.title)).toBeInTheDocument();
 
+  deleted.resolve();
   await waitFor(() => {
-    expect(
-      within(dialog).queryByText("Q3 board review"),
-    ).not.toBeInTheDocument();
+    expect(within(dialog).getByText(renewal.title)).toBeInTheDocument();
+    expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
   });
-  expect(within(dialog).getByText("Renewal deck")).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Search templates")).toBeInTheDocument();
+
+  refresh.resolve();
+  await within(dialog).findByText("Published during deletion");
+  expect(within(dialog).queryByText(board.title)).not.toBeInTheDocument();
+  expect(within(dialog).getByText(renewal.title)).toBeInTheDocument();
 });
+
+test.each(["visibility change", "deletion"] as const)(
+  "A failed %s keeps the template and reports the error",
+  async (operation) => {
+    mockCustomTemplateStore([customTemplate()], {
+      update: () => {
+        return operation === "visibility change" ? "fail" : undefined;
+      },
+      delete: () => {
+        return operation === "deletion" ? "fail" : undefined;
+      },
+    });
+
+    const { dialog } = await openCustomPanel();
+    await openDetail(dialog, "Q3 board review");
+
+    if (operation === "visibility change") {
+      await shareWithOrganization();
+    } else {
+      click(buttonByName("Delete")!);
+    }
+
+    await expect(
+      screen.findByText("User template request failed"),
+    ).resolves.toBeInTheDocument();
+    expect(renameField()).toHaveValue("Q3 board review");
+    expect(screen.getByText("Only you can see and use it")).toBeInTheDocument();
+    expect(within(dialog).getByText("Q3 board review")).toBeInTheDocument();
+    expect(within(dialog).getByText("Private")).toBeInTheDocument();
+  },
+);
 
 test("Uploading moves to Custom once the switch is on", async () => {
   mockCustomTemplates([customTemplate()]);

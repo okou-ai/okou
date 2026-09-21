@@ -20,6 +20,7 @@ import {
   closeCustomTemplate$,
   openCustomTemplateDetail$,
   openCustomTemplateKind$,
+  projectCustomTemplate$,
   reloadCustomTemplates$,
 } from "../../signals/okou-page/custom-template-library.ts";
 
@@ -220,14 +221,16 @@ export function CustomTemplatePreviewDialog({
 }) {
   const { t } = useTranslation();
   const openKind = useGet(openCustomTemplateKind$);
-  // The detail shares the catalog's version, so every save invalidates it. Read
-  // through the last settled answer: dropping to the spinner on a refresh would
-  // take the editor away mid-save, and reload the viewer beside it on a rename
-  // that changed neither the file nor the URL it is drawn from.
+  // Realtime refreshes also revalidate the detail. Retain its loaded preview
+  // while the request runs, and apply confirmed metadata separately so saving
+  // a name or visibility never has to wait for the viewer's readback.
   const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
+  const projectTemplate = useGet(projectCustomTemplate$);
   const close = useSet(closeCustomTemplate$);
   const detail =
-    detailLoadable.state === "hasData" ? detailLoadable.data : null;
+    detailLoadable.state === "hasData" && detailLoadable.data !== null
+      ? projectTemplate(detailLoadable.data)
+      : null;
   return (
     <Dialog
       open={openKind !== null}

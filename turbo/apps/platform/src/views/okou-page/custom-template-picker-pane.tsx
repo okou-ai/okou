@@ -7,7 +7,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -39,11 +39,12 @@ import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import {
   customTemplateSearchQuery$,
+  customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
   setCustomTemplateSearchQuery$,
+  projectVisibleCustomTemplates$,
   updateCustomTemplate$,
-  visibleCustomTemplates$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
@@ -537,11 +538,14 @@ export function CustomTemplatePickerPane({
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
-  const templatesLoadable = useLoadable(visibleCustomTemplates$);
+  const templatesLoadable = useLastLoadable(customTemplateCatalog$);
+  const projectTemplates = useGet(projectVisibleCustomTemplates$);
 
   const hasQuery = query.trim().length > 0;
   const templates =
-    templatesLoadable.state === "hasData" ? templatesLoadable.data : null;
+    templatesLoadable.state === "hasData"
+      ? projectTemplates(templatesLoadable.data)
+      : null;
   // A box for narrowing a catalog belongs to a catalog there is something to
   // narrow. It also waits for the catalog to resolve rather than assuming one:
   // showing it while the answer is still in flight would take it away again the
