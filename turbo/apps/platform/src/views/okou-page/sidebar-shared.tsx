@@ -107,7 +107,6 @@ export function AvatarFromUrl({
   return <span className={className} aria-hidden="true" data-testid={testId} />;
 }
 
-/** Reactive avatar image that respects DB-persisted and user overrides. */
 /**
  * The brand texture for one agent, or null when it cannot have one.
  *
@@ -133,6 +132,7 @@ export function useAgentAvatarTexture(id: string | null): string | null {
   return texture ? avatarTextureUrl(texture) : null;
 }
 
+/** Reactive avatar image that respects DB-persisted and user overrides. */
 export function AgentAvatarImg({
   name,
   alt,
