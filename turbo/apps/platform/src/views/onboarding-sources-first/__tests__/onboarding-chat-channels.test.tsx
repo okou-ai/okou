@@ -189,6 +189,14 @@ test("The step sends an admin to Slack's own install and turns connected once th
 
   expect(open).toHaveBeenCalledWith(`${SLACK_INSTALL_URL}?_t=${NOW}`, "_blank");
 
+  click(getChannelTile("Teams"));
+
+  // Teams' own OAuth installs while it connects, so the tile opens that URL.
+  expect(open).toHaveBeenCalledWith(
+    `${window.location.origin}${TEAMS_CONNECT_URL}&_t=${NOW}`,
+    "_blank",
+  );
+
   setSlack({
     isConnected: true,
     isInstalled: true,

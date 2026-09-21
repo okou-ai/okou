@@ -504,7 +504,8 @@ type ChannelState =
 
 interface ChannelStatus {
   readonly isConnected: boolean;
-  readonly isInstalled: boolean;
+  /** Undefined where the status leaves the workspace-wide install unstated. */
+  readonly isInstalled: boolean | undefined;
   readonly isAdmin: boolean;
   /** Where an admin adds the app to the whole workspace. */
   readonly installUrl: string | null | undefined;
@@ -786,8 +787,7 @@ export function OnboardingSlackPage() {
   const slack = loadedChannelState(useLastLoadable(slackOrgData$), (status) => {
     return {
       isConnected: status.isConnected,
-      // An older status leaves `isInstalled` out; a connection proves it.
-      isInstalled: status.isInstalled ?? status.isConnected,
+      isInstalled: status.isInstalled,
       isAdmin: status.isAdmin,
       installUrl: status.installUrl,
       connectUrl: status.connectUrl,
