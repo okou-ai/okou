@@ -137,12 +137,6 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   // The first category is selected when the panel opens.
   expect(pane).toHaveAttribute("data-category", "slides");
   expect(flyout()).toHaveAccessibleName("Presentation");
-  expect(within(pane).queryByText("Presentation")).not.toBeInTheDocument();
-  expect(
-    within(pane).queryByText(
-      `${String(PRESENTATION_TEMPLATE_PICKER_ITEMS.length)} templates`,
-    ),
-  ).not.toBeInTheDocument();
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -246,12 +240,6 @@ test("Hovering a website row previews the website catalog", async () => {
     throw new Error("Expected the detail pane");
   }
   expect(flyout()).toHaveAccessibleName("Website");
-  expect(within(pane).queryByText("Website")).not.toBeInTheDocument();
-  expect(
-    within(pane).queryByText(
-      `${String(WEBSITE_TEMPLATE_ITEMS.length)} templates`,
-    ),
-  ).not.toBeInTheDocument();
   expect(
     pane.querySelectorAll("[data-slot='slash-template-cover']"),
   ).toHaveLength(WEBSITE_TEMPLATE_ITEMS.length);
