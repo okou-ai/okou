@@ -5,7 +5,10 @@ import {
   getProvidersForModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
+  isPiDeepSeekModel,
   isPiExecutionRoute,
+  isPiGptModel,
+  isPiNativeModel,
   isPiPolicyAdmittedRoute,
   isPiRouteRuntimeCapable,
   piRouteCatalogIdentities,
@@ -266,6 +269,38 @@ describe("Pi admission policy table", () => {
         expect(policy.exception.length, model).toBeGreaterThan(0);
         expect(policy.reason.length, model).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it("keeps the family sets credential capture and billing read", () => {
+    // `agent-run-create.service.ts` captures a provider secret for the native
+    // and DeepSeek families, and the Pi usage services select API-owned billing
+    // entries for the GPT family. Editing a `route` in the table moves those
+    // decisions, so the sets are pinned here and not only through admission.
+    expect(ACTIVE_RUN_MODELS.filter(isPiNativeModel)).toStrictEqual([
+      "claude-fable-5-1",
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-sonnet-5",
+      "claude-sonnet-4-6",
+    ]);
+    expect(ACTIVE_RUN_MODELS.filter(isPiGptModel)).toStrictEqual([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]);
+    expect(ACTIVE_RUN_MODELS.filter(isPiDeepSeekModel)).toStrictEqual([
+      "deepseek-v4.1-flash",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash",
+    ]);
+  });
+
+  it("classifies a retired or unknown model into no family", () => {
+    for (const model of ["claude-fable-5", "gpt-5.5", "deepseek-flash", null]) {
+      expect(isPiNativeModel(model), String(model)).toBe(false);
+      expect(isPiGptModel(model), String(model)).toBe(false);
+      expect(isPiDeepSeekModel(model), String(model)).toBe(false);
     }
   });
 });
