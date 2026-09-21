@@ -145,7 +145,7 @@ struct NetworkLogUploadDegradation {
     eligible_sessions: usize,
     successful_sessions: usize,
     transport_failures: usize,
-    failure_rate_basis_points: u64,
+    failure_rate_basis_points: u128,
     latest_failure_kind: ApiFailureKind,
     latest_failure_cause: ApiTransportCause,
 }
@@ -209,8 +209,7 @@ impl NetworkLogUploadHealthState {
                 })?;
         self.degradation_emitted = true;
         let failure_rate_basis_points =
-            u64::try_from((self.transport_failures as u128) * 10_000 / (eligible_sessions as u128))
-                .unwrap_or(10_000);
+            (self.transport_failures as u128) * 10_000 / (eligible_sessions as u128);
         Some(NetworkLogUploadDegradation {
             eligible_sessions,
             successful_sessions: self.successful_sessions,
