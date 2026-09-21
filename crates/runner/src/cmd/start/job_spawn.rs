@@ -566,13 +566,14 @@ impl DeferredUploadPhase {
                     );
                 }
             }
-            network_logs::upload_network_logs(
+            let outcome = network_logs::upload_network_logs(
                 &exec_config.http,
                 run_id,
                 &sandbox_token,
                 &network_log_path,
             )
             .await;
+            exec_config.network_log_upload_health.observe(outcome);
         };
         tokio::join!(telemetry.flush(), network_log_upload,);
     }

@@ -199,6 +199,7 @@ pub struct ExecutorConfig {
     pub log_paths: LogPaths,
     pub network_log_manager: NetworkLogManager,
     pub network_log_drain: NetworkLogDrainCoordinator,
+    pub(crate) network_log_upload_health: crate::network_logs::NetworkLogUploadHealthTracker,
     pub mitm_jsonl_flush: Option<MitmJsonlFlushHandle>,
     pub(crate) connector_runtime_sync: Option<crate::provider::ConnectorRuntimeSyncHandle>,
     pub(crate) guest_rpc: Option<crate::guest_rpc::Runtime>,
