@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -224,11 +225,44 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
  * the brand foreground so it still carries the row, and the unit stays muted
  * so the eye lands on the number.
  */
-function QuestReward({ amount }: { amount: number }) {
+function QuestReward({
+  amount,
+  earned,
+}: {
+  amount: number;
+  /** A banked reward is history, so it drops out of the brand foreground. */
+  earned: boolean;
+}) {
   return (
-    <span className="flex items-center justify-end gap-1 text-sm font-semibold tabular-nums text-brand-text">
-      <Coins className="size-3 shrink-0" />
-      {formatLocalizedNumber(amount)}
+    <span
+      className={`flex items-center gap-1 text-xs font-semibold tabular-nums ${
+        earned ? "text-muted-foreground" : "text-brand-text"
+      }`}
+    >
+      <Coins className="size-3 shrink-0" />+{formatLocalizedNumber(amount)}
+    </span>
+  );
+}
+
+/**
+ * The row's action.
+ *
+ * The row itself is the menu item, so this is a span: a control nested inside
+ * an option is invalid for the menu's roles. It borrows `buttonVariants` so the
+ * two cannot drift, and every action is drawn at 76px -- "Check in" is the
+ * widest label -- so the left edges line up with the right edges.
+ */
+function QuestAction({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={buttonVariants({
+        variant: "neutral",
+        size: "xs",
+        className: "pointer-events-none w-[76px] shrink-0 px-0",
+      })}
+    >
+      {label}
     </span>
   );
 }
@@ -239,11 +273,11 @@ function QuestReward({ amount }: { amount: number }) {
 // quest fell back to the document's 16px text and lucide's 24px default, which
 // set the done rows a size above the rows beside them and pushed their titles
 // 8px further right than the rest of the column.
-// A one-line row: a 28px tile, the title column, and a 76px trailing slot the
-// figures right-align into. At one line the tile, not the text, sets the row
-// height, which is why it is 28 and not the 32 the two-line row used.
+// A 36px tile, the title column, and a 76px trailing slot. The tile is sized
+// against the two-line text block beside it -- at 28 it sat 10px short of the
+// block and read as floating.
 const QUEST_ROW_CLASS =
-  "grid grid-cols-[28px_minmax(0,1fr)_76px] items-center gap-3 px-3 py-2 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
+  "grid grid-cols-[36px_minmax(0,1fr)_76px] items-center gap-3 px-3 py-2 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
 
 /**
  * The state a row carries, as one muted fragment after a middot.
@@ -293,20 +327,31 @@ function QuestRowBody({
 }) {
   const { t } = useTranslation();
   const done = quest.status === "done" && !quest.canEarnMore;
-  const earning = quest.canEarnMore && quest.status !== "inReview";
+  const actionable = quest.canEarnMore && quest.status !== "inReview";
   const state = useQuestState(quest);
   return (
     <>
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
         {QUEST_ICONS[quest.key]}
       </span>
-      <span className={`truncate ${done ? "text-muted-foreground" : ""}`}>
-        {copy.name}
-        {state !== null && (
-          <span className="text-muted-foreground"> · {state}</span>
-        )}
+      <span className="min-w-0">
+        <span
+          className={`block truncate ${done ? "text-muted-foreground" : ""}`}
+        >
+          {copy.name}
+        </span>
+        {/* What it pays leads the second line; a finished quest keeps the
+            figure, because the row is still worth what it earned. */}
+        <span className="mt-0.5 flex min-w-0 items-center truncate text-xs">
+          <QuestReward amount={quest.rewardAmount} earned={done} />
+          {state !== null && (
+            <span className="ml-1.5 truncate text-muted-foreground">
+              · {state}
+            </span>
+          )}
+        </span>
       </span>
-      {/* One trailing slot, one meaning: finished, waiting, or what it pays. */}
+      {/* One trailing slot, one meaning: finished, waiting, or pressable. */}
       <span className="flex items-center justify-end">
         {done && <Check className="shrink-0 text-chart-green" />}
         {quest.status === "inReview" && (
@@ -316,7 +361,9 @@ function QuestRowBody({
             })}
           </span>
         )}
-        {earning && <QuestReward amount={quest.rewardAmount} />}
+        {actionable && copy.action !== null && (
+          <QuestAction label={copy.action} />
+        )}
       </span>
     </>
   );
@@ -536,10 +583,11 @@ function useQuestActions(
 /**
  * The check-in, promoted out of the list.
  *
- * The streak track is a picture of what checking in builds, so the two belong
- * to one control rather than sitting in different parts of the panel. The
- * whole block is the click target and it keeps its reward, which a decorative
- * track would have dropped along with the way to claim today.
+ * It obeys the same rule as a quest row -- the title over what it pays, the
+ * control centred on that pair -- so the button lines up the way every other
+ * button does. The track is not part of the control, so it takes the full
+ * width underneath instead of sitting beside it: a progress bar next to a
+ * button reads as if the button belonged to the bar.
  */
 function CheckinBlock({
   quest,
@@ -554,29 +602,24 @@ function CheckinBlock({
 }) {
   const { t } = useTranslation();
   const claimed = !quest.canEarnMore;
-  const label = claimed
+  const title = claimed
     ? t(($) => {
         return $.chat.agentPage.getStarted.checkedIn;
       })
     : t(($) => {
-        return $.chat.agentPage.getStarted.checkin.action;
+        return $.chat.agentPage.getStarted.checkin.name;
       });
-  // Claimed, so there is nothing left to press: a status line rather than a
-  // control, the same way a finished quest row renders.
-  const className = `-mx-1 mt-2 grid grid-cols-[minmax(0,1fr)_76px] items-center gap-3 rounded-lg px-1 py-1.5 ${
-    pending ? "opacity-50" : ""
-  }`;
-  if (onSelect === null) {
-    return (
-      <div
-        className={`${className} text-sm [&_svg]:size-4 [&_svg]:shrink-0`}
-        data-testid="get-started-quest-checkin"
-      >
+  const action = t(($) => {
+    return $.chat.agentPage.getStarted.checkin.action;
+  });
+  const body = (
+    <>
+      <div className="grid grid-cols-[minmax(0,1fr)_76px] items-center gap-3">
         <div className="min-w-0">
           <p
             className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}
           >
-            {label}
+            {title}
             {streak > 0 && (
               <span className="text-muted-foreground">
                 {" · "}
@@ -589,30 +632,48 @@ function CheckinBlock({
               </span>
             )}
           </p>
-          <div className="mt-1.5 flex items-center gap-1">
-            {STREAK_SEGMENTS.map((index) => {
-              return (
-                <span
-                  key={index}
-                  className={`h-1.5 flex-1 rounded-full ${
-                    index < streak
-                      ? "bg-primary"
-                      : index === streak && !claimed
-                        ? "border border-primary"
-                        : "bg-card"
-                  }`}
-                />
-              );
-            })}
-          </div>
+          <span className="mt-0.5 flex">
+            <QuestReward amount={quest.rewardAmount} earned={claimed} />
+          </span>
         </div>
         <span className="flex items-center justify-end">
           {claimed ? (
             <Check className="shrink-0 text-chart-green" />
           ) : (
-            <QuestReward amount={quest.rewardAmount} />
+            <QuestAction label={action} />
           )}
         </span>
+      </div>
+      <div className="mt-2.5 flex items-center gap-1">
+        {STREAK_SEGMENTS.map((index) => {
+          return (
+            <span
+              key={index}
+              className={`h-1.5 flex-1 rounded-full ${
+                index < streak
+                  ? "bg-primary"
+                  : index === streak && !claimed
+                    ? "border border-primary"
+                    : "bg-card"
+              }`}
+            />
+          );
+        })}
+      </div>
+    </>
+  );
+  // Claimed, so there is nothing left to press: a status line rather than a
+  // control, the same way a finished quest row renders.
+  const className = `-mx-1 mt-2 rounded-lg px-1 py-1.5 [&_svg]:size-4 [&_svg]:shrink-0 ${
+    pending ? "opacity-50" : ""
+  }`;
+  if (onSelect === null) {
+    return (
+      <div
+        className={`${className} text-sm`}
+        data-testid="get-started-quest-checkin"
+      >
+        {body}
       </div>
     );
   }
@@ -625,47 +686,7 @@ function CheckinBlock({
       aria-busy={pending}
       data-testid="get-started-quest-checkin"
     >
-      <div className="min-w-0">
-        <p
-          className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}
-        >
-          {label}
-          {streak > 0 && (
-            <span className="text-muted-foreground">
-              {" · "}
-              {t(
-                ($) => {
-                  return $.chat.agentPage.getStarted.streak;
-                },
-                { amount: formatLocalizedNumber(streak) },
-              )}
-            </span>
-          )}
-        </p>
-        <div className="mt-1.5 flex items-center gap-1">
-          {STREAK_SEGMENTS.map((index) => {
-            return (
-              <span
-                key={index}
-                className={`h-1.5 flex-1 rounded-full ${
-                  index < streak
-                    ? "bg-primary"
-                    : index === streak && !claimed
-                      ? "border border-primary"
-                      : "bg-card"
-                }`}
-              />
-            );
-          })}
-        </div>
-      </div>
-      <span className="flex items-center justify-end">
-        {claimed ? (
-          <Check className="shrink-0 text-chart-green" />
-        ) : (
-          <QuestReward amount={quest.rewardAmount} />
-        )}
-      </span>
+      {body}
     </DropdownMenuItem>
   );
 }
@@ -727,9 +748,17 @@ function GetStartedPanel({
   const opensModal = (quest: GetStartedQuest): boolean => {
     return quest.key === "share" || (introEnabled && questHasIntro(quest.key));
   };
-  const setupQuests = quests.filter((quest) => {
-    return quest.key !== "checkin";
-  });
+  // Finished work sinks to the bottom: what is still claimable leads the list.
+  const setupQuests = quests
+    .filter((quest) => {
+      return quest.key !== "checkin";
+    })
+    .sort((left, right) => {
+      const settled = (quest: GetStartedQuest): number => {
+        return quest.status === "done" && !quest.canEarnMore ? 1 : 0;
+      };
+      return settled(left) - settled(right);
+    });
   const checkinQuest = quests.find((quest) => {
     return quest.key === "checkin";
   });
