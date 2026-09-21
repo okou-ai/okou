@@ -694,7 +694,7 @@ test("completes signed Agent-owner erasure behind a surviving Workflow update", 
   );
 });
 
-test("completes signed Agent-owner erasure behind scoped artifact GC", async () => {
+test("completes signed Agent-owner erasure after overlapping scoped artifact GC", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -730,45 +730,39 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
     ready: true,
   });
   const artifactDigest = await removePiStableContextHeadFixture(headId);
-  const cleanupEntered = createDeferredPromise<number>(context.signal);
-  const gcEntered = createDeferredPromise<number>(context.signal);
-  const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
-    artifactDigest,
-    cutoff: new Date("2099-01-01T00:00:00.000Z"),
-    afterCandidatesLocked: async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      const gcPid = Number(result.rows[0]?.pid);
-      gcEntered.resolve(gcPid);
-      const cleanupPid = await cleanupEntered.promise;
-      await expect
-        .poll(
-          async () => {
-            return await stableContextBackendBlockedByFixture(
-              { blockedPid: cleanupPid, blockerPid: gcPid },
-              tx,
-            );
-          },
-          { interval: 5, timeout: 500 },
-        )
-        .toBe(true);
-    },
-  });
-  await gcEntered.promise;
-  observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
-    if (agentId !== agent.body.agentId) {
-      return;
-    }
-    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
-    cleanupEntered.resolve(Number(result.rows[0]?.pid));
-  });
-  await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure", {
-    flush: false,
-  });
-  await cleanupEntered.promise;
-  await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
-  await flushWaitUntilForTest();
+  const gcEntered = createDeferredPromise<void>(context.signal);
+  const releaseGc = createDeferredPromise<void>(context.signal);
+  const gcCommitted = createDeferredPromise<void>(context.signal);
+  const [deleted] = await Promise.all([
+    (async () => {
+      const result = await deleteExpiredOwnedPiStableContextArtifactFixture({
+        artifactDigest,
+        cutoff: new Date("2099-01-01T00:00:00.000Z"),
+        afterCandidatesLocked: async () => {
+          gcEntered.resolve();
+          await releaseGc.promise;
+        },
+      });
+      gcCommitted.resolve();
+      return result;
+    })(),
+    (async () => {
+      await gcEntered.promise;
+      observeClerkAgentLifecycleBeforeAgentLockFixture(async (_tx, agentId) => {
+        if (agentId !== agent.body.agentId) {
+          return;
+        }
+        // The following multi-Agent case proves the production Storage lock
+        // order. This public-boundary case only needs the real operations to
+        // overlap: let GC commit before cleanup enters its 100 ms production
+        // lock deadline.
+        releaseGc.resolve();
+        await gcCommitted.promise;
+      });
+      await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure");
+    })(),
+  ]);
+  expect(deleted).toStrictEqual([{ digest: artifactDigest }]);
   await expect(
     countUserStableContextGenerationsFixture({
       agentId: agent.body.agentId,

@@ -538,16 +538,12 @@ export async function removePiStableContextHeadFixture(
   return removed.artifactDigest;
 }
 
-/** Inspect a blocker through either the shared fixture DB or its owning tx. */
-export async function stableContextBackendBlockedByFixture(
-  args: {
-    readonly blockedPid: number;
-    readonly blockerPid: number;
-  },
-  executor: Db | Tx = store.set(writeDb$),
-): Promise<boolean> {
+export async function stableContextBackendBlockedByFixture(args: {
+  readonly blockedPid: number;
+  readonly blockerPid: number;
+}): Promise<boolean> {
   const [state] = await executeRawRows(
-    executor,
+    store.set(writeDb$),
     sql`SELECT ${args.blockerPid} = ANY(pg_blocking_pids(${args.blockedPid})) AS blocked`,
     z.object({ blocked: z.boolean() }),
   );
