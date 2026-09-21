@@ -878,7 +878,7 @@ async function captureBrowserUseUserActionOnSocket(
       {
         id: commandId,
         method: "DOM.getDocument",
-        params: { depth: -1, pierce: false },
+        params: { depth: 0, pierce: false },
         sessionId: focused.page.sessionId,
       },
       signal,

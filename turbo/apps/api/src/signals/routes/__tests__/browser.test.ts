@@ -94,6 +94,8 @@ describe("Browser user-action route", () => {
 
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
+    let currentLoaderId = "native-input-loader";
+    let verificationMatches = true;
     context.mocks.browserUseCdp.command.mockImplementation((command) => {
       if (command.method === "Target.getTargets") {
         return {
@@ -120,7 +122,7 @@ describe("Browser user-action route", () => {
           frameTree: {
             frame: {
               id: "main-frame",
-              loaderId: "native-input-loader",
+              loaderId: currentLoaderId,
               url: "https://example.com/login",
             },
           },
@@ -144,7 +146,7 @@ describe("Browser user-action route", () => {
             ? command.params.functionDeclaration
             : "";
         if (declaration.includes("expected")) {
-          return { result: { value: true } };
+          return { result: { value: verificationMatches } };
         }
         if (declaration.includes("nextValue")) {
           return { result: {} };
@@ -408,6 +410,92 @@ describe("Browser user-action route", () => {
       'new Event("change"',
     );
     expect(writes[0]?.[0].params.functionDeclaration).not.toContain("submit");
+
+    const staleCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after stale input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    currentLoaderId = "navigated-loader";
+    const stale = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: staleCandidate.body.action.requestToken },
+        body: { values: [{ key: "code", value: "001234" }] },
+      }),
+      [200],
+    );
+    expect(stale.body.state).toBe("stale");
+    currentLoaderId = "native-input-loader";
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
+        return (
+          command.method === "Runtime.callFunctionOn" &&
+          typeof command.params.functionDeclaration === "string" &&
+          command.params.functionDeclaration.includes("nextValue")
+        );
+      }),
+    ).toHaveLength(1);
+
+    const uncertainCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after uncertain input",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              selector: "#password",
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    verificationMatches = false;
+    const uncertain = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: uncertainCandidate.body.action.requestToken },
+        body: { values: [{ key: "code", value: "009876" }] },
+      }),
+      [200],
+    );
+    verificationMatches = true;
+    expect(uncertain.body.state).toBe("uncertain");
+    const uncertainRetry = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: uncertainCandidate.body.action.requestToken },
+      body: { values: [{ key: "code", value: "must-not-replay" }] },
+    });
+    expect(uncertainRetry).toMatchObject({ status: 409 });
+    expect(
+      context.mocks.browserUseCdp.command.mock.calls.filter(([command]) => {
+        return (
+          command.method === "Runtime.callFunctionOn" &&
+          typeof command.params.functionDeclaration === "string" &&
+          command.params.functionDeclaration.includes("nextValue")
+        );
+      }),
+    ).toHaveLength(2);
 
     await chat.deleteThread(actor, current.threadId);
     const erased = await userActionClient().get({
