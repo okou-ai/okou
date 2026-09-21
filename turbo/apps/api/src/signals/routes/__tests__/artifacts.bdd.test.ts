@@ -854,12 +854,15 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       deploymentVersion: 1,
       aliasUrl: first.url,
     });
+    // Redeploying keeps one site and one alias; each publication still owns an
+    // immutable artifact URL and its own thread-artifact row.
     expect(second).toMatchObject({
-      deploymentVersion: 1,
+      publicSlug: site,
+      deploymentVersion: 2,
       aliasUrl: second.url,
     });
-    expect(second.publicSlug).toMatch(new RegExp(`^${site}-[a-z0-9]{4}$`, "u"));
-    expect(second.siteId).not.toBe(first.siteId);
+    expect(second.siteId).toBe(first.siteId);
+    expect(second.aliasUrl).toBe(first.aliasUrl);
     expect(second.deploymentId).not.toBe(first.deploymentId);
     expect(second.artifactUrl).not.toBe(first.artifactUrl);
 
@@ -882,7 +885,7 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
 
 describe("hosted Artifact previews", () => {
   it.each([false, true])(
-    "renders a private site through an authorized origin and keeps its screenshot private (rollback=%s)",
+    "renders a hosted site from its publication URL and keeps its screenshot private (rollback=%s)",
     async (rollback) => {
       const owner = await artifactActor("Private site screenshot");
       if (!owner.actor.orgId) {
@@ -916,7 +919,7 @@ describe("hosted Artifact previews", () => {
       await flushWaitUntilForTest();
       expect(snapshots).toHaveLength(1);
       expect(snapshots[0]?.body).toMatchObject({
-        url: expect.stringMatching(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u),
+        url: `https://dpl-${artifact.deploymentId}.okou.app`,
       });
       const catalogArtifact = await findCatalogArtifact(actor, site);
       const reference = await resolvePrivatePreviewReference(
