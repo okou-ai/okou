@@ -1359,6 +1359,19 @@ describe("MCP chat discovery and creation", () => {
     expect(combined.nextAction.arguments.inputRef).toStrictEqual(
       combined.input.inputRef,
     );
+    await expect(
+      getStatus(token, combined.nextAction.arguments),
+    ).resolves.toMatchObject({
+      threadId: args.requestId,
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      messages: {
+        arguments: {
+          threadId: args.requestId,
+          runId: combined.input.runId,
+          limit: 20,
+        },
+      },
+    });
     expect(
       Date.parse(combined.input.retryUntil) -
         Date.parse(combined.input.acceptedAt),
