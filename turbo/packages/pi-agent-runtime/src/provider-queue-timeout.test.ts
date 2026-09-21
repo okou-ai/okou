@@ -111,7 +111,10 @@ function stream(signal?: AbortSignal) {
   if (!model) throw new Error("Expected the pinned DeepSeek model");
   return piAgentStreamForConfig(route)(
     model,
-    normalizeContext({ messages: [{ role: "user", content: "hello", timestamp: 1 }], tools: [] }),
+    normalizeContext({
+      messages: [{ role: "user", content: "hello", timestamp: 1 }],
+      tools: [],
+    }),
     { apiKey: route.apiKey, maxRetries: 3, signal },
   );
 }

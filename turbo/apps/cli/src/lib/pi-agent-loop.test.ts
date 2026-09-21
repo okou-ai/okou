@@ -1571,7 +1571,17 @@ describe("sandbox Pi agent loop", () => {
           expect(persisted.getSessionId()).toBe(SESSION_ID);
           expect(persisted.isSettledCheckpoint()).toBe(true);
           const messages = persisted.buildSessionContext().messages;
-          expect(messages).toHaveLength(turn * 2);
+          // 0.86 declares the prompt and tool loadout as one leading transcript
+          // system message. It must be written once for the session, not once
+          // per turn, so the projection grows by exactly the user/assistant
+          // pair each turn.
+          expect(messages).toHaveLength(turn * 2 + 1);
+          expect(
+            messages.filter((message) => {
+              return message.role === "system";
+            }),
+          ).toHaveLength(1);
+          expect(messages[0]?.role).toBe("system");
           expect(
             messages.filter((message) => {
               return message.role === "user";
