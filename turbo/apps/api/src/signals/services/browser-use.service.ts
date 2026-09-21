@@ -350,7 +350,8 @@ async function withBrowserUseCdpSocket<T>(
 ): Promise<T> {
   const websocketUrl = await browserUseCdpWebSocketUrl(cdpUrl, signal);
   const socket = new WebSocket(websocketUrl);
-  const result = await settle(
+  // Cancellation is rethrown only after the socket cleanup below has run.
+  const result = await settleIncludingAbort(
     (async () => {
       await waitForBrowserUseCdpSocket(socket, signal);
       return await operation(socket);
