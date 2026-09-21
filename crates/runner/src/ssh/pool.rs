@@ -89,6 +89,10 @@ impl Lease {
         &self.transport.connected
     }
 
+    pub(super) fn cancelled(&self) -> CancellationToken {
+        self.transport.scope.cancelled.clone()
+    }
+
     /// Only callers that observed channel close and actual exit may return it.
     pub(super) fn reuse(mut self) {
         let transport = &self.transport;

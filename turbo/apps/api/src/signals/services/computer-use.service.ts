@@ -166,14 +166,17 @@ type StartComputerUseHostResult =
 
 type HeartbeatComputerUseHostResult =
   | { readonly status: "ok"; readonly hostId: string }
-  | { readonly status: "invalid_token" };
+  | { readonly status: "invalid_token" }
+  | { readonly status: "subject_closed" };
 
 type StopComputerUseHostResult =
   | { readonly status: "stopped"; readonly hostId: string }
-  | { readonly status: "invalid_token" };
+  | { readonly status: "invalid_token" }
+  | { readonly status: "subject_closed" };
 
 type ClaimNextComputerUseHostCommandResult =
   | { readonly status: "invalid_token" }
+  | { readonly status: "subject_closed" }
   | { readonly status: "idle" }
   | {
       readonly status: "command";
@@ -197,6 +200,7 @@ type CompleteComputerUseHostCommandParams =
 type CompleteComputerUseHostCommandResult =
   | { readonly status: "completed" }
   | { readonly status: "invalid_token" }
+  | { readonly status: "subject_closed" }
   | { readonly status: "not_found" }
   | { readonly status: "not_running" };
 type CompleteComputerUseHostCommandState =
@@ -1220,10 +1224,119 @@ async function hostFromToken(
   return host ?? null;
 }
 
+const COMPUTER_USE_HOST_SESSION_LOCK_TIMEOUT = "1s";
+const COMPUTER_USE_HOST_SESSION_STATEMENT_TIMEOUT = "5s";
+
+/** The host row moved between the unlocked resolution and the lock. */
+class ComputerUseHostOwnershipChangedError extends Error {
+  constructor() {
+    super("Computer Use host ownership changed while acquiring admission");
+    this.name = "ComputerUseHostOwnershipChangedError";
+  }
+}
+
+/**
+ * The host's content-free identity, read without a row lock.
+ *
+ * These endpoints authenticate by token, so the subjects admission needs are
+ * only known once the host row has been read. Reading it under `FOR UPDATE`
+ * first and taking the shared subject lock afterwards would invert the fence's
+ * lock order — a business row before the subject lock — against a closure that
+ * takes its exclusive subject lock first and business rows after. That is a
+ * deadlock, not a style preference, so the resolution that feeds admission
+ * takes no lock and the locked read happens after admission instead.
+ */
+async function hostIdentityFromToken(
+  tx: ComputerUseTx,
+  hostToken: string,
+  signal: AbortSignal,
+): Promise<Pick<ComputerUseHostRow, "id" | "orgId" | "userId"> | null> {
+  const [identity] = await tx
+    .select({
+      id: computerUseHosts.id,
+      orgId: computerUseHosts.orgId,
+      userId: computerUseHosts.userId,
+    })
+    .from(computerUseHosts)
+    .where(
+      and(
+        eq(computerUseHosts.tokenHash, hashSecret(hostToken)),
+        isNull(computerUseHosts.revokedAt),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return identity ?? null;
+}
+
+type AdmittedComputerUseHostSession =
+  | { readonly outcome: "admitted"; readonly host: ComputerUseHostRow }
+  | { readonly outcome: "invalid_token" }
+  | { readonly outcome: "subject_closed" };
+
+/**
+ * Admission for the high-frequency host session endpoints: deadlines ->
+ * unlocked host identity -> shared B1 admission -> the locked host row,
+ * revalidated against the identity that was admitted.
+ *
+ * These are the most frequent Computer Use calls, so the fence pays only what
+ * the write template costs — one deadline statement, one statement for every
+ * subject key, and the separate closure lookup — plus the one unlocked
+ * resolution the lock order forces. The old per-subject template would have
+ * cost two more round trips on every heartbeat and every claim poll.
+ *
+ * A host that disappears between the two reads was revoked, deleted or had its
+ * token rotated, which is exactly the state these routes already report as
+ * `invalid_token`. An owner that changes is not a state any writer produces
+ * today, so it raises rather than silently admitting one account's subjects
+ * and then writing another's row.
+ */
+async function admitComputerUseHostSession(
+  tx: ComputerUseTx,
+  hostToken: string,
+  signal: AbortSignal,
+): Promise<AdmittedComputerUseHostSession> {
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: COMPUTER_USE_HOST_SESSION_LOCK_TIMEOUT,
+    statementTimeout: COMPUTER_USE_HOST_SESSION_STATEMENT_TIMEOUT,
+  });
+  const identity = await hostIdentityFromToken(tx, hostToken, signal);
+  if (!identity) {
+    return { outcome: "invalid_token" };
+  }
+  const admitted = await settle(
+    assertErasureSubjectWritable(tx, computerUseHostSubjects(identity)),
+  );
+  if (!admitted.ok) {
+    if (
+      admitted.error instanceof Error &&
+      admitted.error.message === "account_erasure:subject_closed"
+    ) {
+      return { outcome: "subject_closed" };
+    }
+    throw admitted.error;
+  }
+  signal.throwIfAborted();
+  const host = await hostFromToken(tx, hostToken, signal);
+  if (!host) {
+    return { outcome: "invalid_token" };
+  }
+  if (
+    host.id !== identity.id ||
+    host.orgId !== identity.orgId ||
+    host.userId !== identity.userId
+  ) {
+    throw new ComputerUseHostOwnershipChangedError();
+  }
+  return { outcome: "admitted", host };
+}
+
 const COMPUTER_USE_HOST_START_LOCK_TIMEOUT = "1s";
 const COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT = "5s";
 
-function computerUseHostStartSubjects(params: {
+/** The complete subject set every host-scoped route admits: the host's owner
+ * and its organization. */
+function computerUseHostSubjects(params: {
   readonly orgId: string;
   readonly userId: string;
 }): readonly ErasureSubject[] {
@@ -1263,10 +1376,7 @@ export const startComputerUseHost$ = command(
           statementTimeout: COMPUTER_USE_HOST_START_STATEMENT_TIMEOUT,
         });
         const admitted = await settle(
-          assertErasureSubjectWritable(
-            tx,
-            computerUseHostStartSubjects(params),
-          ),
+          assertErasureSubjectWritable(tx, computerUseHostSubjects(params)),
         );
         signal.throwIfAborted();
         if (!admitted.ok) {
@@ -1369,17 +1479,24 @@ export const heartbeatComputerUseHost$ = command(
     signal: AbortSignal,
   ): Promise<HeartbeatComputerUseHostResult> => {
     const db = set(writeDb$);
-    const now = nowDate();
     const { result, publishChanged, userId } = await db.transaction(
       async (tx) => {
-        const lockedHost = await hostFromToken(tx, params.hostToken, signal);
-        if (!lockedHost) {
+        const admitted = await admitComputerUseHostSession(
+          tx,
+          params.hostToken,
+          signal,
+        );
+        if (admitted.outcome !== "admitted") {
           return {
-            result: { status: "invalid_token" as const },
+            result: { status: admitted.outcome },
             publishChanged: false,
             userId: null,
           };
         }
+        // Admission can wait behind an erasure mutation. One fresh clock after
+        // that wait owns host liveness and every persisted timestamp here.
+        const now = nowDate();
+        const lockedHost = admitted.host;
         const displayName = normalizeHostName(params.hostName);
         const appVersion = normalizeVersion(params.appVersion);
         const osVersion = normalizeOsVersion(params.osVersion);
@@ -1436,18 +1553,25 @@ export const stopComputerUseHost$ = command(
     signal: AbortSignal,
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
-    const now = nowDate();
     const { result, userId, orgId, threadBindingsCleared } =
       await db.transaction(async (tx) => {
-        const host = await hostFromToken(tx, params.hostToken, signal);
-        if (!host) {
+        const admitted = await admitComputerUseHostSession(
+          tx,
+          params.hostToken,
+          signal,
+        );
+        if (admitted.outcome !== "admitted") {
           return {
-            result: { status: "invalid_token" as const },
+            result: { status: admitted.outcome },
             userId: null,
             orgId: null,
             threadBindingsCleared: false,
           };
         }
+        // Admission can wait behind an erasure mutation. One fresh clock after
+        // that wait owns host liveness and every persisted timestamp here.
+        const now = nowDate();
+        const host = admitted.host;
 
         let threadBindingsCleared = false;
         if (host.installationId) {
@@ -1909,13 +2033,20 @@ export const claimNextComputerUseHostCommand$ = command(
     signal: AbortSignal,
   ): Promise<ClaimNextComputerUseHostCommandResult> => {
     const db = set(writeDb$);
-    const now = nowDate();
     const capabilities = normalizeCapabilities(params.supportedCapabilities);
     const result = await db.transaction(async (tx) => {
-      const host = await hostFromToken(tx, params.hostToken, signal);
-      if (!host) {
-        return { status: "invalid_token" as const };
+      const admitted = await admitComputerUseHostSession(
+        tx,
+        params.hostToken,
+        signal,
+      );
+      if (admitted.outcome !== "admitted") {
+        return { status: admitted.outcome };
       }
+      // Admission can wait behind an erasure mutation. One fresh clock after
+      // that wait owns the stale-command sweep and every claim timestamp.
+      const now = nowDate();
+      const host = admitted.host;
 
       await tx
         .update(computerUseHosts)
@@ -2025,14 +2156,21 @@ async function computerUseHostCommandCompletionState(
   params: {
     readonly hostToken: string;
     readonly commandId: string;
-    readonly now: Date;
   },
   signal: AbortSignal,
 ): Promise<CompleteComputerUseHostCommandState> {
-  const host = await hostFromToken(tx, params.hostToken, signal);
-  if (!host) {
-    return { status: "invalid_token" };
+  const admitted = await admitComputerUseHostSession(
+    tx,
+    params.hostToken,
+    signal,
+  );
+  if (admitted.outcome !== "admitted") {
+    return { status: admitted.outcome };
   }
+  // Admission can wait behind an erasure mutation. One fresh clock after that
+  // wait owns the host liveness stamp this completion writes.
+  const now = nowDate();
+  const host = admitted.host;
 
   const [commandRow] = await tx
     .select()
@@ -2053,7 +2191,7 @@ async function computerUseHostCommandCompletionState(
   if (commandRow.status === "succeeded" || commandRow.status === "failed") {
     await tx
       .update(computerUseHosts)
-      .set({ status: "online", lastSeenAt: params.now, updatedAt: params.now })
+      .set({ status: "online", lastSeenAt: now, updatedAt: now })
       .where(eq(computerUseHosts.id, host.id));
     signal.throwIfAborted();
 
@@ -2157,14 +2295,12 @@ export const completeComputerUseHostCommand$ = command(
     signal: AbortSignal,
   ): Promise<CompleteComputerUseHostCommandResult> => {
     const db = set(writeDb$);
-    const now = nowDate();
     const commandState = await db.transaction(async (tx) => {
       return await computerUseHostCommandCompletionState(
         tx,
         {
           hostToken: params.hostToken,
           commandId: params.commandId,
-          now,
         },
         signal,
       );
@@ -2220,7 +2356,6 @@ export const completeComputerUseHostCommand$ = command(
         {
           hostToken: params.hostToken,
           commandId: params.commandId,
-          now: completedAt,
         },
         signal,
       );

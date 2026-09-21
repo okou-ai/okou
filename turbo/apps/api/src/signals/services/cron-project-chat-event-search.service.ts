@@ -16,6 +16,7 @@ import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retire
 import {
   assertErasureSubjectWritable,
   erasureSubjectOpenCondition,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
@@ -291,12 +292,10 @@ async function visibleSearchEventIds(
 }
 
 async function setProjectionDeadlines(tx: Tx): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${PROJECTION_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${PROJECTION_STATEMENT_TIMEOUT}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: PROJECTION_LOCK_TIMEOUT,
+    statementTimeout: PROJECTION_STATEMENT_TIMEOUT,
+  });
 }
 
 /**
