@@ -692,7 +692,7 @@ function registerMessageTool(
     "get_chat_messages",
     {
       description:
-        "Read visible conversation messages (latest 20 by default) in run-turn order. Filter by runId or center the first page on a real eventId/seqId with around. Continue page cursors with the same filters and no around; use nextContentCursor to finish truncated text/files. Offsets count UTF-16 text units and file entries. History changes invalidate page cursors. Reading does not mark read or bypass artifact authorization. Histories over 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, or 15 seconds fail explicitly.",
+        "Read visible messages in turn order (latest 20 by default). messageAt is accepted-input time for users and output-event time for assistants. Filter by runId or center the first page on eventId/seqId with around. Continue cursors with unchanged filters and no around; use nextContentCursor for truncated content. Offsets count UTF-16 units/files. History changes invalidate cursors. Reading does not mark read or bypass artifact authorization. Limits: 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, 15 seconds.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
       annotations: readAnnotations,
@@ -801,7 +801,7 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Atomically update a conversation title and/or future-run model; omitted fields stay unchanged. model:null clears the pin. A title update suppresses automatic naming; model changes affect future runs, not an active run. Use one UUID requestId per patch. Within 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry, so inspect current state. Replay returns current state without restoring older settings.",
+        "Atomically update a conversation title and/or future-run model; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock, separate from lastMessageAt activity. model:null clears the pin. A title update suppresses automatic naming; model changes affect future runs, not an active run. Use one UUID requestId per patch. Within 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry, so inspect current state. Replay returns current state without restoring older settings.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
@@ -1012,7 +1012,7 @@ function registerSearchAndStatusTools(
     "search_chat_messages",
     {
       description:
-        "Search visible message text using whole words or CJK phrases of 2+ characters; every query group must match. Filter by thread, Agent, role, and source time. Results are newest first with bounded excerpts and real refs; use around with get_chat_messages for full context. Continue nextCursor with identical inputs (default 20, max 50). Empty pages may continue; scanLimited marks the 100-candidate budget. Indexing is asynchronous; empty results do not prove absence. Search does not mark read, and 32 MiB/50,000-event/15-second history limits fail explicitly.",
+        "Search visible message text using whole words or CJK phrases of 2+ characters; every query group must match. Filter by thread, Agent, role, and sourceEventAt; bounds, newest-first order, and continuation all use that source-event clock. Results include bounded excerpts and real refs; use around with get_chat_messages for full context. Continue nextCursor with identical inputs (default 20, max 50). Empty pages may continue; scanLimited marks the 100-candidate budget. Indexing is asynchronous; empty results do not prove absence. Search does not mark read, and 32 MiB/50,000-event/15-second history limits fail explicitly.",
       inputSchema: mcpSearchChatMessagesInputSchema,
       outputSchema: mcpSearchChatMessagesOutputSchema,
       annotations: readAnnotations,
@@ -1099,7 +1099,7 @@ function createChatServer(
       "list_chat_threads",
       {
         description:
-          "List your conversations newest-message first. Filter by Agent, literal title substring, last-message time, activity, or unread; continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained terminal events and native deliveries, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained terminal events and native deliveries, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
         inputSchema: mcpListChatThreadsInputSchema,
         outputSchema: mcpListChatThreadsOutputSchema,
         annotations: readAnnotations,
@@ -1123,7 +1123,7 @@ function createChatServer(
       "get_chat_thread",
       {
         description:
-          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. Model metadata is current policy; admission is checked on send. Unread covers retained terminal events and native deliveries. This neither reads messages nor marks read, and idle activity does not prove execution success.",
+          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained terminal events and native deliveries. This neither reads messages nor marks read, and idle activity does not prove execution success.",
         inputSchema: mcpGetChatThreadInputSchema,
         outputSchema: mcpGetChatThreadOutputSchema,
         annotations: readAnnotations,

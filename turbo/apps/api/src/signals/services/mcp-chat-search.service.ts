@@ -5,6 +5,7 @@ import type {
   McpChatSearchResult,
   McpSearchChatMessagesInput,
 } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpChatOutputTimestampSchema } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import { agentDisplayName } from "@okouai/core/public-brand";
 import { computed, type Computed } from "ccstate";
@@ -40,13 +41,13 @@ type Message = ReturnType<typeof projectMcpChatMessages>[number];
 const CURSOR_TTL_MS = 24 * 60 * 60 * 1000;
 const OUTPUT_BYTES = 160 * 1024;
 const cursorSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(2),
   userId: z.string(),
   orgId: z.string(),
   filters: z.string(),
   issuedAt: z.number().int(),
   expiresAt: z.number().int(),
-  createdAt: z.iso.datetime({ precision: 6 }),
+  sourceEventAt: mcpChatOutputTimestampSchema,
   threadId: z.uuid(),
   seqId: z.number().int().positive(),
 });
@@ -57,7 +58,7 @@ function hash(text: string): string {
 }
 function sign(payload: string): Buffer {
   return createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
-    .update("mcp:search_chat_messages:v1\n")
+    .update("mcp:search_chat_messages:v2\n")
     .update(payload)
     .digest();
 }
@@ -163,7 +164,7 @@ function searchMatch(
     agent: { agentId: candidate.agentId, name },
     role: message.role,
     runId: message.runId,
-    createdAt: candidate.createdAt,
+    sourceEventAt: candidate.sourceEventAt,
     excerpt: {
       text: message.text.slice(start, end),
       offset: start,
@@ -258,13 +259,13 @@ function searchPage(
     const issuedAt = cursor?.issuedAt ?? now();
     const continuation = (candidate: McpSearchCandidate) => {
       return encodeCursor({
-        version: 1,
+        version: 2,
         userId: principal.userId,
         orgId: principal.orgId,
         filters,
         issuedAt,
         expiresAt: issuedAt + CURSOR_TTL_MS,
-        createdAt: candidate.createdAt,
+        sourceEventAt: candidate.sourceEventAt,
         threadId: candidate.threadId,
         seqId: candidate.seqId,
       });
