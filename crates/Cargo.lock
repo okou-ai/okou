@@ -1003,7 +1003,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.21.171"
+version = "0.22.0"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.93.1"
+version = "0.94.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3522,7 +3522,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.207.3"
+version = "0.208.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

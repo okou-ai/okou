@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/claude-mock-v0.21.171...claude-mock-v0.22.0) (2026-09-21)
+
+
+### Features
+
+* **guest-agent:** name the record type on oversized and large cli stdout events ([#35865](https://github.com/okou-ai/okou/issues/35865)) ([23d2532](https://github.com/okou-ai/okou/commit/23d253227788d6588ff28288443a3decc4ab03a4))
+
 ## [0.21.171](https://github.com/okou-ai/okou/compare/claude-mock-v0.21.170...claude-mock-v0.21.171) (2026-09-21)
 
 ## [0.21.170](https://github.com/okou-ai/okou/compare/claude-mock-v0.21.169...claude-mock-v0.21.170) (2026-09-21)

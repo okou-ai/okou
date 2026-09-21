@@ -8,6 +8,39 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.652.0](https://github.com/okou-ai/okou/compare/api-v1.651.0...api-v1.652.0) (2026-09-21)
+
+
+### Features
+
+* **api:** fence the computer use host session endpoints ([#35886](https://github.com/okou-ai/okou/issues/35886)) ([24e508c](https://github.com/okou-ai/okou/commit/24e508c617837d88c6d9a5d7086938b22261e05b))
+* **pi:** keep the fable frontier line on the vendor harness ([#35908](https://github.com/okou-ai/okou/issues/35908)) ([c357b8e](https://github.com/okou-ai/okou/commit/c357b8ee446cc1bf47f8552d3f959b967069bc2f))
+* **platform:** add simplified and traditional chinese ui locales ([#35832](https://github.com/okou-ai/okou/issues/35832)) ([2c227d7](https://github.com/okou-ai/okou/commit/2c227d748b9e82987d2e50ee4d8cbb621314f6a6))
+
+
+### Bug Fixes
+
+* **api:** contain one slack conversation's failure in the morning brief ([#35889](https://github.com/okou-ai/okou/issues/35889)) ([d3fb259](https://github.com/okou-ai/okou/commit/d3fb25973a8884a5c14e9c3b6ee968a8a745a5e3))
+* **api:** make the provider enforce the morning brief response contract ([#35888](https://github.com/okou-ai/okou/issues/35888)) ([b57d12a](https://github.com/okou-ai/okou/commit/b57d12a659ec9c6f85e8a89c25a64c44571ec78b)), closes [#35863](https://github.com/okou-ai/okou/issues/35863)
+* **api:** scope user export to owned records and halve its entry count ([#35856](https://github.com/okou-ai/okou/issues/35856)) ([c0ee844](https://github.com/okou-ai/okou/commit/c0ee844a2cb6e85827adca61606a5cbbd51dc807))
+* **api:** stop digesting endpoint urls as morning brief permissions ([#35876](https://github.com/okou-ai/okou/issues/35876)) ([3136a2a](https://github.com/okou-ai/okou/commit/3136a2a8e8db9fd2fa4828aa782df235902be3eb))
+* **pi:** upgrade the pinned runtime to 0.86.1 ([#35840](https://github.com/okou-ai/okou/issues/35840)) ([5a0e66c](https://github.com/okou-ai/okou/commit/5a0e66cbde8dbe2b3ed69f9c03fa8738b97bd0e5))
+
+
+### Refactoring
+
+* **api:** decouple billing reads from deletable run data ([#35909](https://github.com/okou-ai/okou/issues/35909)) ([b154c81](https://github.com/okou-ai/okou/commit/b154c814a823599b17de086bccad894f7e39dc86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.487.0
+    * @okouai/core bumped to 8.695.0
+    * @okouai/db bumped to 1.283.1
+    * @okouai/pi-agent-runtime bumped to 1.34.7
+
 ## [1.651.0](https://github.com/okou-ai/okou/compare/api-v1.650.0...api-v1.651.0) (2026-09-21)
 
 
