@@ -19,6 +19,7 @@ from typing import Literal, Protocol
 
 from mitmproxy import http
 
+import auth
 import connection_endpoints
 import connector_intent
 import flow_metadata
@@ -69,6 +70,43 @@ _BROWSER_USER_AGENT_MARKERS = (
 # User-Agent is only a spoofable business passthrough signal. Values above this
 # budget conservatively continue through ordinary firewall classification.
 _MAX_BROWSER_USER_AGENT_BYTES = 4096
+
+
+def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallRequestContext:
+    """Extract only bounded headers used by AWS permission selectors.
+
+    Ordinary firewall classification must not decode unrelated header values.
+    AWS signing already applies a 64 KiB request-header-list budget; exceeding
+    that same budget makes AWS rule inspection unavailable and therefore
+    fail-closed without affecting non-AWS path rules.
+    """
+    raw_fields = flow.request.headers.fields
+    if len(raw_fields) > auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS:
+        return matching.FirewallRequestContext(body=flow.request.raw_content)
+
+    selected: list[tuple[str, str]] = []
+    header_list_size = 0
+    for raw_name, raw_value in raw_fields:
+        header_list_size += (
+            len(raw_name) + len(raw_value) + auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
+        )
+        if header_list_size > auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES:
+            return matching.FirewallRequestContext(body=flow.request.raw_content)
+
+        name_bytes = bytes(raw_name)
+        if name_bytes.lower() not in matching.AWS_FIREWALL_REQUEST_HEADER_NAMES:
+            continue
+        selected.append(
+            (
+                name_bytes.decode("utf-8", "surrogateescape"),
+                bytes(raw_value).decode("utf-8", "surrogateescape"),
+            )
+        )
+    return matching.FirewallRequestContext(
+        headers=tuple(selected),
+        body=flow.request.raw_content,
+    )
+
 
 type StaleTlsAdmissionReason = Literal[
     "client_ip_missing",
@@ -538,6 +576,7 @@ def _classify_request(
             compiled_firewalls,
             compiled_network_policies,
             intent,
+            _aws_firewall_request_context(flow),
             is_asterisk_form=is_asterisk_form,
         )
         if isinstance(result, matching.FirewallAmbiguous):

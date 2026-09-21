@@ -9,12 +9,14 @@ parameterized hosts are meaningful only for firewall config bases.
 """
 
 import json
+import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal, NamedTuple
-from urllib.parse import urlsplit
+from typing import Literal, NamedTuple, cast
+from urllib.parse import parse_qsl, urlsplit
 
+import aws_sigv4
 import connector_intent
 import connector_runtime_metadata
 import connector_template_syntax
@@ -34,6 +36,7 @@ from firewall_matching.base_url import (
 from firewall_matching.patterns import (
     SegmentError,
     SegmentLiteral,
+    SegmentParam,
     _compiled_path_segments_match,
     _iter_path_segments,
     _match_compiled_path_segments,
@@ -60,9 +63,11 @@ match_path = _firewall_patterns.match_path
 match_path_prefix = _firewall_patterns.match_path_prefix
 parse_segment = _firewall_patterns.parse_segment
 
-# Firewall rules are encoded as ``"METHOD path"`` — a single-whitespace-split
-# yields exactly two tokens.  Rows that fail this shape are malformed.
+# Firewall rules are encoded as ``"METHOD path"`` with optional AWS predicates
+# after the HTTP rule, such as ``"POST / AWS sigv4=ec2 action=DescribeInstances"``.
 _RULE_TOKEN_COUNT = 2
+_AWS_RULE_SEPARATOR = " AWS "
+_AWS_FORM_BODY_MAX_BYTES = 64 * 1024
 _VALID_RULE_METHODS = frozenset(
     (
         "GET",
@@ -79,6 +84,76 @@ _RESERVED_DECLARED_FIREWALL_PERMISSION_NAMES = frozenset(("all", "__unknown__"))
 _VALID_AUTH_BASE_SCHEME = "https"
 _AUTH_TEMPLATE_START = "${{"
 _AUTH_TEMPLATE_URL_PLACEHOLDER = "placeholder"
+_VALID_AWS_PREDICATE_KEYS = frozenset(("sigv4", "action", "target"))
+_AWS_PREDICATE_VALUE_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+_AWS_QUERY_KEY_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
+_AWS_QUERY_VALUE_RE = re.compile(r"^[A-Za-z0-9._~:{}-]+$")
+_AWS_S3_COPY_SOURCE_HEADER = "x-amz-copy-source"
+_AWS_S3_PERMISSION_HEADER_QUERY_KEYS = MappingProxyType(
+    {
+        "x-amz-acl": frozenset(("acl",)),
+        "x-amz-grant-full-control": frozenset(("acl",)),
+        "x-amz-grant-read": frozenset(("acl",)),
+        "x-amz-grant-read-acp": frozenset(("acl",)),
+        "x-amz-grant-write": frozenset(("acl",)),
+        "x-amz-grant-write-acp": frozenset(("acl",)),
+        "x-amz-object-lock-legal-hold": frozenset(("legal-hold",)),
+        "x-amz-object-lock-mode": frozenset(("retention",)),
+        "x-amz-object-lock-retain-until-date": frozenset(("retention",)),
+        "x-amz-tagging": frozenset(("tagging",)),
+    }
+)
+AWS_FIREWALL_REQUEST_HEADER_NAMES = frozenset(
+    {
+        b"authorization",
+        b"content-length",
+        b"content-type",
+        b"transfer-encoding",
+        b"x-amz-copy-source",
+        b"x-amz-date",
+        b"x-amz-target",
+        *(name.encode() for name in _AWS_S3_PERMISSION_HEADER_QUERY_KEYS),
+    }
+)
+# SigV4 query-auth fields and ordinary S3 operation parameters that do not
+# select a different IAM operation.
+_AWS_IGNORED_QUERY_KEYS = frozenset(
+    key.lower()
+    for key in (
+        "partNumber",
+        "bucket-region",
+        "continuation-token",
+        "delimiter",
+        "encoding-type",
+        "fetch-owner",
+        "key-marker",
+        "marker",
+        "max-buckets",
+        "max-directory-buckets",
+        "max-keys",
+        "max-parts",
+        "max-uploads",
+        "part-number-marker",
+        "prefix",
+        "response-cache-control",
+        "response-content-disposition",
+        "response-content-encoding",
+        "response-content-language",
+        "response-content-type",
+        "response-expires",
+        "start-after",
+        "upload-id-marker",
+        "version-id-marker",
+        "X-Amz-Algorithm",
+        "X-Amz-Credential",
+        "X-Amz-Date",
+        "X-Amz-Expires",
+        "X-Amz-SignedHeaders",
+        "X-Amz-Security-Token",
+        "X-Amz-Signature",
+        "x-id",
+    )
+)
 
 # Path-rule specificity is a Python tuple compared lexicographically from left to right. Keep
 # these coordinates aligned with the labeled TypeScript ``PathSpecificity`` tuple in
@@ -98,6 +173,18 @@ _AUTH_TEMPLATE_URL_PLACEHOLDER = "placeholder"
 #    TypeScript matcher’s ``codePointLength()`` for this contract.
 # 7. ``segment_count`` (``segmentCount``): total number of path segments.
 _PathSpecificity = tuple[int, int, int, int, int, int, int]
+_AwsPathSegmentIdentity = tuple[str, ...]
+_AwsRuleIdentity = tuple[
+    str,
+    tuple[_AwsPathSegmentIdentity, ...],
+    tuple[tuple[str, str | None], ...],
+    tuple[tuple[str, str], ...],
+]
+
+
+class _AwsFormActionResult(NamedTuple):
+    values: list[str]
+    inspectable: bool
 
 
 class _CompiledPrefixTrieNode[T](NamedTuple):
@@ -115,6 +202,9 @@ class _CompiledRule(NamedTuple):
     method: str
     raw: str
     path: CompiledPathPattern
+    query_requirements: tuple[tuple[str, str | None], ...]
+    aws_query_selector_keys: frozenset[str]
+    aws_predicates: Mapping[str, str] | None
     specificity: _PathSpecificity
 
 
@@ -324,6 +414,12 @@ class _CompiledRuleCandidate(NamedTuple):
     rule: str
     specificity: _PathSpecificity
     params: dict[str, str]
+    aws_rule_identity: _AwsRuleIdentity | None
+
+
+class FirewallRequestContext(NamedTuple):
+    headers: tuple[tuple[str, str], ...] = ()
+    body: bytes | None = None
 
 
 def _is_string_record(value: object) -> bool:
@@ -464,6 +560,11 @@ def _auth_config_is_valid(api_entry: dict) -> bool:
     if "base" in raw_auth and not isinstance(raw_auth["base"], str):
         return False
     return "base" not in raw_auth or _static_auth_base_is_valid(raw_auth["base"])
+
+
+def _api_auth_uses_aws_sigv4(api_entry: dict) -> bool:
+    raw_auth = api_entry.get("auth")
+    return isinstance(raw_auth, dict) and "awsSigv4" in raw_auth
 
 
 def _api_routing_identity(api_entry: dict) -> str | None:
@@ -779,12 +880,16 @@ def _compile_rule(rule_str: str) -> _CompiledRule | None:
     parts = rule_str.split(" ", 1)
     if len(parts) != _RULE_TOKEN_COUNT:
         return None
-    method, path = parts
+    method, raw_path = parts
     if method not in _VALID_RULE_METHODS:
         return None
+    parsed = _split_rule_path_and_aws_predicates(raw_path)
+    if parsed is None:
+        return None
+    path, query_requirements, aws_predicates = parsed
     if (
         not path.startswith("/")
-        or "?" in path
+        or (not query_requirements and "?" in path)
         or "#" in path
         or "\\" in path
         or has_unsafe_url_codepoint(path)
@@ -796,7 +901,167 @@ def _compile_rule(rule_str: str) -> _CompiledRule | None:
         return None
     if not _compiled_rule_path_is_valid(pattern):
         return None
-    return _CompiledRule(method, rule_str, pattern, _path_specificity(pattern))
+    return _CompiledRule(
+        method,
+        rule_str,
+        pattern,
+        query_requirements,
+        frozenset(),
+        aws_predicates,
+        _path_specificity(pattern),
+    )
+
+
+def _compile_aws_predicates(raw_predicates: str) -> Mapping[str, str] | None:
+    if raw_predicates == "":
+        return None
+
+    predicates: dict[str, str] = {}
+    for token in raw_predicates.split(" "):
+        if token == "":
+            return None
+        key, separator, value = token.partition("=")
+        if not separator or not key or not value:
+            return None
+        if key not in _VALID_AWS_PREDICATE_KEYS or key in predicates:
+            return None
+        if not _AWS_PREDICATE_VALUE_RE.fullmatch(value):
+            return None
+        predicates[key] = value
+
+    if "sigv4" not in predicates:
+        return None
+    if "action" in predicates and "target" in predicates:
+        return None
+    return MappingProxyType(predicates)
+
+
+def _compile_aws_query_requirements(
+    raw_query: str,
+) -> tuple[tuple[str, str | None], ...] | None:
+    if raw_query == "":
+        return None
+
+    requirements: list[tuple[str, str | None]] = []
+    keys: set[str] = set()
+    for token in raw_query.split("&"):
+        if token == "":
+            return None
+        key, separator, value = token.partition("=")
+        if not key or not _AWS_QUERY_KEY_RE.fullmatch(key) or key in keys:
+            return None
+        keys.add(key)
+        if separator and value != "*" and (value == "" or not _AWS_QUERY_VALUE_RE.fullmatch(value)):
+            return None
+        requirements.append((key, value if separator else None))
+
+    return tuple(requirements)
+
+
+def _split_rule_path_and_aws_predicates(
+    raw_path: str,
+) -> (
+    tuple[
+        str,
+        tuple[tuple[str, str | None], ...],
+        Mapping[str, str] | None,
+    ]
+    | None
+):
+    separator_index = raw_path.find(_AWS_RULE_SEPARATOR)
+    if separator_index == -1:
+        return raw_path, (), None
+    if raw_path.find(_AWS_RULE_SEPARATOR, separator_index + 1) != -1:
+        return None
+
+    raw_rule_path = raw_path[:separator_index]
+    raw_predicates = raw_path[separator_index + len(_AWS_RULE_SEPARATOR) :]
+    predicates = _compile_aws_predicates(raw_predicates)
+    if predicates is None:
+        return None
+
+    query_requirements: tuple[tuple[str, str | None], ...] = ()
+    query_index = raw_rule_path.find("?")
+    if query_index != -1:
+        compiled_requirements = _compile_aws_query_requirements(raw_rule_path[query_index + 1 :])
+        if not compiled_requirements:
+            return None
+        query_requirements = compiled_requirements
+        raw_rule_path = raw_rule_path[:query_index]
+
+    return raw_rule_path, query_requirements, predicates
+
+
+def _aws_path_segment_identity(
+    segment: SegmentLiteral | SegmentParam | SegmentError,
+) -> _AwsPathSegmentIdentity:
+    if isinstance(segment, SegmentLiteral):
+        return ("literal", segment.value)
+    if isinstance(segment, SegmentParam):
+        return ("param", segment.prefix, segment.suffix, segment.greedy)
+    return ("error", segment.reason)
+
+
+def _aws_query_selector_signature(
+    rule: _CompiledRule,
+) -> tuple[str, tuple[_AwsPathSegmentIdentity, ...], str] | None:
+    predicates = rule.aws_predicates
+    if predicates is None or "action" in predicates or "target" in predicates:
+        return None
+    return (
+        rule.method,
+        tuple(_aws_path_segment_identity(segment) for segment in rule.path.segments),
+        predicates["sigv4"],
+    )
+
+
+def _with_aws_query_selector_keys(
+    rule: _CompiledRule,
+    selector_keys: frozenset[str],
+) -> _CompiledRule:
+    return _CompiledRule(
+        rule.method,
+        rule.raw,
+        rule.path,
+        rule.query_requirements,
+        selector_keys,
+        rule.aws_predicates,
+        rule.specificity,
+    )
+
+
+def _attach_aws_query_selector_keys(
+    permissions: list[_CompiledPermission],
+) -> tuple[_CompiledPermission, ...]:
+    selector_keys_by_signature: dict[
+        tuple[str, tuple[_AwsPathSegmentIdentity, ...], str],
+        set[str],
+    ] = {}
+    for permission in permissions:
+        for rule in permission.rules:
+            signature = _aws_query_selector_signature(rule)
+            if signature is None or not rule.query_requirements:
+                continue
+            selector_keys_by_signature.setdefault(signature, set()).update(
+                key for key, _value in rule.query_requirements
+            )
+
+    if not selector_keys_by_signature:
+        return tuple(permissions)
+
+    compiled_permissions: list[_CompiledPermission] = []
+    for permission in permissions:
+        compiled_rules: list[_CompiledRule] = []
+        for rule in permission.rules:
+            signature = _aws_query_selector_signature(rule)
+            selector_keys = (
+                frozenset(selector_keys_by_signature.get(signature, ()))
+                if signature is not None
+                else frozenset()
+            )
+            compiled_rules.append(_with_aws_query_selector_keys(rule, selector_keys))
+        compiled_permissions.append(_CompiledPermission(permission.name, tuple(compiled_rules)))
+    return tuple(compiled_permissions)
 
 
 def firewall_rule_is_valid(rule_str: str) -> bool:
@@ -958,13 +1223,16 @@ def compile_firewall_core(fw_entry: object) -> CompiledFirewallCore | None:
                     if rule is None:
                         has_malformed_rules = True
                         continue
+                    if rule.aws_predicates is not None and not _api_auth_uses_aws_sigv4(api_entry):
+                        has_malformed_rules = True
+                        continue
                     compiled_rules.append(rule)
 
                 compiled_permissions.append(_CompiledPermission(raw_name, tuple(compiled_rules)))
         elif permissions_present:
             has_malformed_rules = True
 
-        compiled_permissions_tuple = tuple(compiled_permissions)
+        compiled_permissions_tuple = _attach_aws_query_selector_keys(compiled_permissions)
         api_cores.append(
             _CompiledApiCore(
                 api_index,
@@ -1418,6 +1686,280 @@ def _resolve_firewall_decision(
     )
 
 
+def _headers_for_sigv4(
+    headers: tuple[tuple[str, str], ...] | None,
+) -> list[tuple[str, str]]:
+    return [] if headers is None else list(headers)
+
+
+def _unique_header_value(
+    headers: tuple[tuple[str, str], ...] | None,
+    name: str,
+) -> str | None:
+    if headers is None:
+        return None
+    matched = [value for header_name, value in headers if header_name.lower() == name]
+    if len(matched) != 1:
+        return None
+    return matched[0]
+
+
+def _has_header(
+    headers: tuple[tuple[str, str], ...] | None,
+    name: str,
+) -> bool:
+    if headers is None:
+        return False
+    return any(header_name.lower() == name for header_name, _value in headers)
+
+
+def _has_ambiguous_s3_permission_header(
+    headers: tuple[tuple[str, str], ...] | None,
+    query_requirements: tuple[tuple[str, str | None], ...],
+) -> bool:
+    if headers is None:
+        return False
+
+    required_query_keys = {key for key, _value in query_requirements}
+    for header_name, _value in headers:
+        allowed_query_keys = _AWS_S3_PERMISSION_HEADER_QUERY_KEYS.get(header_name.lower())
+        if allowed_query_keys is not None and allowed_query_keys.isdisjoint(required_query_keys):
+            return True
+    return False
+
+
+def _query_values(query_pairs: list[tuple[str, str]], name: str) -> list[str]:
+    return [value for key, value in query_pairs if key == name]
+
+
+def _content_length_may_have_body(
+    headers: tuple[tuple[str, str], ...] | None,
+) -> bool:
+    if headers is None:
+        return False
+    for name, value in headers:
+        if name.lower() != "content-length":
+            continue
+        for part in value.split(","):
+            stripped = part.strip(" \t")
+            if not stripped or not stripped.isascii() or not stripped.isdecimal():
+                return True
+            if int(stripped) > 0:
+                return True
+    return False
+
+
+def _form_action_values(
+    headers: tuple[tuple[str, str], ...] | None,
+    body: bytes | None,
+) -> _AwsFormActionResult:
+    if body is None:
+        if _has_header(headers, "transfer-encoding") or _content_length_may_have_body(headers):
+            return _AwsFormActionResult([], False)
+        return _AwsFormActionResult([], True)
+    if not body:
+        if _content_length_may_have_body(headers):
+            return _AwsFormActionResult([], False)
+        return _AwsFormActionResult([], True)
+    content_types = (
+        []
+        if headers is None
+        else [value for name, value in headers if name.lower() == "content-type"]
+    )
+    if len(content_types) != 1:
+        return _AwsFormActionResult([], False)
+    media_type = content_types[0].split(";", maxsplit=1)[0].strip().lower()
+    if media_type != "application/x-www-form-urlencoded":
+        return _AwsFormActionResult([], False)
+    if len(body) > _AWS_FORM_BODY_MAX_BYTES:
+        return _AwsFormActionResult([], False)
+    try:
+        decoded = body.decode("utf-8")
+        pairs = parse_qsl(
+            decoded,
+            keep_blank_values=True,
+            max_num_fields=aws_sigv4.MAX_AWS_SIGV4_QUERY_PAIRS,
+        )
+    except (UnicodeDecodeError, ValueError):
+        return _AwsFormActionResult([], False)
+    return _AwsFormActionResult(_query_values(pairs, "Action"), True)
+
+
+def _aws_query_action_matches(
+    action: str,
+    *,
+    query_pairs: list[tuple[str, str]],
+    form_action_result: _AwsFormActionResult,
+) -> bool:
+    query_actions = _query_values(query_pairs, "Action")
+    if not form_action_result.inspectable:
+        return False
+    form_actions = form_action_result.values
+    if len(query_actions) == 1:
+        if form_actions and form_actions != query_actions:
+            return False
+        return query_actions[0] == action
+    if len(query_actions) > 1 or len(form_actions) != 1:
+        return False
+    return form_actions[0] == action
+
+
+def _aws_target_matches(
+    target: str,
+    *,
+    headers: tuple[tuple[str, str], ...] | None,
+) -> bool:
+    return _unique_header_value(headers, "x-amz-target") == target
+
+
+def _query_has_only_ignored_aws_keys(query_pairs: list[tuple[str, str]]) -> bool:
+    return all(key.lower() in _AWS_IGNORED_QUERY_KEYS for key, _value in query_pairs)
+
+
+def _query_has_only_required_or_ignored_aws_keys(
+    query_pairs: list[tuple[str, str]],
+    required_keys: set[str],
+) -> bool:
+    return all(
+        key in required_keys or key.lower() in _AWS_IGNORED_QUERY_KEYS
+        for key, _value in query_pairs
+    )
+
+
+def _query_has_no_extra_aws_selector_keys(
+    query_pairs: list[tuple[str, str]],
+    required_keys: set[str],
+    selector_keys: frozenset[str],
+) -> bool:
+    if not selector_keys:
+        return True
+    return all(key in required_keys or key not in selector_keys for key, _value in query_pairs)
+
+
+def _aws_query_requirements_match(
+    query_requirements: tuple[tuple[str, str | None], ...],
+    *,
+    query_pairs: list[tuple[str, str]],
+    selector_keys: frozenset[str],
+    strict_extra_keys: bool,
+) -> bool:
+    required_keys = {key for key, _value in query_requirements}
+    if not query_requirements:
+        if strict_extra_keys:
+            return _query_has_only_ignored_aws_keys(query_pairs)
+        return _query_has_no_extra_aws_selector_keys(
+            query_pairs,
+            required_keys,
+            selector_keys,
+        )
+
+    for key, expected_value in query_requirements:
+        values = _query_values(query_pairs, key)
+        if expected_value == "*":
+            if not values or any(value == "" for value in values):
+                return False
+            continue
+        if len(values) != 1:
+            return False
+        if expected_value is None:
+            if values[0] != "":
+                return False
+            continue
+        if values[0] != expected_value:
+            return False
+
+    if strict_extra_keys:
+        return _query_has_only_required_or_ignored_aws_keys(query_pairs, required_keys)
+    return _query_has_no_extra_aws_selector_keys(
+        query_pairs,
+        required_keys,
+        selector_keys,
+    )
+
+
+def _aws_predicates_match(
+    rule: _CompiledRule,
+    *,
+    query_pairs: list[tuple[str, str]],
+    context: FirewallRequestContext | None,
+    sigv4_service: str | None,
+    get_form_action_result: Callable[[], _AwsFormActionResult],
+) -> bool:
+    predicates = rule.aws_predicates
+    if predicates is None:
+        return True
+    if sigv4_service != predicates["sigv4"]:
+        return False
+
+    headers = context.headers if context is not None else None
+    action = predicates.get("action")
+    if action is not None:
+        return _aws_query_action_matches(
+            action,
+            query_pairs=query_pairs,
+            form_action_result=get_form_action_result(),
+        )
+
+    target = predicates.get("target")
+    if target is not None:
+        return _aws_target_matches(target, headers=headers)
+
+    is_s3 = predicates["sigv4"] == "s3"
+    if is_s3 and _has_header(headers, _AWS_S3_COPY_SOURCE_HEADER):
+        return False
+    if is_s3 and _has_ambiguous_s3_permission_header(headers, rule.query_requirements):
+        return False
+
+    return _aws_query_requirements_match(
+        rule.query_requirements,
+        query_pairs=query_pairs,
+        selector_keys=rule.aws_query_selector_keys,
+        strict_extra_keys=is_s3,
+    )
+
+
+def _aws_rule_identity(rule: _CompiledRule) -> _AwsRuleIdentity | None:
+    predicates = rule.aws_predicates
+    if predicates is None:
+        return None
+    return (
+        rule.method,
+        tuple(_aws_path_segment_identity(segment) for segment in rule.path.segments),
+        tuple(sorted(rule.query_requirements, key=lambda item: item[0])),
+        tuple(sorted(predicates.items())),
+    )
+
+
+def _rule_request_params(
+    rule: _CompiledRule,
+    *,
+    rel_path_segs: list[str],
+    upper_method: str,
+    get_query_pairs: Callable[[], list[tuple[str, str]]],
+    get_sigv4_service: Callable[[], str | None],
+    get_form_action_result: Callable[[], _AwsFormActionResult],
+    request_context: FirewallRequestContext | None,
+) -> dict[str, str] | None:
+    if rule.method not in ("ANY", upper_method):
+        return None
+    params = _match_compiled_path_segments(rel_path_segs, rule.path.segments)
+    if params is None:
+        return None
+    if rule.aws_predicates is not None:
+        sigv4_service = get_sigv4_service()
+        if sigv4_service != rule.aws_predicates["sigv4"]:
+            return None
+        if not _aws_predicates_match(
+            rule,
+            query_pairs=get_query_pairs(),
+            context=request_context,
+            sigv4_service=sigv4_service,
+            get_form_action_result=get_form_action_result,
+        ):
+            return None
+    return params
+
+
 def _collect_rule_routes(
     *,
     collection: _FirewallMatchCollection,
@@ -1425,6 +1967,10 @@ def _collect_rule_routes(
     rel_path_segs: list[str],
     upper_method: str,
     rule_entries: tuple[_CompiledRuleEntry, ...],
+    get_query_pairs: Callable[[], list[tuple[str, str]]],
+    get_sigv4_service: Callable[[], str | None],
+    get_form_action_result: Callable[[], _AwsFormActionResult],
+    request_context: FirewallRequestContext | None,
 ) -> None:
     for entry in rule_entries:
         rule = entry.rule
@@ -1433,7 +1979,21 @@ def _collect_rule_routes(
         if not collection.can_rule_affect_collection(rule.specificity):
             continue
 
-        if not _compiled_path_segments_match(rel_path_segs, rule.path.segments):
+        if rule.aws_predicates is None:
+            if not _compiled_path_segments_match(rel_path_segs, rule.path.segments):
+                continue
+        elif (
+            _rule_request_params(
+                rule,
+                rel_path_segs=rel_path_segs,
+                upper_method=upper_method,
+                get_query_pairs=get_query_pairs,
+                get_sigv4_service=get_sigv4_service,
+                get_form_action_result=get_form_action_result,
+                request_context=request_context,
+            )
+            is None
+        ):
             continue
         collection.record_rule_route(api_match.order, rule.specificity)
 
@@ -1592,7 +2152,38 @@ def _evaluate_selected_rule_entries(
     upper_method: str,
     winning_specificity: _PathSpecificity,
     rule_entries: tuple[_CompiledRuleEntry, ...],
+    get_query_pairs: Callable[[], list[tuple[str, str]]],
+    get_sigv4_service: Callable[[], str | None],
+    get_form_action_result: Callable[[], _AwsFormActionResult],
+    request_context: FirewallRequestContext | None,
 ) -> None:
+    matched_aws_entries: dict[int, dict[str, str]] = {}
+    for entry in rule_entries:
+        rule = entry.rule
+        if rule.aws_predicates is None or rule.specificity != winning_specificity:
+            continue
+        params = _rule_request_params(
+            rule,
+            rel_path_segs=rel_path_segs,
+            upper_method=upper_method,
+            get_query_pairs=get_query_pairs,
+            get_sigv4_service=get_sigv4_service,
+            get_form_action_result=get_form_action_result,
+            request_context=request_context,
+        )
+        if params is None:
+            continue
+        matched_aws_entries[entry.order] = params
+
+    blocked_aws_permissions: dict[_AwsRuleIdentity, list[str]] = {}
+    if policy is not None:
+        for entry in rule_entries:
+            if entry.order not in matched_aws_entries:
+                continue
+            identity = _aws_rule_identity(entry.rule)
+            if identity is not None and entry.permission in policy.blocked_permissions:
+                blocked_aws_permissions.setdefault(identity, []).append(entry.permission)
+
     for entry in rule_entries:
         rule = entry.rule
         if rule.method not in ("ANY", upper_method):
@@ -1601,15 +2192,31 @@ def _evaluate_selected_rule_entries(
             continue
 
         permission_blocked = policy is not None and entry.permission in policy.blocked_permissions
-        if permission_blocked:
-            if not _compiled_path_segments_match(rel_path_segs, rule.path.segments):
+        if rule.aws_predicates is None:
+            if permission_blocked:
+                if not _compiled_path_segments_match(rel_path_segs, rule.path.segments):
+                    continue
+                decision.record_denied_rule(api_match.block_match, entry.permission)
                 continue
-            decision.record_denied_rule(api_match.block_match, entry.permission)
-            continue
+            params = _match_compiled_path_segments(rel_path_segs, rule.path.segments)
+            if params is None:
+                continue
+        else:
+            params = matched_aws_entries.get(entry.order)
+            if params is None:
+                continue
+            identity = _aws_rule_identity(rule)
+            blocked_aliases = (
+                blocked_aws_permissions.get(identity) if identity is not None else None
+            )
+            if blocked_aliases is not None:
+                for permission in blocked_aliases:
+                    decision.record_denied_rule(api_match.block_match, permission)
+                continue
+            if permission_blocked:
+                decision.record_denied_rule(api_match.block_match, entry.permission)
+                continue
 
-        params = _match_compiled_path_segments(rel_path_segs, rule.path.segments)
-        if params is None:
-            continue
         decision.record_allowed_rule(
             _AllowedRuleMatch(
                 api_match.api.raw_api_entry,
@@ -1620,6 +2227,7 @@ def _evaluate_selected_rule_entries(
                     rule.raw,
                     rule.specificity,
                     {**api_match.base_params, **params},
+                    _aws_rule_identity(rule),
                 ),
             )
         )
@@ -1633,6 +2241,10 @@ def _reduce_selected_owner(
     compiled_network_policies: CompiledNetworkPolicies,
     upper_method: str,
     indexed_rules: bool,
+    get_query_pairs: Callable[[], list[tuple[str, str]]],
+    get_sigv4_service: Callable[[], str | None],
+    get_form_action_result: Callable[[], _AwsFormActionResult],
+    request_context: FirewallRequestContext | None,
 ) -> FirewallAllow | FirewallBlock | None:
     if selected_name is not None:
         conflicting_block = _conflicting_selected_api_block(collection, selected_name)
@@ -1715,6 +2327,10 @@ def _reduce_selected_owner(
             upper_method=upper_method,
             winning_specificity=winning_specificity,
             rule_entries=rule_entries,
+            get_query_pairs=get_query_pairs,
+            get_sigv4_service=get_sigv4_service,
+            get_form_action_result=get_form_action_result,
+            request_context=request_context,
         )
 
     return _resolve_firewall_decision(
@@ -1726,6 +2342,7 @@ def _reduce_selected_owner(
 
 def _match_compiled_firewall_request_with_api_candidates(
     *,
+    url: str,
     url_parts: _BaseUrlParts,
     url_has_backslash: bool,
     upper_method: str,
@@ -1734,9 +2351,46 @@ def _match_compiled_firewall_request_with_api_candidates(
     indexed_rules: bool,
     intent: connector_intent.ConnectorIntent,
     is_asterisk_form: bool,
+    request_context: FirewallRequestContext | None,
 ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
     collection = _FirewallMatchCollection()
     base_matches: list[_MatchedApi] = []
+    parsed_query_pairs: list[tuple[str, str]] | None = None
+    sigv4_service_unset = object()
+    sigv4_service: str | object | None = sigv4_service_unset
+    form_action_result_unset = object()
+    form_action_result: _AwsFormActionResult | object = form_action_result_unset
+
+    def get_query_pairs() -> list[tuple[str, str]]:
+        nonlocal parsed_query_pairs
+        if parsed_query_pairs is None:
+            parsed_query_pairs = parse_qsl(urlsplit(url).query, keep_blank_values=True)
+        return parsed_query_pairs
+
+    def get_sigv4_service() -> str | None:
+        nonlocal sigv4_service
+        if sigv4_service is sigv4_service_unset:
+            sigv4_service = aws_sigv4.inspect_sigv4_service(
+                url=url,
+                headers=_headers_for_sigv4(
+                    request_context.headers if request_context is not None else None
+                ),
+            )
+        return sigv4_service if isinstance(sigv4_service, str) else None
+
+    def get_form_action_result() -> _AwsFormActionResult:
+        nonlocal form_action_result
+        if form_action_result is form_action_result_unset:
+            result = _form_action_values(
+                request_context.headers if request_context is not None else None,
+                request_context.body if request_context is not None else None,
+            )
+            form_action_result = result
+            return result
+        if isinstance(form_action_result, _AwsFormActionResult):
+            return form_action_result
+        return cast(_AwsFormActionResult, form_action_result)
+
     unsafe_path: bool | None = False if is_asterisk_form else (True if url_has_backslash else None)
     decision_path = "*" if is_asterisk_form else (url_parts.path or "/")
 
@@ -1813,6 +2467,10 @@ def _match_compiled_firewall_request_with_api_candidates(
             rel_path_segs=rel_path_segs,
             upper_method=upper_method,
             rule_entries=rule_entries,
+            get_query_pairs=get_query_pairs,
+            get_sigv4_service=get_sigv4_service,
+            get_form_action_result=get_form_action_result,
+            request_context=request_context,
         )
 
     selected_name = _selected_owner_name(
@@ -1829,6 +2487,10 @@ def _match_compiled_firewall_request_with_api_candidates(
         compiled_network_policies=compiled_network_policies,
         upper_method=upper_method,
         indexed_rules=indexed_rules,
+        get_query_pairs=get_query_pairs,
+        get_sigv4_service=get_sigv4_service,
+        get_form_action_result=get_form_action_result,
+        request_context=request_context,
     )
     if is_asterisk_form and isinstance(result, FirewallAllow):
         return FirewallPolicyAllow(result)
@@ -1866,6 +2528,7 @@ def _match_compiled_firewall_request_linear(
     compiled_firewalls: CompiledFirewallSet | None,
     network_policies: object | None = None,
     intent: connector_intent.ConnectorIntent | None = None,
+    request_context: FirewallRequestContext | None = None,
     *,
     is_asterisk_form: bool = False,
 ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
@@ -1880,6 +2543,7 @@ def _match_compiled_firewall_request_linear(
 
     url_parts, url_has_backslash, upper_method, compiled_network_policies = prepared
     return _match_compiled_firewall_request_with_api_candidates(
+        url=url,
         url_parts=url_parts,
         url_has_backslash=url_has_backslash,
         upper_method=upper_method,
@@ -1888,6 +2552,7 @@ def _match_compiled_firewall_request_linear(
         indexed_rules=False,
         intent=intent or connector_intent.ABSENT,
         is_asterisk_form=is_asterisk_form,
+        request_context=request_context,
     )
 
 
@@ -1897,6 +2562,7 @@ def match_compiled_firewall_request(
     compiled_firewalls: CompiledFirewallSet | None,
     network_policies: object | None = None,
     intent: connector_intent.ConnectorIntent | None = None,
+    request_context: FirewallRequestContext | None = None,
     *,
     is_asterisk_form: bool = False,
 ) -> FirewallAllow | FirewallPolicyAllow | FirewallBlock | FirewallAmbiguous | None:
@@ -1939,6 +2605,7 @@ def match_compiled_firewall_request(
 
     url_parts, url_has_backslash, upper_method, compiled_network_policies = prepared
     return _match_compiled_firewall_request_with_api_candidates(
+        url=url,
         url_parts=url_parts,
         url_has_backslash=url_has_backslash,
         upper_method=upper_method,
@@ -1947,4 +2614,5 @@ def match_compiled_firewall_request(
         indexed_rules=True,
         intent=intent or connector_intent.ABSENT,
         is_asterisk_form=is_asterisk_form,
+        request_context=request_context,
     )

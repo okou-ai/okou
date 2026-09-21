@@ -153,6 +153,23 @@ def inspect_request(
     )
 
 
+def inspect_sigv4_service(
+    *,
+    url: str,
+    headers: list[tuple[str, str]],
+) -> str | None:
+    """Return the validated SigV4 signing service for firewall matching.
+
+    Malformed or unsupported signing metadata is intentionally reported as no
+    service. The AWS-aware firewall rule then does not match, leaving the
+    configured unknown-policy path to fail closed.
+    """
+    try:
+        return inspect_request(url=url, headers=headers)._context.scope.service
+    except AwsSigV4SigningError:
+        return None
+
+
 def sign_request(
     *,
     method: str,

@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { validateRule } from "../firewall-expander";
 import {
   type FirewallRequestDecision,
   matchFirewallBaseUrl,
@@ -97,6 +98,13 @@ const connectorIntentSchema = z.discriminatedUnion("status", [
 ]);
 
 const contractSchema = z.object({
+  awsRuleValidationCases: z.array(
+    z.object({
+      name: z.string(),
+      rule: z.string(),
+      valid: z.boolean(),
+    }),
+  ),
   segmentParseCases: z.array(
     z.object({
       name: z.string(),
@@ -224,6 +232,23 @@ function assertFirewallDecision(
 const contract = loadContract();
 
 describe("firewall semantics contract", () => {
+  describe("AWS rule validation", () => {
+    for (const testCase of contract.awsRuleValidationCases) {
+      it(testCase.name, () => {
+        const validate = (): void => {
+          validateRule(testCase.rule, "permission", "aws", {
+            allowAwsPredicates: true,
+          });
+        };
+        if (testCase.valid) {
+          expect(validate).not.toThrow();
+        } else {
+          expect(validate).toThrow();
+        }
+      });
+    }
+  });
+
   describe("segment parsing", () => {
     for (const testCase of contract.segmentParseCases) {
       it(testCase.name, () => {

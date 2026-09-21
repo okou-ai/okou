@@ -27,6 +27,7 @@ from aws_sigv4 import MAX_AWS_SIGV4_QUERY_PAIRS, AwsSigV4BodyHash, hash_request_
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.aws_sigv4_helpers import (
     RESOLVED_AWS_ACCESS_KEY_ID,
+    STS_FORM_BODY,
     STS_HOST,
     aws_sigv4_authorization,
     aws_sigv4_header_auth_headers,
@@ -103,12 +104,13 @@ def _write_aws_registry(
     base: str = f"https://{STS_HOST}",
     capture_body: bool = False,
     host_policy: dict[str, object] | None = None,
+    rules: list[str] | None = None,
 ) -> Path:
     api_entry: dict[str, object] = dict(aws_api_entry(base=base))
     api_entry["permissions"] = [
         {
             "name": _AWS_PERMISSION,
-            "rules": ["GET /{path*}", "POST /{path*}"],
+            "rules": ["GET /{path*}", "POST /{path*}"] if rules is None else rules,
         }
     ]
     if host_policy is not None:
@@ -138,6 +140,7 @@ def _header_auth_flow(
     body: bytes | None = None,
     content_length: str | None = None,
     content_hash: str | None = None,
+    content_type: str | None = None,
     transfer_encoding: str | None = None,
 ):
     extra_headers: list[tuple[str, str]] = []
@@ -161,6 +164,7 @@ def _header_auth_flow(
                 authorization=aws_sigv4_authorization(
                     signed_headers=signed_headers,
                 ),
+                content_type=content_type,
                 extra_headers=extra_headers,
             )
         ),
@@ -727,6 +731,53 @@ async def test_bounded_payload_dependent_sigv4_classifies_once_before_buffering(
 
         await mitm_addon.request(flow)
         assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+
+        flow.response = http.Response.make(200, b"ok")
+        mitm_addon.response(flow)
+
+    get_headers.assert_awaited_once()
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+
+
+async def test_aws_action_rule_uses_buffered_body_for_request_classification(
+    tmp_path,
+    real_flow,
+    headers,
+    mitm_ctx,
+) -> None:
+    registry_path = _write_aws_registry(
+        tmp_path,
+        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
+    )
+    flow = _header_auth_flow(
+        real_flow,
+        headers,
+        body=STS_FORM_BODY,
+        content_length=str(len(STS_FORM_BODY)),
+        content_type="application/x-www-form-urlencoded",
+    )
+    get_headers = AsyncMock(return_value=_resolved_token_meta())
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", get_headers),
+        patch.object(
+            matching,
+            "match_compiled_firewall_request",
+            wraps=matching.match_compiled_firewall_request,
+        ) as firewall_match,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+        assert flow.metadata[metadata_keys.FIREWALL_PERMISSION] == _AWS_PERMISSION
+        contexts = [
+            call.args[5]
+            for call in firewall_match.call_args_list
+            if len(call.args) > 5 and isinstance(call.args[5], matching.FirewallRequestContext)
+        ]
+        assert contexts
+        assert contexts[-1].body == STS_FORM_BODY
 
         flow.response = http.Response.make(200, b"ok")
         mitm_addon.response(flow)
