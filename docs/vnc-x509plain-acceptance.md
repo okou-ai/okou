@@ -42,13 +42,10 @@ exactly the saved host with `authMethod=username_password` and
 screenshot had SHA-256
 `428e972bee228f488ab1182756b9388767565173762428bbbbe7323d5c6fa2a8`.
 
-The first input attempt intentionally demonstrated why `sent` is only a
-transport result: without an explicit focus click, the server received RFB key
-events but the xterm produced no observable effect and the screenshot was
-unchanged. The final positive interaction used the screenshot's exact geometry,
-clicked coordinate `(100, 20)` inside the visible xterm, typed a command that
-wrote `X509Plain accepted`, and pressed Enter once. Both input operations
-returned `sent`. After two seconds the screenshot changed to SHA-256
+The interaction used the screenshot's exact geometry, clicked coordinate
+`(100, 20)` inside the visible xterm, typed a command that wrote
+`X509Plain accepted`, and pressed Enter once. Both input operations returned
+`sent`. After two seconds the screenshot changed to SHA-256
 `b66e871b4dd22dd7cac817aa696af1a9835faffbc89e2e38de6327fbbc07259b`,
 and an independent SSH readback on `local-11` verified the exact 19-byte marker.
 The VNC session then returned `closed`.
