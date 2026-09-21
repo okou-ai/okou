@@ -311,7 +311,7 @@ test("Custom opens and reopens on documents even when an image is newest", async
 
   click(buttonByName("Image", filters)!);
   await within(dialog).findByText("Market day");
-  await user.keyboard("{Escape}");
+  click(buttonByName("Close", dialog)!);
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
