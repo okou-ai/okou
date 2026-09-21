@@ -38,6 +38,8 @@ response:
 Replacement processing can make `messageAt` and `sourceEventAt` differ for the
 same visible message reference. Metadata edits can advance `metadataUpdatedAt`
 without advancing `lastMessageAt`; later message activity can do the reverse.
+No timestamp proves archive completeness, search-index freshness, message
+delivery, or run completion; retain each tool's separate guarantees below.
 
 ## Tool errors and CLI exit status
 

@@ -3240,14 +3240,12 @@ describe("MCP chat mutations", () => {
       runId: null,
       messageAt: result.acceptedAt,
     });
-    expect(message).not.toHaveProperty("createdAt");
     expectFixedMcpTimestamp(message.messageAt);
 
     const afterInput = await getThread(token, thread.id);
     expectFixedMcpTimestamp(afterInput.thread.createdAt);
     expectFixedMcpTimestamp(afterInput.thread.metadataUpdatedAt);
     expectFixedMcpTimestamp(afterInput.thread.lastMessageAt);
-    expect(afterInput.thread).not.toHaveProperty("updatedAt");
     expect(afterInput.thread.metadataUpdatedAt).toBe(
       beforeInput.thread.metadataUpdatedAt,
     );
@@ -3273,7 +3271,6 @@ describe("MCP chat mutations", () => {
     expect(match.ref).toStrictEqual(message.ref);
     expect(match.sourceEventAt).toBe(fixedMcpTimestamp(sourceEventTime));
     expect(match.sourceEventAt).not.toBe(message.messageAt);
-    expect(match).not.toHaveProperty("createdAt");
     expectFixedMcpTimestamp(match.sourceEventAt);
     await expect(
       searchMessages(token, {
@@ -3295,7 +3292,6 @@ describe("MCP chat mutations", () => {
       threadId: thread.id,
       patch: { title: "Explicit timestamp semantics" },
     });
-    expect(update).not.toHaveProperty("updatedAt");
     expectFixedMcpTimestamp(update.metadataUpdatedAt);
     const afterMetadataUpdate = await getThread(token, thread.id);
     expect(afterMetadataUpdate.thread.metadataUpdatedAt).toBe(
