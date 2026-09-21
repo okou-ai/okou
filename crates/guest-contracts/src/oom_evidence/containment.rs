@@ -3,6 +3,85 @@
 use super::{EvidenceStatus, MemorySnapshot, OomEvidence};
 use crate::diagnostics::WorkloadResourceLimitDiagnostic;
 
+/// Which guard refused to treat observed OOM kills as contained tool OOM.
+///
+/// The proof is a chain of independent rejection conditions, so the boolean it
+/// collapses into cannot say where it stopped. Each variant names one guard and
+/// maps to a stable snake_case token carrying no evidence content, so unproven
+/// records remain groupable by cause instead of by one fused label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContainmentRejection {
+    /// The operation is not the controlled Agent process.
+    ProcessClassNotAgent,
+    /// The operation is not supervised.
+    LifecycleNotSupervised,
+    /// The terminal diagnostic carried no evidence at all.
+    EvidenceAbsent,
+    /// The evidence belongs to a different exec route than the reporting one.
+    OperationSequenceMismatch,
+    /// No native runtime progress was observed for this operation.
+    RuntimeProgressAbsent,
+    /// The sample time is not a parsable timestamp.
+    SampledAtUnparsable,
+    /// The operation-owned cgroup path carries no exec sequence.
+    OperationSequenceAbsent,
+    /// The operation identity is not a UUID.
+    OperationIdNotUuid,
+    /// The Guest boot identity is absent or is not a UUID.
+    GuestBootIdInvalid,
+    /// The monotonic initialization boundary is missing.
+    StartedBoottimeAbsent,
+    /// Native progress is newer than the sample it must precede.
+    ProgressAfterSample,
+    /// Incidents were dropped past the retention cap, so evidence is partial.
+    IncidentsDropped,
+    /// No incident was retained.
+    IncidentsEmpty,
+    /// Two sampled groups share one cgroup inode.
+    DuplicateGroupInode,
+    /// The kernel reader state cannot be supplemented by counters.
+    KernelStatusUnusable,
+    /// The sampled groups failed their identity or counter validation.
+    GroupsInvalid,
+    /// The workload kill counter is unknown or records no kill.
+    WorkloadOomKillAbsent,
+    /// The tools subtree does not account for every workload kill.
+    ToolsOomKillMismatch,
+    /// Counters moved after the last retained incident witnessed them.
+    ContinuationWitnessStale,
+    /// A retained incident failed its own identity, ordering, counter, or
+    /// kernel-record checks.
+    IncidentUnproven,
+}
+
+impl ContainmentRejection {
+    /// Stable, bounded token for logs and aggregation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ContainmentRejection::ProcessClassNotAgent => "process_class_not_agent",
+            ContainmentRejection::LifecycleNotSupervised => "lifecycle_not_supervised",
+            ContainmentRejection::EvidenceAbsent => "evidence_absent",
+            ContainmentRejection::OperationSequenceMismatch => "operation_sequence_mismatch",
+            ContainmentRejection::RuntimeProgressAbsent => "runtime_progress_absent",
+            ContainmentRejection::SampledAtUnparsable => "sampled_at_unparsable",
+            ContainmentRejection::OperationSequenceAbsent => "operation_sequence_absent",
+            ContainmentRejection::OperationIdNotUuid => "operation_id_not_uuid",
+            ContainmentRejection::GuestBootIdInvalid => "guest_boot_id_invalid",
+            ContainmentRejection::StartedBoottimeAbsent => "started_boottime_absent",
+            ContainmentRejection::ProgressAfterSample => "progress_after_sample",
+            ContainmentRejection::IncidentsDropped => "incidents_dropped",
+            ContainmentRejection::IncidentsEmpty => "incidents_empty",
+            ContainmentRejection::DuplicateGroupInode => "duplicate_group_inode",
+            ContainmentRejection::KernelStatusUnusable => "kernel_status_unusable",
+            ContainmentRejection::GroupsInvalid => "groups_invalid",
+            ContainmentRejection::WorkloadOomKillAbsent => "workload_oom_kill_absent",
+            ContainmentRejection::ToolsOomKillMismatch => "tools_oom_kill_mismatch",
+            ContainmentRejection::ContinuationWitnessStale => "continuation_witness_stale",
+            ContainmentRejection::IncidentUnproven => "incident_unproven",
+        }
+    }
+}
+
 impl OomEvidence {
     /// Sequence of the operation-owned cgroup, for correlation with its exec route.
     pub fn operation_sequence(&self) -> Option<u32> {
@@ -21,37 +100,81 @@ impl OomEvidence {
     /// OOM kills were confined to managed tool leaves. Kernel truncation alone
     /// is harmless only when these independent, complete counters suffice.
     /// Neither process names nor exit codes participate in this proof.
-    pub fn proves_contained_tool_oom(&self) -> bool {
+    ///
+    /// The guards are independent rejection conditions, so the first one that
+    /// refuses is reported. Their order decides which guard is named, never
+    /// whether the evidence is rejected; keep it stable so production records
+    /// partition consistently.
+    pub fn containment_rejection(&self) -> Option<ContainmentRejection> {
         let Some(progress) = self.runtime_progress_at else {
-            return false;
+            return Some(ContainmentRejection::RuntimeProgressAbsent);
         };
         let Some(sampled) = timestamp_ms(&self.sampled_at) else {
-            return false;
+            return Some(ContainmentRejection::SampledAtUnparsable);
         };
-        if self.operation_sequence().is_none()
-            || uuid::Uuid::parse_str(&self.operation_id).is_err()
-            || self
-                .guest_boot_id
-                .as_ref()
-                .is_none_or(|id| uuid::Uuid::parse_str(id).is_err())
-            || self.started_boottime_us == 0
-            || progress > sampled
-            || self.dropped_incidents != 0
-            || self.incidents.is_empty()
-            || self.groups.iter().enumerate().any(|(index, group)| {
-                self.groups
-                    .iter()
-                    .take(index)
-                    .any(|other| other.inode == group.inode)
-            })
-            || !usable_kernel_status(self.kernel_status)
-            || !valid_groups(&self.groups, &self.groups)
-        {
-            return false;
+        // Operation identity first, then sampling order, then the shape of the
+        // retained evidence, then source completeness: each guard is read only
+        // once the identity it depends on is established.
+        let guards = [
+            (
+                self.operation_sequence().is_none(),
+                ContainmentRejection::OperationSequenceAbsent,
+            ),
+            (
+                uuid::Uuid::parse_str(&self.operation_id).is_err(),
+                ContainmentRejection::OperationIdNotUuid,
+            ),
+            (
+                self.guest_boot_id
+                    .as_ref()
+                    .is_none_or(|id| uuid::Uuid::parse_str(id).is_err()),
+                ContainmentRejection::GuestBootIdInvalid,
+            ),
+            (
+                self.started_boottime_us == 0,
+                ContainmentRejection::StartedBoottimeAbsent,
+            ),
+            (
+                progress > sampled,
+                ContainmentRejection::ProgressAfterSample,
+            ),
+            (
+                self.dropped_incidents != 0,
+                ContainmentRejection::IncidentsDropped,
+            ),
+            (
+                self.incidents.is_empty(),
+                ContainmentRejection::IncidentsEmpty,
+            ),
+            (
+                self.groups.iter().enumerate().any(|(index, group)| {
+                    self.groups
+                        .iter()
+                        .take(index)
+                        .any(|other| other.inode == group.inode)
+                }),
+                ContainmentRejection::DuplicateGroupInode,
+            ),
+            (
+                !usable_kernel_status(self.kernel_status),
+                ContainmentRejection::KernelStatusUnusable,
+            ),
+            (
+                !valid_groups(&self.groups, &self.groups),
+                ContainmentRejection::GroupsInvalid,
+            ),
+        ];
+        for (rejected, rejection) in guards {
+            if rejected {
+                return Some(rejection);
+            }
         }
         let total = self.groups[0].delta.oom_kill;
-        if !total.is_some_and(|count| count > 0) || total != self.groups[2].delta.oom_kill {
-            return false;
+        if !total.is_some_and(|count| count > 0) {
+            return Some(ContainmentRejection::WorkloadOomKillAbsent);
+        }
+        if total != self.groups[2].delta.oom_kill {
+            return Some(ContainmentRejection::ToolsOomKillMismatch);
         }
         // A counter increase after the last retained incident is not covered by
         // its continuation witness (including deferred kernel/counter races).
@@ -69,9 +192,9 @@ impl OomEvidence {
                     || observed.oom_group_kill != current.oom_group_kill
             })
         }) {
-            return false;
+            return Some(ContainmentRejection::ContinuationWitnessStale);
         }
-        self.incidents.iter().enumerate().all(|(index, incident)| {
+        let incidents_proven = self.incidents.iter().enumerate().all(|(index, incident)| {
             incident.id == format!("{}:{}", self.operation_id, index + 1)
                 && incident.after_observation
                 && incident.before_cleanup
@@ -116,7 +239,15 @@ impl OomEvidence {
                                 !leaf.is_empty() && leaf.bytes().all(|c| c.is_ascii_digit())
                             })
                 })
-        })
+        });
+        (!incidents_proven).then_some(ContainmentRejection::IncidentUnproven)
+    }
+
+    /// Whether every containment guard accepted. Derived from
+    /// [`Self::containment_rejection`] so the proof and the reported reason
+    /// cannot drift apart.
+    pub fn proves_contained_tool_oom(&self) -> bool {
+        self.containment_rejection().is_none()
     }
 
     /// Preserve PID exhaustion and any counters newer than the containment proof.
@@ -221,12 +352,151 @@ mod tests {
     fn native_continuation_and_complete_counters_prove_tool_containment() {
         let evidence = fixture();
         assert_eq!(evidence.operation_sequence(), Some(7));
+        assert_eq!(evidence.containment_rejection(), None);
         assert!(evidence.proves_contained_tool_oom());
         // MainThread is a tool comm here, not a runtime ownership signal.
         assert_eq!(
             evidence.incidents[0].kernel_events[0].victim_comm,
             "MainThread"
         );
+    }
+
+    /// One mutation, the guard it must trip, and that guard's stable token.
+    type RejectionCase = (fn(&mut OomEvidence), ContainmentRejection, &'static str);
+
+    #[test]
+    fn each_rejecting_guard_reports_its_own_reason() {
+        // One mutation per guard, each built so the named guard is the one
+        // that refuses. Where a guard's condition makes a later guard
+        // unsatisfiable by construction, the earlier, reported one is named.
+        let cases: &[RejectionCase] = &[
+            (
+                |e| e.runtime_progress_at = None,
+                ContainmentRejection::RuntimeProgressAbsent,
+                "runtime_progress_absent",
+            ),
+            (
+                |e| e.sampled_at = "not-a-timestamp".into(),
+                ContainmentRejection::SampledAtUnparsable,
+                "sampled_at_unparsable",
+            ),
+            (
+                // Rename the operation-owned cgroup everywhere, so only its
+                // sequence segment stops parsing.
+                |e| {
+                    let renamed = serde_json::to_string(e)
+                        .unwrap()
+                        .replace("exec-281-7-3", "exec-281-x-3");
+                    *e = serde_json::from_str(&renamed).unwrap();
+                },
+                ContainmentRejection::OperationSequenceAbsent,
+                "operation_sequence_absent",
+            ),
+            (
+                |e| {
+                    e.operation_id = "not-a-uuid".into();
+                    e.incidents[0].id = "not-a-uuid:1".into();
+                },
+                ContainmentRejection::OperationIdNotUuid,
+                "operation_id_not_uuid",
+            ),
+            (
+                |e| e.guest_boot_id = None,
+                ContainmentRejection::GuestBootIdInvalid,
+                "guest_boot_id_invalid",
+            ),
+            (
+                |e| e.started_boottime_us = 0,
+                ContainmentRejection::StartedBoottimeAbsent,
+                "started_boottime_absent",
+            ),
+            (
+                |e| e.runtime_progress_at = Some(u64::MAX),
+                ContainmentRejection::ProgressAfterSample,
+                "progress_after_sample",
+            ),
+            (
+                |e| e.dropped_incidents = 1,
+                ContainmentRejection::IncidentsDropped,
+                "incidents_dropped",
+            ),
+            (
+                |e| e.incidents.clear(),
+                ContainmentRejection::IncidentsEmpty,
+                "incidents_empty",
+            ),
+            (
+                |e| {
+                    e.groups[1].inode = e.groups[0].inode;
+                    e.incidents[0].groups[1].inode = e.groups[0].inode;
+                },
+                ContainmentRejection::DuplicateGroupInode,
+                "duplicate_group_inode",
+            ),
+            (
+                |e| e.kernel_status = EvidenceStatus::Uncorrelated,
+                ContainmentRejection::KernelStatusUnusable,
+                "kernel_status_unusable",
+            ),
+            (
+                |e| e.groups[1].status = EvidenceStatus::Recreated,
+                ContainmentRejection::GroupsInvalid,
+                "groups_invalid",
+            ),
+            (
+                // Every counter stays internally consistent; none records a kill.
+                |e| {
+                    for index in [0, 2] {
+                        e.groups[index].events.oom_kill = Some(0);
+                        e.groups[index].delta.oom_kill = Some(0);
+                        e.incidents[0].groups[index].events.oom_kill = Some(0);
+                        e.incidents[0].groups[index].delta.oom_kill = Some(0);
+                    }
+                },
+                ContainmentRejection::WorkloadOomKillAbsent,
+                "workload_oom_kill_absent",
+            ),
+            (
+                // The workload kill is not accounted for by the tools subtree,
+                // while the continuation witness still matches the sample.
+                |e| {
+                    e.groups[2].events.oom_kill = Some(0);
+                    e.groups[2].delta.oom_kill = Some(0);
+                    e.incidents[0].groups[2].events.oom_kill = Some(0);
+                    e.incidents[0].groups[2].delta.oom_kill = Some(0);
+                },
+                ContainmentRejection::ToolsOomKillMismatch,
+                "tools_oom_kill_mismatch",
+            ),
+            (
+                // A counter moved after the last incident witnessed it.
+                |e| {
+                    for index in [0, 2] {
+                        e.groups[index].events.oom = Some(2);
+                        e.groups[index].delta.oom = Some(2);
+                    }
+                },
+                ContainmentRejection::ContinuationWitnessStale,
+                "continuation_witness_stale",
+            ),
+            (
+                |e| e.incidents[0].before_cleanup = false,
+                ContainmentRejection::IncidentUnproven,
+                "incident_unproven",
+            ),
+        ];
+
+        for (mutate, expected, token) in cases {
+            let mut evidence = fixture();
+            mutate(&mut evidence);
+            assert_eq!(
+                evidence.containment_rejection(),
+                Some(*expected),
+                "token={token}"
+            );
+            assert_eq!(expected.as_str(), *token);
+            assert!(!evidence.proves_contained_tool_oom(), "token={token}");
+        }
     }
 
     #[test]

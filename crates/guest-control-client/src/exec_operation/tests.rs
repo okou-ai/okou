@@ -1806,6 +1806,7 @@ fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
             "termination={termination:?}, overflow={overflow}, residual={residual}"
         );
         assert_terminal_log_field(&events[0], "oom_classification", "contained_tool_oom");
+        assert_terminal_log_field(&events[0], "oom_unproven_reason", "");
         assert_terminal_log_field(&events[0], "oom_incidents", "1");
         assert_terminal_log_field(&events[0], "oom_kernel_events", "1");
         assert!(events[0].fields["operation_id"].contains(&evidence.operation_id));
@@ -1849,5 +1850,82 @@ fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
             Level::WARN,
             "stale route, wrong role, or exit zero without progress"
         );
+    }
+}
+
+#[test]
+fn unproven_containment_log_names_the_rejecting_guard() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+    let evidence: OomEvidence = serde_json::from_str(include_str!(
+        "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+    ))
+    .unwrap();
+    let evidence_line = |evidence: &OomEvidence| {
+        format!(
+            "{EVIDENCE_PREFIX}{}",
+            serde_json::to_string(evidence).unwrap()
+        )
+    };
+    let contained = evidence_line(&evidence);
+    let without_progress = evidence_line(&OomEvidence {
+        runtime_progress_at: None,
+        ..evidence
+    });
+    // The first four reasons are this caller's own conditions; the last one is
+    // carried up from the evidence predicate itself.
+    for (seq, role, lifecycle, transported, expected) in [
+        (
+            7,
+            ExecProcessRole::Workload,
+            ExecTerminalLogLifecycle::Supervised,
+            contained.as_str(),
+            "process_class_not_agent",
+        ),
+        (
+            7,
+            ExecProcessRole::Agent,
+            ExecTerminalLogLifecycle::OneShot,
+            contained.as_str(),
+            "lifecycle_not_supervised",
+        ),
+        (
+            7,
+            ExecProcessRole::Agent,
+            ExecTerminalLogLifecycle::Supervised,
+            "guest diagnostic",
+            "evidence_absent",
+        ),
+        (
+            8,
+            ExecProcessRole::Agent,
+            ExecTerminalLogLifecycle::Supervised,
+            contained.as_str(),
+            "operation_sequence_mismatch",
+        ),
+        (
+            7,
+            ExecProcessRole::Agent,
+            ExecTerminalLogLifecycle::Supervised,
+            without_progress.as_str(),
+            "runtime_progress_absent",
+        ),
+    ] {
+        let diagnostic = ExecOperationDiagnostic::new(seq, "guest-agent", role, true, false);
+        let result = guest_control_proto::DecodedExecResult {
+            diagnostic: transported,
+            ..clean_terminal_result()
+        };
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            diagnostic.log_terminal(lifecycle, &result, false, false);
+        });
+        let events = captured.entries();
+        assert_eq!(events.len(), 1, "reason={expected}");
+        assert_terminal_log_field(&events[0], "oom_classification", "unproven_containment");
+        assert_terminal_log_field(&events[0], "oom_unproven_reason", expected);
+        // A plain string aggregates directly; `?` formatting would render the
+        // value as `Some(...)` and break equality matching.
+        assert_eq!(events[0].field_kinds["oom_unproven_reason"], "str");
     }
 }
