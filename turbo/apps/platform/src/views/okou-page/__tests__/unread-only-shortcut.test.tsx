@@ -35,10 +35,14 @@ const platforms = [
 
 function unreadShortcutEvent({
   ctrlKey,
+  isComposing = false,
+  keyCode = 0,
   metaKey,
   repeat = false,
 }: {
   ctrlKey: boolean;
+  isComposing?: boolean;
+  keyCode?: number;
   metaKey: boolean;
   repeat?: boolean;
 }): KeyboardEvent {
@@ -47,7 +51,9 @@ function unreadShortcutEvent({
     cancelable: true,
     code: "KeyU",
     ctrlKey,
+    isComposing,
     key: "u",
+    keyCode,
     metaKey,
     repeat,
     shiftKey: true,
@@ -119,6 +125,20 @@ test.each(platforms)(
     await expect(
       within(list).findByText("Release plan"),
     ).resolves.toBeInTheDocument();
+
+    for (const composition of [
+      { isComposing: true },
+      { keyCode: 229 },
+    ] as const) {
+      const compositionEvent = unreadShortcutEvent({
+        ctrlKey,
+        metaKey,
+        ...composition,
+      });
+      composer.dispatchEvent(compositionEvent);
+      expect(compositionEvent.defaultPrevented).toBeFalsy();
+      expect(within(list).getByText("Release plan")).toBeInTheDocument();
+    }
 
     click(chatListTitleRow(list));
     await waitFor(() => {
