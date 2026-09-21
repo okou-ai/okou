@@ -74,15 +74,8 @@ export interface ValidatedConnectorCatalogCandidate {
   readonly rawBytes: Buffer;
 }
 
-export interface DecodedConnectorCatalogArtifact {
+interface DecodedConnectorCatalogSnapshot {
   readonly artifact: ConnectorCatalogArtifact;
-}
-
-export interface ConnectorCatalogArtifactDecodeArgs {
-  readonly catalogBytes: Uint8Array;
-  readonly catalogVersion: string;
-  readonly catalogDigest: string;
-  readonly timing?: ConnectorCatalogValidationTiming;
 }
 
 export interface ConnectorCatalogArtifactReader {
@@ -299,10 +292,10 @@ export async function loadConnectorCatalogCandidate(args: {
     args.pointer.catalogKey,
     CONNECTOR_CATALOG_MAX_RAW_BYTES,
   );
-  const { artifact } = decodeConnectorCatalogArtifact({
-    catalogBytes: rawBytes,
+  assertDigest(rawBytes, args.pointer.catalogDigest);
+  const artifact = parseAndValidateCatalog({
+    bytes: rawBytes,
     catalogVersion: args.pointer.catalogVersion,
-    catalogDigest: args.pointer.catalogDigest,
   });
   return {
     identity: {
@@ -313,28 +306,6 @@ export async function loadConnectorCatalogCandidate(args: {
     },
     artifact,
     rawBytes,
-  };
-}
-
-export function decodeConnectorCatalogArtifact(
-  args: ConnectorCatalogArtifactDecodeArgs,
-): DecodedConnectorCatalogArtifact {
-  if (args.catalogBytes.byteLength > CONNECTOR_CATALOG_MAX_RAW_BYTES) {
-    fail("object-too-large");
-  }
-  measureSnapshotPhase(
-    args.timing,
-    "api_dispatch_connector_catalog_verify_digest",
-    () => {
-      assertDigest(args.catalogBytes, args.catalogDigest);
-    },
-  );
-  return {
-    artifact: parseAndValidateCatalog({
-      bytes: args.catalogBytes,
-      catalogVersion: args.catalogVersion,
-      ...(args.timing === undefined ? {} : { timing: args.timing }),
-    }),
   };
 }
 
@@ -400,7 +371,7 @@ function decodeConnectorCatalogSnapshotJson(
 
 export function decodeConnectorCatalogSnapshot(
   args: ConnectorCatalogSnapshotDecodeArgs,
-): DecodedConnectorCatalogArtifact {
+): DecodedConnectorCatalogSnapshot {
   return {
     artifact: validateCatalogJson({
       json: decodeConnectorCatalogSnapshotJson(args),
@@ -437,7 +408,7 @@ function assertAttestedConnectorCatalogArtifact(
 
 export function decodeAttestedConnectorCatalogSnapshot(
   args: ConnectorCatalogSnapshotDecodeArgs,
-): DecodedConnectorCatalogArtifact {
+): DecodedConnectorCatalogSnapshot {
   const artifact = decodeConnectorCatalogSnapshotJson(args);
   // The exact-digest compatibility row and current validator authority
   // establish deep schema and semantic validity. Keep this boundary local.

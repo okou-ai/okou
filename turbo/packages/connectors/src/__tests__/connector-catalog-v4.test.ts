@@ -9,7 +9,6 @@ import {
 import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "../connector-catalog/artifacts/mcp-auth";
 import {
   decodeAttestedConnectorCatalogSnapshot,
-  decodeConnectorCatalogArtifact,
   decodeConnectorCatalogSnapshot,
   encodeConnectorCatalogSnapshot,
   loadConnectorCatalogCandidate,
@@ -60,15 +59,6 @@ function snapshot(
 
 function decode(artifact: ConnectorCatalogArtifact) {
   return decodeConnectorCatalogSnapshot(snapshot(artifact)).artifact;
-}
-
-function rawArtifact(artifact: ConnectorCatalogArtifact) {
-  const bytes = Buffer.from(JSON.stringify(artifact));
-  return {
-    catalogBytes: bytes,
-    catalogVersion: artifact.catalogVersion,
-    catalogDigest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-  };
 }
 
 function filteredMethods(artifact: ConnectorCatalogArtifact) {
@@ -127,24 +117,6 @@ describe("v4 connector catalog reader", () => {
     }
   });
 
-  it("validates exact raw catalog bytes and identity", () => {
-    const artifact = publishedCatalog();
-    const args = rawArtifact(artifact);
-    expect(decodeConnectorCatalogArtifact(args).artifact).toEqual(artifact);
-    expect(() => {
-      decodeConnectorCatalogArtifact({
-        ...args,
-        catalogVersion: "another-release",
-      });
-    }).toThrow("invalid-reference");
-    expect(() => {
-      decodeConnectorCatalogArtifact({
-        ...args,
-        catalogDigest: `sha256:${"0".repeat(64)}`,
-      });
-    }).toThrow("digest-mismatch");
-  });
-
   it("validates AWS firewall rules through the shared semantic parser", () => {
     const artifact = publishedCatalog();
     const connector = requiredConnector(artifact, "019sms");
@@ -163,13 +135,11 @@ describe("v4 connector catalog reader", () => {
       },
     };
     permission.rules = ["POST / AWS sigv4=ec2 action=DescribeInstances"];
-    expect(
-      decodeConnectorCatalogArtifact(rawArtifact(artifact)).artifact,
-    ).toEqual(artifact);
+    expect(decode(artifact)).toEqual(artifact);
 
     delete api.auth.awsSigv4;
     expect(() => {
-      decodeConnectorCatalogArtifact(rawArtifact(artifact));
+      decode(artifact);
     }).toThrow(
       expect.objectContaining({
         code: "relationship-mismatch",
@@ -183,7 +153,7 @@ describe("v4 connector catalog reader", () => {
     };
     permission.rules = ["POST / AWS action=DescribeInstances"];
     expect(() => {
-      decodeConnectorCatalogArtifact(rawArtifact(artifact));
+      decode(artifact);
     }).toThrow(
       expect.objectContaining({
         code: "relationship-mismatch",
