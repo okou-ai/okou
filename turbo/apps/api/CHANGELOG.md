@@ -8,6 +8,34 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.645.0](https://github.com/okou-ai/okou/compare/api-v1.644.2...api-v1.645.0) (2026-09-21)
+
+
+### Features
+
+* **templates:** show a document template's first page in the catalog ([#35723](https://github.com/okou-ai/okou/issues/35723)) ([0d07c92](https://github.com/okou-ai/okou/commit/0d07c92b8719a472b61be04574ba87a9527cf5ba))
+
+
+### Bug Fixes
+
+* **api:** reclaim connector catalog attestations from newer validators ([#35761](https://github.com/okou-ai/okou/issues/35761)) ([bb23e71](https://github.com/okou-ai/okou/commit/bb23e710380ec7298360fb813a6da5d0e84f85b9)), closes [#35755](https://github.com/okou-ai/okou/issues/35755)
+* **api:** stop heavy morning brief sources by their own clock ([#35760](https://github.com/okou-ai/okou/issues/35760)) ([3803719](https://github.com/okou-ai/okou/commit/3803719742feee3495464b7ee3557a677f92ae45))
+
+
+### Performance Improvements
+
+* **api:** observe morning brief membership once per phase ([#35750](https://github.com/okou-ai/okou/issues/35750)) ([32123a7](https://github.com/okou-ai/okou/commit/32123a7fb4d91678a5ece8b7f2265703e48c7c16))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.481.0
+    * @okouai/core bumped to 8.689.1
+    * @okouai/db bumped to 1.280.0
+    * @okouai/pi-agent-runtime bumped to 1.33.33
+
 ## [1.644.2](https://github.com/okou-ai/okou/compare/api-v1.644.1...api-v1.644.2) (2026-09-21)
 
 

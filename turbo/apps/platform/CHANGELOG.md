@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.930.0](https://github.com/okou-ai/okou/compare/app-v0.929.3...app-v0.930.0) (2026-09-21)
+
+
+### Features
+
+* **templates:** show a document template's first page in the catalog ([#35723](https://github.com/okou-ai/okou/issues/35723)) ([0d07c92](https://github.com/okou-ai/okou/commit/0d07c92b8719a472b61be04574ba87a9527cf5ba))
+
+
+### Bug Fixes
+
+* **platform:** render a runless assistant message in the chat transcript ([#35749](https://github.com/okou-ai/okou/issues/35749)) ([9db6557](https://github.com/okou-ai/okou/commit/9db655735490329181bee868ca87ce94aaca5440))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.481.0
+    * @okouai/core bumped to 8.689.1
+
 ## [0.929.3](https://github.com/okou-ai/okou/compare/app-v0.929.2...app-v0.929.3) (2026-09-21)
 
 
