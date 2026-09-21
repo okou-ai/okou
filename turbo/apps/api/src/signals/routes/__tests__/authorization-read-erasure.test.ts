@@ -992,7 +992,7 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
-      "lets read-first finish while real closure waits, then denies subsequent reads",
+      "lets closure commit while a read is in flight, then denies subsequent reads",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
@@ -1014,15 +1014,17 @@ describe.each(["browser", "computer-use"] as const)(
               statementTimeout: "5s",
               transactionTimeout: "0",
             });
+            // The read takes no advisory lock, so closure is not held behind
+            // it. This read was admitted before the decision committed, so
+            // serving its already-pinned projection stays correct.
             const closing = scope.start(
               closeSubject({
                 subjectKind: "user",
                 subjectId: fixture.actor.userId,
               }),
             );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+            valueOf(await closing);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
             await expect(
               readAuthorization(unrelated, [200]),
             ).resolves.toMatchObject({
@@ -1030,7 +1032,6 @@ describe.each(["browser", "computer-use"] as const)(
             });
             await scope.release();
             expect(valueOf(await reading).status).toBe(200);
-            valueOf(await closing);
           });
         };
         if (kind === "browser") {
@@ -1060,7 +1061,7 @@ describe.each(["browser", "computer-use"] as const)(
     );
 
     it(
-      "makes closure-first wait on the real admission edge and return no projection",
+      "serves a read started before a closure commits and denies every read after it",
       { timeout: CASE_TIMEOUT_MS },
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
@@ -1073,17 +1074,22 @@ describe.each(["browser", "computer-use"] as const)(
               }),
             );
             await barrier.entered;
-            const reading = scope.start(readAuthorization(fixture, [404]));
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
+            // A subject whose closure has not committed is not a closed
+            // subject. The read holds no advisory lock to wait on and cannot
+            // observe an uncommitted decision under READ COMMITTED.
+            const reading = scope.start(readAuthorization(fixture, [200]));
+            expect(valueOf(await reading).status).toBe(200);
+            await expect(barrier.blockedWaiterCount()).resolves.toBe(0);
             await scope.release();
             valueOf(await closing);
-            const denied = valueOf(await reading);
-            expect(denied.status).toBe(404);
-            expectDeniedBody(denied.body, fixture);
           });
         }, context.signal);
+
+        // The property that must hold is that a committed decision is never
+        // served again; the closure lookup is the read's own statement.
+        const denied = await readAuthorization(fixture, [404]);
+        expect(denied.status).toBe(404);
+        expectDeniedBody(denied.body, fixture);
       },
     );
 
