@@ -6572,6 +6572,8 @@
         "description": "Scegli la tua lingua preferita per l'interfaccia {{brandName}}",
         "label": "Lingua",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

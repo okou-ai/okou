@@ -904,6 +904,8 @@ test("Keep pin management usable with many pinned agents", async () => {
         "it-IT",
         "fr-FR",
         "hi-IN",
+        "zh-Hans",
+        "zh-Hant",
       ],
       pinnedAgentIds,
       sendMode: "enter",

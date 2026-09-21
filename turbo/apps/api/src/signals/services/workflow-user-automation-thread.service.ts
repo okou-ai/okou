@@ -43,6 +43,8 @@ const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
     "it-IT": "Okou Brief del mattino",
     "fr-FR": "Okou Brief du matin",
     "hi-IN": "Okou सुबह की ब्रीफ़",
+    "zh-Hans": "Okou 晨间简报",
+    "zh-Hant": "Okou 晨間簡報",
   },
 };
 
