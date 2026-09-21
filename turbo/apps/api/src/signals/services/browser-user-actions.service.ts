@@ -787,6 +787,12 @@ async function applyClaimedBrowserUserAction(
       threadLock: "update",
     },
     async (): Promise<ServiceResult<RequestRow>> => {
+      // Deliberately use `db`, not the admission callback's transaction. The
+      // outer transaction retains the canonical erasure/Agent/thread locks,
+      // while this connection must commit the one-attempt claim before any
+      // CDP write and commit its terminal result before those locks release.
+      // Reusing the outer transaction would make `applying` invisible until
+      // after the Browser mutation and defeat crash recovery and no-replay.
       const current = await loadExactRequest(db, located);
       if (!current) {
         return notFound();
