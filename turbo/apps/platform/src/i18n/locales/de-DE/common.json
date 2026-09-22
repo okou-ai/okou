@@ -3383,13 +3383,24 @@
         "connectTitle": "Mit Lark verbinden"
       },
       "slack": {
+        "accountInUseDescription": "Dieses Slack-Konto ist mit einem anderen Okou-Konto verbunden. Trennen Sie dort die Verbindung, bevor Sie es erneut versuchen.",
+        "accountInUseTitle": "Slack-Konto bereits verbunden",
+        "accountMismatchDescription": "Ihr Okou-Konto verwendet hier derzeit das Slack-Konto {{currentAccount}}. Möchten Sie zu {{requestedAccount}} wechseln, dem Konto, das diesen Link geöffnet hat?",
+        "accountMismatchDescriptionWorkspace": "Ihr Okou-Konto verwendet derzeit das Slack-Konto {{currentAccount}} in {{workspace}}. Möchten Sie zu {{requestedAccount}} wechseln, dem Konto, das diesen Link geöffnet hat?",
+        "accountMismatchTitle": "Slack-Konto wechseln?",
         "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Slack-Arbeitsbereich, damit Sie direkt über Slack mit Ihrem Agenten interagieren können.",
         "connectTitle": "Stellen Sie eine Verbindung zu Slack her",
+        "errorFallback": "Die Slack-Verbindung konnte nicht geprüft oder gestartet werden. Versuchen Sie es erneut.",
         "invalidDescription": "Diese Seite soll über einen Slack-Connect-Link geöffnet werden.",
+        "keepAccount": "{{account}} beibehalten",
         "open": "Öffnen Sie Slack",
         "successDescription": "Erwähnen Sie den installierten Bot in einem beliebigen Kanal oder senden Sie eine DM, um mit dem Chatten zu beginnen.",
         "successDescriptionWorkspace": "Sie sind mit {{workspace}} verbunden. Erwähnen Sie den installierten Bot in einem beliebigen Kanal oder senden Sie eine DM, um mit dem Chatten zu beginnen.",
-        "successTitle": "Mit Slack verbunden!"
+        "successTitle": "Mit Slack verbunden!",
+        "switchAccount": "Zu {{account}} wechseln",
+        "workspaceMismatchDescription": "Dieser Slack-Arbeitsbereich ist für Ihre aktuelle Okou-Organisation nicht verfügbar. Wechseln Sie die Organisation oder bitten Sie einen Administrator um Hilfe.",
+        "workspaceMismatchDescriptionNamed": "Ihre aktuelle Okou-Organisation ist mit {{workspace}} verbunden. Wechseln Sie die Organisation oder bitten Sie einen Administrator, die Installation zu entfernen, bevor Sie diesen Slack-Arbeitsbereich verbinden.",
+        "workspaceMismatchTitle": "Slack-Arbeitsbereich stimmt nicht überein"
       },
       "teams": {
         "connectDescription": "Verknüpfen Sie Ihr Teams-Konto, damit Sie direkt über Microsoft Teams mit Ihrem Agenten interagieren können.",

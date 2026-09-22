@@ -3437,13 +3437,24 @@
         "connectTitle": "Se connecter à Lark"
       },
       "slack": {
+        "accountInUseDescription": "Ce compte Slack est connecté à un autre compte Okou. Déconnectez-le de cet autre compte avant de réessayer.",
+        "accountInUseTitle": "Compte Slack déjà connecté",
+        "accountMismatchDescription": "Votre compte Okou utilise actuellement le compte Slack {{currentAccount}} ici. Passer à {{requestedAccount}}, le compte qui a ouvert ce lien ?",
+        "accountMismatchDescriptionWorkspace": "Votre compte Okou utilise actuellement le compte Slack {{currentAccount}} dans {{workspace}}. Passer à {{requestedAccount}}, le compte qui a ouvert ce lien ?",
+        "accountMismatchTitle": "Changer de compte Slack ?",
         "connectDescription": "Liez votre compte à cet espace de travail Slack afin de pouvoir interagir avec votre agent directement depuis Slack.",
         "connectTitle": "Connectez-vous à Slack",
+        "errorFallback": "Impossible de vérifier ou de démarrer la connexion Slack. Réessayez.",
         "invalidDescription": "Cette page est destinée à être ouverte à partir d'un lien de connexion Slack.",
+        "keepAccount": "Conserver {{account}}",
         "open": "Ouvrir Slack",
         "successDescription": "Mentionnez le bot installé dans n'importe quel canal ou envoyez un message privé pour commencer à discuter.",
         "successDescriptionWorkspace": "Vous êtes connecté à {{workspace}}. Mentionnez le bot installé dans n'importe quel canal ou envoyez un message privé pour commencer à discuter.",
-        "successTitle": "Connecté à Slack !"
+        "successTitle": "Connecté à Slack !",
+        "switchAccount": "Passer à {{account}}",
+        "workspaceMismatchDescription": "Cet espace de travail Slack n’est pas disponible pour votre organisation Okou actuelle. Changez d’organisation ou demandez de l’aide à un administrateur.",
+        "workspaceMismatchDescriptionNamed": "Votre organisation Okou actuelle est connectée à {{workspace}}. Changez d’organisation ou demandez à un administrateur de le désinstaller avant de connecter cet espace de travail Slack.",
+        "workspaceMismatchTitle": "L’espace de travail Slack ne correspond pas"
       },
       "teams": {
         "connectDescription": "Associez votre compte Teams afin de pouvoir interagir avec votre agent directement depuis Microsoft Teams.",

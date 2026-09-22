@@ -3371,13 +3371,24 @@
         "connectTitle": "Hubungkan ke Lark"
       },
       "slack": {
+        "accountInUseDescription": "Akun Slack ini terhubung ke akun Okou lain. Putuskan koneksinya di akun tersebut sebelum mencoba lagi.",
+        "accountInUseTitle": "Akun Slack sudah terhubung",
+        "accountMismatchDescription": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di sini. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
+        "accountMismatchDescriptionWorkspace": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di {{workspace}}. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
+        "accountMismatchTitle": "Beralih akun Slack?",
         "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
         "connectTitle": "Hubungkan ke Slack",
+        "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack. Coba lagi.",
         "invalidDescription": "Halaman ini dimaksudkan untuk dibuka dari tautan koneksi Slack.",
+        "keepAccount": "Pertahankan {{account}}",
         "open": "Buka Slack",
         "successDescription": "Sebut bot yang terinstal di channel mana pun atau kirim DM untuk mulai mengobrol.",
         "successDescriptionWorkspace": "Anda tersambung ke {{workspace}}. Sebut bot yang terinstal di channel mana pun atau kirim DM untuk mulai mengobrol.",
-        "successTitle": "Berhasil tersambung ke Slack!"
+        "successTitle": "Berhasil tersambung ke Slack!",
+        "switchAccount": "Beralih ke {{account}}",
+        "workspaceMismatchDescription": "Ruang kerja Slack ini tidak tersedia untuk organisasi Okou Anda saat ini. Beralih organisasi atau minta bantuan admin.",
+        "workspaceMismatchDescriptionNamed": "Organisasi Okou Anda saat ini terhubung ke {{workspace}}. Beralih organisasi atau minta admin menghapus instalasinya sebelum menghubungkan ruang kerja Slack ini.",
+        "workspaceMismatchTitle": "Ruang kerja Slack tidak cocok"
       },
       "teams": {
         "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",

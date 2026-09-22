@@ -10,7 +10,9 @@ const START_MAX_AGE_SECONDS = 15 * 60;
 export const SLACK_CONNECTOR_OAUTH_STATE_PREFIX = "slack-connector.";
 
 export const slackConnectorOAuthContextSchema = z.object({
-  flow: z.enum(["install", "connect"]),
+  // Keep switch distinct so pre-switch API instances reject the signed context
+  // instead of dropping the replacement intent during a rolling deployment.
+  flow: z.enum(["install", "connect", "switch"]),
   orgId: z.string().min(1),
   userId: z.string().min(1),
   workspaceId: z.string().min(1).optional(),
@@ -43,7 +45,8 @@ export function buildSlackConnectorOAuthStartUrl(
   const payload = Buffer.from(
     JSON.stringify({ ...context, issuedAt: Math.floor(now() / 1000) }),
   ).toString("base64url");
-  const url = new URL(`/api/slack/oauth/${context.flow}`, apiOrigin);
+  const routeFlow = context.flow === "switch" ? "connect" : context.flow;
+  const url = new URL(`/api/slack/oauth/${routeFlow}`, apiOrigin);
   url.searchParams.set("connectorState", `${payload}.${sign(payload)}`);
   return url.toString();
 }

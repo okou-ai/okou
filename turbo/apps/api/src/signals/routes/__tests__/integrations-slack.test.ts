@@ -15,7 +15,7 @@ import { server } from "../../../mocks/server";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { SlackFileFetchError } from "../../external/slack-file-fetcher";
-import { testSlackStateRoutes } from "../test-slack-state";
+import { testSlackStateRoutes } from "../slack-state-preview";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import {

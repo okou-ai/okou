@@ -196,6 +196,7 @@ import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
 import { slackCommandsRoutes } from "./routes/slack-commands";
 import { slackConnectRoutes } from "./routes/slack-connect";
+import { slackStatePreviewRoutes } from "./routes/slack-state-preview";
 import { slackEventsRoutes } from "./routes/slack-events";
 import { slackInteractiveRoutes } from "./routes/slack-interactive";
 import { slackOauthRoutes } from "./routes/slack-oauth";
@@ -412,6 +413,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...skillImportRoutes,
   ...integrationsGithubRoutes,
   ...slackConnectRoutes,
+  // Registered for protected preview QA; the route's environment gate keeps
+  // production indistinguishable from an unregistered endpoint.
+  ...slackStatePreviewRoutes,
   ...slackOauthRoutes,
   ...slackCommandsRoutes,
   ...slackEventsRoutes,
