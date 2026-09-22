@@ -92,6 +92,53 @@ test("Browse a long sidebar chat history", async () => {
   expect(scrollArea).toBeInTheDocument();
 });
 
+test("Toggle the chat list from its title with the keyboard", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const titleButton = buttonByText("Chats with Okou", list);
+  const contentId = titleButton.getAttribute("aria-controls");
+  if (!contentId) {
+    throw new Error("Chat list title does not control its content");
+  }
+  const content = document.getElementById(contentId);
+  if (!content) {
+    throw new Error("Controlled chat list content not found");
+  }
+
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).not.toHaveClass("hidden");
+  titleButton.focus();
+  await user.keyboard("{Enter}");
+
+  expect(titleButton).toHaveFocus();
+  expect(titleButton).toHaveAttribute("aria-expanded", "false");
+  expect(content).toHaveClass("hidden");
+  expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
+
+  await user.keyboard(" ");
+
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).not.toHaveClass("hidden");
+  await within(list).findByText("Release plan");
+
+  const titleRow = titleButton.parentElement;
+  if (!titleRow) {
+    throw new Error("Chat list title row not found");
+  }
+  click(within(titleRow).getByLabelText("Open chat list menu"));
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+});
+
 test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   const remote = context.mocks.deferred<void>();
   const cachedChatThreadEvents = mockLongSidebarHistory(remote.promise);
