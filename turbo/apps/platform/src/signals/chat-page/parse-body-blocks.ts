@@ -37,6 +37,11 @@ import {
   parseBrowserSessionUrl,
   type BrowserSessionDescriptor,
 } from "./browser-session-block.ts";
+import {
+  browserUserActionResourceKey,
+  parseBrowserUserActionUrl,
+  type BrowserUserActionDescriptor,
+} from "./browser-user-action-block.ts";
 import { isTrustedPlatformHostname } from "./trusted-platform-url.ts";
 import { isOfficialTemplatePreviewUrl } from "./official-template-preview.ts";
 
@@ -103,6 +108,11 @@ export type ParsedBodyBlock =
       type: "browser-session";
       resourceKey: string;
       descriptor: BrowserSessionDescriptor;
+    }
+  | {
+      type: "browser-user-action";
+      resourceKey: string;
+      descriptor: BrowserUserActionDescriptor;
     };
 
 type ChatAttachmentKind = BodyPreviewKind;
@@ -143,7 +153,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_OPENING_PREFIX_PATTERN = /^[({<"'“‘（【《「『[]*$/u;
 const MARKDOWN_LINK_TOKEN_PREFIX_PATTERN = /\[[^\]\n]+\]\($/u;
 
@@ -638,6 +648,31 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
   return URL_TOKEN_OPENING_PREFIX_PATTERN.test(tokenPrefix);
 }
 
+function createBrowserUserActionBlock(
+  url: string,
+  chatActionContext: ChatActionContext | undefined,
+): Extract<
+  ParsedBodyBlock,
+  { type: "browser-user-action" | "unavailable-action" }
+> | null {
+  const result = parseBrowserUserActionUrl(url, chatActionContext);
+  if (result.status === "valid") {
+    return {
+      type: "browser-user-action",
+      resourceKey: browserUserActionResourceKey(result.descriptor),
+      descriptor: result.descriptor,
+    };
+  }
+  if (result.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: result.originalUrl,
+      descriptor: { originalUrl: result.originalUrl },
+    };
+  }
+  return null;
+}
+
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
@@ -653,7 +688,8 @@ function createActionBlockFromUrl(
       | "computer-use-authorization"
       | "plan-upgrade"
       | "mail-draft"
-      | "browser-session";
+      | "browser-session"
+      | "browser-user-action";
   }
 > | null {
   const connectorAction = parseConnectorAuthorizeUrl(url, chatActionContext);
@@ -723,6 +759,14 @@ function createActionBlockFromUrl(
       resourceKey: bankingAction.originalUrl,
       descriptor: { originalUrl: bankingAction.originalUrl },
     };
+  }
+
+  const browserUserAction = createBrowserUserActionBlock(
+    url,
+    chatActionContext,
+  );
+  if (browserUserAction) {
+    return browserUserAction;
   }
 
   const computerUseAuthorization = parseComputerUseAuthorizationUrl(url);
@@ -1245,6 +1289,9 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
     }
     case "browser-session": {
       return block.descriptor.href;
+    }
+    case "browser-user-action": {
+      return block.descriptor.originalUrl;
     }
   }
 }

@@ -22,6 +22,8 @@ export const SECOND_CAPABILITY_RUN_ID = "d0000000-0000-4000-a000-000000000812";
 
 export interface CapturedChatSend {
   readonly prompt: string;
+  readonly clientEventId?: string;
+  readonly chatThreadSortEventId?: string;
   readonly threadId?: string;
   readonly clientThreadId?: string;
   readonly userMessage?: UserMessageDocument;
@@ -77,6 +79,8 @@ export function installCapabilityChat(args: {
     onSendRequest(body) {
       args.onSend?.({
         prompt: body.prompt,
+        clientEventId: body.clientEventId,
+        chatThreadSortEventId: body.chatThreadSortEventId,
         ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
         ...(body.clientThreadId === undefined
           ? {}

@@ -70,6 +70,7 @@ import {
   openVideoLightbox$ as openAttachmentVideoLightbox$,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
+import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
 import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
@@ -337,6 +338,9 @@ export function MarkdownCardView({
     }
     case "browser-session": {
       return <BrowserSessionCard signals={card.signals} />;
+    }
+    case "browser-user-action": {
+      return <BrowserUserActionCard signals={card.signals} />;
     }
   }
 }

@@ -177,6 +177,7 @@ import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts"
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
+import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
 import { getChatThreadTitleParts } from "./chat-thread-title.ts";
@@ -1690,6 +1691,9 @@ interface EventTreeRegistries {
   readonly bankingCardSignals: ReturnType<
     typeof createBankingCardSignalsRegistry
   >;
+  readonly browserUserActionCardSignals: ReturnType<
+    typeof createBrowserUserActionCardSignalsRegistry
+  >;
   readonly computerUseAuthorizationCardSignals: ReturnType<
     typeof createComputerUseAuthorizationCardSignalsRegistry
   >;
@@ -1709,6 +1713,7 @@ function createCardRefRegistrar({
   connectorAccountActionCardSignals,
   permissionCardSignals,
   bankingCardSignals,
+  browserUserActionCardSignals,
   computerUseAuthorizationCardSignals,
   planUpgradeCardSignals,
   mailDraftCardSignals,
@@ -1745,6 +1750,15 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(bankingCardSignals.register$, descriptor.descriptor),
+          };
+        }
+        case "browser-user-action": {
+          return {
+            kind: descriptor.type,
+            signals: set(
+              browserUserActionCardSignals.register$,
+              descriptor.descriptor,
+            ),
           };
         }
         case "unavailable-action": {
@@ -2141,6 +2155,8 @@ function createPagedEventResources({
     createConnectorAccountActionCardSignalsRegistry(connector);
   const permissionCardSignals = createPermissionCardSignalsRegistry();
   const bankingCardSignals = createBankingCardSignalsRegistry();
+  const browserUserActionCardSignals =
+    createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
@@ -2179,6 +2195,7 @@ function createPagedEventResources({
     connectorAccountActionCardSignals,
     permissionCardSignals,
     bankingCardSignals,
+    browserUserActionCardSignals,
     computerUseAuthorizationCardSignals,
     planUpgradeCardSignals,
     mailDraftCardSignals,

@@ -1,0 +1,542 @@
+import {
+  BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
+  BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+  browserUserActionsContract,
+  type BrowserUserActionResponse,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
+
+import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { onRef } from "../utils.ts";
+import {
+  runChatActionCallback$,
+  type ChatActionCallbackIds,
+} from "./action-callback.ts";
+import {
+  chatActionIdMatches,
+  type ChatActionContext,
+  type ChatActionParseResult,
+} from "./chat-action-context.ts";
+import {
+  createCardSignalsRegistry,
+  type CardSignalsRegistry,
+} from "./card-signal-map.ts";
+import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
+
+const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
+export const BROWSER_INPUT_CANCELLATION_PROMPT =
+  "The user cancelled the browser input request.";
+
+type BrowserInputAction = Extract<
+  BrowserUserActionResponse,
+  { readonly kind: "input" }
+>;
+
+export interface BrowserUserActionDescriptor {
+  readonly requestToken: string;
+  readonly agentId: string;
+  readonly threadId: string;
+  readonly callbackPrompt: string;
+  readonly originalUrl: string;
+}
+
+export type BrowserUserActionRequestState =
+  | { readonly kind: "action"; readonly action: BrowserInputAction }
+  | { readonly kind: "expired" }
+  | { readonly kind: "unavailable" };
+
+export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
+  readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
+  readonly draft$: Computed<ReadonlyMap<string, string>>;
+  readonly callbackDelivered$: Computed<boolean>;
+  readonly refresh$: Command<void, []>;
+  readonly updateDraft$: Command<void, [string, string]>;
+  readonly clearDraft$: Command<void, []>;
+  readonly formRef$: Command<
+    (() => void) | undefined,
+    [HTMLFormElement | null]
+  >;
+  readonly submit$: Command<Promise<void>, [AbortSignal]>;
+  readonly cancel$: Command<Promise<void>, [AbortSignal]>;
+  readonly continue$: Command<Promise<void>, [AbortSignal]>;
+}
+
+type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
+  BrowserUserActionDescriptor,
+  BrowserUserActionSignals
+>;
+
+function hasExactQuery(url: URL): boolean {
+  const expected = ["agentId", "threadId", "callbackPrompt"] as const;
+  return (
+    [...url.searchParams.keys()].every((key) => {
+      return expected.includes(key as (typeof expected)[number]);
+    }) &&
+    expected.every((key) => {
+      return url.searchParams.getAll(key).length === 1;
+    })
+  );
+}
+
+function hasValidBrowserUserActionClaims(
+  agentId: string,
+  threadId: string,
+  context: ChatActionContext | undefined,
+): boolean {
+  if (
+    !chatActionIdMatches(agentId, agentId) ||
+    !chatActionIdMatches(threadId, threadId)
+  ) {
+    return false;
+  }
+  return (
+    !context ||
+    (chatActionIdMatches(agentId, context.agentId) &&
+      chatActionIdMatches(threadId, context.threadId))
+  );
+}
+
+function hasValidBrowserUserActionParts(args: {
+  readonly requestToken: string;
+  readonly callbackPrompt: string;
+  readonly agentId: string;
+  readonly threadId: string;
+  readonly url: URL;
+  readonly context: ChatActionContext | undefined;
+}): boolean {
+  return (
+    REQUEST_TOKEN_PATTERN.test(args.requestToken) &&
+    hasExactQuery(args.url) &&
+    hasValidBrowserUserActionClaims(
+      args.agentId,
+      args.threadId,
+      args.context,
+    ) &&
+    args.callbackPrompt.trim() !== "" &&
+    args.callbackPrompt.length <= BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH
+  );
+}
+
+export function parseBrowserUserActionUrl(
+  value: string,
+  context?: ChatActionContext,
+): ChatActionParseResult<BrowserUserActionDescriptor> {
+  const url = parseTrustedPlatformActionUrl(value);
+  if (!url) {
+    return { status: "unrelated" };
+  }
+  const match = url.pathname.match(/^\/browser\/actions\/([^/]+)$/u);
+  if (!match) {
+    return url.pathname.startsWith("/browser/actions/")
+      ? { status: "invalid", originalUrl: value }
+      : { status: "unrelated" };
+  }
+
+  const requestToken = match[1] ?? "";
+  const agentId = url.searchParams.get("agentId") ?? "";
+  const threadId = url.searchParams.get("threadId") ?? "";
+  const callbackPrompt = url.searchParams.get("callbackPrompt") ?? "";
+  if (
+    url.hash !== "" ||
+    !hasValidBrowserUserActionParts({
+      requestToken,
+      callbackPrompt,
+      agentId,
+      threadId,
+      url,
+      context,
+    })
+  ) {
+    return { status: "invalid", originalUrl: value };
+  }
+
+  return {
+    status: "valid",
+    descriptor: {
+      requestToken,
+      agentId: context?.agentId ?? agentId,
+      threadId: context?.threadId ?? threadId,
+      callbackPrompt,
+      originalUrl: value,
+    },
+  };
+}
+
+export function browserUserActionResourceKey(
+  descriptor: BrowserUserActionDescriptor,
+): string {
+  return descriptor.originalUrl;
+}
+
+function inputActionMatches(
+  action: BrowserUserActionResponse,
+  descriptor: BrowserUserActionDescriptor,
+): action is BrowserInputAction {
+  return (
+    action.kind === "input" &&
+    action.requestToken === descriptor.requestToken &&
+    chatActionIdMatches(action.agentId, descriptor.agentId) &&
+    chatActionIdMatches(action.threadId, descriptor.threadId)
+  );
+}
+
+function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
+  const reload$ = state(0);
+  const request$ = computed(
+    async (get): Promise<BrowserUserActionRequestState> => {
+      get(reload$);
+      if (get(featureSwitch$)[FeatureSwitchKey.BrowserNativeInput] !== true) {
+        return { kind: "unavailable" };
+      }
+      const result = await accept(
+        get(apiClient$)(browserUserActionsContract).get({
+          params: { requestToken: descriptor.requestToken },
+        }),
+        [200, 403, 404, 409, 410],
+      );
+      const status: number = result.status;
+      if (status === 410) {
+        return { kind: "expired" };
+      }
+      if (status !== 200 || !inputActionMatches(result.body, descriptor)) {
+        return { kind: "unavailable" };
+      }
+      return { kind: "action", action: result.body };
+    },
+  );
+  const refresh$ = command(({ set }) => {
+    set(reload$, (version) => {
+      return version + 1;
+    });
+  });
+  return { request$, refresh$ };
+}
+
+function createDraftSignals(): Pick<
+  BrowserUserActionSignals,
+  "draft$" | "updateDraft$" | "clearDraft$" | "formRef$"
+> {
+  const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
+  const ownerCount$ = state(0);
+  const draft$ = computed((get) => {
+    return get(internalDraft$);
+  });
+  const updateDraft$ = command(({ set }, key: string, value: string): void => {
+    const boundedValue = value.slice(0, BROWSER_USER_ACTION_MAX_VALUE_LENGTH);
+    set(internalDraft$, (current) => {
+      const next = new Map(current);
+      next.set(key, boundedValue);
+      return next;
+    });
+  });
+  const clearDraft$ = command(({ set }): void => {
+    set(internalDraft$, new Map());
+  });
+  const ownForm$ = command(
+    ({ set }, _form: HTMLFormElement, signal: AbortSignal): void => {
+      signal.throwIfAborted();
+      set(ownerCount$, (count) => {
+        return count + 1;
+      });
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(ownerCount$, (count) => {
+            const next = Math.max(0, count - 1);
+            if (next === 0) {
+              set(clearDraft$);
+            }
+            return next;
+          });
+        },
+        { once: true },
+      );
+    },
+  );
+  return {
+    draft$,
+    updateDraft$,
+    clearDraft$,
+    formRef$: onRef(ownForm$),
+  };
+}
+
+function callbackArgs(
+  descriptor: BrowserUserActionDescriptor,
+  callbackPrompt: string,
+  callbackIds: ChatActionCallbackIds,
+) {
+  return {
+    threadId: descriptor.threadId,
+    agentId: descriptor.agentId,
+    callbackPrompt,
+    callbackIds,
+  };
+}
+
+interface BrowserUserActionMutationContext {
+  readonly descriptor: BrowserUserActionDescriptor;
+  readonly request$: BrowserUserActionSignals["request$"];
+  readonly refresh$: BrowserUserActionSignals["refresh$"];
+  readonly draft$: BrowserUserActionSignals["draft$"];
+  readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
+  readonly activeMutation$: State<boolean>;
+  readonly deliverCallback$: Command<
+    Promise<void>,
+    [string, ChatActionCallbackIds, AbortSignal]
+  >;
+}
+
+function createSubmitSignal({
+  descriptor,
+  request$,
+  refresh$,
+  draft$,
+  clearDraft$,
+  activeMutation$,
+  deliverCallback$,
+}: BrowserUserActionMutationContext): BrowserUserActionSignals["submit$"] {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(activeMutation$)) {
+      return;
+    }
+    const request = await get(request$);
+    signal.throwIfAborted();
+    if (request.kind !== "action" || request.action.state !== "pending") {
+      return;
+    }
+    const draft = get(draft$);
+    const values = request.action.fields.flatMap((field) => {
+      const value = draft.get(field.key) ?? "";
+      return value === "" && !field.required ? [] : [{ key: field.key, value }];
+    });
+    if (
+      request.action.fields.some((field) => {
+        return field.required && (draft.get(field.key) ?? "") === "";
+      })
+    ) {
+      return;
+    }
+
+    set(activeMutation$, true);
+    const result = await accept(
+      get(apiClient$)(browserUserActionsContract).apply({
+        params: { requestToken: descriptor.requestToken },
+        body: { values },
+        fetchOptions: { signal },
+      }),
+      [200, 403, 404, 409, 410],
+      signal,
+    ).finally(() => {
+      set(activeMutation$, false);
+    });
+    signal.throwIfAborted();
+    const status: number = result.status;
+    if (status !== 200) {
+      set(clearDraft$);
+      set(refresh$);
+      return;
+    }
+    if (!inputActionMatches(result.body, descriptor)) {
+      set(clearDraft$);
+      set(refresh$);
+      return;
+    }
+    if (result.body.state !== "pending") {
+      set(clearDraft$);
+    }
+    if (result.body.state === "succeeded") {
+      set(activeMutation$, true);
+      await set(
+        deliverCallback$,
+        descriptor.callbackPrompt,
+        result.body.callbackIds.success,
+        signal,
+      ).finally(() => {
+        set(activeMutation$, false);
+        set(refresh$);
+      });
+      signal.throwIfAborted();
+      return;
+    }
+    set(refresh$);
+  });
+}
+
+function createCancelSignal({
+  descriptor,
+  request$,
+  refresh$,
+  clearDraft$,
+  activeMutation$,
+  deliverCallback$,
+}: BrowserUserActionMutationContext): BrowserUserActionSignals["cancel$"] {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(activeMutation$)) {
+      return;
+    }
+    const request = await get(request$);
+    signal.throwIfAborted();
+    if (request.kind !== "action" || request.action.state !== "pending") {
+      return;
+    }
+    set(activeMutation$, true);
+    const result = await accept(
+      get(apiClient$)(browserUserActionsContract).cancel({
+        params: { requestToken: descriptor.requestToken },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200, 403, 404, 409, 410],
+      signal,
+    ).finally(() => {
+      set(activeMutation$, false);
+    });
+    signal.throwIfAborted();
+    const status: number = result.status;
+    set(clearDraft$);
+    if (
+      status === 200 &&
+      inputActionMatches(result.body, descriptor) &&
+      result.body.state === "cancelled"
+    ) {
+      set(activeMutation$, true);
+      await set(
+        deliverCallback$,
+        BROWSER_INPUT_CANCELLATION_PROMPT,
+        result.body.callbackIds.cancellation,
+        signal,
+      ).finally(() => {
+        set(activeMutation$, false);
+        set(refresh$);
+      });
+      signal.throwIfAborted();
+      return;
+    }
+    set(refresh$);
+  });
+}
+
+function createContinueSignal({
+  descriptor,
+  request$,
+  activeMutation$,
+  deliverCallback$,
+}: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(activeMutation$)) {
+      return;
+    }
+    const request = await get(request$);
+    signal.throwIfAborted();
+    if (request.kind !== "action") {
+      return;
+    }
+    const callback =
+      request.action.state === "succeeded"
+        ? {
+            prompt: descriptor.callbackPrompt,
+            ids: request.action.callbackIds.success,
+          }
+        : request.action.state === "cancelled"
+          ? {
+              prompt: BROWSER_INPUT_CANCELLATION_PROMPT,
+              ids: request.action.callbackIds.cancellation,
+            }
+          : null;
+    if (!callback) {
+      return;
+    }
+    set(activeMutation$, true);
+    await set(deliverCallback$, callback.prompt, callback.ids, signal).finally(
+      () => {
+        set(activeMutation$, false);
+      },
+    );
+  });
+}
+
+function createMutationSignals(
+  descriptor: BrowserUserActionDescriptor,
+  request$: BrowserUserActionSignals["request$"],
+  refresh$: BrowserUserActionSignals["refresh$"],
+  draft$: BrowserUserActionSignals["draft$"],
+  clearDraft$: BrowserUserActionSignals["clearDraft$"],
+): Pick<
+  BrowserUserActionSignals,
+  "callbackDelivered$" | "submit$" | "cancel$" | "continue$"
+> {
+  const callbackDeliveredState$ = state(false);
+  const activeMutation$ = state(false);
+  const deliverCallback$ = command(
+    async (
+      { set },
+      callbackPrompt: string,
+      callbackIds: ChatActionCallbackIds,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      await set(
+        runChatActionCallback$,
+        callbackArgs(descriptor, callbackPrompt, callbackIds),
+        signal,
+      );
+      signal.throwIfAborted();
+      set(callbackDeliveredState$, true);
+    },
+  );
+  const context: BrowserUserActionMutationContext = {
+    descriptor,
+    request$,
+    refresh$,
+    draft$,
+    clearDraft$,
+    activeMutation$,
+    deliverCallback$,
+  };
+
+  return {
+    callbackDelivered$: computed((get) => {
+      return get(callbackDeliveredState$);
+    }),
+    submit$: createSubmitSignal(context),
+    cancel$: createCancelSignal(context),
+    continue$: createContinueSignal(context),
+  };
+}
+
+export function createBrowserUserActionSignals(
+  descriptor: BrowserUserActionDescriptor,
+): BrowserUserActionSignals {
+  const requestSignals = createRequestSignals(descriptor);
+  const draftSignals = createDraftSignals();
+  const mutationSignals = createMutationSignals(
+    descriptor,
+    requestSignals.request$,
+    requestSignals.refresh$,
+    draftSignals.draft$,
+    draftSignals.clearDraft$,
+  );
+  return {
+    ...descriptor,
+    ...requestSignals,
+    ...draftSignals,
+    ...mutationSignals,
+  };
+}
+
+export function createBrowserUserActionCardSignalsRegistry(): BrowserUserActionCardSignalsRegistry {
+  return createCardSignalsRegistry(
+    browserUserActionResourceKey,
+    createBrowserUserActionSignals,
+  );
+}

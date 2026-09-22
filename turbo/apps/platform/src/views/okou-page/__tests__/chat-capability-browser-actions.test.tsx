@@ -2,12 +2,18 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
+import {
+  browserUserActionsContract,
+  type BrowserUserActionResponse,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
 import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -35,6 +41,73 @@ const SUSPENDED_SCREENSHOT_URL =
   "https://images.example.test/browser-suspended.png";
 const ACTIVE_BROWSER_URL = "https://browser.example.test/live/initial";
 const RESUMED_BROWSER_URL = "https://browser.example.test/live/resumed";
+const BROWSER_INPUT_TOKEN = `vm0_browser_user_action_${"a".repeat(43)}`;
+const BROWSER_INPUT_SUCCESS_CLIENT_ID = "10000000-0000-4000-a000-000000001104";
+const BROWSER_INPUT_SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001105";
+const BROWSER_INPUT_CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001106";
+const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
+const BROWSER_INPUT_CALLBACK = "Continue after browser input";
+
+function browserInputAction(
+  state: BrowserUserActionResponse["state"],
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    kind: "input",
+    requestToken: BROWSER_INPUT_TOKEN,
+    state,
+    completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
+    agentId: CAPABILITY_AGENT_ID,
+    threadId: RUN_THREAD_ID,
+    siteOrigin: "https://accounts.example.test",
+    fields: [
+      {
+        key: "username",
+        label: "Account email",
+        description: "The email used for this account",
+        fieldKind: "username",
+        required: true,
+      },
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password",
+        required: true,
+      },
+      {
+        key: "code",
+        label: "Verification code",
+        fieldKind: "one_time_code",
+        required: false,
+      },
+    ],
+    callbackIds: {
+      success: {
+        clientEventId: BROWSER_INPUT_SUCCESS_CLIENT_ID,
+        chatThreadSortEventId: BROWSER_INPUT_SUCCESS_SORT_ID,
+      },
+      cancellation: {
+        clientEventId: BROWSER_INPUT_CANCEL_CLIENT_ID,
+        chatThreadSortEventId: BROWSER_INPUT_CANCEL_SORT_ID,
+      },
+    },
+  };
+}
+
+function browserInputUrl(
+  args: {
+    readonly agentId?: string;
+    readonly threadId?: string;
+  } = {},
+): string {
+  const url = new URL(
+    `/browser/actions/${BROWSER_INPUT_TOKEN}`,
+    "https://app.okou.ai",
+  );
+  url.searchParams.set("agentId", args.agentId ?? CAPABILITY_AGENT_ID);
+  url.searchParams.set("threadId", args.threadId ?? RUN_THREAD_ID);
+  url.searchParams.set("callbackPrompt", BROWSER_INPUT_CALLBACK);
+  return url.href;
+}
 
 /**
  * The chat card surface is Tailwind utilities on the element itself, so the
@@ -450,4 +523,134 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
   expect(window.location.hostname).toBe("app.okou.ai");
+});
+
+test("Apply native browser input before continuing with stable callback IDs", async () => {
+  const ordering: string[] = [];
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let submittedValues: readonly { key: string; value: string }[] = [];
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+    onSend(send) {
+      ordering.push("callback");
+      expect(send.prompt).toBe(BROWSER_INPUT_CALLBACK);
+      expect(send.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
+      expect(send.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+    },
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(
+    browserUserActionsContract.apply,
+    ({ body, params, respond }) => {
+      expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
+      ordering.push("apply");
+      submittedValues = body.values;
+      state = "succeeded";
+      return respond(200, browserInputAction(state));
+    },
+  );
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(within(form).getByText("https://accounts.example.test")).toBeVisible();
+  const username = within(form).getByLabelText(/Account email/u);
+  const password = within(form).getByLabelText(/Password/u);
+  const code = within(form).getByLabelText(/Verification code/u);
+  expect(username).toHaveAttribute("autocomplete", "username");
+  expect(password).toHaveAttribute("type", "password");
+  expect(password).toHaveAttribute("autocomplete", "current-password");
+  expect(code).toHaveAttribute("autocomplete", "one-time-code");
+
+  await fill(username, "user@example.test");
+  await fill(password, "local-only-secret");
+  click(await findButton("Add to browser"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(ordering).toStrictEqual(["apply", "callback"]);
+  expect(submittedValues).toStrictEqual([
+    { key: "username", value: "user@example.test" },
+    { key: "password", value: "local-only-secret" },
+  ]);
+  expect(screen.queryByDisplayValue("local-only-secret")).toBeNull();
+});
+
+test("Cancel browser input before sending the fixed cancellation callback", async () => {
+  const ordering: string[] = [];
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let applyCalls = 0;
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+    onSend(send) {
+      ordering.push("callback");
+      expect(send.prompt).toBe("The user cancelled the browser input request.");
+      expect(send.clientEventId).toBe(BROWSER_INPUT_CANCEL_CLIENT_ID);
+      expect(send.chatThreadSortEventId).toBe(BROWSER_INPUT_CANCEL_SORT_ID);
+    },
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    applyCalls += 1;
+    return respond(200, browserInputAction("succeeded"));
+  });
+  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
+    ordering.push("cancel");
+    state = "cancelled";
+    return respond(200, browserInputAction(state));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  click(await findButton("Cancel"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(ordering).toStrictEqual(["cancel", "callback"]);
+  expect(applyCalls).toBe(0);
+});
+
+test("Keep feature-disabled and foreign browser input actions inert", async () => {
+  let getCalls = 0;
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        `[Disabled input](${browserInputUrl()})`,
+        `[Foreign input](${browserInputUrl({ threadId: OTHER_THREAD_ID })})`,
+      ].join("\n\n"),
+    ),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    getCalls += 1;
+    return respond(200, browserInputAction("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: false },
+  });
+  await readyChat();
+  await waitFor(() => {
+    expect(screen.getAllByText("Request unavailable")).toHaveLength(1);
+    expect(screen.getAllByText("Action unavailable")).toHaveLength(1);
+  });
+  expect(getCalls).toBe(0);
 });
