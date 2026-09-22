@@ -2913,9 +2913,6 @@ export function createWorkflowComposerSignals<
     agentMentionAvatarRuntime,
   );
   const templates = createTemplateSignals(editor, draft, openDialog$);
-  const selectedSuggestionIndex$ = computed((get) => {
-    return get(selectedSuggestionIndexState$);
-  });
   const activeSlashRange$ = createActiveSuggestionRange(
     editor,
     caretIndex$,
@@ -2999,7 +2996,9 @@ export function createWorkflowComposerSignals<
     agentId$,
     workflows$,
     reloadWorkflows$: reloadMountedComposerWorkflows$,
-    selectedSuggestionIndex$,
+    selectedSuggestionIndex$: computed((get) => {
+      return get(selectedSuggestionIndexState$);
+    }),
     setSelectedSuggestionIndex$,
     previewSuggestionIndex$,
     previewSuggestion$,
