@@ -8,6 +8,42 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.657.0](https://github.com/okou-ai/okou/compare/api-v1.656.1...api-v1.657.0) (2026-09-22)
+
+
+### Features
+
+* **api:** reach every declared descendant the catalogue cannot join ([#36043](https://github.com/okou-ai/okou/issues/36043)) ([e86221d](https://github.com/okou-ai/okou/commit/e86221d400db608b7e70ff13dc454cd0d8f70afc))
+* **runner:** install the versioned okou cli into the rootfs and gate its use by runtime version ([#36000](https://github.com/okou-ai/okou/issues/36000)) ([8d8f3a3](https://github.com/okou-ai/okou/commit/8d8f3a3e14d23f7471e0773bd9acb988f59217af))
+* **vnc:** execute sessions through ssh transport ([#36004](https://github.com/okou-ai/okou/issues/36004)) ([1c4fc60](https://github.com/okou-ai/okou/commit/1c4fc606c58ee8b9e721ea776a1b3f122ee5b6ed))
+
+
+### Bug Fixes
+
+* **api:** log desktop update manifest exhaustion at info ([#36041](https://github.com/okou-ai/okou/issues/36041)) ([3e5c1f6](https://github.com/okou-ai/okou/commit/3e5c1f698cb44384cfa423c6ad36598a58735bdd))
+* **api:** retry transient dataforseo serp task failures ([#36029](https://github.com/okou-ai/okou/issues/36029)) ([fa4a676](https://github.com/okou-ai/okou/commit/fa4a67632a8c4bbbc872d7d3edba1596dfe327b0))
+* **api:** stop re-checking morning brief authority after the read ([#36028](https://github.com/okou-ai/okou/issues/36028)) ([117dac5](https://github.com/okou-ai/okou/commit/117dac5a2eb79d34e236e75b1186f7a1eb2b4652))
+
+
+### Refactoring
+
+* finalize chat and export feature switches ([#35987](https://github.com/okou-ai/okou/issues/35987)) ([4ff8c3b](https://github.com/okou-ai/okou/commit/4ff8c3b5351dab21891e633ee7ed51aaf7abe32f))
+
+
+### Performance Improvements
+
+* **api:** attribute storage manifest cache phases ([#36042](https://github.com/okou-ai/okou/issues/36042)) ([bee026b](https://github.com/okou-ai/okou/commit/bee026b1b3f9013ea740706ce9b1fcb3e005bb3f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.491.0
+    * @okouai/core bumped to 8.699.0
+    * @okouai/db bumped to 1.286.3
+    * @okouai/pi-agent-runtime bumped to 1.36.0
+
 ## [1.656.1](https://github.com/okou-ai/okou/compare/api-v1.656.0...api-v1.656.1) (2026-09-22)
 
 
