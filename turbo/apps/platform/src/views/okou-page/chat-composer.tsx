@@ -1106,7 +1106,13 @@ function WebsiteTemplateCard({
 
   return (
     // Keep the full-card preview below the independent Use action locally.
-    <div className={cn(TEMPLATE_TILE_WRAPPER, "isolate cursor-zoom-in")}>
+    <div
+      className={cn(
+        TEMPLATE_TILE_WRAPPER,
+        TEMPLATE_TILE_RING,
+        "isolate cursor-zoom-in has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
+      )}
+    >
       <button
         type="button"
         aria-label={t(
@@ -1118,7 +1124,7 @@ function WebsiteTemplateCard({
           },
         )}
         onClick={preview}
-        className="absolute inset-0 z-10 cursor-zoom-in rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        className="absolute inset-0 z-10 cursor-zoom-in focus-visible:outline-none"
       />
       <div
         className={cn(
