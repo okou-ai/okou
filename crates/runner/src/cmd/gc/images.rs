@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::GC_MIN_AGE;
 use super::filesystem::{

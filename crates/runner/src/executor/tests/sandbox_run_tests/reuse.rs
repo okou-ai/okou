@@ -195,12 +195,12 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
         make_reusable_idle_sandbox(sandbox, source_ip, "test-session").await;
     let server = MockServer::start_async().await;
     let body = storage_archive(b"reused archive");
-    let home = crate::paths::HomePaths::with_root(dir.path().to_owned());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_owned());
     let archive_dir = home.storage_cache_dir("reused-archive", "v1");
     std::fs::create_dir_all(&archive_dir).unwrap();
     std::fs::write(archive_dir.join("archive.tar.gz"), &body).unwrap();
     drop(
-        crate::lock::acquire(home.storage_lock("reused-archive", "v1"))
+        runner_host::lock::acquire(home.storage_lock("reused-archive", "v1"))
             .await
             .unwrap(),
     );
@@ -227,7 +227,7 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
         std::fs::create_dir_all(&instructions_dir).unwrap();
         std::fs::write(instructions_dir.join("archive.tar.gz"), &body).unwrap();
         drop(
-            crate::lock::acquire(home.storage_lock("instructions", "v1"))
+            runner_host::lock::acquire(home.storage_lock("instructions", "v1"))
                 .await
                 .unwrap(),
         );
@@ -299,7 +299,7 @@ async fn assert_reused_decoded_delivery(with_instructions: bool) {
 async fn execute_reused_sandbox_drains_archive_when_guest_state_restore_fails() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
-    let registry_guard = crate::lock::acquire(dir.path().join("proxy-registry.json.lock"))
+    let registry_guard = runner_host::lock::acquire(dir.path().join("proxy-registry.json.lock"))
         .await
         .unwrap();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -386,10 +386,10 @@ async fn execute_reused_sandbox_drains_archive_when_guest_state_restore_fails() 
         None,
     );
     assert!(matches!(
-        crate::lock::try_acquire_or_busy(storage_lock_path)
+        runner_host::lock::try_acquire_or_busy(storage_lock_path)
             .await
             .unwrap(),
-        crate::lock::TryLock::Acquired(_)
+        runner_host::lock::TryLock::Acquired(_)
     ));
     assert_proxy_registry_empty(dir.path()).await;
 }

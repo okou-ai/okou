@@ -10,8 +10,8 @@ use super::super::{
     WorkspaceImagePrepareRequest,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::paths::RunnerPaths;
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
 #[tokio::test]

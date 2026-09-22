@@ -11,7 +11,7 @@ use tracing::{info, warn};
 
 use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::{HomePaths, base_dir_lock_name};
+use runner_host::paths::{HomePaths, base_dir_lock_name};
 
 use super::GC_MIN_AGE;
 use super::filesystem::{GcDirStatus, dir_stats, gc_path_dir_status};
@@ -187,7 +187,7 @@ fn acquire_dead_runner_base_dir_lease(
 }
 
 fn active_workspace_paths(
-    firecrackers: &[crate::process::FirecrackerProcessInfo],
+    firecrackers: &[runner_host::process::FirecrackerProcessInfo],
 ) -> HashSet<PathBuf> {
     firecrackers
         .iter()
@@ -200,14 +200,14 @@ fn active_workspace_paths(
 }
 
 async fn workspace_firecracker_discovery_uncertain(
-    firecrackers: &[crate::process::FirecrackerProcessInfo],
+    firecrackers: &[runner_host::process::FirecrackerProcessInfo],
     live_runner_pids: &[u32],
 ) -> bool {
     for firecracker in firecrackers
         .iter()
         .filter(|firecracker| firecracker.workspace_identity_incomplete())
     {
-        match crate::process::process_has_ancestor(firecracker.pid, live_runner_pids).await {
+        match runner_host::process::process_has_ancestor(firecracker.pid, live_runner_pids).await {
             Some(true) => {}
             Some(false) | None => return true,
         }
@@ -249,7 +249,7 @@ pub(super) async fn gc_workspace_orphans(
     // Discover active workspaces after initial candidate selection. This
     // protects orphaned Firecrackers whose parent runner already died but
     // whose sandbox is still running.
-    let discovered = crate::process::discover_all_with_status().await;
+    let discovered = runner_host::process::discover_all_with_status().await;
     if !discovered.proc_scan_complete {
         warn!(
             "workspace gc: process discovery scan is incomplete; skipping workspace orphan cleanup"
@@ -292,7 +292,7 @@ pub(super) async fn gc_workspace_orphans(
 
 async fn gc_workspace_orphans_with_candidates(
     candidates: Vec<DeadRunnerBaseDirLockCandidate>,
-    firecrackers: &[crate::process::FirecrackerProcessInfo],
+    firecrackers: &[runner_host::process::FirecrackerProcessInfo],
     live_runner_base_dirs: &HashSet<PathBuf>,
     process_discovery_uncertain: bool,
     workspace_age_reference: SystemTime,
@@ -312,7 +312,7 @@ async fn gc_workspace_orphans_with_candidates(
 
 async fn gc_workspace_orphans_with_candidates_and_remove(
     candidates: Vec<DeadRunnerBaseDirLockCandidate>,
-    firecrackers: &[crate::process::FirecrackerProcessInfo],
+    firecrackers: &[runner_host::process::FirecrackerProcessInfo],
     live_runner_base_dirs: &HashSet<PathBuf>,
     process_discovery_uncertain: bool,
     workspace_age_reference: SystemTime,

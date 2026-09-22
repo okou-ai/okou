@@ -13,11 +13,16 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const completedDraftStorage = localStorageSignals(
+  "onboarding:sources-first-draft",
+);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -47,7 +52,15 @@ function mockMemberOnboardingNeeded(): void {
 }
 
 /** One catalog entry, so the source step has a grid to render. */
-function mockCatalog({ connected = false } = {}): void {
+function mockCatalog({
+  connected = false,
+  ready,
+  unavailable,
+}: {
+  connected?: boolean;
+  ready?: Promise<void>;
+  unavailable?: () => boolean;
+} = {}): void {
   const connector: PublicConnectorCatalogStatusItem = {
     slug: "gmail",
     label: "Gmail",
@@ -84,7 +97,18 @@ function mockCatalog({ connected = false } = {}): void {
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
+    if (ready) {
+      await ready;
+    }
+    if (unavailable?.()) {
+      return respond(503, {
+        error: {
+          code: "PROVIDER_UNAVAILABLE",
+          message: "Connector catalog is temporarily unavailable",
+        },
+      });
+    }
     return respond(200, { connectors: [connector] });
   });
 }
@@ -144,11 +168,28 @@ test("The switch opens the field question on /onboarding and continues to the so
 
   click(fieldRadio(MARKETING_FIELD));
 
+  expect(
+    JSON.parse(context.store.get(draftStorage.get$) ?? "null"),
+  ).toMatchObject({
+    orgId: "org_default",
+    userId: "test-user-123",
+    industry: "marketing",
+  });
+
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
   });
 
   click(getButtonByName("Continue"));
+
+  // Keep the current question in place while the next route is being set up.
+  // The full-screen app loader would otherwise flash over every step change.
+  expect(
+    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("status", { name: "Loading" }),
+  ).not.toBeInTheDocument();
 
   await expect(
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
@@ -159,12 +200,94 @@ test("The switch opens the field question on /onboarding and continues to the so
 
   click(getButtonByName("Back"));
 
+  expect(
+    screen.getByRole("heading", { name: SOURCES_QUESTION }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("status", { name: "Loading" }),
+  ).not.toBeInTheDocument();
+
   await expect(
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboarding);
   // The answer survives the way back, so the field can be changed.
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
+});
+
+test("The first step waits for connector choices before opening the sources step", async () => {
+  mockOnboardingNeeded();
+  const catalogReady = context.mocks.deferred<void>();
+  mockCatalog({ ready: catalogReady.promise });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(fieldRadio(MARKETING_FIELD));
+
+  expect(getButtonByName("Continue")).toBeEnabled();
+  click(getButtonByName("Continue"));
+
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "true");
+  expect(pathname()).toBe(ROUTES.onboarding);
+  expect(
+    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).toBeInTheDocument();
+
+  catalogReady.resolve();
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Connect Gmail")).toBeInTheDocument();
+  expect(screen.queryByText("Loading connectors…")).not.toBeInTheDocument();
+});
+
+test("The first step can retry when connector choices are unavailable", async () => {
+  mockOnboardingNeeded();
+  const catalogReady = context.mocks.deferred<void>();
+  let unavailable = true;
+  mockCatalog({
+    ready: catalogReady.promise,
+    unavailable: () => {
+      return unavailable;
+    },
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  click(getButtonByName("Continue"));
+  expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "true");
+  catalogReady.resolve();
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Couldn't load built-in connectors.");
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "false");
+
+  unavailable = false;
+  click(getButtonByName("Retry"));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+
+  click(getButtonByName("Continue"));
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Connect Gmail")).toBeInTheDocument();
 });
 
 test("A later step returns to the entry until a source is connected", async () => {
@@ -196,17 +319,21 @@ test("The ready step completes onboarding once, before it runs the first request
   // Where the browser still was when completion went out, so the order of the
   // two is observable rather than assumed.
   const completedFrom: string[] = [];
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completedFrom.push(pathname());
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: false,
-      onboardingComplete: true,
-    });
-    return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
-    });
-  });
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ query, respond }) => {
+      completedFrom.push(pathname());
+      expect(query?.modelProvider).toBeUndefined();
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
 
   await setupPage({
     context,
@@ -225,6 +352,70 @@ test("The ready step completes onboarding once, before it runs the first request
     expect(runPrompt).toBeTruthy();
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
+});
+
+test("A refreshed ready step keeps the industry, model choice, and edited request", async () => {
+  mockOnboardingNeeded();
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  let sentIndustry: string | undefined;
+  let sentProvider: string | undefined;
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ body, query, respond }) => {
+      sentIndustry = body.industry;
+      sentProvider = query?.modelProvider;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
+  // A fresh browser app starts with storage from the previous app lifetime.
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 1,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "Draft my launch plan",
+      startingPromptKey: "marketing:gmail",
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+    "Draft my launch plan",
+  );
+
+  click(getButtonByName(START_ACTION));
+  await waitFor(() => {
+    expect(runPrompt).toBe("Draft my launch plan");
+  });
+  expect(sentIndustry).toBe("marketing");
+  expect(sentProvider).toBe("claudeCode");
+  expect(context.store.get(completedDraftStorage.get$)).toBeNull();
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {

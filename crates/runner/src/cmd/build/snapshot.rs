@@ -6,8 +6,8 @@ use sandbox::SnapshotProvider;
 
 use crate::deps::{FIRECRACKER_VERSION, KERNEL_VERSION};
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::{HomePaths, RootfsPaths};
 use crate::profile;
+use runner_host::paths::{HomePaths, RootfsPaths};
 
 use super::sizes::file_sizes;
 
@@ -149,7 +149,7 @@ mod tests {
     };
     use std::time::Duration;
 
-    use crate::lock;
+    use runner_host::lock;
 
     const SNAPSHOT_PUBLISH_SCENARIO_TIMEOUT: Duration = Duration::from_secs(5);
     const SNAPSHOT_PUBLISH_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);

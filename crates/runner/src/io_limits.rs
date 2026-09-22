@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 use sandbox::{BlockRateLimits, DeviceRateLimits, NetworkRateLimits};
 
 use crate::config::ProfileConfig;
-use crate::host_env::{self, HostEnvValue, RunnerHostEnv, RunnerIoEnvValues};
 use crate::resource_budget::ResourceBudget;
+use runner_host::host_env::{self, HostEnvValue, RunnerHostEnv, RunnerIoEnvValues};
 
 const MIB: f64 = 1024.0 * 1024.0;
 // Keep host-level headroom outside Firecracker token buckets for system daemons,

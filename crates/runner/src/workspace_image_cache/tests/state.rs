@@ -21,10 +21,9 @@ use super::super::{
 use super::support::{
     TEST_PROFILE_NAME, local_cache, timestamp_for_index, write_current_cache_entry_for_profile,
 };
-use crate::paths::{
-    HomePaths, RunnerPaths, scoped_workspace_image_cache_key, workspace_image_cache_key,
-};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
+use crate::test_fixtures::workspace_image_cache_key;
+use runner_host::paths::{HomePaths, RunnerPaths, scoped_workspace_image_cache_key};
 use runner_types::ids::RunId;
 use runner_types::types::{
     HeldWorkspaceState, MAX_HELD_WORKSPACE_STATES, MAX_WORKSPACE_CACHES_PER_HEARTBEAT,
@@ -305,7 +304,7 @@ async fn commit_reconciliation_waits_for_entry_lock_before_validating() {
     let image_size = format!("image-{reuse_key}").len() as u64;
     let configured = BTreeMap::from([(TEST_PROFILE_NAME, image_size)]);
     let committed = BTreeSet::from([cache_key.clone()]);
-    let held_lock = crate::lock::acquire(cache.entry_lock_path(&cache_key))
+    let held_lock = runner_host::lock::acquire(cache.entry_lock_path(&cache_key))
         .await
         .unwrap();
 
@@ -353,7 +352,7 @@ async fn initial_scan_returns_committed_entry_skipped_for_locking() {
     .await;
     let image_size = format!("image-{reuse_key}").len() as u64;
     let configured = BTreeMap::from([(TEST_PROFILE_NAME, image_size)]);
-    let held_lock = crate::lock::acquire(cache.entry_lock_path(&cache_key))
+    let held_lock = runner_host::lock::acquire(cache.entry_lock_path(&cache_key))
         .await
         .unwrap();
 
@@ -391,7 +390,7 @@ async fn initial_scan_ignores_locked_foreign_scope_commit() {
     .await;
     let image_size = format!("image-{reuse_key}").len() as u64;
     let configured = BTreeMap::from([(TEST_PROFILE_NAME, image_size)]);
-    let held_lock = crate::lock::acquire(publisher.entry_lock_path(&cache_key))
+    let held_lock = runner_host::lock::acquire(publisher.entry_lock_path(&cache_key))
         .await
         .unwrap();
 

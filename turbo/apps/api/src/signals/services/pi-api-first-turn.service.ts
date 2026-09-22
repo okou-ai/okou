@@ -1440,7 +1440,14 @@ async function executeApiModelTurn(
   // Use the captured source, never the active account. Revalidation neither
   // refreshes credentials nor changes the prepared runtime, and stays outside
   // the lifecycle lock that owns the final provider transition.
-  await validateApiFirstTurnCredentialSources(args.context, signal);
+  await measurePiPreparation(
+    args.onPreparationTiming,
+    "credentials_revalidate",
+    () => {
+      return validateApiFirstTurnCredentialSources(args.context, signal);
+    },
+    signal,
+  );
   const modelDeadline =
     apiFirstTurnApiDeadlineAt(args.activation) - MODEL_COMMIT_BUDGET_MS;
   if (now() >= modelDeadline) {
@@ -2791,10 +2798,17 @@ export const runPiApiFirstTurn$ = command(
   ): Promise<DispatchCompleteSideEffectsInput | undefined> => {
     let ownedPreparation = preparation;
     return await (async () => {
-      const [run] = await set(writeDb$)
-        .select({ triggerSource: agentRuns.triggerSource })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, activation.runId));
+      const [run] = await measurePiPreparation(
+        piPreparationObserver(activation.runId),
+        "activation_authorize",
+        async () => {
+          return await set(writeDb$)
+            .select({ triggerSource: agentRuns.triggerSource })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, activation.runId));
+        },
+        signal,
+      );
       signal.throwIfAborted();
       if (!run || run.triggerSource === "goal") {
         return undefined;

@@ -7,7 +7,6 @@ use nix::fcntl::FlockArg;
 
 use super::*;
 use crate::cmd::gc::test_support::{assert_is_symlink, old_gc_time, set_mtime, test_home};
-use crate::process::discovery_test_support::{ProcfsFixture, UNCERTAIN_STAT_FAULTS};
 
 fn discovered_base_dirs(leases: &[DeadRunnerBaseDirLease]) -> Vec<PathBuf> {
     leases
@@ -41,8 +40,8 @@ fn firecracker_with_base_dir(
     pid: u32,
     sandbox_id: &str,
     base_dir: &Path,
-) -> crate::process::FirecrackerProcessInfo {
-    crate::process::FirecrackerProcessInfo {
+) -> runner_host::process::FirecrackerProcessInfo {
+    runner_host::process::FirecrackerProcessInfo {
         pid,
         ppid: Some(1),
         sandbox_id: sandbox_id.to_string(),
@@ -51,8 +50,8 @@ fn firecracker_with_base_dir(
     }
 }
 
-fn incomplete_firecracker(pid: u32) -> crate::process::FirecrackerProcessInfo {
-    crate::process::FirecrackerProcessInfo {
+fn incomplete_firecracker(pid: u32) -> runner_host::process::FirecrackerProcessInfo {
+    runner_host::process::FirecrackerProcessInfo {
         pid,
         ppid: Some(1),
         sandbox_id: format!("pid-{pid}"),
@@ -464,49 +463,40 @@ async fn gc_workspace_orphans_dry_run_preserves() {
 }
 
 #[tokio::test]
-async fn gc_workspace_orphans_preserves_files_after_discovery_stat_faults() {
-    for fault in UNCERTAIN_STAT_FAULTS {
-        for successful_reads in 0..4 {
-            let dir = tempfile::tempdir().unwrap();
-            let home = test_home(dir.path());
-            std::fs::create_dir_all(home.locks_dir()).unwrap();
-            let base_dir = dir.path().join("runner-data");
-            let workspace = base_dir.join("workspaces").join("run-old");
-            std::fs::create_dir_all(&workspace).unwrap();
-            let image_path = workspace.join("cow.img");
-            std::fs::write(&image_path, b"live workspace data").unwrap();
-            set_mtime(&workspace, old_gc_time());
-            let lock_path = write_base_dir_lock(&home, &base_dir);
-            let candidates = discover_base_dir_lock_candidates(&home);
+async fn gc_workspace_orphans_preserves_files_when_process_identity_is_uncertain() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = test_home(dir.path());
+    std::fs::create_dir_all(home.locks_dir()).unwrap();
+    let base_dir = dir.path().join("runner-data");
+    let workspace = base_dir.join("workspaces").join("run-old");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let image_path = workspace.join("cow.img");
+    std::fs::write(&image_path, b"live workspace data").unwrap();
+    set_mtime(&workspace, old_gc_time());
+    let lock_path = write_base_dir_lock(&home, &base_dir);
+    let candidates = discover_base_dir_lock_candidates(&home);
 
-            let fixture = ProcfsFixture::new(&workspace);
-            let discovered = fixture
-                .discover_with_stat_fault(successful_reads, fault)
-                .await;
-            assert!(discovered.proc_scan_complete);
-            let firecrackers = discovered.processes.firecrackers;
-            let uncertain = workspace_firecracker_discovery_uncertain(&firecrackers, &[]).await;
-            let summary = gc_workspace_orphans_with_candidates(
-                candidates,
-                &firecrackers,
-                &HashSet::new(),
-                uncertain,
-                SystemTime::now(),
-                false,
-            )
-            .await
-            .unwrap();
+    // runner-host owns exhaustive procfs/stat-fault classification. GC only
+    // needs to prove that an incomplete process identity fails closed.
+    let firecrackers = vec![incomplete_firecracker(u32::MAX)];
+    let uncertain = workspace_firecracker_discovery_uncertain(&firecrackers, &[]).await;
+    assert!(uncertain);
+    let summary = gc_workspace_orphans_with_candidates(
+        candidates,
+        &firecrackers,
+        &HashSet::new(),
+        uncertain,
+        SystemTime::now(),
+        false,
+    )
+    .await
+    .unwrap();
 
-            assert_eq!(
-                summary.workspaces_cleaned, 0,
-                "{fault:?} after {successful_reads} successful stat reads"
-            );
-            assert_eq!(summary.bytes_freed, 0);
-            assert_eq!(summary.base_dir_locks_removed, 0);
-            assert_eq!(std::fs::read(&image_path).unwrap(), b"live workspace data");
-            assert!(lock_path.exists(), "lock must remain for a later retry");
-        }
-    }
+    assert_eq!(summary.workspaces_cleaned, 0);
+    assert_eq!(summary.bytes_freed, 0);
+    assert_eq!(summary.base_dir_locks_removed, 0);
+    assert_eq!(std::fs::read(&image_path).unwrap(), b"live workspace data");
+    assert!(lock_path.exists(), "lock must remain for a later retry");
 }
 
 #[tokio::test]

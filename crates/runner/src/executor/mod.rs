@@ -161,7 +161,6 @@ use crate::idle_pool::{IdleSandboxKind, ReusableIdleSandbox, ReusableIdleSandbox
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogManager;
 use crate::network_log_manager::NetworkLogSession;
-use crate::paths::{HomePaths, LogPaths};
 use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
 use crate::workspace_image_cache::{
@@ -171,6 +170,7 @@ use crate::workspace_image_cache::{
     WorkspaceImagePromotionIdentityRequest,
 };
 use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
+use runner_host::paths::{HomePaths, LogPaths};
 use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {

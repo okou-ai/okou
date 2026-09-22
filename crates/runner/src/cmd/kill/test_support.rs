@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::process::{DiscoveredProcesses, FirecrackerProcessInfo, ProcfsProcessGeneration};
+use runner_host::process::{DiscoveredProcesses, FirecrackerProcessInfo, ProcfsProcessGeneration};
 
 use super::target::KillTarget;
 

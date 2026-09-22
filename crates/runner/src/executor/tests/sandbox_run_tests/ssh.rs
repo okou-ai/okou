@@ -217,10 +217,12 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                 .tempdir()
                 .unwrap();
             let mut config = test_executor_config(dir.path()).await;
-            crate::log_file::ensure_log_dir(config.log_paths.dir()).unwrap();
-            let identity =
-                crate::runner_process_identity::RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1)
-                    .unwrap();
+            runner_host::log_file::ensure_log_dir(config.log_paths.dir()).unwrap();
+            let identity = runner_host::runner_process_identity::RunnerProcessIdentity::new(
+                uuid::Uuid::new_v4(),
+                1,
+            )
+            .unwrap();
             config.guest_rpc = crate::ssh::SshRuntime::official(
                 config.http.clone(),
                 if enabled {

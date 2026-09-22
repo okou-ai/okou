@@ -4,19 +4,19 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 /// Load runner ID from `{base_dir}/runner_id`, or generate a new UUID and persist it.
 async fn load_or_generate_runner_id(base_dir: &Path) -> RunnerResult<Uuid> {
     let path = base_dir.join("runner_id");
-    match crate::private_fs::read_private_file_to_string(&path).await? {
+    match runner_host::private_fs::read_private_file_to_string(&path).await? {
         Some(contents) => Uuid::parse_str(contents.trim()).map_err(|e| {
             RunnerError::Config(format!("invalid runner_id in {}: {e}", path.display()))
         }),
         None => {
             let id = Uuid::new_v4();
             let id_text = id.to_string();
-            crate::private_fs::write_private_file(&path, id_text.as_bytes()).await?;
+            runner_host::private_fs::write_private_file(&path, id_text.as_bytes()).await?;
             info!(runner_id = %id, "generated new runner ID");
             Ok(id)
         }
@@ -32,7 +32,7 @@ pub(super) async fn load_runner_process_identity(
 ) -> RunnerResult<RunnerProcessIdentity> {
     let runner_id = load_or_generate_runner_id(base_dir).await?;
     let path = base_dir.join("heartbeat_generation");
-    let previous = match crate::private_fs::read_private_file_to_string(&path).await? {
+    let previous = match runner_host::private_fs::read_private_file_to_string(&path).await? {
         Some(contents) => contents.trim().parse::<u64>().map_err(|error| {
             RunnerError::Config(format!(
                 "invalid heartbeat generation in {}: {error}",
@@ -54,7 +54,7 @@ pub(super) async fn load_runner_process_identity(
                 path.display(),
             ))
         })?;
-    crate::private_fs::write_private_file(&path, heartbeat_generation.to_string().as_bytes())
+    runner_host::private_fs::write_private_file(&path, heartbeat_generation.to_string().as_bytes())
         .await?;
     Ok(identity)
 }

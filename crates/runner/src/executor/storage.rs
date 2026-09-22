@@ -13,18 +13,19 @@ use tracing::{info, warn};
 
 use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
-use crate::paths::guest;
 use crate::storage_cache::decoded::CachedFiles;
+use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
+use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::types::ExecutionContext;
 
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) fn guest_storage_apply_command() -> String {
-    format!("{} {}", guest::STORAGE_APPLY_BIN, guest::STORAGE_MANIFEST)
+    format!("{STORAGE_APPLY_PATH} {STORAGE_MANIFEST_PATH}")
 }
 
 pub(super) fn guest_storage_manifest_cleanup_command() -> String {
-    format!("rm -f -- {}", guest::STORAGE_MANIFEST)
+    format!("rm -f -- {STORAGE_MANIFEST_PATH}")
 }
 
 pub(super) fn guest_storage_apply_env<'a>(
@@ -207,7 +208,7 @@ async fn apply_storage_input(
     } else {
         remove_fallback_storage_manifest(sandbox).await?;
         if let Err(error) = sandbox
-            .write_file(guest::STORAGE_MANIFEST, manifest_json)
+            .write_file(STORAGE_MANIFEST_PATH, manifest_json)
             .await
         {
             cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;

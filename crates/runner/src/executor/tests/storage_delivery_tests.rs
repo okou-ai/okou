@@ -12,10 +12,10 @@ use super::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, api_storage, create_overridden_sandbox, minimal_context,
     spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
 };
-use crate::paths::guest;
 use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
 use crate::storage_plan::build_storage_plan;
+use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::storage_manifest::StorageManifest;
 
 struct DeliveryFixture {
@@ -58,7 +58,10 @@ impl DeliveryFixture {
             let archive_dir = config.home.storage_cache_dir(&name, &version);
             std::fs::create_dir_all(&archive_dir).unwrap();
             std::fs::write(archive_dir.join("archive.tar.gz"), &archive).unwrap();
-            drop(crate::lock::open_lock_file(&config.home.storage_lock(&name, &version)).unwrap());
+            drop(
+                runner_host::lock::open_lock_file(&config.home.storage_lock(&name, &version))
+                    .unwrap(),
+            );
             if index < ready {
                 config
                     .decoded_cache
@@ -431,7 +434,7 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
         .unwrap();
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].path, guest::STORAGE_MANIFEST);
+    assert_eq!(writes[0].path, STORAGE_MANIFEST_PATH);
     let ordinary: Manifest = serde_json::from_slice(&writes[0].content).unwrap();
     assert_eq!(ordinary.storages.len(), 1);
     assert!(ordinary.storages[0].mount_path.ends_with("ordinary"));

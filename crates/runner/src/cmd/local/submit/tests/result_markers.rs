@@ -88,7 +88,10 @@ fn abandoned_marker_write_creates_missing_group_dir_as_shared_trusted() {
         write_abandoned_result_marker(&result_path, job_id, "local submit abandoned").unwrap();
 
     assert_eq!(std::fs::read(&result_path).unwrap(), marker.bytes);
-    assert_eq!(mode(&group_dir), crate::host_file::SHARED_TRUSTED_DIR_MODE);
+    assert_eq!(
+        mode(&group_dir),
+        runner_host::host_file::SHARED_TRUSTED_DIR_MODE
+    );
     assert_eq!(mode(&local_queue::results_dir(&group_dir)), 0o700);
     assert_eq!(mode(&result_path), 0o600);
 }

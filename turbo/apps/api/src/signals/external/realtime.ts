@@ -3,6 +3,7 @@ import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner
 import {
   sessionOutputChannelName,
   type BrowserSessionChangedPayload,
+  type HomeTaskRecommendationsChangedPayload,
   type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
@@ -156,6 +157,17 @@ export function publishMorningBriefChangedSafely(target: {
   readonly orgId: string;
 }): Promise<void> {
   return publishChatDatabaseSignal(target, "morningBriefChanged");
+}
+
+export function publishHomeTaskRecommendationsChangedSafely(
+  target: { readonly userId: string; readonly orgId: string },
+  payload: HomeTaskRecommendationsChangedPayload,
+): Promise<void> {
+  return publishChatDatabaseSignal(
+    target,
+    "homeTaskRecommendationsChanged",
+    payload,
+  );
 }
 
 /**

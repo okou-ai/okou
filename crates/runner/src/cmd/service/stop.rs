@@ -3,7 +3,7 @@ use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::drain_override_cleanup::{
     DrainOverrideReloadPolicy, reconcile_drain_restart_override_removal,
@@ -107,9 +107,9 @@ async fn acquire_cleanup_service_lock(
     let deadline = TokioInstant::now() + CLEANUP_LOCK_TIMEOUT;
 
     loop {
-        match crate::lock::try_acquire_or_busy(path.clone()).await? {
-            crate::lock::TryLock::Acquired(lock) => return Ok(lock),
-            crate::lock::TryLock::Busy => {
+        match runner_host::lock::try_acquire_or_busy(path.clone()).await? {
+            runner_host::lock::TryLock::Acquired(lock) => return Ok(lock),
+            runner_host::lock::TryLock::Busy => {
                 let now = TokioInstant::now();
                 if now >= deadline {
                     return Err(RunnerError::Internal(format!(

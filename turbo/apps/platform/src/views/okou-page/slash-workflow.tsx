@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 // Slash-workflow domain helpers and the suggestion menu, shared by the chat
 // composer. Kept in its own module so the textarea composer and the TipTap
 // workflow composer can both reuse them without an import cycle.
@@ -117,8 +117,7 @@ function SlashWorkflowRows({
               "flex w-full flex-col items-start gap-0.5 rounded-lg px-2 py-1.5 text-left transition-colors",
               selected ? "bg-accent" : "hover:bg-state-hover",
             )}
-            onMouseDown={(event) => {
-              event.preventDefault();
+            onClick={() => {
               onSelect(workflow);
             }}
           >
@@ -136,6 +135,7 @@ function SlashWorkflowRows({
 }
 
 export function SlashWorkflowMenu({
+  menuRef,
   anchor,
   workflows,
   loading,
@@ -144,6 +144,7 @@ export function SlashWorkflowMenu({
   onSelect,
   panel,
 }: {
+  readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly loading: boolean;
@@ -159,6 +160,7 @@ export function SlashWorkflowMenu({
   const { t } = useTranslation();
   return (
     <PopoverContent
+      ref={menuRef}
       anchor={anchor}
       side="top"
       align="start"
@@ -200,10 +202,6 @@ export function SlashWorkflowMenu({
             <div className="shrink-0 border-t border-border/60 bg-popover/95 p-1">
               <Link
                 pathname={ROUTES.workflows}
-                onMouseDown={(event) => {
-                  // Keep the composer focused until Link handles the click.
-                  event.preventDefault();
-                }}
                 className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm font-medium text-popover-foreground transition-colors hover:bg-state-hover"
               >
                 <span className="flex min-w-0 items-center gap-2">

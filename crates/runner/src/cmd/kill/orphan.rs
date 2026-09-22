@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use tracing::info;
 
-use crate::process::{
+use runner_host::process::{
     self, DiscoveredProcesses, ProcessDiscovery, ProcessStat, ProcessStatRead,
     ProcfsProcessGeneration, ProcfsProcessHandle,
 };
@@ -558,10 +558,10 @@ mod tests {
 
     use super::super::test_support::{discovered_with_firecrackers, make_fc, make_target};
     use super::*;
-    use crate::process::{FirecrackerProcessInfo, ProcessDiscovery};
     use crate::test_fixtures::ignored_child::{
         ignored_child_test_env_guard_enabled, run_ignored_child_test,
     };
+    use runner_host::process::{FirecrackerProcessInfo, ProcessDiscovery};
 
     const ORPHAN_KILL_CHILD_ENV: &str = "OKOU_RUNNER_ORPHAN_KILL_TEST_CHILD";
     const ORPHAN_KILL_READY_LINE: &str = "vm0 orphan kill test ready";

@@ -179,6 +179,8 @@ function setupAuthSidebarPageWrapper(
   return setupAuthPageWrapper(setupSettingsParamAfterStableRoute(setupPage));
 }
 
+const SOURCES_FIRST_ONBOARDING_PAGE_GROUP = "sources-first-onboarding";
+
 const ROUTE_CONFIG = [
   {
     path: ROUTES.desktopAuthStart,
@@ -439,30 +441,37 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboarding,
     setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSources,
     setup: setupAuthPageWrapper(setupOnboardingSourcesPage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingTeam,
     setup: setupAuthPageWrapper(setupOnboardingTeamPage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingExperience,
     setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSkills,
     setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSlack,
     setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingReady,
     setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
+    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingWorkflowPicker,

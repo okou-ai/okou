@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::lock;
-use crate::paths::HomePaths;
-use crate::state_file;
+use runner_host::lock;
+use runner_host::paths::HomePaths;
+use runner_host::state_file;
 
 pub(crate) const CA_CERT: &str = "mitmproxy-ca-cert.pem";
 const CA_KEY: &str = "mitmproxy-ca-key.pem";
@@ -226,7 +226,7 @@ async fn write_if_changed(path: &Path, content: &[u8]) -> RunnerResult<()> {
             )));
         }
     }
-    state_file::write_private_atomic(path, content).await
+    Ok(state_file::write_private_atomic(path, content).await?)
 }
 
 /// Chmod the three CA files: cert 0o644, key 0o600, combined 0o600.
@@ -286,7 +286,7 @@ fn openssl_error(args: &[&str], output: &std::process::Output) -> RunnerError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::paths::HomePaths;
+    use runner_host::paths::HomePaths;
     use tokio::sync::OnceCell;
 
     struct CaBytes {

@@ -10,7 +10,7 @@ use clap::Args;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::local_queue;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 #[derive(Args)]

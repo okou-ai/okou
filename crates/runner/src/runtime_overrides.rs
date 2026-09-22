@@ -5,7 +5,7 @@
 
 use crate::config;
 use crate::error::{RunnerError, RunnerResult};
-use crate::host_env::{self, HostEnvValue, RunnerHostEnv};
+use runner_host::host_env::{self, HostEnvValue, RunnerHostEnv};
 
 const RUNNER_YAML_SOURCE: &str = "runner.yaml";
 

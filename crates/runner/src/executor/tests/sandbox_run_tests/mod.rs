@@ -43,11 +43,11 @@ use super::support::{
     seed_workspace_image_cache_with_fingerprints, seed_workspace_image_cache_with_sidecar,
     test_budget_lease, test_device_rate_limits, test_executor_config, test_telemetry,
 };
-use crate::paths::{RunnerPaths, scoped_workspace_image_cache_key};
 use crate::workspace_image_cache::{
     WorkspaceCacheCheckoutResult, WorkspaceCacheTerminalStatus, WorkspaceImageCache,
     WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
 };
+use runner_host::paths::{RunnerPaths, scoped_workspace_image_cache_key};
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
 use runner_types::types::{

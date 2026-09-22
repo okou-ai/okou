@@ -43,8 +43,8 @@ export type SourceFamily = keyof typeof SOURCE_FAMILIES;
 /**
  * The sources a field actually works in. The step shows this set for the
  * answered field rather than the whole featured list, so the grid is six
- * choices that make sense plus the catalog search for anything else. The first
- * entries are also the ones the starting prompt prefers.
+ * choices that make sense. The first entries are also the ones the starting
+ * prompt prefers.
  */
 export const INDUSTRY_SOURCE_SLUGS: Readonly<
   Record<OnboardingIndustry, readonly ConnectorSlug[]>

@@ -11,7 +11,7 @@ use tracing::{error, info};
 use super::TeardownTimer;
 use crate::config::{self, ProfileConfig};
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 /// A sandbox factory shared across concurrent job executors.
 ///

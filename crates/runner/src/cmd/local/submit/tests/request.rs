@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use super::super::{SubmitArgs, run_submit_with_home};
 use super::support::{run_submit_and_write_success, submit_args_for_test};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 #[tokio::test]
 async fn submit_defaults_profile_and_writes_default_partition() {

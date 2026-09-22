@@ -332,26 +332,26 @@ impl WorkspaceImageCache {
         &self,
         lock_path: PathBuf,
         lock_policy: WorkspaceImagePrepareLockPolicy,
-    ) -> RunnerResult<crate::lock::TryLock> {
+    ) -> RunnerResult<runner_host::lock::TryLock> {
         if lock_policy == WorkspaceImagePrepareLockPolicy::ImmediateFallback {
-            return crate::lock::try_acquire_or_busy(lock_path).await;
+            return Ok(runner_host::lock::try_acquire_or_busy(lock_path).await?);
         }
 
         #[cfg(test)]
         if let Some(gate) = &self.prepare_lock_test_gate {
-            return crate::lock::acquire_with_contention_timeout_after_busy_for_test(
-                lock_path,
-                WORKSPACE_IMAGE_PREPARE_LOCK_TIMEOUT,
-                gate.enter_and_wait(),
-            )
-            .await;
+            match runner_host::lock::try_acquire_or_busy(lock_path.clone()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => {
+                    return Ok(runner_host::lock::TryLock::Acquired(lock));
+                }
+                runner_host::lock::TryLock::Busy => gate.enter_and_wait().await,
+            }
         }
 
-        crate::lock::acquire_with_contention_timeout(
+        Ok(runner_host::lock::acquire_with_contention_timeout(
             lock_path,
             WORKSPACE_IMAGE_PREPARE_LOCK_TIMEOUT,
         )
-        .await
+        .await?)
     }
 
     pub(crate) fn expected_promotion_identity(
@@ -419,8 +419,8 @@ impl WorkspaceImageCache {
 
         let cache_key = common.cache_key(self, reuse_key, working_dir);
         let owner_before = self.local_entry_lock_observation(&cache_key);
-        match crate::lock::try_acquire_or_busy(self.entry_lock_path(&cache_key)).await {
-            Ok(crate::lock::TryLock::Acquired(lock)) => active_lease(
+        match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(&cache_key)).await {
+            Ok(runner_host::lock::TryLock::Acquired(lock)) => active_lease(
                 WorkspaceCacheCheckoutResult::Miss,
                 Some(WorkspaceEntryLock::new(
                     self,
@@ -431,7 +431,7 @@ impl WorkspaceImageCache {
                 Some(cache_key),
                 None,
             ),
-            Ok(crate::lock::TryLock::Busy) => {
+            Ok(runner_host::lock::TryLock::Busy) => {
                 let owner = self.stable_local_entry_lock_owner(&cache_key, owner_before.as_ref());
                 info!(
                     run_id = %common.run_id,
@@ -590,8 +590,8 @@ impl WorkspaceImageCache {
         let lock_path = self.entry_lock_path(&cache_key);
         let owner_before = self.local_entry_lock_observation(&cache_key);
         let lock = match self.acquire_prepare_lock(lock_path, lock_policy).await {
-            Ok(crate::lock::TryLock::Acquired(lock)) => lock,
-            Ok(crate::lock::TryLock::Busy) => {
+            Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
+            Ok(runner_host::lock::TryLock::Busy) => {
                 let owner = self.stable_local_entry_lock_owner(&cache_key, owner_before.as_ref());
                 match lock_policy {
                     WorkspaceImagePrepareLockPolicy::WaitForTransientContention => info!(
@@ -885,7 +885,7 @@ impl WorkspaceImageCache {
                 }
                 let lock = match tokio::time::timeout_at(
                     deadline,
-                    crate::lock::acquire(self.entry_lock_path(cache_key)),
+                    runner_host::lock::acquire(self.entry_lock_path(cache_key)),
                 )
                 .await
                 {
@@ -951,10 +951,11 @@ impl WorkspaceImageCache {
             if validated_cache_keys.contains(cache_key) {
                 continue;
             }
-            let lock = match crate::lock::try_acquire_or_busy(self.entry_lock_path(cache_key)).await
+            let lock = match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(cache_key))
+                .await
             {
-                Ok(crate::lock::TryLock::Acquired(lock)) => lock,
-                Ok(crate::lock::TryLock::Busy) => {
+                Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
+                Ok(runner_host::lock::TryLock::Busy) => {
                     if collect_locked_commits
                         && locked_commit_keys.len() < MAX_HELD_WORKSPACE_STATES
                     {
@@ -1166,27 +1167,27 @@ impl WorkspaceImageCache {
             ),
         }
 
-        let _capacity_lock = match crate::lock::try_acquire_or_busy(self.capacity_lock_path()).await
-        {
-            Ok(crate::lock::TryLock::Acquired(lock)) => lock,
-            Ok(crate::lock::TryLock::Busy) => {
-                info!(
-                    run_id = %input.run_id,
-                    cache_key = input.cache_key,
-                    "workspace image cache promotion skipped: capacity lock busy"
-                );
-                return Ok(WorkspaceImagePromotionOutcome::SkippedUnpublished);
-            }
-            Err(e) => {
-                warn!(
-                    run_id = %input.run_id,
-                    cache_key = input.cache_key,
-                    error = %e,
-                    "workspace image cache promotion skipped: capacity lock unavailable"
-                );
-                return Ok(WorkspaceImagePromotionOutcome::SkippedUnpublished);
-            }
-        };
+        let _capacity_lock =
+            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await {
+                Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
+                Ok(runner_host::lock::TryLock::Busy) => {
+                    info!(
+                        run_id = %input.run_id,
+                        cache_key = input.cache_key,
+                        "workspace image cache promotion skipped: capacity lock busy"
+                    );
+                    return Ok(WorkspaceImagePromotionOutcome::SkippedUnpublished);
+                }
+                Err(e) => {
+                    warn!(
+                        run_id = %input.run_id,
+                        cache_key = input.cache_key,
+                        error = %e,
+                        "workspace image cache promotion skipped: capacity lock unavailable"
+                    );
+                    return Ok(WorkspaceImagePromotionOutcome::SkippedUnpublished);
+                }
+            };
 
         let mut stats = self.fs_stats().await?;
         let mut budget = CacheBudget::from_fs_stats(stats);
@@ -1671,7 +1672,9 @@ impl WorkspaceImagePromotionContext {
         let late_entry_lock = match self.entry_lock.as_ref() {
             Some(_) => None,
             None => {
-                match crate::lock::try_acquire(self.cache.entry_lock_path(&self.cache_key)).await {
+                match runner_host::lock::try_acquire(self.cache.entry_lock_path(&self.cache_key))
+                    .await
+                {
                     Ok(lock) => Some(WorkspaceEntryLock::new(
                         &self.cache,
                         &self.cache_key,
@@ -1718,7 +1721,9 @@ impl WorkspaceImagePromotionContext {
         let _late_entry_lock_guard = match self.entry_lock.as_ref() {
             Some(_) => None,
             None => {
-                match crate::lock::try_acquire(self.cache.entry_lock_path(&self.cache_key)).await {
+                match runner_host::lock::try_acquire(self.cache.entry_lock_path(&self.cache_key))
+                    .await
+                {
                     Ok(lock) => Some(WorkspaceEntryLock::new(
                         &self.cache,
                         &self.cache_key,
@@ -1784,7 +1789,7 @@ impl WorkspaceImagePromotionContext {
                 run_id = %run_id,
                 sandbox_id = %sandbox_id,
                 profile_name,
-                reuse_key_fingerprint = %crate::paths::short_digest(&reuse_key),
+                reuse_key_fingerprint = %runner_host::paths::short_digest(&reuse_key),
                 reuse_key_kind = runner_types::types::reuse_key_kind(&reuse_key),
                 cache_key,
                 reason,
@@ -1814,7 +1819,7 @@ impl WorkspaceImagePromotionContext {
         } = self;
         let _late_entry_lock_guard = match entry_lock.as_ref() {
             Some(_) => None,
-            None => match crate::lock::try_acquire(cache.entry_lock_path(&cache_key)).await {
+            None => match runner_host::lock::try_acquire(cache.entry_lock_path(&cache_key)).await {
                 Ok(lock) => Some(WorkspaceEntryLock::new(
                     &cache,
                     &cache_key,

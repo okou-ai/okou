@@ -10,7 +10,8 @@ use zeroize::Zeroizing;
 use super::{FailureReason, keys::SigningKey};
 use runner_types::ids::RunId;
 
-use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
+use crate::http::HttpClient;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 

@@ -10,9 +10,9 @@ use crate::cmd::service;
 #[cfg(test)]
 use crate::error::RunnerError;
 use crate::error::RunnerResult;
-use crate::host_file;
-use crate::lock;
-use crate::paths::HomePaths;
+use runner_host::host_file;
+use runner_host::lock;
+use runner_host::paths::HomePaths;
 
 use super::GC_MIN_AGE;
 use super::filesystem::{GcDirEntryReader, GcDirStatus, gc_path_dir_status, read_dir_or_missing};

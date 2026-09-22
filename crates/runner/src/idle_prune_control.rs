@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::host_file::{DirMode, ensure_dir, validate_dir};
-use crate::paths::HomePaths;
-use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_host::host_file::{DirMode, ensure_dir, validate_dir};
+use runner_host::paths::HomePaths;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 const FRAME_LIMIT: usize = 4096;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);

@@ -12,12 +12,95 @@ use super::control::ControlHandle;
 use super::registry_application::{RegistryDigest, RegistryPublication};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::lock;
-use crate::state_file::PROXY_REGISTRY_MAX_BYTES;
+use runner_host::lock;
+use runner_host::state_file::PROXY_REGISTRY_MAX_BYTES;
 use runner_types::types::{
     ConnectorRuntimeTarget, ConnectorRuntimeTargetRegistration, FirewallEntry, NetworkPolicy,
     SecretConnectorMetadata,
 };
+
+#[cfg(test)]
+pub(crate) mod write_test {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{LazyLock, Mutex};
+    use std::time::Duration;
+
+    use tokio::sync::oneshot;
+
+    static GATES: LazyLock<Mutex<HashMap<PathBuf, WriteOperation>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    struct WriteOperation {
+        entered: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+        settled: oneshot::Sender<()>,
+    }
+
+    pub(crate) struct RegistryWriteGate {
+        path: PathBuf,
+        entered: oneshot::Receiver<()>,
+        release: Option<oneshot::Sender<()>>,
+        settled: oneshot::Receiver<()>,
+    }
+
+    impl RegistryWriteGate {
+        pub(crate) fn new(path: &Path) -> Self {
+            let (entered_tx, entered) = oneshot::channel();
+            let (release, release_rx) = oneshot::channel();
+            let (settled_tx, settled) = oneshot::channel();
+            let previous = GATES.lock().unwrap().insert(
+                path.to_path_buf(),
+                WriteOperation {
+                    entered: entered_tx,
+                    release: release_rx,
+                    settled: settled_tx,
+                },
+            );
+            assert!(previous.is_none(), "only one write gate may own a path");
+            Self {
+                path: path.to_path_buf(),
+                entered,
+                release: Some(release),
+                settled,
+            }
+        }
+
+        pub(crate) async fn wait_entered(&mut self) {
+            tokio::time::timeout(Duration::from_secs(5), &mut self.entered)
+                .await
+                .expect("registry write should start")
+                .expect("registry write should signal entry");
+        }
+
+        pub(crate) async fn finish(mut self) {
+            drop(self.release.take());
+            tokio::time::timeout(Duration::from_secs(5), &mut self.settled)
+                .await
+                .expect("registry write should settle")
+                .expect("registry write should signal completion");
+        }
+    }
+
+    impl Drop for RegistryWriteGate {
+        fn drop(&mut self) {
+            GATES.lock().unwrap().remove(&self.path);
+        }
+    }
+
+    pub(super) async fn enter(path: &Path) -> Option<oneshot::Sender<()>> {
+        let operation = GATES.lock().unwrap().remove(path)?;
+        let _ = operation.entered.send(());
+        let _ = operation.release.await;
+        Some(operation.settled)
+    }
+
+    pub(super) fn settle(settled: Option<oneshot::Sender<()>>) {
+        if let Some(settled) = settled {
+            let _ = settled.send(());
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,10 +162,10 @@ pub struct SandboxRegistration<'a> {
 }
 
 async fn read_registry(path: &std::path::Path) -> RunnerResult<ProxyRegistry> {
-    let content = crate::state_file::read_to_string(
+    let content = runner_host::state_file::read_to_string(
         path,
         PROXY_REGISTRY_MAX_BYTES,
-        crate::state_file::OwnerCheck::CurrentEuid,
+        runner_host::state_file::OwnerCheck::CurrentEuid,
     )
     .await?
     .ok_or_else(|| RunnerError::Internal(format!("read registry {}: not found", path.display())))?;
@@ -130,7 +213,12 @@ async fn write_registry_with_reserve(
         )));
     }
     let digest = RegistryDigest::of(&content);
-    crate::state_file::write_private_atomic(path, &content).await?;
+    #[cfg(test)]
+    let settled = write_test::enter(path).await;
+    let write_result = runner_host::state_file::write_private_atomic(path, &content).await;
+    #[cfg(test)]
+    write_test::settle(settled);
+    write_result?;
     Ok(digest)
 }
 
@@ -1443,7 +1531,7 @@ mod tests {
         let registry_path = dir.path().join("proxy-registry.json");
         std::fs::write(
             &registry_path,
-            vec![b' '; crate::state_file::PROXY_REGISTRY_MAX_BYTES as usize + 1],
+            vec![b' '; runner_host::state_file::PROXY_REGISTRY_MAX_BYTES as usize + 1],
         )
         .unwrap();
 
