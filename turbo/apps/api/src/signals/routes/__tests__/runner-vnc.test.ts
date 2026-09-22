@@ -24,6 +24,7 @@ import {
   vncRunnerHeaders,
   vncSecurity,
   vncSessionHeaders,
+  vncTransportProfiles,
   vncX509VncProfiles,
   type VncRuntimeFixture,
 } from "./helpers/vnc-runtime";
@@ -279,6 +280,49 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
+  it("preserves the legacy direct response and returns an explicit direct snapshot to a capable Runner", async () => {
+    const f = await api.fixture();
+    await expect(api.resolve(f)).resolves.toStrictEqual({
+      outcome: "resolved",
+      host: "vnc.example.com",
+      port: 5900,
+      generation: 1,
+      authentication: { method: "vnc_password", password: vncPassword },
+      security: vncSecurity,
+    });
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toStrictEqual({
+      outcome: "resolved_transport",
+      host: "vnc.example.com",
+      port: 5900,
+      generation: 1,
+      serverName: "vnc.example.com",
+      transport: { type: "direct" },
+      authentication: { method: "vnc_password", password: vncPassword },
+      security: vncSecurity,
+    });
+    expect((await check(f, 1)).body).toStrictEqual({ outcome: "valid" });
+    expect(
+      (
+        await check(f, 1, {
+          expectedTransport: { type: "direct" },
+        })
+      ).body,
+    ).toStrictEqual({ outcome: "valid" });
+    expect(
+      (
+        await check(f, 1, {
+          expectedTransport: {
+            type: "ssh",
+            connectionId: randomUUID(),
+            generation: 1,
+          },
+        })
+      ).body,
+    ).toStrictEqual({ outcome: "configuration_changed" });
+  });
+
   it("refuses saved SSH transport before decrypting VNC credentials", async () => {
     const f = await api.fixture();
     const ssh = await accept(
@@ -311,7 +355,150 @@ describe("private Runner VNC authority", () => {
       outcome: "unsupported_profile",
     });
     expect(kms.decryptCalls).toBe(0);
-    expect((await check(f, 2)).body).toStrictEqual({ outcome: "valid" });
+    expect((await check(f, 2)).body).toStrictEqual({
+      outcome: "unavailable",
+    });
+    await api.grantSsh(f, true);
+    expect((await check(f, 2)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+  });
+
+  it("requires both grants and binds SSH-backed handoff and checks to the exact SSH generation", async () => {
+    const f = await api.fixture();
+    const ssh = await accept(
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          transport: { type: "ssh", connectionId: ssh.body.id },
+          security: {
+            ...vncSecurity,
+            serverName: "desktop.internal",
+          },
+        },
+      }),
+      [200],
+    );
+    const kms = useSecretKmsProbe();
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+
+    await api.grantSsh(f, true);
+    const resolved = await api.resolve(f, {
+      supportedProfiles: [...vncTransportProfiles],
+    });
+    expect(resolved).toStrictEqual({
+      outcome: "resolved_transport",
+      host: "vnc.example.com",
+      port: 5900,
+      generation: 2,
+      serverName: "desktop.internal",
+      transport: {
+        type: "ssh",
+        connectionId: ssh.body.id,
+        generation: 1,
+      },
+      authentication: { method: "vnc_password", password: vncPassword },
+      security: vncSecurity,
+    });
+    expect(JSON.stringify(resolved)).not.toContain("private-key");
+    const expectedTransport = {
+      type: "ssh" as const,
+      connectionId: ssh.body.id,
+      generation: 1,
+    };
+    expect((await check(f, 2, { expectedTransport })).body).toStrictEqual({
+      outcome: "valid",
+    });
+    for (const override of [
+      {},
+      { expectedTransport: { type: "direct" as const } },
+      {
+        expectedTransport: {
+          ...expectedTransport,
+          connectionId: randomUUID(),
+        },
+      },
+      {
+        expectedTransport: { ...expectedTransport, generation: 2 },
+      },
+    ]) {
+      expect((await check(f, 2, override)).body).toStrictEqual({
+        outcome: "configuration_changed",
+      });
+    }
+
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<Uint8Array>(context.signal);
+    useSecretKmsProbe(undefined, (_request, call) => {
+      if (call !== 1) {
+        return undefined;
+      }
+      entered.resolve(undefined);
+      return release.promise;
+    });
+    const pending = api.resolve(f, {
+      supportedProfiles: [...vncTransportProfiles],
+    });
+    await entered.promise;
+    const rotated = await accept(
+      api.sshState().action({
+        body: {
+          action: "set-learned-host-key",
+          orgId: f.orgId,
+          userId: f.userId,
+          connectionId: ssh.body.id,
+          algorithm: "ssh-ed25519",
+          fingerprint: "SHA256:rotated",
+        },
+      }),
+      [200],
+    ).finally(() => {
+      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+    });
+    expect(rotated.body.generation).toBe(2);
+    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect((await check(f, 2, { expectedTransport })).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    await expect(
+      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_transport",
+      generation: 2,
+      transport: {
+        type: "ssh",
+        connectionId: ssh.body.id,
+        generation: 2,
+      },
+    });
+
+    await api.grantSsh(f, false);
+    expect(
+      (
+        await check(f, 2, {
+          expectedTransport: { ...expectedTransport, generation: 2 },
+        })
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
   });
 
   it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {

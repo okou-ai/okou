@@ -65,9 +65,12 @@ means direct and omission on update preserves the current transport. SSH
 references must belong to the same organization/user owner and are deleted only
 after every VNC reference is reassigned or removed. Direct metadata retains its
 legacy response shape; SSH metadata includes the typed reference. Private and
-loopback literal VNC destinations require SSH transport. The current Runner
-returns `unsupported_profile` for every saved SSH route before VNC credential
-decryption; tunnel composition remains a later delivery slice.
+loopback literal VNC destinations require SSH transport. Current Runners
+advertise exact authentication/security/transport tuples and execute an SSH row
+only when the Agent independently holds both VNC and SSH grants. Older Runners
+omit transport, which means direct-only; an SSH row returns
+`unsupported_profile` before VNC credential decryption and never falls back to
+public TCP.
 
 Connection creation accepts either `credential: { id }` or
 `credential: { create: { name, authentication } }`. Inline credential and host
@@ -206,8 +209,9 @@ profiles and unsupported trust shapes are rejected, with no implicit default.
 
 Credentialless and client-certificate profiles must add their own validated
 variants and matching runtime support. SSH is a typed outer transport rather
-than a credential or security profile, and its runtime composition is still
-required before use. New credential requirements
+than a credential or security profile. Runner composes it through the existing
+verified, Run-owned SSH authority and retains both generations for live checks.
+New credential requirements
 and length limits must not inherit classic VNC's eight-byte limit. Binding or
 changing a credential must remain compatible with every referencing connection;
 authentication changes invalidate those connection generations.
@@ -263,9 +267,13 @@ migration, or activate UI or Runner support.
 Before enabling the feature, every serving API must include the new owner reader,
 VNC-aware cleanup and the runtime/UI slices required for the selected activation.
 Before any SSH-backed VNC row is admitted, every serving and rollback API must
-understand this transport schema. Once such a row exists, rolling the API below
-the typed-route slice is unsafe: an old writer cannot preserve or validate its
-transport semantics. Disabling the feature does not remove that rollback floor.
+understand this transport schema. Deploy the tuple-aware API before the Runner:
+the new API preserves the exact old direct handoff for transport-omitting
+Runners, while the older strict API rejects a new Runner's transport fields.
+There is no request retry, inferred route or downgrade. Once such a row exists,
+rolling the API below the typed-route slice is unsafe: an old writer cannot
+preserve or validate its transport semantics. Disabling the feature does not
+remove that rollback floor.
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
 that floor requires a separately verified disablement, drain and VNC erasure.

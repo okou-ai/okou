@@ -30,12 +30,12 @@ enum Profile {
     Plain,
 }
 
-pub(super) const PLAIN_USERNAME: &str = " operator界 ";
-pub(super) const PLAIN_PASSWORD: &str = " päss 界 ";
+pub(crate) const PLAIN_USERNAME: &str = " operator界 ";
+pub(crate) const PLAIN_PASSWORD: &str = " päss 界 ";
 
-pub(super) struct Peer {
-    pub(super) address: std::net::SocketAddr,
-    pub(super) ca: String,
+pub(crate) struct Peer {
+    pub(crate) address: std::net::SocketAddr,
+    pub(crate) ca: String,
     pub(super) capture_gate: Arc<Mutex<Option<Arc<Semaphore>>>>,
     pub(super) refuse: Arc<AtomicBool>,
     pub(super) disconnect: CancellationToken,
@@ -44,11 +44,11 @@ pub(super) struct Peer {
 }
 
 impl Peer {
-    pub(super) async fn new() -> Self {
+    pub(crate) async fn new() -> Self {
         Self::with_profile(Profile::Vnc).await
     }
 
-    pub(super) async fn plain() -> Self {
+    pub(crate) async fn plain() -> Self {
         Self::with_profile(Profile::Plain).await
     }
 

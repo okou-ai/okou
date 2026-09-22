@@ -34,40 +34,51 @@ winning process on that exact running Run. Browser, guest and local/PAT
 credentials do not authorize these routes. Fleet-secret protection remains a
 trust assumption; the shared credential itself does not identify a machine.
 
-Every call joins the current same-owner Run/session/visible Agent/grant/connection
-and credential. Requests contain saved IDs, not endpoint or owner overrides.
+Every call joins the current same-owner Run/session/visible Agent/VNC
+grant/connection and credential. SSH rows additionally require the independent
+SSH Agent grant and same-owner referenced SSH connection. Requests contain
+saved IDs, not endpoint or owner overrides.
 Private handlers set `Cache-Control: no-store` before authentication and body
 validation. Malformed path parameters return a generic 400 before the handler.
 Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 400, missing/invalid authentication is 401, and authenticated local Runners are 403. DB/KMS failures remain server errors instead of fabricated absence.
 
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
-exact pairs. Current Runners advertise
-`{ authMethod: "vnc_password", securityType: "x509_vnc" }` and
-`{ authMethod: "username_password", securityType: "x509_plain" }`. An older
-Runner advertises only the first pair. An empty list or a saved pair absent from
-the list returns `unsupported_profile` only after authorization, before KMS.
+exact authentication/security/transport tuples. Current Runners advertise the
+two supported pairs separately for `direct` and `ssh`. A pre-transport Runner
+omits `transportType`; omission means direct-only. An empty list or a saved
+tuple absent from the list returns `unsupported_profile` only after VNC
+authorization and before KMS. An SSH row is also checked for its SSH grant
+before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
 creating an implicit downgrade path.
 
 Saved owner configuration also has an outer direct/SSH transport discriminator.
-This authority slice resolves only direct rows. An authorized SSH-backed row
-returns `unsupported_profile` before trust parsing or KMS decryption; it never
-falls back to the VNC destination as public TCP. The typed SSH reference and
-optional certificate server identity remain private saved metadata until the
-combined VNC/SSH Runner capability is delivered.
+For a capable Runner, authority returns either an explicit direct snapshot or
+only the SSH connection ID and generation. It never returns or decrypts SSH
+credentials on the VNC endpoint. The saved VNC destination is opened through
+the existing SSH authority, and certificate verification uses
+`x509ServerName ?? host`. Any SSH setup, channel, TLS or inner-authentication
+failure is terminal for that attempt; it is never retried as direct TCP or a
+different profile.
 
-A resolved response contains host, port, typed authentication/security and
-`generation`, matching SSH's connection identity. Generation changes on credential
-rotation, rebinding or connection edits.
+A legacy direct request receives the exact original `resolved` response. A
+transport-capable request receives the required-field `resolved_transport`
+variant containing host, port, server name, typed authentication/security, VNC
+generation and explicit transport snapshot. The separate variant keeps the old
+sensitive decoder shape unchanged and makes omission unambiguous. VNC generation
+changes on credential rotation, rebinding or connection edits.
 KMS decryption runs outside locks, followed by another current-authority check
 before handoff. A committed generation change during decryption discards the stale
 snapshot.
 
-`check` takes `connectionId`, `runnerIdentity` and `expectedGeneration`. It
+`check` takes `connectionId`, `runnerIdentity`, `expectedGeneration` and, for a
+capable Runner, `expectedTransport`. It
 returns `valid`, `configuration_changed` or `unavailable`. It rechecks current
-authorization without decrypting credentials or changing database state. Multiple
+authorization, both grants and both generations without decrypting credentials
+or changing database state. A missing expected transport is accepted only for a
+legacy direct row; SSH requires the exact referenced ID and generation. Multiple
 authorized Runs can independently resolve and check the same connection. Neither
 endpoint reserves a desktop or provides a duration-based authorization token.
 
@@ -108,12 +119,19 @@ disconnection does not trigger an automatic reconnect, mode retry or input repla
 
 ## Runtime and cleanup
 
-The #34780 Runner must check current authority before each screenshot/input and
-stop fresh work on authority/API failure. Detected generation changes require closing
+The Runner checks current authority before status/list/screenshot/input and
+stops fresh work on authority/API failure. Detected VNC or SSH generation,
+reference, transport or grant changes require closing
 the old session rather than adopting new credentials into its socket. Run
 cancellation and explicit session close own socket/operation teardown; resource
 permits remain held until work actually ends. Input is serialized within each
 session; independent sessions remain subject to server sharing policy.
+
+SSH-backed sessions reuse the exact `Arc<ssh::Run>` already created for the Run.
+The SSH layer remains the sole owner of credential decryption, host-key trust,
+Cloudflare Access, cache, pool, forward capacity and invalidation. The RFB engine
+owns one closed direct-or-SSH stream type, while direct sessions retain their
+local all-public-address policy and SSH destinations remain remotely resolved.
 
 Checks establish current admission, not instantaneous remote cancellation: a
 change after an accepted check cannot retract already-started effects. There is
@@ -144,11 +162,13 @@ feature activation is part of this extension.
 
 For saved SSH transport, apply the generated SSH owner-key migration before the
 generated VNC route migration, then deploy the typed-route owner API before
-admitting tunneled rows. Current Runners fail closed on those rows before KMS.
+admitting tunneled rows. Deploy the tuple-aware API before the composed Runner.
+The new API continues serving old direct-only Runners with the exact legacy
+response and rejects their SSH rows before KMS. An old strict API rejects a new
+Runner's transport capability field, so the Runner fails closed without retry.
 After the first SSH-backed row exists, do not roll the API below the typed-route
 reader/writer; disabling `VncAccess` preserves data and does not make that
-rollback safe. Runner tunnel composition and product exposure require their own
-later rollout evidence.
+rollback safe. Product exposure requires its own later rollout evidence.
 
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new

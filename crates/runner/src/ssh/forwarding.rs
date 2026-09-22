@@ -99,6 +99,7 @@ impl Run {
     pub(crate) async fn open_direct_tcpip(
         &self,
         connection: Uuid,
+        expected_generation: i64,
         host: &str,
         port: u16,
         cancelled: CancellationToken,
@@ -129,13 +130,15 @@ impl Run {
                     &mut attempt,
                 )))
                 .await??;
-            attempt.generation = Some(
-                credential
-                    .trust
-                    .lock()
-                    .map_err(|_| FailureReason::Protocol)?
-                    .generation,
-            );
+            let generation = credential
+                .trust
+                .lock()
+                .map_err(|_| FailureReason::Protocol)?
+                .generation;
+            attempt.generation = Some(generation);
+            if generation != expected_generation {
+                return Err(FailureReason::ConfigurationChanged);
+            }
             attempt.connecting = true;
             let lease = self
                 .sessions

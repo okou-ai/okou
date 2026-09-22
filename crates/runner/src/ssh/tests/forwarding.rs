@@ -37,6 +37,7 @@ async fn open(
         .ssh()
         .open_direct_tcpip(
             connection(),
+            7,
             "desktop.internal",
             5900,
             cancelled,
@@ -50,6 +51,27 @@ fn failure<T>(result: Result<T, FailureReason>) -> FailureReason {
         Ok(_) => panic!("forwarding unexpectedly succeeded"),
         Err(failure) => failure,
     }
+}
+
+#[tokio::test]
+async fn forwarding_requires_the_authority_generation_selected_by_vnc() {
+    let mut harness = Harness::new(Reply::default()).await;
+    let resolve = harness.resolve(harness.credential(true)).await;
+    let result = harness
+        .ssh()
+        .open_direct_tcpip(
+            connection(),
+            8,
+            "desktop.internal",
+            5900,
+            CancellationToken::new(),
+            Instant::now() + Duration::from_secs(10),
+        )
+        .await;
+    assert_eq!(failure(result), FailureReason::ConfigurationChanged);
+    assert!(harness.observed.forwards.lock().unwrap().is_empty());
+    resolve.assert_calls_async(1).await;
+    harness.shutdown().await;
 }
 
 #[tokio::test]
@@ -255,6 +277,7 @@ async fn expired_setup_and_run_cancellation_fail_without_leaking_forward_capacit
         .ssh()
         .open_direct_tcpip(
             connection(),
+            7,
             "https://desktop.internal",
             5900,
             CancellationToken::new(),
@@ -266,6 +289,7 @@ async fn expired_setup_and_run_cancellation_fail_without_leaking_forward_capacit
         .ssh()
         .open_direct_tcpip(
             connection(),
+            7,
             "desktop.internal",
             5900,
             CancellationToken::new(),

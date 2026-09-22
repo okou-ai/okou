@@ -45,6 +45,14 @@ export const vncProfiles = Object.freeze([
     securityType: "x509_plain" as const,
   },
 ]);
+export const vncTransportProfiles = Object.freeze(
+  vncProfiles.flatMap((profile) => {
+    return [
+      { ...profile, transportType: "direct" as const },
+      { ...profile, transportType: "ssh" as const },
+    ];
+  }),
+);
 export const vncPassword = " secret ";
 type Owner = { readonly orgId: string; readonly userId: string };
 type RuntimeBody = Extract<
@@ -98,6 +106,11 @@ export function createVncRuntimeApi(context: TestContext) {
   const state = () => {
     return setupApp({ context, routes: testVncAuthorityStateRoutes })(
       testVncAuthorityStateContract,
+    );
+  };
+  const sshState = () => {
+    return setupApp({ context, routes: testSshConnectionStateRoutes })(
+      testSshConnectionStateContract,
     );
   };
   function authenticate(owner: Owner) {
@@ -179,6 +192,23 @@ export function createVncRuntimeApi(context: TestContext) {
       [200],
     );
   }
+  async function grantSsh(
+    owner: Owner & { readonly agentId: string },
+    enabled: boolean,
+  ) {
+    return await accept(
+      sshState().action({
+        body: {
+          action: "set-agent-access",
+          orgId: owner.orgId,
+          userId: owner.userId,
+          agentId: owner.agentId,
+          enabled,
+        },
+      }),
+      [200],
+    );
+  }
   async function fixture(
     options: {
       readonly grant?: boolean;
@@ -248,9 +278,11 @@ export function createVncRuntimeApi(context: TestContext) {
     credentials,
     access,
     state,
+    sshState,
     authenticate,
     runtime,
     grant,
+    grantSsh,
     fixture,
     resolve,
     resolved,

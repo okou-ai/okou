@@ -1919,6 +1919,23 @@ pub mod runners {
             pub heartbeat_generation: i64,
         }
 
+        /// Expected secret-free SSH authority snapshot.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "type", rename_all_fields = "camelCase")]
+        pub enum CheckRequestExpectedTransport {
+            /// Expect the saved direct transport.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Expect this exact saved SSH connection and generation.
+            #[serde(rename = "ssh")]
+            Ssh {
+                /// Exact saved SSH connection UUID.
+                connection_id: String,
+                /// Expected saved SSH configuration generation.
+                generation: i64,
+            },
+        }
+
         /// Recheck current Run authorization and saved configuration.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -1929,6 +1946,9 @@ pub mod runners {
             pub runner_identity: CheckRequestRunnerIdentity,
             /// Configuration generation returned by credential resolution.
             pub expected_generation: i64,
+            /// Expected explicit transport snapshot; omission preserves legacy direct-only checks.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_transport: Option<CheckRequestExpectedTransport>,
         }
 
         /// Current authorization snapshot, not a reservation or guarantee of exclusive control.
@@ -1979,7 +1999,18 @@ pub mod runners {
             X509Plain,
         }
 
-        /// One supported authentication and security pair, never a cross-product.
+        /// Transport supported for this exact profile tuple.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ResolveRequestSupportedProfileTransportType {
+            /// Connect directly under the VNC public-network policy.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Connect through the verified Run-owned SSH transport.
+            #[serde(rename = "ssh")]
+            Ssh,
+        }
+
+        /// One supported authentication, security and transport tuple, never a cross-product.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct ResolveRequestSupportedProfile {
@@ -1987,6 +2018,9 @@ pub mod runners {
             pub auth_method: ResolveRequestSupportedProfileAuthMethod,
             /// Supported security policy.
             pub security_type: ResolveRequestSupportedProfileSecurityType,
+            /// Supported transport; omission is the legacy direct-only capability.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub transport_type: Option<ResolveRequestSupportedProfileTransportType>,
         }
 
         /// Resolve one saved VNC policy supported by this Runner.
@@ -1997,7 +2031,7 @@ pub mod runners {
             pub connection_id: String,
             /// Winning process identity.
             pub runner_identity: ResolveRequestRunnerIdentity,
-            /// Exact supported pairs; empty means no supported policy.
+            /// Exact supported tuples; empty means no supported policy.
             pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
         }
 
@@ -2262,13 +2296,108 @@ pub mod runners {
             }
         }
 
+        /// Secret-free transport snapshot selected by an exact capability tuple.
+        pub enum ResolveResponseResolvedTransportTransport {
+            /// Connect directly under the VNC public-network policy.
+            Direct,
+            /// Connect through this exact SSH authority snapshot.
+            Ssh {
+                /// Exact saved SSH connection UUID.
+                connection_id: String,
+                /// Current saved SSH configuration generation.
+                generation: i64,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportTransport {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "direct")]
+                    Direct,
+                    #[serde(rename = "ssh")]
+                    Ssh,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "type")]
+                    Outcome,
+                    #[serde(rename = "connectionId")]
+                    ConnectionId,
+                    #[serde(rename = "generation")]
+                    Generation,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportTransport;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut connection_id = None::<String>;
+                        let mut generation = None::<i64>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::ConnectionId => {
+                                    if connection_id.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    connection_id = Some(map.next_value()?);
+                                }
+                                Field::Generation => {
+                                    if generation.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    generation = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, connection_id, generation) {
+                            (Some(Kind::Direct), None, None) => {
+                                Ok(ResolveResponseResolvedTransportTransport::Direct)
+                            }
+                            (Some(Kind::Ssh), Some(connection_id), Some(generation)) => {
+                                Ok(ResolveResponseResolvedTransportTransport::Ssh {
+                                    connection_id,
+                                    generation,
+                                })
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
         /// Private credential handoff. Never Debug, clone, serialize, persist or send to guest.
         pub enum ResolveResponse {
             /// Current authority is unavailable; no credential delivered.
             Unavailable,
             /// Runner does not support the exact saved profile.
             UnsupportedProfile,
-            /// Current credential and policy; the VNC server controls connection admission.
+            /// Legacy direct credential and policy; the VNC server controls connection admission.
             Resolved {
                 /// Current private destination.
                 host: String,
@@ -2276,6 +2405,23 @@ pub mod runners {
                 port: u64,
                 /// Current saved configuration generation.
                 generation: i64,
+                /// Credential for the explicitly saved method.
+                authentication: ResolveResponseResolvedAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedSecurity,
+            },
+            /// Current credential, policy and explicit generation-bound transport.
+            ResolvedTransport {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit certificate identity for a transport-capable handoff.
+                server_name: String,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
                 authentication: ResolveResponseResolvedAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
@@ -2294,6 +2440,8 @@ pub mod runners {
                     UnsupportedProfile,
                     #[serde(rename = "resolved")]
                     Resolved,
+                    #[serde(rename = "resolved_transport")]
+                    ResolvedTransport,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2310,6 +2458,10 @@ pub mod runners {
                     Authentication,
                     #[serde(rename = "security")]
                     Security,
+                    #[serde(rename = "serverName")]
+                    ServerName,
+                    #[serde(rename = "transport")]
+                    Transport,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2330,6 +2482,8 @@ pub mod runners {
                         let mut generation = None::<i64>;
                         let mut authentication = None::<ResolveResponseResolvedAuthentication>;
                         let mut security = None::<ResolveResponseResolvedSecurity>;
+                        let mut server_name = None::<String>;
+                        let mut transport = None::<ResolveResponseResolvedTransportTransport>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2380,15 +2534,47 @@ pub mod runners {
                                     }
                                     security = Some(map.next_value()?);
                                 }
+                                Field::ServerName => {
+                                    if server_name.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    server_name = Some(map.next_value()?);
+                                }
+                                Field::Transport => {
+                                    if transport.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    transport = Some(map.next_value()?);
+                                }
                             }
                         }
-                        match (outcome, host, port, generation, authentication, security) {
-                            (Some(Kind::Unavailable), None, None, None, None, None) => {
+                        match (
+                            outcome,
+                            host,
+                            port,
+                            generation,
+                            authentication,
+                            security,
+                            server_name,
+                            transport,
+                        ) {
+                            (Some(Kind::Unavailable), None, None, None, None, None, None, None) => {
                                 Ok(ResolveResponse::Unavailable)
                             }
-                            (Some(Kind::UnsupportedProfile), None, None, None, None, None) => {
-                                Ok(ResolveResponse::UnsupportedProfile)
-                            }
+                            (
+                                Some(Kind::UnsupportedProfile),
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                            ) => Ok(ResolveResponse::UnsupportedProfile),
                             (
                                 Some(Kind::Resolved),
                                 Some(host),
@@ -2396,10 +2582,30 @@ pub mod runners {
                                 Some(generation),
                                 Some(authentication),
                                 Some(security),
+                                None,
+                                None,
                             ) => Ok(ResolveResponse::Resolved {
                                 host,
                                 port,
                                 generation,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedTransport),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                Some(authentication),
+                                Some(security),
+                                Some(server_name),
+                                Some(transport),
+                            ) => Ok(ResolveResponse::ResolvedTransport {
+                                host,
+                                port,
+                                generation,
+                                server_name,
+                                transport,
                                 authentication,
                                 security,
                             }),
