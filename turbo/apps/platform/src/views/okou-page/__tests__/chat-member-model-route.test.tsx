@@ -124,9 +124,9 @@ test.each(
       click(changeModel);
     }
 
-    const option = await findModelMenuOption(
-      new RegExp(modelLabel.replaceAll(".", "\\."), "u"),
-    );
+    const option = await findModelMenuOption((name) => {
+      return name.includes(modelLabel);
+    });
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
     expect(option).not.toHaveTextContent("$");

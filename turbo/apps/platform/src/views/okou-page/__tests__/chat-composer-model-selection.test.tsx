@@ -911,7 +911,15 @@ test("Choose a model from the flyout without leaving the type list", async () =>
   await readyComposer();
   const trigger = await findButton("GPT 5.6 Sol");
   trigger.focus();
-  await user.keyboard("{ArrowDown}{ArrowRight}");
+  await user.keyboard("{ArrowDown}");
+  const rail = await screen.findByRole("menu", { name: "Models" });
+  await waitFor(() => {
+    const chat = queryAllByRoleFast("menuitem", rail).find((item) => {
+      return item.textContent?.startsWith("Chat");
+    });
+    expect(chat).toHaveFocus();
+  });
+  await user.keyboard("{ArrowRight}");
   // One panel, no pages: every model is reachable without a drill-in step.
   const list = await screen.findByRole("menu", { name: "Chat models" });
   expect(screen.queryByLabelText("Back to models")).not.toBeInTheDocument();
@@ -1516,8 +1524,19 @@ test("Browse unavailable models by keyboard and return through the native menu r
   await readyComposer();
   const trigger = await findButton("GPT 5.6 Sol");
   trigger.focus();
-  await user.keyboard("{ArrowDown}{ArrowRight}");
+  await user.keyboard("{ArrowDown}");
+  const rail = await screen.findByRole("menu", { name: "Models" });
+  await waitFor(() => {
+    const chat = queryAllByRoleFast("menuitem", rail).find((item) => {
+      return item.textContent?.startsWith("Chat");
+    });
+    expect(chat).toHaveFocus();
+  });
+  await user.keyboard("{ArrowRight}");
   const unavailable = await findModelMenuOption(/GPT 5\.6 Luna/u);
+  await waitFor(() => {
+    expect(modelMenuOption(/GPT 5\.6 Sol/u)).toHaveFocus();
+  });
   await user.keyboard("{End}");
   expect(unavailable).toHaveFocus();
   expect(unavailable).toHaveAttribute("aria-disabled", "true");

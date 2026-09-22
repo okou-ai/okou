@@ -125,7 +125,7 @@ async function openPicker(
   await waitFor(() => {
     expect(pickerTrigger(container)).toBeInTheDocument();
   });
-  click(pickerTrigger(container));
+  await userEvent.setup({ delay: null }).click(pickerTrigger(container));
   return await screen.findByRole("menu", { name: "Models" });
 }
 
@@ -212,6 +212,7 @@ async function chooseMenuMediaModel(
 /** The menu's rows, which name themselves for a narrow viewport's pages. */
 function menuRow(label: string): HTMLElement {
   const row = [
+    ...queryAllByRoleFast("button"),
     ...queryAllByRoleFast("menuitem"),
     ...queryAllByRoleFast("menuitemradio"),
   ].find((candidate) => {
@@ -233,11 +234,13 @@ async function chooseMediaModel(
   container: ParentNode = document,
 ): Promise<void> {
   await openPicker(container);
-  click(category(categoryName));
-  await waitFor(() => {
-    expect(mediaModelRow(label)).toBeInTheDocument();
+  await userEvent.setup({ delay: null }).click(category(categoryName));
+  const option = await waitFor(() => {
+    const row = mediaModelRow(label);
+    expect(row).toBeInTheDocument();
+    return row;
   });
-  click(mediaModelRow(label));
+  await userEvent.setup({ delay: null }).click(option);
   await waitFor(() => {
     expect(screen.queryByRole("menu", { name: "Models" })).toBeNull();
   });
@@ -248,7 +251,8 @@ async function openCategory(
   container: ParentNode = document,
 ): Promise<void> {
   await openPicker(container);
-  click(category(categoryName));
+  await userEvent.setup({ delay: null }).click(category(categoryName));
+  await screen.findByRole("menu", { name: `${categoryName} models` });
 }
 
 function scopeCard(label: string): HTMLElement | null {
@@ -399,7 +403,7 @@ test("Keep image model pins independent in split chats", async () => {
   await chooseMediaModel("Image", "FLUX.2 Pro", mainComposer);
   await openCategory("Image", mainComposer);
   expectSelected("FLUX.2 Pro");
-  click(category("Chat"));
+  await userEvent.setup({ delay: null }).click(category("Chat"));
   // The panel swaps in place, so the image rows leave with it.
   await screen.findByRole("menu", { name: "Chat models" });
   expect(mediaModelRowOrNull("FLUX.2 Pro")).toBeNull();
@@ -554,12 +558,12 @@ async function browseNewChatModelCategories(): Promise<void> {
   await expect(
     findModelMenuOption(/Claude Fable 5/u),
   ).resolves.toBeInTheDocument();
-  click(category("Image"));
+  await userEvent.setup({ delay: null }).click(category("Image"));
   await waitFor(() => {
     expect(mediaModelRow("Nano Banana 2")).toBeInTheDocument();
     expect(queryModelMenuOption(/Claude Fable 5/u)).toBeNull();
   });
-  click(category("Video"));
+  await userEvent.setup({ delay: null }).click(category("Video"));
   await waitFor(() => {
     expect(mediaModelRow("MiniMax H3")).toBeInTheDocument();
     expect(
@@ -584,6 +588,7 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await openMenuCategory("Image");
   expectMenuSelected("GPT Image 2");
   await userEvent.setup().keyboard("{Escape}");
+  await screen.findByRole("region", { name: "Models" });
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
     expect(scopeCard("Model for this chat")).toBeNull();
@@ -592,6 +597,7 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await openMenuCategory("Video");
   expectMenuSelected("Veo 3.1 fast");
   await userEvent.setup().keyboard("{Escape}");
+  await screen.findByRole("region", { name: "Models" });
   expect(scopeCard("Video model for this chat")).not.toBeNull();
   expect(scopeCard("Image model for this chat")).toBeNull();
 }
@@ -643,15 +649,15 @@ async function exerciseExistingChatThreeModePicker(): Promise<void> {
   await expect(
     findModelMenuOption(/Claude Sonnet 4\.6/u),
   ).resolves.toHaveAttribute("aria-checked", "true");
-  click(category("Image"));
+  await userEvent.setup({ delay: null }).click(category("Image"));
   await waitFor(() => {
     expectSelected("GPT Image 2");
   });
-  click(category("Video"));
+  await userEvent.setup({ delay: null }).click(category("Video"));
   await waitFor(() => {
     expectSelected("MiniMax H3");
   });
-  click(category("Chat"));
+  await userEvent.setup({ delay: null }).click(category("Chat"));
   await expect(
     findModelMenuOption(/Claude Sonnet 4\.6/u),
   ).resolves.toHaveAttribute("aria-checked", "true");
@@ -1163,12 +1169,10 @@ test("Hovering a model type opens its panel only once the pointer settles", asyn
     throw new Error("Image type row not found");
   }
 
-  // A pointer that only crosses the row leaves the panel where it was: the
-  // swap is scheduled, not applied, so this frame still shows chat models.
-  // `delay: null` keeps the pointer sequence instant, which keeps the
-  // assertion below well inside the dwell window.
+  // Native submenus dismiss the previous branch while waiting for the new
+  // trigger's hover intent. Passing a row must not open that branch at once.
   await userEvent.setup({ delay: null }).hover(imageType);
-  expect(screen.getByRole("menu", { name: "Chat models" })).toBeVisible();
+  expect(imageType).toHaveAttribute("aria-expanded", "false");
 
   // Resting on the row is what opens it.
   await screen.findByRole("menu", { name: "Image models" });

@@ -167,10 +167,9 @@ async function selectComposerModel(
     name: "Chat models",
   });
   await user.click(
-    modelMenuOption(
-      new RegExp(nextModelName.replaceAll(".", "\\."), "u"),
-      chatModels,
-    ),
+    modelMenuOption((name) => {
+      return name.includes(nextModelName);
+    }, chatModels),
   );
 }
 

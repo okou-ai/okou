@@ -197,7 +197,7 @@ test("New paid accounts see neither video models nor video templates in compact 
 
   await openModels();
   const models = await screen.findByRole("region", { name: "Models" });
-  const labels = queryAllByRoleFast("button", models).map((button) => {
+  const labels = queryAllByRoleFast("menuitem", models).map((button) => {
     return button.getAttribute("aria-label");
   });
   expect(
