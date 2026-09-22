@@ -1,7 +1,7 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
 import {
@@ -25,7 +25,13 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
-import { stageStuckBrowserUserActionFixture } from "../../../test-fixtures/browser-user-action";
+import {
+  browserUserActionProviderExistsFixture,
+  readBrowserUserActionFixtures,
+  stageBrowserUserActionClosureFixture,
+  stageBrowserUserActionStateFixture,
+  stageStuckBrowserUserActionFixture,
+} from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
@@ -111,6 +117,10 @@ function browserUserActionObjectId(backendNodeId: unknown): string {
     return "native-username-object";
   }
   return backendNodeId === 44 ? "native-code-object" : "native-password-object";
+}
+
+function browserUserActionTokenHash(requestToken: string): string {
+  return createHash("sha256").update(requestToken).digest("hex");
 }
 
 aroundEach(async (runTest) => {
@@ -1089,6 +1099,406 @@ describe("Browser user-action route", () => {
       status: 404,
       body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
     });
+  }, 120_000);
+
+  it("converts closed actions from Browser finishedAt without rewriting terminal outcomes", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Open a Browser for user-action lifecycle conversion",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+
+    const providerId = randomUUID();
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const createDirectAction = async (reason: string) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "direct_interaction",
+            callbackPrompt: `Continue after ${reason}`,
+            reason,
+          },
+        }),
+        [201],
+      );
+    };
+    const pending = await createDirectAction("pending conversion");
+    const applying = await createDirectAction("applying conversion");
+    const succeeded = await createDirectAction("successful completion");
+    const cancelled = await createDirectAction("cancelled completion");
+    const stale = await createDirectAction("existing stale completion");
+    const uncertain = await createDirectAction("existing uncertain completion");
+    const raced = await createDirectAction("concurrent completion or closure");
+
+    await stageStuckBrowserUserActionFixture({
+      requestToken: applying.body.action.requestToken,
+      applyStartedAt: new Date(STARTED_AT_MS),
+    });
+    await accept(
+      userActionClient().complete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: succeeded.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    await accept(
+      userActionClient().cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: cancelled.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    const existingTerminalAt = new Date(STARTED_AT_MS + 30_000);
+    await stageBrowserUserActionStateFixture({
+      requestToken: stale.body.action.requestToken,
+      status: "stale",
+      completedAt: existingTerminalAt,
+    });
+    await stageBrowserUserActionStateFixture({
+      requestToken: uncertain.body.action.requestToken,
+      status: "uncertain",
+      completedAt: existingTerminalAt,
+    });
+
+    const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
+    mockNow(finishedAt.getTime());
+    const [capturedProviderId, completeRace, cancelRace] = await Promise.all([
+      stageBrowserUserActionClosureFixture({
+        requestToken: raced.body.action.requestToken,
+        finishedAt,
+      }),
+      userActionClient().complete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: raced.body.action.requestToken },
+        body: {},
+      }),
+      userActionClient().cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: raced.body.action.requestToken },
+        body: {},
+      }),
+    ]);
+    expect(capturedProviderId).toBe(providerId);
+    expect([200, 409, 410]).toContain(completeRace.status);
+    expect([200, 409, 410]).toContain(cancelRace.status);
+    expect(
+      [completeRace, cancelRace].filter((response) => {
+        return response.status === 200;
+      }),
+    ).toHaveLength(
+      completeRace.status === 200 || cancelRace.status === 200 ? 1 : 0,
+    );
+
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: false,
+    });
+    let providerCallsAfterClosure = 0;
+    server.use(
+      http.all(`${BROWSER_USE_API_URL}/*`, () => {
+        providerCallsAfterClosure += 1;
+        return HttpResponse.json(
+          { detail: "unexpected provider call" },
+          {
+            status: 500,
+          },
+        );
+      }),
+    );
+    context.mocks.browserUseCdp.connect.mockClear();
+    context.mocks.browserUseCdp.command.mockClear();
+    const converted = await reconcileBrowsers(current.threadId);
+    expect(converted.body).toMatchObject({ errors: 0 });
+    expect(providerCallsAfterClosure).toBe(0);
+    expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
+    expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
+
+    const tokens = [
+      pending.body.action.requestToken,
+      applying.body.action.requestToken,
+      succeeded.body.action.requestToken,
+      cancelled.body.action.requestToken,
+      stale.body.action.requestToken,
+      uncertain.body.action.requestToken,
+      raced.body.action.requestToken,
+    ];
+    const rows = await readBrowserUserActionFixtures(tokens);
+    const byHash = new Map(
+      rows.map((row) => {
+        return [row.requestTokenHash, row];
+      }),
+    );
+    expect(
+      byHash.get(browserUserActionTokenHash(pending.body.action.requestToken)),
+    ).toMatchObject({ status: "stale", completedAt: finishedAt });
+    expect(
+      byHash.get(browserUserActionTokenHash(applying.body.action.requestToken)),
+    ).toMatchObject({ status: "uncertain", completedAt: finishedAt });
+    expect(
+      byHash.get(
+        browserUserActionTokenHash(succeeded.body.action.requestToken),
+      ),
+    ).toMatchObject({ status: "succeeded" });
+    expect(
+      byHash.get(
+        browserUserActionTokenHash(cancelled.body.action.requestToken),
+      ),
+    ).toMatchObject({ status: "cancelled" });
+    expect(
+      byHash.get(browserUserActionTokenHash(stale.body.action.requestToken)),
+    ).toMatchObject({ status: "stale", completedAt: existingTerminalAt });
+    expect(
+      byHash.get(
+        browserUserActionTokenHash(uncertain.body.action.requestToken),
+      ),
+    ).toMatchObject({ status: "uncertain", completedAt: existingTerminalAt });
+    expect(
+      byHash.get(browserUserActionTokenHash(raced.body.action.requestToken))
+        ?.status,
+    ).toMatch(/^(succeeded|cancelled|stale)$/u);
+
+    const repeated = await reconcileBrowsers(current.threadId);
+    expect(repeated.body).toMatchObject({ errors: 0 });
+    await expect(readBrowserUserActionFixtures(tokens)).resolves.toStrictEqual(
+      rows,
+    );
+
+    await Promise.all([
+      chat.deleteThread(actor, current.threadId),
+      reconcileBrowsers(current.threadId),
+    ]);
+    await flushWaitUntilForTest();
+    await expect(readBrowserUserActionFixtures(tokens)).resolves.toStrictEqual(
+      [],
+    );
+  }, 120_000);
+
+  it("retains the Browser finish source through deterministic callback-recovery batches", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Open a Browser for user-action retention",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+
+    const providerId = randomUUID();
+    const providerProfileId = randomUUID();
+    const deletedProfiles: string[] = [];
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(
+          providerProfile(providerProfileId, body.name),
+          {
+            status: 201,
+          },
+        );
+      }),
+      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, ({ params }) => {
+        deletedProfiles.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const tokens: string[] = [];
+    for (let index = 0; index < 21; index += 1) {
+      const created = await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "direct_interaction",
+            callbackPrompt: `Continue after retained action ${index.toString()}`,
+            reason: `Retained action ${index.toString()}`,
+          },
+        }),
+        [201],
+      );
+      tokens.push(created.body.action.requestToken);
+    }
+    const laterTerminal = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "direct_interaction",
+          callbackPrompt: "Continue after the later terminal action",
+          reason: "Later terminal action",
+        },
+      }),
+      [201],
+    );
+    await accept(
+      userActionClient().complete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: laterTerminal.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+
+    const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
+    const laterCompletedAt = new Date(finishedAt.getTime() + MINUTE_MS);
+    const capturedProviderId = await stageBrowserUserActionClosureFixture({
+      requestToken: tokens[0] ?? "",
+      finishedAt,
+    });
+    expect(capturedProviderId).toBe(providerId);
+    await stageBrowserUserActionStateFixture({
+      requestToken: laterTerminal.body.action.requestToken,
+      status: "succeeded",
+      completedAt: laterCompletedAt,
+    });
+
+    const sortedTokens = [...tokens].sort((left, right) => {
+      return browserUserActionTokenHash(left).localeCompare(
+        browserUserActionTokenHash(right),
+      );
+    });
+    mockNow(finishedAt.getTime());
+    await reconcileBrowsers(current.threadId);
+    const firstConversion = await readBrowserUserActionFixtures(tokens);
+    const firstConversionByHash = new Map(
+      firstConversion.map((row) => {
+        return [row.requestTokenHash, row.status];
+      }),
+    );
+    for (const token of sortedTokens.slice(0, 20)) {
+      expect(firstConversionByHash.get(browserUserActionTokenHash(token))).toBe(
+        "stale",
+      );
+    }
+    expect(
+      firstConversionByHash.get(
+        browserUserActionTokenHash(sortedTokens[20] ?? ""),
+      ),
+    ).toBe("pending");
+    await expect(
+      browserUserActionProviderExistsFixture(capturedProviderId),
+    ).resolves.toBeTruthy();
+
+    await reconcileBrowsers(current.threadId);
+    const secondConversion = await readBrowserUserActionFixtures(tokens);
+    expect(
+      secondConversion.every((row) => {
+        return (
+          row.status === "stale" &&
+          row.completedAt?.getTime() === finishedAt.getTime()
+        );
+      }),
+    ).toBeTruthy();
+
+    mockNow(finishedAt.getTime() + 7 * DAY_MS - 1);
+    await reconcileBrowsers(current.threadId);
+    await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: sortedTokens[0] ?? "" },
+      }),
+      [200],
+    );
+    await expect(readBrowserUserActionFixtures(tokens)).resolves.toHaveLength(
+      21,
+    );
+    await expect(
+      browserUserActionProviderExistsFixture(capturedProviderId),
+    ).resolves.toBeTruthy();
+    expect(deletedProfiles).toStrictEqual([]);
+
+    mockNow(finishedAt.getTime() + 7 * DAY_MS);
+    await reconcileBrowsers(current.threadId);
+    const afterFirstDeletion = await readBrowserUserActionFixtures(tokens);
+    expect(afterFirstDeletion).toHaveLength(1);
+    expect(afterFirstDeletion[0]?.requestTokenHash).toBe(
+      browserUserActionTokenHash(sortedTokens[20] ?? ""),
+    );
+    const deletedAction = await userActionClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: sortedTokens[0] ?? "" },
+    });
+    expect(deletedAction).toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+    await expect(
+      browserUserActionProviderExistsFixture(capturedProviderId),
+    ).resolves.toBeTruthy();
+    expect(deletedProfiles).toStrictEqual([]);
+
+    await reconcileBrowsers(current.threadId);
+    await expect(readBrowserUserActionFixtures(tokens)).resolves.toStrictEqual(
+      [],
+    );
+    await expect(
+      browserUserActionProviderExistsFixture(capturedProviderId),
+    ).resolves.toBeTruthy();
+    await expect(
+      readBrowserUserActionFixtures([laterTerminal.body.action.requestToken]),
+    ).resolves.toHaveLength(1);
+
+    mockNow(laterCompletedAt.getTime() + 7 * DAY_MS - 1);
+    await reconcileBrowsers(current.threadId);
+    await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: laterTerminal.body.action.requestToken },
+      }),
+      [200],
+    );
+    await expect(
+      browserUserActionProviderExistsFixture(capturedProviderId),
+    ).resolves.toBeTruthy();
+
+    mockNow(laterCompletedAt.getTime() + 7 * DAY_MS);
+    await reconcileBrowsers(current.threadId);
+    await expect(
+      readBrowserUserActionFixtures([laterTerminal.body.action.requestToken]),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      browserUserActionProviderExistsFixture(capturedProviderId),
+    ).resolves.toBeFalsy();
+    expect(deletedProfiles).toStrictEqual([providerProfileId]);
   }, 120_000);
 });
 
