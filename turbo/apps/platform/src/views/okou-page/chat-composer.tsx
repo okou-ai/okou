@@ -9521,7 +9521,7 @@ function ComposerModelPickerSlotBase({
   );
 }
 
-/** Choosing a media model writes its pin and closes the shared popover. */
+/** Media callbacks write their pins; each native menu item owns dismissal. */
 function ComposerVideoModelPickerSlot({
   signals,
   videoModelSignals,
@@ -9529,7 +9529,6 @@ function ComposerVideoModelPickerSlot({
   signals: ComposerSignals;
   videoModelSignals: ComposerVideoModelSignals;
 }) {
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const selectedVideoModel =
     useLastResolved(videoModelSignals.selectedVideoModel$) ?? null;
   const setVideoModel = useSet(videoModelSignals.setVideoModel$);
@@ -9538,7 +9537,6 @@ function ComposerVideoModelPickerSlot({
     value: selectedVideoModel,
     onChange: (next) => {
       detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   return (
@@ -9559,7 +9557,6 @@ function ComposerExistingMediaModelPickerSlot({
   imageModelSignals: ComposerImageModelSignals;
   videoModelSignals: ComposerVideoModelSignals;
 }) {
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const selectedImageModel =
     useLastResolved(imageModelSignals.selectedImageModel$) ?? null;
   const selectedVideoModel =
@@ -9571,14 +9568,12 @@ function ComposerExistingMediaModelPickerSlot({
     value: selectedImageModel,
     onChange: (next) => {
       detach(setImageModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   const videoModel: ComposerVideoModelPickerState = {
     value: selectedVideoModel,
     onChange: (next) => {
       detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   return (

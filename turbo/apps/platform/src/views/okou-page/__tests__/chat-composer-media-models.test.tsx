@@ -121,11 +121,12 @@ function pickerTrigger(container: ParentNode = document): HTMLElement {
  */
 async function openPicker(
   container: ParentNode = document,
+  user = userEvent.setup({ delay: null }),
 ): Promise<HTMLElement> {
   await waitFor(() => {
     expect(pickerTrigger(container)).toBeInTheDocument();
   });
-  await userEvent.setup({ delay: null }).click(pickerTrigger(container));
+  await user.click(pickerTrigger(container));
   return await screen.findByRole("menu", { name: "Models" });
 }
 
@@ -237,14 +238,13 @@ async function chooseMediaModel(
   label: string,
   container: ParentNode = document,
 ): Promise<void> {
-  await openPicker(container);
-  await userEvent.setup({ delay: null }).click(category(categoryName));
+  const user = await openCategory(categoryName, container);
   const option = await waitFor(() => {
     const row = mediaModelRow(label);
     expect(row).toBeInTheDocument();
     return row;
   });
-  await userEvent.setup({ delay: null }).click(option);
+  await user.click(option);
   await waitFor(() => {
     expect(screen.queryByRole("menu", { name: "Models" })).toBeNull();
   });
@@ -253,10 +253,12 @@ async function chooseMediaModel(
 async function openCategory(
   categoryName: "Chat" | "Image" | "Video",
   container: ParentNode = document,
-): Promise<void> {
-  await openPicker(container);
-  await userEvent.setup({ delay: null }).click(category(categoryName));
+) {
+  const user = userEvent.setup({ delay: null });
+  await openPicker(container, user);
+  await user.click(category(categoryName));
   await screen.findByRole("menu", { name: `${categoryName} models` });
+  return user;
 }
 
 function scopeCard(label: string): HTMLElement | null {
@@ -405,13 +407,13 @@ test("Keep image model pins independent in split chats", async () => {
   const sideComposer = await findComposerFor(SPLIT_THREAD_ID);
 
   await chooseMediaModel("Image", "FLUX.2 Pro", mainComposer);
-  await openCategory("Image", mainComposer);
+  const user = await openCategory("Image", mainComposer);
   expectSelected("FLUX.2 Pro");
-  await userEvent.setup({ delay: null }).click(category("Chat"));
+  await user.click(category("Chat"));
   // The panel swaps in place, so the image rows leave with it.
   await screen.findByRole("menu", { name: "Chat models" });
   expect(mediaModelRowOrNull("FLUX.2 Pro")).toBeNull();
-  await userEvent.setup().keyboard("{Escape}");
+  await user.keyboard("{Escape}");
 
   await openCategory("Image", sideComposer);
   expectSelected("Nano Banana 2");
@@ -557,17 +559,18 @@ test("Follow the live video model default in an untouched new chat", async () =>
 });
 
 async function browseNewChatModelCategories(): Promise<void> {
-  await openPicker();
+  const user = userEvent.setup({ delay: null });
+  await openPicker(document, user);
   expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
   await expect(
     findModelMenuOption(/Claude Fable 5/u),
   ).resolves.toBeInTheDocument();
-  await userEvent.setup({ delay: null }).click(category("Image"));
+  await user.click(category("Image"));
   await waitFor(() => {
     expect(mediaModelRow("Nano Banana 2")).toBeInTheDocument();
     expect(queryModelMenuOption(/Claude Fable 5/u)).toBeNull();
   });
-  await userEvent.setup({ delay: null }).click(category("Video"));
+  await user.click(category("Video"));
   await waitFor(() => {
     expect(mediaModelRow("MiniMax H3")).toBeInTheDocument();
     expect(
@@ -648,20 +651,21 @@ test("Retain independent Chat, Image, and Video selections in a new chat", async
 });
 
 async function exerciseExistingChatThreeModePicker(): Promise<void> {
-  await openPicker();
+  const user = userEvent.setup({ delay: null });
+  await openPicker(document, user);
   expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
   await expect(
     findModelMenuOption(/Claude Sonnet 4\.6/u),
   ).resolves.toHaveAttribute("aria-checked", "true");
-  await userEvent.setup({ delay: null }).click(category("Image"));
+  await user.click(category("Image"));
   await waitFor(() => {
     expectSelected("GPT Image 2");
   });
-  await userEvent.setup({ delay: null }).click(category("Video"));
+  await user.click(category("Video"));
   await waitFor(() => {
     expectSelected("MiniMax H3");
   });
-  await userEvent.setup({ delay: null }).click(category("Chat"));
+  await user.click(category("Chat"));
   await expect(
     findModelMenuOption(/Claude Sonnet 4\.6/u),
   ).resolves.toHaveAttribute("aria-checked", "true");
@@ -1060,6 +1064,11 @@ test("Choose image and video models from the compact overview", async () => {
   ).resolves.toBeVisible();
   expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Image model, GPT Image 1")).toBeVisible();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("menu").contains(document.activeElement),
+    ).toBeTruthy();
+  });
   click(
     menuRow(
       `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
