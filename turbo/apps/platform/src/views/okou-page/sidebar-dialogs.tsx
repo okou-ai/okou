@@ -269,7 +269,7 @@ function AgentCommandAgentContent({
       {avatar ?? (
         <AgentAvatarImg
           name={agent.agentId}
-          alt={label}
+          alt=""
           className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
         />
       )}
@@ -285,37 +285,32 @@ function AgentCommandAgentContent({
   );
 }
 
-/**
- * Trailing pin toggle for a pin-dialog row. It stays hidden until the command highlights
- * the row — hovering or arrowing onto it — so a resting row never shows the
- * pin glyph the rest of the app uses to mean "already pinned".
- */
-function AgentCommandPinToggle({
+function AgentCommandPinRow({
+  agent,
   label,
   icon,
   onToggle,
   disabled,
 }: {
+  readonly agent: AgentDialogItem;
   readonly label: string;
   readonly icon: ReactNode;
   readonly onToggle: () => void;
   readonly disabled: boolean;
 }) {
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      size="xs"
+    <CommandItem
+      value={agent.agentId}
       disabled={disabled}
-      className="ml-auto shrink-0 gap-1.5 opacity-0 group-data-[highlighted]:opacity-100 focus-visible:opacity-100"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
+      onClick={onToggle}
+      className="group w-full gap-2 px-1 py-2"
     >
-      {icon}
-      {label}
-    </Button>
+      <AgentCommandAgentContent agent={agent} />
+      <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs opacity-0 group-data-[highlighted]:opacity-100">
+        {icon}
+        {label}
+      </span>
+    </CommandItem>
   );
 }
 
@@ -541,7 +536,7 @@ function SpotlightThreadCommandItem({
   return (
     <CommandItem
       value={`spotlight-thread-${thread.id}`}
-      onSelect={onSelect}
+      onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
       <AgentAvatarImg
@@ -579,7 +574,7 @@ function SpotlightMessageCommandItem({
   return (
     <CommandItem
       value={`spotlight-message-${message.matchedMessage.chatThreadId}:${message.matchedMessage.seqId}`}
-      onSelect={onSelect}
+      onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
       <AgentAvatarImg
@@ -619,7 +614,7 @@ function SpotlightAgentCommandItem({
   return (
     <CommandItem
       value={`spotlight-agent-${agent.agentId}`}
-      onSelect={onSelect}
+      onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
       <AgentAvatarImg
@@ -648,7 +643,7 @@ function SpotlightWorkflowCommandItem({
   return (
     <CommandItem
       value={`spotlight-workflow-${workflow.id}`}
-      onSelect={onSelect}
+      onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
       <span className={SPOTLIGHT_RESOURCE_ICON_CLASS} aria-hidden="true">
@@ -774,7 +769,7 @@ function SpotlightArtifactCommandItem({
   return (
     <CommandItem
       value={`spotlight-artifact-${artifact.id}`}
-      onSelect={onSelect}
+      onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
       <SpotlightArtifactThumbnail artifact={artifact} />
@@ -1335,10 +1330,15 @@ export function ThreeColumnSearchDialog({
       contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
-        shouldFilter: false,
-        loop: true,
+        mode: "none",
+        autoHighlight: true,
+        loopFocus: true,
         value: query,
-        onValueChange: (value) => {
+        onValueChange: (value, eventDetails) => {
+          if (eventDetails.reason === "item-press") {
+            eventDetails.cancel();
+            return;
+          }
           detach(setQuery(value, signal), Reason.DomCallback);
         },
       }}
@@ -1470,10 +1470,17 @@ export function PinAgentDialog({
       contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
-        shouldFilter: false,
-        loop: true,
+        mode: "none",
+        autoHighlight: true,
+        loopFocus: true,
         value: query,
-        onValueChange: setQuery,
+        onValueChange: (value, eventDetails) => {
+          if (eventDetails.reason === "item-press") {
+            eventDetails.cancel();
+            return;
+          }
+          setQuery(value);
+        },
       }}
     >
       <DialogHeader className="px-5 pt-5 pb-3">
@@ -1517,25 +1524,16 @@ export function PinAgentDialog({
           >
             {pinnable.map((agent) => {
               return (
-                <CommandItem
+                <AgentCommandPinRow
                   key={agent.agentId}
-                  value={agent.agentId}
+                  agent={agent}
+                  label={pinLabel}
+                  icon={<Pin size={16} />}
                   disabled={saving}
-                  onSelect={() => {
+                  onToggle={() => {
                     return setAgentPinned(agent, true);
                   }}
-                  className="group w-full gap-2 px-1 py-2"
-                >
-                  <AgentCommandAgentContent agent={agent} />
-                  <AgentCommandPinToggle
-                    label={pinLabel}
-                    icon={<Pin size={16} />}
-                    disabled={saving}
-                    onToggle={() => {
-                      return setAgentPinned(agent, true);
-                    }}
-                  />
-                </CommandItem>
+                />
               );
             })}
           </AgentCommandSection>
@@ -1549,25 +1547,16 @@ export function PinAgentDialog({
           >
             {alreadyPinned.map((agent) => {
               return (
-                <CommandItem
+                <AgentCommandPinRow
                   key={agent.agentId}
-                  value={agent.agentId}
+                  agent={agent}
+                  label={unpinLabel}
+                  icon={<PinOff size={16} />}
                   disabled={saving}
-                  onSelect={() => {
+                  onToggle={() => {
                     return setAgentPinned(agent, false);
                   }}
-                  className="group w-full gap-2 px-1 py-2"
-                >
-                  <AgentCommandAgentContent agent={agent} />
-                  <AgentCommandPinToggle
-                    label={unpinLabel}
-                    icon={<PinOff size={16} />}
-                    disabled={saving}
-                    onToggle={() => {
-                      return setAgentPinned(agent, false);
-                    }}
-                  />
-                </CommandItem>
+                />
               );
             })}
           </AgentCommandSection>

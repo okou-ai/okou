@@ -9,27 +9,15 @@ import { Dialog, DialogContent } from "./dialog";
 
 interface CommandProps extends Omit<
   Autocomplete.Root.Props<string>,
-  "inline" | "items" | "loopFocus" | "mode" | "open"
+  "inline" | "items" | "open"
 > {
   readonly className?: string | undefined;
-  readonly loop?: boolean | undefined;
-  readonly shouldFilter?: boolean | undefined;
 }
 
 const Command = React.forwardRef<HTMLDivElement, CommandProps>(
-  (
-    { autoHighlight, children, className, loop, shouldFilter = true, ...props },
-    ref,
-  ) => {
+  ({ children, className, ...props }, ref) => {
     return (
-      <Autocomplete.Root
-        {...props}
-        inline
-        open
-        autoHighlight={loop ? true : autoHighlight}
-        loopFocus={loop ?? false}
-        mode={shouldFilter ? "list" : "none"}
-      >
+      <Autocomplete.Root {...props} inline open>
         <div
           ref={ref}
           data-slot="command"
@@ -204,35 +192,16 @@ const CommandSeparator = React.forwardRef<
 });
 CommandSeparator.displayName = "CommandSeparator";
 
-interface CommandItemProps extends Omit<
-  Autocomplete.Item.Props,
-  "onClick" | "onSelect" | "value"
-> {
-  readonly onClick?: Autocomplete.Item.Props["onClick"];
-  readonly onSelect?: ((value: string) => void) | undefined;
-  readonly value: string;
-}
-
-const CommandItem = React.forwardRef<HTMLDivElement, CommandItemProps>(
-  ({ className, onClick, onSelect, value, ...props }, ref) => {
+const CommandItem = React.forwardRef<HTMLDivElement, Autocomplete.Item.Props>(
+  ({ className, ...props }, ref) => {
     return (
       <Autocomplete.Item
         ref={ref}
         data-slot="command-item"
-        value={value}
         className={cn(
           "relative flex cursor-pointer select-none items-center rounded-lg text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[highlighted]:bg-state-hover data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
           className,
         )}
-        onClick={(event) => {
-          onClick?.(event);
-          if (event.defaultPrevented) {
-            return;
-          }
-          event.preventDefault();
-          event.preventBaseUIHandler();
-          onSelect?.(value);
-        }}
         {...props}
       />
     );

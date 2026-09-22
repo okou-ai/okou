@@ -335,8 +335,9 @@ test("Pin and unpin agents without closing the pin manager", async () => {
   click(screen.getByLabelText("Pin an agent"));
 
   const dialogList = await screen.findByTestId("pin-agent-dialog-list");
-  const supportRow = commandItemByText(dialogList, "Support Agent");
-  click(buttonByText("Pin", supportRow));
+  click(
+    within(commandItemByText(dialogList, "Support Agent")).getByText("Pin"),
+  );
 
   await waitFor(() => {
     expect(pinnedAgentNames(grid)).toStrictEqual([
@@ -346,21 +347,20 @@ test("Pin and unpin agents without closing the pin manager", async () => {
     ]);
   });
   expect(dialogList).toBeInTheDocument();
-  expect(
-    buttonByText("Unpin", commandItemByText(dialogList, "Support Agent")),
-  ).toBeInTheDocument();
   await expect(
     screen.findByText("Support Agent pinned"),
   ).resolves.toBeInTheDocument();
 
-  click(buttonByText("Unpin", commandItemByText(dialogList, "Support Agent")));
+  click(
+    within(commandItemByText(dialogList, "Support Agent")).getByText("Unpin"),
+  );
 
   await waitFor(() => {
     expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Research Agent"]);
   });
   expect(dialogList).toBeInTheDocument();
   expect(
-    buttonByText("Pin", commandItemByText(dialogList, "Support Agent")),
+    within(commandItemByText(dialogList, "Support Agent")).getByText("Pin"),
   ).toBeInTheDocument();
   await expect(
     screen.findByText("Support Agent unpinned"),
@@ -981,11 +981,11 @@ test("Search, pin, and open an agent from the pin manager", async () => {
   });
 
   const researchRow = commandItemByText(dialog, "Research Agent");
-  click(buttonByText("Pin", researchRow));
+  click(researchRow);
 
   await waitFor(() => {
     expect(
-      buttonByText("Unpin", commandItemByText(dialog, "Research Agent")),
+      within(commandItemByText(dialog, "Research Agent")).getByText("Unpin"),
     ).toBeInTheDocument();
     expect(pinnedAgentNames(grid)).toContain("Research Agent");
   });
