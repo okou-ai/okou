@@ -650,7 +650,7 @@ function protocolHeaders(
   };
 }
 
-async function fixture(enabled = true) {
+async function fixture() {
   mockEnv("MCP_RESOURCE_URL", resource);
   mockEnv("MCP_OAUTH_ISSUER", issuer);
   const userId = `user_${randomUUID()}`;
@@ -677,18 +677,6 @@ async function fixture(enabled = true) {
     ],
     totalCount: 1,
   });
-  createRouteMocks(context).clerk.session(userId, orgId);
-  if (enabled) {
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { switches: { [FeatureSwitchKey.McpServer]: true } },
-      }),
-      [200],
-    );
-  }
   function token(overrides: Record<string, unknown> = {}, typ = "at+jwt") {
     const seconds = Math.floor(now() / 1000);
     const header = Buffer.from(
@@ -1000,14 +988,6 @@ describe("MCP chat discovery and creation", () => {
     ]) {
       expect((await callTool(token, "list_agents", args)).isError).toBeTruthy();
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        userId: peer.userId,
-        orgId: f.auth.orgId,
-      },
-      { [FeatureSwitchKey.McpServer]: true },
-    );
     expect(
       (
         await callTool(f.auth.token({ sub: peer.userId }), "list_agents", {
@@ -2194,11 +2174,6 @@ describe("MCP chat discovery and creation", () => {
           agentId: hidden.agentId,
         }),
       ).resolves.toStrictEqual(missing);
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId },
-        { [FeatureSwitchKey.McpServer]: true },
-      );
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [f.auth.orgId, actor.orgId].map((orgId) => {
@@ -3880,14 +3855,6 @@ describe("MCP chat mutations", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization for an OAuth peer");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        {
-          userId: actor.userId,
-          orgId: actor.orgId,
-        },
-        { [FeatureSwitchKey.McpServer]: true },
-      );
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [f.auth.orgId, actor.orgId].map((orgId) => {
@@ -4193,11 +4160,6 @@ describe("MCP chat mutations", () => {
       if (!actor.orgId) {
         throw new Error("Expected organization for cancellation authorization");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId },
-        { [FeatureSwitchKey.McpServer]: true },
-      );
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [f.auth.orgId, actor.orgId].map((orgId) => {
@@ -4906,11 +4868,6 @@ describe("MCP canonical message reads", () => {
       if (!actor.orgId) {
         throw new Error("Expected organization");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId },
-        { [FeatureSwitchKey.McpServer]: true },
-      );
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [f.auth.orgId, actor.orgId].map((orgId) => {
@@ -6473,11 +6430,6 @@ describe("MCP message search", () => {
       if (!actor.orgId) {
         throw new Error("Expected the other principal's organization");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId },
-        { [FeatureSwitchKey.McpServer]: true },
-      );
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [f.auth.orgId, actor.orgId].map((orgId) => {
@@ -7231,41 +7183,6 @@ describe("external MCP entry", () => {
     );
   });
 
-  it("requires the feature override in the selected organization", async () => {
-    const auth = await fixture(false);
-    const response = await accept(
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-      [403],
-    );
-    expect(response.body).toMatchObject({ error: "access_denied" });
-  });
-
-  it("does not share feature authority across concurrent principals", async () => {
-    const auth = await fixture();
-    const otherUser = `user_${randomUUID()}`;
-    const responses = await Promise.all([
-      client().request({
-        extraHeaders: protocolHeaders(auth.token(), "tools/list"),
-        body: requestBody("tools/list"),
-      }),
-      client().request({
-        extraHeaders: protocolHeaders(
-          auth.token({ sub: otherUser }),
-          "tools/list",
-        ),
-        body: requestBody("tools/list"),
-      }),
-    ]);
-    expect(
-      responses.map((item) => {
-        return item.status;
-      }),
-    ).toStrictEqual([200, 403]);
-  });
-
   it("rejects an organization outside current membership", async () => {
     const auth = await fixture();
     const response = await accept(
@@ -7778,13 +7695,6 @@ describe("external MCP entry", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization for a peer fixture");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId },
-        {
-          [FeatureSwitchKey.McpServer]: true,
-        },
-      );
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
           data: [f.auth.orgId, actor.orgId].map((orgId) => {
@@ -8025,16 +7935,6 @@ describe("external MCP entry", () => {
       if (sent.status !== 201) {
         throw new Error("Expected an active chat thread");
       }
-      createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-      await accept(
-        setupApp({ context, routes: featureSwitchesRoutes })(
-          featureSwitchesContract,
-        ).update({
-          headers: { authorization: "Bearer clerk-session" },
-          body: { switches: { [FeatureSwitchKey.McpServer]: true } },
-        }),
-        [200],
-      );
       expected.push({ threadId: sent.body.threadId, agentId: agent.agentId });
     }
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({

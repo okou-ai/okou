@@ -523,8 +523,7 @@ sequence and creation time. The existing 30-day live-event retention covers the
 concurrent duplicate enqueue; losing writes roll back. No extra table,
 fingerprint, permanent identity record or migration is added. Current thread
 ownership is checked before resolving a receipt; deleting the thread ends the
-retry contract. The default-off `McpServer` feature and OAuth configuration are
-unchanged.
+retry contract. The OAuth configuration is unchanged.
 
 ### Input, execution and output status
 
@@ -686,11 +685,9 @@ Use the same send identity to recover an ambiguous outcome.
 
 ## Configuration and authorization
 
-The `McpServer` feature switch defaults to off. Standard per-user/per-organization
-overrides apply to the verified OAuth principal. Metadata is public; discovery and
-tool calls require authorization and the feature override.
+Metadata is public; discovery and tool calls require authorization.
 
-Configure these optional API environment variables before enabling an account:
+Configure these optional API environment variables to enable the MCP surface:
 
 | Variable           | Value                                                                                     |
 | ------------------ | ----------------------------------------------------------------------------------------- |
@@ -717,8 +714,8 @@ instance's exact OAuth issuer. Override the same variable in the `production`
 GitHub Environment with `https://clerk.okou.ai`, matching that environment's
 Clerk credentials. Without an issuer, MCP returns 503 while the existing API
 remains available.
-These deployment variables do not enable the `McpServer` feature switch or
-configure OAuth settings in either Clerk instance.
+These deployment variables do not configure OAuth settings in either Clerk
+instance.
 
 The resource server accepts only `Authorization: Bearer` OAuth access JWTs signed
 by the configured Clerk instance. It requires an access-token header type
@@ -733,8 +730,8 @@ checks current membership using the existing membership service; positive cached
 membership can remain valid for up to 60 seconds. A removed member is rejected;
 a Clerk/key-service outage returns 503 rather than pretending the user is invalid.
 Local JWT verification does not provide immediate provider token revocation:
-an already issued token can remain usable until expiry, subject to membership and
-feature checks. Short token lifetimes and the provider's actual revoke/refresh
+an already issued token can remain usable until expiry, subject to membership
+checks. Short token lifetimes and the provider's actual revoke/refresh
 behavior must be verified before rollout.
 
 Initial and invalid-token `401` challenges request the complete default grant:
@@ -789,8 +786,8 @@ token exchange, client registration or a consent UI. Before hosted acceptance:
    permission (`user:org:read` where required). Obtain a real grant and establish
    that its signed access JWT includes the selected `org_id`, resource `aud`,
    `client_id` and intended custom scopes. An ordinary Clerk session JWT is not
-   a substitute. If the provider cannot issue this contract, keep the feature off
-   and resolve the authorization design before rollout.
+   a substitute. If the provider cannot issue this contract, keep the MCP surface
+   unconfigured and resolve the authorization design before rollout.
 3. Verify reauthorization into a different organization, token refresh, expiry,
    revoked grants and membership removal using that actual application.
 
@@ -825,8 +822,8 @@ No additional App environment variable is required.
 Clients start with `/.well-known/oauth-protected-resource/mcp`, or follow the
 `resource_metadata` URL in a 401 `WWW-Authenticate: Bearer` challenge. The metadata
 publishes the resource and authorization server. A valid token without the read
-scope receives 403 `insufficient_scope`; a disabled account receives 403
-`access_denied`. Authenticated responses use `Cache-Control: no-store`.
+scope receives 403 `insufficient_scope`. Authenticated responses use
+`Cache-Control: no-store`.
 
 The SDK handles JSON-RPC discovery (`tools/list`), invocation (`tools/call`),
 initialization and protocol errors. 2025 protocol traffic uses stateless Streamable
@@ -851,7 +848,7 @@ metadata supports public cross-origin discovery.
 ## Acceptance evidence
 
 Automated route tests use real Hono routing, SDK transport, RSA signature checks,
-the membership service and feature overrides. Only external provider/network
+and the membership service. Only external provider/network
 boundaries are simulated. They cover both protocol eras, complete response
 consumption, invalid grants, scope/membership isolation, Origin checks and
 provider outages.
