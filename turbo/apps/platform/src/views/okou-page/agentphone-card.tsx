@@ -159,7 +159,7 @@ export function AgentPhoneCard() {
         data-slot="integration-card"
         className={surfaceVariants({ className: "flex flex-col" })}
       >
-        <div className="flex items-center gap-4 p-4">
+        <div className="flex flex-wrap items-center gap-4 p-4 sm:flex-nowrap">
           <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
             <img src={imessageIconImg} alt="" className="h-7 w-7" />
           </div>
@@ -189,13 +189,15 @@ export function AgentPhoneCard() {
               )}
             </div>
           </div>
-          <AgentPhoneCardActions
-            canConnect={agentPhoneNumber !== null}
-            onConnect={() => {
-              requestConnectionCode();
-              setConnectOpen(true);
-            }}
-          />
+          <div className="flex min-w-0 items-center gap-4 empty:hidden max-sm:w-full max-sm:justify-end">
+            <AgentPhoneCardActions
+              canConnect={agentPhoneNumber !== null}
+              onConnect={() => {
+                requestConnectionCode();
+                setConnectOpen(true);
+              }}
+            />
+          </div>
         </div>
       </div>
       <AgentPhoneConnectDialog
