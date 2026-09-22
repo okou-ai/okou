@@ -778,6 +778,44 @@ describe("okou browser user-action commands", () => {
     expect(consoleError.mock.calls.flat().join("\n")).not.toContain("#email");
   });
 
+  it("does not extend the capture deadline for fallback cleanup", async () => {
+    let nowCalls = 0;
+    const dateNow = vi.spyOn(Date, "now").mockImplementation(() => {
+      nowCalls += 1;
+      return nowCalls <= 2 ? 1_000 : 32_000;
+    });
+    let apiRequests = 0;
+    installCreateRoute(() => {
+      apiRequests += 1;
+    });
+
+    try {
+      await expect(
+        browserCommand.parseAsync([
+          "node",
+          "okou",
+          "input-request",
+          "--field",
+          JSON.stringify({
+            key: "username",
+            label: "Email",
+            fieldKind: "username",
+            required: true,
+            target: "#email",
+          }),
+          "--callback-prompt",
+          "Continue",
+        ]),
+      ).rejects.toThrow("process.exit called");
+    } finally {
+      dateNow.mockRestore();
+    }
+
+    expect(apiRequests).toBe(0);
+    expect(spawnSyncMock).toHaveBeenCalledTimes(1);
+    expect(consoleError.mock.calls.flat().join("\n")).toContain("timed out");
+  });
+
   it("fails before API creation when the selected document navigates", async () => {
     installCdp({ pageMarkerResponses: [true, true, false] });
     let apiRequests = 0;

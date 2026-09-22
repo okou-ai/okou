@@ -190,9 +190,13 @@ function runAgentBrowser(
   return parseAgentBrowserOutput(result.stdout);
 }
 
-function tryAgentBrowser(sessionName: string, args: readonly string[]): void {
+function tryAgentBrowser(
+  sessionName: string,
+  args: readonly string[],
+  deadline: number,
+): void {
   try {
-    runAgentBrowser(sessionName, args);
+    runAgentBrowser(sessionName, args, deadline);
   } catch {
     // Cleanup is best-effort. Markers are random, non-secret, and scoped to
     // the current document, so navigation also releases them.
@@ -799,7 +803,11 @@ export async function captureBrowserInputTargets(
       client.close();
     }
     if (pageMarker) {
-      tryAgentBrowser(sessionName, ["eval", DELETE_PAGE_MARKER_SCRIPT]);
+      tryAgentBrowser(
+        sessionName,
+        ["eval", DELETE_PAGE_MARKER_SCRIPT],
+        deadline,
+      );
     }
   }
 }
