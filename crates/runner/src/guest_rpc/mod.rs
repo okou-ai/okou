@@ -89,7 +89,7 @@ impl Runtime {
         let vnc = self
             .vnc
             .as_ref()
-            .map(|runtime| runtime.for_run(run, &cancel));
+            .map(|runtime| runtime.for_run(run, &cancel, ssh.clone()));
         let task_cancel = cancel.clone();
         let task_ssh = ssh.clone();
         let task_vnc = vnc.clone();

@@ -3,7 +3,7 @@ mod delivery;
 mod harness;
 mod list;
 mod list_lifecycle;
-mod peer;
+pub(crate) mod peer;
 
 use std::{io::Cursor, sync::Arc};
 
@@ -226,10 +226,12 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
         let mut h = Harness::new().await;
         let resolve = h
             .resolve_response(json!({
-                "outcome":"resolved",
+                "outcome":"resolved_transport",
                 "host":"vnc.example.test",
                 "port":5900,
                 "generation":7,
+                "serverName":"vnc.example.test",
+                "transport":{"type":"direct"},
                 "authentication":authentication,
                 "security":security,
             }))
@@ -240,6 +242,29 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
         resolve.assert_calls_async(1).await;
         h.run.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn legacy_response_to_an_explicit_transport_request_fails_closed() {
+    let mut h = Harness::new().await;
+    let resolve = h
+        .resolve_response(json!({
+            "outcome":"resolved",
+            "host":"vnc.example.test",
+            "port":5900,
+            "generation":7,
+            "authentication":{"method":"vnc_password","password":" secret "},
+            "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":h.peer.ca}}
+        }))
+        .await;
+    let reply = h.start("shared").await;
+    assert_eq!(
+        reply.result(),
+        &json!({"outcome":"failed","reason":"authority_failure"})
+    );
+    assert!(h.network.attempts.lock().unwrap().is_empty());
+    resolve.assert_calls_async(1).await;
+    h.run.shutdown().await;
 }
 
 #[tokio::test]
