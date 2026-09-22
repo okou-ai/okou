@@ -688,18 +688,23 @@ describe("storage manifest presigned URL cache telemetry", () => {
 
   it("deduplicates mixed pairs and never rereads an empty snapshot", async () => {
     const system = systemRequest("mixed-empty");
+    const systemRequests = Array.from({ length: 17 }, () => {
+      return system;
+    });
     const { workflow } = scopedRequests("mixed-empty");
     const mixedDb = fakeMixedCacheDb([]);
+    const timing = new RecordingTimingCollector();
     const store = createStore();
     const prefetchedRows = await store.get(
       prefetchStorageManifestPresignedUrlCacheRows({
         db: mixedDb.db,
         input: {
-          systemRequests: [system, system],
+          systemRequests,
           workflowSkillRequests: [workflow],
           readOnlyRequests: [],
           logicalLookupCount: 2,
         },
+        observation: { timing, branch: "requested" },
       }),
     );
     if (!prefetchedRows) {
@@ -710,7 +715,7 @@ describe("storage manifest presigned URL cache telemetry", () => {
       store.get(
         resolveSystemStoragePresignedUrls({
           db: mixedDb.db,
-          requests: [system, system],
+          requests: systemRequests,
           prefetchedRows,
         }),
       ),
@@ -724,6 +729,17 @@ describe("storage manifest presigned URL cache telemetry", () => {
     ]);
 
     expect(mixedDb.selectCount()).toBe(1);
+    expect(timing.recorded).toStrictEqual([
+      {
+        actionType: "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+        dimensions: {
+          storage_manifest_branch: "requested",
+          storage_manifest_cache_requested_count_bucket: "17_plus",
+          storage_manifest_cache_unique_key_count_bucket: "2_4",
+          storage_manifest_cache_logical_lookup_count_bucket: "2_4",
+        },
+      },
+    ]);
     expect(systemResults.size).toBe(1);
     expect(workflowResults.size).toBe(1);
     expect([...systemResults.values()][0]?.status).toBe("miss");
