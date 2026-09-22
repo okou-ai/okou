@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.697.2](https://github.com/okou-ai/okou/compare/core-v8.697.1...core-v8.697.2) (2026-09-22)
+
+
+### Refactoring
+
+* remove mcp server feature switch ([#35957](https://github.com/okou-ai/okou/issues/35957)) ([9cd2d93](https://github.com/okou-ai/okou/commit/9cd2d935892c86e50dfd39319ac75411f77f677e))
+
 ## [8.697.1](https://github.com/okou-ai/okou/compare/core-v8.697.0...core-v8.697.1) (2026-09-22)
 
 
