@@ -1557,6 +1557,10 @@ describe("GET/PUT /api/model-policies", () => {
   it("stores priority with a GPT 5.6 user model preference", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
+    // The member projection is always present now, so the priority tier is
+    // validated against a route that is actually available rather than against
+    // a merely valid organization route.
+    await seedBuiltInModelCandidateKeys(context, "gpt-5.6-sol");
     const client = apiClient();
     const preferenceClient = setupApp({
       context,

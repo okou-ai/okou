@@ -14,9 +14,9 @@ Chat, thread defaults/updates, queued messages promoted to a new run, linked int
 
 Effective provider selection precedes executor, session and model credit/billing decisions. Claude API/Pi to personal Claude Code can rotate the canonical session without changing the logical model. Changing accounts within the same Codex executor/family retains session continuity. Supported Codex Pi/Fast/non-Pi behavior and the unsupported native Claude subscription Pi boundary remain in their existing owners. Existing transient Pi recovery can hand the same captured personal source to Sandbox; it cannot choose another account, organization API, model, or Built-in model charge.
 
-The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is omitted while priority is off. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
+The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is now always present for a real member; it was omitted while the priority switch was off, and `isMemberModelPolicyConfigurable` still keeps its `routeStatus` fallback for an older API that omits it. Because the projection is always present, member-facing decisions that consult it — including the Codex priority service tier — are now judged on the effective route's availability rather than on a merely valid organization route. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
 
-Organization Subscription policies retain their required subscription route and missing-connection guidance under either switch state; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the actual serving-writer, historical-context and executable rollback prerequisites. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes and the retained switch are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
+Organization Subscription policies retain their required subscription route and missing-connection guidance; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the actual serving-writer, historical-context and executable rollback prerequisites. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
 
 ## Launch consumers and policy writes (C)
 
@@ -38,9 +38,10 @@ notices contain no account metadata and do not request upstream usage.
 
 Policy GET returns an opaque `revision` over the persisted administrative rows,
 independently of the requesting member. Settings submit that revision with the
-array they actually read. Priority-enabled PUT rejects missing or stale
-preconditions with a refresh/upgrade conflict before lazy seed/default repair
-or policy/preference changes. With a current revision, an eligible admin can
+array they actually read. PUT rejects a missing or stale precondition with a
+refresh/upgrade conflict before lazy seed/default repair or policy/preference
+changes; this is unconditional now that the priority switch is gone, so every
+writer sends the revision it read. With a current revision, an eligible admin can
 add a Subscription route, change an API route to Subscription, or edit an
 existing Subscription choice. Provider choices remain independent of the
 precondition requirement, with model/plan/provider validation unchanged. The API-key-create flow reads a
@@ -52,8 +53,9 @@ parents, surfaces, and policy rows before comparing its revision, protecting
 the snapshot against FK deletion through commit. Normal runtime selection does
 not take this lock when no repair is needed. Validation inside the transaction
 uses local data and does not acquire A's credential lifecycle lock or perform
-upstream calls. Existing feature-off Turbo setup PUTs remain supported; C does
-not enable Priority for those callers or change Actions definitions.
+upstream calls. The Turbo runner bootstrap steps that previously wrote
+policies without a precondition now read the current revision first, because
+the feature-off path they relied on no longer exists.
 
 The canonical rollback resolver requires accepted B merge
 `8a5e1299b4d26bd114ccec017b84b7a83fb4a164` in addition to all prior floors and
