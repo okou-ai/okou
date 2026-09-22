@@ -145,7 +145,7 @@ function OAuthAccountGroupsSection() {
   return (
     <section className="flex flex-col gap-4">
       <PersonalModelsHeading />
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         <div
           className="overflow-hidden rounded-xl bg-card"
           style={{

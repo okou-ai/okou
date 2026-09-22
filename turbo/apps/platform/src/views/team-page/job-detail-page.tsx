@@ -991,7 +991,7 @@ function AgentHeader({
               className="h-14 w-14 shrink-0 rounded-full object-cover object-top sm:h-16 sm:w-16"
             />
             {showProfileAndInstructions && isDefaultAgent === false && (
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={

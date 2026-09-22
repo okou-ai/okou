@@ -532,7 +532,7 @@ function ChatThreadHeaderIconButton({
   onClick: () => void;
 }) {
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -874,7 +874,7 @@ function ChatThreadEmojiMenuButton({
   const setEmojiPreview = useSet(setChatThreadEmojiPreview$);
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Popover
         open={open}
         onOpenChange={(nextOpen) => {
@@ -7909,7 +7909,7 @@ function RelatedArtifactsDialog({
   );
   return (
     <Dialog>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -7967,7 +7967,7 @@ function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
     return null;
   }
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -8045,7 +8045,7 @@ function PagedGroupPrimaryActions({
       data-testid="chat-event-actions"
     >
       {showActivityLogs && firstRunId && (
-        <TooltipProvider delayDuration={300}>
+        <TooltipProvider delay={300}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -8086,7 +8086,7 @@ function PagedGroupPrimaryActions({
           copyAction={onCopy}
           render={({ onClick, ref }, { copied }) => {
             return (
-              <TooltipProvider delayDuration={300}>
+              <TooltipProvider delay={300}>
                 <Tooltip>
                   <TooltipTrigger
                     render={

@@ -408,7 +408,7 @@ function CreateAgentAvatarPreview() {
                 })}
                 className="h-16 w-16 rounded-full object-cover object-top"
               />
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -735,7 +735,7 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
           </span>
           <div className="flex-1 min-w-0">
             {showCreator ? (
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={

@@ -1106,7 +1106,7 @@ function PlanSelectionCard({
 function PricingBackButton({ onBack }: { readonly onBack: () => void }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -1778,7 +1778,7 @@ function ManagedSubscriptionComparisonTooltip({
     { price: formatUsd(totalUsd, 0) },
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           type="button"

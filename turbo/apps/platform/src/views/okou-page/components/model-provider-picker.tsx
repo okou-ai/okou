@@ -197,7 +197,7 @@ function ByokBadge({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -568,7 +568,7 @@ function ModelFirstPolicyRow({
             showSelectedIndicator={fastSelected}
           />
         </SelectItem>
-        <TooltipProvider delayDuration={800} skipDelayDuration={0}>
+        <TooltipProvider delay={800} timeout={0}>
           <Tooltip>
             <TooltipTrigger
               render={

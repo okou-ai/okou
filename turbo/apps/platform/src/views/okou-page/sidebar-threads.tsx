@@ -338,7 +338,7 @@ function ChatThreadMenu({
   const hasRestingIndicator = showStateIndicator || showPinIndicator;
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -1053,7 +1053,7 @@ function ChatThreadsListMenu({
     useGet(featureSwitch$)[FeatureSwitchKey.ChatUnreadOnlyShortcut] === true;
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -1127,7 +1127,7 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
         </span>
       </span>
       <div className="flex items-center gap-0.5">
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={

@@ -230,7 +230,6 @@ type SelectPositionerProps = Pick<
 type SelectContentProps = SelectPrimitive.Popup.Props &
   SelectPositionerProps & {
     hideScrollButtons?: boolean;
-    position?: "item-aligned" | "popper";
     viewportClassName?: string;
   };
 
@@ -238,7 +237,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
   (
     {
       align = "center",
-      alignItemWithTrigger,
+      alignItemWithTrigger = false,
       alignOffset = 0,
       anchor,
       children,
@@ -247,7 +246,6 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       collisionBoundary,
       collisionPadding,
       hideScrollButtons = false,
-      position = "popper",
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
@@ -258,14 +256,11 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
     },
     ref,
   ) => {
-    const resolvedAlignItemWithTrigger =
-      alignItemWithTrigger ?? position === "item-aligned";
-
     return (
       <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
           align={align}
-          alignItemWithTrigger={resolvedAlignItemWithTrigger}
+          alignItemWithTrigger={alignItemWithTrigger}
           alignOffset={alignOffset}
           anchor={anchor}
           collisionAvoidance={collisionAvoidance}
