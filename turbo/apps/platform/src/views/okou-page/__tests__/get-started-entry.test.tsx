@@ -21,6 +21,7 @@ import { expect, test, vi } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -124,6 +125,7 @@ function mockQuestCatalog(): void {
     return respond(200, {
       connectors: [
         catalogItem("gmail", "Gmail", "auth-code"),
+        catalogItem("notion", "Notion", "auth-code"),
         catalogItem("openai", "OpenAI", "manual"),
       ],
     });
@@ -791,6 +793,85 @@ test("The connector step says what it costs the user before it hands them off", 
   await waitFor(() => {
     expect(pathname()).toBe("/connectors");
   });
+});
+
+test("Searching the connector step narrows the catalog and says when nothing matches", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog");
+  const picker = await within(dialog).findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(within(picker).getByText("Notion")).toBeInTheDocument();
+
+  const search = within(picker).getByTestId("quest-connector-search");
+  await fill(search, "not");
+  await waitFor(() => {
+    expect(within(picker).queryByText("Gmail")).not.toBeInTheDocument();
+  });
+  // The one that matches is still pressable, not merely still rendered.
+  expect(within(picker).getByTestId("quest-connector-notion")).toBeEnabled();
+
+  await fill(search, "zzz");
+  const empty = await within(picker).findByTestId("quest-connector-empty");
+  expect(empty).toHaveTextContent('No connectors matching "zzz"');
+  // Nothing matched, but the way back is still on screen.
+  expect(within(picker).getByTestId("quest-connector-search")).toHaveValue(
+    "zzz",
+  );
+
+  await fill(search, "");
+  await waitFor(() => {
+    expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  });
+  expect(within(picker).getByText("Notion")).toBeInTheDocument();
+});
+
+test("Reopening the connector step starts from the whole catalog", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog");
+  const picker = await within(dialog).findByTestId("quest-connector-picker");
+  await fill(within(picker).getByTestId("quest-connector-search"), "not");
+  await waitFor(() => {
+    expect(within(picker).queryByText("Gmail")).not.toBeInTheDocument();
+  });
+
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const reopened = await within(await screen.findByRole("dialog")).findByTestId(
+    "quest-connector-picker",
+  );
+  expect(within(reopened).getByTestId("quest-connector-search")).toHaveValue(
+    "",
+  );
+  expect(within(reopened).getByText("Gmail")).toBeInTheDocument();
 });
 
 test("Picking a connector in the dialog starts its authorization", async () => {
