@@ -1172,6 +1172,42 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   );
 
   it("uses the durable identity fallback when an official skill has no binding", async () => {
+    const skillName = "workflow-setup";
+    const fallbackStorageName = getSkillStorageName(
+      `okou-ai/vm0-skills/tree/main/${skillName}`,
+    );
+    // Populate the fallback Storage through a non-alias fixture row so the
+    // official alias lookup remains empty while manifest resolution is real.
+    const fixtureFullPath = `okou-ai/vm0-skills/tree/fallback-${randomUUID()}/${skillName}`;
+    const fixtureUrl = `https://github.com/${fixtureFullPath}`;
+    onTestFinished(async () => {
+      await cleanupOwnedSkillsState(context, {
+        skillUrls: [fixtureUrl],
+        storageNames: [fallbackStorageName],
+      });
+    });
+    await seedCurrentSkillVersionsState(context, {
+      staleCommitSha: "official-skill-fallback",
+      versions: [
+        {
+          name: skillName,
+          url: fixtureUrl,
+          full_path: fixtureFullPath,
+          storage_name: fallbackStorageName,
+          version_hash: createHash("sha256")
+            .update(randomUUID())
+            .digest("hex"),
+          size: 1024,
+          archive_size: 1024,
+          file_count: 1,
+          frontmatter: {
+            name: skillName,
+            description: "Durable fallback Storage without an official alias",
+          },
+        },
+      ],
+    });
+
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const run = await api.createRun(actor, {
@@ -1189,7 +1225,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       ),
     ).toMatchObject({
-      name: getSkillStorageName("okou-ai/vm0-skills/tree/main/workflow-setup"),
+      name: fallbackStorageName,
     });
     await api.requestCancelRun(actor, run.runId, [200]);
   });
