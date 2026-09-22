@@ -177,21 +177,21 @@ export function vncCredentialMatchesProfile(
   return credential.authMethod === vncAuthMethodForProfile(profile);
 }
 
-export function vncSshConnectionId(
+type SshRoutedVncConnection = Extract<
+  VncConnectionResponse,
+  { readonly transport: unknown }
+>;
+
+function isSshRoutedVncConnection(
   connection: VncConnectionResponse,
-): string | null {
-  const transport = "transport" in connection ? connection.transport : null;
-  if (
-    typeof transport !== "object" ||
-    transport === null ||
-    !("type" in transport) ||
-    transport.type !== "ssh" ||
-    !("connectionId" in transport) ||
-    typeof transport.connectionId !== "string"
-  ) {
-    return null;
-  }
-  return transport.connectionId;
+): connection is SshRoutedVncConnection {
+  return "transport" in connection;
+}
+
+export function vncSshConnectionId(connection: VncConnectionResponse) {
+  return isSshRoutedVncConnection(connection)
+    ? connection.transport.connectionId
+    : null;
 }
 
 function initialVncProfile(

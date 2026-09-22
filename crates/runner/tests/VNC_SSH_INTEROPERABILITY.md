@@ -84,9 +84,20 @@ VNC_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
 VNC_SSHD_PID=""
 
 cleanup_vnc_acceptance() {
+  if [ -z "$VNC_SSHD_PID" ] && [ -f "$VNC_ACCEPT_DIR/sshd.pid" ]; then
+    VNC_SSHD_PID="$(sudo cat "$VNC_ACCEPT_DIR/sshd.pid")"
+  fi
   if [ -n "$VNC_SSHD_PID" ]; then
     sudo kill "$VNC_SSHD_PID" 2>/dev/null || true
-    wait "$VNC_SSHD_PID" 2>/dev/null || true
+    for _ in $(seq 1 50); do
+      if ! sudo kill -0 "$VNC_SSHD_PID" 2>/dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+    if sudo kill -0 "$VNC_SSHD_PID" 2>/dev/null; then
+      sudo kill -KILL "$VNC_SSHD_PID" 2>/dev/null || true
+    fi
   fi
   sudo userdel --remove "$VNC_ACCEPT_USER" 2>/dev/null || true
   case "$VNC_ACCEPT_DIR" in
@@ -132,9 +143,9 @@ X11Forwarding no
 PermitTTY no
 LogLevel VERBOSE
 EOF
-sudo sh -c \
-  "exec /usr/sbin/sshd -D -e -f '$VNC_ACCEPT_DIR/sshd_config' 2>'$VNC_ACCEPT_DIR/sshd.log'" &
-VNC_SSHD_PID=$!
+sudo /usr/sbin/sshd -f "$VNC_ACCEPT_DIR/sshd_config" \
+  -E "$VNC_ACCEPT_DIR/sshd.log"
+VNC_SSHD_PID="$(sudo cat "$VNC_ACCEPT_DIR/sshd.pid")"
 VNC_SSHD_READY=""
 for _ in $(seq 1 20); do
   if ssh-keyscan -T 1 -p "$VNC_OPENSSH_PORT" 127.0.0.1 >/dev/null 2>&1; then
