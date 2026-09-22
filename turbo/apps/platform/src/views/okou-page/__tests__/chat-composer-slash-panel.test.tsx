@@ -755,3 +755,28 @@ test("Escape from a focused template cover dismisses the slash menu", async () =
   await user.keyboard("next");
   expect(editor).toHaveTextContent("Draft /next");
 });
+
+test("Tab from the last template cover leaves and dismisses the suggestion tree", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  const lastCover = queryAllByRoleFast(
+    "button",
+    screen.getByRole("dialog", { name: "Presentation" }),
+  ).at(-1);
+  if (!lastCover) {
+    throw new Error("Expected a presentation template cover");
+  }
+  act(() => {
+    lastCover.focus();
+  });
+
+  await user.keyboard("{Tab}");
+
+  await waitFor(() => {
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(flyout()).toBeNull();
+    expect(screen.getByLabelText("Attach")).toHaveFocus();
+  });
+  expect(editor).toHaveTextContent("Draft /");
+});

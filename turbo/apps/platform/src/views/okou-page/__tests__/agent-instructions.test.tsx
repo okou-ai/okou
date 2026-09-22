@@ -207,7 +207,10 @@ test.each(["{Enter}", " "])(
       );
       expect(editor).toHaveFocus();
     });
-    await user.keyboard("Replacement");
+    expect(window.getSelection()?.toString()).toBe("Selected instructions");
+    // user-event keyboard insertion replaces a selected DOM range with a bare
+    // text node. Paste exercises ProseMirror's rich-text replacement instead.
+    await user.paste("Replacement");
     expect(editor.querySelector("strong")).toHaveTextContent("Replacement");
     expect(editor).not.toHaveTextContent("Selected instructions");
   },
