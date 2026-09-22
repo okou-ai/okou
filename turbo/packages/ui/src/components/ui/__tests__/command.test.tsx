@@ -142,8 +142,9 @@ describe("Command", () => {
     await user.keyboard("{ArrowUp}");
     expect(charlie).toHaveAttribute("data-highlighted");
 
-    await user.keyboard("{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowDown}");
     expect(alpha).toHaveAttribute("data-highlighted");
+    await user.keyboard("{Enter}");
     expect(screen.getByLabelText("Selected commands")).toHaveTextContent(
       /^alpha$/,
     );

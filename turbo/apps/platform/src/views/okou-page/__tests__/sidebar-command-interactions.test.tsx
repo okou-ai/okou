@@ -49,6 +49,7 @@ test.each(["pointer", "Enter"])(
     expect(search).toHaveAttribute("aria-activedescendant", research.id);
     await user.keyboard("{ArrowDown}");
     expect(search).toHaveAttribute("aria-activedescendant", support.id);
+    expect(search).toHaveFocus();
 
     if (activation === "pointer") {
       await user.click(support);
@@ -63,7 +64,9 @@ test.each(["pointer", "Enter"])(
     expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Support Agent"]);
     expect(dialog).toBeInTheDocument();
     expect(search).toHaveValue("Agent");
-    expect(search).toHaveFocus();
+    await waitFor(() => {
+      expect(search).toHaveFocus();
+    });
     expect(
       within(dialog).getByRole("option", { name: "Support Agent Unpin" }),
     ).not.toHaveAttribute("aria-disabled", "true");
