@@ -146,17 +146,19 @@ function VisualizationChartButton({
       <span
         className={cn(
           // A cover, at the metrics of the covers on the other shelves: 16:9,
-          // `rounded-xl`, one hairline and the same `bg-muted` behind it. Only
-          // the padding is this shelf's own -- a drawing sits on the tile
-          // rather than bleeding to its edge the way a screenshot does.
-          "flex aspect-video items-center justify-center overflow-hidden rounded-xl border bg-muted p-3 transition-colors",
-          // Selection recolours that hairline and tints the box behind the
-          // line art -- the drawing is strokes on a fill, not a screenshot, so
-          // the fill is still readable underneath. The width is the same
-          // hairline in both branches, so selecting never moves a sibling.
+          // `rounded-xl` and the same `bg-muted` behind it. Only the padding is
+          // this shelf's own -- a drawing sits on the tile rather than bleeding
+          // to its edge the way a screenshot does.
+          "flex aspect-video items-center justify-center overflow-hidden rounded-xl p-3 transition-colors",
+          // Those covers are not selectable and take the hairline; this one is,
+          // and `docs/styles.md` gives selection on a picture tile the emphasis
+          // width -- at the hairline the selected rim reads as an antialiasing
+          // artifact rather than as a state. Both branches carry that width so
+          // selecting a tile never moves its siblings.
+          "border-(length:--border-width-emphasis)",
           selected
             ? "border-primary bg-primary/10 text-foreground"
-            : "border-border text-foreground/45 group-hover/tile:text-foreground/70",
+            : "border-transparent bg-muted text-foreground/45 group-hover/tile:text-foreground/70",
         )}
       >
         <VisualizationChartPreview chart={chart} />
