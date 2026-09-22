@@ -11,6 +11,44 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.943.0](https://github.com/okou-ai/okou/compare/app-v0.942.0...app-v0.943.0) (2026-09-22)
+
+
+### Features
+
+* **api:** add standalone cloudflare access management boundary ([#36057](https://github.com/okou-ai/okou/issues/36057)) ([c6df88a](https://github.com/okou-ai/okou/commit/c6df88aeb90ffe3d6f563a1028ffec5a41cc0b45))
+* **app:** recommend personalized tasks on the agent home page ([#35881](https://github.com/okou-ai/okou/issues/35881)) ([26dfde0](https://github.com/okou-ai/okou/commit/26dfde0a42e1a45d191508ffcde7348f00925303))
+* **platform:** make the share step two steps and give review a screen ([#36076](https://github.com/okou-ai/okou/issues/36076)) ([d7c6996](https://github.com/okou-ai/okou/commit/d7c69963051d28469c38b9cfc011689f39fa6dd2))
+* **platform:** redesign personal provider accounts ([#36031](https://github.com/okou-ai/okou/issues/36031)) ([ee3ac38](https://github.com/okou-ai/okou/commit/ee3ac386a243222710a2067e6a36995a835777f9))
+* streamline source-first onboarding ([#36078](https://github.com/okou-ai/okou/issues/36078)) ([3ea7b47](https://github.com/okou-ai/okou/commit/3ea7b472711d7c76f80bbe1d0b48472ad9005c7d))
+
+
+### Bug Fixes
+
+* **chat:** recognize actions after unambiguous delimiters ([#36059](https://github.com/okou-ai/okou/issues/36059)) ([ca6e855](https://github.com/okou-ai/okou/commit/ca6e8552106d63049c4bde2b203a0d89a8f22a01))
+* **platform:** activate editor actions through native clicks ([#36034](https://github.com/okou-ai/okou/issues/36034)) ([624c77b](https://github.com/okou-ai/okou/commit/624c77b033f5b95b9972e5760fbf11fe44f7e3b7))
+* **platform:** avoid redundant chat scroll writes ([#36079](https://github.com/okou-ai/okou/issues/36079)) ([a75b075](https://github.com/okou-ai/okou/commit/a75b075d403629dc9f190c7bdab947823d930e0a))
+* **platform:** exclude Slack and Teams pages from onboarding ([#36096](https://github.com/okou-ai/okou/issues/36096)) ([7e96f9b](https://github.com/okou-ai/okou/commit/7e96f9bded16c497cd834ad6afb9eee350e1471e))
+* **platform:** keep a rail's fade after a dialog hands focus back ([#36086](https://github.com/okou-ai/okou/issues/36086)) ([e27df6f](https://github.com/okou-ai/okou/commit/e27df6f451fffbef773f8e36dcef703f21289c2e))
+* **platform:** preserve popover positioning during composer scrolls ([#36054](https://github.com/okou-ai/okou/issues/36054)) ([44ff06e](https://github.com/okou-ai/okou/commit/44ff06e864880bd9976c71f2c03c02119ecc1479))
+* **platform:** remove chat filter separator ([#36085](https://github.com/okou-ai/okou/issues/36085)) ([d779698](https://github.com/okou-ai/okou/commit/d779698fbb1d195cdaae83856e5dfea625473d07))
+* **platform:** scope connector directory loading ([#36099](https://github.com/okou-ai/okou/issues/36099)) ([a652869](https://github.com/okou-ai/okou/commit/a6528698ed0483b00c6f30645d9921339179918c))
+
+
+### Refactoring
+
+* **app:** use native menus for composer model picker ([#36036](https://github.com/okou-ai/okou/issues/36036)) ([1d029c7](https://github.com/okou-ai/okou/commit/1d029c76d63579440ba0224c98eb3a7958dbaab6))
+* **ui:** preserve semantic hosts without button aschild ([#36016](https://github.com/okou-ai/okou/issues/36016)) ([8ea0f44](https://github.com/okou-ai/okou/commit/8ea0f44bd6b8d66451a1b6a1607d4adff1c75e46)), closes [#35925](https://github.com/okou-ai/okou/issues/35925)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.492.0
+    * @okouai/core bumped to 8.700.0
+    * @okouai/ui bumped to 1.11.6
+
 ## [0.942.0](https://github.com/okou-ai/okou/compare/app-v0.941.2...app-v0.942.0) (2026-09-22)
 
 
