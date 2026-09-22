@@ -56,6 +56,15 @@ fi
 pi_sdk_patch_set="$(cat "${pi_sdk_patch_files[@]}" | sha256sum | cut -c1-12)"
 pi_sdk_version="${pi_sdk_pin}+okou.${pi_sdk_patch_set}"
 
+# The session-construction digest is the parity key the guest and the CLI
+# compare for API-first handoffs. The runtime package commits it and its test
+# suite fails while it is stale, so the packed sources and this value agree.
+pi_session_construction_digest="$(jq -er '.digest' turbo/packages/pi-agent-runtime/session-construction-digest.json)"
+if [[ ! "$pi_session_construction_digest" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "CLI artifact session-construction digest must be 64 lowercase hex: $pi_session_construction_digest" >&2
+  exit 1
+fi
+
 jq -n \
   --arg commit_sha "$commit_sha" \
   --arg package_sha256 "$package_sha256" \
@@ -63,6 +72,7 @@ jq -n \
   --arg cli_version "$cli_version" \
   --arg pi_agent_runtime_version "$pi_agent_runtime_version" \
   --arg pi_sdk_version "$pi_sdk_version" \
+  --arg pi_session_construction_digest "$pi_session_construction_digest" \
   '{
     version: 1,
     commitSha: $commit_sha,
@@ -75,6 +85,9 @@ jq -n \
       cli: $cli_version,
       piAgentRuntime: $pi_agent_runtime_version,
       piSdk: $pi_sdk_version
+    },
+    sessionConstruction: {
+      digest: $pi_session_construction_digest
     }
   }' > "$output_dir/manifest.json"
 

@@ -231,6 +231,7 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
             sandbox_event_sequence_start: 1,
             required_pi_agent_runtime_version: Some("1.36.0".to_string()),
             min_cli_version: Some("9.352.7".to_string()),
+            required_pi_session_construction_digest: Some("c".repeat(64)),
         },
         memory_recall: None,
         maintenance: None,
@@ -265,6 +266,7 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
                 "sandboxEventSequenceStart": 1,
                 "requiredPiAgentRuntimeVersion": "1.36.0",
                 "minCliVersion": "9.352.7",
+                "requiredPiSessionConstructionDigest": "c".repeat(64),
             },
         })
     );

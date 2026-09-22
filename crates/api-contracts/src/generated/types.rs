@@ -72,6 +72,10 @@ pub mod runners {
             /// Lowest installed Okou CLI release allowed to run this launch payload.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub min_cli_version: Option<String>,
+            /// Digest of the session construction the API prepared this turn with;
+            /// when present it replaces the runtime version as the parity key.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub required_pi_session_construction_digest: Option<String>,
         }
 
         /// Frozen exact-version Pi memory recall selection.
