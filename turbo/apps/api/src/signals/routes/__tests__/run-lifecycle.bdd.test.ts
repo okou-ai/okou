@@ -1194,9 +1194,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
           url: fixtureUrl,
           full_path: fixtureFullPath,
           storage_name: fallbackStorageName,
-          version_hash: createHash("sha256")
-            .update(randomUUID())
-            .digest("hex"),
+          version_hash: createHash("sha256").update(randomUUID()).digest("hex"),
           size: 1024,
           archive_size: 1024,
           file_count: 1,
