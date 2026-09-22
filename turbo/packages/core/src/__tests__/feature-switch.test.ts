@@ -68,31 +68,27 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("defaults personal subscription priority by workspace and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_external" }]) {
+  it("gives personal subscription priority to every workspace and honors explicit overrides", () => {
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const context of [{}, { orgId: "org_external" }, staff]) {
       expect(
         isFeatureEnabled(
           FeatureSwitchKey.PersonalSubscriptionPriority,
           context,
         ),
-      ).toBe(false);
+      ).toBe(true);
+      // The organization override is the only way back to the API route.
       expect(
         isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, {
           ...context,
-          overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+          overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
         }),
-      ).toBe(true);
+      ).toBe(false);
     }
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     expect(
-      isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, staff),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, {
-        ...staff,
-        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
-      }),
-    ).toBe(false);
+      getFeatureSwitchMetadata()[FeatureSwitchKey.PersonalSubscriptionPriority]
+        .rolloutStage,
+    ).toBe("released");
     expect(
       isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
         ...staff,

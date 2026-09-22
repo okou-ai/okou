@@ -48,7 +48,7 @@ describe("/api/feature-switches", () => {
     ).toBeTruthy();
   });
 
-  it("defaults subscription priority on for staff and applies overrides consistently across an organization", async () => {
+  it("defaults subscription priority on for every organization and applies overrides consistently across one", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
@@ -66,22 +66,6 @@ describe("/api/feature-switches", () => {
       ordinary.body.effectiveSwitches[
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
-    ).toBeFalsy();
-    await accept(
-      client().update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
-        },
-      }),
-      [200],
-    );
-    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
-    const peer = await accept(client().get({ headers }), [200]);
-    expect(
-      peer.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
     ).toBeTruthy();
     await accept(
       client().update({
@@ -92,10 +76,11 @@ describe("/api/feature-switches", () => {
       }),
       [200],
     );
-    clerk.session(userId, orgId, "org:member");
-    const disabled = await accept(client().get({ headers }), [200]);
+    const peerUserId = `user_${randomUUID()}`;
+    clerk.session(peerUserId, orgId, "org:member");
+    const peer = await accept(client().get({ headers }), [200]);
     expect(
-      disabled.body.effectiveSwitches[
+      peer.body.effectiveSwitches[
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
     ).toBeFalsy();
@@ -105,7 +90,24 @@ describe("/api/feature-switches", () => {
       elsewhere.body.effectiveSwitches[
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
-    ).toBeFalsy();
+    ).toBeTruthy();
+    clerk.session(peerUserId, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+        },
+      }),
+      [200],
+    );
+    clerk.session(userId, orgId, "org:member");
+    const restored = await accept(client().get({ headers }), [200]);
+    expect(
+      restored.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeTruthy();
   });
 
   it.each([true, false])(
