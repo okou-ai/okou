@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -42,8 +42,6 @@ async function setupLocatorConversation({
 
   await screen.findByText(`Locator answer ${String(turnCount)}`);
   const container = chatScrollContainer();
-  // Native scrolling reports the initial tail position after the DOM commit.
-  fireEvent.scroll(container);
   const rail = requiredElement("[data-conversation-locator]");
   const tickCount = Math.min(turnCount, MAX_TICK_COUNT);
   await waitFor(() => {
