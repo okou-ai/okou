@@ -7,7 +7,10 @@ import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createAvatarTemplatePickerSignals } from "./avatar-template-picker.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
-import { createModelPickerMenuSignals } from "./model-picker-menu.ts";
+import {
+  createModelPickerMenuSignals,
+  type ModelPickerCategory,
+} from "./model-picker-menu.ts";
 import type { VideoRunOptionsPatch } from "./video-run-options.ts";
 
 // ---------------------------------------------------------------------------
@@ -161,8 +164,8 @@ function createBasicComposerUiSignals() {
     },
   );
   const completeModelPickerSelection$ = command(
-    ({ set }, category: MediaModelCategory | null) => {
-      set(setMediaModelCategory$, category);
+    ({ set }, category: ModelPickerCategory) => {
+      set(setMediaModelCategory$, category === "chat" ? null : category);
       set(setModelPickerOpen$, false);
     },
   );

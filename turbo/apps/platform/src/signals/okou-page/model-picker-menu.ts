@@ -2,7 +2,7 @@ import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { onRef, resetSignal } from "../utils.ts";
 
-type ModelPickerCategory = "chat" | "image" | "video";
+export type ModelPickerCategory = "chat" | "image" | "video";
 
 type ModelPickerMenuPage =
   | { readonly kind: "overview" }

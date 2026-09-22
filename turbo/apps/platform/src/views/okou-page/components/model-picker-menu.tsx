@@ -13,7 +13,10 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { useTranslation } from "react-i18next";
-import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
+import type {
+  ModelPickerCategory,
+  ModelPickerMenuSignals,
+} from "../../../signals/okou-page/model-picker-menu.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
 import { formatChatEffort, useChatEffort } from "./chat-effort-controls.tsx";
@@ -159,8 +162,8 @@ interface ModelPickerMenuContentProps {
   options: readonly ModelPickerMenuOption[];
   mediaModelPanel: MediaModelPanelState | undefined;
   onChange: (selection: ModelProviderSelection) => void;
-  /** Only the flyout uses it: the menu's pages stay open after a selection. */
-  onSelected?: (() => void) | undefined;
+  /** Only the flyout reports the chosen option's category to its owner. */
+  onSelected?: ((category: ModelPickerCategory) => void) | undefined;
 }
 
 function ModelPickerOverview({
@@ -514,7 +517,7 @@ function ModelPickerFlyoutOptions({
   options: readonly ModelPickerMenuOption[];
   value: ModelProviderSelection | null;
   onChange: (selection: ModelProviderSelection) => void;
-  onSelected: (() => void) | undefined;
+  onSelected: ((category: ModelPickerCategory) => void) | undefined;
 }) {
   if (activeMedia) {
     return activeMedia.options.map((option, index) => {
@@ -537,7 +540,7 @@ function ModelPickerFlyoutOptions({
           total={activeMedia.options.length}
           onSelect={() => {
             option.onSelect();
-            onSelected?.();
+            onSelected?.(activeMedia.id);
           }}
         />
       );
@@ -560,7 +563,7 @@ function ModelPickerFlyoutOptions({
           );
           // Picking a model is the whole task: leave rather than making the
           // user dismiss a panel that has nothing left to offer.
-          onSelected?.();
+          onSelected?.("chat");
         }}
       />
     );

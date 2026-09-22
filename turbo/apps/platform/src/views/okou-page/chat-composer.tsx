@@ -9207,9 +9207,6 @@ function ComposerRunModelPickerControl({
   const { t } = useTranslation();
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
-  // A media selection closes and resets the menu before onSelected runs.
-  // Keep the category from the render that owns the selected option.
-  const flyoutCategory = useGet(signals.model.menu.flyoutCategory$);
   const completeModelPickerSelection = useSet(
     signals.model.completeModelPickerSelection$,
   );
@@ -9233,11 +9230,7 @@ function ComposerRunModelPickerControl({
         // The flyout needs the room a phone does not have; narrow viewports keep
         // the menu's pages until the sheet layout lands.
         flyoutLayout={desktopLayout}
-        onSelected={() => {
-          completeModelPickerSelection(
-            flyoutCategory === "chat" ? null : flyoutCategory,
-          );
-        }}
+        onSelected={completeModelPickerSelection}
         compactTrigger
         mobileIconTrigger
         open={modelPickerOpen}

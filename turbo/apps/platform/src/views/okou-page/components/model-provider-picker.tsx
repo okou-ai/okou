@@ -71,7 +71,10 @@ import {
 import { ProviderIcon } from "./settings/provider-icons";
 import { settingsIconAssetUrl } from "./settings/settings-icon-assets";
 
-import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
+import type {
+  ModelPickerCategory,
+  ModelPickerMenuSignals,
+} from "../../../signals/okou-page/model-picker-menu.ts";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
 import { ModelFastImpact } from "./model-fast-impact.tsx";
 import {
@@ -162,8 +165,8 @@ interface ModelProviderPickerProps {
   menuSignals?: ModelPickerMenuSignals;
   /** Replaces the menu's pages with the detached type/model flyout. */
   flyoutLayout?: boolean;
-  /** Lets the flyout dismiss itself once a model has been committed. */
-  onSelected?: () => void;
+  /** Reports the category of the option chosen in the flyout. */
+  onSelected?: (category: ModelPickerCategory) => void;
   /** Model omitted from this caller's list of available choices. */
   excludedModel?: SupportedRunModel;
   /**
@@ -1192,7 +1195,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   showInheritOption: boolean;
   menuSignals: ModelPickerMenuSignals | undefined;
   flyoutLayout: boolean;
-  onSelected: (() => void) | undefined;
+  onSelected: ((category: ModelPickerCategory) => void) | undefined;
   onMenuChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
