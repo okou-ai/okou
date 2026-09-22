@@ -515,7 +515,7 @@ function OAuthAccountTableRow({
       </div>
       <div
         role="cell"
-        className="col-start-2 col-end-4 row-start-2 flex min-w-0 items-center justify-end gap-3 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
+        className="col-start-2 col-end-4 row-start-2 flex min-w-0 items-center justify-end gap-3 max-sm:col-start-1 max-sm:row-start-3 max-sm:pl-7 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
       >
         {!account.needsReconnect && usageWindows(usage).length > 0 ? (
           <SubscriptionUsageRings

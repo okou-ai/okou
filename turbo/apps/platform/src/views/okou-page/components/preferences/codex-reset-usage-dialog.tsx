@@ -170,7 +170,7 @@ export function CodexResetCreditsMenuItem({
       {showDescription && (
         <span
           id={descriptionId}
-          className="max-w-52 text-right text-xs text-muted-foreground"
+          className="max-w-40 text-right text-xs text-muted-foreground"
         >
           {description}
         </span>

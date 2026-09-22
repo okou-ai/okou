@@ -1,4 +1,3 @@
-import userEvent from "@testing-library/user-event";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   ACTIVE_RUN_MODELS,
