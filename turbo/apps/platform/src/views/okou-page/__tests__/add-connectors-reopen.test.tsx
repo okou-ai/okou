@@ -297,18 +297,42 @@ test.each(["category", "custom"] as const)(
   },
 );
 
+async function tabToFirstConnector(
+  user: ReturnType<typeof userEvent.setup>,
+  dialog: HTMLElement,
+): Promise<void> {
+  const first = await findFastControl("button", "Connect Gmail", dialog);
+  for (let step = 0; step < 30; step += 1) {
+    await user.keyboard("{Tab}");
+    if (document.activeElement === first) {
+      return;
+    }
+  }
+  throw new Error("The first connector is not reachable with Tab");
+}
+
 test("Start keyboard navigation at the first connector after reopening", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({ catalog: catalog() });
   await loadPage(true);
   const dialog = await openAddConnectors(true);
   await user.click(within(dialog).getByPlaceholderText("Find connectors..."));
-  await user.keyboard("{ArrowDown}{Enter}");
+  await tabToFirstConnector(user, dialog);
+  await user.keyboard("{ArrowDown}");
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button", dialog).find((button) => {
+        return button.getAttribute("aria-label") === "Connect Notion";
+      }),
+    ).toHaveFocus();
+  });
+  await user.keyboard("{Enter}");
   const setup = await screen.findByRole("dialog", { name: "Notion" });
   await dismiss(setup, "Close");
 
   const reopened = await openAddConnectors(true);
   await user.click(within(reopened).getByPlaceholderText("Find connectors..."));
+  await tabToFirstConnector(user, reopened);
   await user.keyboard("{Enter}");
   await expect(
     screen.findByRole("dialog", { name: "Gmail" }),

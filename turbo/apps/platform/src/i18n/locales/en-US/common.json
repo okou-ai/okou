@@ -5870,7 +5870,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Reset",
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
@@ -6206,7 +6205,6 @@
       },
       "reset": {
         "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
-        "expiresAt": "Soonest reset expires {{date}}",
         "progress": "Resetting...",
         "remaining_one": "{{value}} reset left",
         "remaining_other": "{{value}} resets left",
