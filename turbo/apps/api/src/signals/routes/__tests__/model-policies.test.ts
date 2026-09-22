@@ -2251,7 +2251,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await apiClient().update({
       headers: authHeaders(),
-      body: { policies: [] },
+      body: { revision: await currentPolicyRevision(), policies: [] },
     });
 
     expect(response.status).toBe(400);
@@ -2298,6 +2298,7 @@ test.each([
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             {
               model: "claude-sonnet-4-6",
