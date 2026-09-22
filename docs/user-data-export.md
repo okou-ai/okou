@@ -56,8 +56,8 @@ insert and job completion also commit together, so notification retries cannot
 enqueue a second ready email after completion. Recipient lookup failures leave the
 already completed download available.
 
-Both export modes send a transactional completion email through the shared
-outbox after the download is available. It uses the Morning Brief email layout,
+The durable export handler sends a transactional completion email through the
+shared outbox after the download is available. It uses the Morning Brief email layout,
 with a download button and the export's expiry date and time in UTC. Optional
 email preferences do not suppress a user-requested export confirmation; the
 outbox still blocks addresses with a recorded bounce or complaint.
