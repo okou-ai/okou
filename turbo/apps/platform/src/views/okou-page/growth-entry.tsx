@@ -25,7 +25,6 @@ import {
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { getStartedSummary$ } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { SlackMark } from "./components/slack-mark.tsx";
 import { GetStartedEntry } from "./get-started-entry.tsx";
@@ -65,9 +64,9 @@ function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
   return (
     <>
       <DropdownMenuSeparator />
-      <DropdownMenuModalItem
+      <DropdownMenuItem
         className="gap-3 px-3"
-        onModalSelect={openCredits}
+        onClick={openCredits}
         data-testid="growth-credits"
       >
         <Coins className="text-muted-foreground" />
@@ -79,7 +78,7 @@ function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
         <span className="shrink-0 font-semibold tabular-nums">
           {creditLabel}
         </span>
-      </DropdownMenuModalItem>
+      </DropdownMenuItem>
     </>
   );
 }
@@ -153,20 +152,22 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           </span>
         </Button>
 
-        <DropdownMenuTrigger asChild>
-          <Button
-            showTooltip
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            aria-label={t(($) => {
-              return $.chat.actions.more;
-            })}
-            className="h-full w-9 rounded-l-none rounded-r-[11px] border-l border-[hsl(var(--gray-300))] data-popup-open:bg-state-hover data-popup-open:text-foreground"
-            data-testid="growth-entry-menu"
-          >
-            <ChevronDown />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              showTooltip
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              aria-label={t(($) => {
+                return $.chat.actions.more;
+              })}
+              className="h-full w-9 rounded-l-none rounded-r-[11px] border-l border-[hsl(var(--gray-300))] data-popup-open:bg-state-hover data-popup-open:text-foreground"
+              data-testid="growth-entry-menu"
+            />
+          }
+        >
+          <ChevronDown />
         </DropdownMenuTrigger>
       </div>
 
@@ -214,9 +215,9 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuModalItem
+        <DropdownMenuItem
           className="gap-3 px-3"
-          onModalSelect={openInvite}
+          onClick={openInvite}
           data-testid="growth-invite"
         >
           <PlusCircle className="text-muted-foreground" />
@@ -225,7 +226,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
               return $.chat.agentPage.growth.inviteMember;
             })}
           </span>
-        </DropdownMenuModalItem>
+        </DropdownMenuItem>
 
         {/* Content is unmounted while closed, so credit requests stay lazy. */}
         <GrowthCreditMenuItem openCredits={openCredits} />

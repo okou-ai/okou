@@ -1169,18 +1169,20 @@ function AuthenticationFields({
         />
       )}
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            className="self-start"
-            disabled={availableAuthMethods.length === 0}
-          >
-            <Plus size={16} />
-            {t(($) => {
-              return $.connectors.custom.create.addAuthentication;
-            })}
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              disabled={availableAuthMethods.length === 0}
+            />
+          }
+        >
+          <Plus size={16} />
+          {t(($) => {
+            return $.connectors.custom.create.addAuthentication;
+          })}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           {availableAuthMethods.includes("none") && (

@@ -537,30 +537,32 @@ function PolicyActionsMenu({
   const { t } = useTranslation();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          className="shrink-0 rounded-lg"
-          disabled={disabled}
-          aria-label={t(
-            ($) => {
-              return $.settings.models.policies.actionsFor;
-            },
-            {
-              model: policy.modelLabel,
-            },
-          )}
-        >
-          <EllipsisVertical size={14} />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0 rounded-lg"
+            disabled={disabled}
+            aria-label={t(
+              ($) => {
+                return $.settings.models.policies.actionsFor;
+              },
+              {
+                model: policy.modelLabel,
+              },
+            )}
+          />
+        }
+      >
+        <EllipsisVertical size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuItem
           disabled={disabled}
-          onSelect={() => {
+          onClick={() => {
             onEdit(policy);
           }}
         >
@@ -573,7 +575,7 @@ function PolicyActionsMenu({
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"
           disabled={disabled || !canDelete}
-          onSelect={() => {
+          onClick={() => {
             onDelete(policy);
           }}
         >

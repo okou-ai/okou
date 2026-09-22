@@ -48,7 +48,6 @@ import { ProviderIcon } from "../settings/provider-icons.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "../settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "../settings/codex-device-auth-dialog.tsx";
 import { SettingsSectionHeading } from "../settings/settings-section-heading.tsx";
-import { DropdownMenuModalItem } from "../../../components/dropdown-menu-modal-item.tsx";
 import { formatSubscriptionUsageReset } from "../../subscription-usage-format.ts";
 import {
   CodexResetUsageDialog,
@@ -530,18 +529,20 @@ function OAuthAccountMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          showTooltip
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-hover hover:text-foreground"
-          aria-label={t(($) => {
-            return $.settings.shared.moreOptions;
-          })}
-        >
-          <EllipsisVertical size={14} />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            showTooltip
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-hover hover:text-foreground"
+            aria-label={t(($) => {
+              return $.settings.shared.moreOptions;
+            })}
+          />
+        }
+      >
+        <EllipsisVertical size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         {menuItems.map((item, index) => {
@@ -1390,18 +1391,15 @@ function OAuthMenuEntry({ item }: { item: OAuthMenuItem }) {
   }
   if (item.opensModal && item.onSelect) {
     return (
-      <DropdownMenuModalItem
-        disabled={item.disabled}
-        onModalSelect={item.onSelect}
-      >
+      <DropdownMenuItem disabled={item.disabled} onClick={item.onSelect}>
         {item.label}
-      </DropdownMenuModalItem>
+      </DropdownMenuItem>
     );
   }
   return (
     <DropdownMenuItem
       disabled={item.disabled}
-      onSelect={() => {
+      onClick={() => {
         item.onSelect?.();
       }}
     >
@@ -1489,18 +1487,20 @@ function OAuthCredentialRow({
             />
             {menuItems.length > 0 && (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    showTooltip
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-hover hover:text-foreground"
-                    aria-label={t(($) => {
-                      return $.settings.shared.moreOptions;
-                    })}
-                  >
-                    <EllipsisVertical size={14} />
-                  </Button>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      showTooltip
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-hover hover:text-foreground"
+                      aria-label={t(($) => {
+                        return $.settings.shared.moreOptions;
+                      })}
+                    />
+                  }
+                >
+                  <EllipsisVertical size={14} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">
                   {menuItems.map((item) => {

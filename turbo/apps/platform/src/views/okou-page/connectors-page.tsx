@@ -424,27 +424,29 @@ function ConnectorFilterDropdown({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="neutral"
-          size="sm"
-          aria-label={t(($) => {
-            return $.connectors.catalog.filters.aria;
-          })}
-          className="hidden h-9 shrink-0 gap-1.5 rounded-lg sm:inline-flex"
-        >
-          <Filter size={14} className="" />
-          {activeAgent && (
-            <AvatarFromUrl
-              avatarUrl={activeAgent.avatarUrl}
-              alt={connectorAgentName(activeAgent)}
-              size={16}
-              className="h-4 w-4 rounded-full object-cover"
-            />
-          )}
-          <span className="max-w-[140px] truncate">{triggerLabel}</span>
-          <ChevronDown size={14} className="" />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="neutral"
+            size="sm"
+            aria-label={t(($) => {
+              return $.connectors.catalog.filters.aria;
+            })}
+            className="hidden h-9 shrink-0 gap-1.5 rounded-lg sm:inline-flex"
+          />
+        }
+      >
+        <Filter size={14} className="" />
+        {activeAgent && (
+          <AvatarFromUrl
+            avatarUrl={activeAgent.avatarUrl}
+            alt={connectorAgentName(activeAgent)}
+            size={16}
+            className="h-4 w-4 rounded-full object-cover"
+          />
+        )}
+        <span className="max-w-[140px] truncate">{triggerLabel}</span>
+        <ChevronDown size={14} className="" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
@@ -670,20 +672,22 @@ function ConnectorFilterMenu({
   const { t } = useTranslation();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 shrink-0 self-end gap-1.5"
-          aria-label={t(($) => {
-            return $.connectors.catalog.filters.aria;
-          })}
-        >
-          <Filter size={14} aria-hidden="true" />
-          {leading}
-          <span className="max-w-[160px] truncate">{label}</span>
-          <ChevronDown size={14} aria-hidden="true" />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 self-end gap-1.5"
+            aria-label={t(($) => {
+              return $.connectors.catalog.filters.aria;
+            })}
+          />
+        }
+      >
+        <Filter size={14} aria-hidden="true" />
+        {leading}
+        <span className="max-w-[160px] truncate">{label}</span>
+        <ChevronDown size={14} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
@@ -916,36 +920,38 @@ function ConnectorsDirectoryToolbar({
             isAdmin && <NewCustomConnectorButton />
           ) : (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 shrink-0 self-end gap-1.5"
-                  aria-label={t(($) => {
-                    return $.connectors.catalog.filters.aria;
-                  })}
-                >
-                  <Filter size={14} aria-hidden="true" />
-                  <span className="max-w-[160px] truncate">
-                    {t(
-                      ($) => {
-                        return $.connectors.catalog.filterWith;
-                      },
-                      {
-                        category:
-                          (customScope
-                            ? t(($) => {
-                                return $.connectors.catalog.directory.custom;
-                              })
-                            : active?.menuLabel) ??
-                          t(($) => {
-                            return $.connectors.catalog.filters.all;
-                          }),
-                      },
-                    )}
-                  </span>
-                  <ChevronDown size={14} aria-hidden="true" />
-                </Button>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 self-end gap-1.5"
+                    aria-label={t(($) => {
+                      return $.connectors.catalog.filters.aria;
+                    })}
+                  />
+                }
+              >
+                <Filter size={14} aria-hidden="true" />
+                <span className="max-w-[160px] truncate">
+                  {t(
+                    ($) => {
+                      return $.connectors.catalog.filterWith;
+                    },
+                    {
+                      category:
+                        (customScope
+                          ? t(($) => {
+                              return $.connectors.catalog.directory.custom;
+                            })
+                          : active?.menuLabel) ??
+                        t(($) => {
+                          return $.connectors.catalog.filters.all;
+                        }),
+                    },
+                  )}
+                </span>
+                <ChevronDown size={14} aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"

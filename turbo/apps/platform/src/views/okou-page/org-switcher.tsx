@@ -324,24 +324,26 @@ export function OrgSwitcherCompact() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          aria-label={t(($) => {
-            return $.appShell.sidebar.workspaceSwitcher.switch;
-          })}
-          variant="quiet"
-          size="icon"
-          className="relative"
-        >
-          <WorkspaceLogo
-            name={orgName}
-            imageUrl={currentOrg?.imageUrl}
-            size="md+"
+      <DropdownMenuTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            aria-label={t(($) => {
+              return $.appShell.sidebar.workspaceSwitcher.switch;
+            })}
+            variant="quiet"
+            size="icon"
+            className="relative"
           />
-          <PendingInvitationsBadge />
-        </Button>
+        }
+      >
+        <WorkspaceLogo
+          name={orgName}
+          imageUrl={currentOrg?.imageUrl}
+          size="md+"
+        />
+        <PendingInvitationsBadge />
       </DropdownMenuTrigger>
       <OrgDropdownContent />
     </DropdownMenu>
@@ -360,23 +362,25 @@ export function OrgSwitcher() {
   return (
     <div>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={t(($) => {
-              return $.appShell.sidebar.workspaceSwitcher.switch;
-            })}
-            className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-state-hover text-sidebar-foreground transition-colors"
-          >
-            <span className="relative shrink-0">
-              <WorkspaceLogo name={orgName} imageUrl={currentOrg?.imageUrl} />
-              <PendingInvitationsBadge />
-            </span>
-            <span className="min-w-0 flex-1 text-left text-sm font-semibold leading-tight truncate">
-              {orgName}
-            </span>
-            <ChevronDown size={16} className="ml-auto shrink-0" />
-          </button>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              aria-label={t(($) => {
+                return $.appShell.sidebar.workspaceSwitcher.switch;
+              })}
+              className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-state-hover text-sidebar-foreground transition-colors"
+            />
+          }
+        >
+          <span className="relative shrink-0">
+            <WorkspaceLogo name={orgName} imageUrl={currentOrg?.imageUrl} />
+            <PendingInvitationsBadge />
+          </span>
+          <span className="min-w-0 flex-1 text-left text-sm font-semibold leading-tight truncate">
+            {orgName}
+          </span>
+          <ChevronDown size={16} className="ml-auto shrink-0" />
         </DropdownMenuTrigger>
         <OrgDropdownContent />
       </DropdownMenu>

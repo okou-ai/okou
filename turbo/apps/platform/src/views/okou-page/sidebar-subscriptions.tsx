@@ -1,5 +1,6 @@
 import { useGet, useLoadable } from "ccstate-react";
 import {
+  DropdownMenuItem,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -17,7 +18,6 @@ import {
   type AccountMenuSubscriptionUsageWindow,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { formatCodexResetCredits } from "./components/preferences/codex-reset-usage-dialog.tsx";
 import {
   formatCodexResetCreditExpiry,
@@ -190,9 +190,9 @@ function AccountMenuSubscriptionProviderSection({
         })}
       </div>
       {type === "codex-oauth-token" ? (
-        <DropdownMenuModalItem
+        <DropdownMenuItem
           disabled={!canResetCodex || resetPending}
-          onModalSelect={() => {
+          onClick={() => {
             onResetCodexUsage?.(resetCredits ?? null);
           }}
           className="mt-1 flex items-center justify-between gap-2 rounded-md px-2 text-xs"
@@ -207,7 +207,7 @@ function AccountMenuSubscriptionProviderSection({
               return $.settings.accountMenu.subscriptions.reset;
             })}
           </span>
-        </DropdownMenuModalItem>
+        </DropdownMenuItem>
       ) : null}
     </section>
   );

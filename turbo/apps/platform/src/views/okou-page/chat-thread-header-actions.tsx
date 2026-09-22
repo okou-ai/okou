@@ -17,7 +17,6 @@ import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/
 import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
 export function ChatThreadPinButton({
@@ -94,25 +93,27 @@ export function MobileChatThreadMoreMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className="size-11 shrink-0"
-          aria-label={t(($) => {
-            return $.chat.actions.more;
-          })}
-        >
-          <Ellipsis size={18} />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            iconSize="md"
+            className="size-11 shrink-0"
+            aria-label={t(($) => {
+              return $.chat.actions.more;
+            })}
+          />
+        }
+      >
+        <Ellipsis size={18} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuItem
           className="min-h-11"
-          onSelect={() => {
+          onClick={() => {
             detach(setPinned(!pinned, pageSignal), Reason.DomCallback);
           }}
         >
@@ -125,9 +126,9 @@ export function MobileChatThreadMoreMenu({
                 return $.chat.sidebar.pin;
               })}
         </DropdownMenuItem>
-        <DropdownMenuModalItem
+        <DropdownMenuItem
           className="min-h-11"
-          onModalSelect={() => {
+          onClick={() => {
             detach(openRename(thread.threadId, pageSignal), Reason.DomCallback);
           }}
         >
@@ -135,12 +136,12 @@ export function MobileChatThreadMoreMenu({
           {t(($) => {
             return $.chat.sidebar.rename;
           })}
-        </DropdownMenuModalItem>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {automations && automations.length > 0 && (
           <DropdownMenuItem
             className="min-h-11"
-            onSelect={() => {
+            onClick={() => {
               reloadAutomations();
               openAutomations(thread);
             }}
@@ -153,7 +154,7 @@ export function MobileChatThreadMoreMenu({
         )}
         <DropdownMenuItem
           className="min-h-11"
-          onSelect={() => {
+          onClick={() => {
             reloadArtifacts();
             openArtifacts();
           }}

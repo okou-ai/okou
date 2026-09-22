@@ -136,11 +136,17 @@ export function UsageRangeSelect({
   useTranslation();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="neutral" size="sm" className="h-9 shrink-0 rounded-lg">
-          {rangeLabel(value)}
-          <ChevronDown size={14} className="ml-1.5 text-muted-foreground" />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="neutral"
+            size="sm"
+            className="h-9 shrink-0 rounded-lg"
+          />
+        }
+      >
+        {rangeLabel(value)}
+        <ChevronDown size={14} className="ml-1.5 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         {RANGE_OPTIONS.map((option) => {

@@ -81,25 +81,27 @@ function AddConnectionMenu() {
   }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="h-9 gap-2 rounded-lg"
-        >
-          <Plus size={14} />
-          {t(($) => {
-            return $.settings.models.gateways.add;
-          })}
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="h-9 gap-2 rounded-lg"
+          />
+        }
+      >
+        <Plus size={14} />
+        {t(($) => {
+          return $.settings.models.gateways.add;
+        })}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {templates.map((template) => {
           return (
             <DropdownMenuItem
               key={template}
-              onSelect={() => {
+              onClick={() => {
                 openCreate(template, settingsDialogSignal);
               }}
             >
@@ -149,23 +151,25 @@ function ConnectionCard({
         </p>
       </div>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            showTooltip
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 rounded-lg"
-            aria-label={t(($) => {
-              return $.settings.models.gateways.actions;
-            })}
-          >
-            <EllipsisVertical size={15} />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              showTooltip
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-lg"
+              aria-label={t(($) => {
+                return $.settings.models.gateways.actions;
+              })}
+            />
+          }
+        >
+          <EllipsisVertical size={15} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem
-            onSelect={() => {
+            onClick={() => {
               openEdit(connection, settingsDialogSignal);
             }}
           >
@@ -176,7 +180,7 @@ function ConnectionCard({
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"
-            onSelect={() => {
+            onClick={() => {
               openDelete(connection);
             }}
           >
