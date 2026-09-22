@@ -368,6 +368,55 @@ export async function withMorningBriefInstructionVersionReadFixture<T>(
   );
 }
 
+/**
+ * Pause delivery of one member's real Morning Brief locale SELECT.
+ *
+ * The locale read is the one statement that always sits between the frozen
+ * language context and the final instruction-version fence: it runs for every
+ * owner, including one with no instructions storage at all, and it reaches no
+ * network. That makes it the only place a test can suspend an attempt in that
+ * window now that no membership lookup survives past collection.
+ *
+ * The query and its result remain real, and only this member's delivery
+ * pauses, so unrelated traffic against the same table is never blocked.
+ */
+export async function withMorningBriefMemberLocaleReadFixture<T>(
+  owner: MorningBriefCollectionOwner,
+  work: (read: {
+    readonly waitForArrival: () => Promise<void>;
+    readonly release: () => void;
+  }) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        const text = barrierQueryText(queryArgs);
+        return (
+          text.startsWith("select") &&
+          text.includes('from "org_members_metadata"') &&
+          text.includes('"locale"') &&
+          barrierQueryBinds(queryArgs, owner.orgId) &&
+          barrierQueryBinds(queryArgs, owner.userId)
+        );
+      },
+      stopAt: (_queryArgs, selectingStatement) => {
+        return selectingStatement;
+      },
+      pauseAfter: true,
+      work: async (barrier) => {
+        return await work({
+          waitForArrival: async () => {
+            await barrier.entered;
+          },
+          release: barrier.release,
+        });
+      },
+    },
+    signal,
+  );
+}
+
 /** Pause the seeded schedule the way the Settings surface would. */
 export async function pauseMorningBriefAutomation(
   automationId: string,
