@@ -64,7 +64,6 @@ import {
   AccountMenuSubscriptionsPanel,
   useSubscriptionUsageRows,
 } from "./sidebar-subscriptions.tsx";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -394,8 +393,8 @@ function CreditBalanceItem({
   onOpenCreditBalance: () => void;
 }) {
   return (
-    <DropdownMenuModalItem
-      onModalSelect={onOpenCreditBalance}
+    <DropdownMenuItem
+      onClick={onOpenCreditBalance}
       className="gap-3 px-3"
       data-testid="account-menu-credit-balance"
     >
@@ -407,7 +406,7 @@ function CreditBalanceItem({
           creditLabel
         )}
       </span>
-    </DropdownMenuModalItem>
+    </DropdownMenuItem>
   );
 }
 
@@ -423,17 +422,14 @@ function UnifiedSettingsGroup({
   const { t } = useTranslation();
   return (
     <>
-      <DropdownMenuModalItem
-        onModalSelect={onOpenSettings}
-        className="gap-3 px-3"
-      >
+      <DropdownMenuItem onClick={onOpenSettings} className="gap-3 px-3">
         <Settings size={18} className="" />
         <span>
           {t(($) => {
             return $.settings.accountMenu.settings;
           })}
         </span>
-      </DropdownMenuModalItem>
+      </DropdownMenuItem>
       {labEnabled && (
         <DropdownMenuItem
           onClick={() => {
@@ -720,9 +716,9 @@ export function AccountDropdown({
   return (
     <>
       <DropdownMenu onOpenChange={handleMenuOpenChange}>
-        <DropdownMenuTrigger asChild>
-          {renderAccountTrigger(accountDisplay, collapsed, avatarShape)}
-        </DropdownMenuTrigger>
+        <DropdownMenuTrigger
+          render={renderAccountTrigger(accountDisplay, collapsed, avatarShape)}
+        />
 
         <DropdownMenuContent
           side="top"

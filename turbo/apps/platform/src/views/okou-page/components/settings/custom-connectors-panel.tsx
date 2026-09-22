@@ -14,6 +14,7 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@okouai/ui";
 import {
@@ -43,7 +44,6 @@ import {
   ConnectorAgentAccessButton,
   connectorAgentAccessStatus,
 } from "./connector-agent-access-button.tsx";
-import { DropdownMenuModalItem } from "../../../components/dropdown-menu-modal-item.tsx";
 import { noConnectorImg } from "../../platform-assets.ts";
 import { customConnectorTarget } from "./custom-connector-display.ts";
 import { connectorAccountSummaryByTarget$ } from "../../../../signals/okou-page/connector-accounts.ts";
@@ -281,36 +281,38 @@ function CustomConnectorActions({
   return (
     <div className="absolute bottom-2 right-2 z-20">
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            showTooltip
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
-            aria-label={t(($) => {
-              return $.connectors.custom.moreOptions;
-            })}
-          >
-            <EllipsisVertical size={14} />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              showTooltip
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+              aria-label={t(($) => {
+                return $.connectors.custom.moreOptions;
+              })}
+            />
+          }
+        >
+          <EllipsisVertical size={14} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
           {adminCanEdit ? (
-            <DropdownMenuModalItem onModalSelect={onEdit}>
+            <DropdownMenuItem onClick={onEdit}>
               {t(($) => {
                 return $.connectors.actions.edit;
               })}
-            </DropdownMenuModalItem>
+            </DropdownMenuItem>
           ) : null}
           {adminCanDelete ? (
-            <DropdownMenuModalItem
-              onModalSelect={onDelete}
+            <DropdownMenuItem
+              onClick={onDelete}
               className="text-destructive focus:text-destructive"
             >
               {t(($) => {
                 return $.connectors.actions.delete;
               })}
-            </DropdownMenuModalItem>
+            </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>

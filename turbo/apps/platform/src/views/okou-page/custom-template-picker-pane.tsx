@@ -218,21 +218,23 @@ function CustomTemplateActions({
     // where hover does not exist and whenever it takes focus.
     <div className="absolute right-2 top-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:group-focus-within/tile:opacity-100">
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            aria-label={t(
-              ($) => {
-                return $.templates.actions.menu;
-              },
-              { title: template.title },
-            )}
-            className="bg-background/90 hover:bg-background"
-          >
-            <MoreHorizontal />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              aria-label={t(
+                ($) => {
+                  return $.templates.actions.menu;
+                },
+                { title: template.title },
+              )}
+              className="bg-background/90 hover:bg-background"
+            />
+          }
+        >
+          <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuSub>
@@ -250,7 +252,7 @@ function CustomTemplateActions({
                 return (
                   <DropdownMenuItem
                     key={value}
-                    onSelect={() => {
+                    onClick={() => {
                       if (!selected) {
                         onVisibilityChange(value);
                       }
@@ -267,7 +269,7 @@ function CustomTemplateActions({
           </DropdownMenuSub>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={onDelete}
+            onClick={onDelete}
             className="text-destructive focus:text-destructive"
           >
             <Trash2 />

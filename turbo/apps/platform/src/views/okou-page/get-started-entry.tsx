@@ -56,7 +56,6 @@ import {
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { SlackMark } from "./components/slack-mark.tsx";
 import {
   GetStartedCheckinDialog,
@@ -437,13 +436,13 @@ function QuestRow({
   // just opened down with it.
   if (opensModal) {
     return (
-      <DropdownMenuModalItem
+      <DropdownMenuItem
         className={QUEST_ROW_CLASS}
-        onModalSelect={onSelect}
+        onClick={onSelect}
         data-testid={testId}
       >
         {body}
-      </DropdownMenuModalItem>
+      </DropdownMenuItem>
     );
   }
 
@@ -924,30 +923,32 @@ export function GetStartedEntry() {
   return (
     <>
       <DropdownMenu onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            className="h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover"
-            data-testid="get-started-entry"
-          >
-            <QuestRing completed={summary.completed} total={summary.total} />
-            <span className="text-[13px] font-medium">
-              {t(($) => {
-                return $.chat.agentPage.getStarted.title;
-              })}
-            </span>
-            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
-            <span className="text-xs font-semibold tabular-nums text-muted-foreground">
-              {t(
-                ($) => {
-                  return $.chat.agentPage.getStarted.stepCount;
-                },
-                { completed: summary.completed, total: summary.total },
-              )}
-            </span>
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="sm"
+              className="h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover"
+              data-testid="get-started-entry"
+            />
+          }
+        >
+          <QuestRing completed={summary.completed} total={summary.total} />
+          <span className="text-[13px] font-medium">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.title;
+            })}
+          </span>
+          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
+          <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.stepCount;
+              },
+              { completed: summary.completed, total: summary.total },
+            )}
+          </span>
         </DropdownMenuTrigger>
         <GetStartedPanel
           quests={questsLoadable.data}

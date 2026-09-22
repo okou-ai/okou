@@ -20,7 +20,6 @@ import { createRule } from "../utils.ts";
 /** Components whose row height is owned by `@okouai/ui`. */
 const MENU_ROWS = new Set([
   "DropdownMenuItem",
-  "DropdownMenuModalItem",
   "DropdownMenuSubTrigger",
   "SelectItem",
 ]);

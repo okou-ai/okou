@@ -75,7 +75,6 @@ import {
   currentChatThreadId$,
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
 import { setChatThreadUnreadFilter$ } from "../../signals/okou-page/chat-thread-filter.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
@@ -210,7 +209,7 @@ function ChatThreadMarkUnreadMenuItem({
 
   return (
     <DropdownMenuItem
-      onSelect={() => {
+      onClick={() => {
         detach(markUnread(pageSignal), Reason.DomCallback);
       }}
     >
@@ -241,7 +240,7 @@ function ChatThreadArchiveMenuItem({
 
   return (
     <DropdownMenuItem
-      onSelect={() => {
+      onClick={() => {
         detach(toggleArchived(pageSignal), Reason.DomCallback);
       }}
     >
@@ -296,7 +295,7 @@ function ChatThreadPinMenuItems({
         aria-keyshortcuts={
           GLOBAL_KEYBOARD_SHORTCUTS.toggleChatPin.ariaKeyShortcuts
         }
-        onSelect={() => {
+        onClick={() => {
           detach(togglePinned(pageSignal), Reason.DomCallback);
         }}
       >
@@ -341,68 +340,68 @@ function ChatThreadMenu({
   return (
     <TooltipProvider delayDuration={200}>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            onClick={preventChatThreadMenuNavigation}
-            variant="quiet"
-            size="icon-2xs"
-            className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
-              hasRestingIndicator
-                ? ""
-                : "md:invisible md:group-hover:visible md:data-popup-open:visible"
-            } ${CHAT_THREAD_ROW_ICON_CLASS}`}
-            aria-label={t(($) => {
-              return $.chat.sidebar.openChatMenu;
-            })}
-            data-testid="chat-thread-menu-trigger"
-            data-pinned={isPinned ? "true" : "false"}
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  aria-label={
-                    showPinIndicator
-                      ? t(($) => {
-                          return $.chat.sidebar.pinned;
-                        })
-                      : undefined
-                  }
-                  data-testid={
-                    showPinIndicator
-                      ? "chat-thread-pinned-indicator"
-                      : undefined
-                  }
-                  className="flex items-center justify-center"
-                >
-                  {hasRestingIndicator ? (
-                    <>
-                      <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
-                        {showStateIndicator ? (
-                          <SessionStateIndicator signals={signals} />
-                        ) : (
-                          <Pin size={17} className="opacity-70" />
-                        )}
-                      </span>
-                      <Ellipsis
-                        size={17}
-                        className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
-                      />
-                    </>
-                  ) : (
-                    <Ellipsis size={17} className="opacity-70" />
-                  )}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p className="text-xs">
-                  {t(($) => {
-                    return $.chat.actions.more;
-                  })}
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              onClick={preventChatThreadMenuNavigation}
+              variant="quiet"
+              size="icon-2xs"
+              className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
+                hasRestingIndicator
+                  ? ""
+                  : "md:invisible md:group-hover:visible md:data-popup-open:visible"
+              } ${CHAT_THREAD_ROW_ICON_CLASS}`}
+              aria-label={t(($) => {
+                return $.chat.sidebar.openChatMenu;
+              })}
+              data-testid="chat-thread-menu-trigger"
+              data-pinned={isPinned ? "true" : "false"}
+            />
+          }
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                aria-label={
+                  showPinIndicator
+                    ? t(($) => {
+                        return $.chat.sidebar.pinned;
+                      })
+                    : undefined
+                }
+                data-testid={
+                  showPinIndicator ? "chat-thread-pinned-indicator" : undefined
+                }
+                className="flex items-center justify-center"
+              >
+                {hasRestingIndicator ? (
+                  <>
+                    <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
+                      {showStateIndicator ? (
+                        <SessionStateIndicator signals={signals} />
+                      ) : (
+                        <Pin size={17} className="opacity-70" />
+                      )}
+                    </span>
+                    <Ellipsis
+                      size={17}
+                      className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
+                    />
+                  </>
+                ) : (
+                  <Ellipsis size={17} className="opacity-70" />
+                )}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="text-xs">
+                {t(($) => {
+                  return $.chat.actions.more;
+                })}
+              </p>
+            </TooltipContent>
+          </Tooltip>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
@@ -412,21 +411,21 @@ function ChatThreadMenu({
           <ChatThreadPinMenuItems signals={signals} />
           <ChatThreadMarkUnreadMenuItem signals={signals} />
           <ChatThreadArchiveMenuSection signals={signals} />
-          <DropdownMenuModalItem
+          <DropdownMenuItem
             aria-label={renameLabel}
             aria-keyshortcuts={
               GLOBAL_KEYBOARD_SHORTCUTS.renameChat.ariaKeyShortcuts
             }
-            onModalSelect={openRenameDialog}
+            onClick={openRenameDialog}
           >
             <Pencil size={16} className="mr-2" />
             {renameLabel}
             <ChatThreadMenuShortcut
               shortcut={GLOBAL_KEYBOARD_SHORTCUTS.renameChat.binding}
             />
-          </DropdownMenuModalItem>
-          <DropdownMenuModalItem
-            onModalSelect={() => {
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
               requestDelete();
             }}
             className="text-destructive focus:text-destructive"
@@ -435,7 +434,7 @@ function ChatThreadMenu({
             {t(($) => {
               return $.chat.sidebar.delete;
             })}
-          </DropdownMenuModalItem>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>
@@ -946,7 +945,7 @@ function MarkAllReadMenuItem({
   const { t } = useTranslation("agents");
 
   return (
-    <DropdownMenuItem onSelect={onSelect} disabled={disabled}>
+    <DropdownMenuItem onClick={onSelect} disabled={disabled}>
       <CheckCheck size={16} className="mr-2" />
       {t(($) => {
         return $.sidebar.markAllRead;
@@ -980,7 +979,7 @@ function ChatThreadFilterMenuItems({
   return (
     <>
       <DropdownMenuItem
-        onSelect={() => {
+        onClick={() => {
           setUnreadFilter(false);
         }}
       >
@@ -990,7 +989,7 @@ function ChatThreadFilterMenuItems({
         })}
       </DropdownMenuItem>
       <DropdownMenuItem
-        onSelect={() => {
+        onClick={() => {
           setUnreadFilter(true);
         }}
         aria-keyshortcuts={
@@ -1012,7 +1011,7 @@ function ChatThreadFilterMenuItems({
       {archiveEnabled ? (
         <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={toggleShowArchived} disabled={unreadOnly}>
+          <DropdownMenuItem onClick={toggleShowArchived} disabled={unreadOnly}>
             <Check
               size={16}
               className={`mr-2 ${showArchived || unreadOnly ? "" : "invisible"}`}
@@ -1040,19 +1039,21 @@ function ChatThreadsListMenu({
   return (
     <TooltipProvider delayDuration={200}>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.sidebar.openListMenu;
-            })}
-          >
-            <ChatThreadsListMenuTooltip />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.sidebar.openListMenu;
+              })}
+            />
+          }
+        >
+          <ChatThreadsListMenuTooltip />
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"

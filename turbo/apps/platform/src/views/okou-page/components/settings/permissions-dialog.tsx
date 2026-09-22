@@ -583,33 +583,35 @@ function PermissionAllowDurationDropdown({
   const { t } = useTranslation();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={saving}
-          aria-label={t(
-            ($) => {
-              return $.connectors.permissions.allowOptions;
-            },
-            { permission },
-          )}
-          className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium border-surface-border transition-colors ${
-            saving
-              ? "cursor-default text-muted-foreground/50"
-              : "cursor-pointer text-muted-foreground hover:bg-state-hover hover:text-foreground"
-          }`}
-        >
-          <Clock size={12} className="shrink-0" />
-          <span className="max-w-[90px] truncate">{label}</span>
-          <ChevronDown size={12} className="shrink-0" />
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            disabled={saving}
+            aria-label={t(
+              ($) => {
+                return $.connectors.permissions.allowOptions;
+              },
+              { permission },
+            )}
+            className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium border-surface-border transition-colors ${
+              saving
+                ? "cursor-default text-muted-foreground/50"
+                : "cursor-pointer text-muted-foreground hover:bg-state-hover hover:text-foreground"
+            }`}
+          />
+        }
+      >
+        <Clock size={12} className="shrink-0" />
+        <span className="max-w-[90px] truncate">{label}</span>
+        <ChevronDown size={12} className="shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-40" finalFocus={false}>
         {ALLOW_DURATION_MENU_OPTIONS.map((option) => {
           return (
             <DropdownMenuItem
               key={option}
-              onSelect={() => {
+              onClick={() => {
                 onSelect(option);
               }}
               className="flex items-center justify-between gap-4"

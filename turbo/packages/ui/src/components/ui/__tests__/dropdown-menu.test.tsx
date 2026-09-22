@@ -18,20 +18,20 @@ import {
   TooltipTrigger,
 } from "../tooltip";
 
-function TestMenu({ keepOpen = false }: { keepOpen?: boolean }) {
+function TestMenu({
+  keepOpen = false,
+  onAction,
+}: {
+  keepOpen?: boolean;
+  onAction?: () => void;
+}) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button type="button">Actions</button>
+      <DropdownMenuTrigger render={<button type="button" />}>
+        Actions
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem
-          onSelect={(event) => {
-            if (keepOpen) {
-              event.preventDefault();
-            }
-          }}
-        >
+        <DropdownMenuItem closeOnClick={!keepOpen} onClick={onAction}>
           Rename
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -40,13 +40,26 @@ function TestMenu({ keepOpen = false }: { keepOpen?: boolean }) {
 }
 
 describe("DropdownMenu", () => {
-  it("keeps legacy onSelect preventDefault behavior", async () => {
+  it("keeps the menu open when an item opts out of closing", async () => {
     render(<TestMenu keepOpen />);
 
     fireEvent.click(screen.getByRole("button", { name: "Actions" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
 
     expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("forwards native item actions and closes the menu", async () => {
+    const onAction = vi.fn();
+    render(<TestMenu onAction={onAction} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+
+    expect(onAction).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
   });
 
   it("does not restore trigger focus after a pointer dismissal", async () => {

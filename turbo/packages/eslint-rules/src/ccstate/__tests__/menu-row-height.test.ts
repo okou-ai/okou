@@ -59,11 +59,6 @@ ruleTester.run("menu-row-height", rule, {
       code: `<SelectItem className="h-8 pl-2 pr-8">{label}</SelectItem>`,
       errors: [{ messageId: "menuRowHeight" }],
     },
-    // The app's own wrapper forwards className straight through.
-    {
-      code: `<DropdownMenuModalItem className="py-3" onModalSelect={open}>{label}</DropdownMenuModalItem>`,
-      errors: [{ messageId: "menuRowHeight" }],
-    },
     // A variant prefix still sets the height on some viewport or state.
     {
       code: `<DropdownMenuItem className="sm:py-3">{label}</DropdownMenuItem>`,

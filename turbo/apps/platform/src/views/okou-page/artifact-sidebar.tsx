@@ -643,17 +643,19 @@ function ArtifactMoreActions({ onClose }: { onClose: () => void }) {
           return $.artifacts.actions.more;
         })}
       >
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            aria-label={t(($) => {
-              return $.artifacts.actions.more;
-            })}
-            variant="quiet"
-            size="icon-sm"
-          >
-            <Ellipsis size={16} />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              aria-label={t(($) => {
+                return $.artifacts.actions.more;
+              })}
+              variant="quiet"
+              size="icon-sm"
+            />
+          }
+        >
+          <Ellipsis size={16} />
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end">
