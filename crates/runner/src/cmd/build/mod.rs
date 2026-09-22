@@ -1243,10 +1243,7 @@ async fn write_okou_cli_sidecar(
         Some(okou_cli) => tokio::fs::write(&sidecar, okou_cli.installed_manifest_bytes())
             .await
             .map_err(|e| {
-                RunnerError::Internal(format!(
-                    "write Okou CLI sidecar {}: {e}",
-                    sidecar.display()
-                ))
+                RunnerError::Internal(format!("write Okou CLI sidecar {}: {e}", sidecar.display()))
             }),
         None => match tokio::fs::remove_file(&sidecar).await {
             Ok(()) => Ok(()),

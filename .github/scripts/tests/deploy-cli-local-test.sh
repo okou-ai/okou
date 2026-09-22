@@ -14,6 +14,8 @@ mkdir -p \
   "${test_root}/.github/scripts" \
   "${test_root}/turbo/apps/cli/dist/migrations" \
   "${test_root}/turbo/apps/cli/dist" \
+  "${test_root}/turbo/packages/pi-agent-runtime" \
+  "${test_root}/turbo/patches" \
   "${test_root}/bin"
 
 ln -s "$deploy_script" "${test_root}/scripts/deploy-cli-local.sh"
@@ -50,6 +52,22 @@ printf 'worker\n' \
 printf 'wasm\n' >"${test_root}/turbo/apps/cli/dist/photon_rs_bg.wasm"
 printf 'CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY);\n' \
   >"${test_root}/turbo/apps/cli/dist/migrations/001_initial.sql"
+
+# The artifact manifest carries the bundled runtime and patched Pi SDK versions,
+# so the local deploy needs the same sources the release build reads.
+cat >"${test_root}/turbo/packages/pi-agent-runtime/package.json" <<'EOF'
+{
+  "name": "@okouai/pi-agent-runtime",
+  "version": "1.36.0",
+  "private": true,
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.86.1"
+  }
+}
+EOF
+printf 'patch fixture\n' \
+  >"${test_root}/turbo/patches/@earendil-works__pi-coding-agent@0.86.1.patch"
 
 cat >"${test_root}/bin/git" <<'EOF'
 #!/usr/bin/env bash

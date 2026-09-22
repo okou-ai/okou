@@ -120,7 +120,10 @@ fn build_args_reject_okou_cli_artifact_with_warm_rootfs_cache() {
 #[test]
 fn build_args_parse_okou_cli_artifact_dir() {
     let mut args = build_args();
-    args.extend(["--okou-cli-artifact".to_string(), "/tmp/okou-cli".to_string()]);
+    args.extend([
+        "--okou-cli-artifact".to_string(),
+        "/tmp/okou-cli".to_string(),
+    ]);
 
     let cli = <TestBuildCli as clap::Parser>::try_parse_from(args).unwrap();
 

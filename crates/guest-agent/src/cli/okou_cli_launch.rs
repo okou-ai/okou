@@ -154,7 +154,10 @@ mod tests {
         }
     }
 
-    fn requirement<'a>(runtime: Option<&'a str>, floor: Option<&'a str>) -> PiRuntimeRequirement<'a> {
+    fn requirement<'a>(
+        runtime: Option<&'a str>,
+        floor: Option<&'a str>,
+    ) -> PiRuntimeRequirement<'a> {
         PiRuntimeRequirement {
             required_pi_agent_runtime_version: runtime,
             min_cli_version: floor,
@@ -207,12 +210,36 @@ mod tests {
     fn every_other_case_keeps_npx_with_a_bounded_reason() {
         let cli = installed("9.353.0", "1.36.0");
         let cases = [
-            (requirement(Some("1.36.0"), Some("9.352.7")), None, "no_installed_cli"),
-            (requirement(None, Some("9.352.7")), Some(&cli), "launch_config_without_runtime_version"),
-            (requirement(Some("1.36.1"), Some("9.352.7")), Some(&cli), "runtime_version_mismatch"),
-            (requirement(Some("1.36.0"), None), Some(&cli), "launch_config_without_cli_floor"),
-            (requirement(Some("1.36.0"), Some("9.353.1")), Some(&cli), "cli_below_floor"),
-            (requirement(Some("1.36.0"), Some("v9")), Some(&cli), "invalid_version"),
+            (
+                requirement(Some("1.36.0"), Some("9.352.7")),
+                None,
+                "no_installed_cli",
+            ),
+            (
+                requirement(None, Some("9.352.7")),
+                Some(&cli),
+                "launch_config_without_runtime_version",
+            ),
+            (
+                requirement(Some("1.36.1"), Some("9.352.7")),
+                Some(&cli),
+                "runtime_version_mismatch",
+            ),
+            (
+                requirement(Some("1.36.0"), None),
+                Some(&cli),
+                "launch_config_without_cli_floor",
+            ),
+            (
+                requirement(Some("1.36.0"), Some("9.353.1")),
+                Some(&cli),
+                "cli_below_floor",
+            ),
+            (
+                requirement(Some("1.36.0"), Some("v9")),
+                Some(&cli),
+                "invalid_version",
+            ),
         ];
         for (requirement, installed, reason) in cases {
             let decision = select_pi_cli_launch(&requirement, installed);
@@ -230,8 +257,11 @@ mod tests {
         std::fs::write(&path, b"{not json").unwrap();
         assert!(load_installed_okou_cli_from(&path).is_err());
 
-        std::fs::write(&path, serde_json::to_vec(&installed("9.353.0", "1.36.0")).unwrap())
-            .unwrap();
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&installed("9.353.0", "1.36.0")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             load_installed_okou_cli_from(&path).unwrap(),
             Some(installed("9.353.0", "1.36.0"))

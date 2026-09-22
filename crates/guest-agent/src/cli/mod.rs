@@ -1112,10 +1112,7 @@ async fn execute_cli_inner(
     }
 
     let cmd = if matches!(runtime.framework, env::Framework::Pi) {
-        build_pi_command_for_runtime(
-            runtime,
-            okou_cli_launch::load_installed_okou_cli().as_ref(),
-        )?
+        build_pi_command_for_runtime(runtime, okou_cli_launch::load_installed_okou_cli().as_ref())?
     } else {
         command::build_claude_command_for_runtime(runtime, replay_user_messages)
     };
@@ -2409,12 +2406,12 @@ mod tests {
         set_cli_current_dir, with_carried_failure_reason, write_pi_launch_payload_file,
     };
     use crate::active_input::ActiveInputRuntime;
-    use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
     use crate::paths;
     use crate::session_metadata::SessionHistoryLaunchSource;
     use crate::{constants, env};
     use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
     use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
+    use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
     use std::borrow::Cow;
     use std::collections::HashMap;
     #[cfg(unix)]

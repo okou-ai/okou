@@ -520,9 +520,9 @@ impl LockedRunnerImageArtifacts {
     /// installs advertise nothing and keep the legacy launch path.
     pub(crate) fn uniform_installed_okou_cli(&self) -> Option<&InstalledOkouCli> {
         let mut profiles = self.profile_paths.values();
-        let first = profiles.next()?.installed_okou_cli.as_ref()?;
+        let first = profiles.next()?.installed_okou_cli()?;
         profiles
-            .all(|paths| paths.installed_okou_cli.as_ref() == Some(first))
+            .all(|paths| paths.installed_okou_cli() == Some(first))
             .then_some(first)
     }
 }

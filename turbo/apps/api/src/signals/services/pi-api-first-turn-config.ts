@@ -103,8 +103,8 @@ export function requirePiApiFirstTurnExecutionContext(
         baseSession: context.piLaunchConfig.apiFirstTurn.baseSession,
         sandboxEventSequenceStart:
           context.piLaunchConfig.apiFirstTurn.sandboxEventSequenceStart,
-        ...(context.piLaunchConfig.apiFirstTurn.requiredPiAgentRuntimeVersion ===
-        undefined
+        ...(context.piLaunchConfig.apiFirstTurn
+          .requiredPiAgentRuntimeVersion === undefined
           ? {}
           : {
               requiredPiAgentRuntimeVersion:

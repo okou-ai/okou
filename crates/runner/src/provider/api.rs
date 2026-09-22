@@ -42,7 +42,6 @@ use super::{
     JobCandidate, JobDiscoverySource, JobProvider, RunnerPreference, RunnerPreferenceClaimState,
     parse_runner_preference,
 };
-use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
 use crate::active_input::{ActiveInputNotifications, ActiveInputSource};
 use crate::duration::duration_ms;
 use crate::error::{
@@ -59,6 +58,7 @@ use crate::types::{
 };
 #[cfg(test)]
 use crate::types::{SandboxReuseResult, WorkspaceReuseResult};
+use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))

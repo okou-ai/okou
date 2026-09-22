@@ -125,7 +125,10 @@ impl InstalledOkouCli {
         }
         for (field, value) in [
             ("cli", manifest.versions.cli.as_str()),
-            ("piAgentRuntime", manifest.versions.pi_agent_runtime.as_str()),
+            (
+                "piAgentRuntime",
+                manifest.versions.pi_agent_runtime.as_str(),
+            ),
         ] {
             if parse_release_version(value).is_none() {
                 return Err(InstalledOkouCliError::Version {
@@ -175,11 +178,14 @@ mod tests {
 
     #[test]
     fn parse_accepts_release_versions() {
-        let manifest = InstalledOkouCli::parse(manifest_json("9.353.0", "1.36.0", 1).as_bytes())
-            .unwrap();
+        let manifest =
+            InstalledOkouCli::parse(manifest_json("9.353.0", "1.36.0", 1).as_bytes()).unwrap();
         assert_eq!(manifest.versions.cli, "9.353.0");
         assert_eq!(manifest.versions.pi_agent_runtime, "1.36.0");
-        assert_eq!(manifest.entrypoint, InstalledOkouCli::entrypoint_for("9.353.0"));
+        assert_eq!(
+            manifest.entrypoint,
+            InstalledOkouCli::entrypoint_for("9.353.0")
+        );
     }
 
     #[test]
@@ -206,7 +212,15 @@ mod tests {
     fn release_version_parsing_is_strict() {
         assert_eq!(parse_release_version("9.352.7"), Some([9, 352, 7]));
         assert_eq!(parse_release_version("0.0.0"), Some([0, 0, 0]));
-        for invalid in ["9.352", "9.352.7.1", "9.352.07", "v9.352.7", "9.352.7-rc.1", "", "9..7"] {
+        for invalid in [
+            "9.352",
+            "9.352.7.1",
+            "9.352.07",
+            "v9.352.7",
+            "9.352.7-rc.1",
+            "",
+            "9..7",
+        ] {
             assert_eq!(parse_release_version(invalid), None, "{invalid}");
         }
         assert!(parse_release_version("9.353.0") > parse_release_version("9.352.99"));

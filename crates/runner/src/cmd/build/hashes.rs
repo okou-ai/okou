@@ -126,10 +126,7 @@ async fn compute_rootfs_hash(
 
     if let Some(okou_cli) = okou_cli {
         let package = tokio::fs::read(okou_cli.package_path).await.map_err(|e| {
-            RunnerError::Internal(format!(
-                "read {}: {e}",
-                okou_cli.package_path.display()
-            ))
+            RunnerError::Internal(format!("read {}: {e}", okou_cli.package_path.display()))
         })?;
         update_rootfs_hash_field(
             &mut hasher,
@@ -521,7 +518,10 @@ mod tests {
         .await
         .unwrap();
         let with_a = hash(package_a, manifest_a).await;
-        assert_ne!(without, with_a, "installing a CLI must change the rootfs hash");
+        assert_ne!(
+            without, with_a,
+            "installing a CLI must change the rootfs hash"
+        );
         assert_eq!(with_a, hash(package_a, manifest_a).await, "deterministic");
         assert_ne!(
             with_a,

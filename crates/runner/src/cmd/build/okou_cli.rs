@@ -64,13 +64,12 @@ impl OkouCliArtifact {
                 manifest_path.display()
             ))
         })?;
-        let manifest: ArtifactManifest =
-            serde_json::from_slice(&manifest_bytes).map_err(|e| {
-                RunnerError::Internal(format!(
-                    "parse Okou CLI artifact manifest {}: {e}",
-                    manifest_path.display()
-                ))
-            })?;
+        let manifest: ArtifactManifest = serde_json::from_slice(&manifest_bytes).map_err(|e| {
+            RunnerError::Internal(format!(
+                "parse Okou CLI artifact manifest {}: {e}",
+                manifest_path.display()
+            ))
+        })?;
         if manifest.version != ARTIFACT_MANIFEST_VERSION {
             return Err(RunnerError::Internal(format!(
                 "Okou CLI artifact manifest version {} is unsupported",
@@ -85,7 +84,10 @@ impl OkouCliArtifact {
         }
         for (field, value) in [
             ("cli", manifest.versions.cli.as_str()),
-            ("piAgentRuntime", manifest.versions.pi_agent_runtime.as_str()),
+            (
+                "piAgentRuntime",
+                manifest.versions.pi_agent_runtime.as_str(),
+            ),
         ] {
             if parse_release_version(value).is_none() {
                 return Err(RunnerError::Internal(format!(
@@ -131,8 +133,9 @@ impl OkouCliArtifact {
                 size: package_size,
             },
         };
-        let mut installed_manifest_bytes = serde_json::to_vec(&installed)
-            .map_err(|e| RunnerError::Internal(format!("encode installed Okou CLI manifest: {e}")))?;
+        let mut installed_manifest_bytes = serde_json::to_vec(&installed).map_err(|e| {
+            RunnerError::Internal(format!("encode installed Okou CLI manifest: {e}"))
+        })?;
         installed_manifest_bytes.push(b'\n');
 
         let temp_dir = tempfile::tempdir()
@@ -144,7 +147,9 @@ impl OkouCliArtifact {
         let installed_manifest_path = temp_dir.path().join("installed.json");
         tokio::fs::write(&installed_manifest_path, &installed_manifest_bytes)
             .await
-            .map_err(|e| RunnerError::Internal(format!("stage installed Okou CLI manifest: {e}")))?;
+            .map_err(|e| {
+                RunnerError::Internal(format!("stage installed Okou CLI manifest: {e}"))
+            })?;
 
         Ok(Self {
             _temp_dir: temp_dir,
@@ -169,10 +174,6 @@ impl OkouCliArtifact {
 
     pub(super) fn installed_manifest_bytes(&self) -> &[u8] {
         &self.installed_manifest_bytes
-    }
-
-    pub(super) fn installed(&self) -> &InstalledOkouCli {
-        &self.installed
     }
 
     pub(super) fn hash_input(&self) -> OkouCliHashInput<'_> {
@@ -224,7 +225,11 @@ mod tests {
         let artifact = OkouCliArtifact::resolve(dir.path()).await.unwrap();
 
         assert_eq!(artifact.cli_version(), "9.353.0");
-        assert!(artifact.package_path().starts_with(artifact._temp_dir.path()));
+        assert!(
+            artifact
+                .package_path()
+                .starts_with(artifact._temp_dir.path())
+        );
         assert_eq!(
             std::fs::read(artifact.package_path()).unwrap(),
             b"tarball-bytes"
@@ -234,7 +239,10 @@ mod tests {
         assert_eq!(installed.versions.pi_agent_runtime, "1.36.0");
         assert_eq!(installed.package.sha256, sha256);
         assert_eq!(installed.package.size, 13);
-        assert_eq!(installed.entrypoint, "/usr/local/lib/okou-cli/9.353.0/okou.js");
+        assert_eq!(
+            installed.entrypoint,
+            "/usr/local/lib/okou-cli/9.353.0/okou.js"
+        );
         assert_eq!(
             std::fs::read(artifact.installed_manifest_path()).unwrap(),
             artifact.installed_manifest_bytes()

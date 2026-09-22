@@ -553,12 +553,12 @@ describe("Pi API first-turn handoff loader", () => {
     expect(deriveBaseSessionBytes(Buffer.from(h1), null).toString()).toBe(
       h1.slice(0, h1.indexOf("\n") + 1),
     );
-    expect(() => deriveBaseSessionBytes(Buffer.from(h1), "0".repeat(64))).toThrow(
-      /does not extend the configured H0/,
-    );
-    expect(() => deriveBaseSessionBytes(Buffer.from("{no newline"), null)).toThrow(
-      /no session header line/,
-    );
+    expect(() => {
+      return deriveBaseSessionBytes(Buffer.from(h1), "0".repeat(64));
+    }).toThrow(/does not extend the configured H0/);
+    expect(() => {
+      return deriveBaseSessionBytes(Buffer.from("{no newline"), null);
+    }).toThrow(/no session header line/);
   });
 
   it("accepts a sandbox-first manifest after the API budget but before coordination expires", async () => {
