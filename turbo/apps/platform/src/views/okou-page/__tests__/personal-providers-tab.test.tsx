@@ -313,11 +313,24 @@ test("Review personal subscriptions through account identity", async () => {
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
   expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
-  const table = screen.getByRole("table");
-  expect(within(table).getByText("Provider")).toBeInTheDocument();
-  expect(within(table).getByText("Account")).toBeInTheDocument();
-  expect(within(table).getByText("Plan")).toBeInTheDocument();
-  expect(within(table).getByText("Usage")).toBeInTheDocument();
+  const claudeTable = screen.getByRole("table", {
+    name: "Claude Code OAuth",
+  });
+  const codexTable = screen.getByRole("table", {
+    name: "ChatGPT (Codex)",
+  });
+  for (const table of [claudeTable, codexTable]) {
+    expect(within(table).getByText("Account")).toBeInTheDocument();
+    expect(within(table).getByText("Plan")).toBeInTheDocument();
+    expect(within(table).getByText("Usage")).toBeInTheDocument();
+  }
+  expect(within(claudeTable).getByText("No accounts connected.")).toBeVisible();
+  expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(
+    rowA,
+  );
+  expect(
+    within(claudeTable).queryByTestId(`oauth-account-${accountA.id}`),
+  ).toBeNull();
   const addAccountButtons = queryAllByRoleFast("button").filter((button) => {
     return button.textContent?.trim() === "Add account";
   });

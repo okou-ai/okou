@@ -19,12 +19,6 @@ import {
   DropdownMenuTrigger,
   Radio,
   RadioGroup,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -339,110 +333,154 @@ function PersonalProviderAccountsTable({
   ) => void;
   readonly onReset: (account: ModelProviderResponse) => void;
 }) {
-  const { t } = useTranslation();
-  const accountCount = accountGroups.reduce((count, group) => {
-    return count + group.accounts.length;
-  }, 0);
-
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[24%]">
-            {t(($) => {
-              return $.settings.models.personal.accountTable.provider;
-            })}
-          </TableHead>
-          <TableHead className="w-[32%]">
-            {t(($) => {
-              return $.settings.models.personal.accountTable.account;
-            })}
-          </TableHead>
-          <TableHead className="w-[12%]">
-            {t(($) => {
-              return $.settings.models.personal.accountTable.plan;
-            })}
-          </TableHead>
-          <TableHead>
-            {t(($) => {
-              return $.settings.models.personal.accountTable.usage;
-            })}
-          </TableHead>
-          <TableHead className="w-12" />
-        </TableRow>
-      </TableHeader>
-      {isLoading ? (
-        <TableBody>
-          <OAuthAccountTableRowSkeleton />
-          <OAuthAccountTableRowSkeleton />
-        </TableBody>
-      ) : accountCount === 0 ? (
-        <TableBody>
-          <TableRow className="hover:bg-transparent">
-            <TableCell />
-            <TableCell className="py-5 text-xs text-muted-foreground">
-              {t(($) => {
-                return $.settings.models.personal.noAccounts;
-              })}
-            </TableCell>
-            <TableCell />
-            <TableCell />
-            <TableCell />
-          </TableRow>
-        </TableBody>
-      ) : (
-        accountGroups.map((group) => {
-          if (group.accounts.length === 0) {
-            return null;
-          }
-          const activeId = group.accounts.find((account) => {
-            return account.isActive;
-          })?.id;
-          return (
-            <RadioGroup
-              key={group.type}
-              render={<TableBody />}
-              role="rowgroup"
-              className="border-b border-border last:border-b-0"
-              value={activeId ?? ""}
-              disabled={actionPending}
-              onValueChange={(id: string) => {
-                if (id !== activeId) {
-                  onActivate(id);
-                }
-              }}
-            >
-              {group.accounts.map((account, index) => {
-                return (
-                  <OAuthAccountTableRow
-                    key={account.id}
-                    account={account}
-                    providerTitle={group.title}
-                    fallbackIndex={index + 1}
-                    actionPending={actionPending}
-                    onReconnect={() => {
-                      onReconnect(group.type, account.id);
-                    }}
-                    onDisconnect={() => {
-                      onDisconnect(account, index + 1);
-                    }}
-                    onReset={() => {
-                      onReset(account);
-                    }}
-                  />
-                );
-              })}
-            </RadioGroup>
-          );
-        })
-      )}
-    </Table>
+    <div className="flex flex-col gap-4">
+      {accountGroups.map((group) => {
+        return (
+          <PersonalProviderAccountTable
+            key={group.type}
+            group={group}
+            actionPending={actionPending}
+            isLoading={isLoading}
+            onActivate={onActivate}
+            onReconnect={onReconnect}
+            onDisconnect={onDisconnect}
+            onReset={onReset}
+          />
+        );
+      })}
+    </div>
   );
 }
 
+function PersonalProviderAccountTable({
+  group,
+  actionPending,
+  isLoading,
+  onActivate,
+  onReconnect,
+  onDisconnect,
+  onReset,
+}: {
+  readonly group: PersonalProviderAccountGroup;
+  readonly actionPending: boolean;
+  readonly isLoading: boolean;
+  readonly onActivate: (id: string) => void;
+  readonly onReconnect: (
+    type: PersonalAccountProviderType,
+    modelProviderId: string,
+  ) => void;
+  readonly onDisconnect: (
+    account: ModelProviderResponse,
+    fallbackIndex: number,
+  ) => void;
+  readonly onReset: (account: ModelProviderResponse) => void;
+}) {
+  const { t } = useTranslation();
+  const headingId = `personal-provider-accounts-${group.type}`;
+  const activeId = group.accounts.find((account) => {
+    return account.isActive;
+  })?.id;
+
+  return (
+    <section className="flex flex-col gap-2" aria-labelledby={headingId}>
+      <div className="flex items-center gap-2 px-1">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
+          <ProviderIcon type={group.type} size={18} />
+        </span>
+        <h4 id={headingId} className="text-sm font-medium text-foreground">
+          {group.title}
+        </h4>
+      </div>
+      <div
+        role="table"
+        aria-labelledby={headingId}
+        className="overflow-hidden rounded-xl bg-card"
+        style={{
+          border: "var(--border-width-surface) solid hsl(var(--gray-400))",
+        }}
+      >
+        <div role="rowgroup">
+          <div
+            role="row"
+            className="hidden grid-cols-[minmax(0,1fr)_96px_236px_36px] gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid"
+          >
+            <span role="columnheader">
+              {t(($) => {
+                return $.settings.models.personal.accountTable.account;
+              })}
+            </span>
+            <span role="columnheader">
+              {t(($) => {
+                return $.settings.models.personal.accountTable.plan;
+              })}
+            </span>
+            <span role="columnheader">
+              {t(($) => {
+                return $.settings.models.personal.accountTable.usage;
+              })}
+            </span>
+            <span role="columnheader" />
+          </div>
+        </div>
+        {isLoading ? (
+          <div role="rowgroup" className="p-2">
+            <OAuthAccountTableRowSkeleton />
+          </div>
+        ) : group.accounts.length === 0 ? (
+          <div role="rowgroup" className="p-2">
+            <div role="row" className="rounded-lg px-3 py-5">
+              <div role="cell" className="text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.settings.models.personal.noAccounts;
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <RadioGroup
+            render={<div />}
+            role="rowgroup"
+            className="p-2"
+            value={activeId ?? ""}
+            disabled={actionPending}
+            onValueChange={(id: string) => {
+              if (id !== activeId) {
+                onActivate(id);
+              }
+            }}
+          >
+            {group.accounts.map((account, index) => {
+              return (
+                <OAuthAccountTableRow
+                  key={account.id}
+                  account={account}
+                  fallbackIndex={index + 1}
+                  actionPending={actionPending}
+                  onReconnect={() => {
+                    onReconnect(group.type, account.id);
+                  }}
+                  onDisconnect={() => {
+                    onDisconnect(account, index + 1);
+                  }}
+                  onReset={() => {
+                    onReset(account);
+                  }}
+                />
+              );
+            })}
+          </RadioGroup>
+        )}
+      </div>
+    </section>
+  );
+}
+
+const PERSONAL_ACCOUNT_ROW_CLASS =
+  "relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-12 after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_96px_236px_36px]";
+
 function OAuthAccountTableRow({
   account,
-  providerTitle,
   fallbackIndex,
   actionPending,
   onReconnect,
@@ -450,7 +488,6 @@ function OAuthAccountTableRow({
   onReset,
 }: {
   readonly account: ModelProviderResponse;
-  readonly providerTitle: string;
   readonly fallbackIndex: number;
   readonly actionPending: boolean;
   readonly onReconnect: () => void;
@@ -480,38 +517,38 @@ function OAuthAccountTableRow({
       });
 
   return (
-    <TableRow data-testid={`oauth-account-${account.id}`}>
-      <TableCell className="py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <ProviderIcon type={account.type} size={18} />
-          <span className="truncate font-medium text-foreground">
-            {providerTitle}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell className="py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Radio
-            value={account.id}
-            aria-label={
-              account.isActive
-                ? t(($) => {
-                    return $.settings.models.personal.activeAccount;
-                  })
-                : t(($) => {
-                    return $.settings.models.personal.useAccount;
-                  })
-            }
-          />
-          <OAuthAccountIdentity
-            detail={detail}
-            identity={identity}
-            needsReconnect={account.needsReconnect}
-            statusLabel={statusLabel}
-          />
-        </div>
-      </TableCell>
-      <TableCell className="py-3">
+    <div
+      role="row"
+      data-testid={`oauth-account-${account.id}`}
+      className={PERSONAL_ACCOUNT_ROW_CLASS}
+    >
+      <div
+        role="cell"
+        className="col-start-1 row-start-1 flex min-w-0 items-center gap-3"
+      >
+        <Radio
+          value={account.id}
+          aria-label={
+            account.isActive
+              ? t(($) => {
+                  return $.settings.models.personal.activeAccount;
+                })
+              : t(($) => {
+                  return $.settings.models.personal.useAccount;
+                })
+          }
+        />
+        <OAuthAccountIdentity
+          detail={detail}
+          identity={identity}
+          needsReconnect={account.needsReconnect}
+          statusLabel={statusLabel}
+        />
+      </div>
+      <div
+        role="cell"
+        className="col-start-1 row-start-2 flex items-center pl-7 lg:col-start-2 lg:row-start-1 lg:pl-0"
+      >
         {plan ? (
           <Badge className="text-[11px] font-normal text-muted-foreground">
             {plan}
@@ -519,39 +556,43 @@ function OAuthAccountTableRow({
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         )}
-      </TableCell>
-      <TableCell className="py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {!account.needsReconnect && usageWindows(usage).length > 0 ? (
-            <SubscriptionUsageRings
-              identity={identity}
-              usage={usage}
-              className="ml-0 justify-start"
-            />
-          ) : (
-            <span className="text-xs text-muted-foreground">—</span>
-          )}
-          {account.type === "codex-oauth-token" ? (
-            <CodexResetCreditsButton
-              className="ml-auto"
-              resetCredits={account.subscriptionResetCredits ?? null}
-              resetCreditsNextExpiresAt={
-                account.subscriptionResetCreditsNextExpiresAt
-              }
-              resetPending={actionPending}
-              onReset={onReset}
-            />
-          ) : null}
-        </div>
-      </TableCell>
-      <TableCell className="py-3">
+      </div>
+      <div
+        role="cell"
+        className="col-start-2 row-start-2 flex min-w-0 items-center justify-end gap-3 lg:col-start-3 lg:row-start-1 lg:justify-start"
+      >
+        {!account.needsReconnect && usageWindows(usage).length > 0 ? (
+          <SubscriptionUsageRings
+            identity={identity}
+            usage={usage}
+            className="ml-0 justify-start"
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+        {account.type === "codex-oauth-token" ? (
+          <CodexResetCreditsButton
+            className="ml-auto"
+            resetCredits={account.subscriptionResetCredits ?? null}
+            resetCreditsNextExpiresAt={
+              account.subscriptionResetCreditsNextExpiresAt
+            }
+            resetPending={actionPending}
+            onReset={onReset}
+          />
+        ) : null}
+      </div>
+      <div
+        role="cell"
+        className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4"
+      >
         <OAuthAccountMenu
           actionPending={actionPending}
           onReconnect={onReconnect}
           onDisconnect={onDisconnect}
         />
-      </TableCell>
-    </TableRow>
+      </div>
+    </div>
   );
 }
 
@@ -598,38 +639,41 @@ function OAuthAccountIdentity({
 
 function OAuthAccountTableRowSkeleton() {
   return (
-    <TableRow
+    <div
+      role="row"
       data-testid="oauth-account-table-skeleton"
-      className="hover:bg-transparent"
+      className={cn(PERSONAL_ACCOUNT_ROW_CLASS, "hover:bg-transparent")}
     >
-      <TableCell className="py-3">
-        <div className="flex animate-pulse items-center gap-2.5">
-          <span className="h-[18px] w-[18px] shrink-0 rounded bg-muted/50" />
-          <span className="h-4 w-28 rounded bg-muted/50" />
+      <div
+        role="cell"
+        className="col-start-1 row-start-1 flex animate-pulse items-center gap-3"
+      >
+        <span className="h-4 w-4 shrink-0 rounded-full bg-muted/50" />
+        <div>
+          <span className="block h-4 w-36 rounded bg-muted/50" />
+          <span className="mt-1.5 block h-3 w-20 rounded bg-muted/30" />
         </div>
-      </TableCell>
-      <TableCell className="py-3">
-        <div className="flex animate-pulse items-center gap-3">
-          <span className="h-4 w-4 shrink-0 rounded-full bg-muted/50" />
-          <div>
-            <span className="block h-4 w-36 rounded bg-muted/50" />
-            <span className="mt-1.5 block h-3 w-20 rounded bg-muted/30" />
-          </div>
-        </div>
-      </TableCell>
-      <TableCell className="py-3">
+      </div>
+      <div
+        role="cell"
+        className="col-start-1 row-start-2 flex items-center pl-7 lg:col-start-2 lg:row-start-1 lg:pl-0"
+      >
         <span className="block h-5 w-12 animate-pulse rounded bg-muted/30" />
-      </TableCell>
-      <TableCell className="py-3">
-        <div className="flex animate-pulse gap-1.5">
-          <span className="h-7 w-7 rounded-full bg-muted/30" />
-          <span className="h-7 w-7 rounded-full bg-muted/30" />
-        </div>
-      </TableCell>
-      <TableCell className="py-3">
+      </div>
+      <div
+        role="cell"
+        className="col-start-2 row-start-2 flex animate-pulse items-center justify-end gap-1.5 lg:col-start-3 lg:row-start-1 lg:justify-start"
+      >
+        <span className="h-7 w-7 rounded-full bg-muted/30" />
+        <span className="h-7 w-7 rounded-full bg-muted/30" />
+      </div>
+      <div
+        role="cell"
+        className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4"
+      >
         <span className="block h-8 w-8 animate-pulse rounded-lg bg-muted/30" />
-      </TableCell>
-    </TableRow>
+      </div>
+    </div>
   );
 }
 
