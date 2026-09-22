@@ -446,6 +446,15 @@ async function verifyPrefixAbsent(
  * phase while the capture is unsealed and the inventory phase once it is
  * sealed — and it is what guarantees a locator is durably captured before the
  * catalog row that held it can disappear.
+ *
+ * Unlike the relational sink this one really paginates, so its driver matters.
+ * A page commit keeps the lease: `commitErasureInventoryPage` does not clear
+ * `lease_id` the way `commitResult` does, and `claimErasureWork` skips a row
+ * whose lease is still live. That is deliberate — it makes one worker the only
+ * owner of a capture, so two cannot interleave pages and break the cursor
+ * chain `cursor_mismatch` enforces. A caller therefore claims once and calls
+ * `executeErasureWork` again for each page; claiming again per page yields
+ * nothing after the first, and the capture never reaches `captureComplete`.
  */
 export function createHostedSiteErasureCollector(db: Db): ErasureHandler {
   return {

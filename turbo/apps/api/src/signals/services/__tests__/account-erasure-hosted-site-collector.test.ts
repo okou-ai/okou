@@ -182,18 +182,36 @@ describe("dormant hosted-site object erasure", () => {
     return await reviseErasureInventory(db, initial.id, initial, [sink]);
   }
 
+  async function capturedEveryPage(workId: string): Promise<boolean> {
+    const result = await db.execute(
+      sql`SELECT capture_complete FROM account_erasure_work WHERE id = ${workId}`,
+    );
+    return result.rows[0]?.capture_complete === true;
+  }
+
   /** Runs the inventory phase and seals the capture, exactly as the future
-   * worker will: no object is touched before this returns.
+   * worker must: no object is touched before this returns.
+   *
+   * One claim, then repeated execution on the lease it holds. A page commit
+   * deliberately keeps that lease — `commitErasureInventoryPage` does not
+   * clear `lease_id` the way `commitResult` does, and `claimErasureWork` skips
+   * a row whose lease is still live — which is what stops two workers
+   * interleaving pages and breaking the cursor chain that
+   * `cursor_mismatch` enforces. Claiming again per page therefore yields
+   * nothing after the first page, the collector item never reaches
+   * `captureComplete`, and `sealErasureCapture` refuses with
+   * `capture_incomplete`.
    */
   async function capture(subjectId: string) {
     const handler = createHostedSiteErasureCollector(db);
     const job = await sealedJob(subjectId);
-    for (let page = 0; page < 8; page += 1) {
-      const [collector] = await claimErasureWork(db, job.id, "inventory");
-      if (!collector) {
+    const [collector] = await claimErasureWork(db, job.id, "inventory");
+    expect(collector).toBeDefined();
+    for (let page = 0; collector && page < 8; page += 1) {
+      await executeErasureWork(db, collector, handler, context.signal);
+      if (await capturedEveryPage(collector.workId)) {
         break;
       }
-      await executeErasureWork(db, collector, handler, context.signal);
     }
     const sealed = await sealErasureCapture(
       db,
@@ -268,7 +286,9 @@ describe("dormant hosted-site object erasure", () => {
 
     // One captured prefix plus the collector's own item, which verifies every
     // prefix still readable for the subject — none, now that the row is gone.
-    expect(await runVerification(captured.job.id, captured.handler)).toBe(2);
+    await expect(
+      runVerification(captured.job.id, captured.handler),
+    ).resolves.toBe(2);
     expect([...bucket.live]).toStrictEqual([`${prefix}-other/index.html`]);
 
     const finished = await finalizeErasureJob(
@@ -410,7 +430,9 @@ describe("dormant hosted-site object erasure", () => {
 
     const captured = await capture(userId);
     // Every deployment gets its own item, plus the collector's own.
-    expect(await runVerification(captured.job.id, captured.handler)).toBe(121);
+    await expect(
+      runVerification(captured.job.id, captured.handler),
+    ).resolves.toBe(121);
     expect(bucket.live.size).toBe(0);
 
     const finished = await finalizeErasureJob(
@@ -477,7 +499,9 @@ describe("dormant hosted-site object erasure", () => {
     ]);
     const captured = await capture(userId);
     // Two captured prefixes plus the collector's own item.
-    expect(await runVerification(captured.job.id, captured.handler)).toBe(3);
+    await expect(
+      runVerification(captured.job.id, captured.handler),
+    ).resolves.toBe(3);
     expect([...bucket.live]).toStrictEqual([`${otherPrefix}/index.html`]);
   });
 });
