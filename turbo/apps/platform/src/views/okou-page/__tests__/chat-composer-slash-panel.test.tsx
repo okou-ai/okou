@@ -695,7 +695,12 @@ test("Activate a template cover with Space after a cancelled pointer press", asy
   expect(cover).toHaveFocus();
   expect(editor).toHaveTextContent("Draft /");
   expect(screen.getByTestId("slash-workflow-menu")).toBeInTheDocument();
-  await user.pointer({ target: editor, keys: "[/MouseLeft]" });
+  // Cancel the button press within the popup. Releasing outside the whole
+  // suggestion tree may dismiss it and no longer leaves a keyboard target.
+  await user.pointer({
+    target: screen.getByRole("dialog", { name: "Presentation" }),
+    keys: "[/MouseLeft]",
+  });
   await user.pointer({ target: cover, keys: "[MouseRight]" });
   expect(editor).toHaveTextContent("Draft /");
 
@@ -718,7 +723,12 @@ test("Escape from a focused template cover dismisses the slash menu", async () =
   }
   const cover = slashButton(template.title);
   await user.pointer({ target: cover, keys: "[MouseLeft>]" });
-  await user.pointer({ target: editor, keys: "[/MouseLeft]" });
+  // Cancel the button press within the popup. Releasing outside the whole
+  // suggestion tree may dismiss it and no longer leaves a keyboard target.
+  await user.pointer({
+    target: screen.getByRole("dialog", { name: "Presentation" }),
+    keys: "[/MouseLeft]",
+  });
   expect(cover).toHaveFocus();
 
   await user.keyboard("{Escape}");
