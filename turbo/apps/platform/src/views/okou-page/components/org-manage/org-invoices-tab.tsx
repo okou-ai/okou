@@ -383,22 +383,24 @@ export function OrgInvoicesTab() {
                   {inv.hostedInvoiceUrl ? (
                     <TooltipProvider delayDuration={200}>
                       <Tooltip>
-                        <TooltipTrigger asChild>
-                          <a
-                            href={inv.hostedInvoiceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-state-hover transition-colors"
-                            aria-label={t(
-                              ($) => {
-                                return $.billing.invoices.downloadInvoice;
-                              },
-                              { month: invoiceMonth },
-                            )}
-                          >
-                            <Download size={14} />
-                          </a>
-                        </TooltipTrigger>
+                        <TooltipTrigger
+                          render={
+                            <a
+                              href={inv.hostedInvoiceUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-state-hover transition-colors"
+                              aria-label={t(
+                                ($) => {
+                                  return $.billing.invoices.downloadInvoice;
+                                },
+                                { month: invoiceMonth },
+                              )}
+                            >
+                              <Download size={14} />
+                            </a>
+                          }
+                        />
                         <TooltipContent side="bottom">
                           <p className="text-xs">
                             {t(

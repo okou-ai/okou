@@ -410,11 +410,13 @@ function PriceTierBadge({ tier }: { tier: ModelPriceTier }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex h-7 min-w-10 shrink-0 cursor-help items-center justify-center rounded-lg px-2 text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 transition-colors hover:bg-state-hover hover:text-foreground hover:decoration-muted-foreground">
-            {tier}
-          </span>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <span className="inline-flex h-7 min-w-10 shrink-0 cursor-help items-center justify-center rounded-lg px-2 text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 transition-colors hover:bg-state-hover hover:text-foreground hover:decoration-muted-foreground">
+              {tier}
+            </span>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {getBuiltInModelPriceTierLabel(tier)}
         </TooltipContent>

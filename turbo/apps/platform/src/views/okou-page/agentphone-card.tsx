@@ -54,20 +54,22 @@ function AgentPhoneCardActions({
       {isConnected ? (
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                data-testid="agentphone-connected-indicator"
-                className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
-              >
-                <CircleCheck className="h-3 w-3 text-green-600" />
-                <span className="min-w-0 truncate">
-                  {connectedPhone ??
-                    t(($) => {
-                      return $.connectors.providerSettings.works.connected;
-                    })}
+            <TooltipTrigger
+              render={
+                <span
+                  data-testid="agentphone-connected-indicator"
+                  className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
+                >
+                  <CircleCheck className="h-3 w-3 text-green-600" />
+                  <span className="min-w-0 truncate">
+                    {connectedPhone ??
+                      t(($) => {
+                        return $.connectors.providerSettings.works.connected;
+                      })}
+                  </span>
                 </span>
-              </span>
-            </TooltipTrigger>
+              }
+            />
             <TooltipContent>
               {t(($) => {
                 return $.connectors.providerSettings.agentphone

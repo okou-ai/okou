@@ -534,24 +534,26 @@ function ChatThreadHeaderIconButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn(
-              "shrink-0 duration-150",
-              open &&
-                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-            )}
-            aria-label={label}
-            aria-pressed={open}
-            onClick={onClick}
-          >
-            {icon}
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className={cn(
+                "shrink-0 duration-150",
+                open &&
+                  "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
+              )}
+              aria-label={label}
+              aria-pressed={open}
+              onClick={onClick}
+            >
+              {icon}
+            </Button>
+          }
+        />
         <TooltipContent side="bottom">{tooltip}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -745,27 +747,29 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       <div className="flex shrink-0 items-center gap-0.5">
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                onClick={() => {
-                  detach(
-                    startSharing(pageSignal),
-                    Reason.DomCallback,
-                    "start shared thread selection",
-                  );
-                }}
-                variant="quiet"
-                size="icon-sm"
-                iconSize="md"
-                className="shrink-0 duration-150"
-                aria-label={t(($) => {
-                  return $.chat.sharing.start;
-                })}
-              >
-                <Share2 size={18} />
-              </Button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  onClick={() => {
+                    detach(
+                      startSharing(pageSignal),
+                      Reason.DomCallback,
+                      "start shared thread selection",
+                    );
+                  }}
+                  variant="quiet"
+                  size="icon-sm"
+                  iconSize="md"
+                  className="shrink-0 duration-150"
+                  aria-label={t(($) => {
+                    return $.chat.sharing.start;
+                  })}
+                >
+                  <Share2 size={18} />
+                </Button>
+              }
+            />
             <TooltipContent side="bottom">
               {t(($) => {
                 return $.chat.sharing.start;
@@ -886,32 +890,34 @@ function ChatThreadEmojiMenuButton({
         }}
       >
         <Tooltip>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                aria-label={t(($) => {
-                  return $.chat.thread.changeIcon;
-                })}
-                aria-keyshortcuts="Shift+F2"
-                variant="quiet"
-                size="icon-xs"
-                iconSize="md"
-                className="shrink-0"
-              >
-                {emoji ? (
-                  <span
-                    aria-hidden="true"
-                    className="font-family-emoji text-base leading-none"
-                  >
-                    {emoji}
-                  </span>
-                ) : (
-                  <SmilePlus size={18} aria-hidden="true" />
-                )}
-              </Button>
-            </PopoverTrigger>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  aria-label={t(($) => {
+                    return $.chat.thread.changeIcon;
+                  })}
+                  aria-keyshortcuts="Shift+F2"
+                  variant="quiet"
+                  size="icon-xs"
+                  iconSize="md"
+                  className="shrink-0"
+                >
+                  {emoji ? (
+                    <span
+                      aria-hidden="true"
+                      className="font-family-emoji text-base leading-none"
+                    >
+                      {emoji}
+                    </span>
+                  ) : (
+                    <SmilePlus size={18} aria-hidden="true" />
+                  )}
+                </Button>
+              </PopoverTrigger>
+            }
+          />
           <TooltipContent
             role="tooltip"
             side="bottom"
@@ -7901,22 +7907,24 @@ function RelatedArtifactsDialog({
     <Dialog>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                variant="quiet"
-                size="xs"
-                iconSize="sm"
-                className="gap-1.5 px-2 text-xs text-muted-foreground/60 tabular-nums"
-                aria-label={triggerLabel}
-                data-testid="chat-run-related-artifacts-trigger"
-              >
-                <Package />
-                <span>{triggerLabel}</span>
-              </Button>
-            </DialogTrigger>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="xs"
+                  iconSize="sm"
+                  className="gap-1.5 px-2 text-xs text-muted-foreground/60 tabular-nums"
+                  aria-label={triggerLabel}
+                  data-testid="chat-run-related-artifacts-trigger"
+                >
+                  <Package />
+                  <span>{triggerLabel}</span>
+                </Button>
+              </DialogTrigger>
+            }
+          />
           <TooltipContent side="bottom">{title}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -7955,26 +7963,28 @@ function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            asChild
-            variant="quiet"
-            size="icon-xs"
-            iconSize="sm"
-            className="text-muted-foreground/60"
-          >
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t(($) => {
-                return $.chat.run.viewLangfuseTrace;
-              })}
+        <TooltipTrigger
+          render={
+            <Button
+              asChild
+              variant="quiet"
+              size="icon-xs"
+              iconSize="sm"
+              className="text-muted-foreground/60"
             >
-              <BrandLangfuse aria-hidden />
-            </a>
-          </Button>
-        </TooltipTrigger>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t(($) => {
+                  return $.chat.run.viewLangfuseTrace;
+                })}
+              >
+                <BrandLangfuse aria-hidden />
+              </a>
+            </Button>
+          }
+        />
         <TooltipContent side="bottom">
           {t(($) => {
             return $.chat.run.viewLangfuseTrace;
@@ -8031,27 +8041,29 @@ function PagedGroupPrimaryActions({
       {showActivityLogs && firstRunId && (
         <TooltipProvider delayDuration={300}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                asChild
-                variant="quiet"
-                size="icon-xs"
-                iconSize="sm"
-                className="text-muted-foreground/60"
-              >
-                <Link
-                  pathname="/activities/:activityRunId"
-                  options={{
-                    pathParams: { activityRunId: firstRunId },
-                  }}
-                  aria-label={t(($) => {
-                    return $.chat.run.viewLogs;
-                  })}
+            <TooltipTrigger
+              render={
+                <Button
+                  asChild
+                  variant="quiet"
+                  size="icon-xs"
+                  iconSize="sm"
+                  className="text-muted-foreground/60"
                 >
-                  <ChartLine />
-                </Link>
-              </Button>
-            </TooltipTrigger>
+                  <Link
+                    pathname="/activities/:activityRunId"
+                    options={{
+                      pathParams: { activityRunId: firstRunId },
+                    }}
+                    aria-label={t(($) => {
+                      return $.chat.run.viewLogs;
+                    })}
+                  >
+                    <ChartLine />
+                  </Link>
+                </Button>
+              }
+            />
             <TooltipContent side="bottom">
               {t(($) => {
                 return $.chat.run.viewActivityLogs;
@@ -8070,22 +8082,24 @@ function PagedGroupPrimaryActions({
             return (
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      ref={ref}
-                      type="button"
-                      variant="quiet"
-                      size="icon-xs"
-                      iconSize="sm"
-                      onClick={onClick}
-                      className="text-muted-foreground/60"
-                      aria-label={t(($) => {
-                        return $.chat.actions.copyMessage;
-                      })}
-                    >
-                      {copied ? <Check /> : <Copy />}
-                    </Button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        ref={ref}
+                        type="button"
+                        variant="quiet"
+                        size="icon-xs"
+                        iconSize="sm"
+                        onClick={onClick}
+                        className="text-muted-foreground/60"
+                        aria-label={t(($) => {
+                          return $.chat.actions.copyMessage;
+                        })}
+                      >
+                        {copied ? <Check /> : <Copy />}
+                      </Button>
+                    }
+                  />
                   <TooltipContent side="bottom">
                     {copied
                       ? t(($) => {

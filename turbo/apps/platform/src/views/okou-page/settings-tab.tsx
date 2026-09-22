@@ -151,22 +151,24 @@ function AvatarEditButton({
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={onClick}
-            className="relative shrink-0 rounded-full transition-transform duration-200 hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            aria-label={label}
-          >
-            <AvatarSvgPreview
-              config={config}
-              className="h-12 w-12 rounded-full border-(length:--border-width-emphasis) border-primary ring-2 ring-primary/20"
-            />
-            <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
-              <Wand size={10} />
-            </span>
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={onClick}
+              className="relative shrink-0 rounded-full transition-transform duration-200 hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label={label}
+            >
+              <AvatarSvgPreview
+                config={config}
+                className="h-12 w-12 rounded-full border-(length:--border-width-emphasis) border-primary ring-2 ring-primary/20"
+              />
+              <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
+                <Wand size={10} />
+              </span>
+            </button>
+          }
+        />
         <TooltipContent side="bottom">
           <p className="text-xs">{label}</p>
         </TooltipContent>
