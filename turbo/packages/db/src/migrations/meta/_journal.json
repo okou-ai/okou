@@ -841,6 +841,13 @@
       "when": 1790044914636,
       "tag": "1197_puzzling_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 1198,
+      "version": "7",
+      "when": 1790059286347,
+      "tag": "1198_minor_warlock",
+      "breakpoints": true
     }
   ]
 }

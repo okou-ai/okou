@@ -1960,6 +1960,11 @@
       "threads": "チャット",
       "title": "転送先"
     },
+    "homeTasks": {
+      "existingThread": "チャットを続ける",
+      "heading": "最近の作業から選んだタスク",
+      "newThread": "新しいチャット"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",

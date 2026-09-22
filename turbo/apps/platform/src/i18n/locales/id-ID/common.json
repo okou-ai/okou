@@ -1960,6 +1960,11 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
+    "homeTasks": {
+      "existingThread": "Lanjutkan chat",
+      "heading": "Diambil dari pekerjaan terbaru Anda",
+      "newThread": "Chat baru"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

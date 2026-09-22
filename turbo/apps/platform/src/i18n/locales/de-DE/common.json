@@ -1967,6 +1967,11 @@
       "threads": "Chats",
       "title": "Weiterleiten an"
     },
+    "homeTasks": {
+      "existingThread": "Chat fortsetzen",
+      "heading": "Aus Ihrer letzten Arbeit aufgegriffen",
+      "newThread": "Neuer Chat"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "CC",

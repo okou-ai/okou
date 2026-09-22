@@ -2004,6 +2004,11 @@
       "threads": "Chats",
       "title": "Transférer vers"
     },
+    "homeTasks": {
+      "existingThread": "Continuer le chat",
+      "heading": "Repris de votre travail récent",
+      "newThread": "Nouveau chat"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

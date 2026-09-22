@@ -2004,6 +2004,11 @@
       "threads": "Conversaciones",
       "title": "Reenviar a"
     },
+    "homeTasks": {
+      "existingThread": "Continuar chat",
+      "heading": "Retomado de tu trabajo reciente",
+      "newThread": "Chat nuevo"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",

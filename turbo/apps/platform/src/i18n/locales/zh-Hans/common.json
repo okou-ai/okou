@@ -1960,6 +1960,11 @@
       "threads": "聊天",
       "title": "转发到"
     },
+    "homeTasks": {
+      "existingThread": "继续聊天",
+      "heading": "从近期工作中提取",
+      "newThread": "新建聊天"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",

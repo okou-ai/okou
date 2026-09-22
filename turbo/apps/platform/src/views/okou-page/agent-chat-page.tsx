@@ -26,6 +26,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
+import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import { chatPageTaglineIndex$ } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
@@ -492,6 +493,18 @@ export function AgentChatPage() {
             className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
           >
             <ChatComposer signals={composerSignals} />
+          </div>
+
+          {/* Above the generic starting points and below the composer: these
+              cards describe the member's own unfinished work, so they are only
+              worth the position when there are any, and the section renders
+              nothing when there are not. */}
+          {/* `order-1` keeps the mobile column greeting, recommendations,
+              starting points, composer: the composer's own `order-3` is what
+              holds it at the bottom within thumb reach, so this section takes
+              the step above the chips rather than sharing theirs. */}
+          <div className="order-1 sm:order-none">
+            <HomeTaskRecommendations agentId={currentChatAgentId} />
           </div>
 
           <div className="order-2 sm:order-none">

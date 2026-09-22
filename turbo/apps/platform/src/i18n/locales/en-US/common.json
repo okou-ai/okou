@@ -1967,6 +1967,11 @@
       "threads": "Chats",
       "title": "Forward to"
     },
+    "homeTasks": {
+      "existingThread": "Continue chat",
+      "heading": "Picked up from your recent work",
+      "newThread": "New chat"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
