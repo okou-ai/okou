@@ -130,6 +130,36 @@ const DropdownMenuItem = React.forwardRef<
 });
 DropdownMenuItem.displayName = "DropdownMenuItem";
 
+function DropdownMenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
+  return (
+    <MenuPrimitive.RadioGroup
+      data-slot="dropdown-menu-radio-group"
+      {...props}
+    />
+  );
+}
+
+const DropdownMenuRadioItem = React.forwardRef<
+  HTMLElement,
+  MenuPrimitive.RadioItem.Props
+>(({ className, ...props }, ref) => {
+  return (
+    <MenuPrimitive.RadioItem
+      ref={ref}
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        MENU_ROW_HEIGHT_CLASS,
+        className,
+      )}
+      {...props}
+    />
+  );
+});
+DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem";
+
+const DropdownMenuRadioItemIndicator = MenuPrimitive.RadioItemIndicator;
+
 const DropdownMenuSeparator = React.forwardRef<
   HTMLDivElement,
   MenuPrimitive.Separator.Props
@@ -191,6 +221,9 @@ export {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubTrigger,

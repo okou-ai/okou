@@ -288,7 +288,7 @@ function OAuthAccountGroup({
       ) : (
         <div
           className="border-t border-border/50"
-          role="radiogroup"
+          role="group"
           aria-label={title}
         >
           {accounts.map((account, index) => {
@@ -365,11 +365,10 @@ function OAuthAccountRow({
         <Button
           showTooltip
           type="button"
-          role="radio"
           variant="quiet"
           size="icon-xs"
           className="shrink-0 rounded-full border border-border hover:border-foreground/40 disabled:cursor-default disabled:opacity-100"
-          aria-label={
+          aria-label={`${
             account.isActive
               ? t(($) => {
                   return $.settings.models.personal.activeAccount;
@@ -377,8 +376,8 @@ function OAuthAccountRow({
               : t(($) => {
                   return $.settings.models.personal.useAccount;
                 })
-          }
-          aria-checked={account.isActive}
+          }: ${identity}${detail ? ` (${detail})` : ""}`}
+          aria-pressed={account.isActive}
           disabled={account.isActive || actionPending}
           onClick={onActivate}
         >

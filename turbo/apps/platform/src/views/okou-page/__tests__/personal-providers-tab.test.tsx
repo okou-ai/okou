@@ -1,3 +1,4 @@
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import {
   billingStatusContract,
@@ -22,21 +23,21 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 
 const context = testContext();
 
-function radioByName(
+function activationButton(
   name: string | RegExp,
   container: ParentNode = document.body,
 ): HTMLElement {
-  const radio = queryAllByRoleFast("radio", container).find((candidate) => {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
     const accessibleName =
       candidate.getAttribute("aria-label") ?? candidate.textContent ?? "";
     return typeof name === "string"
       ? accessibleName.trim() === name
       : name.test(accessibleName);
   });
-  if (!radio) {
-    throw new Error(`Radio not found: ${String(name)}`);
+  if (!button) {
+    throw new Error(`Activation button not found: ${String(name)}`);
   }
-  return radio;
+  return button;
 }
 
 function stalePersonalCodexProvider(): ModelProviderResponse {
@@ -306,8 +307,16 @@ test("Review personal subscriptions through account identity", async () => {
   expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
-  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
-  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  expect(
+    activationButton(
+      "Active: account-a@example.com (Account A Organization)",
+      rowA,
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(activationButton("Use: account-b@example.com", rowB)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   const usageRings = within(rowA).getAllByRole("progressbar");
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
@@ -482,8 +491,16 @@ test("Review personal subscriptions through usage details", async () => {
   expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
-  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
-  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  expect(
+    activationButton(
+      "Active: account-a@example.com (Account A Organization)",
+      rowA,
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(activationButton("Use: account-b@example.com", rowB)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   const usageRings = within(rowA).getAllByRole("progressbar");
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
@@ -573,8 +590,16 @@ test("Review personal subscriptions through account switching", async () => {
   expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
-  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
-  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  expect(
+    activationButton(
+      "Active: account-a@example.com (Account A Organization)",
+      rowA,
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(activationButton("Use: account-b@example.com", rowB)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   const usageRings = within(rowA).getAllByRole("progressbar");
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
@@ -585,10 +610,17 @@ test("Review personal subscriptions through account switching", async () => {
       return button.textContent?.trim() === "Add account";
     }),
   ).toHaveLength(2);
-  click(radioByName("Use", rowB));
+  click(activationButton("Use: account-b@example.com", rowB));
   await waitFor(() => {
-    expect(radioByName("Active", rowB)).toHaveAttribute("aria-checked", "true");
-    expect(radioByName("Use", rowA)).toHaveAttribute("aria-checked", "false");
+    expect(
+      activationButton("Active: account-b@example.com", rowB),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      activationButton(
+        "Use: account-a@example.com (Account A Organization)",
+        rowA,
+      ),
+    ).toHaveAttribute("aria-pressed", "false");
     expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   });
 });
@@ -893,4 +925,145 @@ test("Show the saved Codex reset date when live usage is unavailable", async () 
     ),
   ).toBeInTheDocument();
   expect(within(codexRow).queryByText(/% left/u)).toBeNull();
+});
+
+test.each(["{Enter}", " "])(
+  "Account activation waits for explicit %s and server confirmation",
+  async (key) => {
+    const accountA = connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000311",
+      email: "account-a@example.com",
+      isActive: true,
+      createdAt: "2026-03-01T00:00:00Z",
+    });
+    const accountB = connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000312",
+      email: "account-b@example.com",
+      isActive: false,
+      createdAt: "2026-03-02T00:00:00Z",
+    });
+    const response = context.mocks.deferred<void>();
+    let activations = 0;
+    context.mocks.data.personalModelProviders([accountA, accountB]);
+    context.mocks.api(
+      personalModelProviderAccountsByIdContract.activate,
+      async ({ params, respond, withSignal }) => {
+        activations += 1;
+        expect(params.id).toBe(accountB.id);
+        await withSignal(response.promise);
+        context.mocks.data.personalModelProviders([
+          { ...accountA, isActive: false },
+          { ...accountB, isActive: true },
+        ]);
+        return respond(200, { ...accountB, isActive: true });
+      },
+    );
+    await openModelSettings("Models", {
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+    });
+    const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
+    const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
+    const current = activationButton("Active: account-a@example.com", rowA);
+    const target = activationButton("Use: account-b@example.com", rowB);
+    expect(current).toBeDisabled();
+    const user = userEvent.setup();
+    target.focus();
+    await user.keyboard("{ArrowDown}{ArrowUp}{ArrowRight}{ArrowLeft}");
+    expect(target).toHaveFocus();
+    expect(current).toHaveAttribute("aria-pressed", "true");
+    expect(activations).toBe(0);
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(
+        activationButton("Use: account-b@example.com", rowB),
+      ).toBeDisabled();
+    });
+    expect(current).toHaveAttribute("aria-pressed", "true");
+    expect(target).toHaveAttribute("aria-pressed", "false");
+    await user.keyboard(key);
+    expect(activations).toBe(1);
+    response.resolve();
+    await waitFor(() => {
+      expect(
+        activationButton("Active: account-b@example.com", rowB),
+      ).toBeDisabled();
+    });
+    expect(activationButton("Use: account-a@example.com", rowA)).toBeEnabled();
+    expect(activations).toBe(1);
+  },
+);
+
+test("A failed account activation keeps each provider's active account and permits retry", async () => {
+  const accountA = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000311",
+    email: "account-a@example.com",
+    isActive: true,
+    createdAt: "2026-03-01T00:00:00Z",
+  });
+  const accountB = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000312",
+    email: "account-b@example.com",
+    isActive: false,
+    createdAt: "2026-03-02T00:00:00Z",
+  });
+  const claude = { ...connectedPersonalClaudeCodeProvider(), isActive: true };
+  const failed = context.mocks.deferred<void>();
+  let attempts = 0;
+  context.mocks.data.personalModelProviders([accountA, accountB, claude]);
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.activate,
+    async ({ params, respond, withSignal }) => {
+      attempts += 1;
+      expect(params.id).toBe(accountB.id);
+      if (attempts === 1) {
+        await withSignal(failed.promise);
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Activation unavailable",
+          },
+        });
+      }
+      context.mocks.data.personalModelProviders([
+        { ...accountA, isActive: false },
+        { ...accountB, isActive: true },
+        claude,
+      ]);
+      return respond(200, { ...accountB, isActive: true });
+    },
+  );
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+  const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
+  const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
+  const claudeRow = await screen.findByTestId(`oauth-account-${claude.id}`);
+  click(activationButton("Use: account-b@example.com", rowB));
+  await waitFor(() => {
+    expect(activationButton("Use: account-b@example.com", rowB)).toBeDisabled();
+  });
+  failed.resolve();
+  await waitFor(() => {
+    expect(activationButton("Use: account-b@example.com", rowB)).toBeEnabled();
+  });
+  expect(
+    activationButton("Active: account-a@example.com", rowA),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(
+    activationButton("Active: claude.user@example.com", claudeRow),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(attempts).toBe(1);
+  click(activationButton("Use: account-b@example.com", rowB));
+  await expect(
+    screen.findByText("Active account switched"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      activationButton("Active: account-b@example.com", rowB),
+    ).toBeDisabled();
+  });
+  expect(
+    activationButton("Active: claude.user@example.com", claudeRow),
+  ).toBeDisabled();
+  expect(attempts).toBe(2);
 });

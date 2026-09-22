@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
   ACTIVE_RUN_MODELS,
@@ -34,21 +35,21 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 
 const context = testContext();
 
-function radioByName(
+function routeButtonByName(
   name: string | RegExp,
   container: ParentNode = document.body,
 ): HTMLElement {
-  const radio = queryAllByRoleFast("radio", container).find((candidate) => {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
     const accessibleName =
       candidate.getAttribute("aria-label") ?? candidate.textContent ?? "";
     return typeof name === "string"
       ? accessibleName.trim() === name
       : name.test(accessibleName);
   });
-  if (!radio) {
-    throw new Error(`Radio not found: ${String(name)}`);
+  if (!button) {
+    throw new Error(`Route button not found: ${String(name)}`);
   }
-  return radio;
+  return button;
 }
 
 function staleCodexProvider(): ModelProviderResponse {
@@ -405,7 +406,7 @@ async function openAddApiKeyModelDialog(): Promise<void> {
 
   click(screen.getByText("Add model"));
   await selectDialogModel("Claude Opus 4.8");
-  click(radioByName(/API key/u));
+  click(routeButtonByName(/API key/u));
   await waitFor(() => {
     expect(
       screen.getByPlaceholderText("Enter your API key"),
@@ -715,7 +716,7 @@ test("Route a workspace model through an existing custom gateway", async () => {
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Sonnet 5");
   const policyDialog = screen.getByRole("dialog", { name: "Add model" });
-  click(radioByName(/Custom gateway/u, policyDialog));
+  click(routeButtonByName(/Custom gateway/u, policyDialog));
   expect(
     within(policyDialog).getByText("Vercel Edge Gateway"),
   ).toBeInTheDocument();
@@ -873,11 +874,11 @@ test("Gate free workspaces by route instead of by model", async () => {
   expect(within(restrictedModelOption).queryByText("Pro")).toBeNull();
   click(restrictedModelOption);
 
-  const builtInRoute = radioByName(/Built-in/u, dialog);
+  const builtInRoute = routeButtonByName(/Built-in/u, dialog);
   expect(within(builtInRoute).getByText("Pro")).toBeVisible();
   expect(buttonByText("Upgrade to Pro", dialog)).toBeVisible();
 
-  click(radioByName(/API key/u, dialog));
+  click(routeButtonByName(/API key/u, dialog));
   expect(screen.queryByRole("heading", { name: "Choose a plan" })).toBeNull();
   expect(buttonByText("Add model", dialog)).toBeVisible();
   await fill(screen.getByPlaceholderText("Enter your API key"), "sk-test");
@@ -990,7 +991,7 @@ test("Route a workspace model through a Claude subscription", async () => {
 
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Opus 4.8");
-  click(radioByName(/Claude subscription/u));
+  click(routeButtonByName(/Claude subscription/u));
   click(buttonByText("Add model"));
 
   const oauthRow = await screen.findByTestId(
@@ -1010,7 +1011,7 @@ test("Route Claude Fable 5.1 through a workspace Claude subscription", async () 
 
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Fable 5.1");
-  click(radioByName(/Claude subscription/u));
+  click(routeButtonByName(/Claude subscription/u));
   click(buttonByText("Add model"));
 
   const oauthRow = await screen.findByTestId(
@@ -1039,7 +1040,7 @@ test("Add a Codex route and make it the workspace default", async () => {
   const dialog = screen.getByRole("dialog", { name: "Add model" });
   click(within(dialog).getByRole("combobox"));
   click(await screen.findByRole("option", { name: "GPT 5.6 Sol" }));
-  click(radioByName(/Codex subscription/u));
+  click(routeButtonByName(/Codex subscription/u));
   click(buttonByText("Add model", dialog));
 
   const codexRow = await screen.findByTestId(
@@ -1074,7 +1075,7 @@ test("Add a GPT 6 Astra Codex subscription model route", async () => {
   const dialog = screen.getByRole("dialog", { name: "Add model" });
   click(within(dialog).getByRole("combobox"));
   click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
-  click(radioByName(/Codex subscription/u));
+  click(routeButtonByName(/Codex subscription/u));
   click(buttonByText("Add model", dialog));
 
   const codexRow = await screen.findByTestId(
@@ -1093,7 +1094,10 @@ test("Add DeepSeek V4.1 Flash as a built-in model", async () => {
   click(buttonByText("Add model"));
   const dialog = screen.getByRole("dialog", { name: "Add model" });
   await selectDialogModel("DeepSeek V4.1 Flash");
-  expect(radioByName(/Built-in/u, dialog)).toBeChecked();
+  expect(routeButtonByName(/Built-in/u, dialog)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   click(buttonByText("Add model", dialog));
 
   const modelRow = await screen.findByTestId(
@@ -1162,7 +1166,7 @@ test("Offer an upgrade for restricted built-in routes", async () => {
   expect(within(restrictedModelOption).queryByText("Pro")).toBeNull();
   click(restrictedModelOption);
   expect(
-    within(radioByName(/Built-in/u, addDialog)).getByText("Pro"),
+    within(routeButtonByName(/Built-in/u, addDialog)).getByText("Pro"),
   ).toBeVisible();
   expect(screen.queryByRole("heading", { name: "Choose a plan" })).toBeNull();
   click(buttonByText("Upgrade to Pro", addDialog));
@@ -1194,8 +1198,17 @@ test("Offer a plan change when bring-your-own-key is unavailable", async () => {
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Opus 4.8");
 
-  const apiKeyRoute = radioByName(/API key/u);
-  click(apiKeyRoute);
+  const apiKeyRoute = routeButtonByName(/API key/u);
+  const user = userEvent.setup();
+  apiKeyRoute.focus();
+  await user.keyboard("{ArrowDown}{ArrowRight}");
+  expect(apiKeyRoute).toHaveFocus();
+  expect(apiKeyRoute).not.toHaveAttribute("aria-pressed");
+  expect(apiKeyRoute).toHaveAccessibleDescription("Upgrade to Pro");
+  expect(
+    screen.queryByRole("heading", { name: "Choose a plan" }),
+  ).not.toBeInTheDocument();
+  await user.keyboard("{Enter}");
 
   await expect(
     screen.findByRole("heading", { name: "Choose a plan" }),
@@ -1228,7 +1241,7 @@ test("Repair a model route whose provider is missing", async () => {
   click(within(missingRow).getByLabelText("Actions for GPT 5.6 Luna"));
   click(menuItemByText("Edit model"));
   const editDialog = await screen.findByRole("dialog", { name: "Edit model" });
-  click(radioByName(/Built-in/u, editDialog));
+  click(routeButtonByName(/Built-in/u, editDialog));
   click(buttonByText("Save changes", editDialog));
 
   await waitFor(() => {
@@ -1569,9 +1582,9 @@ test("Enabled priority adds a subscription while preserving the displayed defaul
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Opus 4.8");
   const dialog = screen.getByRole("dialog", { name: "Add model" });
-  expect(radioByName(/Built-in/u, dialog)).toBeInTheDocument();
-  expect(radioByName(/Claude subscription/u, dialog)).toBeEnabled();
-  click(radioByName(/Claude subscription/u, dialog));
+  expect(routeButtonByName(/Built-in/u, dialog)).toBeInTheDocument();
+  expect(routeButtonByName(/Claude subscription/u, dialog)).toBeEnabled();
+  click(routeButtonByName(/Claude subscription/u, dialog));
   click(buttonByText("Add model", dialog));
   const added = await screen.findByTestId(
     "org-model-policy-row-claude-opus-4-8",
@@ -1601,8 +1614,8 @@ test("Enabled priority changes an API route to Subscription and keeps that choic
   click(within(luna).getByLabelText("Actions for GPT 5.6 Luna"));
   click(menuItemByText("Edit model"));
   const edit = await screen.findByRole("dialog", { name: "Edit model" });
-  expect(radioByName(/Codex subscription/u, edit)).toBeEnabled();
-  click(radioByName(/Codex subscription/u, edit));
+  expect(routeButtonByName(/Codex subscription/u, edit)).toBeEnabled();
+  click(routeButtonByName(/Codex subscription/u, edit));
   click(buttonByText("Save changes", edit));
   await expect(
     within(luna).findByText("ChatGPT (Codex)"),
@@ -1621,14 +1634,15 @@ test("Enabled priority changes an API route to Subscription and keeps that choic
   const subscriptionEdit = await screen.findByRole("dialog", {
     name: "Edit model",
   });
-  expect(radioByName(/Codex subscription/u, subscriptionEdit)).toBeEnabled();
-  expect(radioByName(/Codex subscription/u, subscriptionEdit)).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  expect(
+    routeButtonByName(/Codex subscription/u, subscriptionEdit),
+  ).toBeEnabled();
+  expect(
+    routeButtonByName(/Codex subscription/u, subscriptionEdit),
+  ).toHaveAttribute("aria-pressed", "true");
   // An administrator can change their choice and return to Subscription before saving.
-  click(radioByName(/Built-in/u, subscriptionEdit));
-  click(radioByName(/Codex subscription/u, subscriptionEdit));
+  click(routeButtonByName(/Built-in/u, subscriptionEdit));
+  click(routeButtonByName(/Codex subscription/u, subscriptionEdit));
   click(buttonByText("Save changes", subscriptionEdit));
   await waitFor(() => {
     expect(
@@ -1670,4 +1684,29 @@ test("A stale settings save displays refresh guidance and leaves the displayed l
   expect(
     within(screen.getByTestId("default-model-row")).getByRole("combobox"),
   ).toHaveTextContent("GPT 5.6 Luna");
+});
+
+test("Provider route keyboard actions edit the draft before submitting", async () => {
+  await openAddApiKeyModelDialog();
+  const dialog = screen.getByRole("dialog", { name: "Add model" });
+  const api = routeButtonByName(/API key/u, dialog);
+  const builtIn = routeButtonByName(/Built-in/u, dialog);
+  const gateway = routeButtonByName(/Custom gateway/u, dialog);
+  const user = userEvent.setup();
+  expect(api).toHaveAttribute("aria-pressed", "true");
+  expect(gateway).toBeDisabled();
+  builtIn.focus();
+  await user.keyboard("{ArrowDown}{ArrowRight}");
+  expect(builtIn).toHaveFocus();
+  expect(api).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard(" ");
+  expect(builtIn).toHaveAttribute("aria-pressed", "true");
+  expect(api).toHaveAttribute("aria-pressed", "false");
+  expect(dialog).toBeInTheDocument();
+  api.focus();
+  expect(api).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(api).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByPlaceholderText("Enter your API key")).toBeInTheDocument();
+  expect(dialog).toBeInTheDocument();
 });

@@ -722,6 +722,7 @@ function RouteChoiceButton({
   active,
   disabled = false,
   pro = false,
+  upgrade = false,
   title,
   description,
   onClick,
@@ -729,23 +730,32 @@ function RouteChoiceButton({
   active: boolean;
   disabled?: boolean;
   pro?: boolean;
+  upgrade?: boolean;
   title: string;
   description: string;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
-    <button
+    <Button
       type="button"
-      role="radio"
-      aria-checked={active}
+      variant="quiet"
+      aria-pressed={upgrade ? undefined : active}
+      aria-description={
+        upgrade
+          ? t(($) => {
+              return $.settings.models.actions.upgradeToPro;
+            })
+          : undefined
+      }
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex flex-col gap-0.5 rounded-xl border bg-card px-5 py-4 text-left transition-colors",
+        "h-auto flex-col items-stretch justify-start gap-0.5 whitespace-normal rounded-xl border bg-card px-5 py-4 text-left font-normal transition-colors hover:bg-card active:bg-card",
         // A text card, so selection recolours the shared hairline rather than
         // thickening it.
         active ? "border-primary" : "border-surface-border",
-        active && "bg-primary/5",
+        active && "bg-primary/5 hover:bg-primary/5 active:bg-primary/5",
         !active && !disabled && "hover:bg-state-hover",
         disabled && "cursor-not-allowed opacity-50",
       )}
@@ -755,7 +765,7 @@ function RouteChoiceButton({
         {pro && <ProBadge />}
       </span>
       <span className="text-[13px] text-muted-foreground">{description}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -1250,7 +1260,7 @@ function ProviderRouteChoices({
         })}
       </label>
       <div
-        role="radiogroup"
+        role="group"
         aria-label={t(($) => {
           return $.settings.models.policies.providedBy;
         })}
@@ -1273,6 +1283,7 @@ function ProviderRouteChoices({
           active={routeKind === "api-key"}
           disabled={apiTypes.length === 0}
           pro={!supportByok}
+          upgrade={!supportByok}
           title={t(($) => {
             return $.settings.models.policies.apiKey;
           })}
@@ -1287,6 +1298,7 @@ function ProviderRouteChoices({
           active={routeKind === "gateway"}
           disabled={gatewayCount === 0}
           pro={!supportByok}
+          upgrade={!supportByok}
           title={t(($) => {
             return $.settings.models.policies.gateway;
           })}
@@ -1301,6 +1313,7 @@ function ProviderRouteChoices({
           <RouteChoiceButton
             active={routeKind === "oauth"}
             pro={!supportByok}
+            upgrade={!supportByok}
             title={
               oauthRouteKind === "codex"
                 ? t(($) => {
