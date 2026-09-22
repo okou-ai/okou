@@ -317,7 +317,7 @@ test("Filter the chat list to unread conversations", async () => {
   });
 
   openChatListMenu();
-  click(menuItemByText("Unread only"));
+  click(menuItemByText("Unread"));
 
   await waitFor(() => {
     expect(
@@ -364,7 +364,7 @@ test("Keep unread conversations visible while remote read cursors refresh", asyn
   await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
   await within(sidebar()).findByText("Read conversation");
   openChatListMenu();
-  click(menuItemByText("Unread only"));
+  click(menuItemByText("Unread"));
   await waitFor(() => {
     expect(
       visibleThreadTitles([
@@ -436,7 +436,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
 
   openChatListMenu();
   expect(menuItemByText("All chats")).toBeInTheDocument();
-  expect(queryMenuItemByText("Show archived")).not.toBeInTheDocument();
+  expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
   fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
 
   openThreadMenu("✅ Completed release");
@@ -445,7 +445,7 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
 });
 
-test("Hide archived chats until they are explicitly shown, except in Unread only", async () => {
+test("Filter chats by All chats, Unread, or Archived", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   const archivedReadThread = createThread(
@@ -495,20 +495,33 @@ test("Hide archived chats until they are explicitly shown, except in Unread only
   });
 
   openChatListMenu();
-  expect(menuItemByText("Show archived")).toBeInTheDocument();
-  click(menuItemByText("Unread only"));
+  expect(menuItemByText("Archived")).toBeInTheDocument();
+  click(menuItemByText("Unread"));
 
   await waitFor(() => {
     expect(
-      visibleThreadTitles(["✅ Archived context", "✅ Waiting for review"]),
+      visibleThreadTitles([
+        "Release plan",
+        "✅ Archived context",
+        "✅ Waiting for review",
+      ]),
     ).toStrictEqual(["✅ Waiting for review"]);
   });
 
   openChatListMenu();
-  expect(menuItemByText("Show archived")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
+  click(menuItemByText("Archived"));
+
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles([
+        "Release plan",
+        "✅ Archived context",
+        "✅ Waiting for review",
+      ]),
+    ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
+  });
+
+  openChatListMenu();
   click(menuItemByText("All chats"));
 
   await waitFor(() => {
@@ -519,27 +532,6 @@ test("Hide archived chats until they are explicitly shown, except in Unread only
         "✅ Waiting for review",
       ]),
     ).toStrictEqual(["Release plan"]);
-  });
-
-  openChatListMenu();
-  expect(menuItemByText("Show archived")).not.toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  click(menuItemByText("Show archived"));
-
-  await waitFor(() => {
-    expect(
-      visibleThreadTitles([
-        "Release plan",
-        "✅ Archived context",
-        "✅ Waiting for review",
-      ]),
-    ).toStrictEqual([
-      "Release plan",
-      "✅ Archived context",
-      "✅ Waiting for review",
-    ]);
   });
 });
 
@@ -579,7 +571,10 @@ test("Hide the current chat after archiving it", async () => {
   click(menuItemByText("Unarchive chat"));
 
   await waitFor(() => {
-    expect(within(sidebar()).getByText("New Thread")).toBeInTheDocument();
+    expect(
+      within(sidebar()).getByText("No archived chats"),
+    ).toBeInTheDocument();
+    expect(within(sidebar()).queryByText("New Thread")).not.toBeInTheDocument();
     expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   });
 });
@@ -832,7 +827,7 @@ test("Keep chat navigation usable while secondary data is unavailable", async ()
   openChatListMenu();
   expect(queryMenuItemByText("New chat")).not.toBeInTheDocument();
   expect(menuItemByText("All chats")).toBeInTheDocument();
-  expect(menuItemByText("Unread only")).toBeInTheDocument();
+  expect(menuItemByText("Unread")).toBeInTheDocument();
 });
 
 test("Mount only the sidebar for the current viewport", async () => {
@@ -1190,7 +1185,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
     ).toStrictEqual([
       "Mark all read",
       "All chats",
-      expect.stringMatching(/^Unread only/u),
+      expect.stringMatching(/^Unread/u),
     ]);
   });
   const menuWithMarkAllRead =
@@ -1201,7 +1196,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   expect(
     menuWithMarkAllRead.querySelectorAll('[role="separator"]'),
   ).toHaveLength(1);
-  click(menuItemByText("Unread only"));
+  click(menuItemByText("Unread"));
   await waitFor(() => {
     expect(
       visibleThreadTitles(["Existing conversation", "Unread conversation"]),
@@ -1223,7 +1218,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       queryAllByRoleFast("menuitem").map((item) => {
         return item.textContent?.replace(/\s+/g, " ").trim();
       }),
-    ).toStrictEqual(["All chats", expect.stringMatching(/^Unread only/u)]);
+    ).toStrictEqual(["All chats", expect.stringMatching(/^Unread/u)]);
     const menuWithoutMarkAllRead =
       document.querySelector<HTMLElement>('[role="menu"]');
     if (!menuWithoutMarkAllRead) {

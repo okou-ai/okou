@@ -2147,6 +2147,7 @@
       "allCaughtUp": "Tutto fatto",
       "allChats": "Tutte le chat",
       "archive": "Archivia chat",
+      "archived": "Archiviate",
       "chatsWith": "Chatta con {{agentName}}",
       "chatThreads": "Thread di chat",
       "delete": "Elimina la chat",
@@ -2158,6 +2159,7 @@
       "movePinDown": "Sposta giù",
       "movePinUp": "Sposta su",
       "newChatWith": "Nuova chat con {{agentName}}",
+      "noArchived": "Nessuna chat archiviata",
       "noUnread": "Nessuna chat non letta",
       "openChatMenu": "Apri il menu della chat",
       "openListMenu": "Apri il menu dell'elenco chat",
@@ -2166,13 +2168,12 @@
       "rename": "Rinomina la chat",
       "renameDescription": "Inserisci un nuovo nome per questo thread di chat.",
       "showAllChats": "Mostra tutte le chat",
-      "showArchived": "Mostra archiviate",
       "showArchivedChats": "Mostra chat archiviate",
       "titlePlaceholder": "Titolo della chat",
       "unarchive": "Rimuovi dall'archivio",
       "unpin": "Rimuovi la chat",
       "unread": "Non letto",
-      "unreadOnly": "Solo non letto"
+      "unreadOnly": "Non letto"
     },
     "startCards": {
       "kinds": {

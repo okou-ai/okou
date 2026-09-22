@@ -2093,6 +2093,7 @@
       "allCaughtUp": "已全部看完",
       "allChats": "全部聊天",
       "archive": "归档聊天",
+      "archived": "已归档",
       "chatsWith": "与{{agentName}}的聊天",
       "chatThreads": "聊天会话",
       "delete": "删除聊天",
@@ -2104,6 +2105,7 @@
       "movePinDown": "下移",
       "movePinUp": "上移",
       "newChatWith": "与{{agentName}}新建聊天",
+      "noArchived": "没有已归档的聊天",
       "noUnread": "没有未读聊天",
       "openChatMenu": "打开聊天菜单",
       "openListMenu": "打开聊天列表菜单",
@@ -2112,13 +2114,12 @@
       "rename": "重命名聊天",
       "renameDescription": "为这个聊天会话输入新名称。",
       "showAllChats": "显示全部聊天",
-      "showArchived": "显示已归档",
       "showArchivedChats": "显示已归档的聊天",
       "titlePlaceholder": "聊天标题",
       "unarchive": "取消归档",
       "unpin": "取消置顶",
       "unread": "未读",
-      "unreadOnly": "仅看未读"
+      "unreadOnly": "未读"
     },
     "startCards": {
       "kinds": {

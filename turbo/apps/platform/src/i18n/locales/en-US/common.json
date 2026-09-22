@@ -2101,6 +2101,7 @@
       "allCaughtUp": "All caught up",
       "allChats": "All chats",
       "archive": "Archive chat",
+      "archived": "Archived",
       "chatsWith": "Chats with {{agentName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
@@ -2112,6 +2113,7 @@
       "movePinDown": "Move down",
       "movePinUp": "Move up",
       "newChatWith": "New chat with {{agentName}}",
+      "noArchived": "No archived chats",
       "noUnread": "No unread chats",
       "openChatMenu": "Open chat menu",
       "openListMenu": "Open chat list menu",
@@ -2120,13 +2122,12 @@
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
       "showAllChats": "Show all chats",
-      "showArchived": "Show archived",
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
       "unarchive": "Unarchive chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
-      "unreadOnly": "Unread only"
+      "unreadOnly": "Unread"
     },
     "startCards": {
       "kinds": {

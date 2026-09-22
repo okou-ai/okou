@@ -75,8 +75,12 @@ import {
   currentChatThreadId$,
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
+import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
-import { setChatThreadUnreadFilter$ } from "../../signals/okou-page/chat-thread-filter.ts";
+import {
+  setChatThreadArchivedFilter$,
+  setChatThreadUnreadFilter$,
+} from "../../signals/okou-page/chat-thread-filter.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
@@ -102,10 +106,6 @@ import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import {
-  chatThreadShowArchived$,
-  setChatThreadShowArchived$,
-} from "../../signals/chat-page/chat-thread-show-archived.ts";
 
 // The row glyphs draw at 17px, which the shared button base (`[&_svg]:size-4`)
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
@@ -802,7 +802,7 @@ function VirtualizedChatThreads({
 
 function ArchivedChatThreadsEmptyState() {
   const { t } = useTranslation();
-  const showArchived = useSet(setChatThreadShowArchived$);
+  const setArchivedFilter = useSet(setChatThreadArchivedFilter$);
 
   return (
     <div className="flex flex-col items-center px-2 py-6 text-center">
@@ -827,7 +827,7 @@ function ArchivedChatThreadsEmptyState() {
         variant="link"
         className="mt-1 h-auto p-0 text-xs"
         onClick={() => {
-          showArchived(true);
+          setArchivedFilter();
         }}
       >
         {t(($) => {
@@ -844,12 +844,24 @@ function ChatThreads({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  const archivedOnly = useGet(chatThreadOnlyArchived$);
   const threadCount = useGet(listSignals.count$);
   const hasHiddenArchivedThreads = useGet(
     listSignals.hasHiddenArchivedThreads$,
   );
 
   if (threadCount === 0) {
+    if (archiveEnabled && archivedOnly) {
+      return (
+        <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
+          {t(($) => {
+            return $.chat.sidebar.noArchived;
+          })}
+        </p>
+      );
+    }
     if (hasHiddenArchivedThreads) {
       return <ArchivedChatThreadsEmptyState />;
     }
@@ -960,21 +972,12 @@ function ChatThreadFilterMenuItems({
   unreadShortcutEnabled: boolean;
 }) {
   const { t } = useTranslation();
-  const setCollapsed = useSet(setSessionListCollapsed$);
   const unreadOnly = useGet(chatThreadOnlyUnread$);
+  const archivedOnly = useGet(chatThreadOnlyArchived$);
   const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
+  const setArchivedFilter = useSet(setChatThreadArchivedFilter$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  const showArchived = useGet(chatThreadShowArchived$);
-  const setShowArchived = useSet(setChatThreadShowArchived$);
-
-  function toggleShowArchived() {
-    const next = !showArchived;
-    setShowArchived(next);
-    if (next) {
-      setCollapsed(false);
-    }
-  }
 
   return (
     <>
@@ -983,7 +986,10 @@ function ChatThreadFilterMenuItems({
           setUnreadFilter(false);
         }}
       >
-        <Check size={16} className={`mr-2 ${unreadOnly ? "invisible" : ""}`} />
+        <Check
+          size={16}
+          className={`mr-2 ${unreadOnly || archivedOnly ? "invisible" : ""}`}
+        />
         {t(($) => {
           return $.chat.sidebar.allChats;
         })}
@@ -1011,13 +1017,17 @@ function ChatThreadFilterMenuItems({
       {archiveEnabled ? (
         <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={toggleShowArchived} disabled={unreadOnly}>
+          <DropdownMenuItem
+            onClick={() => {
+              setArchivedFilter();
+            }}
+          >
             <Check
               size={16}
-              className={`mr-2 ${showArchived || unreadOnly ? "" : "invisible"}`}
+              className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
             />
             {t(($) => {
-              return $.chat.sidebar.showArchived;
+              return $.chat.sidebar.archived;
             })}
           </DropdownMenuItem>
         </>

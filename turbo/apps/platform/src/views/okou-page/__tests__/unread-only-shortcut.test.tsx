@@ -74,10 +74,10 @@ function unreadOnlyMenuItem(): HTMLElement {
     return candidate.textContent
       ?.replace(/\s+/gu, " ")
       .trim()
-      .startsWith("Unread only");
+      .startsWith("Unread");
   });
   if (!item) {
-    throw new Error("Unread only menu item not found");
+    throw new Error("Unread menu item not found");
   }
   return item;
 }
@@ -165,11 +165,11 @@ test.each(platforms)(
     const dialog = await screen.findByRole("dialog", {
       name: "Keyboard Shortcuts",
     });
-    const helpLabel = within(dialog).getByText("Unread only");
+    const helpLabel = within(dialog).getByText("Unread");
     expect(helpLabel).toBeInTheDocument();
     const helpRow = helpLabel.parentElement;
     if (!helpRow) {
-      throw new Error("Unread only shortcut row not found");
+      throw new Error("Unread shortcut row not found");
     }
     for (const part of helpParts) {
       expect(within(helpRow).getByText(part)).toBeInTheDocument();
@@ -224,7 +224,7 @@ test("Leave the browser shortcut and hints untouched when the rollout is off", a
   const dialog = await screen.findByRole("dialog", {
     name: "Keyboard Shortcuts",
   });
-  expect(within(dialog).queryByText("Unread only")).not.toBeInTheDocument();
+  expect(within(dialog).queryByText("Unread")).not.toBeInTheDocument();
 });
 
 test("Preserve Linux Unicode input while allowing the shortcut outside editors", async () => {
