@@ -1,9 +1,11 @@
 # Runner VNC authority
 
 The #34980 API slice authorizes the engine and session integration delivered by
-#34780. `VncAccess` remains disabled by default, including staff. VNC authority is
-independent of SSH and Desktop. The Agent chooses native shared or exclusive
-mode for each session; the VNC server enforces its connection policy.
+#34780. `VncAccess` remains disabled by default, including staff. VNC grants
+remain independent of SSH and Desktop; an SSH-backed route additionally requires
+the Agent's separate SSH grant and shared Run-owned SSH authority. The Agent
+chooses native shared or exclusive mode for each session; the VNC server enforces
+its connection policy.
 
 ## Explicit grants and inventory
 
