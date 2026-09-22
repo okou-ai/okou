@@ -1771,6 +1771,31 @@
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
     },
+    "browserInteraction": {
+      "applying": "正在完成浏览器交互",
+      "applyingDescription": "浏览器正在完成此请求。",
+      "callbackFailed": "未能通知 Agent。请再次点击继续。",
+      "cancel": "取消",
+      "cancelFailed": "无法取消此请求。请重试。",
+      "cancelled": "请求已取消",
+      "cancelledDescription": "浏览器接管已取消。点击继续以通知 Agent。",
+      "cancelling": "正在取消…",
+      "completed": "浏览器交互已完成",
+      "completedDescription": "浏览器交互已记录。点击继续以通知 Agent。",
+      "completeFailed": "无法完成此请求。请重试。",
+      "completing": "正在完成…",
+      "continue": "继续",
+      "continuing": "正在继续…",
+      "delivered": "已通知 Agent",
+      "deliveredDescription": "Agent 现在可以继续。",
+      "description": "打开浏览器并完成此步骤，然后点击完成。",
+      "done": "完成",
+      "stale": "浏览器已不可用",
+      "staleDescription": "请让 Agent 创建新请求。",
+      "title": "接管浏览器",
+      "uncertain": "请检查浏览器",
+      "uncertainDescription": "交互可能已完成。重试前，请先让 Agent 检查。"
+    },
     "cards": {
       "viewDetails": "查看详情"
     },

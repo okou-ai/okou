@@ -1803,6 +1803,31 @@
       "uncertain": "Comprueba el navegador",
       "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
     },
+    "browserInteraction": {
+      "applying": "Completando la interacción con el navegador",
+      "applyingDescription": "El navegador está finalizando esta solicitud.",
+      "callbackFailed": "No se notificó al agente. Vuelve a pulsar Continuar.",
+      "cancel": "Cancelar",
+      "cancelFailed": "No se pudo cancelar esta solicitud. Inténtalo de nuevo.",
+      "cancelled": "Solicitud cancelada",
+      "cancelledDescription": "La entrega del navegador se canceló. Continúa para notificar al agente.",
+      "cancelling": "Cancelando…",
+      "completed": "Interacción con el navegador completada",
+      "completedDescription": "Tu interacción con el navegador quedó registrada. Continúa para notificar al agente.",
+      "completeFailed": "No se pudo completar esta solicitud. Inténtalo de nuevo.",
+      "completing": "Completando…",
+      "continue": "Continuar",
+      "continuing": "Continuando…",
+      "delivered": "Agente notificado",
+      "deliveredDescription": "El agente ya puede continuar.",
+      "description": "Abre el navegador, completa este paso y selecciona Hecho.",
+      "done": "Hecho",
+      "stale": "El navegador ya no está disponible",
+      "staleDescription": "Pide al agente que cree una nueva solicitud.",
+      "title": "Toma el control del navegador",
+      "uncertain": "Comprueba el navegador",
+      "uncertainDescription": "Es posible que la interacción se haya completado. Pide al agente que lo compruebe antes de volver a intentarlo."
+    },
     "cards": {
       "viewDetails": "Ver detalles"
     },

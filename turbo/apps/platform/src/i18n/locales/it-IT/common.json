@@ -1803,6 +1803,31 @@
       "uncertain": "Controlla il browser",
       "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di controllare prima di riprovare."
     },
+    "browserInteraction": {
+      "applying": "Completamento dell’interazione nel browser",
+      "applyingDescription": "Il browser sta completando questa richiesta.",
+      "callbackFailed": "L’agente non è stato avvisato. Prova di nuovo Continua.",
+      "cancel": "Annulla",
+      "cancelFailed": "Impossibile annullare questa richiesta. Riprova.",
+      "cancelled": "Richiesta annullata",
+      "cancelledDescription": "Il passaggio al browser è stato annullato. Continua per avvisare l’agente.",
+      "cancelling": "Annullamento…",
+      "completed": "Interazione nel browser completata",
+      "completedDescription": "L’interazione nel browser è stata registrata. Continua per avvisare l’agente.",
+      "completeFailed": "Impossibile completare questa richiesta. Riprova.",
+      "completing": "Completamento…",
+      "continue": "Continua",
+      "continuing": "Continuazione…",
+      "delivered": "Agente avvisato",
+      "deliveredDescription": "Ora l’agente può continuare.",
+      "description": "Apri il browser, completa questo passaggio, quindi seleziona Fine.",
+      "done": "Fine",
+      "stale": "Browser non più disponibile",
+      "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
+      "title": "Prendi il controllo del browser",
+      "uncertain": "Controlla il browser",
+      "uncertainDescription": "L’interazione potrebbe essere stata completata. Chiedi all’agente di controllare prima di riprovare."
+    },
     "cards": {
       "viewDetails": "Visualizza dettagli"
     },

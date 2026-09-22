@@ -1771,6 +1771,31 @@
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
     },
+    "browserInteraction": {
+      "applying": "Menyelesaikan interaksi browser",
+      "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
+      "callbackFailed": "Agen tidak menerima pemberitahuan. Coba Lanjutkan lagi.",
+      "cancel": "Batal",
+      "cancelFailed": "Permintaan ini tidak dapat dibatalkan. Coba lagi.",
+      "cancelled": "Permintaan dibatalkan",
+      "cancelledDescription": "Penyerahan browser dibatalkan. Lanjutkan untuk memberi tahu agen.",
+      "cancelling": "Membatalkan…",
+      "completed": "Interaksi browser selesai",
+      "completedDescription": "Interaksi browser Anda telah dicatat. Lanjutkan untuk memberi tahu agen.",
+      "completeFailed": "Permintaan ini tidak dapat diselesaikan. Coba lagi.",
+      "completing": "Menyelesaikan…",
+      "continue": "Lanjutkan",
+      "continuing": "Melanjutkan…",
+      "delivered": "Agen diberi tahu",
+      "deliveredDescription": "Agen dapat melanjutkan sekarang.",
+      "description": "Buka browser, selesaikan langkah ini, lalu pilih Selesai.",
+      "done": "Selesai",
+      "stale": "Browser tidak lagi tersedia",
+      "staleDescription": "Minta agen membuat permintaan baru.",
+      "title": "Ambil alih browser",
+      "uncertain": "Periksa browser",
+      "uncertainDescription": "Interaksi mungkin telah selesai. Minta agen memeriksanya sebelum mencoba lagi."
+    },
     "cards": {
       "viewDetails": "Lihat detail"
     },

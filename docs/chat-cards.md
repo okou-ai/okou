@@ -657,7 +657,7 @@ provider's CDP URL is reserved for the Okou CLI to connect `agent-browser` and
 is never returned by the card read, lease, or resume endpoints, nor printed in
 CLI output.
 
-### Stateful action: Browser input
+### Stateful actions: Browser input and direct interaction
 
 A Browser input action matches `/browser/actions/:requestToken` with exact
 `agentId`, `threadId`, and `callbackPrompt` query claims. The parser accepts it
@@ -678,8 +678,25 @@ clear the complete draft, and nothing is persisted across page reload.
 Apply or cancel completes before the card sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without
 repeating the Browser mutation or retaining submitted values. The Platform and
-API both enforce `BrowserNativeInput`; direct Browser interaction is a separate
-action kind and surface.
+API both enforce `BrowserNativeInput`.
+
+A verified `direct_interaction` response uses the same action URL, ownership
+checks, mutation lock, and callback-only recovery, but it never carries or
+collects input values. The compact transcript card shows the API-provided
+reason and opens its Browser handoff in `ChatCardDetails`, preserving the
+card's fixed geometry while the existing thread-owned `BrowserSessionCard`
+loads. That Browser card keeps its normal sidebar behavior. The authenticated
+standalone action route shows the same handoff directly and opens the existing
+`/browsers/:threadId` full-page viewer in a new tab so Done and Cancel remain
+available on the action page.
+
+Done calls the direct-action completion endpoint before sending the URL's
+bounded callback prompt and stable success event IDs. Cancel records the
+terminal state before sending the fixed direct-interaction cancellation prompt
+with stable cancellation IDs. A failed callback exposes Continue without
+repeating either Browser mutation. Neither path adds a Browser-opening action
+endpoint, captures page or DOM state, or changes the existing Browser viewer
+and lease ownership.
 
 ## Adding a Card Type
 

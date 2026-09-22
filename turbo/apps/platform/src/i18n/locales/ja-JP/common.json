@@ -1771,6 +1771,31 @@
       "uncertain": "ブラウザを確認してください",
       "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
     },
+    "browserInteraction": {
+      "applying": "ブラウザ操作を完了しています",
+      "applyingDescription": "ブラウザでこのリクエストを完了しています。",
+      "callbackFailed": "エージェントに通知できませんでした。もう一度［続行］を選択してください。",
+      "cancel": "キャンセル",
+      "cancelFailed": "このリクエストをキャンセルできませんでした。もう一度お試しください。",
+      "cancelled": "リクエストをキャンセルしました",
+      "cancelledDescription": "ブラウザの引き継ぎをキャンセルしました。エージェントに通知するには続行してください。",
+      "cancelling": "キャンセルしています…",
+      "completed": "ブラウザ操作が完了しました",
+      "completedDescription": "ブラウザ操作を記録しました。エージェントに通知するには続行してください。",
+      "completeFailed": "このリクエストを完了できませんでした。もう一度お試しください。",
+      "completing": "完了しています…",
+      "continue": "続行",
+      "continuing": "続行しています…",
+      "delivered": "エージェントに通知しました",
+      "deliveredDescription": "エージェントは処理を続行できます。",
+      "description": "ブラウザを開いてこの手順を完了し、［完了］を選択してください。",
+      "done": "完了",
+      "stale": "ブラウザは利用できません",
+      "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
+      "title": "ブラウザを引き継ぐ",
+      "uncertain": "ブラウザを確認してください",
+      "uncertainDescription": "操作が完了している可能性があります。再試行する前にエージェントに確認を依頼してください。"
+    },
     "cards": {
       "viewDetails": "詳細を表示"
     },

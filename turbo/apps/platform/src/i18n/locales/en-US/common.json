@@ -1774,6 +1774,31 @@
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
     },
+    "browserInteraction": {
+      "applying": "Completing browser interaction",
+      "applyingDescription": "The browser is finishing this request.",
+      "callbackFailed": "The agent wasn't notified. Try Continue again.",
+      "cancel": "Cancel",
+      "cancelFailed": "Couldn't cancel this request. Try again.",
+      "cancelled": "Request cancelled",
+      "cancelledDescription": "The browser handoff was cancelled. Continue to notify the agent.",
+      "cancelling": "Cancelling…",
+      "completed": "Browser interaction complete",
+      "completedDescription": "Your browser interaction is recorded. Continue to notify the agent.",
+      "completeFailed": "Couldn't complete this request. Try again.",
+      "completing": "Completing…",
+      "continue": "Continue",
+      "continuing": "Continuing…",
+      "delivered": "Agent notified",
+      "deliveredDescription": "The agent can continue now.",
+      "description": "Open the browser, complete this step, then choose Done.",
+      "done": "Done",
+      "stale": "Browser no longer available",
+      "staleDescription": "Ask the agent to create a new request.",
+      "title": "Take over the browser",
+      "uncertain": "Check the browser",
+      "uncertainDescription": "The interaction may have completed. Ask the agent to check before trying again."
+    },
     "cards": {
       "viewDetails": "View details"
     },

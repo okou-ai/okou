@@ -1803,6 +1803,31 @@
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."
     },
+    "browserInteraction": {
+      "applying": "Finalisation de l’interaction avec le navigateur",
+      "applyingDescription": "Le navigateur finalise cette demande.",
+      "callbackFailed": "L’agent n’a pas été informé. Réessayez en cliquant sur Continuer.",
+      "cancel": "Annuler",
+      "cancelFailed": "Impossible d’annuler cette demande. Réessayez.",
+      "cancelled": "Demande annulée",
+      "cancelledDescription": "Le transfert du navigateur a été annulé. Continuez pour informer l’agent.",
+      "cancelling": "Annulation…",
+      "completed": "Interaction avec le navigateur terminée",
+      "completedDescription": "Votre interaction avec le navigateur a été enregistrée. Continuez pour informer l’agent.",
+      "completeFailed": "Impossible de terminer cette demande. Réessayez.",
+      "completing": "Finalisation…",
+      "continue": "Continuer",
+      "continuing": "Poursuite…",
+      "delivered": "Agent informé",
+      "deliveredDescription": "L’agent peut maintenant continuer.",
+      "description": "Ouvrez le navigateur, terminez cette étape, puis sélectionnez Terminé.",
+      "done": "Terminé",
+      "stale": "Navigateur indisponible",
+      "staleDescription": "Demandez à l’agent de créer une nouvelle demande.",
+      "title": "Prenez le contrôle du navigateur",
+      "uncertain": "Vérifiez le navigateur",
+      "uncertainDescription": "L’interaction est peut-être terminée. Demandez à l’agent de vérifier avant de réessayer."
+    },
     "cards": {
       "viewDetails": "Voir les détails"
     },
