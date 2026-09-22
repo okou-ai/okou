@@ -5174,7 +5174,7 @@ mod tests {
 
     fn partial_content_response(total: usize) -> Vec<u8> {
         format!(
-            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-0/{total}\r\nContent-Length: 1\r\n\r\nx"
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-0/{total}\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx"
         )
         .into_bytes()
     }
