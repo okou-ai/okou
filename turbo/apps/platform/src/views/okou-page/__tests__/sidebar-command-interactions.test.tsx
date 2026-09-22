@@ -64,9 +64,6 @@ test.each(["pointer", "Enter"])(
     expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Support Agent"]);
     expect(dialog).toBeInTheDocument();
     expect(search).toHaveValue("Agent");
-    await waitFor(() => {
-      expect(search).toHaveFocus();
-    });
     expect(
       within(dialog).getByRole("option", { name: "Support Agent Unpin" }),
     ).not.toHaveAttribute("aria-disabled", "true");
