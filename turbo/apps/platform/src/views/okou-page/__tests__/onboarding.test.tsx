@@ -38,6 +38,49 @@ test.each(["/", "/connectors/ssh"])(
   },
 );
 
+test.each([
+  {
+    integration: "Slack",
+    path: "/settings/slack?status=connected&workspace=Acme+Workspace",
+    heading: "Connected to Slack!",
+  },
+  {
+    integration: "Microsoft Teams",
+    path: "/settings/teams?status=connected&teamName=Core+Team&botName=Okou",
+    heading: "Connected to Microsoft Teams",
+  },
+])(
+  "A $integration success return remains visible before onboarding",
+  async ({ path, heading }) => {
+    mockOnboardingNeeded();
+    context.mocks.browser.open();
+
+    await setupPage({ context, path });
+
+    await expect(
+      screen.findByRole("heading", { name: heading }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).not.toBe("/onboarding");
+  },
+);
+
+test.each([
+  "/settings/slack?error=access_denied",
+  "/settings/teams?error=access_denied",
+])(
+  "An unsuccessful integration return at %s still requires onboarding",
+  async (path) => {
+    mockOnboardingNeeded();
+
+    await setupPage({ context, path });
+
+    await expect(
+      screen.findByRole("heading", { name: "What do you want to make first" }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe("/onboarding");
+  },
+);
+
 test("An unknown nested onboarding path shows not found", async () => {
   await setupPage({
     context,
