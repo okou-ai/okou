@@ -76,7 +76,7 @@ function installModelEnvironment(
 
 function setDesktopViewport(): void {
   context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 640px)";
+    return query === "(min-width: 640px)" || query === "(min-width: 48rem)";
   });
 }
 
@@ -162,8 +162,7 @@ function expectSelected(label: string): void {
 }
 
 /**
- * The menu's overview page. Its rows are what drive the composer's active media
- * category, so the temporary-model card is a narrow viewport's behaviour.
+ * The compact overview selects a media category before opening its model list.
  */
 async function openMenu(
   container: ParentNode = document,
@@ -578,9 +577,57 @@ test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () =>
   expect(category("Video")).toHaveAttribute("aria-selected", "true");
 });
 
+test("The desktop model notice follows selections and survives browsing other categories", async () => {
+  await openDesktopNewChatModelPicker();
+
+  await chooseMediaModel("Image", "GPT Image 2");
+  const imageNotice = await screen.findByRole("group", {
+    name: "Image model for this chat",
+  });
+  expect(imageNotice).toHaveTextContent("Temporarily switch to GPT Image 2");
+  expect(
+    scopeCardButton("Image model for this chat", "Use this for future chats"),
+  ).toBeEnabled();
+  expect(scopeCard("Model for this chat")).toBeNull();
+  expect(scopeCard("Video model for this chat")).toBeNull();
+
+  await openCategory("Video");
+  await screen.findByRole("option", { name: /Veo 3\.1 fast/u });
+  await userEvent.setup().keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
+  });
+  expect(scopeCard("Image model for this chat")).toHaveTextContent(
+    "Temporarily switch to GPT Image 2",
+  );
+  expect(scopeCard("Video model for this chat")).toBeNull();
+
+  await chooseMediaModel("Video", "Veo 3.1 fast");
+  await expect(
+    screen.findByRole("group", { name: "Video model for this chat" }),
+  ).resolves.toHaveTextContent("Temporarily switch to Veo 3.1 Fast");
+  expect(scopeCard("Image model for this chat")).toBeNull();
+  expect(scopeCard("Model for this chat")).toBeNull();
+
+  await openCategory("Chat");
+  const chatModel = await screen.findByRole("option", {
+    name: /Claude Sonnet 4\.6/u,
+  });
+  click(chatModel);
+  await expect(
+    screen.findByRole("group", { name: "Model for this chat" }),
+  ).resolves.toHaveTextContent("Temporarily switch to Claude Sonnet 4.6");
+  expect(scopeCard("Image model for this chat")).toBeNull();
+  expect(scopeCard("Video model for this chat")).toBeNull();
+
+  await chooseMediaModel("Image", "Nano Banana 2");
+  expect(scopeCard("Image model for this chat")).toBeNull();
+  expect(scopeCard("Model for this chat")).toBeNull();
+  expect(scopeCard("Video model for this chat")).toBeNull();
+});
+
 /**
- * The menu's overview is what points the composer at a media category, so the
- * per-chat cards that follow a selection are a narrow viewport's behaviour.
+ * The compact overview can revisit each independently selected model.
  */
 test("Retain independent Chat, Image, and Video selections in a new chat", async () => {
   setMobileViewport();
@@ -638,9 +685,7 @@ test("Switch Chat, Image, and Video from one model picker in a desktop existing 
 });
 
 /**
- * The card that names a temporary media model follows the composer's active
- * category, and only the menu's overview sets one, so the two cases differ by
- * viewport rather than by assertion.
+ * Both picker layouts can select a temporary image model for the next chat.
  */
 async function openTemporaryImageModelChat(
   layout: "menu" | "flyout",
@@ -648,6 +693,8 @@ async function openTemporaryImageModelChat(
 ) {
   if (layout === "menu") {
     setMobileViewport();
+  } else {
+    setDesktopViewport();
   }
   const creates: ({ readonly imageModel?: string } | undefined)[] = [];
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
@@ -697,11 +744,11 @@ test("A temporary image model applies to one new chat and resets for the next", 
   });
 
   const newChat = await waitFor(() => {
-    const button = queryAllByRoleFast("button").find((candidate) => {
-      return (
-        candidate.getAttribute("aria-label") === "New chat" &&
-        candidate.querySelector(".lucide-square-pen") !== null
-      );
+    const button = queryAllByRoleFast(
+      "button",
+      screen.getByTestId("chat-list-column"),
+    ).find((candidate) => {
+      return candidate.getAttribute("aria-label") === "New chat";
     });
     if (!button) {
       throw new Error("New chat button not found");
@@ -760,106 +807,126 @@ test("A blocked paid tool takes the composer tray from the temporary image model
   expect(scopeCard("Image model for this chat")).toBeNull();
 });
 
-test("Save a temporary image model as the default for future chats", async () => {
-  const { preferenceUpdates } = await openTemporaryImageModelChat("menu");
-  await chooseMenuMediaModel("Image", "GPT Image 2");
-  await waitFor(() => {
-    expect(scopeCard("Image model for this chat")).not.toBeNull();
-  });
-  click(
-    scopeCardButton("Image model for this chat", "Use this for future chats"),
-  );
-  await waitFor(() => {
-    expect(preferenceUpdates).toStrictEqual([
-      {
-        selectedModel: DEFAULT_RUN_MODEL,
-        serviceTier: "priority",
-        selectedImageModel: "gpt-image-2",
-      },
-    ]);
-  });
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("userPreferenceChanged"),
-    ).toBeTruthy();
-  });
-  context.mocks.ably.trigger("userPreferenceChanged", {
-    kinds: ["defaultImageModel"],
-  });
-  await waitFor(() => {
-    expect(scopeCard("Image model for this chat")).toBeNull();
-  });
-});
-
-test("Temporarily choose a video model for a new chat", async () => {
-  setMobileViewport();
-  const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
-  let currentPreference = preference();
-  installModelEnvironment(currentPreference);
-  context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
-    return respond(200, currentPreference);
-  });
-  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
-    preferenceUpdates.push(body);
-    currentPreference = preference({
-      selectedModel: body.selectedModel,
-      serviceTier: body.serviceTier,
-      selectedImageModel: currentPreference.selectedImageModel,
-      selectedVideoModel:
-        body.selectedVideoModel ?? currentPreference.selectedVideoModel,
+test.each(["menu", "flyout"] as const)(
+  "Save a temporary image model as the default from the %s picker",
+  async (layout) => {
+    const { preferenceUpdates } = await openTemporaryImageModelChat(layout);
+    const chooseModel =
+      layout === "menu" ? chooseMenuMediaModel : chooseMediaModel;
+    await chooseModel("Image", "GPT Image 2");
+    await waitFor(() => {
+      expect(scopeCard("Image model for this chat")).not.toBeNull();
     });
-    return respond(200, currentPreference);
-  });
-  mockChatLifecycle(context, { threadId: "temporary-video-choice" });
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
-  });
-
-  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
-  await waitFor(() => {
-    expect(scopeCard("Video model for this chat")).toHaveTextContent(
-      /Veo 3\.1 fast/iu,
+    expect(preferenceUpdates).toStrictEqual([]);
+    click(
+      scopeCardButton("Image model for this chat", "Use this for future chats"),
     );
-  });
-  expect(preferenceUpdates).toStrictEqual([]);
-  const card = scopeCard("Video model for this chat");
-  if (!card) {
-    throw new Error("Video scope card not found");
-  }
-  const useFuture = queryAllByRoleFast("button", card).find((button) => {
-    return button.textContent?.includes("Use this for future chats");
-  });
-  if (!useFuture) {
-    throw new Error("Use this for future chats button not found");
-  }
-  click(useFuture);
-  await waitFor(() => {
-    expect(preferenceUpdates).toStrictEqual([
-      {
-        selectedModel: DEFAULT_RUN_MODEL,
-        serviceTier: "priority",
-        selectedVideoModel: "fal-ai/veo3.1/fast",
+    await waitFor(() => {
+      expect(preferenceUpdates).toStrictEqual([
+        {
+          selectedModel: DEFAULT_RUN_MODEL,
+          serviceTier: "priority",
+          selectedImageModel: "gpt-image-2",
+        },
+      ]);
+    });
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscription("userPreferenceChanged"),
+      ).toBeTruthy();
+    });
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultImageModel"],
+    });
+    await waitFor(() => {
+      expect(scopeCard("Image model for this chat")).toBeNull();
+    });
+  },
+);
+
+test.each(["menu", "flyout"] as const)(
+  "Temporarily choose a video model from the %s picker",
+  async (layout) => {
+    if (layout === "menu") {
+      setMobileViewport();
+    } else {
+      setDesktopViewport();
+    }
+    const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
+    let currentPreference = preference();
+    installModelEnvironment(currentPreference);
+    context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
+      return respond(200, currentPreference);
+    });
+    context.mocks.api(
+      userModelPreferenceContract.update,
+      ({ body, respond }) => {
+        preferenceUpdates.push(body);
+        currentPreference = preference({
+          selectedModel: body.selectedModel,
+          serviceTier: body.serviceTier,
+          selectedImageModel: currentPreference.selectedImageModel,
+          selectedVideoModel:
+            body.selectedVideoModel ?? currentPreference.selectedVideoModel,
+        });
+        return respond(200, currentPreference);
       },
-    ]);
-  });
-  currentPreference = preference({ selectedVideoModel: "fal-ai/veo3.1/fast" });
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("userPreferenceChanged"),
-    ).toBeTruthy();
-  });
-  context.mocks.ably.trigger("userPreferenceChanged", {
-    kinds: ["defaultVideoModel"],
-  });
-  await waitFor(() => {
-    expect(scopeCard("Video model for this chat")).toBeNull();
-  });
-});
+    );
+    mockChatLifecycle(context, { threadId: "temporary-video-choice" });
+
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ChatPreference]: true,
+      },
+    });
+
+    const chooseModel =
+      layout === "menu" ? chooseMenuMediaModel : chooseMediaModel;
+    await chooseModel("Video", "Veo 3.1 fast");
+    await waitFor(() => {
+      expect(scopeCard("Video model for this chat")).toHaveTextContent(
+        /Veo 3\.1 fast/iu,
+      );
+    });
+    expect(preferenceUpdates).toStrictEqual([]);
+    const card = scopeCard("Video model for this chat");
+    if (!card) {
+      throw new Error("Video scope card not found");
+    }
+    const useFuture = queryAllByRoleFast("button", card).find((button) => {
+      return button.textContent?.includes("Use this for future chats");
+    });
+    if (!useFuture) {
+      throw new Error("Use this for future chats button not found");
+    }
+    click(useFuture);
+    await waitFor(() => {
+      expect(preferenceUpdates).toStrictEqual([
+        {
+          selectedModel: DEFAULT_RUN_MODEL,
+          serviceTier: "priority",
+          selectedVideoModel: "fal-ai/veo3.1/fast",
+        },
+      ]);
+    });
+    currentPreference = preference({
+      selectedVideoModel: "fal-ai/veo3.1/fast",
+    });
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscription("userPreferenceChanged"),
+      ).toBeTruthy();
+    });
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultVideoModel"],
+    });
+    await waitFor(() => {
+      expect(scopeCard("Video model for this chat")).toBeNull();
+    });
+  },
+);
 
 test("Persist a new-chat video choice when temporary choices are unavailable", async () => {
   setMobileViewport();

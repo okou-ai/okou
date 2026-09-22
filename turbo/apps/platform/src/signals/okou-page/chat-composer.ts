@@ -160,6 +160,12 @@ function createBasicComposerUiSignals() {
       set(internalMediaModelCategory$, category);
     },
   );
+  const completeModelPickerSelection$ = command(
+    ({ set }, category: MediaModelCategory | null) => {
+      set(setMediaModelCategory$, category);
+      set(setModelPickerOpen$, false);
+    },
+  );
   return {
     model: {
       menu,
@@ -167,6 +173,7 @@ function createBasicComposerUiSignals() {
       setModelPickerOpen$,
       mediaModelCategory$,
       setMediaModelCategory$,
+      completeModelPickerSelection$,
       desktopModelPickerLayout$,
       desktopModelPickerLifecycleRef$,
     },
