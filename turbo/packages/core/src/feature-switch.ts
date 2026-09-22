@@ -501,11 +501,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatUnreadOnlyShortcut]: {
-    maintainer: "ethan@okou.ai",
-    description: "Toggle the chat list's unread-only filter with Mod+Shift+U.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -563,12 +558,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
     enabled: false,
-  },
-  [FeatureSwitchKey.OptimisticMessageSpinner]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show a spinner beside a user message the server has not confirmed yet",
-    enabled: true,
   },
 };
 

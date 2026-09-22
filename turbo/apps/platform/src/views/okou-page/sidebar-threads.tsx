@@ -1014,11 +1014,7 @@ function MarkAllReadMenuItem({
   );
 }
 
-function ChatThreadFilterMenuItems({
-  unreadShortcutEnabled,
-}: {
-  unreadShortcutEnabled: boolean;
-}) {
+function ChatThreadFilterMenuItems() {
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
@@ -1047,20 +1043,16 @@ function ChatThreadFilterMenuItems({
           setUnreadFilter(true);
         }}
         aria-keyshortcuts={
-          unreadShortcutEnabled
-            ? GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
-            : undefined
+          GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
         }
       >
         <Check size={16} className={`mr-2 ${unreadOnly ? "" : "invisible"}`} />
         {t(($) => {
           return $.chat.sidebar.unreadOnly;
         })}
-        {unreadShortcutEnabled ? (
-          <ChatThreadMenuShortcut
-            shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
-          />
-        ) : null}
+        <ChatThreadMenuShortcut
+          shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
+        />
       </DropdownMenuItem>
       {archiveEnabled ? (
         <DropdownMenuItem
@@ -1088,9 +1080,6 @@ function ChatThreadsListMenu({
 }) {
   const { t } = useTranslation();
   const markAllReadAction = useMarkAllReadMenuAction(showMarkAllRead);
-  const unreadShortcutEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatUnreadOnlyShortcut] === true;
-
   return (
     <TooltipProvider delay={200}>
       <DropdownMenu>
@@ -1110,19 +1099,14 @@ function ChatThreadsListMenu({
         >
           <ChatThreadsListMenuTooltip />
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className={unreadShortcutEnabled ? "w-56" : "w-44"}
-        >
+        <DropdownMenuContent align="end" className="w-56">
           {markAllReadAction.visible ? (
             <>
               <MarkAllReadMenuItem {...markAllReadAction} />
               <DropdownMenuSeparator />
             </>
           ) : null}
-          <ChatThreadFilterMenuItems
-            unreadShortcutEnabled={unreadShortcutEnabled}
-          />
+          <ChatThreadFilterMenuItems />
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>
