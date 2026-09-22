@@ -25,6 +25,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
+  RefCallback,
 } from "react";
 import {
   useGet,
@@ -2343,6 +2344,9 @@ function TemplatePreview({
   const html = useLoadable(signals.template.previewTemplateHtml$);
   const selectPreview = useSet(signals.template.selectPreviewTemplate$);
   const clearPreview = useSet(signals.template.clearPreviewTemplate$);
+  const restorePreviewTrigger = useSet(
+    signals.template.restoreTemplatePreviewTriggerRef$,
+  );
   const active = previewId === item.slug;
   const loadedTemplate =
     template.state === "hasData" && template.data?.item.slug === item.slug
@@ -2432,6 +2436,8 @@ function TemplatePreview({
         </div>
       ) : null}
       <button
+        ref={restorePreviewTrigger}
+        data-template-preview-id={`built-in:${item.slug}`}
         type="button"
         aria-label={t(
           ($) => {
@@ -2448,56 +2454,6 @@ function TemplatePreview({
       />
     </div>
   );
-}
-
-const TEMPLATE_DETAIL_FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button",
-  "input",
-  "select",
-  "textarea",
-  '[tabindex]:not([tabindex="-1"]):not([role="group"])',
-].join(",");
-
-function templateDetailFocusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(
-    root.querySelectorAll<HTMLElement>(TEMPLATE_DETAIL_FOCUSABLE_SELECTOR),
-  ).filter((element) => {
-    return (
-      element.tabIndex >= 0 &&
-      !element.hasAttribute("disabled") &&
-      !element.closest("[inert]")
-    );
-  });
-}
-
-function handleTemplateDetailTabKeyDown(
-  event: ReactKeyboardEvent<HTMLElement>,
-): void {
-  if (event.key !== "Tab") {
-    return;
-  }
-
-  const candidates = templateDetailFocusableElements(event.currentTarget);
-  if (candidates.length === 0) {
-    return;
-  }
-
-  const target =
-    event.target instanceof HTMLElement ? event.target : document.activeElement;
-  const currentIndex = candidates.findIndex((candidate) => {
-    return target instanceof Node && candidate.contains(target);
-  });
-  const direction = event.shiftKey ? -1 : 1;
-  const nextIndex =
-    currentIndex === -1
-      ? event.shiftKey
-        ? candidates.length - 1
-        : 0
-      : (currentIndex + direction + candidates.length) % candidates.length;
-
-  event.preventDefault();
-  candidates[nextIndex]?.focus();
 }
 
 function templateDetailPreviewMatchesItem(
@@ -2522,6 +2478,7 @@ function TemplatePreviewPage({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
   const detailPreview = useGet(signals.template.openedTemplateSelection$);
   const template = useLoadable(signals.template.openedTemplate$);
   const html = useLoadable(signals.template.openedTemplateHtml$);
@@ -2626,6 +2583,7 @@ function TemplatePreviewPage({
       <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3">
           <div
+            ref={focusPreview}
             role="group"
             aria-label={t(
               ($) => {
@@ -4017,18 +3975,22 @@ function ImportedPptCardMediaControls({
   selected,
   loading,
   onPreview,
+  previewRef,
   onSelect,
 }: {
   template: PresentationTemplateSummary;
   selected: boolean;
   loading: boolean;
   onPreview: () => void;
+  previewRef: RefCallback<HTMLButtonElement>;
   onSelect: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <>
       <button
+        ref={previewRef}
+        data-template-preview-id={`imported:${template.id}`}
         type="button"
         aria-label={t(
           ($) => {
@@ -4265,6 +4227,7 @@ function ImportedPptCardMedia({
   onRequestDetail,
   onHover,
   onPreview,
+  previewRef,
   onSelect,
 }: {
   template: PresentationTemplateSummary;
@@ -4277,6 +4240,7 @@ function ImportedPptCardMedia({
   onRequestDetail: () => void;
   onHover: (index: number | null) => void;
   onPreview: () => void;
+  previewRef: RefCallback<HTMLButtonElement>;
   onSelect: () => void;
 }) {
   return (
@@ -4319,6 +4283,7 @@ function ImportedPptCardMedia({
         selected={selected}
         loading={loading}
         onPreview={onPreview}
+        previewRef={previewRef}
         onSelect={onSelect}
       />
     </div>
@@ -4362,6 +4327,9 @@ function ImportedPptCard({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const restorePreviewTrigger = useSet(
+    signals.template.restoreTemplatePreviewTriggerRef$,
+  );
   const detailLoadable = useLoadable(
     signals.template.importedPresentationTemplateDetail$,
   );
@@ -4407,6 +4375,7 @@ function ImportedPptCard({
       data-imported-presentation-template={template.id}
     >
       <ImportedPptCardMedia
+        previewRef={restorePreviewTrigger}
         template={template}
         selected={selected}
         activeSlideIndex={activeSlideIndex}
@@ -4857,6 +4826,7 @@ function ImportedPresentationTemplateMainPreview({
   loading,
   onChange,
   onKeyDown,
+  previewRef,
 }: {
   title: string;
   activeSlideIndex: number;
@@ -4865,6 +4835,7 @@ function ImportedPresentationTemplateMainPreview({
   loading: boolean;
   onChange: (index: number) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+  previewRef: RefCallback<HTMLDivElement>;
 }) {
   const { t } = useTranslation();
   const previewLabel = t(
@@ -4875,6 +4846,7 @@ function ImportedPresentationTemplateMainPreview({
   );
   return (
     <div
+      ref={previewRef}
       role="group"
       aria-label={previewLabel}
       data-testid={`${title} imported detail image preview`}
@@ -5007,6 +4979,7 @@ function ImportedPresentationTemplatePreviewPage({
   onSelect: (template: PresentationTemplateSummary) => void;
   signals: ComposerSignals;
 }) {
+  const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
   const detailLoadable = useLoadable(
     signals.template.importedPresentationTemplateDetail$,
   );
@@ -5069,6 +5042,7 @@ function ImportedPresentationTemplatePreviewPage({
       <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3 lg:overflow-y-auto">
           <ImportedPresentationTemplateMainPreview
+            previewRef={focusPreview}
             title={title}
             activeSlideIndex={activeSlideIndex}
             imageSignals={imageBuffers.detail}
@@ -5437,38 +5411,26 @@ function TemplatePickerDialog({
   const importedPreviewId = useGet(
     signals.template.importedPresentationTemplatePreviewId$,
   );
-  const importedPreviewSlideIndex = useGet(
-    signals.template.importedPresentationTemplatePreviewSlideIndex$,
-  );
-  const importedDetailLoadable = useLoadable(
-    signals.template.importedPresentationTemplateDetail$,
-  );
   const openImportedPreview = useSet(
     signals.template.openImportedPresentationTemplatePreview$,
   );
   const closeImportedPreview = useSet(
     signals.template.closeImportedPresentationTemplatePreview$,
   );
-  const selectImportedPreviewSlide = useSet(
-    signals.template.selectImportedPresentationTemplatePreviewSlide$,
-  );
   const resetImportedTemplatePicker = useSet(
     signals.template.resetImportedPresentationTemplatePicker$,
   );
   const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
   const restorePresentationGridScroll = useSet(
-    signals.template.restoreTemplatePickerPresentationScroll$,
+    signals.template.restoreTemplatePickerPresentationScrollRef$,
   );
   const setPresentationGridScrollTop = useSet(
     signals.template.setTemplatePickerPresentationScrollTop$,
   );
-  const detailPreview = useGet(signals.template.openedTemplateSelection$);
-  const openedTemplate = useLoadable(signals.template.openedTemplate$);
   const clearPresentationPreviews = useSet(
     signals.template.clearPresentationTemplatePreviews$,
   );
   const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
-  const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const closeDetailPreview = useSet(signals.template.closeOpenedTemplate$);
   const openWebsiteTemplatePreview = useSet(
     signals.template.openWebsiteTemplatePreview$,
@@ -5493,11 +5455,6 @@ function TemplatePickerDialog({
     importedTemplateItems.find((item) => {
       return item.template.id === importedPreviewId;
     }) ?? null;
-  const importedPreviewDetail =
-    importedDetailLoadable.state === "hasData" &&
-    importedDetailLoadable.data?.id === importedPreviewId
-      ? importedDetailLoadable.data
-      : null;
   const isPreviewing = Boolean(previewItem ?? importedPreviewItem);
   const dialogContentClassName = cn(
     "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
@@ -5655,92 +5612,6 @@ function TemplatePickerDialog({
     openImportedPreview(templateId, Math.max(0, Math.floor(slideIndex)));
   };
 
-  const previewDetailNavigationState = () => {
-    if (previewItem === null) {
-      return null;
-    }
-    const activeDetailPreview =
-      detailPreview?.slug === previewItem.slug &&
-      detailPreview.embedUrl === previewItem.embedUrl
-        ? detailPreview
-        : null;
-    const selectedThemeId =
-      activeDetailPreview?.themeId ??
-      cardThemeIdBySlug[previewItem.slug] ??
-      defaultPresentationTemplateThemeId(previewItem);
-    const selectedTheme = findPresentationTemplateTheme(selectedThemeId);
-    const detailSlideCount =
-      openedTemplate.state === "hasData" &&
-      openedTemplate.data?.item.slug === previewItem.slug
-        ? openedTemplate.data.draft.slides.length
-        : presentationTemplateSlideCount(previewItem);
-    return {
-      activeSlideIndex: activeDetailPreview?.index ?? 0,
-      detailSlideCount,
-      selectedTheme,
-    };
-  };
-
-  const selectPreviewDetailSlide = (index: number) => {
-    if (previewItem === null) {
-      return;
-    }
-    const navigationState = previewDetailNavigationState();
-    if (navigationState === null) {
-      return;
-    }
-    selectDetailPreview({
-      item: previewItem,
-      index: Math.max(0, Math.min(navigationState.detailSlideCount - 1, index)),
-      themeCss: presentationTemplateThemeCss(navigationState.selectedTheme),
-      themeId: navigationState.selectedTheme.id,
-    });
-  };
-
-  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!isPreviewing || event.defaultPrevented) {
-      return;
-    }
-    if (importedPreviewItem !== null) {
-      const slideCount = Math.max(
-        1,
-        importedPreviewDetail?.pageCount ??
-          importedPreviewItem.template.pageCount,
-      );
-      if (event.key === "ArrowLeft" && importedPreviewSlideIndex > 0) {
-        event.preventDefault();
-        selectImportedPreviewSlide(importedPreviewSlideIndex - 1);
-      }
-      if (
-        event.key === "ArrowRight" &&
-        importedPreviewSlideIndex < slideCount - 1
-      ) {
-        event.preventDefault();
-        selectImportedPreviewSlide(importedPreviewSlideIndex + 1);
-      }
-      return;
-    }
-    const navigationState = previewDetailNavigationState();
-    if (navigationState === null) {
-      return;
-    }
-    if (event.key === "ArrowLeft") {
-      if (navigationState.activeSlideIndex > 0) {
-        event.preventDefault();
-        selectPreviewDetailSlide(navigationState.activeSlideIndex - 1);
-      }
-    }
-    if (event.key === "ArrowRight") {
-      if (
-        navigationState.activeSlideIndex <
-        navigationState.detailSlideCount - 1
-      ) {
-        event.preventDefault();
-        selectPreviewDetailSlide(navigationState.activeSlideIndex + 1);
-      }
-    }
-  };
-
   const handleCategoryChange = (nextCategory: string) => {
     if (nextCategory !== "avatar") {
       clearAvatarVoiceSelection();
@@ -5759,13 +5630,6 @@ function TemplatePickerDialog({
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(selectedCategory);
     }
-  };
-
-  const restorePresentationGridScrollNode = (node: HTMLDivElement | null) => {
-    if (node === null) {
-      return;
-    }
-    restorePresentationGridScroll(node);
   };
 
   return (
@@ -5807,11 +5671,6 @@ function TemplatePickerDialog({
         // like every other preview instead of against the grid it came from.
         hideWhenNestedOpen
         aria-describedby={undefined}
-        onKeyDown={handleDialogKeyDown}
-        onKeyDownCapture={
-          isPreviewing ? handleTemplateDetailTabKeyDown : undefined
-        }
-        initialFocus={false}
       >
         {!isPreviewing ? (
           <div className="min-h-0 flex flex-1 flex-col">
@@ -5864,9 +5723,7 @@ function TemplatePickerDialog({
                   value={value}
                   illustrationVariantIndex={illustrationVariantIndex}
                   onPresentationScroll={setPresentationGridScrollTop}
-                  onRestorePresentationScroll={
-                    restorePresentationGridScrollNode
-                  }
+                  onRestorePresentationScroll={restorePresentationGridScroll}
                   onSelectPresentation={handleSelectPresentation}
                   onSelectImportedPresentation={
                     handleSelectImportedPresentation
@@ -5955,7 +5812,7 @@ function TemplatePickerCategoryContent({
   value: GenerationTemplateRequest | undefined;
   illustrationVariantIndex: Readonly<Record<string, number>>;
   onPresentationScroll: (value: number) => void;
-  onRestorePresentationScroll: (node: HTMLDivElement | null) => void;
+  onRestorePresentationScroll: RefCallback<HTMLDivElement>;
   onSelectPresentation: (
     item: PresentationTemplateItem,
     colorSystemId?: string,

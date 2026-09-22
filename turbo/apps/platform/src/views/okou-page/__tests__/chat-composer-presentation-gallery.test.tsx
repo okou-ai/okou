@@ -328,6 +328,74 @@ test("Navigate every slide in a presentation template", async () => {
   expect(screen.getByLabelText("Preview slide 3")).toBeVisible();
 });
 
+test("Presentation preview keeps keyboard navigation inside its focused controls", async () => {
+  mockTemplateChat();
+  const template = builtInTemplate();
+  mockPresentationHtml(template.embedUrl, ["One", "Two", "Three"]);
+  const user = userEvent.setup({ delay: null });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+
+  const pickerTrigger = screen.getByLabelText("Template");
+  await user.click(pickerTrigger);
+  const picker = await screen.findByRole("dialog");
+  await waitFor(() => {
+    expect(picker.contains(document.activeElement)).toBe(true);
+  });
+  await user.click(tabByText("Presentation"));
+  const previewLabel = `Preview ${template.title} at current slide`;
+  await user.click(screen.getByLabelText(previewLabel));
+  const preview = await screen.findByRole("group", {
+    name: `${template.title} slide preview`,
+  });
+  await within(preview).findByTitle(`${template.title} HTML preview`);
+  expect(preview).toHaveFocus();
+
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByLabelText("Preview slide 2")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  const back = buttonContainingText("Template", picker);
+  expect(back).toHaveFocus();
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(within(picker).getByLabelText("Close")).toHaveFocus();
+  await user.keyboard("{Tab}");
+  expect(back).toHaveFocus();
+  await user.keyboard("{Tab}");
+  expect(preview).toHaveFocus();
+  await user.keyboard("{Tab}");
+  expect(screen.getByLabelText("Preview slide 1")).toHaveFocus();
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByLabelText("Preview slide 3")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const theme = screen.getByLabelText("Select style Deep dive");
+  await user.click(theme);
+  await user.keyboard("{ArrowLeft}");
+  expect(theme).toHaveFocus();
+  expect(screen.getByLabelText("Preview slide 3")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.getByLabelText(previewLabel)).toHaveFocus();
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(picker).not.toBeInTheDocument();
+    expect(pickerTrigger).toHaveFocus();
+  });
+});
+
 test("Navigate template categories on different screen sizes", async () => {
   mockTemplateChat();
   const user = userEvent.setup();

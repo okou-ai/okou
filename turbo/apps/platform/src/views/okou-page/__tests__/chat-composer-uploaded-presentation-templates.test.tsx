@@ -854,6 +854,71 @@ function renameField(): HTMLTextAreaElement {
   return field;
 }
 
+test("Uploaded presentation names retain caret navigation while the preview owns slide keys", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Quarterly Board Review",
+    pageCount: 3,
+    canManage: true,
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  const user = userEvent.setup({ delay: null });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+  const picker = await openTemplatePicker(user, "Presentation");
+  const previewLabel = `Preview ${uploaded.title} at current slide`;
+  const previewTrigger = await waitFor(() => {
+    return buttonNamed(previewLabel, picker);
+  });
+  await user.click(previewTrigger);
+  const preview = await screen.findByRole("group", {
+    name: `${uploaded.title} slide preview`,
+  });
+  await waitFor(() => {
+    expect(buttonNamed("Preview slide 3", picker)).toBeEnabled();
+  });
+  expect(preview).toHaveFocus();
+  await user.keyboard("{ArrowRight}");
+  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const title = renameField();
+  await user.click(title);
+  await user.keyboard("{End}{ArrowLeft}");
+  expect(title.selectionStart).toBe(uploaded.title.length - 1);
+  expect(title.selectionEnd).toBe(uploaded.title.length - 1);
+  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await user.keyboard("{Shift>}{ArrowLeft}{/Shift}");
+  expect(title.selectionStart).toBe(uploaded.title.length - 2);
+  expect(title.selectionEnd).toBe(uploaded.title.length - 1);
+  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(buttonNamed("Preview slide 3", picker)).toHaveFocus();
+  await user.keyboard("{ArrowLeft}");
+  expect(buttonNamed("Preview slide 1", picker)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await user.click(buttonContainingText("Template", picker));
+  await waitFor(() => {
+    expect(buttonNamed(previewLabel, picker)).toHaveFocus();
+  });
+});
+
 test("A second rename cannot overtake the one already sent", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
