@@ -395,7 +395,12 @@ describe("OPS-01: user data export", () => {
 
     createStoragesBddApi(context).mockStoragePresignedUrls();
     const oldFiles = [{ path: "removed.md", content: "An old memory version" }];
-    const oldMemory = await commitMemoryVersion(context, actor, oldFiles);
+    const oldMemory = await commitMemoryVersion(
+      context,
+      actor,
+      oldFiles,
+      createTarGz(oldFiles).length,
+    );
     putMemoryArchive(misc, oldMemory.s3Key, oldFiles);
     const memoryFiles = [
       { path: "MEMORY.md", content: "# Exported memory" },
@@ -404,12 +409,22 @@ describe("OPS-01: user data export", () => {
         content: Buffer.from([0, 255, 254, 128, 10, 13, 0, 1, 2]),
       },
     ];
-    const memory = await commitMemoryVersion(context, actor, memoryFiles);
+    const memory = await commitMemoryVersion(
+      context,
+      actor,
+      memoryFiles,
+      createTarGz(memoryFiles).length,
+    );
     const currentMemory = putMemoryArchive(misc, memory.s3Key, memoryFiles);
     const peerFiles = [
       { path: "peer-secret.md", content: "Another user's memory" },
     ];
-    const peerMemory = await commitMemoryVersion(context, peer, peerFiles);
+    const peerMemory = await commitMemoryVersion(
+      context,
+      peer,
+      peerFiles,
+      createTarGz(peerFiles).length,
+    );
     putMemoryArchive(misc, peerMemory.s3Key, peerFiles);
 
     const storage = installDurableUserExportStorage(context);
