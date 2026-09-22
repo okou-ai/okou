@@ -17,13 +17,39 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
 
 const internalTaglineIndex$ = state(Math.floor(Math.random() * 18));
+const internalChatGreetingHasEntered$ = state(false);
+const internalChatGreetingShouldAnimate$ = state(false);
 
-export const reloadTagline$ = command(({ set }) => {
+/**
+ * Start one composer visit as a single state transition. The first visit in
+ * this App lifetime owns the decorative entrance; later visits may choose new
+ * copy, but they publish it with motion already disabled so a changed React key
+ * cannot restart the animation between route-setup writes.
+ */
+export const startChatGreetingVisit$ = command(({ get, set }): boolean => {
+  const shouldAnimate = !get(internalChatGreetingHasEntered$);
+  set(internalChatGreetingHasEntered$, true);
+  set(internalChatGreetingShouldAnimate$, shouldAnimate);
   set(internalTaglineIndex$, Math.floor(Math.random() * 18));
+  return shouldAnimate;
+});
+
+/** Restore the first entrance when the requested agent cannot be opened. */
+export const releaseChatGreetingVisit$ = command(({ set }) => {
+  set(internalChatGreetingHasEntered$, false);
+  set(internalChatGreetingShouldAnimate$, false);
+});
+
+export const finishChatGreetingEntrance$ = command(({ set }) => {
+  set(internalChatGreetingShouldAnimate$, false);
 });
 
 export const chatPageTaglineIndex$ = computed((get) => {
   return get(internalTaglineIndex$);
+});
+
+export const chatGreetingShouldAnimate$ = computed((get) => {
+  return get(internalChatGreetingShouldAnimate$);
 });
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,11 @@ import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
-import { chatPageTaglineIndex$ } from "../../signals/okou-page/chat-page.ts";
+import {
+  chatGreetingShouldAnimate$,
+  chatPageTaglineIndex$,
+  finishChatGreetingEntrance$,
+} from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
@@ -185,12 +189,12 @@ function localizedUserTaglines(
 
 function useTagline(
   agentName: string | null | undefined,
-  userName: string | null,
+  userName: string | null | undefined,
   index: number,
 ): string {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  if (agentName === undefined) {
+  if (agentName === undefined || userName === undefined) {
     return "";
   }
   const taglines = userName
@@ -216,7 +220,15 @@ const GREETING_TOKEN_STEP_MS = 70;
  * The space belongs to the outer span, not to the animated box, so a word's
  * blur cannot smear into its neighbour's gap.
  */
-function GreetingTokens({ text }: { text: string }) {
+function GreetingTokens({
+  text,
+  animate,
+  onAnimationComplete,
+}: {
+  text: string;
+  animate: boolean;
+  onAnimationComplete: () => void;
+}) {
   const words = text.split(" ");
 
   return (
@@ -226,10 +238,22 @@ function GreetingTokens({ text }: { text: string }) {
           <span key={`${String(index)}-${word}`}>
             <span
               data-slot="chat-tagline-word"
-              className="inline-block motion-safe:animate-chat-greeting-token"
-              style={{
-                animationDelay: `${String((index + 1) * GREETING_TOKEN_STEP_MS)}ms`,
-              }}
+              className={cn(
+                "inline-block",
+                animate && "motion-safe:animate-chat-greeting-token",
+              )}
+              style={
+                animate
+                  ? {
+                      animationDelay: `${String((index + 1) * GREETING_TOKEN_STEP_MS)}ms`,
+                    }
+                  : undefined
+              }
+              onAnimationEnd={
+                animate && index === words.length - 1
+                  ? onAnimationComplete
+                  : undefined
+              }
             >
               {word}
             </span>
@@ -408,7 +432,9 @@ export function AgentChatPage() {
   );
 
   const pageSignal = useGet(pageSignal$);
-  const userFirstName = useLastResolved(user$)?.firstName ?? null;
+  const user = useLastResolved(user$);
+  const userFirstName =
+    user === undefined ? undefined : (user.firstName ?? null);
 
   const composerSignals = useGet(agentChatComposerSignals$);
   const taskChipsEnabled = useGet(composerSignals.taskChips.enabled$);
@@ -420,6 +446,9 @@ export function AgentChatPage() {
     userFirstName,
     taglineIndex,
   );
+  const animateGreeting = useGet(chatGreetingShouldAnimate$);
+  const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
+  const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
 
   const handleInputChange = (value: string) => {
     setInput(value);
@@ -454,32 +483,44 @@ export function AgentChatPage() {
               it and the line lands in the middle of what is left. The row is at
               its final width on the first frame, so it is centered once and
               never moves again. */}
-          <div className="flex w-full justify-center my-auto sm:my-0">
-            {/* Keyed on what is being greeted, so arriving at another agent
-                replays the whole entrance rather than swapping words under a
-                finished one. */}
-            <div
-              key={`${currentChatAgentId ?? "none"}:${tagline}`}
-              data-slot="chat-greeting"
-              data-testid="chat-greeting"
-              className="flex max-w-full items-center gap-4"
-            >
-              {/* The avatar is the greeting's first word: it takes the same
-                  entrance with no delay, and the sentence follows it. */}
-              <span
-                data-slot="chat-greeting-avatar"
-                className="shrink-0 motion-safe:animate-chat-greeting-token"
+          <div className="flex min-h-14 w-full justify-center my-auto sm:my-0">
+            {/* The async agent identity and name leave the first renders
+                incomplete. Reserve the finished row's height, but do not let
+                the avatar run a throwaway entrance before the real greeting
+                can mount under its final identity. */}
+            {currentChatAgentId === undefined || tagline === "" ? null : (
+              <div
+                key={greetingIdentity}
+                data-slot="chat-greeting"
+                data-testid="chat-greeting"
+                className="flex max-w-full items-center gap-4"
               >
-                <ChatAgentAvatar agentId={currentChatAgentId} />
-              </span>
-              <h2
-                aria-label={tagline}
-                data-testid="chat-tagline"
-                className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
-              >
-                <GreetingTokens text={tagline} />
-              </h2>
-            </div>
+                {/* The avatar is the greeting's first word. Only the first
+                    greeting in this App lifetime takes the entrance; changing
+                    agents or opening another new chat gets no second entrance. */}
+                <span
+                  data-slot="chat-greeting-avatar"
+                  className={cn(
+                    "shrink-0",
+                    animateGreeting &&
+                      "motion-safe:animate-chat-greeting-token",
+                  )}
+                >
+                  <ChatAgentAvatar agentId={currentChatAgentId} />
+                </span>
+                <h2
+                  aria-label={tagline}
+                  data-testid="chat-tagline"
+                  className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+                >
+                  <GreetingTokens
+                    text={tagline}
+                    animate={animateGreeting}
+                    onAnimationComplete={finishGreetingEntrance}
+                  />
+                </h2>
+              </div>
+            )}
           </div>
 
           {/* The same two the thread page's footer carries.

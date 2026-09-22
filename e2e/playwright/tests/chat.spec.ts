@@ -28,6 +28,7 @@ interface GreetingCapture {
 declare global {
   interface Window {
     recordChatGreeting?: (capture: GreetingCapture) => Promise<void>;
+    chatGreetingAnimationStarts?: number;
   }
 }
 
@@ -115,7 +116,7 @@ test("chat page displays tagline after onboarding", async ({ page }) => {
   });
 });
 
-test("a mobile greeting arrives without moving its row or cutting its text", async ({
+test("a mobile greeting enters once without moving its row or cutting its text", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 740 });
@@ -143,6 +144,18 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
     },
   );
   await page.addInitScript(() => {
+    window.chatGreetingAnimationStarts = 0;
+    document.addEventListener(
+      "animationstart",
+      (event) => {
+        if (event.animationName === "chat-greeting-token") {
+          window.chatGreetingAnimationStarts =
+            (window.chatGreetingAnimationStarts ?? 0) + 1;
+        }
+      },
+      true,
+    );
+
     const frames: GreetingFrame[] = [];
     let text = "";
     let startedAt = 0;
@@ -253,6 +266,12 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
   for (let index = 1; index < capture.delays.length; index++) {
     expect(capture.delays[index]).toBeGreaterThan(capture.delays[index - 1]);
   }
+  const firstEntranceAnimationStarts = await page.evaluate(() => {
+    return window.chatGreetingAnimationStarts ?? 0;
+  });
+  // One start belongs to the avatar and one to each word. An avatar-only pass
+  // while the async agent name is still loading would add another start here.
+  expect(firstEntranceAnimationStarts).toBe(words.length + 1);
 
   // What the animation must never do: change the sentence, reflow it, or move
   // the row it sits in. The avatar snapping sideways while the line grew is
@@ -274,6 +293,53 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
     );
     expect(frame.rowRight, label).toBeLessThanOrEqual(frame.containerRight + 1);
   }
+
+  const newChatShortcut = await page.evaluate(() => {
+    return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
+      ? "Meta+Shift+O"
+      : "Control+Shift+O";
+  });
+  const waitForTwoPaints = async () => {
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+      });
+    });
+  };
+
+  // Leaving the composer and opening it again is ordinary navigation, not a
+  // new page entrance. The shortcut also reruns the same route setup while the
+  // composer is already open; neither path may start the greeting again.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await page.waitForURL(/\/agents$/);
+  await page.keyboard.press(newChatShortcut);
+  await page.waitForURL(/\/agents\/.*\/chat$/);
+  await expect(page.getByTestId("chat-tagline")).toBeVisible();
+  await waitForTwoPaints();
+  expect(
+    await page.evaluate(() => {
+      return window.chatGreetingAnimationStarts ?? 0;
+    }),
+  ).toBe(firstEntranceAnimationStarts);
+
+  const historyLength = await page.evaluate(() => window.history.length);
+  await page.keyboard.press(newChatShortcut);
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => window.history.length);
+    })
+    .toBe(historyLength + 1);
+  await waitForTwoPaints();
+  expect(
+    await page.evaluate(() => {
+      return window.chatGreetingAnimationStarts ?? 0;
+    }),
+  ).toBe(firstEntranceAnimationStarts);
 });
 
 test("sidebar scrollbar thumb meets the workspace edge without a mobile inset", async ({
