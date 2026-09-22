@@ -68,6 +68,9 @@ function matchesExpectedTransport(
   expected: RunnerVncCheckRequest["expectedTransport"],
 ) {
   if (current.type === "direct") {
+    // Old Runner -> new API: pre-transport Runners omit this snapshot. Remove
+    // omission support after the replacement fleet and its two-hour Runs have
+    // drained; #35894 owns that rollout evidence and retirement gate.
     return expected === undefined || expected.type === "direct";
   }
   return (
@@ -96,6 +99,9 @@ function selectedCapability(
   if (explicit || transport.type === "ssh") {
     return explicit;
   }
+  // Old Runner -> new API: pre-transport Runners advertise only the profile
+  // pair. Remove this legacy direct selection and response after the replacement
+  // fleet and its two-hour Runs have drained; #35894 owns the retirement gate.
   return profiles.find((profile) => {
     return matchesProfile(profile) && profile.transportType === undefined;
   });
