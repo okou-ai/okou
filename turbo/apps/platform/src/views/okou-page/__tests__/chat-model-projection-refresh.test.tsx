@@ -366,17 +366,17 @@ test("A local active-account change refreshes the member projection", async () =
     screen.findByRole("heading", { name: "Models" }),
   ).resolves.toBeInTheDocument();
   const row = await screen.findByTestId(`oauth-account-${secondId}`);
-  const activate = queryAllByRoleFast("radio", row).find((radio) => {
-    return radio.getAttribute("aria-label") === "Use";
+  const activate = queryAllByRoleFast("button", row).find((button) => {
+    return button.getAttribute("aria-label")?.startsWith("Use:");
   });
   expect(activate).toBeDefined();
   click(activate!);
   await waitFor(() => {
     expect(
-      queryAllByRoleFast("radio", row).find((radio) => {
-        return radio.getAttribute("aria-label") === "Active";
+      queryAllByRoleFast("button", row).find((button) => {
+        return button.getAttribute("aria-label")?.startsWith("Active:");
       }),
-    ).toHaveAttribute("aria-checked", "true");
+    ).toHaveAttribute("aria-pressed", "true");
   });
   click(within(settings).getByLabelText("Close"));
   await waitFor(() => {

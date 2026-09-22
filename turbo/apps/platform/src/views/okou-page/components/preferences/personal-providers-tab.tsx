@@ -17,8 +17,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Radio,
-  RadioGroup,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -378,9 +376,6 @@ function PersonalProviderAccountTable({
 }) {
   const { t } = useTranslation();
   const headingId = `personal-provider-accounts-${group.type}`;
-  const activeId = group.accounts.find((account) => {
-    return account.isActive;
-  })?.id;
 
   return (
     <section aria-labelledby={headingId}>
@@ -393,56 +388,48 @@ function PersonalProviderAccountTable({
             {group.title}
           </h4>
         </div>
-        <RadioGroup
-          aria-labelledby={headingId}
-          value={activeId ?? ""}
-          disabled={actionPending}
-          onValueChange={(id: string) => {
-            if (id !== activeId) {
-              onActivate(id);
-            }
-          }}
-        >
-          <div role="table" aria-labelledby={headingId}>
-            {isLoading ? (
-              <div role="rowgroup" className="p-2">
-                <OAuthAccountTableRowSkeleton />
-              </div>
-            ) : group.accounts.length === 0 ? (
-              <div role="rowgroup" className="p-2">
-                <div role="row" className="rounded-lg px-3 py-5">
-                  <div role="cell" className="text-xs text-muted-foreground">
-                    {t(($) => {
-                      return $.settings.models.personal.noAccounts;
-                    })}
-                  </div>
+        <div role="table" aria-labelledby={headingId}>
+          {isLoading ? (
+            <div role="rowgroup" className="p-2">
+              <OAuthAccountTableRowSkeleton />
+            </div>
+          ) : group.accounts.length === 0 ? (
+            <div role="rowgroup" className="p-2">
+              <div role="row" className="rounded-lg px-3 py-5">
+                <div role="cell" className="text-xs text-muted-foreground">
+                  {t(($) => {
+                    return $.settings.models.personal.noAccounts;
+                  })}
                 </div>
               </div>
-            ) : (
-              <div role="rowgroup" className="p-2">
-                {group.accounts.map((account, index) => {
-                  return (
-                    <OAuthAccountTableRow
-                      key={account.id}
-                      account={account}
-                      fallbackIndex={index + 1}
-                      actionPending={actionPending}
-                      onReconnect={() => {
-                        onReconnect(group.type, account.id);
-                      }}
-                      onDisconnect={() => {
-                        onDisconnect(account, index + 1);
-                      }}
-                      onReset={() => {
-                        onReset(account);
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </RadioGroup>
+            </div>
+          ) : (
+            <div role="rowgroup" className="p-2">
+              {group.accounts.map((account, index) => {
+                return (
+                  <OAuthAccountTableRow
+                    key={account.id}
+                    account={account}
+                    fallbackIndex={index + 1}
+                    actionPending={actionPending}
+                    onActivate={() => {
+                      onActivate(account.id);
+                    }}
+                    onReconnect={() => {
+                      onReconnect(group.type, account.id);
+                    }}
+                    onDisconnect={() => {
+                      onDisconnect(account, index + 1);
+                    }}
+                    onReset={() => {
+                      onReset(account);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -455,6 +442,7 @@ function OAuthAccountTableRow({
   account,
   fallbackIndex,
   actionPending,
+  onActivate,
   onReconnect,
   onDisconnect,
   onReset,
@@ -462,6 +450,7 @@ function OAuthAccountTableRow({
   readonly account: ModelProviderResponse;
   readonly fallbackIndex: number;
   readonly actionPending: boolean;
+  readonly onActivate: () => void;
   readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
   readonly onReset: () => void;
@@ -498,17 +487,12 @@ function OAuthAccountTableRow({
         role="cell"
         className="col-start-1 col-end-3 row-start-1 flex min-w-0 items-center gap-3 lg:col-end-2"
       >
-        <Radio
-          value={account.id}
-          aria-label={
-            account.isActive
-              ? t(($) => {
-                  return $.settings.models.personal.activeAccount;
-                })
-              : t(($) => {
-                  return $.settings.models.personal.useAccount;
-                })
-          }
+        <OAuthAccountActivateButton
+          actionPending={actionPending}
+          detail={detail}
+          identity={identity}
+          isActive={account.isActive ?? false}
+          onActivate={onActivate}
         />
         <OAuthAccountIdentity
           detail={detail}
@@ -565,6 +549,53 @@ function OAuthAccountTableRow({
         />
       </div>
     </div>
+  );
+}
+
+// Activating an account is a server-side switch, so it stays an explicit
+// command: a button that reports the confirmed account with `aria-pressed`,
+// never a radio whose arrow keys would change the account while browsing.
+function OAuthAccountActivateButton({
+  actionPending,
+  detail,
+  identity,
+  isActive,
+  onActivate,
+}: {
+  readonly actionPending: boolean;
+  readonly detail: string | null | undefined;
+  readonly identity: string;
+  readonly isActive: boolean;
+  readonly onActivate: () => void;
+}) {
+  const { t } = useTranslation();
+  const action = isActive
+    ? t(($) => {
+        return $.settings.models.personal.activeAccount;
+      })
+    : t(($) => {
+        return $.settings.models.personal.useAccount;
+      });
+
+  return (
+    <Button
+      showTooltip
+      type="button"
+      variant="quiet"
+      size="icon-2xs"
+      className={cn(
+        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border bg-input transition-colors hover:border-foreground/40 hover:bg-input disabled:cursor-default disabled:opacity-100",
+        isActive && "border-primary bg-primary hover:bg-primary",
+      )}
+      aria-label={`${action}: ${identity}${detail ? ` (${detail})` : ""}`}
+      aria-pressed={isActive}
+      disabled={isActive || actionPending}
+      onClick={onActivate}
+    >
+      {isActive ? (
+        <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--on-filled))]" />
+      ) : null}
+    </Button>
   );
 }
 

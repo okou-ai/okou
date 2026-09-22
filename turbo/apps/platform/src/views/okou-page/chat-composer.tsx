@@ -1,3 +1,11 @@
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
+} from "@okouai/ui/components/ui/dropdown-menu";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   useComposerConnectorActions,
@@ -4577,15 +4585,18 @@ const IMPORTED_TEMPLATE_VISIBILITY_OPTIONS = [
  * because reading the current state is the common act and switching it is not.
  */
 function ImportedPresentationTemplateVisibilityControl({
+  templateId,
   visibility,
   updating,
   onChange,
 }: {
+  templateId: string;
   visibility: PresentationTemplateSummary["visibility"];
   updating: boolean;
   onChange: (visibility: PresentationTemplateSummary["visibility"]) => void;
 }) {
   const { t } = useTranslation();
+  const descriptionId = `imported-template-${templateId}-visibility`;
   const optionLabel = (value: PresentationTemplateSummary["visibility"]) => {
     return value === "private"
       ? t(($) => {
@@ -4606,12 +4617,12 @@ function ImportedPresentationTemplateVisibilityControl({
   };
   const CurrentIcon = visibility === "private" ? Lock : Users;
   return (
-    <Popover>
+    <DropdownMenu>
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
         <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
         <span>{optionState(visibility)}</span>
         <span aria-hidden="true">·</span>
-        <PopoverTrigger
+        <DropdownMenuTrigger
           disabled={updating}
           className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground disabled:opacity-50"
           aria-label={t(($) => {
@@ -4621,74 +4632,68 @@ function ImportedPresentationTemplateVisibilityControl({
           {t(($) => {
             return $.artifacts.templates.visibility.change;
           })}
-        </PopoverTrigger>
+        </DropdownMenuTrigger>
       </p>
-      <PopoverContent
+      <DropdownMenuContent
         align="start"
         side="bottom"
         sideOffset={6}
         className="w-[19rem] p-1.5"
       >
-        <div
-          role="radiogroup"
+        <DropdownMenuRadioGroup
+          value={visibility}
+          onValueChange={(next: PresentationTemplateSummary["visibility"]) => {
+            if (next !== visibility) {
+              onChange(next);
+            }
+          }}
           aria-label={t(($) => {
             return $.workflows.detail.metadata.visibility;
           })}
         >
           {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
-            const selected = value === visibility;
             return (
-              <PopoverClose
+              <DropdownMenuRadioItem
                 key={value}
-                render={
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={cn(
-                      "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                      selected && "bg-state-selected",
-                    )}
-                    onClick={() => {
-                      if (!selected) {
-                        onChange(value);
-                      }
-                    }}
+                value={value}
+                label={optionLabel(value)}
+                aria-label={optionLabel(value)}
+                aria-describedby={`${descriptionId}-${value}`}
+                closeOnClick
+                className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
+              >
+                <Icon
+                  size={16}
+                  className="mt-0.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-foreground">
+                    {optionLabel(value)}
+                  </span>
+                  <span
+                    id={`${descriptionId}-${value}`}
+                    className="block text-xs text-muted-foreground"
                   >
-                    <Icon
+                    {optionState(value)}
+                  </span>
+                </span>
+                {/* Reserve the check column so descriptions do not reflow. */}
+                <span className="mt-0.5 w-4 shrink-0">
+                  <DropdownMenuRadioItemIndicator>
+                    <Check
                       size={16}
-                      className="mt-0.5 shrink-0 text-muted-foreground"
+                      className="text-foreground"
                       aria-hidden="true"
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm text-foreground">
-                        {optionLabel(value)}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {optionState(value)}
-                      </span>
-                    </span>
-                    {/* The check column is reserved on both rows: letting it
-                      appear only on the selected one narrows that row's text
-                      box, so the description reflows every time the selection
-                      moves. */}
-                    <span className="mt-0.5 w-4 shrink-0">
-                      {selected ? (
-                        <Check
-                          size={16}
-                          className="text-foreground"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                    </span>
-                  </button>
-                }
-              />
+                  </DropdownMenuRadioItemIndicator>
+                </span>
+              </DropdownMenuRadioItem>
             );
           })}
-        </div>
-      </PopoverContent>
-    </Popover>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -4807,6 +4812,7 @@ function ImportedPresentationTemplateSidebar({
           <>
             <div className="my-5 border-t border-border" />
             <ImportedPresentationTemplateVisibilityControl
+              templateId={activeTemplate.id}
               visibility={activeTemplate.visibility}
               updating={updating}
               onChange={(nextVisibility) => {
