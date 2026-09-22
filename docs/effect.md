@@ -114,26 +114,28 @@ the acquired resource is owned by that element. Examples include:
 
 - focus, selection, measurement, and scrolling;
 - DOM event listeners;
-- `ResizeObserver` or `IntersectionObserver` bound to an element;
+- `IntersectionObserver` bound to an element;
 - an editor, iframe, or browser resource whose lifetime matches the element.
 
 The inner command receives the mounted element and an `AbortSignal` that is
 aborted on detach. Acquire and release the resource in the same lifecycle.
+Forward DOM events to a predeclared command:
 
 ```ts
 const setRootRef$ = onRef(
-  command((_ctx, root: HTMLElement, signal: AbortSignal) => {
-    const observer = new ResizeObserver(() => {
-      // Read or update state owned by this DOM resource.
-    });
-
-    observer.observe(root);
-    signal.addEventListener("abort", () => observer.disconnect(), {
-      once: true,
-    });
+  command(({ set }, root: HTMLElement, signal: AbortSignal) => {
+    root.addEventListener(
+      "scroll",
+      onDomEventFn(() => set(recordScrollPosition$, root, signal)),
+      { passive: true, signal },
+    );
   }),
 );
 ```
+
+Mount ownership does not justify observing application-owned layout changes.
+Follow the [ResizeObserver guide](./resize-observer.md) to use CSS, stable
+geometry, and deterministic command triggers.
 
 Pass the stable `useSet` result directly to React so the cleanup return value is
 preserved:
