@@ -738,13 +738,11 @@ function DirectStateFromAction({
 function PendingDirectInteraction({
   action,
   browserSessionSignals,
-  closeDialogOnBrowserOpen = false,
   signals,
   variant,
 }: {
   readonly action: BrowserDirectInteractionAction;
   readonly browserSessionSignals: BrowserSessionSignals;
-  readonly closeDialogOnBrowserOpen?: boolean;
   readonly signals: BrowserUserActionSignals;
   readonly variant: BrowserUserActionCardVariant;
 }) {
@@ -788,9 +786,10 @@ function PendingDirectInteraction({
       </div>
 
       <BrowserSessionCard
-        closeDialogOnOpen={closeDialogOnBrowserOpen}
         signals={browserSessionSignals}
-        openMode={variant === "standalone" ? "new-page" : "sidebar"}
+        openMode={
+          variant === "standalone" ? "new-page" : "sidebar-and-close-dialog"
+        }
       />
 
       {(completeFailed || cancelFailed) && (
@@ -882,7 +881,6 @@ function PendingInlineDirectInteraction({
         <PendingDirectInteraction
           action={action}
           browserSessionSignals={browserSessionSignals}
-          closeDialogOnBrowserOpen
           signals={signals}
           variant="inline"
         />

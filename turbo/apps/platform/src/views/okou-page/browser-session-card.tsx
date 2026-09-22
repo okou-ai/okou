@@ -19,8 +19,7 @@ import { ChatCard } from "./components/chat-card.tsx";
 
 interface BrowserSessionCardProps {
   readonly signals: BrowserSessionSignals;
-  readonly closeDialogOnOpen?: boolean;
-  readonly openMode?: "sidebar" | "new-page";
+  readonly openMode?: "new-page" | "sidebar" | "sidebar-and-close-dialog";
 }
 
 const BROWSER_SESSION_CARD_SHELL_CLASS =
@@ -142,20 +141,20 @@ function BrowserSessionCardSkeleton() {
 }
 
 function BrowserSessionUnavailable({
-  closeDialogOnOpen,
   signals,
   openMode,
 }: {
-  readonly closeDialogOnOpen: boolean;
   readonly signals?: BrowserSessionSignals;
-  readonly openMode: "sidebar" | "new-page";
+  readonly openMode: NonNullable<BrowserSessionCardProps["openMode"]>;
 }) {
   const { t } = useTranslation();
   const openSidebar = useSet(openThreadBrowserSession$);
   const unavailable = signals === undefined;
   return (
     <BrowserSessionCardAction
-      closeDialogOnOpen={closeDialogOnOpen && signals !== undefined}
+      closeDialogOnOpen={
+        openMode === "sidebar-and-close-dialog" && signals !== undefined
+      }
       render={
         openMode === "new-page" && signals ? (
           <a
@@ -214,7 +213,6 @@ function BrowserSessionUnavailable({
 }
 
 function BrowserSessionCardState({
-  closeDialogOnOpen = false,
   signals,
   openMode = "sidebar",
 }: BrowserSessionCardProps) {
@@ -229,21 +227,10 @@ function BrowserSessionCardState({
     return <BrowserSessionCardSkeleton />;
   }
   if (sessionLoadable.state === "hasError") {
-    return (
-      <BrowserSessionUnavailable
-        closeDialogOnOpen={false}
-        openMode={openMode}
-      />
-    );
+    return <BrowserSessionUnavailable openMode={openMode} />;
   }
   if (sessionLoadable.data === null) {
-    return (
-      <BrowserSessionUnavailable
-        closeDialogOnOpen={closeDialogOnOpen}
-        signals={signals}
-        openMode={openMode}
-      />
-    );
+    return <BrowserSessionUnavailable signals={signals} openMode={openMode} />;
   }
 
   const session = sessionLoadable.data;
@@ -251,7 +238,7 @@ function BrowserSessionCardState({
   const live = session.status === "active";
   return (
     <BrowserSessionCardAction
-      closeDialogOnOpen={closeDialogOnOpen}
+      closeDialogOnOpen={openMode === "sidebar-and-close-dialog"}
       render={
         openMode === "new-page" ? (
           <a
@@ -310,17 +297,12 @@ function BrowserSessionCardState({
 }
 
 export function BrowserSessionCard({
-  closeDialogOnOpen = false,
   signals,
   openMode = "sidebar",
 }: BrowserSessionCardProps) {
   return (
     <BrowserSessionCardShell>
-      <BrowserSessionCardState
-        closeDialogOnOpen={closeDialogOnOpen}
-        signals={signals}
-        openMode={openMode}
-      />
+      <BrowserSessionCardState signals={signals} openMode={openMode} />
     </BrowserSessionCardShell>
   );
 }
