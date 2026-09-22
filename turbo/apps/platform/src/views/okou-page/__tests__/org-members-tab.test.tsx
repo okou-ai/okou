@@ -556,6 +556,40 @@ test.each(["free", "limited-free-1", "pro", "team"])(
   },
 );
 
+test("shows a pending-invitation conflict without closing the invite dialog", async () => {
+  mockMembersStory(undefined, "admin", "owner");
+  mockMemberInviteEntitlement(false, { tier: "free", status: "active" });
+  context.mocks.api(orgInviteContract.invite, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "INVITATION_ALREADY_EXISTS",
+        message: "This person already has a pending invitation.",
+      },
+    });
+  });
+
+  await setupPage({ context, path: "/?settings=people" });
+  await screen.findByRole("heading", { name: "People" });
+  click(buttonByText("Add member"));
+  const inviteDialog = await screen.findByRole("dialog", {
+    name: "Invite member",
+  });
+  await fill(
+    within(inviteDialog).getByPlaceholderText("email@example.com"),
+    "already.invited@example.com",
+  );
+  const send = buttonByText("Send invitation", inviteDialog);
+  await waitFor(() => {
+    expect(send).toBeEnabled();
+  });
+  click(send);
+
+  await expect(
+    screen.findByText("This person already has a pending invitation."),
+  ).resolves.toBeInTheDocument();
+  expect(inviteDialog).toBeInTheDocument();
+});
+
 test.each([
   { tier: "pro", hasSubscription: true },
   { tier: "team", hasSubscription: true },

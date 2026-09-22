@@ -39,6 +39,29 @@ export async function linkGetStartedInvitation(
     .where(eq(getStartedClaims.id, claimId));
 }
 
+export async function invalidateGetStartedInvitationClaim(
+  db: Db,
+  args: {
+    readonly claimId: string;
+    readonly reason: "invitation_create_failed" | "invitee_unavailable";
+  },
+): Promise<void> {
+  await db
+    .update(getStartedClaims)
+    .set({
+      status: "ineligible",
+      reason: args.reason,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(getStartedClaims.id, args.claimId),
+        eq(getStartedClaims.questKey, "invite"),
+        eq(getStartedClaims.status, "pending"),
+      ),
+    );
+}
+
 export async function revokeGetStartedInvitation(
   db: Db,
   args: { readonly orgId: string; readonly invitationId: string },
