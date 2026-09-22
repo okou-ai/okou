@@ -62,11 +62,11 @@ use `cargo clippy --profile local --all-targets --all-features`.
 
 ### Shared firewall contract in CI
 
-The Crates coverage job runs
-`types::tests::firewall_base_url_validation_matches_shared_contract` as part of
-the full Rust suite. When coverage is selected, the dedicated
-`runner-firewall-contract-test` job is skipped to avoid compiling the runner test
-executable twice.
+The Crates coverage job runs the
+`runner-types` integration test
+`firewall_base_url_validation_matches_shared_contract` as part of the full Rust
+suite. When coverage is selected, the dedicated `runner-firewall-contract-test`
+job is skipped to avoid compiling the same integration test twice.
 
 A change only to
 `turbo/packages/connectors/src/__tests__/firewall-base-url-validation-contract.json`
