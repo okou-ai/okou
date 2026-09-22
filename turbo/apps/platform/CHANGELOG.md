@@ -11,6 +11,14 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.941.1](https://github.com/okou-ai/okou/compare/app-v0.941.0...app-v0.941.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **platform:** move Codex reset control into usage header ([#35961](https://github.com/okou-ai/okou/issues/35961)) ([22f085a](https://github.com/okou-ai/okou/commit/22f085a14ce8fe7d7bb467645aed1979bdf223b7))
+* **platform:** scope connector directory keyboard actions ([#35971](https://github.com/okou-ai/okou/issues/35971)) ([8b33098](https://github.com/okou-ai/okou/commit/8b33098582390e25734cc63620c92a236ebd8849))
+
 ## [0.941.0](https://github.com/okou-ai/okou/compare/app-v0.940.0...app-v0.941.0) (2026-09-22)
 
 
