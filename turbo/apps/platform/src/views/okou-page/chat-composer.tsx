@@ -10257,6 +10257,9 @@ function ComposerConnectorsSlot({
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
+  const finishAddConnectorsDialog = useSet(
+    signals.connector.finishAddConnectorsDialog$,
+  );
 
   const pageSignal = useGet(pageSignal$);
   const selectedConnectorSlug = connectorUi.selectedConnectorSlug;
@@ -10331,9 +10334,6 @@ function ComposerConnectorsSlot({
       await handleConnectSuccess(connectorSlug, signal);
     }
     signal.throwIfAborted();
-    updateConnectorUi({
-      showAddDialog: false,
-    });
   };
 
   const connectorConnectHandlers = (
@@ -10352,7 +10352,7 @@ function ComposerConnectorsSlot({
         if (!accountOptions) {
           return;
         }
-        await actions.connectBrowserAuth(
+        const connected = await actions.connectBrowserAuth(
           {
             connectorSlug,
             method: authMethod,
@@ -10368,12 +10368,15 @@ function ComposerConnectorsSlot({
           },
           pageSignal,
         );
+        if (connected) {
+          finishAddConnectorsDialog(connectorUi.addDialogSessionId);
+        }
       },
       connectNoAuth: async (authMethod) => {
         if (!accountOptions) {
           return;
         }
-        await actions.connectNoAuth(
+        const connected = await actions.connectNoAuth(
           {
             connectorSlug,
             authMethod,
@@ -10388,6 +10391,9 @@ function ComposerConnectorsSlot({
           },
           pageSignal,
         );
+        if (connected) {
+          finishAddConnectorsDialog(connectorUi.addDialogSessionId);
+        }
       },
     };
   };
@@ -10470,7 +10476,6 @@ function ComposerConnectorsSlot({
             unconnected={unconnectedConnectors}
             connectedCustom={agentCustomConnectors}
             unconnectedCustom={unconnectedCustomConnectors}
-            connecting={actions.connecting}
             connectHandlers={connectorConnectHandlers}
             onConnectCustom={(connector) => {
               updateConnectorUi({

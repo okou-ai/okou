@@ -16,12 +16,12 @@ import {
   connectBuiltinConnectorOAuthAuthCode$,
   type ConnectorConnectSuccess,
   connectBuiltinConnectorNoAuth$,
-  builtinConnectFlowSlug$,
+  builtinConnectFlowSlugs$,
   getBuiltinConnectorStatusConnectLaunchMode,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
   getOnlyAvailableBuiltinConnectorStatusNoAuthMethod,
   justConnectedBuiltinSlugs$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthAuthCodeSlugs$,
   type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
@@ -387,8 +387,8 @@ function useDirectedAuthorizeSuccess(
 function DirectedAuthorizeCard() {
   const { t } = useTranslation();
   const params = useDirectedAuthorizeParams();
-  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
-  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
+  const pollingConnectorSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
+  const connectFlowConnectorSlugs = useGet(builtinConnectFlowSlugs$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const [authorizeLoadable, authorize] = useLoadableSet(authorizeConnector$);
@@ -420,8 +420,8 @@ function DirectedAuthorizeCard() {
 
   const { connectorSlug, agentId } = params;
   const isConnecting =
-    pollingConnectorSlug === connectorSlug ||
-    connectFlowConnectorSlug === connectorSlug;
+    pollingConnectorSlugs.has(connectorSlug) ||
+    connectFlowConnectorSlugs.has(connectorSlug);
 
   const isLoading = catalogLoading || permissionLoading;
   const canAuthorize = canAuthorizeConnector(item, isConnected);

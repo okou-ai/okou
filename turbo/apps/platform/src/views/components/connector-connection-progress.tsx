@@ -11,13 +11,14 @@ import {
   connectorConnectionProgressVisible$,
   cancelConnectorConnection$,
   connectorConnectionAttempt$,
+  connectorConnectionProgressAttempt$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "./connector-connection-dialog-body.tsx";
 
 export function ConnectorConnectionProgress() {
   const visible = useGet(connectorConnectionProgressVisible$);
   const cancelConnection = useSet(cancelConnectorConnection$);
-  const attempt = useGet(connectorConnectionAttempt$);
+  const attempt = useGet(connectorConnectionProgressAttempt$);
   const cancel = () => {
     cancelConnection(attempt);
   };
@@ -60,12 +61,19 @@ export function ConnectorConnectionProgress() {
 export function useConnectorConnectionDialogClose(
   pending: boolean,
   onClose: () => void,
+  attemptIds?: readonly symbol[],
 ) {
   const cancelConnection = useSet(cancelConnectorConnection$);
   const attempt = useGet(connectorConnectionAttempt$);
   const close = () => {
     if (pending) {
-      cancelConnection(attempt);
+      if (attemptIds) {
+        for (const attemptId of attemptIds) {
+          cancelConnection(attemptId);
+        }
+      } else {
+        cancelConnection(attempt);
+      }
     }
     onClose();
   };

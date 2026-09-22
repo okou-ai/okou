@@ -7,8 +7,8 @@ import { cn, ScrollBar, surfaceVariants } from "@okouai/ui";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
-  builtinConnectFlowSlug$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinConnectFlowSlugs$,
+  builtinPollingOAuthAuthCodeSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   connectBuiltinConnectorOAuthAuthCode$,
   getBuiltinConnectorStatusDirectConnectMethod,
@@ -165,8 +165,8 @@ export function QuestConnectorPicker({
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const pageSignal = useGet(pageSignal$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectFlowSlugs = useGet(builtinConnectFlowSlugs$);
+  const pollingAuthCodeSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectors =
     catalogLoadable.state === "hasData"
@@ -175,8 +175,8 @@ export function QuestConnectorPicker({
 
   const isBusy = (connector: PlatformConnectorCatalogStatusItem) => {
     return (
-      connectFlowSlug === connector.slug ||
-      pollingAuthCodeSlug === connector.slug ||
+      connectFlowSlugs.has(connector.slug) ||
+      pollingAuthCodeSlugs.has(connector.slug) ||
       pollingDeviceAuthSlug === connector.slug
     );
   };

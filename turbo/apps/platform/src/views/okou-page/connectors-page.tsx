@@ -50,7 +50,7 @@ import {
   connectorCatalogDiscovery$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   connectBuiltinConnectorNoAuth$,
-  builtinConnectFlowSlug$,
+  builtinConnectFlowSlugs$,
   runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
   connectorsCategoryFilter$,
@@ -59,7 +59,7 @@ import {
   setConnectorsCategoryFilter$,
   setConnectorsConnectionFilter$,
   setConnectorsSearch$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthAuthCodeSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   relatedCatalogItems$,
   builtinConnectorScopeReviewSelection$,
@@ -2057,9 +2057,9 @@ export function ConnectorsPage() {
   const closeAccountManager = useSet(closeBuiltinAccountManager$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
   const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingAuthCodeSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectFlowSlugs = useGet(builtinConnectFlowSlugs$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const signal = useGet(pageSignal$);
@@ -2207,9 +2207,9 @@ export function ConnectorsPage() {
 
   const renderCard = (c: PlatformConnectorCatalogStatusItem) => {
     const isPolling =
-      pollingAuthCodeSlug === c.slug ||
+      pollingAuthCodeSlugs.has(c.slug) ||
       pollingDeviceAuthSlug === c.slug ||
-      connectFlowSlug === c.slug;
+      connectFlowSlugs.has(c.slug);
     const summary =
       accountSummariesLoadable.state === "hasData"
         ? accountSummariesLoadable.data.get(`builtin:${c.slug}`)

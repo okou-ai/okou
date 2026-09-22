@@ -32,8 +32,8 @@ import type {
   PlatformConnectorCatalogStatusItem,
 } from "../../../../signals/connector-domain.ts";
 import {
-  builtinConnectFlowSlug$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinConnectFlowSlugs$,
+  builtinPollingOAuthAuthCodeSlugs$,
   builtinConnectorExternalCodeState$,
   builtinConnectorOAuthDeviceAuthState$,
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -68,7 +68,7 @@ import { ConnectorHelpText } from "./connector-help-text.tsx";
 import { i18n } from "../../../../i18n/index.ts";
 import {
   cancelConnectorConnection$,
-  connectorConnectionAttempt$,
+  connectorConnectionAttemptForKey$,
 } from "../../../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
 import type {
@@ -399,10 +399,10 @@ function useConnectorProgressContent(
     readonly external: boolean;
   },
 ) {
-  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingConnectorSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const deviceAuthState = useGet(builtinConnectorOAuthDeviceAuthState$);
   const externalCodeState = useGet(builtinConnectorExternalCodeState$);
-  const isPolling = pollingConnectorSlug === connectorSlug;
+  const isPolling = pollingConnectorSlugs.has(connectorSlug);
   const settling =
     pending.browser ||
     (pending.device &&
@@ -1536,20 +1536,22 @@ export function ConnectModal({
     clearBuiltinConnectorOAuthDeviceAuth$,
   );
   const clearConnectorExternalCode = useSet(clearBuiltinConnectorExternalCode$);
-  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
-  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectFlowConnectorSlugs = useGet(builtinConnectFlowSlugs$);
+  const pollingConnectorSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const connectorOAuthDeviceAuthState = useGet(
     builtinConnectorOAuthDeviceAuthState$,
   );
   const connectorExternalCodeState = useGet(builtinConnectorExternalCodeState$);
   const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
+  const connectionAttempt = useGet(connectorConnectionAttemptForKey$)(
+    `builtin:${item.slug}`,
+  );
 
   const selectedConnectorSlug = item.slug;
 
   const connectFlowActive =
-    connectFlowConnectorSlug === selectedConnectorSlug ||
-    pollingConnectorSlug === selectedConnectorSlug ||
+    connectFlowConnectorSlugs.has(selectedConnectorSlug) ||
+    pollingConnectorSlugs.has(selectedConnectorSlug) ||
     connectorOAuthDeviceAuthFlowIsActive(
       connectorOAuthDeviceAuthState,
       selectedConnectorSlug,

@@ -10,9 +10,9 @@ import {
 import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
-  builtinConnectFlowSlug$,
+  builtinConnectFlowSlugs$,
   justConnectedBuiltinSlugs$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthAuthCodeSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
@@ -159,8 +159,8 @@ function SourcesConnectorGrid({
   );
   const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
   const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectFlowSlugs = useGet(builtinConnectFlowSlugs$);
+  const pollingAuthCodeSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
@@ -194,8 +194,8 @@ function SourcesConnectorGrid({
                 justConnectedSlugs.has(connectorSlug)
               }
               busy={
-                connectFlowSlug === connectorSlug ||
-                pollingAuthCodeSlug === connectorSlug ||
+                connectFlowSlugs.has(connectorSlug) ||
+                pollingAuthCodeSlugs.has(connectorSlug) ||
                 pollingDeviceAuthSlug === connectorSlug
               }
               onActivate={() => {
@@ -252,8 +252,8 @@ function ListConnectorSetup({
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
   const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectFlowSlugs = useGet(builtinConnectFlowSlugs$);
+  const pollingAuthCodeSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
 
@@ -290,8 +290,8 @@ function ListConnectorSetup({
           const connected =
             item?.connected === true || justConnectedSlugs.has(connectorSlug);
           const connecting =
-            connectFlowSlug === connectorSlug ||
-            pollingAuthCodeSlug === connectorSlug ||
+            connectFlowSlugs.has(connectorSlug) ||
+            pollingAuthCodeSlugs.has(connectorSlug) ||
             pollingDeviceAuthSlug === connectorSlug;
           const accountOptions = defaultBuiltinConnectorAccountOptions(item);
 

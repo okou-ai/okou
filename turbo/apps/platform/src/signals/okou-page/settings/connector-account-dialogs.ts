@@ -11,7 +11,10 @@ import type {
   PlatformConnectorAccountMutationIntent,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
-import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
+import {
+  connectorAccountTargetKey,
+  reloadConnectorAccountSummaries$,
+} from "../connector-accounts.ts";
 import {
   connectorAccountDeletionImpact$,
   readConnectorAccount$,
@@ -256,7 +259,11 @@ const finishConnectorAccountConnectionCommand$ = command(
 );
 
 export const finishConnectorAccountConnection$ =
-  withConnectorConnectionProgress(finishConnectorAccountConnectionCommand$);
+  withConnectorConnectionProgress(finishConnectorAccountConnectionCommand$, {
+    getConnectionKey: (args) => {
+      return connectorAccountTargetKey(args.target);
+    },
+  });
 
 interface ConnectorAccountRenameDraft {
   readonly account: ConnectorAccountConnection;

@@ -80,7 +80,7 @@ export function buildConnectorDirectoryModel({
   chipCatalog,
   connectedCustom,
   unconnectedCustom,
-  connectingSlug,
+  connectingSlugs,
   search,
   category,
   categoryMetadata,
@@ -94,7 +94,7 @@ export function buildConnectorDirectoryModel({
   readonly chipCatalog: readonly PlatformConnectorCatalogStatusItem[];
   readonly connectedCustom: readonly CustomConnectorResponse[];
   readonly unconnectedCustom: readonly CustomConnectorResponse[];
-  readonly connectingSlug: ConnectorSlug | null;
+  readonly connectingSlugs: ReadonlySet<ConnectorSlug>;
   readonly search: string;
   readonly category: string | null;
   readonly categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined;
@@ -152,7 +152,7 @@ export function buildConnectorDirectoryModel({
     matchedConnected: search.trim()
       ? searchedConnected
       : searchedConnected.filter((connector) => {
-          return connector.slug === connectingSlug;
+          return connectingSlugs.has(connector.slug);
         }),
     discover,
     custom,

@@ -5,7 +5,7 @@ import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  builtinConnectFlowSlug$,
+  builtinConnectFlowSlugs$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -15,7 +15,7 @@ export function useGmailReconnect(
   onSuccess: () => void | Promise<void>,
 ) {
   const catalogBySlug = useLastResolved(connectorCatalogStatusBySlug$);
-  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
+  const connectFlowConnectorSlugs = useGet(builtinConnectFlowSlugs$);
   const [connection, connect] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
@@ -25,25 +25,15 @@ export function useGmailReconnect(
     ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector)
     : null;
   const reconnecting =
-    connectFlowConnectorSlug === "gmail" || connection.state === "loading";
+    connectFlowConnectorSlugs.has("gmail") || connection.state === "loading";
 
   return {
     connectorIcon: connector?.icon,
     reconnecting,
     reconnectDisabled:
-      !connectionId ||
-      !connector ||
-      !authMethod ||
-      reconnecting ||
-      connectFlowConnectorSlug !== null,
+      !connectionId || !connector || !authMethod || reconnecting,
     reconnect() {
-      if (
-        !connectionId ||
-        !connector ||
-        !authMethod ||
-        reconnecting ||
-        connectFlowConnectorSlug !== null
-      ) {
+      if (!connectionId || !connector || !authMethod || reconnecting) {
         return;
       }
       detach(

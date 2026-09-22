@@ -27,12 +27,12 @@ import {
   connectBuiltinConnectorOAuthAuthCode$,
   type ConnectorConnectSuccess,
   connectBuiltinConnectorNoAuth$,
-  builtinConnectFlowSlug$,
+  builtinConnectFlowSlugs$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
   getOnlyAvailableBuiltinConnectorStatusNoAuthMethod,
   getBuiltinConnectorStatusConnectLaunchMode,
   justConnectedBuiltinSlugs$,
-  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthAuthCodeSlugs$,
   builtinPollingOAuthDeviceAuthSlug$,
   submitBuiltinManualGrant$,
   builtinManualGrantFormSubmitting$,
@@ -757,9 +757,9 @@ function DirectedConnectCard() {
   const assistantName = useGet(assistantName$);
   const agentId = useGet(directedConnectAgentId$);
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
-  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingAuthCodeSlugs = useGet(builtinPollingOAuthAuthCodeSlugs$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectFlowSlugs = useGet(builtinConnectFlowSlugs$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const signal = useGet(pageSignal$);
@@ -782,9 +782,9 @@ function DirectedConnectCard() {
       ? agentNameLoadable.data.displayName
       : assistantName;
   const isConnecting =
-    pollingAuthCodeSlug === connectorSlug ||
+    pollingAuthCodeSlugs.has(connectorSlug) ||
     pollingDeviceAuthSlug === connectorSlug ||
-    connectFlowSlug === connectorSlug;
+    connectFlowSlugs.has(connectorSlug);
   if (presentation.unavailable) {
     return null;
   }

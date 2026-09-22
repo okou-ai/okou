@@ -1,6 +1,9 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
-import { registerConnectorConnectionDialog$ } from "../../signals/connector-connection-progress.ts";
+import {
+  connectorConnectionAttempts$,
+  registerConnectorConnectionDialog$,
+} from "../../signals/connector-connection-progress.ts";
 import { useConnectorConnectionDialogClose } from "../components/connector-connection-progress.tsx";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
@@ -22,7 +25,7 @@ import { Button, cn } from "@okouai/ui";
 import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
-import { builtinConnectFlowSlug$ } from "../../signals/okou-page/settings/connectors.ts";
+import { builtinConnectFlowSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
@@ -1003,7 +1006,6 @@ function DirectoryConnectorCardSlot({
   connector,
   connected,
   busy,
-  disabled,
   summary,
   accountLabelOf,
   connect,
@@ -1012,7 +1014,6 @@ function DirectoryConnectorCardSlot({
   readonly connector: PlatformConnectorCatalogStatusItem;
   readonly connected: boolean;
   readonly busy: boolean;
-  readonly disabled: boolean;
   readonly summary: ConnectorAccountSummary | undefined;
   readonly accountLabelOf: (
     account: NonNullable<ConnectorAccountSummary["defaultConnection"]>,
@@ -1025,7 +1026,6 @@ function DirectoryConnectorCardSlot({
       variant="directory"
       connector={connector}
       busy={busy}
-      disabled={disabled}
       connected={connected}
       accountCount={summary?.accountCount ?? (connected ? 1 : 0)}
       accountLabel={
@@ -1094,7 +1094,6 @@ interface ConnectorDirectoryDialogProps {
   readonly unconnected: readonly PlatformConnectorCatalogStatusItem[];
   readonly connectedCustom: readonly CustomConnectorResponse[];
   readonly unconnectedCustom: readonly CustomConnectorResponse[];
-  readonly connecting: boolean;
   readonly connectHandlers: (
     connector: PlatformConnectorCatalogStatusItem,
   ) => ConnectorConnectHandlers;
@@ -1114,7 +1113,6 @@ export function ConnectorDirectoryDialog({
   unconnected,
   connectedCustom,
   unconnectedCustom,
-  connecting,
   connectHandlers,
   onConnectCustom,
   onConfigurePermissions,
@@ -1122,7 +1120,9 @@ export function ConnectorDirectoryDialog({
 }: ConnectorDirectoryDialogProps) {
   const { t } = useTranslation();
   const accountLabelOf = useConnectorAccountLabel();
-  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connectFlowSlugs = useGet(builtinConnectFlowSlugs$);
+  const connectionAttempts = useGet(connectorConnectionAttempts$);
+  const connecting = connectFlowSlugs.size > 0;
   const accountsLoadable = useLastLoadable(connectorAccountSummaryByTarget$);
   const accountSummaries: ReadonlyMap<string, ConnectorAccountSummary> =
     accountsLoadable.state === "hasData"
@@ -1138,7 +1138,7 @@ export function ConnectorDirectoryDialog({
     chipCatalog,
     connectedCustom,
     unconnectedCustom,
-    connectingSlug: connecting ? connectFlowSlug : null,
+    connectingSlugs: connectFlowSlugs,
     search,
     category,
     categoryMetadata,
@@ -1160,8 +1160,7 @@ export function ConnectorDirectoryDialog({
         key={connector.slug}
         connector={connector}
         connected={isConnected}
-        busy={connecting && connectFlowSlug === connector.slug}
-        disabled={connecting}
+        busy={connectFlowSlugs.has(connector.slug)}
         summary={accountSummaries.get(`builtin:${connector.slug}`)}
         accountLabelOf={accountLabelOf}
         connect={connectHandlers(connector)}
@@ -1176,6 +1175,7 @@ export function ConnectorDirectoryDialog({
   const { onOpenChange } = useConnectorConnectionDialogClose(
     connecting,
     onClose,
+    connectionAttempts,
   );
 
   return (
@@ -1194,7 +1194,7 @@ export function ConnectorDirectoryDialog({
               `builtin:${detailConnector.slug}`,
             )}
             model={model}
-            connecting={connecting}
+            connecting={connectFlowSlugs.has(detailConnector.slug)}
             connectHandlers={connectHandlers}
             onConfigurePermissions={onConfigurePermissions}
             onUpdateState={onUpdateState}

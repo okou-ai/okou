@@ -354,6 +354,53 @@ export function resetSignal(): Command<AbortSignal, AbortSignal[]> {
   });
 }
 
+/** Independent owned lifetimes; omitting parents cancels and releases one key. */
+export function resetKeyedSignal<Key>(): Command<
+  AbortSignal,
+  [Key, ...AbortSignal[]]
+> {
+  const controllers$ = state<ReadonlyMap<Key, AbortController>>(new Map());
+
+  return command(({ get, set }, key: Key, ...parents: AbortSignal[]) => {
+    const controllers = get(controllers$);
+    const previous = controllers.get(key);
+    const next = new Map(controllers);
+    if (parents.length === 0) {
+      next.delete(key);
+      set(controllers$, next);
+      previous?.abort();
+      return previous?.signal ?? AbortSignal.abort();
+    }
+
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, ...parents]);
+    if (signal.aborted) {
+      next.delete(key);
+    } else {
+      next.set(key, controller);
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(controllers$, (current) => {
+            if (current.get(key) !== controller) {
+              return current;
+            }
+            const remaining = new Map(current);
+            remaining.delete(key);
+            return remaining;
+          });
+        },
+        { once: true },
+      );
+    }
+    // Publish the replacement before aborting the old owner. Its cleanup must
+    // not remove this lifetime or a newer one started by an abort listener.
+    set(controllers$, next);
+    previous?.abort();
+    return signal;
+  });
+}
+
 export function onDomEventFn<T>(callback: (e: T) => void | Promise<void>) {
   return function (e: T) {
     detach(callback(e), Reason.DomCallback);

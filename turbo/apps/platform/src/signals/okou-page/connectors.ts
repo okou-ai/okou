@@ -32,7 +32,10 @@ import {
   createComposerConnectorAccountSignals,
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
-import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
+import {
+  builtinConnectFlowSlugs$,
+  resetBuiltinManualGrantForm$,
+} from "./settings/connectors.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -53,6 +56,7 @@ export type ComposerConnectorAuthorizationTarget =
 
 export interface ComposerConnectorUiState {
   readonly showAddDialog: boolean;
+  readonly addDialogSessionId: symbol | null;
   readonly selectedConnectorSlug: ConnectorSlug | null;
   readonly selectedCustomConnectorId: string | null;
   readonly addDialogSearch: string;
@@ -105,6 +109,7 @@ export interface ComposerConnectorSignals {
   >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly openAddConnectorsDialog$: Command<void, []>;
+  readonly finishAddConnectorsDialog$: Command<void, [symbol | null]>;
   readonly updateConnectorUiState$: Command<
     void,
     [Partial<ComposerConnectorUiState>]
@@ -209,6 +214,7 @@ const agentCustomConnectorAuthorizationRequestBroker$ = computed(() => {
 function initialComposerConnectorUiState(): ComposerConnectorUiState {
   return {
     showAddDialog: false,
+    addDialogSessionId: null,
     selectedConnectorSlug: null,
     selectedCustomConnectorId: null,
     addDialogSearch: "",
@@ -359,7 +365,10 @@ function createConnectorAuthorizationCommand(
 
 function createConnectorUiSignals(): Pick<
   ComposerConnectorSignals,
-  "connectorUiState$" | "updateConnectorUiState$" | "openAddConnectorsDialog$"
+  | "connectorUiState$"
+  | "updateConnectorUiState$"
+  | "openAddConnectorsDialog$"
+  | "finishAddConnectorsDialog$"
 > {
   const internalUiState$ = state(initialComposerConnectorUiState());
   const connectorUiState$ = computed((get): ComposerConnectorUiState => {
@@ -380,16 +389,30 @@ function createConnectorUiSignals(): Pick<
     // connector/account targets or the lifetime of an ongoing connection.
     set(updateConnectorUiState$, {
       showAddDialog: true,
+      addDialogSessionId: Symbol(),
       addDialogSearch: "",
       directoryTab: "discover",
       directoryCategory: null,
       directoryDetailSlug: null,
     });
   });
+  const finishAddConnectorsDialog$ = command(
+    ({ get, set }, sessionId: symbol | null) => {
+      const current = get(internalUiState$);
+      if (
+        current.showAddDialog &&
+        current.addDialogSessionId === sessionId &&
+        get(builtinConnectFlowSlugs$).size === 0
+      ) {
+        set(updateConnectorUiState$, { showAddDialog: false });
+      }
+    },
+  );
   return {
     connectorUiState$,
     updateConnectorUiState$,
     openAddConnectorsDialog$,
+    finishAddConnectorsDialog$,
   };
 }
 
