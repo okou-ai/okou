@@ -112,7 +112,9 @@ afterEach(() => {
   electron.windows.length = 0;
   electron.handlers.clear();
   electron.storage.clear();
-  vi.clearAllMocks();
+  // A substituted deadline that outlives its own test would silently rewrite
+  // every deadline after it, so restoring is teardown rather than a courtesy.
+  vi.restoreAllMocks();
 });
 /** Every reported restore failure as `classification:message`, in order. */
 function failures(refreshes: readonly DesktopAuthRefreshEvent[]): string[] {
@@ -608,11 +610,38 @@ describe("Hidden restore teardown", () => {
     );
 
     // Nobody abandoned this attempt: it ran out of time, which is genuine
-    // unavailability. It rejects with the message supersession also produces,
-    // so only the cause separates the two.
+    // unavailability. Nothing cancelled it either, so it names the phase whose
+    // budget elapsed rather than borrowing supersession's wording.
     expect(await pending).toBeNull();
     expect(failures(refreshes)).toEqual([
-      "unavailable:Desktop auth operation cancelled",
+      "unavailable:Desktop auth session restore timed out",
+    ]);
+  });
+
+  it("still bounds a restore with the window's own deadline", async () => {
+    const { session, refreshes } = setup(0);
+
+    const pending = session.getToken();
+
+    // Nobody is watching a hidden restore, so a page that never reaches a
+    // decision is a stall the window ends on its own.
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "unavailable:Desktop auth window timed out",
+    ]);
+  });
+
+  it("keeps a closed window a suppressed teardown", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+
+    currentWindow().close();
+
+    // Closing abandons the attempt, so it stays `cancelled` — the
+    // classification reporting drops — and never becomes `unavailable`.
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "cancelled:Desktop auth window closed",
     ]);
   });
 
@@ -733,5 +762,81 @@ describe("Update quit teardown", () => {
 
     expect(await pending).toBeNull();
     expect(failures(refreshes)).toEqual([]);
+  });
+});
+
+/**
+ * A person signing in sets the pace: credentials, a second factor or an SSO
+ * redirect routinely outlast any machine-scale budget. Both timers that can end
+ * the window phase have to agree on that, or bounding one only moves the same
+ * failure onto the other.
+ */
+describe("Interactive sign-in deadlines", () => {
+  it("outlives the window deadline a hidden restore keeps", async () => {
+    const requests: string[] = [];
+    const server = setupServer(
+      http.get("https://api.okou.ai/api/auth/me", ({ request }) => {
+        requests.push(`me:${request.headers.get("authorization")}`);
+        return HttpResponse.json({
+          userId: "app-user",
+          email: "app@example.test",
+          orgId: "app-org",
+        });
+      }),
+      http.get("https://api.okou.ai/api/org", () =>
+        HttpResponse.json({ id: "app-org", name: "App" }),
+      ),
+    );
+    server.listen({ onUnhandledRequest: "error" });
+    try {
+      // Zero is the shortest delay this deadline can carry, and the window arms
+      // it while `consumeCode` is still synchronous, so a timer queued below it
+      // cannot run first.
+      const { session, refreshes } = setup(0);
+      const pending = session.consumeCode("code");
+      const window = currentWindow();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Getting this far is the proof: an armed deadline would already have
+      // settled the attempt, and the sign-in that outlasted it still completes.
+      navigate(window, "/desktop-auth/token");
+      await deliver(window);
+      navigate(window, "/");
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(session.getCachedToken()).toBe("fresh");
+      expect(requests).toEqual(["me:Bearer fresh"]);
+      expect(failures(refreshes)).toEqual([]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("names the sign-in phase when its own budget runs out", async () => {
+    // Node drives `AbortSignal.timeout` from an internal timer that no timer
+    // control can advance, so substituting the deadline signal is the only way
+    // to reach the elapsed state without waiting it out.
+    const deadline = new AbortController();
+    const deadlines: number[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    timeout.mockImplementation((milliseconds) => {
+      deadlines.push(milliseconds);
+      return deadline.signal;
+    });
+    const { session } = setup(0);
+    const pending = session.selectOrganization();
+    timeout.mockRestore();
+    // Minutes, not the thirty seconds a hidden restore gets.
+    expect(deadlines).toEqual([600_000]);
+
+    deadline.abort(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+
+    await expect(pending).rejects.toThrow("Desktop auth sign-in timed out");
   });
 });
