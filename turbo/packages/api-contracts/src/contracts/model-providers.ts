@@ -133,6 +133,19 @@ export type ModelProviderCodexRuntimeConfig = z.infer<
   typeof modelProviderCodexRuntimeConfigSchema
 >;
 
+export type ModelProviderCodexRuntimeCapabilities = Pick<
+  ModelProviderCodexRuntimeConfig,
+  "supportsWebsockets"
+>;
+
+const MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES: Partial<
+  Record<ModelProviderType, ModelProviderCodexRuntimeCapabilities>
+> = {
+  "openrouter-codex": {
+    supportsWebsockets: false,
+  },
+};
+
 const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
   Record<ModelProviderType, ModelProviderCodexRuntimeConfig>
 > = {
@@ -1387,6 +1400,15 @@ export function getModelProviderCodexRuntimeConfig(
   type: ModelProviderType,
 ): ModelProviderCodexRuntimeConfig | undefined {
   return MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type];
+}
+
+/**
+ * Get Codex runtime capabilities that apply independently from model metadata.
+ */
+export function getModelProviderCodexRuntimeCapabilities(
+  type: ModelProviderType,
+): ModelProviderCodexRuntimeCapabilities | undefined {
+  return MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES[type];
 }
 
 const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
