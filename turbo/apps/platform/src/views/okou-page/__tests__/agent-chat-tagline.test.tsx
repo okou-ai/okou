@@ -62,37 +62,27 @@ function tokens(text: Element): HTMLElement[] {
   );
 }
 
-test("The greeting renders its complete sentence and staggers one word at a time", async () => {
+test("The greeting shows its complete sentence, one box per word", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   const { tagline, fullLine, text } = await greeting();
-  // The line is complete from the first frame: the entrance changes each
-  // word's own ink, never the sentence that is laid out.
+  // The sentence is complete from the first frame. Each word arrives on its
+  // own, so a reader never sees a partial line and the row it sits in never
+  // has to move; how a word arrives is a stylesheet decision, and the deployed
+  // greeting test owns it.
   expect(text.textContent).toBe(fullLine);
   expect(tagline).toHaveAccessibleName(fullLine);
-
-  const words = fullLine.split(" ");
-  const wordBoxes = tokens(text);
   expect(
-    wordBoxes.map((box) => {
+    tokens(text).map((box) => {
       return box.textContent;
     }),
-  ).toEqual(words);
-  expect(
-    wordBoxes.map((box) => {
-      return box.style.animationDelay;
-    }),
-  ).toEqual(
-    words.map((_word, index) => {
-      return `${String((index + 1) * 70)}ms`;
-    }),
-  );
+  ).toEqual(fullLine.split(" "));
 });
 
-test("The avatar leads the sentence with the same entrance and no delay", async () => {
+test("The avatar leads the sentence", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
@@ -100,14 +90,15 @@ test("The avatar leads the sentence with the same entrance and no delay", async 
 
   const row = await screen.findByTestId("chat-greeting");
   const avatarBox = row.querySelector('[data-slot="chat-greeting-avatar"]');
-  if (!(avatarBox instanceof HTMLElement)) {
+  const tagline = await screen.findByTestId("chat-tagline");
+  if (!avatarBox) {
     throw new Error("Expected the avatar to lead the greeting row");
   }
   expect(row.firstElementChild).toBe(avatarBox);
-  expect(avatarBox.className).toContain(
-    "motion-safe:animate-chat-greeting-token",
-  );
-  expect(avatarBox.style.animationDelay).toBe("");
+  expect(
+    avatarBox.compareDocumentPosition(tagline) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 test("Reduced motion shows the complete greeting immediately", async () => {

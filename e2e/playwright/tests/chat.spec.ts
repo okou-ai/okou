@@ -7,7 +7,8 @@ const MOBILE_VIEWPORT = { width: 402, height: 874 } as const;
 
 interface GreetingFrame {
   readonly text: string;
-  readonly avatarLeft: number;
+  readonly rowLeft: number;
+  readonly rowRight: number;
   readonly avatarWidth: number;
   readonly avatarHeight: number;
   readonly containerLeft: number;
@@ -186,16 +187,25 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
           return Number.parseFloat(getComputedStyle(word).animationDelay) || 0;
         });
       }
+      // The greeting row carries no animation of its own, so its box is the
+      // layout answer to "did anything move?", unaffected by a word that is
+      // still travelling inside it.
+      const rowRect = row.getBoundingClientRect();
       const avatarRect = avatar.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
-      const range = document.createRange();
-      range.selectNodeContents(line);
-      const glyphs = Array.from(range.getClientRects()).filter(
-        (rect) => rect.width > 0 && rect.height > 0,
-      );
+      // Measure the per-word wrapper spans, not the animated boxes inside
+      // them. A wrapper is laid out but never transformed, while a rect taken
+      // over the boxes would carry each word's own unfinished 14px rise and
+      // report a travelling word as an extra line.
+      const glyphs = Array.from(line.children)
+        .flatMap((word) => {
+          return Array.from(word.getClientRects());
+        })
+        .filter((rect) => rect.width > 0 && rect.height > 0);
       frames.push({
         text: line.textContent ?? "",
-        avatarLeft: avatarRect.left,
+        rowLeft: rowRect.left,
+        rowRight: rowRect.right,
         avatarWidth: avatarRect.width,
         avatarHeight: avatarRect.height,
         containerLeft: containerRect.left,
@@ -255,10 +265,11 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
   // the row it sits in. The avatar snapping sideways while the line grew is
   // the defect this greeting was rebuilt to remove.
   expect(last.lineCount).toBeGreaterThan(1);
-  for (const frame of capture.frames) {
-    const label = `Greeting frame at avatarLeft ${String(frame.avatarLeft)}`;
+  for (const [index, frame] of capture.frames.entries()) {
+    const label = `Greeting frame ${String(index)} of ${String(capture.frames.length)}`;
     expect(frame.text, label).toBe(capture.text);
-    expect(frame.avatarLeft, label).toBeCloseTo(first.avatarLeft, 0);
+    expect(frame.rowLeft, label).toBeCloseTo(first.rowLeft, 0);
+    expect(frame.rowRight, label).toBeCloseTo(first.rowRight, 0);
     expect(frame.avatarWidth, label).toBeCloseTo(first.avatarWidth, 1);
     expect(frame.avatarHeight, label).toBeCloseTo(first.avatarHeight, 1);
     expect(frame.lineCount, label).toBe(last.lineCount);
