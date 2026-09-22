@@ -378,18 +378,58 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/report-memory-peak
 
+  cli-artifact:
+    name: Resolve Okou CLI artifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: [prepare]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.prepare.result == 'success' &&
+        needs.prepare.outputs.current-runner-image-needed == 'true'
+      }}
+    timeout-minutes: 15
+    outputs:
+      found: ${{ steps.okou-cli.outputs.found }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # deploy-cli (turbo.yml) publishes okou-cli/<source head sha>/ in a
+      # separate workflow. Resolve it once so every architecture consumes the
+      # same verified preview CLI bundle without repeating the external wait.
+      - name: Download Okou CLI artifact for this source commit
+        id: okou-cli
+        env:
+          ARTIFACT_SHA: ${{ needs.prepare.outputs.source-head-sha }}
+          OUTPUT_DIR: okou-cli-artifact
+          ARTIFACT_REQUIRED: "false"
+          WAIT_SECONDS: "600"
+        run: .github/scripts/download-okou-cli-artifact.sh
+
+      - name: Upload verified Okou CLI artifact
+        if: steps.okou-cli.outputs.found == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: okou-cli-rootfs-input
+          path: okou-cli-artifact/
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     name: Build runner image (${{ matrix.label }})
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
-    needs: [prepare, compile]
+    needs: [prepare, compile, cli-artifact]
     if: >-
       ${{
         always() &&
         needs.prepare.result == 'success' &&
         needs.prepare.outputs.current-runner-image-needed == 'true' &&
+        needs.cli-artifact.result == 'success' &&
         (
           (needs.prepare.outputs.runner-binary-miss-count == '0' && needs.compile.result == 'skipped') ||
           (needs.prepare.outputs.runner-binary-miss-count != '0' && needs.compile.result == 'success')
@@ -405,6 +445,13 @@ jobs:
       PROFILE: vm0/default
     steps:
       - uses: actions/checkout@v7.0.1
+
+      - name: Download verified Okou CLI artifact
+        if: needs.cli-artifact.outputs.found == 'true'
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: okou-cli-rootfs-input
+          path: okou-cli-artifact
 
       - name: Resolve runner binary input
         id: binary-input
@@ -486,18 +533,6 @@ jobs:
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: dev
 
-      # deploy-cli (turbo.yml) publishes okou-cli/<head sha>/ for the same
-      # commit in a separate workflow; the preview rootfs installs that bundle
-      # so the preview API and the preview sandbox run the same CLI build.
-      - name: Download Okou CLI artifact for this commit
-        id: okou-cli
-        env:
-          ARTIFACT_SHA: ${{ needs.prepare.outputs.head-sha }}
-          OUTPUT_DIR: okou-cli-artifact
-          ARTIFACT_REQUIRED: "false"
-          WAIT_SECONDS: "600"
-        run: .github/scripts/download-okou-cli-artifact.sh
-
       - name: Build runner image on all metal hosts
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
@@ -507,7 +542,7 @@ jobs:
           METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
           EXPECTED_REMOTE_ARCH: ${{ matrix.unameM }}
           MANIFEST_PATH: runner-image-manifest/manifest.json
-          OKOU_CLI_ARTIFACT_DIR: ${{ steps.okou-cli.outputs.found == 'true' && steps.okou-cli.outputs.artifact-dir || '' }}
+          OKOU_CLI_ARTIFACT_DIR: ${{ needs.cli-artifact.outputs.found == 'true' && 'okou-cli-artifact' || '' }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
