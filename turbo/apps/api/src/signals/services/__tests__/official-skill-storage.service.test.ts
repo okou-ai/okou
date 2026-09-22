@@ -90,12 +90,14 @@ function cleanUpFixture(
 }
 
 describe("official skill Storage binding resolution", () => {
-  it("returns no binding for a new official skill", async () => {
-    const skillName = `unbound-${randomUUID()}`;
-
+  it("returns no binding for a new official skill with a prototype key", async () => {
     await expect(
-      resolveOfficialSkillStorageBindings(db(), [skillName], context.signal),
-    ).resolves.toStrictEqual({});
+      resolveOfficialSkillStorageBindings(
+        db(),
+        ["constructor"],
+        context.signal,
+      ),
+    ).resolves.toStrictEqual(new Map());
   });
 
   it("resolves either repository alias through the persisted Storage binding", async () => {
@@ -109,9 +111,7 @@ describe("official skill Storage binding resolution", () => {
 
     await expect(
       resolveOfficialSkillStorageBindings(db(), [skillName], context.signal),
-    ).resolves.toStrictEqual({
-      [skillName]: storage,
-    });
+    ).resolves.toStrictEqual(new Map([[skillName, storage]]));
   });
 
   it("fails closed when repository aliases reference different Storages", async () => {

@@ -1381,7 +1381,7 @@ async function resolvePreparedSystemSkillStorageResolution(
     signal,
   );
   const persistedResolution = Object.fromEntries(
-    Object.entries(bindings).map(([skillName, binding]) => {
+    [...bindings].map(([skillName, binding]) => {
       return [skillName, binding.name];
     }),
   );

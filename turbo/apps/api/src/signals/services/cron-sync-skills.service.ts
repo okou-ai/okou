@@ -580,7 +580,7 @@ function syncSingleSkill(
     );
     const context = buildSkillSyncContext(
       extracted,
-      bindings[extracted.skillName]?.name ??
+      bindings.get(extracted.skillName)?.name ??
         getSkillStorageName(
           getOfficialSkillIdentityFullPath(extracted.skillName),
         ),

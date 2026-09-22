@@ -21,10 +21,10 @@ export async function resolveOfficialSkillStorageBindings(
   db: Db,
   skillNames: readonly string[],
   signal: AbortSignal,
-): Promise<Readonly<Record<string, OfficialSkillStorageBinding>>> {
+): Promise<ReadonlyMap<string, OfficialSkillStorageBinding>> {
   const uniqueSkillNames = [...new Set(skillNames)];
   if (uniqueSkillNames.length === 0) {
-    return {};
+    return new Map();
   }
 
   const skillNameByUrl = new Map<string, string>();
@@ -48,7 +48,7 @@ export async function resolveOfficialSkillStorageBindings(
     .where(inArray(skills.url, [...skillNameByUrl.keys()]));
   signal.throwIfAborted();
 
-  const bindings: Record<string, OfficialSkillStorageBinding> = {};
+  const bindings = new Map<string, OfficialSkillStorageBinding>();
   for (const row of rows) {
     const skillName = skillNameByUrl.get(row.url);
     if (skillName === undefined) {
@@ -60,17 +60,17 @@ export async function resolveOfficialSkillStorageBindings(
       );
     }
 
-    const existing = bindings[skillName];
+    const existing = bindings.get(skillName);
     if (existing !== undefined && existing.id !== row.storageId) {
       throw new Error(
         `Official skill ${skillName} aliases have conflicting Storage bindings`,
       );
     }
-    bindings[skillName] = {
+    bindings.set(skillName, {
       id: row.storageId,
       name: row.storageName,
       s3Prefix: row.s3Prefix,
-    };
+    });
   }
 
   return bindings;
