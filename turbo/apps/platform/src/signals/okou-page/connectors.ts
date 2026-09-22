@@ -62,8 +62,6 @@ export interface ComposerConnectorUiState {
   readonly directoryTab: ConnectorDirectoryTab;
   readonly directoryCategory: string | null;
   readonly directoryDetailSlug: ConnectorSlug | null;
-  /** Index into the connectors the arrow keys currently walk through. */
-  readonly directoryActiveIndex: number;
 }
 
 /**
@@ -220,7 +218,6 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     directoryTab: "discover",
     directoryCategory: null,
     directoryDetailSlug: null,
-    directoryActiveIndex: 0,
   };
 }
 
@@ -387,7 +384,6 @@ function createConnectorUiSignals(): Pick<
       directoryTab: "discover",
       directoryCategory: null,
       directoryDetailSlug: null,
-      directoryActiveIndex: 0,
     });
   });
   return {

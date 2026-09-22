@@ -38,7 +38,6 @@ export interface ConnectorDirectoryModel {
   readonly chipSections: readonly ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[];
   /** Shelves for the default browse view: no search, no chosen category. */
   readonly shelfLayout: ConnectorShelfLayout<PlatformConnectorCatalogStatusItem>;
-  readonly discoverSlugs: readonly ConnectorSlug[];
   readonly bySlug: ReadonlyMap<
     ConnectorSlug,
     PlatformConnectorCatalogStatusItem
@@ -70,18 +69,10 @@ function matchesCustomConnectorSearch(
   });
 }
 
-function slugsOf(
-  connectors: readonly PlatformConnectorCatalogStatusItem[],
-): ConnectorSlug[] {
-  return connectors.map((connector) => {
-    return connector.slug;
-  });
-}
-
 /**
  * Derives everything the directory renders from the raw connector lists, so the
  * dialog stays a view: which connected connectors need a fix, what discovery
- * shows for the current search and category, and the order the arrow keys walk.
+ * shows for the current search and category.
  */
 export function buildConnectorDirectoryModel({
   connected,
@@ -162,10 +153,6 @@ export function buildConnectorDirectoryModel({
     categorySections,
     chipSections,
     shelfLayout,
-    discoverSlugs:
-      search.trim() || category !== null || shelfLayout.shelves.length === 0
-        ? slugsOf(discover)
-        : slugsOf(shelfLayout.connectors),
     bySlug: new Map(
       [...connected, ...unconnected].map((connector) => {
         return [connector.slug, connector];
