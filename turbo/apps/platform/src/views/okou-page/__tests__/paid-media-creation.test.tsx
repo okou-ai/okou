@@ -33,7 +33,7 @@ function button(name: string, root: ParentNode = document.body) {
 
 async function setupComposer(
   enabled = true,
-  taskChips = true,
+  taskChips = false,
   chatPreference = true,
 ) {
   await setupPage({

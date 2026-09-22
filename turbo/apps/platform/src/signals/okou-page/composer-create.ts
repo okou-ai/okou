@@ -72,13 +72,17 @@ export function createComposerCreateSignals(
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
   /**
-   * What the run will make is the task chips' own state, so it waits for their
-   * switch alone. The slash panel names the same tasks, but it is a way in, not
-   * the surface: reading its switch here is what let a panel row raise the
-   * footer's task state for a member the chips had not reached yet.
+   * Create modes are infrastructure, not a surface: the two places that pick
+   * one are the slash panel and the task chips, and each owns its own switch.
+   * Reading both here keeps either surface from depending on the other's
+   * rollout, so turning the chips off cannot empty the slash panel.
    */
   const enabled$ = computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.ComposerTaskChips];
+    const features = get(featureSwitch$);
+    return (
+      features[FeatureSwitchKey.ComposerSlashTemplatePanel] ||
+      features[FeatureSwitchKey.ComposerTaskChips]
+    );
   });
   const hasOtherTemplate$ = createNonCreativeTemplateSignal(composer);
   const mode$ = computed((get) => {

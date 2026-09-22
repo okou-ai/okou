@@ -212,14 +212,14 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Keep video settings collapsed until requested with the composer task chips on: %s",
+  "Keep video settings collapsed until requested with the slash panel on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerTaskChips]: enabled,
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
       },
     });
     await selectVideoTemplate();
@@ -262,7 +262,7 @@ test("Keep the video spec with the run controls below the message", async () => 
 });
 
 test.each([false, true])(
-  "Submit default video options with the composer task chips on: %s",
+  "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
@@ -270,7 +270,7 @@ test.each([false, true])(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerTaskChips]: enabled,
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
       },
     });
 
@@ -328,7 +328,7 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "Submit a selected video ratio with the composer task chips on: %s",
+  "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
@@ -336,7 +336,7 @@ test.each([false, true])(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerTaskChips]: enabled,
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
       },
     });
 

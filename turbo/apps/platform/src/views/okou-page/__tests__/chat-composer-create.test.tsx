@@ -138,7 +138,7 @@ test("Create commands stay hidden until enabled", async () => {
   expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
 });
 
-test("A panel row picks a template without stating a task of its own", async () => {
+test("A panel row states its task while only the panel's switch is on", async () => {
   setupModels();
   await setupPage({
     context,
@@ -152,10 +152,14 @@ test("A panel row picks a template without stating a task of its own", async () 
   await fill(editor, "Our launch /");
   const menu = await screen.findByTestId("slash-workflow-menu");
   await clickPanelRow("Presentation", menu);
-  // The panel still opens the picker, and the template it inserts still goes
-  // in the message; what waits for the chips is the footer's own task state.
-  expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
-  expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
+  // The footer chip is the one control both rollouts share, so it states the
+  // type here in the same shape the chip row's own selection leaves behind.
+  await waitFor(() => {
+    expect(taskChip("Presentation")).toBeVisible();
+  });
+  expect(
+    screen.getByRole("combobox", { name: "Slide count" }),
+  ).toHaveTextContent("8–12 slides");
   expect(editor).toHaveTextContent("Our launch");
 });
 
