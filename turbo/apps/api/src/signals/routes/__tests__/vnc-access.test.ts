@@ -288,6 +288,9 @@ describe("explicit VNC grants and current Agent inventory", () => {
       [201],
     );
     await api.grant(runtime, true);
+    // Creating the first SSH host auto-grants visible Agents. Establish the
+    // VNC-only baseline explicitly before testing the independent grant.
+    await api.grantSsh(runtime, false);
 
     const listIds = async () => {
       const result = await accept(
