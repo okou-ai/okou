@@ -38,6 +38,29 @@ export const SCROLL_FADE_Y_END = [
   "[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
 ].join(" ");
 
+/**
+ * The same fade, drawn only while the scroller really does have more below.
+ *
+ * `SCROLL_FADE_Y_END` is unconditional because its first consumers always
+ * overflow. A list that can be filtered does not: once the Get started
+ * connector search narrows the catalog to one row, an unconditional mask fades
+ * the bottom of the only row on screen and states an overflow that is not
+ * there -- the same lie as a hard cut, told the other way round.
+ *
+ * Base UI's `ScrollArea.Root` already publishes the answer as
+ * `data-overflow-y-end`, so this reads it off the ancestor instead of measuring
+ * the box a second time. The root has to carry `group` for the variant to see
+ * it.
+ *
+ * The 20px is spelled a second time because Tailwind scans for literal class
+ * names and cannot read it out of the constant above. The two are one
+ * decision; change them together.
+ */
+export const SCROLL_FADE_Y_END_WHEN_OVERFLOWING = [
+  "group-data-[overflow-y-end]:[-webkit-mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+  "group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
+].join(" ");
+
 /** Hides the native scrollbar; the fade is what states there is more to see. */
 export const SCROLLBAR_HIDDEN =
   "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
