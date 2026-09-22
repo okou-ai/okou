@@ -556,9 +556,10 @@ jobs:
         working-directory: turbo
         run: |
           allowed=$(jq -r '.overrides[0].rules."no-restricted-imports"[1].paths[0].allowImportNames | sort | join(",")' apps/platform/.oxlintrc.json)
-          expected="Component,StrictMode"
+          # useId owns DOM identity; application state and effects stay in ccstate.
+          expected="Component,StrictMode,useId"
           if [ "$allowed" != "$expected" ]; then
-            echo "::error::platform oxlintrc.json allowImportNames must be [\"StrictMode\", \"Component\"], got: $allowed"
+            echo "::error::platform oxlintrc.json allowImportNames must be [\"StrictMode\", \"Component\", \"useId\"], got: $allowed"
             exit 1
           fi
       - name: Lint
