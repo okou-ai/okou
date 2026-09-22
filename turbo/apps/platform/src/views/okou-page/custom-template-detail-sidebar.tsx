@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { Check, Lock, User, Users } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -93,14 +92,16 @@ export function SharedByLabel({
 }
 
 function VisibilityOptionList({
+  templateId,
   visibility,
   onChange,
 }: {
   readonly visibility: UserTemplateVisibility;
+  readonly templateId: string;
   readonly onChange: (next: UserTemplateVisibility) => void;
 }) {
   const { t } = useTranslation();
-  const descriptionId = useId();
+  const descriptionId = `custom-template-${templateId}-visibility`;
   return (
     <DropdownMenuRadioGroup
       value={visibility}
@@ -208,6 +209,7 @@ function CustomTemplateVisibilityControl({
         className="w-[19rem] p-1.5"
       >
         <VisibilityOptionList
+          templateId={detail.id}
           visibility={detail.visibility}
           onChange={(visibility) => {
             detach(

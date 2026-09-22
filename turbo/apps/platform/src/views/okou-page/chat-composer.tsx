@@ -6,7 +6,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
 } from "@okouai/ui/components/ui/dropdown-menu";
-import { useId } from "react";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   useComposerConnectorActions,
@@ -4557,16 +4556,18 @@ const IMPORTED_TEMPLATE_VISIBILITY_OPTIONS = [
  * because reading the current state is the common act and switching it is not.
  */
 function ImportedPresentationTemplateVisibilityControl({
+  templateId,
   visibility,
   updating,
   onChange,
 }: {
+  templateId: string;
   visibility: PresentationTemplateSummary["visibility"];
   updating: boolean;
   onChange: (visibility: PresentationTemplateSummary["visibility"]) => void;
 }) {
   const { t } = useTranslation();
-  const descriptionId = useId();
+  const descriptionId = `imported-template-${templateId}-visibility`;
   const optionLabel = (value: PresentationTemplateSummary["visibility"]) => {
     return value === "private"
       ? t(($) => {
@@ -4782,6 +4783,7 @@ function ImportedPresentationTemplateSidebar({
           <>
             <div className="my-5 border-t border-border" />
             <ImportedPresentationTemplateVisibilityControl
+              templateId={activeTemplate.id}
               visibility={activeTemplate.visibility}
               updating={updating}
               onChange={(nextVisibility) => {
