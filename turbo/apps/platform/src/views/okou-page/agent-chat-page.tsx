@@ -27,11 +27,7 @@ import { ChatComposer } from "./chat-composer.tsx";
 import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
-import {
-  chatPageTaglineDisplayed$,
-  chatPageTaglineIndex$,
-  chatPageTaglineTypewriterRef$,
-} from "../../signals/okou-page/chat-page.ts";
+import { chatPageTaglineIndex$ } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
@@ -202,27 +198,45 @@ function useTagline(
   return taglines[index % taglines.length];
 }
 
-function TypewriterText({ text }: { text: string }) {
-  const animation = useGet(chatPageTaglineDisplayed$);
-  const displayedText = animation.text === text ? animation.displayed : "";
-  const typewriterRef = useSet(chatPageTaglineTypewriterRef$);
+const GREETING_TOKEN_STEP_MS = 70;
+
+/**
+ * The greeting arrives one word at a time, and nothing is ever cut.
+ *
+ * Each word is its own `inline-block` sitting in its final position from the
+ * first frame, so the only thing that changes is the word's own ink. The line
+ * is therefore at its finished width immediately: the row does not re-centre,
+ * no ancestor has to clip a line that is still growing, and no measurement
+ * runs per frame. The alternative that reads well at display sizes - a line
+ * rising through a stationary clip - puts a hard horizontal edge across the
+ * glyphs for the length of the travel, which on one 30px line at the top of
+ * the page reads as a rendering fault rather than as craft.
+ *
+ * The space belongs to the outer span, not to the animated box, so a word's
+ * blur cannot smear into its neighbour's gap.
+ */
+function GreetingTokens({ text }: { text: string }) {
+  const words = text.split(" ");
 
   return (
-    <>
-      {/* The complete copy keeps wrapping and height stable while the row
-          follows the width of the text that has actually unfolded. */}
-      <span key={text} ref={typewriterRef} aria-hidden className="invisible">
-        {text}
-      </span>
-      <span
-        aria-hidden
-        data-slot="chat-tagline-measurement"
-        className="invisible absolute inset-0"
-      />
-      <span aria-hidden className="absolute inset-0">
-        <span data-slot="chat-tagline-text">{displayedText}</span>
-      </span>
-    </>
+    <span aria-hidden data-slot="chat-tagline-text">
+      {words.map((word, index) => {
+        return (
+          <span key={`${String(index)}-${word}`}>
+            <span
+              data-slot="chat-tagline-word"
+              className="inline-block motion-safe:animate-chat-greeting-token"
+              style={{
+                animationDelay: `${String((index + 1) * GREETING_TOKEN_STEP_MS)}ms`,
+              }}
+            >
+              {word}
+            </span>
+            {index < words.length - 1 ? " " : null}
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -432,22 +446,33 @@ export function AgentChatPage() {
           {/* The greeting keeps the space the composer left behind rather than
               staying pinned under the header with a screen-deep hole under it.
               Both margins are auto, so the free space is split above and below
-              it and the line lands in the middle of what is left. The reserved
-              line extends past the right edge during the centered hold, so clip
-              that axis while keeping the pin button visible vertically. */}
-          <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
+              it and the line lands in the middle of what is left. The row is at
+              its final width on the first frame, so it is centered once and
+              never moves again. */}
+          <div className="flex w-full justify-center my-auto sm:my-0">
+            {/* Keyed on what is being greeted, so arriving at another agent
+                replays the whole entrance rather than swapping words under a
+                finished one. */}
             <div
+              key={`${currentChatAgentId ?? "none"}:${tagline}`}
               data-slot="chat-greeting"
               data-testid="chat-greeting"
-              className="flex max-w-full items-center gap-4 motion-safe:translate-x-[var(--chat-greeting-offset,calc(50%-1.75rem))]"
+              className="flex max-w-full items-center gap-4"
             >
-              <ChatAgentAvatar agentId={currentChatAgentId} />
+              {/* The avatar is the greeting's first word: it takes the same
+                  entrance with no delay, and the sentence follows it. */}
+              <span
+                data-slot="chat-greeting-avatar"
+                className="shrink-0 motion-safe:animate-chat-greeting-token"
+              >
+                <ChatAgentAvatar agentId={currentChatAgentId} />
+              </span>
               <h2
                 aria-label={tagline}
                 data-testid="chat-tagline"
-                className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+                className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
               >
-                <TypewriterText key={currentChatAgentId} text={tagline} />
+                <GreetingTokens text={tagline} />
               </h2>
             </div>
           </div>
