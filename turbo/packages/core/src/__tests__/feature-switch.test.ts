@@ -237,14 +237,8 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("keeps Okou models off for everyone until an explicit override enables them", () => {
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: staffOrgId },
-      { orgId: staffOrgId, userId: "staff-user", email: "staff@okou.ai" },
-    ]) {
+  it("enables Okou models for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, context)).toBe(
         false,
       );
@@ -255,11 +249,21 @@ describe("isFeatureEnabled", () => {
         }),
       ).toBe(true);
     }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, staffContext)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OkouModels, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.OkouModels]: false },
+      }),
+    ).toBe(false);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
       maintainer: "liangyou@okou.ai",
       description:
-        "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
-      rolloutStage: "alpha",
+        "Show the Okou 1.0 model family in Add Model for the staff organization.",
+      rolloutStage: "beta",
     });
   });
 

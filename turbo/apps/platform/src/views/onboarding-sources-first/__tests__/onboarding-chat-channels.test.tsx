@@ -213,6 +213,47 @@ test("The step sends an admin to Slack's own install and turns connected once th
   expect(getButtonByName(SLACK_CONNECTED_STATUS)).toBeDisabled();
 });
 
+test("A protected worker preview keeps access on its matching OAuth start URL", async () => {
+  mockOnboardingNeeded();
+  mockConnectedSource();
+  const installUrl =
+    "https://pr-431-api.vm6.ai/api/slack/oauth/install?state=slack-state";
+  mockSlack({
+    isConnected: false,
+    isInstalled: false,
+    isAdmin: true,
+    installUrl,
+    connectUrl: null,
+  });
+  mockTeams({
+    isConnected: true,
+    isInstalled: true,
+    isAdmin: true,
+    teamName: "Northwind",
+    connectUrl: TEAMS_CONNECT_URL,
+  });
+  mockNow(NOW, context.signal);
+  const open = vi.spyOn(window, "open").mockReturnValue(null);
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    host: "pr-431-app-okou-app-preview.vm0.workers.dev",
+    path: `${ROUTES.onboardingSlack}?x-vercel-protection-bypass=preview-secret`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await waitFor(() => {
+    expect(getButtonByName(SLACK_ADD)).toBeEnabled();
+  });
+  click(getButtonByName(SLACK_ADD));
+
+  expect(open).toHaveBeenCalledWith(
+    `${installUrl}&_t=${NOW}&x-vercel-protection-bypass=preview-secret`,
+    "_blank",
+  );
+});
+
 test("An installed workspace offers the account connect rather than the install", async () => {
   mockOnboardingNeeded();
   mockConnectedSource();
