@@ -118,7 +118,7 @@ function selectChatListFilter(
 ): void {
   click(within(sidebar).getByLabelText("Open chat list menu"));
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === filter;
+    return candidate.textContent?.trim().startsWith(filter);
   });
   if (!item) {
     throw new Error(`${filter} menu item is missing`);
