@@ -25,10 +25,12 @@ const internalSettingsCodexResetDialog$ = state({
   open: false,
   resetCredits: null as number | null,
   accountId: null as string | null,
+  type: "codex-oauth-token" as ModelProviderType,
 });
 const internalAccountMenuCodexResetDialog$ = state({
   open: false,
   resetCredits: null as number | null,
+  type: "codex-oauth-token" as ModelProviderType,
 });
 interface PersonalAccountDisconnectDialogState {
   readonly account: ModelProviderResponse;
@@ -61,6 +63,7 @@ export const setSettingsCodexResetDialog$ = command(
       open: boolean;
       resetCredits: number | null;
       accountId: string | null;
+      type: ModelProviderType;
     },
   ) => {
     set(internalSettingsCodexResetDialog$, dialog);
@@ -68,7 +71,14 @@ export const setSettingsCodexResetDialog$ = command(
 );
 
 export const setAccountMenuCodexResetDialog$ = command(
-  ({ set }, dialog: { open: boolean; resetCredits: number | null }) => {
+  (
+    { set },
+    dialog: {
+      open: boolean;
+      resetCredits: number | null;
+      type: ModelProviderType;
+    },
+  ) => {
     set(internalAccountMenuCodexResetDialog$, dialog);
   },
 );
@@ -214,13 +224,13 @@ const runPersonalCodexSubscriptionUsageReset$ = command(
 );
 
 export const resetPersonalCodexSubscriptionUsage$ = command(
-  ({ set }, signal: AbortSignal) => {
+  ({ set }, type: ModelProviderType, signal: AbortSignal) => {
     return set(
       runPersonalCodexSubscriptionUsageReset$,
       () => {
         return set(
           resetPersonalCodexSubscriptionUsageRequest$,
-          { idempotencyKey: crypto.randomUUID() },
+          { type, idempotencyKey: crypto.randomUUID() },
           signal,
         );
       },

@@ -6330,14 +6330,14 @@
         "workspaceDescription": "這個工作區的所有人都可以使用。"
       },
       "reset": {
-        "confirmDescription": "消耗一次Codex重置額度，重置當前的用量週期。你還有{{remaining}}。",
+        "confirmDescription": "消耗一次{{provider}}重置額度，重置當前的用量週期。你還有{{remaining}}。",
         "progress": "正在重置…",
         "remaining_one": "還剩{{value}}次重置",
         "remaining_other": "還剩{{value}}次重置",
         "remainingUnavailable": "剩餘重置次數不可用",
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "還剩{{value}}次重置 · {{expiry}}過期",
-        "title": "重置Codex用量？"
+        "title": "重置{{provider}}用量？"
       },
       "stale": {
         "claudeExpired": "你的Claude Code會話已過期。請重新連線以繼續。",

@@ -6336,7 +6336,7 @@
         "workspaceDescription": "Available to everyone in this workspace."
       },
       "reset": {
-        "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
+        "confirmDescription": "Use one {{provider}} reset to reset your current usage windows. You have {{remaining}}.",
         "progress": "Resetting...",
         "remaining_one": "{{value}} reset left",
         "remaining_other": "{{value}} resets left",
@@ -6344,7 +6344,7 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} reset left · expires {{expiry}}",
         "remainingWithExpiry_other": "{{value}} resets left · expires {{expiry}}",
-        "title": "Reset Codex usage?"
+        "title": "Reset {{provider}} usage?"
       },
       "stale": {
         "claudeExpired": "Your Claude Code session expired. Re-connect to continue.",

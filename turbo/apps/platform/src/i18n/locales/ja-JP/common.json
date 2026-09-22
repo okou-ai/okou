@@ -6330,14 +6330,14 @@
         "workspaceDescription": "このワークスペース内の全員が利用できます。"
       },
       "reset": {
-        "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
+        "confirmDescription": "{{provider}}リセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
         "progress": "リセット中...",
         "remaining_one": "リセット残り{{value}}回",
         "remaining_other": "リセット残り{{value}}回",
         "remainingUnavailable": "残りのリセット回数を取得できません",
         "remainingUnknown": "リセット —",
         "remainingWithExpiry_other": "リセット残り{{value}}回 · 有効期限{{expiry}}",
-        "title": "Codexの使用量をリセットしますか？"
+        "title": "{{provider}}の使用量をリセットしますか？"
       },
       "stale": {
         "claudeExpired": "Claude Codeセッションの有効期限が切れました。続行するには再接続してください。",

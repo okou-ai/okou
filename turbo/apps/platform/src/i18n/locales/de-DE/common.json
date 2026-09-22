@@ -6344,7 +6344,7 @@
         "workspaceDescription": "Verfügbar für alle in diesem Arbeitsbereich."
       },
       "reset": {
-        "confirmDescription": "Verwenden Sie einen Codex-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
+        "confirmDescription": "Verwenden Sie einen {{provider}}-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
         "progress": "Zurücksetzen...",
         "remaining_one": "{{value}} Reset übrig",
         "remaining_other": "{{value}} Resets übrig",
@@ -6352,7 +6352,7 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} Reset übrig · läuft {{expiry}} ab",
         "remainingWithExpiry_other": "{{value}} Resets übrig · laufen {{expiry}} ab",
-        "title": "Codex-Nutzung zurücksetzen?"
+        "title": "{{provider}}-Nutzung zurücksetzen?"
       },
       "stale": {
         "claudeExpired": "Ihre Claude Code-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",

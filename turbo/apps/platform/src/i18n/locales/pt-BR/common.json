@@ -6404,7 +6404,7 @@
         "workspaceDescription": "Disponível para todos neste espaço de trabalho."
       },
       "reset": {
-        "confirmDescription": "Use uma redefinição do Codex para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
+        "confirmDescription": "Use uma redefinição do {{provider}} para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
         "progress": "Redefinindo...",
         "remaining_one": "{{value}} redefinição restante",
         "remaining_many": "{{value}} redefinições restantes",
@@ -6414,7 +6414,7 @@
         "remainingWithExpiry_one": "{{value}} redefinição restante · expira {{expiry}}",
         "remainingWithExpiry_many": "{{value}} redefinições restantes · expiram {{expiry}}",
         "remainingWithExpiry_other": "{{value}} redefinições restantes · expiram {{expiry}}",
-        "title": "Redefinir o uso do Codex?"
+        "title": "Redefinir o uso do {{provider}}?"
       },
       "stale": {
         "claudeExpired": "Sua sessão do Claude Code expirou. Reconecte para continuar.",
