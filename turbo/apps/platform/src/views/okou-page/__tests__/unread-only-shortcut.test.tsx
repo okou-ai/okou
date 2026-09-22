@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
+  buttonByText,
   context,
   createThread,
   EXISTING_THREAD_ID,
@@ -60,13 +61,8 @@ function unreadShortcutEvent({
   });
 }
 
-function chatListTitleRow(list: HTMLElement): HTMLElement {
-  const menuButton = within(list).getByLabelText("Open chat list menu");
-  const titleRow = menuButton.parentElement?.parentElement;
-  if (!(titleRow instanceof HTMLElement)) {
-    throw new Error("Chat list title row not found");
-  }
-  return titleRow;
+function chatListCollapseToggle(list: HTMLElement): HTMLElement {
+  return buttonByText("Chats with Okou", list);
 }
 
 function unreadOnlyMenuItem(): HTMLElement {
@@ -140,7 +136,7 @@ test.each(platforms)(
       expect(within(list).getByText("Release plan")).toBeInTheDocument();
     }
 
-    click(chatListTitleRow(list));
+    click(chatListCollapseToggle(list));
     await waitFor(() => {
       expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
     });
