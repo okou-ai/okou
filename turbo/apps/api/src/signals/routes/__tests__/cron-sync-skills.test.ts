@@ -673,7 +673,7 @@ describe("GET /api/cron/sync-skills", () => {
     ).resolves.toBeNull();
   });
 
-  it("skips malformed skill frontmatter and syncs other skills", async () => {
+  it("retries the same commit after a partial sync failure", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
     const badSkillName = `${fixture.skillNamePrefix}bad-yaml`;
@@ -714,10 +714,42 @@ describe("GET /api/cron/sync-skills", () => {
     });
     await expect(
       findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.not.toBeNull();
+    ).resolves.toMatchObject({ commitSha: null });
     await expect(
       findSkillByUrl(testSkillUrl(badSkill.name)),
     ).resolves.toBeNull();
+
+    const repairedSkill = {
+      ...badSkill,
+      files: [
+        {
+          path: "SKILL.md",
+          content: `---\nname: ${badSkillName}\ndescription: Repaired skill\n---\n\n# Repaired Skill`,
+        },
+      ],
+    };
+    setupMswHandlers(
+      commitSha,
+      createFullTarball(fixture, [fixture.alphaSkill, repairedSkill]),
+    );
+
+    const retryResponse = await syncOwnedSkills(fixture);
+
+    expect(retryResponse).toStrictEqual({
+      success: true,
+      commitSha,
+      synced: 1,
+      skipped: fixture.requiredSeedSkillNames.length + 1,
+      failed: 0,
+      removed: 0,
+      total: fixture.requiredSeedSkillNames.length + 2,
+    });
+    await expect(
+      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
+    ).resolves.toMatchObject({ commitSha });
+    await expect(
+      findSkillByUrl(testSkillUrl(badSkill.name)),
+    ).resolves.toMatchObject({ commitSha });
   });
 
   it("retains archive expansion limits when indexing unchanged skill versions", async () => {

@@ -332,7 +332,6 @@ async function hasCurrentSkillVersion(
     readonly db: Db;
     readonly url: string;
     readonly versionHash: string;
-    readonly commitSha: string;
     readonly files: readonly ExtractedFile[];
   },
   signal: AbortSignal,
@@ -376,11 +375,6 @@ async function hasCurrentSkillVersion(
       signal,
     );
   }
-  await args.db
-    .update(skills)
-    .set({ commitSha: args.commitSha, updatedAt: nowDate() })
-    .where(eq(skills.url, args.url));
-  signal.throwIfAborted();
   return true;
 }
 
@@ -519,7 +513,6 @@ async function upsertSkillRecord(
     readonly storageId: string;
     readonly context: SkillSyncContext;
     readonly upload: SkillArchiveUpload;
-    readonly commitSha: string;
     readonly timestamp: Date;
   },
   signal: AbortSignal,
@@ -534,7 +527,6 @@ async function upsertSkillRecord(
       fullPath: args.context.fullPath,
       storageId: args.storageId,
       versionHash: args.context.versionHash,
-      commitSha: args.commitSha,
       frontmatter: args.context.frontmatter,
       s3Key: args.upload.s3Key,
       size: args.context.totalSize,
@@ -548,7 +540,6 @@ async function upsertSkillRecord(
         fullPath: args.context.fullPath,
         storageId: args.storageId,
         versionHash: args.context.versionHash,
-        commitSha: args.commitSha,
         frontmatter: args.context.frontmatter,
         s3Key: args.upload.s3Key,
         size: args.context.totalSize,
@@ -575,7 +566,6 @@ function syncSingleSkill(
           db,
           url: context.url,
           versionHash: context.versionHash,
-          commitSha,
           files: context.files,
         },
         signal,
@@ -610,7 +600,7 @@ function syncSingleSkill(
         signal,
       );
       await upsertSkillRecord(
-        { db: tx, storageId, context, upload, commitSha, timestamp },
+        { db: tx, storageId, context, upload, timestamp },
         signal,
       );
       await publishPiResourceVersionIndex(
@@ -778,14 +768,21 @@ export const syncSkillsForScope$ = command(
     signal.throwIfAborted();
 
     const urlPrefix = `${OFFICIAL_SKILL_URL_ROOT}${scope.skillNamePrefix ?? ""}`;
-    const [existing] = await db
+    // commitSha is a batch completion marker. A failed or interrupted attempt
+    // leaves the set incomplete so the next cron run downloads the same commit
+    // and retries its missing work.
+    const existing = await db
       .select({ commitSha: skills.commitSha })
       .from(skills)
-      .where(like(skills.url, `${urlPrefix}%`))
-      .limit(1);
+      .where(like(skills.url, `${urlPrefix}%`));
     signal.throwIfAborted();
 
-    if (existing?.commitSha === headSha) {
+    if (
+      existing.length > 0 &&
+      existing.every((skill) => {
+        return skill.commitSha === headSha;
+      })
+    ) {
       return {
         commitSha: headSha,
         synced: 0,
@@ -849,6 +846,16 @@ export const syncSkillsForScope$ = command(
     );
     signal.throwIfAborted();
     validateSeedSkills(extractedSkills, scope.requiredSkillNames);
+
+    if (failed === 0) {
+      // Advance the marker only after every extracted skill completed. Updating
+      // it per skill would let one success hide another skill's failure.
+      await db
+        .update(skills)
+        .set({ commitSha: headSha, updatedAt: nowDate() })
+        .where(like(skills.url, `${urlPrefix}%`));
+      signal.throwIfAborted();
+    }
 
     log.debug("Skills sync completed", {
       commitSha: headSha,
