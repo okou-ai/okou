@@ -194,7 +194,7 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
     use std::path::Path;
 
     use crate::proxy::{ProxyRegistryHandle, SandboxRegistration};
-    use crate::types::{
+    use runner_types::types::{
         ConnectorRuntimeTargetRegistration, Firewall, FirewallApi, FirewallAuth, FirewallEntry,
     };
 
