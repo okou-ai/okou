@@ -156,14 +156,16 @@ export interface RelationalDescendantPath {
 export interface RelationalErasurePlan {
   /** Account-owned roots, every root ordered before the roots it references. */
   readonly order: readonly RelationalErasureRoot[];
-  /** Declared descendants reachable through a parent root's ownership, deepest
-   * path first so a path's intermediate still exists when it runs.
+  /** Declared descendants reachable through a parent root's ownership, ordered
+   * so every path runs before the tables it joins through still lose their
+   * rows.
    */
   readonly descendants: readonly RelationalDescendantPath[];
   /** Declared descendants with neither a catalogue foreign key to a declared
-   * parent nor a declared reach. Nothing in this sink can prove those rows are
-   * gone, so they are reported as an explicit residual rather than silently
-   * omitted.
+   * parent nor a declared reach, plus any whose paths join through each other
+   * so that no single order satisfies them all. Nothing in this sink can prove
+   * those rows are gone, so they are reported as an explicit residual rather
+   * than silently omitted.
    */
   readonly unreachableDescendants: readonly string[];
   /** Declared descendants whose account attribution does not exist in the
@@ -498,6 +500,114 @@ function resolveDescendantPaths(
   return { descendants, unreachable, unattributable };
 }
 
+/** Deterministic order for the paths of one descendant table. */
+function compareDescendantPaths(
+  left: RelationalDescendantPath,
+  right: RelationalDescendantPath,
+): number {
+  return (
+    left.root.localeCompare(right.root) ||
+    left.source.localeCompare(right.source) ||
+    right.hops.length - left.hops.length
+  );
+}
+
+/** The order the descendant phase deletes in, derived from the join graph.
+ *
+ * A path longer than one hop joins through an intermediate table, and when
+ * that intermediate is itself a descendant its rows are deleted by a path of
+ * its own. Deleting the intermediate first leaves the path through it matching
+ * nothing, which is a silent under-delete rather than an error.
+ *
+ * Hop count does not decide this. A table's own reach is declared
+ * independently of the paths that traverse it, so nothing makes an
+ * intermediate's path the shorter one; ordering by length would be a fact
+ * about today's catalogue rather than an invariant. Precedence is therefore
+ * derived the way `topologicalRootOrder` derives the root order: a path's
+ * child must be deleted before every table that path joins through. The
+ * terminal root is not one of those, because roots are deleted afterwards.
+ *
+ * A cycle has no order that satisfies every path through it. Its members are
+ * returned rather than emitted in an arbitrary order, so the sweep skips them
+ * and the completeness gate refuses the claim instead of guessing.
+ */
+function orderDescendantPaths(paths: readonly RelationalDescendantPath[]): {
+  readonly ordered: RelationalDescendantPath[];
+  readonly cycles: string[];
+} {
+  interface DescendantGroup {
+    readonly child: string;
+    readonly paths: RelationalDescendantPath[];
+    readonly blockedBy: Set<string>;
+    readonly blocking: Set<DescendantGroup>;
+  }
+  const groups = new Map<string, DescendantGroup>();
+  for (const path of paths) {
+    const group = groups.get(path.child);
+    if (group) {
+      group.paths.push(path);
+      continue;
+    }
+    groups.set(path.child, {
+      child: path.child,
+      paths: [path],
+      blockedBy: new Set(),
+      blocking: new Set(),
+    });
+  }
+  for (const group of groups.values()) {
+    for (const path of group.paths) {
+      for (const hop of path.hops.slice(0, -1)) {
+        // A hop parent that is not a descendant is a root or a table erasure
+        // never deletes, so it constrains nothing here.
+        const intermediate = groups.get(hop.parent);
+        if (!intermediate || intermediate === group) {
+          continue;
+        }
+        intermediate.blockedBy.add(group.child);
+        group.blocking.add(intermediate);
+      }
+    }
+  }
+  const byChild = (left: DescendantGroup, right: DescendantGroup): number => {
+    return left.child.localeCompare(right.child);
+  };
+  const ready = [...groups.values()]
+    .filter((group) => {
+      return group.blockedBy.size === 0;
+    })
+    .sort(byChild);
+  const ordered: RelationalDescendantPath[] = [];
+  const placed = new Set<string>();
+  while (ready.length > 0) {
+    const group = ready.shift();
+    if (group === undefined) {
+      break;
+    }
+    ordered.push(...[...group.paths].sort(compareDescendantPaths));
+    placed.add(group.child);
+    for (const next of [...group.blocking].sort(byChild)) {
+      next.blockedBy.delete(group.child);
+      if (next.blockedBy.size === 0) {
+        // Keep the frontier sorted so one catalogue yields exactly one order.
+        ready.push(next);
+        ready.sort(byChild);
+      }
+    }
+  }
+  return {
+    ordered,
+    cycles: [...groups.values()]
+      .filter((group) => {
+        return !placed.has(group.child);
+      })
+      .map((group) => {
+        return group.child;
+      })
+      .sort(),
+  };
+}
+
 /** Derives what an account's relational sweep must delete, and in what order.
  *
  * Order is derived, never declared. A hand-written order rots the moment
@@ -570,6 +680,7 @@ export async function planRelationalErasure(
     keys,
     types,
   );
+  const sweep = orderDescendantPaths(descendants);
 
   const reachable = roots
     .filter((root) => {
@@ -591,20 +702,8 @@ export async function planRelationalErasure(
     order: order.map((table) => {
       return { table, owners: ownership.get(table) ?? [] };
     }),
-    // Deepest path first. A path longer than one hop passes through an
-    // intermediate that is itself a descendant, and that intermediate is
-    // always reachable in strictly fewer hops than the path through it, so
-    // ordering by descending length deletes every child before the row it
-    // joins through. The remaining keys only make the order deterministic.
-    descendants: descendants.sort((left, right) => {
-      return (
-        right.hops.length - left.hops.length ||
-        left.child.localeCompare(right.child) ||
-        left.root.localeCompare(right.root) ||
-        left.source.localeCompare(right.source)
-      );
-    }),
-    unreachableDescendants: unreachable.sort(),
+    descendants: sweep.ordered,
+    unreachableDescendants: [...unreachable, ...sweep.cycles].sort(),
     unattributableDescendants: unattributable.sort(),
     unreachableRoots: unreachableRoots.sort(),
     rewritingEdges,
@@ -685,11 +784,7 @@ function descendantPredicate(path: RelationalDescendantPath, owned: SQL): SQL {
     );
   };
   let predicate = owned;
-  for (let index = path.hops.length - 1; index >= 0; index -= 1) {
-    const hop = path.hops[index];
-    if (!hop) {
-      continue;
-    }
+  for (const hop of [...path.hops].reverse()) {
     predicate = sql`(${columns(hop.childColumns)}) IN (
       SELECT ${columns(hop.parentColumns)} FROM ${sql.identifier(hop.parent)}
       WHERE ${predicate}
@@ -719,6 +814,12 @@ async function subjectRowCount(
  * public and credential access, remote terminal results and remaining derived
  * copies belong to the object, provider and recovery sinks, so an empty result
  * here is not account erasure and must never be reported as one.
+ *
+ * Roots only, and that is structural rather than an omission. A descendant is
+ * attributed by joining up to a root the sweep has already deleted, so the
+ * same read after the sweep can only ever return zero and would assert
+ * nothing. What protects a descendant is the completeness gate, which refuses
+ * a claim while any of them is unreachable.
  */
 export async function relationalErasureResidual(
   db: Executor,
@@ -820,9 +921,15 @@ export async function sweepRelationalErasure(
       },
       binding.required,
     );
-    const roots = new Map(
-      plan.order.map((root) => {
-        return [root.table, subjectPredicate(root, subject.subjectId)];
+    const owned = plan.order.map((root) => {
+      return {
+        table: root.table,
+        predicate: subjectPredicate(root, subject.subjectId),
+      };
+    });
+    const byRoot = new Map(
+      owned.map((root) => {
+        return [root.table, root.predicate];
       }),
     );
     let deleted = 0;
@@ -832,8 +939,11 @@ export async function sweepRelationalErasure(
     // root than the one it ends at. Deleting each root's descendants just
     // before that root would leave those paths matching nothing.
     for (const path of plan.descendants) {
-      const owned = roots.get(path.root);
-      if (!owned) {
+      const predicate = byRoot.get(path.root);
+      // A path anchored on a root the plan could not reach has no predicate to
+      // build from. `assertRelationalSweepComplete` already refuses to call
+      // such a plan complete, so skipping here drops no claim.
+      if (!predicate) {
         continue;
       }
       // Swept through the key explicitly, not left to a cascade: a declared
@@ -842,16 +952,16 @@ export async function sweepRelationalErasure(
         (
           await tx.execute(
             sql`DELETE FROM ${sql.identifier(path.child)}
-                WHERE ${descendantPredicate(path, owned)}`,
+                WHERE ${descendantPredicate(path, predicate)}`,
           )
         ).rowCount ?? 0;
     }
-    for (const root of plan.order) {
+    for (const root of owned) {
       deleted +=
         (
           await tx.execute(
             sql`DELETE FROM ${sql.identifier(root.table)}
-                WHERE ${roots.get(root.table) ?? sql`false`}`,
+                WHERE ${root.predicate}`,
           )
         ).rowCount ?? 0;
     }

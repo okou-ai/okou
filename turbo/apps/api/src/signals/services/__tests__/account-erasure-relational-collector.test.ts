@@ -290,16 +290,29 @@ describe("relational erasure plan", () => {
     for (const path of plan.descendants) {
       expect([...planned]).toContain(path.root);
     }
-    // Deepest first: a longer path joins through an intermediate that is
-    // itself a shorter-path descendant, so it has to be deleted first.
-    const lengths = plan.descendants.map((path) => {
-      return path.hops.length;
-    });
-    expect(lengths).toStrictEqual(
-      [...lengths].sort((left, right) => {
-        return right - left;
-      }),
-    );
+    // The order is derived, not a hop count: every path runs before each
+    // table it joins through loses its rows, or the join would match nothing.
+    // A path's terminal root is excluded because roots go in a later phase.
+    const firstIndex = new Map<string, number>();
+    for (const [index, path] of plan.descendants.entries()) {
+      if (!firstIndex.has(path.child)) {
+        firstIndex.set(path.child, index);
+      }
+    }
+    let traversedDescendants = 0;
+    for (const [index, path] of plan.descendants.entries()) {
+      for (const hop of path.hops.slice(0, -1)) {
+        const intermediate = firstIndex.get(hop.parent);
+        if (intermediate === undefined) {
+          continue;
+        }
+        traversedDescendants += 1;
+        expect(index).toBeLessThan(intermediate);
+      }
+    }
+    // The live schema really does exercise that ordering, so a future change
+    // that stopped producing multi-hop paths would not silently pass this.
+    expect(traversedDescendants).toBeGreaterThan(0);
 
     // A descendant with neither a foreign key to a declared parent nor a
     // declared reach cannot be swept, so it is reported rather than assumed
