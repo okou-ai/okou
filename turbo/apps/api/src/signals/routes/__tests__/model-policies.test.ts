@@ -1558,8 +1558,15 @@ describe("GET/PUT /api/model-policies", () => {
     const fixture = await seedFixture();
     useSession(fixture);
     // The member projection is always present now, so the priority tier is
-    // validated against a route that is actually available rather than against
-    // a merely valid organization route.
+    // validated against the effective route rather than against a merely valid
+    // organization route. A fresh workspace bootstraps onto limited-free-1,
+    // whose plan restricts Built-in models, so give it a plan that admits the
+    // route and a runtime route to resolve.
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "pro",
+      credits: 1_000_000,
+    });
     await seedBuiltInModelCandidateKeys(context, "gpt-5.6-sol");
     const client = apiClient();
     const preferenceClient = setupApp({
@@ -2335,6 +2342,7 @@ describe("conditional organization model policy writes", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             makeBuiltInPolicy("gpt-5.6-luna", true),
             makeBuiltInPolicy("gpt-6-astra"),
@@ -2464,6 +2472,7 @@ describe("conditional organization model policy writes", () => {
         apiClient().update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [
               makeBuiltInPolicy("gpt-5.6-luna", true),
               {
@@ -2597,6 +2606,7 @@ describe("conditional organization model policy writes", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             makeBuiltInPolicy("gpt-5.6-luna", true),
             makeBuiltInPolicy("gpt-6-astra"),
