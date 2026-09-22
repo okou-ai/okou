@@ -2158,17 +2158,34 @@ environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
 #34081 owns Access management UI; #34370 records integrated real-Run acceptance
 and the owner-approved evidence boundaries at closure.
-Management stays inside `/connectors/ssh`. Access is a reusable host connection
-setting under the existing SSH Agent grant, not a separately authorized service.
-General availability does not replace the existing Agent permission.
+The existing management UI stays inside `/connectors/ssh` while #36038 adds a
+second standalone entry. Access is reusable owner configuration, not a separately
+authorized Agent service. SSH remains its first consumer under the existing SSH
+Agent grant; general availability does not replace that permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. Unified host forms also accept inline Access
-creation in the host write request. Existing `configId` selections remain valid;
-responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative;
+The current SSH management UI uses the retained
+`/api/ssh/cloudflare-access/configs` compatibility endpoints. The standalone
+owner boundary adds `/api/cloudflare-access/configs` over the same rows, revisions
+and mutation service; its response names current references `sshHosts`, while the
+compatibility response keeps `hosts`. Configuration mutations publish both
+`cloudflare-access:changed` and `ssh:changed` with `{ orgId }` only so loaded
+standalone and SSH pages can refresh each other. Neither event contains a token,
+configuration ID or host ID.
+
+Deploy the additive API before an App uses the standalone endpoint. A new
+API/old App continues using the SSH path and event unchanged; a new API/new App
+can use the standalone path while the retained SSH UI continues using the
+compatibility path. Both combinations operate on the same encrypted records.
+There is no feature switch, schema migration, data copy, or Runner contract
+change. Removing the SSH compatibility path/event requires separate web-client
+floor evidence and is outside #36037 and #36038.
+
+Unified host forms also accept inline Access creation in the host write request.
+Existing `configId` selections remain valid; responses still return only the
+resolved binding. Deploy API support before the App uses inline creation. An older
+API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.
