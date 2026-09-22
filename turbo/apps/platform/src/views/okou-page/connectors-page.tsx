@@ -541,8 +541,8 @@ interface ConnectorsScopeBadge {
   readonly needsAttention: boolean;
 }
 
-/** Configured hosts determine whether a remote-access service is connected. */
-function configuredRemoteAccessHosts(
+/** Configured resources determine whether a remote-access service is connected. */
+function configuredRemoteAccessResources(
   summary: Loadable<{ configuredCount: number } | null>,
 ): number {
   return remoteAccessSummaryData(summary)?.configuredCount ?? 0;
@@ -1660,10 +1660,9 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 }
 
 /**
- * Everything with an account: connected built-ins, connected custom connectors,
- * and the SSH hosts. A plain grid rather than a shelf view -- the list is short
- * enough to read, and the only dimension that organises it, which agent uses
- * it, lives in the toolbar.
+ * Everything configured: connected built-ins, connected custom connectors, and
+ * remote-access resources. A plain grid rather than a shelf view keeps this
+ * short list easy to scan.
  */
 function ConnectorsConnectedPanel({
   connected,
@@ -2262,15 +2261,15 @@ export function ConnectorsPage() {
   const scopeBadge = connectorsScopeBadge(
     connectedBadge,
     custom.all.length,
-    Number(configuredRemoteAccessHosts(sshSummary) > 0) +
-      Number(configuredRemoteAccessHosts(vncSummary) > 0) +
-      Number(configuredRemoteAccessHosts(cloudflareAccessSummary) > 0),
+    Number(configuredRemoteAccessResources(sshSummary) > 0) +
+      Number(configuredRemoteAccessResources(vncSummary) > 0) +
+      Number(configuredRemoteAccessResources(cloudflareAccessSummary) > 0),
   );
-  // Remote access belongs to the connected scope once hosts exist; until then it is only
-  // a thing to discover, and the catalog already carries it.
-  const connectedSshCount = configuredRemoteAccessHosts(filteredSshSummary);
-  const connectedVncCount = configuredRemoteAccessHosts(filteredVncSummary);
-  const connectedCloudflareAccessCount = configuredRemoteAccessHosts(
+  // Remote access belongs to the connected scope once resources exist; until
+  // then it is only discoverable through the directory catalog.
+  const connectedSshCount = configuredRemoteAccessResources(filteredSshSummary);
+  const connectedVncCount = configuredRemoteAccessResources(filteredVncSummary);
+  const connectedCloudflareAccessCount = configuredRemoteAccessResources(
     filteredCloudflareAccessSummary,
   );
   const agentsLoadable = useLastLoadable(agents$);
