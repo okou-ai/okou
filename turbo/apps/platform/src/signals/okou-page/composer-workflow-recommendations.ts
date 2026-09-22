@@ -50,7 +50,7 @@ export type WorkflowCoverKind =
 interface WorkflowRecommendationCover {
   readonly tone: WorkflowCoverTone;
   readonly kind: WorkflowCoverKind;
-  readonly sources: readonly ConnectorSlug[];
+  readonly sources: readonly [ConnectorSlug, ...ConnectorSlug[]];
   readonly destination: ConnectorSlug | null;
 }
 

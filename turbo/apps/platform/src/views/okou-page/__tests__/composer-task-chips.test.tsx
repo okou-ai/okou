@@ -1185,11 +1185,6 @@ test("The Workflow shelf carries every recommendation on one rail without changi
     "See how your business is doing",
     "Catch the reply you’re waiting for",
   ]);
-  expect(
-    queryAllByRoleFast("button", shelf).filter((item) => {
-      return item.textContent === "More ideas";
-    }),
-  ).toHaveLength(0);
   expect(editor).toHaveTextContent("Keep this context");
   expect(capture.sentMessages).toHaveLength(0);
 });

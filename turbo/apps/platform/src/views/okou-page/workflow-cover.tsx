@@ -199,7 +199,7 @@ function CoverNode({
   slugs,
   size,
 }: {
-  readonly slugs: readonly ConnectorSlug[];
+  readonly slugs: readonly [ConnectorSlug, ...ConnectorSlug[]];
   readonly size: number;
 }) {
   const stack = Math.round(size * 0.75);
@@ -234,7 +234,7 @@ function CoverNode({
           })}
         </span>
       ) : (
-        <CoverMark slug={slugs[0]!} size={Math.round(size * 0.58)} />
+        <CoverMark slug={slugs[0]} size={Math.round(size * 0.58)} />
       )}
     </span>
   );
@@ -266,7 +266,7 @@ export function WorkflowCover({
       <span className="absolute top-[16%] left-[29%] h-[88%] w-[67%] rounded-[10px] border border-border/50 bg-card/55 p-[7.5%]">
         <WorkflowSketch kind={cover.kind} />
       </span>
-      <span className="absolute top-[48%] left-[11%] z-[5] flex items-center">
+      <span className="absolute top-[48%] left-[11%] flex items-center">
         <CoverNode slugs={cover.sources} size={size} />
         {cover.destination !== null && (
           <>
