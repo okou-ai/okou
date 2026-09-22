@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Install Node.js 24
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,7 +24,7 @@ RUN node --version
 
 # Install global npm packages for CI/CD
 # Note: vercel and neonctl are installed in jobs that need them
-RUN npm install -g pnpm@10.15.0 lefthook@1.12.3
+RUN npm install -g pnpm@12.5.1 lefthook@1.12.3
 
 # Stage 2: Toolchain with Rust for cross-compilation
 FROM toolchain AS toolchain-rust
@@ -163,7 +163,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install vercel and neonctl for development
-RUN npm install -g vercel@48.11.0 neonctl@2.15.0
+RUN npm install -g vercel@59.25.0 neonctl@2.15.0
 
 
 # Install GitHub CLI
@@ -190,8 +190,27 @@ RUN curl -fsSL https://downloads.1password.com/linux/keys/1password.asc | gpg --
     && apt-get install -y 1password-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# Install agent-browser for browser automation
-RUN npm install -g agent-browser@0.22.0
+# Install the same agent-browser fork used by the runner environment.
+ARG AGENT_BROWSER_VERSION=0.33.0-vm0.1
+RUN ARCH=$(dpkg --print-architecture) \
+    && case "$ARCH" in \
+        amd64) \
+            AGENT_BROWSER_PLATFORM="linux-x64"; \
+            AGENT_BROWSER_SHA256="a9e3fbe24c537960b9ac0d1f358224a10eb70d87a619aec7bcb1175222a46a18" \
+            ;; \
+        arm64) \
+            AGENT_BROWSER_PLATFORM="linux-arm64"; \
+            AGENT_BROWSER_SHA256="6a74dba04c299a69d564eae5aff67adc2ffc6fda5ddf672994ff75b73d64a9fe" \
+            ;; \
+        *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL \
+       "https://github.com/okou-ai/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}/agent-browser-${AGENT_BROWSER_PLATFORM}" \
+       -o /tmp/agent-browser \
+    && echo "${AGENT_BROWSER_SHA256}  /tmp/agent-browser" | sha256sum -c - \
+    && install -m 0755 /tmp/agent-browser /usr/local/bin/agent-browser \
+    && rm /tmp/agent-browser \
+    && test "$(agent-browser --version)" = "agent-browser ${AGENT_BROWSER_VERSION}"
 
 # Install Chromium via Playwright (supports both amd64 and arm64)
 # Use chrome-for-testing to ensure full browser (not just headless shell)
@@ -243,7 +262,7 @@ RUN rustup component add rust-src
 
 # Install Caddy web server with Cloudflare DNS module for automatic Let's Encrypt certificates
 # Uses xcaddy to build a custom Caddy binary with the caddy-dns/cloudflare plugin
-RUN GOLANG_VERSION=1.24.4 \
+RUN GOLANG_VERSION=1.27.1 \
     && ARCH=$(dpkg --print-architecture) \
     && curl -fsSL "https://go.dev/dl/go${GOLANG_VERSION}.linux-${ARCH}.tar.gz" -o /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz \
