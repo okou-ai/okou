@@ -9207,6 +9207,8 @@ function ComposerRunModelPickerControl({
   const { t } = useTranslation();
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
+  const flyoutCategory = useGet(signals.model.menu.flyoutCategory$);
+  const setMediaModelCategory = useSet(signals.model.setMediaModelCategory$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
     <div
@@ -9228,6 +9230,9 @@ function ComposerRunModelPickerControl({
         // the menu's pages until the sheet layout lands.
         flyoutLayout={desktopLayout}
         onSelected={() => {
+          setMediaModelCategory(
+            flyoutCategory === "chat" ? null : flyoutCategory,
+          );
           setModelPickerOpen(false);
         }}
         compactTrigger
