@@ -15,6 +15,7 @@ import {
 } from "@okouai/core";
 import {
   billingCheckoutContract,
+  billingRedeemCodeContract,
   billingUsagePackCheckoutContract,
   type MemberUsagePack,
 } from "@okouai/api-contracts/contracts/billing";
@@ -215,13 +216,12 @@ async function openGithubWorkflowRun(): Promise<void> {
 }
 
 function chooseMakeOption(name: string): void {
-  const radio = queryAllByRoleFast("radio").find((candidate) => {
-    return candidate.textContent?.includes(name) ?? false;
-  });
-  if (!radio) {
-    throw new Error(`Radio not found for ${name}`);
-  }
-  click(radio);
+  click(
+    buttonByText(
+      name,
+      screen.getByRole("group", { name: "First project type" }),
+    ),
+  );
 }
 
 function buttonByText(
@@ -295,7 +295,8 @@ function chooseTemplate(
 test("Slack is the leading onboarding choice", async () => {
   await openMakePage();
 
-  const slackOption = firstItem(queryAllByRoleFast("radio"));
+  const choices = screen.getByRole("group", { name: "First project type" });
+  const slackOption = firstItem(queryAllByRoleFast("button", choices));
   expect(slackOption).toHaveTextContent("Chat with Okou in Slack");
   expect(
     screen.getByTestId("onboarding-slack-illustration"),
@@ -312,18 +313,204 @@ test("Slack is the leading onboarding choice", async () => {
   });
 });
 
+test("Make actions are named buttons in Tab order and arrow keys do not activate them", async () => {
+  const user = userEvent.setup();
+  await openMakePage();
+  const choices = screen.getByRole("group", { name: "First project type" });
+  const buttons = queryAllByRoleFast("button", choices);
+  const names = [
+    "Chat with Okou in Slack Chat with your AI teammate in your workspace",
+    "Workflow automation Explore from preset templates",
+    "Generate a presentation Generate slides and speaker",
+    "Video production Turn your ideas into video",
+    "Generate images Create high-quality visuals",
+    "Build a website Create and publish a shareable page",
+    "I will explore on my own Just connect with my tools",
+  ];
+  expect(buttons).toHaveLength(names.length);
+  firstItem(buttons).focus();
+
+  for (const [index, button] of buttons.entries()) {
+    if (index > 0) {
+      await user.keyboard("{Tab}");
+    }
+    expect(button).toHaveFocus();
+    expect(button).toHaveAccessibleName(names[index]);
+    expect(button).toHaveAttribute("type", "button");
+    expect(button).not.toHaveAttribute("aria-checked");
+    expect(button).not.toHaveAttribute("aria-pressed");
+    await user.keyboard("{ArrowRight}{ArrowDown}{ArrowLeft}{ArrowUp}");
+    expect(button).toHaveFocus();
+    expect(button).toBeEnabled();
+    expect(pathname()).toBe(ROUTES.onboarding);
+  }
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(buttonByText("Build a website", choices)).toHaveFocus();
+});
+
+test.each(["click", "Enter", "Space"] as const)(
+  "Make action %s completes once and disables all actions until navigation",
+  async (activation) => {
+    const user = userEvent.setup();
+    const completion = context.mocks.deferred<void>();
+    let completions = 0;
+    let redeemedCode: string | undefined;
+    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+      redeemedCode = body.code;
+      return respond(200, { redeemed: true });
+    });
+    context.mocks.api(
+      onboardingCompleteContract.complete,
+      async ({ respond }) => {
+        completions++;
+        await completion.promise;
+        context.mocks.data.onboardingStatus({
+          needsOnboarding: false,
+          onboardingComplete: true,
+        });
+        return respond(200, {
+          onboardingComplete: true,
+          needsOnboarding: false,
+        });
+      },
+    );
+    mockOnboardingNeeded();
+    await setupPage({
+      context,
+      path: "/onboarding?redeemCode=%20LAUNCH50%20&choice=presentation&template=old&category=engineering&utm_source=test",
+    });
+    const choices = await screen.findByRole("group", {
+      name: "First project type",
+    });
+    const button = buttonByText("Chat with Okou in Slack", choices);
+    button.focus();
+    if (activation === "click") {
+      click(button);
+    } else {
+      await user.keyboard(activation === "Enter" ? "{Enter}" : "[Space]");
+    }
+
+    await waitFor(() => {
+      expect(button).toHaveAttribute("aria-busy", "true");
+    });
+    for (const action of queryAllByRoleFast("button", choices)) {
+      expect(action).toBeDisabled();
+      expect(action).toHaveAttribute(
+        "aria-busy",
+        action === button ? "true" : "false",
+      );
+    }
+    expect(pathname()).toBe(ROUTES.onboarding);
+
+    await user.dblClick(button);
+    await user.keyboard("{Enter}[Space]");
+    click(buttonByText("Generate images", choices));
+    completion.resolve();
+
+    await waitFor(() => {
+      expect(pathname()).toBe(ROUTES.works);
+    });
+    expect(search()).toBe("");
+    expect(redeemedCode).toBe("LAUNCH50");
+    expect(completions).toBe(1);
+  },
+);
+
+test("A failed Make action can be retried without leaving onboarding", async () => {
+  const failure = context.mocks.deferred<void>();
+  let attempts = 0;
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    async ({ respond }) => {
+      attempts++;
+      if (attempts === 1) {
+        await failure.promise;
+        return respond(403, {
+          error: { message: "Try again", code: "FORBIDDEN" },
+        });
+      }
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, { onboardingComplete: true, needsOnboarding: false });
+    },
+  );
+  await openMakePage();
+  const choices = screen.getByRole("group", { name: "First project type" });
+  const explore = buttonByText("I will explore on my own", choices);
+  click(explore);
+  await waitFor(() => {
+    expect(explore).toHaveAttribute("aria-busy", "true");
+  });
+  failure.resolve();
+  await waitFor(() => {
+    expect(explore).toBeEnabled();
+  });
+  expect(pathname()).toBe(ROUTES.onboarding);
+  expect(explore).toHaveAttribute("aria-busy", "false");
+  for (const button of queryAllByRoleFast("button", choices)) {
+    expect(button).toBeEnabled();
+  }
+  click(explore);
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/agents/${DEFAULT_ONBOARDING_AGENT.agentId}/chat`);
+  expect(search()).toBe("");
+  expect(attempts).toBe(2);
+});
+
+test("The workflow action clears stale branch parameters and returns to Make without completing", async () => {
+  let completions = 0;
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completions++;
+    return respond(200, { onboardingComplete: true, needsOnboarding: false });
+  });
+  mockOnboardingNeeded();
+  const params = new URLSearchParams({
+    choice: "presentation",
+    category: "engineering",
+    workflow: "auto-merge-github-prs",
+    template: "old-template",
+    onboarding_billing: "canceled",
+    onboarding_billing_session_id: "old-session",
+    onboarding_note: "old-note",
+    onboarding_template: "old-slug",
+    [ONBOARDING_CHECKOUT_STATE_PARAM]: "old-state",
+    redeemCode: "LAUNCH50",
+    utm_source: "test",
+  });
+  await setupPage({ context, path: `/onboarding?${params.toString()}` });
+  await screen.findByRole("group", { name: "First project type" });
+  chooseMakeOption("Workflow automation");
+  await expect(
+    screen.findByRole("heading", { name: "What do you work on?" }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingWorkflowPicker);
+  expect(Object.fromEntries(new URLSearchParams(search()))).toStrictEqual({
+    choice: "workflow",
+    redeemCode: "LAUNCH50",
+    utm_source: "test",
+  });
+  click(buttonByText("Back"));
+  const choices = await screen.findByRole("group", {
+    name: "First project type",
+  });
+  expect(pathname()).toBe(ROUTES.onboarding);
+  expect(new URLSearchParams(search()).get("choice")).toBe("workflow");
+  expect(buttonByText("Workflow automation", choices)).toBeEnabled();
+  expect(completions).toBe(0);
+});
+
 async function expectCreativeChoiceOpensTemplateGallery(scenario: {
   readonly description: string;
   readonly option: string;
   readonly tab: string;
 }): Promise<HTMLElement> {
   await openMakePage();
-  const option = queryAllByRoleFast("radio").find((candidate) => {
-    return candidate.textContent?.includes(scenario.option);
-  });
-  if (!option) {
-    throw new Error(`Expected ${scenario.option} choice`);
-  }
+  const choices = screen.getByRole("group", { name: "First project type" });
+  const option = buttonByText(scenario.option, choices);
   expect(option).toHaveTextContent(scenario.description);
 
   click(option);
@@ -383,9 +570,11 @@ test("New accounts skip the Video production choice and can continue onboarding"
       },
     },
   });
-  const choices = await screen.findByRole("radiogroup");
-  const radios = queryAllByRoleFast("radio", choices);
-  expect(radios).toHaveLength(6);
+  const choices = await screen.findByRole("group", {
+    name: "First project type",
+  });
+  const buttons = queryAllByRoleFast("button", choices);
+  expect(buttons).toHaveLength(6);
   expect(
     within(choices).queryByText("Video production"),
   ).not.toBeInTheDocument();
