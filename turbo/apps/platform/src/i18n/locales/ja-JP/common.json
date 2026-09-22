@@ -2093,6 +2093,7 @@
       "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
       "archive": "チャットをアーカイブ",
+      "archived": "アーカイブ済み",
       "chatsWith": "{{agentName}} とのチャット",
       "chatThreads": "チャットスレッド",
       "delete": "チャットを削除する",
@@ -2104,6 +2105,7 @@
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
       "newChatWith": "{{agentName}} との新しいチャット",
+      "noArchived": "アーカイブ済みのチャットはありません",
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
@@ -2112,13 +2114,12 @@
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
       "showAllChats": "すべてのチャットを表示",
-      "showArchived": "アーカイブ済みを表示",
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
-      "unreadOnly": "未読のみ"
+      "unreadOnly": "未読"
     },
     "startCards": {
       "kinds": {

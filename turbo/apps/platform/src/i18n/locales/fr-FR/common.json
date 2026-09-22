@@ -2147,6 +2147,7 @@
       "allCaughtUp": "Tout est à jour",
       "allChats": "Toutes les discussions",
       "archive": "Archiver la discussion",
+      "archived": "Archivées",
       "chatsWith": "Discussions avec {{agentName}}",
       "chatThreads": "Fils de discussion",
       "delete": "Supprimer la discussion",
@@ -2158,6 +2159,7 @@
       "movePinDown": "Déplacer vers le bas",
       "movePinUp": "Déplacer vers le haut",
       "newChatWith": "Nouvelle discussion avec {{agentName}}",
+      "noArchived": "Aucune discussion archivée",
       "noUnread": "Aucune discussion non lue",
       "openChatMenu": "Ouvrir le menu de discussion",
       "openListMenu": "Ouvrir le menu de la liste de discussion",
@@ -2166,13 +2168,12 @@
       "rename": "Renommer la discussion",
       "renameDescription": "Entrez un nouveau nom pour ce fil de discussion.",
       "showAllChats": "Afficher toutes les discussions",
-      "showArchived": "Afficher les archives",
       "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
       "unarchive": "Désarchiver la discussion",
       "unpin": "Détacher la discussion",
       "unread": "Non lu",
-      "unreadOnly": "Seulement non lu"
+      "unreadOnly": "Non lu"
     },
     "startCards": {
       "kinds": {

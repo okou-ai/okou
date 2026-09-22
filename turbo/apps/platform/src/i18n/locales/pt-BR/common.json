@@ -2147,6 +2147,7 @@
       "allCaughtUp": "Tudo em dia",
       "allChats": "Todas as conversas",
       "archive": "Arquivar conversa",
+      "archived": "Arquivadas",
       "chatsWith": "Conversas com {{agentName}}",
       "chatThreads": "Conversas",
       "delete": "Excluir",
@@ -2158,6 +2159,7 @@
       "movePinDown": "Mover para baixo",
       "movePinUp": "Mover para cima",
       "newChatWith": "Nova conversa com {{agentName}}",
+      "noArchived": "Nenhuma conversa arquivada",
       "noUnread": "Nenhuma conversa não lida",
       "openChatMenu": "Abrir menu da conversa",
       "openListMenu": "Abrir menu da lista de conversas",
@@ -2166,13 +2168,12 @@
       "rename": "Renomear conversa",
       "renameDescription": "Escolha um novo nome para esta conversa.",
       "showAllChats": "Mostrar todas as conversas",
-      "showArchived": "Mostrar arquivadas",
       "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
       "unarchive": "Desarquivar conversa",
       "unpin": "Desafixar conversa",
       "unread": "Não lida",
-      "unreadOnly": "Somente não lidas"
+      "unreadOnly": "Não lida"
     },
     "startCards": {
       "kinds": {
