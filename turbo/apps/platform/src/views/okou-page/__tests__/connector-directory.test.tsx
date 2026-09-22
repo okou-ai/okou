@@ -662,6 +662,7 @@ test("Keep attention-card navigation inside its own action group", async () => {
         return {
           ...builtinConnector({ slug, label: slug, connected: true }),
           scopeMismatch: true,
+          connectionStatus: "scope-mismatch" as const,
         };
       }),
       builtinConnector({ slug: GMAIL_SLUG, label: "Gmail", connected: false }),

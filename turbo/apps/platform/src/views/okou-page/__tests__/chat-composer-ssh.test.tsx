@@ -448,7 +448,7 @@ test("Directory SSH setup follows shelves and categories and supports keyboard n
   await within(dialog).findByTestId("connector-shelf-head");
   await findFastControl("link", "Manage SSH hosts", dialog);
   click(await findFastControl("button", "Remote access1", dialog));
-  await within(dialog).findByText("1 match");
+  await within(dialog).findByRole("heading", { name: "Remote access" });
   expect(within(dialog).queryByText("GitHub")).toBeNull();
   click(within(dialog).getByText("Custom", { exact: true }));
   await within(dialog).findByText("No custom connectors yet");
