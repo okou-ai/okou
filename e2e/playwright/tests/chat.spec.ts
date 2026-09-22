@@ -13,8 +13,6 @@ interface GreetingFrame {
   readonly avatarHeight: number;
   readonly containerLeft: number;
   readonly containerRight: number;
-  readonly glyphLeft: number | null;
-  readonly glyphRight: number | null;
   readonly lineCount: number;
 }
 
@@ -193,11 +191,12 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
       const rowRect = row.getBoundingClientRect();
       const avatarRect = avatar.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
-      // Measure the per-word wrapper spans, not the animated boxes inside
-      // them. A wrapper is laid out but never transformed, while a rect taken
-      // over the boxes would carry each word's own unfinished 14px rise and
-      // report a travelling word as an extra line.
-      const glyphs = Array.from(line.children)
+      // Count lines from the per-word wrapper spans, not from a range over
+      // the animated boxes inside them. A wrapper is laid out but never
+      // transformed, while a rect taken over the boxes would carry each
+      // word's own unfinished 14px rise and report a travelling word as an
+      // extra line.
+      const wordLines = Array.from(line.children)
         .flatMap((word) => {
           return Array.from(word.getClientRects());
         })
@@ -210,13 +209,7 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
         avatarHeight: avatarRect.height,
         containerLeft: containerRect.left,
         containerRight: containerRect.right,
-        glyphLeft: glyphs.length
-          ? Math.min(...glyphs.map((r) => r.left))
-          : null,
-        glyphRight: glyphs.length
-          ? Math.max(...glyphs.map((r) => r.right))
-          : null,
-        lineCount: new Set(glyphs.map((rect) => Math.round(rect.top))).size,
+        lineCount: new Set(wordLines.map((rect) => Math.round(rect.top))).size,
       });
       // The last word starts at wordCount * 70ms and runs for 720ms; sample
       // past the end of it rather than waiting on a text change that no
@@ -273,14 +266,13 @@ test("a mobile greeting arrives without moving its row or cutting its text", asy
     expect(frame.avatarWidth, label).toBeCloseTo(first.avatarWidth, 1);
     expect(frame.avatarHeight, label).toBeCloseTo(first.avatarHeight, 1);
     expect(frame.lineCount, label).toBe(last.lineCount);
-    if (frame.glyphLeft !== null && frame.glyphRight !== null) {
-      expect(frame.glyphLeft, label).toBeGreaterThanOrEqual(
-        frame.containerLeft - 1,
-      );
-      expect(frame.glyphRight, label).toBeLessThanOrEqual(
-        frame.containerRight + 1,
-      );
-    }
+    // The greeting stays inside the scrollport it is centered in. Measured on
+    // the row rather than on glyph rects: a wrapper span's box includes the
+    // trailing space it owns, which can hang past a wrapped line's edge.
+    expect(frame.rowLeft, label).toBeGreaterThanOrEqual(
+      frame.containerLeft - 1,
+    );
+    expect(frame.rowRight, label).toBeLessThanOrEqual(frame.containerRight + 1);
   }
 });
 
