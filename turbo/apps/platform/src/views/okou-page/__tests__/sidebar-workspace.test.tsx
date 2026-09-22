@@ -352,7 +352,7 @@ test("Show only the selected agent’s unread conversations when switching agent
     expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
   });
   openChatListMenu();
-  click(menuItemByText("Unread only"));
+  click(menuItemByText("Unread"));
   await waitFor(() => {
     expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
   });
@@ -429,7 +429,7 @@ test("Toggle unread chats by reselecting an unread pinned agent", async () => {
     expect(within(sidebar()).getByText("Default read")).toBeInTheDocument();
   });
   openChatListMenu();
-  click(menuItemByText("Unread only"));
+  click(menuItemByText("Unread"));
   await waitFor(() => {
     expect(within(sidebar()).getByText("Default unread")).toBeInTheDocument();
     expect(

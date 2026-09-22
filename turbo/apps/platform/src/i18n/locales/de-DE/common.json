@@ -2101,6 +2101,7 @@
       "allCaughtUp": "Alles erledigt",
       "allChats": "Alle Chats",
       "archive": "Chat archivieren",
+      "archived": "Archiviert",
       "chatsWith": "Chats mit {{agentName}}",
       "chatThreads": "Chat-Threads",
       "delete": "Chat löschen",
@@ -2112,6 +2113,7 @@
       "movePinDown": "Nach unten verschieben",
       "movePinUp": "Nach oben verschieben",
       "newChatWith": "Neuer Chat mit {{agentName}}",
+      "noArchived": "Keine archivierten Chats",
       "noUnread": "Keine ungelesenen Chats",
       "openChatMenu": "Chat-Menü öffnen",
       "openListMenu": "Chatlisten-Menü öffnen",
@@ -2120,13 +2122,12 @@
       "rename": "Chat umbenennen",
       "renameDescription": "Geben Sie einen neuen Namen für diesen Chat-Thread ein.",
       "showAllChats": "Alle Chats anzeigen",
-      "showArchived": "Archivierte anzeigen",
       "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
       "unarchive": "Archivierung aufheben",
       "unpin": "Chat nicht mehr anheften",
       "unread": "Ungelesen",
-      "unreadOnly": "Nur ungelesen"
+      "unreadOnly": "Ungelesen"
     },
     "startCards": {
       "kinds": {
