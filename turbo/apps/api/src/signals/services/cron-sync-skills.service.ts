@@ -778,14 +778,11 @@ export const syncSkillsForScope$ = command(
     signal.throwIfAborted();
 
     const urlPrefix = `${OFFICIAL_SKILL_URL_ROOT}${scope.skillNamePrefix ?? ""}`;
-    const [existing] =
-      scope.skillNamePrefix === null
-        ? await db.select({ commitSha: skills.commitSha }).from(skills).limit(1)
-        : await db
-            .select({ commitSha: skills.commitSha })
-            .from(skills)
-            .where(like(skills.url, `${urlPrefix}%`))
-            .limit(1);
+    const [existing] = await db
+      .select({ commitSha: skills.commitSha })
+      .from(skills)
+      .where(like(skills.url, `${urlPrefix}%`))
+      .limit(1);
     signal.throwIfAborted();
 
     if (existing?.commitSha === headSha) {

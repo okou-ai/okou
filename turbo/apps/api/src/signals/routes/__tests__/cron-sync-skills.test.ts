@@ -490,6 +490,33 @@ describe("GET /api/cron/sync-skills", () => {
     ).resolves.toMatchObject({ commitSha: sentinelCommitSha });
   });
 
+  it("does not skip when the matching commit is outside the active URL prefix", async () => {
+    const fixture = useCronSyncSkillsFixture();
+    const commitSha = newCommitSha();
+    await setOwnedSkillsCommitSha(fixture, commitSha, [
+      fixture.sentinelSkillName,
+    ]);
+    setupMswHandlers(
+      commitSha,
+      createFullTarball(fixture, [fixture.alphaSkill]),
+    );
+
+    const response = await syncOwnedSkills(fixture);
+
+    expect(response).toStrictEqual({
+      success: true,
+      commitSha,
+      synced: fixture.requiredSeedSkillNames.length + 1,
+      skipped: 0,
+      failed: 0,
+      removed: 0,
+      total: fixture.requiredSeedSkillNames.length + 1,
+    });
+    await expect(
+      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
+    ).resolves.toMatchObject({ commitSha });
+  });
+
   it("syncs new skills from the repository tarball", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
