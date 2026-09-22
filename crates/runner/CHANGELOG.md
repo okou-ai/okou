@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.209.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.208.0...runner-rs-v0.209.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
 ## [0.208.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.3...runner-rs-v0.208.0) (2026-09-21)
 
 
