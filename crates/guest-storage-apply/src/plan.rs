@@ -523,7 +523,6 @@ mod tests {
             }],
             cleanup_paths: vec![],
             instruction_cleanups: Vec::new(),
-            history_overlap_shadow: None,
         };
 
         let plan = RunPlan::from_manifest(&manifest);
@@ -551,7 +550,6 @@ mod tests {
             artifacts: vec![],
             cleanup_paths: vec![],
             instruction_cleanups: Vec::new(),
-            history_overlap_shadow: None,
         };
 
         let plan = RunPlan::from_manifest(&manifest);
@@ -592,7 +590,6 @@ mod tests {
             }],
             cleanup_paths: vec![],
             instruction_cleanups: Vec::new(),
-            history_overlap_shadow: None,
         };
 
         let plan = RunPlan::from_manifest(&manifest);

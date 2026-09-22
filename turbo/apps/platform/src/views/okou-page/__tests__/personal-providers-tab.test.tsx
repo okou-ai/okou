@@ -328,7 +328,52 @@ test("Review personal subscriptions through account identity", async () => {
   expect(
     within(accountMenu).getByText("Disconnect account"),
   ).toBeInTheDocument();
+  expect(within(accountMenu).queryByText(/resets? left/u)).toBeNull();
+  expect(within(accountMenu).queryByText("Reset usage")).toBeNull();
   click(within(rowA).getByLabelText("More options"));
+});
+
+test("Reset personal Codex account usage from the reset count", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "member",
+  });
+  const account = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000311",
+    email: "account-a@example.com",
+    isActive: true,
+    createdAt: "2026-03-01T00:00:00Z",
+  });
+  context.mocks.data.personalModelProviders([account]);
+
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const row = await screen.findByTestId(`oauth-account-${account.id}`);
+  click(within(row).getByLabelText("2 resets left"));
+
+  const confirmDialog = await screen.findByRole("dialog", {
+    name: "Reset Codex usage?",
+  });
+  expect(within(confirmDialog).getByText(/2 resets left/u)).toBeInTheDocument();
+  const resetButton = queryAllByRoleFast("button", confirmDialog).find(
+    (button) => {
+      return button.textContent === "Reset usage";
+    },
+  );
+  if (!resetButton) {
+    throw new Error("Reset usage button not found");
+  }
+  click(resetButton);
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("Codex usage reset")).toBeInTheDocument();
 });
 
 test("Disconnect an active personal subscription account", async () => {

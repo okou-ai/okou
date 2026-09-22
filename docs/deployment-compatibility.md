@@ -1870,6 +1870,30 @@ bundle can still offer Limelight and receive `400` on that one write; every
 other palette, and the member's stored selection, is unaffected. The palette was
 only reachable under the `GradientColorThemes` rollout switch.
 
+### Unchosen Blue horizon palettes withdrawn (2026-09-21)
+
+Migration `1190_reset_unchosen_blue_horizon_color_theme` clears
+`org_members_metadata.color_theme` for every member holding `blue-horizon`
+without a `gradientColorThemes` key in `user_feature_switches`. App bootstrap
+wrote those rows, not the member: between #30051 and #34556 the App's fallback
+palette was `blue-horizon` and bootstrap persisted that fallback whenever the
+column was null, ungated by a switch that stayed `enabled: false` for every
+organization until #35645 released it.
+
+Old App/new data is compatible, but not inert. An App bundle between #34556 and
+this change reads a cleared column as "no palette chosen", renders the default
+palette, and writes `default` back: the member sees the intended interface and
+the column simply stops being null again. The App promoted with this migration
+writes nothing back, so rows cleared after it is served stay null. An App bundle
+from before #34556 would write `blue-horizon` back instead; that write happens
+only during bootstrap, so it needs a session that loaded such a bundle before
+the migration and bootstraps after it, and the member's recovery is to select
+Default once on the current App.
+
+No rollback restores the withdrawn values. A cleared column is indistinguishable
+from one that was never written, which is the state the migration returns those
+members to.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:
@@ -2500,7 +2524,7 @@ PostHog OAuth uses a public client identified by
 `https://app.okou.ai/connectors/posthog/metadata.json`, with PKCE and no
 client secret. Deploy the API support for static public authorization-code
 clients and the updated public metadata before publishing the companion
-`vm0-ai/vm0-connectors` catalog change. Earlier API versions reject the public
+`okou-ai/okou-connectors` catalog change. Earlier API versions reject the public
 client during catalog relationship validation; catalog publication must wait
 until those versions no longer serve traffic. If the API must roll back below
 this support, restore a compatible catalog first through the normal catalog
@@ -2959,3 +2983,76 @@ execution context contains the claim-only capability, and no historical usage
 or resource row needs rewriting. A code merge and local tests do not prove the
 production drain or full resource coverage. Record that evidence under #34615 as described in the
 [X rollout guide](x-resource-rollout.md).
+
+## Saved Social data jobs
+
+The new `social_data_jobs` table and nullable `usage_event` pricing snapshot
+columns must exist before the new API starts. Reconciliation and
+scoped usage cleanup reference the table even when `socialDataJobs` is off.
+Old APIs ignore the additive schema; old usage events keep null snapshots and
+continue using the existing tariff lookup.
+
+Keep `socialDataJobs` disabled until all serving API instances and account
+cleanup workers contain this implementation. Older instances reject the new
+job endpoints, and older account cleanup does not remove saved jobs. Setting
+the flag during that mixed-version window is unsupported. Credential
+provisioning and operational pricing configuration are separate activation
+steps. New job settlement commits the priced usage event and durable job
+receipt together, so legacy settlement workers cannot observe its pending
+event between those writes.
+
+The new CLI uses the saved-job protocol only when job controls are provided.
+An old API rejects those endpoints instead of silently running a different
+collection. Existing commands without job controls keep their current routes.
+New APIs retain list/get/cancel and reconciliation after disabling creation,
+so admitted work can drain. The Usage presentation change reads the existing
+breakdown contract; stored provider IDs remain unchanged.
+
+After activation, do not roll the API or workers below this implementation
+while jobs or usage receipts remain outstanding. Disable new admissions,
+finish or cancel admitted jobs, and verify durable settlement receipts before
+such a rollback. Database expansion is retained. A merged PR does not prove
+fleet parity, the drain, or paid-provider readiness.
+
+## Browser native input foundation (#35821)
+
+The `browser_user_action_requests` table must exist before an API instance that
+serves `browserNativeInput` starts. The schema is additive: older APIs ignore
+the table, and rollback leaves it in place. There is no backfill or production
+data operation.
+
+The row is deliberately not an audit record. Its token hash is the primary
+key; searchable ownership, agent/thread authorization, provider-session
+identity, state, the strict versioned payload, and the two operational
+transition timestamps are the only persisted fields. Variant-specific callback
+and exact-target data live only in that payload. Do not add a copied Browser
+expiry, originating run, diagnostic reason, or created/updated timestamps.
+
+Keep `browserNativeInput` globally disabled during mixed-version deployment.
+Its initial registry policy is staff-only, but an explicit override must not be
+enabled until every serving API instance and Clerk account-cleanup worker has
+this implementation. Older API instances reject the new routes and older
+cleanup workers do not explicitly remove outstanding requests.
+
+The API rejects unknown persisted payload versions instead of guessing. A
+nonterminal request is usable only while its exact `browser_session_instances`
+row is active and both `timeout_at` and the renewable `idle_expires_at` are in
+the future. Guarded lease updates must not revive an already expired Browser.
+Terminal requests remain readable after their Browser lease expires so the
+Platform can retry notification only; values are never stored and Browser
+mutation is never retried. Rolling back the API requires disabling the switch
+first. The retained expansion table needs no contraction until all requests
+created by the newer API are outside their product retention window.
+
+Browser access is request-scoped and bounded. The CLI resolves each input to a
+`backendNodeId` in one exact `pageTargetId` and then stops operating the Browser.
+Input creation uses at most one provider lookup and one short-lived, read-only
+CDP connection to validate those identifiers and derive the document and
+control fingerprints. Application uses one provider lookup and one short-lived
+CDP connection to revalidate, mutate, and verify all fields. The API does not
+query selectors or rediscover controls.
+
+Direct-interaction creation, read, cancel, and complete are database-only. They
+capture no page or DOM metadata and have no open endpoint. The existing
+thread-scoped Browser card opens the current Browser and its normal viewer
+heartbeat owns Browser access and lease renewal.

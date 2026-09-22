@@ -1257,12 +1257,18 @@ export function mockGoogleDriveFilesList(
 
 interface GoogleDriveArtifactUploadRecorder {
   readonly bodies: Uint8Array[];
+  readonly metadata: string[];
   readonly authorizationHeaders: (string | null)[];
   readonly contentLengthHeaders: (string | null)[];
   readonly contentTypeHeaders: (string | null)[];
+  readonly contentRangeHeaders: (string | null)[];
+  readonly uploadContentTypeHeaders: (string | null)[];
   readonly folderAuthorizationHeaders: (string | null)[];
   readonly folderQueries: string[];
 }
+
+const GOOGLE_DRIVE_UPLOAD_SESSION_URL =
+  "https://www.googleapis.com/upload/drive/v3/files/resumable-session";
 
 /**
  * Google Drive folder and multipart-upload provider boundary. Folder lookups
@@ -1274,9 +1280,12 @@ export function mockGoogleDriveArtifactUpload(
 ): GoogleDriveArtifactUploadRecorder {
   const recorded: GoogleDriveArtifactUploadRecorder = {
     bodies: [],
+    metadata: [],
     authorizationHeaders: [],
     contentLengthHeaders: [],
     contentTypeHeaders: [],
+    contentRangeHeaders: [],
+    uploadContentTypeHeaders: [],
     folderAuthorizationHeaders: [],
     folderQueries: [],
   };
@@ -1300,10 +1309,23 @@ export function mockGoogleDriveArtifactUpload(
         ],
       });
     }),
+    // A resumable upload opens a session with the metadata, then sends the
+    // content against the returned session URI.
     http.post(GOOGLE_DRIVE_UPLOAD_URL, async ({ request }) => {
       recorded.authorizationHeaders.push(request.headers.get("authorization"));
+      recorded.metadata.push(await request.text());
+      recorded.uploadContentTypeHeaders.push(
+        request.headers.get("x-upload-content-type"),
+      );
+      return new HttpResponse(null, {
+        status: 200,
+        headers: { Location: GOOGLE_DRIVE_UPLOAD_SESSION_URL },
+      });
+    }),
+    http.put(GOOGLE_DRIVE_UPLOAD_SESSION_URL, async ({ request }) => {
       recorded.contentLengthHeaders.push(request.headers.get("content-length"));
       recorded.contentTypeHeaders.push(request.headers.get("content-type"));
+      recorded.contentRangeHeaders.push(request.headers.get("content-range"));
       recorded.bodies.push(new Uint8Array(await request.arrayBuffer()));
       return HttpResponse.json(file);
     }),

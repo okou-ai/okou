@@ -1,5 +1,130 @@
 # Changelog
 
+## [8.697.0](https://github.com/okou-ai/okou/compare/core-v8.696.0...core-v8.697.0) (2026-09-22)
+
+
+### Features
+
+* **browser:** add native user-action request api ([#35845](https://github.com/okou-ai/okou/issues/35845)) ([90935db](https://github.com/okou-ai/okou/commit/90935db3145fb010d2055c207a2fd1275eeac2cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.489.0
+
+## [8.696.0](https://github.com/okou-ai/okou/compare/core-v8.695.0...core-v8.696.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+
+## [8.695.0](https://github.com/okou-ai/okou/compare/core-v8.694.0...core-v8.695.0) (2026-09-21)
+
+
+### Features
+
+* **pi:** keep the fable frontier line on the vendor harness ([#35908](https://github.com/okou-ai/okou/issues/35908)) ([c357b8e](https://github.com/okou-ai/okou/commit/c357b8ee446cc1bf47f8552d3f959b967069bc2f))
+* **platform:** add unread-only chat shortcut ([#35898](https://github.com/okou-ai/okou/issues/35898)) ([1ee024b](https://github.com/okou-ai/okou/commit/1ee024b30118b50892db99d13fee1b9d0747d63c))
+
+
+### Refactoring
+
+* **pi:** decide admission from an exhaustive model policy table ([#35893](https://github.com/okou-ai/okou/issues/35893)) ([97bde50](https://github.com/okou-ai/okou/commit/97bde504c506b16e583fb6a241eecc3d5a5eb516))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.487.0
+
+## [8.694.0](https://github.com/okou-ai/okou/compare/core-v8.693.0...core-v8.694.0) (2026-09-21)
+
+
+### Features
+
+* **platform:** give the default agent avatar its own texture ([#35901](https://github.com/okou-ai/okou/issues/35901)) ([b503a49](https://github.com/okou-ai/okou/commit/b503a49b709681dae650d0ca46a08243da39c6a2))
+
+
+### Bug Fixes
+
+* keep deepseek openrouter routes global ([#35852](https://github.com/okou-ai/okou/issues/35852)) ([73d8915](https://github.com/okou-ai/okou/commit/73d891553ec6ba74f4a0786573dc45b01ab5e811))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.486.0
+
+## [8.693.0](https://github.com/okou-ai/okou/compare/core-v8.692.0...core-v8.693.0) (2026-09-21)
+
+
+### Features
+
+* **core:** admit every user export to the durable handler ([#35828](https://github.com/okou-ai/okou/issues/35828)) ([9967f71](https://github.com/okou-ai/okou/commit/9967f7191fdae596ba3d049052a345fe9ffe4b6a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+
+## [8.692.0](https://github.com/okou-ai/okou/compare/core-v8.691.0...core-v8.692.0) (2026-09-21)
+
+
+### Features
+
+* **api:** add the token-authenticated skill import service ([#35813](https://github.com/okou-ai/okou/issues/35813)) ([8b54e49](https://github.com/okou-ai/okou/commit/8b54e494a7115ac3c5fa3125c7ef425d7bbf1f8e))
+* **platform:** hide video discovery entries for new accounts ([#35790](https://github.com/okou-ai/okou/issues/35790)) ([c8dd8ba](https://github.com/okou-ai/okou/commit/c8dd8ba9e605f13c97a011728fb881834b9f343e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.484.0
+
+## [8.691.0](https://github.com/okou-ai/okou/compare/core-v8.690.0...core-v8.691.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+* **platform:** back the chat home avatar with a brand texture ([#35783](https://github.com/okou-ai/okou/issues/35783)) ([8a1366d](https://github.com/okou-ai/okou/commit/8a1366da03ad829f7af1be96365983abcb849a35))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.483.0
+
+## [8.690.0](https://github.com/okou-ai/okou/compare/core-v8.689.3...core-v8.690.0) (2026-09-21)
+
+
+### Features
+
+* **model-provider:** gate alternative deepseek routing ([#35775](https://github.com/okou-ai/okou/issues/35775)) ([8cffdc6](https://github.com/okou-ai/okou/commit/8cffdc6ecfd86b58ac65c61c62d20bed6ece2d8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.482.2
+
 ## [8.689.3](https://github.com/okou-ai/okou/compare/core-v8.689.2...core-v8.689.3) (2026-09-21)
 
 

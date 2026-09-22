@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-client"
-version = "0.22.1"
+version = "0.22.3"
 edition.workspace = true
 description = "Runner-side client for controlling guest operations"
 
@@ -17,6 +17,7 @@ guest-control-proto.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
 tracing-test-support.workspace = true

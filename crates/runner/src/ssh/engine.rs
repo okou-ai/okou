@@ -38,6 +38,28 @@ pub(super) struct Connected {
 }
 
 impl Connected {
+    pub(super) async fn open_direct_tcpip(
+        &self,
+        host: &str,
+        port: u16,
+        scope: &Scope,
+    ) -> Result<russh::ChannelStream<client::Msg>, FailureReason> {
+        const ORIGINATOR_ADDRESS: &str = "127.0.0.1";
+        const ORIGINATOR_PORT: u32 = 0;
+
+        let channel = scope
+            .wait(self.session.channel_open_direct_tcpip(
+                host,
+                u32::from(port),
+                ORIGINATOR_ADDRESS,
+                ORIGINATOR_PORT,
+            ))
+            .await?
+            .map_err(|_| FailureReason::Protocol)?;
+        scope.check()?;
+        Ok(channel.into_stream())
+    }
+
     pub(super) fn prepare_reuse(&self) -> std::io::Result<()> {
         // Small control packets on later channels must not wait for delayed ACKs.
         // Preserve the initial handshake/command's existing socket behavior.

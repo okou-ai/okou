@@ -12,7 +12,7 @@ import type {
   StreamFunction,
   Tool,
 } from "@earendil-works/pi-ai";
-import { clampThinkingLevel } from "@earendil-works/pi-ai";
+import { clampThinkingLevel, normalizeContext } from "@earendil-works/pi-ai";
 import {
   buildSessionContext,
   convertToLlm,
@@ -343,11 +343,13 @@ export async function runPiFirstModelTurn<TApi extends Api>(
         timestamp: options.timestamp ?? Date.now(),
       });
       const sessionContext = options.session.buildSessionContext();
-      const context: Context = {
+      // 0.86 carries the prompt and tool loadout as transcript system
+      // messages; normalizeContext() is the only producer of that shape.
+      const context = normalizeContext({
         systemPrompt: options.systemPrompt,
         messages: convertToLlm(sessionContext.messages),
         tools: [...options.tools],
-      };
+      } satisfies Context);
       return { sessionContext, context };
     },
     options.streamOptions?.signal,

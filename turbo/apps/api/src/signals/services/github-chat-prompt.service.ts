@@ -47,10 +47,12 @@ export function buildGitHubPrompt(args: {
   readonly subjectKind: "issue" | "pull_request";
   readonly appId: string | null;
   readonly appSlug: string | null;
+  readonly integrationNote: string;
 }): string {
   return [
     CONVERSATION_GUIDANCE,
     buildIntegrationPrompt(args),
+    args.integrationNote,
     args.issueContext,
   ]
     .filter((part): part is string => {

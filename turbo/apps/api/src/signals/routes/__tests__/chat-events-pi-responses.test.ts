@@ -213,20 +213,20 @@ describe("CHAT-02: model-first provider policies", () => {
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const modelRequests: unknown[] = [];
+      const providerUrl = selectedModel.startsWith("deepseek")
+        ? "https://openrouter.ai/api/v1/responses"
+        : `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`;
       server.use(
-        http.post(
-          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`,
-          async ({ request }) => {
-            modelRequests.push(await request.json());
-            return new HttpResponse(
-              piResponsesTextSse(
-                `${selectedModel} OpenRouter Responses answer`,
-                modelRequests.length,
-              ),
-              { headers: { "content-type": "text/event-stream" } },
-            );
-          },
-        ),
+        http.post(providerUrl, async ({ request }) => {
+          modelRequests.push(await request.json());
+          return new HttpResponse(
+            piResponsesTextSse(
+              `${selectedModel} OpenRouter Responses answer`,
+              modelRequests.length,
+            ),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }),
       );
 
       const run = await withOpenRouterRoute(async () => {
@@ -261,6 +261,72 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
       expect(claim.status).toBe(404);
+    },
+    90_000,
+  );
+
+  it.each([
+    ["okou-1.0", "@preset/okou-1-0"],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro"],
+    ["okou-1.0-max", "@preset/okou-1-0-max"],
+  ] as const)(
+    "bills built-in %s API-first usage under its Okou identity",
+    async (selectedModel, preset) => {
+      const { actor, agentId } = await entitledChatActor();
+      const orgId = requireOrgId(actor);
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId },
+        {
+          [FeatureSwitchKey.OkouModels]: true,
+          [FeatureSwitchKey.PiLoop]: true,
+        },
+      );
+      const usagePricingResolution =
+        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
+      await configureBuiltInPiModel(actor, selectedModel);
+      mockPiResourceArchiveDownloads();
+      mockPiCheckpointObjectStore();
+
+      const modelRequests: unknown[] = [];
+      server.use(
+        http.post(
+          "https://openrouter.ai/api/v1/responses",
+          async ({ request }) => {
+            modelRequests.push(await request.json());
+            return new HttpResponse(
+              piResponsesTextSse(`${selectedModel} answer`, 0),
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          },
+        ),
+      );
+
+      const run = await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: `bill ${selectedModel} under its product identity`,
+          model: selectedModel,
+        },
+        usagePricingResolution,
+      );
+      await waitForRunStatus(actor, run.runId, "completed", 10_000);
+      await flushWaitUntilForTest();
+
+      expect(modelRequests).toStrictEqual([
+        expect.objectContaining({
+          model: preset,
+          store: false,
+        }),
+      ]);
+      expect(modelRequests[0]).not.toHaveProperty("reasoning");
+      await expectPiApiUsage(run.runId, selectedModel, "", {
+        input: 5,
+        output: 3,
+        cacheRead: 0,
+        cacheCreation: 0,
+      });
     },
     90_000,
   );

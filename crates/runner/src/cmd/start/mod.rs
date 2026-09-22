@@ -2084,6 +2084,13 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut discover_fut = Box::pin(provider_state.provider.discover());
 
     let mut current_mode = startup_mode;
+    let mut blank_pool = BlankPoolReplenisher::new(
+        &runner.profiles,
+        &factories,
+        &capacity.budget,
+        capacity.max_idle,
+        capacity.device_rate_limits.clone(),
+    );
     let spawn_ctx = SpawnContext {
         runner_id: runner.identity.runner_id().to_string(),
         provider: Arc::clone(&provider_state.provider),
@@ -2097,6 +2104,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         usage_flush_tx,
         active_runs: active_runs.clone(),
         pre_spawn_concurrency: RunnerPreSpawnConcurrency::default(),
+        blank_pool_diagnostics: blank_pool.diagnostics(),
         budget: Arc::clone(&capacity.budget),
         workspace_cache_snapshot,
         device_rate_limits: capacity.device_rate_limits.clone(),
@@ -2105,13 +2113,6 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         #[cfg(test)]
         test_observer: test_hooks.test_observer.clone(),
     };
-    let mut blank_pool = BlankPoolReplenisher::new(
-        &runner.profiles,
-        &factories,
-        &capacity.budget,
-        capacity.max_idle,
-        capacity.device_rate_limits.clone(),
-    );
     let mut blank_pool_tick = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(1),
         Duration::from_secs(1),

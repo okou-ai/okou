@@ -190,7 +190,11 @@ The 128 KiB ceiling is on the **whole serialized request**, so evidence is never
 budgeted against it directly. The fixed policy, the output schema, the coverage
 report and the frozen Agent instruction text are measured first — an instruction
 file may be 64 KiB on its own, half the request — and only what is left is
-available to items.
+available to items. The response contract travels twice and both copies are
+inside that measurement: once inside the message as documentation, and once as
+the body's `response_format`, where the provider enforces it. Measuring the
+complete body is what keeps the second copy a charge against evidence rather
+than a surprise at the transport.
 
 Item sizes are measured the same way, by serializing the exact projection the
 request carries. Summing field lengths is not the same number and is not

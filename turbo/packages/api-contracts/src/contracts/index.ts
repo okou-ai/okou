@@ -220,6 +220,7 @@ export {
   type TestTeamsDispatchProbeResponse,
 } from "./test-teams-dispatch-probe";
 export { emailInboundContract } from "./email";
+export * from "./browser-user-actions";
 export {
   webhookClerkContract,
   webhookEventsContract,
@@ -898,6 +899,17 @@ export {
   type OnboardingStatusResponse,
 } from "./onboarding";
 export { skillFrontmatterSchema } from "./skills";
+export {
+  normalizeSkillImportName,
+  skillImportSessionsContract,
+  skillImportSkillsContract,
+  SKILL_IMPORT_LIMITS,
+  type SkillImportLimits,
+  type SkillImportRequest,
+  type SkillImportSessionResponse,
+  type SkillImportSessionsContract,
+  type SkillImportSkillsContract,
+} from "./skill-import";
 export {
   agentDraftContract,
   agentDraftResponseSchema,

@@ -1,0 +1,1 @@
+ALTER TABLE "org_metadata" ADD COLUMN "onboarding_industry" text;

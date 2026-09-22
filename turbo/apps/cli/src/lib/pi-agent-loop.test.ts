@@ -31,6 +31,7 @@ import {
 import {
   piSandboxAgentConfigFromEnv,
   recordPiMemoryToolSourceUse,
+  recordPiPreparationTiming,
   runPiSandboxAgentLoop,
   reportPiSandboxAgentLoopFailure,
   type PiSandboxAgentConfig,
@@ -45,6 +46,7 @@ const TSX_IMPORT = import.meta.resolve("tsx");
 const CONFIG: PiSandboxAgentConfig = {
   runId: RUN_ID,
   sessionId: SESSION_ID,
+  reportPreparationTiming: true,
   launchPayload: {
     schemaVersion: 1,
     appendSystemPrompt: "exact immutable Pi append prompt",
@@ -395,6 +397,7 @@ function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "DEEPSEEK_API_KEY",
     }),
+    OKOU_PI_PREPARATION_TIMING: "1",
     OPENAI_API_KEY: "test-api-key",
   };
 }
@@ -967,6 +970,56 @@ describe("sandbox Pi agent loop", () => {
     });
   });
 
+  it("reports each sandbox preparation phase as a bounded stderr envelope", () => {
+    const writes: string[] = [];
+    const write = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+    try {
+      recordPiPreparationTiming(RUN_ID, {
+        phase: "session_services",
+        startedAt: 1_700_000_000_000,
+        finishedAt: 1_700_000_000_042,
+        durationMs: 41.6,
+        outcome: "success",
+      });
+    } finally {
+      write.mockRestore();
+    }
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.endsWith("\n")).toBe(true);
+    // guest-agent parses this envelope into `pi_prepare_session_services`;
+    // wall-clock boundaries stay out of it because the guest owns the
+    // timestamp it records.
+    expect(JSON.parse(writes[0] ?? "{}") as unknown).toStrictEqual({
+      type: "pi_preparation_timing",
+      runId: RUN_ID,
+      phase: "session_services",
+      durationMs: 41.6,
+      outcome: "success",
+    });
+  });
+
+  it("stays silent about preparation phases until guest-agent opts the child in", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    delete env.OKOU_PI_PREPARATION_TIMING;
+
+    // An older guest-agent does not recognize the envelope and would surface it
+    // as user-visible failure output, so the child must not emit it.
+    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+      reportPreparationTiming: false,
+    });
+    const looseValue = piEnv({ OKOU_RUN_ID: RUN_ID });
+    looseValue.OKOU_PI_PREPARATION_TIMING = "true";
+    await expect(
+      piSandboxAgentConfigFromEnv(looseValue),
+    ).resolves.toMatchObject({ reportPreparationTiming: false });
+  });
+
   it("resolves the Pi session, launch payload file, and model credential", async () => {
     await expect(
       piSandboxAgentConfigFromEnv(piEnv({ OKOU_RUN_ID: RUN_ID })),
@@ -1520,7 +1573,11 @@ describe("sandbox Pi agent loop", () => {
           const state = await host.state(`native-input-state-${turn}`);
           expect(state).toMatchObject({
             sessionId: SESSION_ID,
-            messageCount: (turn - 1) * 2,
+            // A fresh session has projected nothing yet. Once the first turn
+            // has run, 0.86's single leading transcript system message is part
+            // of the projection this count reports, alongside each completed
+            // user/assistant pair.
+            messageCount: turn === 1 ? 0 : (turn - 1) * 2 + 1,
           });
           expect(host.records[0]).toStrictEqual({
             type: "vm0_pi_api_first_turn_boundary",
@@ -1571,7 +1628,17 @@ describe("sandbox Pi agent loop", () => {
           expect(persisted.getSessionId()).toBe(SESSION_ID);
           expect(persisted.isSettledCheckpoint()).toBe(true);
           const messages = persisted.buildSessionContext().messages;
-          expect(messages).toHaveLength(turn * 2);
+          // 0.86 declares the prompt and tool loadout as one leading transcript
+          // system message. It must be written once for the session, not once
+          // per turn, so the projection grows by exactly the user/assistant
+          // pair each turn.
+          expect(messages).toHaveLength(turn * 2 + 1);
+          expect(
+            messages.filter((message) => {
+              return message.role === "system";
+            }),
+          ).toHaveLength(1);
+          expect(messages[0]?.role).toBe("system");
           expect(
             messages.filter((message) => {
               return message.role === "user";

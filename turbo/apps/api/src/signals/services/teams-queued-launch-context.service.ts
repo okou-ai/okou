@@ -11,6 +11,8 @@ import {
   teamsDeliveryTargetSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "./teams-prompt";
 
 export interface TeamsQueuedLaunchMaterial {
@@ -190,6 +192,7 @@ export async function loadTeamsQueuedLaunchMaterial(
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<TeamsQueuedLaunchMaterial | null> {
   const context = await loadTeamsLaunchContext(db, args);
@@ -213,6 +216,10 @@ export async function loadTeamsQueuedLaunchMaterial(
       teamsAppId: context.teamsAppId,
       botId,
       botName,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: "teams",
+        featureSwitchContext: args.featureSwitchContext,
+      }),
       threadContext: context.threadContext,
     }),
     publicBrand: context.publicBrand,

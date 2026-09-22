@@ -15,6 +15,8 @@ surface; the index does not replace their detailed rules.
   semantics.
 - [React effects and ccstate commands](./effect.md): choosing between computed
   values, semantic commands, route setup, DOM lifecycles, and React effects.
+- [ResizeObserver anti-pattern](./resize-observer.md): CSS layout, deterministic
+  command triggers, stable card geometry, and measurement ownership.
 - [React and ccstate cache and lifecycle practices](./cache.md): render purity,
   state ownership, cache retention, refs, and resource teardown.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
@@ -43,6 +45,8 @@ surface; the index does not replace their detailed rules.
 
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
+- [X509Plain VNC acceptance](./vnc-x509plain-acceptance.md): head-specific owner,
+  Agent, current-Runner, real-server and cleanup evidence.
 - [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
   private typed handoff, current authorization and native sharing modes.
 - [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest

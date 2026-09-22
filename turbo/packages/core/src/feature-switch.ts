@@ -45,17 +45,28 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SocialDataJobs]: {
+    maintainer: "ethan@okou.ai",
+    description: "Enable bounded public Social data jobs and saved results",
+    enabled: false,
+  },
   [FeatureSwitchKey.DurableUserExport]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
-    enabled: false,
+      "Run a data export as a resumable background job that continues after an interrupted request. Turning it off runs the next export in the previous single-request exporter.",
+    enabled: true,
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.NewUserVideoPickers]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
+    enabled: false,
   },
   [FeatureSwitchKey.RunUsage]: {
     maintainer: "liangyou@okou.ai",
@@ -113,6 +124,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.UserMessageLinks]: {
     maintainer: "bingjie@okou.ai",
     description: "Make plain http(s) URLs clickable in a user's own messages",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.BrowserNativeInput]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Create native web forms that apply user-provided values to exact managed Browser controls",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -343,7 +361,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OpenRouterUsRouting]: {
     maintainer: "liangyou@okou.ai",
     description:
-      "Use US routing for supported models with platform-owned OpenRouter keys.",
+      "Use US routing for supported non-DeepSeek models with platform-owned OpenRouter keys.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -353,6 +371,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Skip direct DeepSeek candidates when selecting built-in DeepSeek routes.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.OkouModels]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
+    enabled: false,
   },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",
@@ -370,6 +394,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Center every avatar's visible artwork in its box and move it halfway to a shared fill, so hair volume stops changing how large an avatar looks.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AvatarTexture]: {
+    maintainer: "tongx@okou.ai",
+    description:
+      "Back the chat home greeting avatar with a brand texture chosen to stay clear of the avatar's own colours, sit it on the frame's bottom edge, and drop the frame's hairline.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -475,6 +506,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
+  },
+  [FeatureSwitchKey.ChatUnreadOnlyShortcut]: {
+    maintainer: "ethan@okou.ai",
+    description: "Toggle the chat list's unread-only filter with Mod+Shift+U.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",

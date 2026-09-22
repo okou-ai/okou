@@ -1,9 +1,9 @@
 import type { TFunction } from "i18next";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   INDUSTRY_RECOMMENDED_SOURCES,
   SOURCE_FAMILIES,
-  type IndustryId,
   type SourceFamily,
 } from "./onboarding-sources-first-data.ts";
 
@@ -74,7 +74,7 @@ function resourceKey(value: string): string {
 }
 
 function exactPromptKey(
-  industry: IndustryId,
+  industry: OnboardingIndustry,
   slug: ConnectorSlug,
 ): ExactPromptKey | null {
   const candidate = `${industry}_${resourceKey(slug)}`;
@@ -86,7 +86,7 @@ function exactPromptKey(
 }
 
 function familyPromptKey(
-  industry: IndustryId,
+  industry: OnboardingIndustry,
   family: SourceFamily,
 ): FamilyPromptKey | null {
   const candidate = `${industry}_${family}`;
@@ -111,7 +111,7 @@ function sourceFamilyOf(slug: ConnectorSlug): SourceFamily | null {
  * with exact copy, then one that matches a family, then anything connected.
  */
 export function pickStartingPromptSource(
-  industry: IndustryId,
+  industry: OnboardingIndustry,
   connectedSlugs: readonly ConnectorSlug[],
 ): ConnectorSlug | null {
   const recommended = INDUSTRY_RECOMMENDED_SOURCES[industry].find((slug) => {
@@ -144,7 +144,7 @@ interface StartingPrompt {
 
 export function startingPromptFor(
   t: TFunction<"common">,
-  industry: IndustryId,
+  industry: OnboardingIndustry,
   source: { readonly slug: ConnectorSlug; readonly name: string } | null,
 ): StartingPrompt {
   const short = t(($) => {

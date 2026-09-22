@@ -1585,7 +1585,9 @@ mod tests {
         assert_eq!(doctor.blank_sandboxes[0].sandbox_id, blank_id.to_string());
         assert!(doctor.active_runs.is_empty());
 
-        let reservation = pool.reserve_blank("vm0/default", &None).unwrap();
+        let Ok(reservation) = pool.reserve_blank("vm0/default", &None) else {
+            panic!("compatible blank should reserve");
+        };
         assert!(reservation.reuse_key().is_none());
         let claimed = pool.status_snapshot();
         let run_id = RunId::new_v4();

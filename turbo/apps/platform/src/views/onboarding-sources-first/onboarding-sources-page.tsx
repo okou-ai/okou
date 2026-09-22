@@ -11,6 +11,13 @@ import {
   DialogTitle,
 } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
+import {
+  captureSourceOnboardingCatalogSearchOpened$,
+  captureSourceOnboardingCatalogSearchResultSelected$,
+  captureSourceOnboardingConnected$,
+  captureSourceOnboardingConnectStarted$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
@@ -28,7 +35,6 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
   FEATURED_SOURCE_SLUGS,
   INDUSTRY_SOURCE_SLUGS,
-  type IndustryId,
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
@@ -38,7 +44,7 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
  * beside them still reaches everything else.
  */
 function featuredSlugsFor(
-  industry: IndustryId | null,
+  industry: OnboardingIndustry | null,
 ): readonly ConnectorSlug[] {
   return industry === null
     ? FEATURED_SOURCE_SLUGS
@@ -105,6 +111,10 @@ function SourceSearchDialog({
   const { t } = useTranslation();
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
+  const captureResultSelected = useSet(
+    captureSourceOnboardingCatalogSearchResultSelected$,
+  );
+  const captureConnectStarted = useSet(captureSourceOnboardingConnectStarted$);
   const connectors =
     catalogLoadable.state === "hasData"
       ? catalogLoadable.data.connectors.filter((connector) => {
@@ -163,6 +173,9 @@ function SourceSearchDialog({
               className="gap-3 px-2 py-2"
               onSelect={() => {
                 onOpenChange(false);
+                // What the search produced, never the words that produced it.
+                captureResultSelected(connector.slug, matches.length);
+                captureConnectStarted(connector.slug, "search");
                 selectConnector(connector.slug);
               }}
             >
@@ -187,6 +200,11 @@ export function OnboardingSourcesPage() {
   const { t } = useTranslation();
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
+  const captureSearchOpened = useSet(
+    captureSourceOnboardingCatalogSearchOpened$,
+  );
+  const captureConnectStarted = useSet(captureSourceOnboardingConnectStarted$);
+  const captureConnected = useSet(captureSourceOnboardingConnected$);
   const flow = useSourcesFirstFlow("sources");
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
@@ -230,6 +248,12 @@ export function OnboardingSourcesPage() {
       <OnboardingConnectorSetup
         connectorSlugs={[...featuredSlugs, ...extraConnectedSlugs]}
         variant="sources"
+        onConnectStart={(connectorSlug) => {
+          captureConnectStarted(connectorSlug, "grid");
+        }}
+        onConnected={(connectorSlug) => {
+          captureConnected(connectorSlug);
+        }}
       >
         {/* The catalog entry closes the grid, as the last cell of its last row. */}
         <ConnectorEntryCard
@@ -255,6 +279,7 @@ export function OnboardingSourcesPage() {
               type="button"
               className="absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               onClick={() => {
+                captureSearchOpened();
                 updateUi({ searchOpen: true });
               }}
             >

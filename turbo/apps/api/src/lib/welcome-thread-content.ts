@@ -13,6 +13,8 @@ import it from "./welcome-thread-content/it-IT.json";
 import ja from "./welcome-thread-content/ja-JP.json";
 import ko from "./welcome-thread-content/ko-KR.json";
 import pt from "./welcome-thread-content/pt-BR.json";
+import zhHans from "./welcome-thread-content/zh-Hans.json";
+import zhHant from "./welcome-thread-content/zh-Hant.json";
 
 interface WelcomeContent {
   readonly title: string;
@@ -37,6 +39,8 @@ const WELCOME_THREAD_TEMPLATE = Object.freeze({
     "it-IT": it,
     "fr-FR": fr,
     "hi-IN": hi,
+    "zh-Hans": zhHans,
+    "zh-Hant": zhHant,
   } satisfies Record<UserLocale, WelcomeContent>,
 });
 

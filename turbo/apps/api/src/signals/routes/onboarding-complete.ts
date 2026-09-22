@@ -38,6 +38,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       member: { userId: auth.userId, role: auth.orgRole },
       timezone: body.data.timezone,
+      industry: body.data.industry,
     },
     signal,
   );

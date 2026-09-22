@@ -1,5 +1,127 @@
 # Changelog
 
+## [9.352.5](https://github.com/okou-ai/okou/compare/cli-v9.352.4...cli-v9.352.5) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.489.0
+    * @okouai/core bumped to 8.697.0
+    * @okouai/pi-agent-runtime bumped to 1.35.1
+
+## [9.352.4](https://github.com/okou-ai/okou/compare/cli-v9.352.3...cli-v9.352.4) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.488.0
+    * @okouai/core bumped to 8.696.0
+    * @okouai/pi-agent-runtime bumped to 1.35.0
+
+## [9.352.3](https://github.com/okou-ai/okou/compare/cli-v9.352.2...cli-v9.352.3) (2026-09-21)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35915](https://github.com/okou-ai/okou/issues/35915)) ([e9a08cf](https://github.com/okou-ai/okou/commit/e9a08cfb7946ad10b779b86603d08cfb9d08f6f5))
+
+## [9.352.2](https://github.com/okou-ai/okou/compare/cli-v9.352.1...cli-v9.352.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **pi:** upgrade the pinned runtime to 0.86.1 ([#35840](https://github.com/okou-ai/okou/issues/35840)) ([5a0e66c](https://github.com/okou-ai/okou/commit/5a0e66cbde8dbe2b3ed69f9c03fa8738b97bd0e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.487.0
+    * @okouai/core bumped to 8.695.0
+    * @okouai/pi-agent-runtime bumped to 1.34.7
+
+## [9.352.1](https://github.com/okou-ai/okou/compare/cli-v9.352.0...cli-v9.352.1) (2026-09-21)
+
+
+### Performance Improvements
+
+* **pi:** measure pi sandbox startup at parity with codex ([#35896](https://github.com/okou-ai/okou/issues/35896)) ([72604f0](https://github.com/okou-ai/okou/commit/72604f0ca4ea5785ce9be83f57c76a9a493df38f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.486.0
+    * @okouai/connectors bumped to 3.15.1
+    * @okouai/core bumped to 8.694.0
+    * @okouai/pi-agent-runtime bumped to 1.34.6
+
+## [9.352.0](https://github.com/okou-ai/okou/compare/cli-v9.351.0...cli-v9.352.0) (2026-09-21)
+
+
+### Features
+
+* expose and verify x509plain vnc access ([#35792](https://github.com/okou-ai/okou/issues/35792)) ([e5dfe16](https://github.com/okou-ai/okou/commit/e5dfe16de48753642c81558877bba57cb1f90dce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.485.0
+    * @okouai/core bumped to 8.693.0
+    * @okouai/pi-agent-runtime bumped to 1.34.5
+
+## [9.351.0](https://github.com/okou-ai/okou/compare/cli-v9.350.0...cli-v9.351.0) (2026-09-21)
+
+
+### Features
+
+* add threads and wechat saved social data jobs ([#35789](https://github.com/okou-ai/okou/issues/35789)) ([f753cf4](https://github.com/okou-ai/okou/commit/f753cf44d4f89d5d23be5905973987df8480255c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.484.0
+    * @okouai/core bumped to 8.692.0
+    * @okouai/pi-agent-runtime bumped to 1.34.4
+
+## [9.350.0](https://github.com/okou-ai/okou/compare/cli-v9.349.3...cli-v9.350.0) (2026-09-21)
+
+
+### Features
+
+* add saved social data jobs and platform usage ([#35700](https://github.com/okou-ai/okou/issues/35700)) ([ec286d8](https://github.com/okou-ai/okou/commit/ec286d84ccbd1bab235c1baa1cc66f35d1f96ba1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.483.0
+    * @okouai/core bumped to 8.691.0
+    * @okouai/pi-agent-runtime bumped to 1.34.3
+
+## [9.349.3](https://github.com/okou-ai/okou/compare/cli-v9.349.2...cli-v9.349.3) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.482.2
+    * @okouai/connectors bumped to 3.15.0
+    * @okouai/core bumped to 8.690.0
+    * @okouai/pi-agent-runtime bumped to 1.34.2
+
 ## [9.349.2](https://github.com/okou-ai/okou/compare/cli-v9.349.1...cli-v9.349.2) (2026-09-21)
 
 

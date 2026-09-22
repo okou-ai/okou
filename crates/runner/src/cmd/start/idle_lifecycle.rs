@@ -11,9 +11,11 @@ use tokio::task::JoinSet;
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
+use super::blank_pool::BlankPoolDiagnostics;
+use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use crate::idle_pool::{
-    DestroyOutcome, IdleDestroyJob, IdleDestroyPayload, IdleDestroyResult, IdlePool,
-    IdlePoolSnapshot, ReservedIdleSandbox,
+    BlankIdleReservationMiss, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload,
+    IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
 };
 use crate::ids::RunId;
 use crate::paths::short_digest;
@@ -117,6 +119,7 @@ pub(super) struct IdlePressureRequest<'a> {
     pub(super) device_rate_limits: &'a Option<DeviceRateLimits>,
     pub(super) history_generation_run_id: Option<RunId>,
     pub(super) allow_compatible_blank: bool,
+    pub(super) blank_pool_diagnostics: Option<&'a BlankPoolDiagnostics>,
     pub(super) vcpu: u32,
     pub(super) memory_mb: u32,
     pub(super) context: &'static str,
@@ -195,22 +198,48 @@ pub(super) async fn select_idle_entries_for_pressure(
     budget: &Arc<ResourceBudget>,
     mut retiring_leases: Vec<BudgetLease>,
     request: IdlePressureRequest<'_>,
-) -> IdlePressureSelection {
-    let (selection, snapshot) = {
+) -> (IdlePressureSelection, Option<BlankPoolSelection>) {
+    let (selection, blank_pool_selection, snapshot) = {
         let mut pool = idle_pool.lock().await;
-        let reservation = pool
-            .reserve_reusable_for_pressure(
-                request.reuse_key,
-                request.profile_name,
-                request.device_rate_limits,
-                request.history_generation_run_id,
-            )
-            .or_else(|| {
-                request
-                    .allow_compatible_blank
-                    .then(|| pool.reserve_blank(request.profile_name, request.device_rate_limits))
-                    .flatten()
-            });
+        let exact = pool.reserve_reusable_for_pressure(
+            request.reuse_key,
+            request.profile_name,
+            request.device_rate_limits,
+            request.history_generation_run_id,
+        );
+        let (reservation, blank_pool_selection) = match exact {
+            Some(reservation) => (Some(reservation), None),
+            None if request.allow_compatible_blank => {
+                match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
+                    Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
+                    Err(BlankIdleReservationMiss::Empty) => (
+                        None,
+                        Some(request.blank_pool_diagnostics.map_or(
+                            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
+                            |diagnostics| {
+                                diagnostics.classify_empty(
+                                    request.profile_name,
+                                    request.device_rate_limits,
+                                    pool.revision(),
+                                    budget,
+                                )
+                            },
+                        )),
+                    ),
+                    Err(BlankIdleReservationMiss::Incompatible) => (
+                        None,
+                        Some(BlankPoolSelection::Miss(
+                            BlankPoolSelectionReason::IncompatibleShape,
+                        )),
+                    ),
+                    Err(BlankIdleReservationMiss::Unknown) => (
+                        None,
+                        Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
+                    ),
+                }
+            }
+            None => (None, None),
+        };
         if let Some(reservation) = reservation {
             drop(retiring_leases);
             let snapshot = pool.status_snapshot();
@@ -219,6 +248,7 @@ pub(super) async fn select_idle_entries_for_pressure(
                     reservation: Box::new(reservation),
                     idle_snapshot: snapshot,
                 }),
+                blank_pool_selection,
                 None,
             )
         } else {
@@ -265,13 +295,13 @@ pub(super) async fn select_idle_entries_for_pressure(
                 None => IdlePressureSelection::Exhausted(retiring_leases),
             };
             let snapshot = mutated.then(|| pool.status_snapshot());
-            (selection, snapshot)
+            (selection, blank_pool_selection, snapshot)
         }
     };
     if let Some(snapshot) = snapshot {
         set_idle_status_snapshot(status, snapshot).await;
     }
-    selection
+    (selection, blank_pool_selection)
 }
 
 fn try_substitute_retiring_leases(

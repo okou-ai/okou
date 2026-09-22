@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
+use super::record_labels::EventLabels;
 use super::{codex_event_delivery, pi_event_delivery};
 
 use crate::error::AgentError;
@@ -30,12 +31,11 @@ const RETAINED_CONTENT_ADJUSTMENT_ATTEMPTS: usize = 4;
 
 pub(super) struct PreparedEvent {
     pub(super) serialized: Vec<u8>,
+    pub(super) labels: EventLabels,
     pub(super) reduction: Option<EventReduction>,
 }
 
 pub(super) struct EventReduction {
-    pub(super) event_type: &'static str,
-    pub(super) item_type: &'static str,
     pub(super) original_bytes: usize,
     pub(super) delivered_bytes: usize,
     pub(super) fields: Vec<&'static str>,
@@ -67,20 +67,27 @@ pub(super) fn prepare_for_delivery(
     max_serialized_event_bytes: usize,
     framework: Framework,
 ) -> Result<PreparedEvent, AgentError> {
+    // Every delivered event is named, not only the reduced ones: the ordinary
+    // delivery log line carries these labels too.
+    let (event_type, item_type) = match framework {
+        Framework::Pi => pi_event_delivery::labels(&event),
+        Framework::Codex => codex_event_delivery::labels(&event),
+    };
+    let labels = EventLabels {
+        event_type,
+        item_type,
+    };
     let serialized = serde_json::to_vec(&event)?;
     if serialized.len() <= max_serialized_event_bytes {
         return Ok(PreparedEvent {
             serialized,
+            labels,
             reduction: None,
         });
     }
 
     let original_bytes = serialized.len();
     drop(serialized);
-    let (event_type, item_type) = match framework {
-        Framework::Pi => pi_event_delivery::labels(&event),
-        Framework::Codex => codex_event_delivery::labels(&event),
-    };
     let mut candidates = collect_content_candidates(&event, framework)?;
     candidates.sort_by(|left, right| {
         right
@@ -143,8 +150,7 @@ pub(super) fn prepare_for_delivery(
             if serialized.len() <= max_serialized_event_bytes {
                 return Ok(reduced_event(
                     serialized,
-                    event_type,
-                    item_type,
+                    labels,
                     original_bytes,
                     reduced_categories,
                     false,
@@ -160,8 +166,7 @@ pub(super) fn prepare_for_delivery(
 
         return Ok(reduced_event(
             minimum,
-            event_type,
-            item_type,
+            labels,
             original_bytes,
             reduced_categories,
             false,
@@ -191,8 +196,7 @@ pub(super) fn prepare_for_delivery(
 
     Ok(reduced_event(
         serialized,
-        event_type,
-        item_type,
+        labels,
         original_bytes,
         fallback_categories,
         true,
@@ -201,8 +205,7 @@ pub(super) fn prepare_for_delivery(
 
 fn reduced_event(
     serialized: Vec<u8>,
-    event_type: &'static str,
-    item_type: &'static str,
+    labels: EventLabels,
     original_bytes: usize,
     fields: BTreeSet<&'static str>,
     fallback: bool,
@@ -210,9 +213,8 @@ fn reduced_event(
     let delivered_bytes = serialized.len();
     PreparedEvent {
         serialized,
+        labels,
         reduction: Some(EventReduction {
-            event_type,
-            item_type,
             original_bytes,
             delivered_bytes,
             fields: fields.into_iter().collect(),

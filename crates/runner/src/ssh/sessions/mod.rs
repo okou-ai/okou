@@ -30,21 +30,23 @@ use crate::ids::RunId;
 use protocol::{Effects, Info, Rejection, Response, State};
 
 const CAPACITY: usize = 8;
+const FORWARDING_CAPACITY: usize = 2;
 const LIFETIME: Duration = Duration::from_secs(2 * 60 * 60);
 const RETENTION: Duration = Duration::from_secs(5 * 60);
 const INPUT_BYTES: usize = 16 * 1024;
 
 pub(super) struct Manager {
     runtime: Arc<SshRuntime>,
-    run: RunId,
+    pub(super) run: RunId,
     pub(super) registration: Arc<Registration>,
     pub(super) file_transfers: Arc<Semaphore>,
+    pub(super) forwarding: Arc<Semaphore>,
     pub(super) pool: Arc<super::pool::Pool>,
-    cancel: CancellationToken,
+    pub(super) cancel: CancellationToken,
     capacity: Arc<Semaphore>,
     waiting_readers: Semaphore,
     entries: Mutex<HashMap<Uuid, Arc<Entry>>>,
-    tasks: TaskTracker,
+    pub(super) tasks: TaskTracker,
 }
 
 struct Entry {
@@ -118,6 +120,7 @@ impl Manager {
             run,
             registration,
             file_transfers: super::files::capacity(),
+            forwarding: Arc::new(Semaphore::new(FORWARDING_CAPACITY)),
             pool: super::pool::Pool::new(run, cancel.clone()),
             cancel,
             capacity: Arc::new(Semaphore::new(CAPACITY)),

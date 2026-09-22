@@ -315,7 +315,7 @@ function AccountMenuSubscriptionUsageBar({
           ) : (
             <div className="space-y-0.5">
               <p className="text-xs font-medium">{reset.tooltipTitle}</p>
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-[10px] text-on-filled/60">
                 {reset.absoluteText}
               </p>
             </div>

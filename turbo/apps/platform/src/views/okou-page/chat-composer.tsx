@@ -40,7 +40,11 @@ import { useTranslation } from "react-i18next";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PaidToolNotice, TemplatePaidToolNotice } from "./paid-tool-notice.tsx";
+import {
+  ComposerPaidToolNotice,
+  TemplatePaidToolNotice,
+} from "./paid-tool-notice.tsx";
+import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
@@ -307,6 +311,7 @@ import {
   userModelPreference$,
 } from "../../signals/external/user-model-preference.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { videoPickersVisible$ } from "../../signals/okou-page/video-picker-visibility.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   selectedComputerUseHostId,
@@ -3583,16 +3588,19 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
+  videoPickersVisible: boolean,
 ): string {
   switch (category) {
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
     }
+    case "video":
+    case "avatar": {
+      return videoPickersVisible ? category : "slides";
+    }
     case "slides":
     case "website":
     case "illustration":
-    case "video":
-    case "avatar":
     case "workflow": {
       return category;
     }
@@ -3607,10 +3615,12 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
+  videoPickersVisible,
   onChange,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
+  videoPickersVisible: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -3654,20 +3664,24 @@ function TemplatePickerCategoryNav({
       }),
       Icon: ImageIcon,
     },
-    {
-      value: "video",
-      label: t(($) => {
-        return $.artifacts.kinds.video;
-      }),
-      Icon: Video,
-    },
-    {
-      value: "avatar",
-      label: t(($) => {
-        return $.artifacts.templates.avatar;
-      }),
-      Icon: User,
-    },
+    ...(videoPickersVisible
+      ? [
+          {
+            value: "video",
+            label: t(($) => {
+              return $.artifacts.kinds.video;
+            }),
+            Icon: Video,
+          },
+          {
+            value: "avatar",
+            label: t(($) => {
+              return $.artifacts.templates.avatar;
+            }),
+            Icon: User,
+          },
+        ]
+      : []),
     {
       value: "workflow",
       label: t(($) => {
@@ -3679,13 +3693,24 @@ function TemplatePickerCategoryNav({
 
   return (
     <>
-      <div className="shrink-0 border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4 sm:hidden">
+      <div
+        className={cn(
+          "shrink-0 sm:hidden",
+          selectedCategory === "custom"
+            ? "flex h-[68px] items-center px-5 pr-44 max-[374px]:pr-40"
+            : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
+        )}
+      >
         <Select value={selectedCategory} onValueChange={onChange}>
           <SelectTrigger
             aria-label={t(($) => {
               return $.artifacts.templates.category;
             })}
-            className="h-9 w-full bg-card"
+            className={
+              selectedCategory === "custom"
+                ? "h-8 w-auto max-w-full border-0 bg-background px-0 max-[374px]:text-xs"
+                : "h-9 w-full bg-card"
+            }
           >
             <SelectValue />
           </SelectTrigger>
@@ -5495,9 +5520,13 @@ function TemplatePickerDialog({
   const features = useGet(featureSwitch$);
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
+  const videoPickers = useLoadable(videoPickersVisible$);
+  const videoPickersVisible =
+    videoPickers.state === "hasData" && videoPickers.data;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
+    videoPickersVisible,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
   const showAvatarPickerToolbar = selectedCategory === "avatar";
@@ -5716,6 +5745,9 @@ function TemplatePickerDialog({
     if (nextCategory !== "avatar") {
       clearAvatarVoiceSelection();
     }
+    if (nextCategory === "custom") {
+      resetCustomTemplatePicker();
+    }
     setCategory(nextCategory);
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(nextCategory);
@@ -5794,28 +5826,31 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
+                videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                 <TemplatePaidToolNotice category={selectedCategory} />
-                <div
-                  className={cn(
-                    "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                    showTemplatePickerSearch || showAvatarPickerToolbar
-                      ? "flex"
-                      : "hidden sm:flex",
-                  )}
-                >
-                  {showTemplatePickerSearch ? (
-                    <TemplatePickerWorkflowSearch
-                      search={search}
-                      onSearchChange={handleSearchChange}
-                    />
-                  ) : null}
-                  {showAvatarPickerToolbar ? (
-                    <AvatarTemplatePickerToolbar signals={signals} />
-                  ) : null}
-                </div>
+                {selectedCategory !== "custom" ? (
+                  <div
+                    className={cn(
+                      "relative h-[68px] shrink-0 items-center px-6 pr-14",
+                      showTemplatePickerSearch || showAvatarPickerToolbar
+                        ? "flex"
+                        : "hidden sm:flex",
+                    )}
+                  >
+                    {showTemplatePickerSearch ? (
+                      <TemplatePickerWorkflowSearch
+                        search={search}
+                        onSearchChange={handleSearchChange}
+                      />
+                    ) : null}
+                    {showAvatarPickerToolbar ? (
+                      <AvatarTemplatePickerToolbar signals={signals} />
+                    ) : null}
+                  </div>
+                ) : null}
                 <TemplatePickerCategoryContent
                   signals={signals}
                   selectedCategory={selectedCategory}
@@ -5953,7 +5988,7 @@ function TemplatePickerCategoryContent({
 }) {
   if (selectedCategory === "custom") {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-5 pb-6 sm:px-7">
         <CustomTemplatePickerPane
           signals={signals}
           onSelect={onSelectCustom}
@@ -6216,6 +6251,7 @@ function selectedComposerTemplateAttachment(
  */
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
+  const videoPickers = useLoadable(videoPickersVisible$);
   const category = useGet(signals.template.templatePickerCategory$);
   const pickerFeatures = useGet(featureSwitch$);
   const customTemplatesEnabled =
@@ -6242,11 +6278,11 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
         : t(($) => {
             return $.artifacts.templates.template;
           });
-  const selectedCategory =
-    templateMode === "presentation"
-      ? "slides"
-      : (templateMode ??
-        resolveTemplatePickerCategory(category, customTemplatesEnabled));
+  const selectedCategory = resolveTemplatePickerCategory(
+    templateMode === "presentation" ? "slides" : (templateMode ?? category),
+    customTemplatesEnabled,
+    videoPickers.state === "hasData" && videoPickers.data,
+  );
   const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
@@ -9301,7 +9337,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:gap-1 composer-wide:px-2",
+    "h-8 w-8 max-w-none justify-center gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:justify-start composer-wide:gap-1 composer-wide:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center composer-wide:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
@@ -9435,6 +9471,7 @@ function ComposerModelPickerControls({
   videoModel: ComposerResolvedVideoModelPickerState | undefined;
 }) {
   const { t } = useTranslation();
+  const videoPickers = useLoadable(videoPickersVisible$);
   const desktopLayout = useGet(signals.model.desktopModelPickerLayout$);
   const category = useGet(signals.model.mediaModelCategory$);
   const setCategory = useSet(signals.model.setMediaModelCategory$);
@@ -9453,7 +9490,7 @@ function ComposerModelPickerControls({
       }),
     );
   }
-  if (videoModel) {
+  if (videoModel && videoPickers.state === "hasData" && videoPickers.data) {
     categories.push(
       composerVideoModelPanelCategory({
         selectedModel: videoModel.selectedModel,
@@ -9679,10 +9716,16 @@ function ComposerExistingMediaModelPickerSlot({
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const createMode = useGet(signals.create.mode$);
   const creativeVideo = useGet(signals.create.creativeVideo$);
+  const videoPickers = useLoadable(videoPickersVisible$);
   if (createMode === "image" && signals.imageModel) {
     return <ComposerCreateImageModelPicker model={signals.imageModel} />;
   }
-  if (creativeVideo && signals.videoModel) {
+  if (
+    creativeVideo &&
+    signals.videoModel &&
+    videoPickers.state === "hasData" &&
+    videoPickers.data
+  ) {
     return (
       <ComposerCreateVideoModelPicker
         model={signals.videoModel}
@@ -9731,50 +9774,30 @@ function ComposerModelScopeCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="relative z-0">
-      {/* The surface extends one content-height behind the composer. The
-          composer stays above it (z-10), while the controls remain fully
-          visible in the half that protrudes below. It spans the composer's
-          width and repeats the card's own rounded-3xl, so the only corners it
-          ever shows — the bottom two — continue the card's outline instead of
-          turning inside it. */}
-      <div
-        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-3xl bg-gray-50"
-        aria-hidden="true"
-      />
-      {/* Both ends sit 20px in, matching the text column of the card above:
-          the ghost action already carries 12px of its own padding. */}
-      <div
-        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs composer-wide:flex-nowrap"
-        role="group"
-        aria-label={label}
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        <span className="min-w-0 max-w-full text-muted-foreground">
-          <span>
-            {t(($) => {
-              return $.chat.composer.temporarilySwitchTo;
-            })}
-          </span>{" "}
-          <span>{model}</span>
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto shrink-0 text-xs font-medium text-foreground"
-          disabled={updating}
-          aria-busy={updating}
-          onClick={onUseForFutureChats}
-        >
-          {updating && <Loader2 className="animate-spin" aria-hidden="true" />}
+    <ComposerNoticeTray role="group" label={label}>
+      <span className="min-w-0 max-w-full text-muted-foreground">
+        <span>
           {t(($) => {
-            return $.chat.composer.useForFutureChats;
+            return $.chat.composer.temporarilySwitchTo;
           })}
-        </Button>
-      </div>
-    </div>
+        </span>{" "}
+        <span>{model}</span>
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="ml-auto shrink-0 text-xs font-medium text-foreground"
+        disabled={updating}
+        aria-busy={updating}
+        onClick={onUseForFutureChats}
+      >
+        {updating && <Loader2 className="animate-spin" aria-hidden="true" />}
+        {t(($) => {
+          return $.chat.composer.useForFutureChats;
+        })}
+      </Button>
+    </ComposerNoticeTray>
   );
 }
 
@@ -9973,6 +9996,17 @@ function ComposerTemporaryModelNoticeSlot({
   }
   return withChatScrollLayout(
     <ComposerTemporaryModelNotice signals={signals} />,
+  );
+}
+
+/** The one tray below the card, and the notice that currently owns it. */
+function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
+  const paidToolHints = useGet(signals.paidToolHints$);
+  return (
+    <ComposerPaidToolNotice
+      tools={paidToolHints}
+      fallback={<ComposerTemporaryModelNoticeSlot signals={signals} />}
+    />
   );
 }
 
@@ -10578,7 +10612,6 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
-  const paidToolHints = useGet(signals.paidToolHints$);
   const dragOver = useGet(signals.draft.dragOver$);
   const setDragOver = useSet(signals.draft.setDragOver$);
   const uploadFile = useComposerFileUpload(signals);
@@ -10629,7 +10662,6 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
           />
-          <PaidToolNotice tools={paidToolHints} />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
           <ComposerFooter
@@ -10663,7 +10695,7 @@ export function ChatComposer({
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} />
-        <ComposerTemporaryModelNoticeSlot signals={signals} />
+        <ComposerNoticeSlot signals={signals} />
         <ReplaceComposerDraftDialog signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>

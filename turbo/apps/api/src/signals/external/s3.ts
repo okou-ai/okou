@@ -14,6 +14,7 @@ import {
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  type PutObjectCommandOutput,
   S3Client,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
@@ -1157,9 +1158,19 @@ function putS3ObjectWithClient(
   signal?: AbortSignal,
 ): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
+    await get(sendPutS3Object(client$, args, signal));
+  });
+}
+
+function sendPutS3Object(
+  client$: Computed<S3Client>,
+  args: PutS3ObjectArgs,
+  signal?: AbortSignal,
+): Computed<Promise<PutObjectCommandOutput>> {
+  return computed(async (get): Promise<PutObjectCommandOutput> => {
     const client = get(client$);
     await get(publicArtifactWriteRegistration(args.bucket, args, signal));
-    await client.send(
+    return await client.send(
       new PutObjectCommand({
         Bucket: args.bucket,
         Key: args.key,
@@ -1169,6 +1180,39 @@ function putS3ObjectWithClient(
       }),
       signal ? { abortSignal: signal } : undefined,
     );
+  });
+}
+
+/**
+ * The PutObject response already carries the stored object's ETag. A caller
+ * that writes its own bytes therefore needs no follow-up HeadObject to learn
+ * the revision it just created.
+ */
+export function putS3ObjectReturningEtag(
+  bucket: string,
+  key: string,
+  body: string | Buffer,
+  contentType: string,
+  signal?: AbortSignal,
+): Computed<Promise<string>> {
+  return putS3ObjectReturningEtagWithClient(
+    s3ClientForBucket(bucket),
+    { bucket, key, body, contentType },
+    signal,
+  );
+}
+
+function putS3ObjectReturningEtagWithClient(
+  client$: Computed<S3Client>,
+  args: PutS3ObjectArgs,
+  signal?: AbortSignal,
+): Computed<Promise<string>> {
+  return computed(async (get): Promise<string> => {
+    const stored = await get(sendPutS3Object(client$, args, signal));
+    if (!stored.ETag) {
+      throw new Error(`S3 put returned no revision for ${args.key}`);
+    }
+    return stored.ETag;
   });
 }
 

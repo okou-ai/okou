@@ -14,15 +14,29 @@ import {
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { connectorCatalogStatus$ } from "../external/connectors.ts";
-import { onboardingStatus$ } from "../okou-page/onboarding.ts";
-import { updatePage$ } from "../react-router.ts";
-import { detachedNavigateTo$ } from "../route.ts";
-import { ROUTES, type RoutePath } from "../route-paths.ts";
-import { setupOnboardingMakePage$ } from "./onboarding-page-setup.ts";
+import { sendEvent$ } from "../marketing/events.ts";
 import {
+  setAgentPhoneConnectDialogOpen$,
+  watchAgentPhoneConnection$,
+} from "../okou-page/agentphone.ts";
+import { onboardingStatus$ } from "../okou-page/onboarding.ts";
+import { watchSlackConnection$ } from "../okou-page/slack.ts";
+import { watchTeamsConnection$ } from "../okou-page/teams.ts";
+import { updatePage$ } from "../react-router.ts";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
+import { ROUTES, type RoutePath } from "../route-paths.ts";
+import { detach, Reason } from "../utils.ts";
+import {
+  promptHandoffParams,
+  setupOnboardingMakePage$,
+} from "./onboarding-page-setup.ts";
+import { enterSkillImport$ } from "./onboarding-skill-import.ts";
+import {
+  claimSourcesFirstStartEvent$,
   setSourcesFirstFlow$,
   sourcesFirstDraft$,
   sourcesFirstSteps,
@@ -33,6 +47,19 @@ interface SourcesFirstPageConfig {
   readonly step: SourcesFirstStep;
   readonly title: () => string;
   readonly Page: ComponentType;
+  /**
+   * Live subscriptions this step needs, owned by the step's own signal. They
+   * start once the step is known to render, so a redirect never leaves one
+   * listening behind it.
+   */
+  readonly watch?: readonly Command<Promise<void>, [AbortSignal]>[];
+  /**
+   * Finite work the step needs before it is any use, such as opening a
+   * session it has to show. Unlike `watch` it is awaited, so the step's own
+   * events stay in order behind `StepViewed`; it owns the route's signal, and
+   * it reports its own failure rather than keeping the step from opening.
+   */
+  readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
 
 const sourcesFirstEnabled$ = command(
@@ -43,9 +70,29 @@ const sourcesFirstEnabled$ = command(
   },
 );
 
-const redirectTo$ = command(({ set }, path: RoutePath) => {
+/**
+ * A redirect inside the flow keeps the query it arrived with: the Marketing
+ * `prompt` handoff and a `redeemCode` have to survive until the last step
+ * completes onboarding and opens the first request.
+ */
+const redirectTo$ = command(({ get, set }, path: RoutePath) => {
   set(detachedNavigateTo$, path, {
-    searchParams: new URLSearchParams(),
+    searchParams: new URLSearchParams(get(searchParams$)),
+    replace: true,
+  });
+});
+
+/**
+ * Nothing is left to onboard, so the visitor goes where the make-something
+ * flow sends them: to their prompt when they brought one, and home otherwise.
+ */
+const forwardOnboardedVisitor$ = command(({ get, set }) => {
+  const searchParams = get(searchParams$);
+  const prompt = searchParams.get("prompt")?.trim();
+  set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
+    searchParams: prompt
+      ? promptHandoffParams(searchParams)
+      : new URLSearchParams(),
     replace: true,
   });
 });
@@ -65,8 +112,14 @@ function createSourcesFirstPageSetup(
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
     if (!status.needsOnboarding) {
-      set(redirectTo$, ROUTES.home);
+      set(forwardOnboardedVisitor$);
       return;
+    }
+
+    // The run started, whichever step this setup ended up on: a guard redirect
+    // below, or the way back, still belongs to the same run.
+    if (set(claimSourcesFirstStartEvent$)) {
+      set(sendEvent$, "onboarding-start");
     }
 
     // A member invited into an existing org runs the flow without the invite
@@ -96,7 +149,19 @@ function createSourcesFirstPageSetup(
 
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
+    // One integration's status decides what a step offers, never whether the
+    // step opens: a daemon keeps a failing integration out of the flow's way,
+    // and the step says what it could not reach.
+    for (const watch$ of config.watch ?? []) {
+      detach(set(watch$, signal), Reason.Daemon, "onboarding step status");
+    }
     await set(hideAppSkeleton$, signal);
+    set(captureSourceOnboardingStepViewed$, config.step);
+    // The step is on screen first, so its own work is something the person
+    // watches happen rather than something they wait through.
+    if (config.enter) {
+      await set(config.enter, signal);
+    }
   });
 }
 
@@ -164,7 +229,25 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSkillsPage,
+  enter: enterSkillImport$,
 });
+
+/**
+ * The AgentPhone tile shows a real link, so the step watches that link for as
+ * long as it is open. It is behind the same switch as the Works page entry,
+ * and the watcher only runs where the tile does.
+ */
+const watchOnboardingAgentPhone$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const switches = await get(featureSwitches$);
+    signal.throwIfAborted();
+    if (!switches[FeatureSwitchKey.AgentPhoneEntry]) {
+      return;
+    }
+    set(setAgentPhoneConnectDialogOpen$, false);
+    await set(watchAgentPhoneConnection$, signal);
+  },
+);
 
 export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
   step: "slack",
@@ -174,6 +257,14 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSlackPage,
+  // The install finishes in the provider's own tab, so the step only learns it
+  // happened from the realtime change these watchers subscribe to. AgentPhone
+  // is linked from a phone, which the step never sees either.
+  watch: [
+    watchSlackConnection$,
+    watchTeamsConnection$,
+    watchOnboardingAgentPhone$,
+  ],
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({

@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.209.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.208.0...runner-rs-v0.209.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+## [0.208.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.3...runner-rs-v0.208.0) (2026-09-21)
+
+
+### Features
+
+* **runner:** add run-owned ssh direct-tcpip streams ([#35899](https://github.com/okou-ai/okou/issues/35899)) ([bd1327e](https://github.com/okou-ai/okou/commit/bd1327e146ed93210cedce07e8900be2929f4afe))
+
+## [0.207.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.2...runner-rs-v0.207.3) (2026-09-21)
+
+## [0.207.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.1...runner-rs-v0.207.2) (2026-09-21)
+
+## [0.207.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.207.0...runner-rs-v0.207.1) (2026-09-21)
+
+
+### Performance Improvements
+
+* **runner:** overlap workspace history restore ([#35766](https://github.com/okou-ai/okou/issues/35766)) ([022ac68](https://github.com/okou-ai/okou/commit/022ac688820391243d31429bbaeda7d423eacac5))
+
+## [0.207.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.206.0...runner-rs-v0.207.0) (2026-09-21)
+
+
+### Features
+
+* **connectors:** support aws-aware firewall rules ([#35742](https://github.com/okou-ai/okou/issues/35742)) ([05a07b9](https://github.com/okou-ai/okou/commit/05a07b98e0ef6bfc04a29cb2e2603df19ea5a8c1))
+
 ## [0.206.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.205.3...runner-rs-v0.206.0) (2026-09-21)
 
 

@@ -16,6 +16,31 @@ Successful results keep the complete machine-readable value in
 `structuredContent` and include a tool-specific human summary of at most 512
 UTF-8 bytes in text content; they do not duplicate the full JSON value as text.
 
+## Timestamp contract
+
+All MCP chat output timestamps are UTC RFC 3339 strings with exactly six
+fractional-second digits, for example `2026-09-21T01:02:03.123000Z`. Time-filter
+inputs continue to accept zero through six fractional-second digits. Each field
+names one clock; callers must not substitute another timestamp from the same
+response:
+
+| Field               | Meaning                                                                                         |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| `createdAt`         | Conversation creation time.                                                                     |
+| `acceptedAt`        | Server acceptance/persistence time for the submitted mutation or input.                         |
+| `messageAt`         | Original accepted-input time for a visible user message, or output-event time for an assistant. |
+| `sourceEventAt`     | Indexed source-event time used by search bounds, ordering and continuation.                     |
+| `metadataUpdatedAt` | Conversation metadata-row update time; ordinary message activity does not advance it.           |
+| `lastMessageAt`     | Conversation activity time used by thread bounds, ordering and continuation.                    |
+| `observedAt`        | Completion time of a bounded status observation.                                                |
+| `retryUntil`        | Absolute end of the relevant idempotent retry window.                                           |
+
+Replacement processing can make `messageAt` and `sourceEventAt` differ for the
+same visible message reference. Metadata edits can advance `metadataUpdatedAt`
+without advancing `lastMessageAt`; later message activity can do the reverse.
+No timestamp proves archive completeness, search-index freshness, message
+delivery, or run completion; retain each tool's separate guarantees below.
+
 ## Tool errors and CLI exit status
 
 MCP server-declared tool failures use `isError: true` and content for human
@@ -108,12 +133,12 @@ In either mode, optional `agentId`, `title`, and `model` select explicit values.
 An omitted Agent resolves to the currently visible organization default and is
 stored concretely on the thread. An omitted title stays null until the first
 text run triggers automatic title generation. An omitted model leaves the
-thread unpinned until run admission, so the current member default then
-organization default is used for that admission. Canonical admission may
-persist the resolved model on the thread for future runs. The response exposes
-the selected/effective model and `source`. `message` uses the same nonblank,
-32,000 UTF-16-unit limit as `send_chat_message` and preserves its exact accepted
-text.
+thread without a stored selection until first run admission. That admission
+resolves the current member default, then the organization default, and persists
+the resolved model as the thread pin. Later default changes do not affect the
+thread. The response exposes the selected/effective model and `source`. `message`
+uses the same nonblank, 32,000 UTF-16-unit limit as `send_chat_message` and
+preserves its exact accepted text.
 
 The thread and canonical input event commit in one transaction. Only after that
 commit does the shared scheduler attempt to start, queue, or steer execution.
@@ -123,7 +148,7 @@ points to `get_chat_status` with only the complete stable `inputRef`. Use that h
 and then `get_chat_messages` to observe output.
 
 Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
-current title, selected/effective model, service tier, creation time,
+current title, selected/effective model, service tier, creation time in `createdAt`,
 authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
 defaults apply and service tier starts unset. Credentials, quota, and execution
 policy are checked when the initial or later input is dispatched, as indicated
@@ -135,18 +160,19 @@ the same derived input reference. Concurrent identical requests converge on one
 thread and, when present, one input. Switching between empty and combined modes,
 changing a message, or changing omitted-versus-explicit Agent/title/model intent
 is a conflict. Replay returns current stored thread settings without undoing
-later edits. An originally omitted model follows current defaults while the
-thread is still unpinned; after run admission persists the resolved model,
-replay reports that thread pin. Deleted conversations, expired retries, or
-missing canonical evidence return an error while either half of the retained
-identity remains. Thread events become eligible for snapshot-backed pruning
-after seven days. If the thread remains after its creation event is pruned, the
-missing evidence still conflicts; if the thread was also deleted, the same old
-arguments can create new work because neither identity remains. There is no
-permanent request-ID ledger. This complete lifecycle is why the catalog does not
-mark creation as generally idempotent. Never automatically retry an uncertain
-old request after the window; inspect the original thread before intentionally
-creating new work. No new table or schema migration is introduced.
+later edits. An originally omitted model follows current defaults only while the
+thread remains unpinned before first run admission; after admission persists the
+resolved model, replay reports that thread pin. Deleted conversations, expired
+retries, or missing canonical evidence return an error while either half of the
+retained identity remains. Thread events become eligible for snapshot-backed
+pruning after seven days. If the thread remains after its creation event is
+pruned, the missing evidence still conflicts; if the thread was also deleted,
+the same old arguments can create new work because neither identity remains.
+There is no permanent request-ID ledger. This complete lifecycle is why the
+catalog does not mark creation as generally idempotent. Never automatically
+retry an uncertain old request after the window; inspect the original thread
+before intentionally creating new work. No new table or schema migration is
+introduced.
 
 Creation checks current Agent visibility and account-content admission in its
 transaction, including the Agent owner's account. It uses the existing creation
@@ -171,11 +197,13 @@ patch:
 ```
 
 The patch must contain `title` and/or `model`. Omitted fields remain unchanged;
-`model: null` clears the thread model pin so later runs use the current member or
-organization default. A title is nonblank and at most 200 UTF-16 units. The patch
-never implicitly changes service tier, per-model reasoning settings, image/video
-models, computer-use or browser settings. A preserved setting that is incompatible
-with the requested model makes the whole update fail.
+`model: null` clears the thread model pin until the next admitted run resolves
+the current member or organization default and persists it as the new pin. Later
+default changes do not affect the thread. A title is nonblank and at most 200
+UTF-16 units. The patch never implicitly changes service tier, per-model
+reasoning settings, image/video models, computer-use or browser settings. A
+preserved setting that is incompatible with the requested model makes the whole
+update fail.
 
 Title and model validation, metadata changes and durable sidebar events commit in
 one transaction. Failure leaves both fields and their events unchanged. A title
@@ -185,7 +213,7 @@ An existing run retains its run-scoped model, and a message steered into that ru
 continues with the existing model.
 
 The result contains the current bounded title, selected/effective model and source,
-current service tier, update timestamp, authenticated App URL and retry metadata.
+current service tier, `metadataUpdatedAt`, authenticated App URL and retry metadata.
 Generate one UUID `requestId` for each intended patch. Retry an uncertain response
 with the identical request ID, thread ID, exact field presence and exact values
 within 24 hours. Concurrent identical requests converge. Exact replay does not
@@ -222,8 +250,10 @@ then pass a result's `threadId` to `get_chat_thread` as
 `unreadCoverage`; detail returns `thread` and `unreadCoverage`.
 
 Each thread includes its current title, Agent identity/name, selected and
-effective model metadata, timestamps, authenticated App URL, queued/pending/
-running activity flags and unread state. Titles are bounded to 500 Unicode
+effective model metadata, `createdAt`, `metadataUpdatedAt`, `lastMessageAt`,
+authenticated App URL, queued/pending/running activity flags and unread state.
+`since`, `before`, ordering and continuation use `lastMessageAt`, not the
+metadata clock. Titles are bounded to 500 Unicode
 characters, with an explicit truncation flag. Agent names retain their existing
 256-character storage bound. Private drafts, Agent
 instructions, message content and provider credentials are excluded.
@@ -232,7 +262,10 @@ Model metadata is a read-only view of current policy. A null `effectiveModel`
 means no usable policy route was resolved; it does not invent a default or
 repair stored settings. `admission: "checked_on_send"` means credentials, quota,
 policy and other execution checks still apply when a future message is sent.
-The selected thread model does not change an already-running execution.
+When the stored selection is null, `source` may temporarily report
+`member_default` or `org_default`; the next run admission persists the resolved
+model, and later reads report `source: "thread"`. The selected thread model does
+not change an already-running execution.
 
 Pagination orders by last-message time descending, then thread ID descending.
 The opaque cursor preserves database timestamp precision, expires after 24
@@ -288,7 +321,7 @@ run-filtered anchor returns an explicit unavailable-reference error. Around
 pages expose older and newer continuations where applicable.
 
 Every message includes `ref: {threadId,eventId,seqId}`, `role`, `eventType`,
-`createdAt`, nullable `runId`, visible `text`, `files` and the actual authenticated
+`messageAt`, nullable `runId`, visible `text`, `files` and the actual authenticated
 conversation `url`. Files retain original `fileId`, filename and content type,
 plus `annotatedFileId` when present. Assistant Markdown keeps its original
 artifact links. Neither an event reference nor a file/artifact identifier grants
@@ -372,7 +405,7 @@ For example, search with `{"query":"上海发布","limit":10}`. For each match,
 pass `ref.threadId` as `threadId` and `{eventId: ref.eventId, seqId: ref.seqId}`
 as `around` to `get_chat_messages`. Search returns a bounded excerpt, its UTF-16
 offset and `hasBefore`/`hasAfter`, thread title/truncation, current Agent, role,
-nullable run ID, source-event timestamp, authenticated conversation URL and the
+nullable run ID, `sourceEventAt`, authenticated conversation URL and the
 real canonical `ref`. Excerpts contain at most 1,000 UTF-16 units and do not split
 surrogate pairs. Use the message reader for complete text/files. This is lexical
 text search, not semantic search or attachment-content indexing. Punctuation-only
@@ -386,7 +419,7 @@ Revoked, replaced, hidden or changed candidates are skipped. A missing/corrupt
 archive fails the whole call instead of returning a successful partial page.
 Search does not advance read state, run work, update projections or repair data.
 
-Order is indexed source-event time descending, then thread UUID and sequence descending;
+Order is indexed `sourceEventAt` descending, then thread UUID and sequence descending;
 cursor ordering preserves the stored PostgreSQL microseconds. The live JavaScript
 projector stores millisecond dates; historical SQL-produced rows may have finer
 precision. Replacement-event timestamps

@@ -2,10 +2,11 @@ import {
   USER_TEMPLATE_KINDS,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { command } from "ccstate";
+import { command, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { onRef } from "../utils.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
 /**
@@ -53,13 +54,28 @@ function acceptList(kinds: readonly UserTemplateKind[]): string {
 export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
 
 /**
- * The Custom pane's tile, which publishes to the user template catalog.
+ * The Custom pane's import action, which publishes to the user template catalog.
  *
  * One entry for every kind rather than one entry per kind: the user picks a
  * file and the file decides what it becomes, so nothing asks them to classify
  * their own document before the analysis has read it.
  */
 export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
+
+const customTemplateImportInput$ = state<HTMLInputElement | null>(null);
+
+export const setCustomTemplateImportInput$ = onRef(
+  command(({ set }, input: HTMLInputElement, signal: AbortSignal) => {
+    set(customTemplateImportInput$, input);
+    signal.addEventListener("abort", () => {
+      set(customTemplateImportInput$, null);
+    });
+  }),
+);
+
+export const openCustomTemplateImport$ = command(({ get }) => {
+  get(customTemplateImportInput$)?.click();
+});
 
 /**
  * The message the deck is sent with.
@@ -80,7 +96,7 @@ function presentationTemplateImportPrompt(): string {
  * The same request, aimed at the custom template catalog.
  *
  * One sentence for every kind, because the guide already sorts them: the
- * `reverse-template` skill reads the file and follows the branch that matches.
+ * `extract-template` skill reads the file and follows the branch that matches.
  * Repeating that decision here would give the run two answers that can
  * disagree, and the one in the guide is the one that read the file.
  *
@@ -101,15 +117,9 @@ function customTemplateImportPrompt(): string {
  *
  * Which guide and which catalog, and nothing else.
  *
- * Naming the guide is not redundant with the agent-tools prompt, which is
- * where the deck's route to it lives. That prompt sends a run to
- * `okou resource pull skill:presentation-reverse-template`, and the archive it
- * unpacks to `./generated/resources/reverse-template/` holds the presentation
- * branch alone. A run told to use "the reverse-template skill" therefore
- * reaches a guide of that name, reads a deck guide, and has nothing to suggest
- * the document, PDF and illustration branches exist. Saying "the dispatcher in
- * `okou-ai/vm0-skills`" is what distinguishes the four-branch guide from the
- * one-branch copy that shares its name.
+ * Custom imports explicitly select the four-branch `extract-template`
+ * dispatcher in `okou-ai/vm0-skills`. The standing agent-tools prompt points
+ * deck imports to the separate presentation-only registry guide.
  *
  * The catalog still has to be said because the presentation branch ends in
  * `okou presentation-template publish`, which writes to the presentation table
@@ -124,7 +134,7 @@ function customTemplateImportPrompt(): string {
  * second answer to disagree with.
  */
 function customTemplateImportGuidance(): string {
-  return "Analyse this file with the `reverse-template` dispatcher in `okou-ai/vm0-skills`: read `reverse-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
+  return "Analyse this file with the `extract-template` dispatcher in `okou-ai/vm0-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 }
 
 /** One import's message: what the member reads, and what only the run reads. */
@@ -139,8 +149,8 @@ interface TemplateImportMessage {
  * Neither answer reads the file. Which formats can become a template is what
  * the input's `accept` states and the file chooser applies, so re-reading the
  * extension here could only refuse a file the chooser already handed over,
- * and what to make of the one that arrives is the `reverse-template` guide's
- * decision rather than this function's.
+ * and what to make of the one that arrives is the selected guide's decision
+ * rather than this function's.
  */
 function templateImportMessage(
   customTemplates: boolean,

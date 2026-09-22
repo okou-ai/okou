@@ -41,6 +41,44 @@ const IMAGE_RECOGNITION_MODEL = "xiaomi/mimo-v2.5";
 const IMAGE_RECOGNITION_OPERATION = "image-recognition";
 const IMAGE_RECOGNITION_MAX_TOKENS = 8192;
 
+/**
+ * Reasoning control for `IMAGE_RECOGNITION_MODEL`, recorded the way
+ * `AUXILIARY_TEXT_MAX_TOKENS` records `FAST_PATH_MODEL`. From
+ * `GET /api/v1/models` and its `/endpoints` detail, checked 2026-09-21: the
+ * model reports `reasoning: { mandatory: false }` with no `supported_efforts`,
+ * no `default_effort` and no `supports_max_tokens`, and each of its six
+ * provider endpoints lists `reasoning` and `include_reasoning` among the
+ * supported parameters but never `reasoning_effort`. An omitted
+ * `supported_efforts` is documented as a model that exposes no effort
+ * selection, so the `effort: "low"` that run summaries send to
+ * `FAST_PATH_MODEL` has nothing to select here and would be dropped rather
+ * than honored; `mandatory: false` is exactly what leaves the remaining
+ * control, the on/off switch, valid to send.
+ *
+ * Recognition reads back what an image already contains, and thinking is drawn
+ * from the same `max_tokens` budget as the visible answer, so a model that
+ * thinks first spends both wall clock and budget before emitting any answer at
+ * all. Turning it off leaves the whole ceiling to the answer. `exclude: true`
+ * is not the same lever: it keeps both costs and only hides the tokens.
+ */
+const IMAGE_RECOGNITION_REASONING = { enabled: false } as const;
+
+/**
+ * Total budget for one provider attempt, covering connect, headers and the
+ * body read together. Without it the attempt inherits undici's 300 s
+ * `bodyTimeout`, which is a per-chunk inactivity window rather than a bound on
+ * the attempt, and which starts only once response headers arrive.
+ *
+ * Measured over 09-11 -> 09-14 in `vm0-traces-prod`, successful recognitions
+ * ran p50 31.5 s and p90 126 s, and the slowest success completed in 299.45 s.
+ * This is the smallest whole-second budget that still contains that slowest
+ * success, so an attempt that cannot finish ends as a deliberate
+ * `upstream_timeout` without turning any request that succeeds today into a
+ * failure. It does not make a slow attempt succeed; the reasoning switch above
+ * is what keeps attempts away from the ceiling.
+ */
+const IMAGE_RECOGNITION_PROVIDER_DEADLINE_MS = 300_000;
+
 const log = logger("api:image-recognition");
 type RecognitionFailureReason =
   | OpenRouterFailureReason
@@ -185,6 +223,7 @@ function createRecognitionDiagnostics(
   authenticatedRunId: string | undefined,
   clientSignal: AbortSignal,
   signal: AbortSignal,
+  deadlineSignal: AbortSignal,
 ) {
   const diagnostics: OpenRouterDiagnostics & {
     reason?: RecognitionFailureReason;
@@ -209,6 +248,19 @@ function createRecognitionDiagnostics(
     return clientSignal.aborted && error === clientSignal.reason
       ? "request_cancelled"
       : undefined;
+  };
+  // Classification for a failed provider attempt, where the deadline is the
+  // only signal our own budget owns. An attempt it ended is an upstream
+  // timeout, never a caller's decision, so it answers exactly the failures a
+  // caller did not cause. Both caller signals keep precedence by identity, so
+  // a real cancellation racing the deadline still reports itself.
+  const providerFailureReason = (
+    error: unknown,
+  ): RecognitionFailureReason | undefined => {
+    return (
+      cancellationReason(error) ??
+      (deadlineSignal.aborted ? "upstream_timeout" : undefined)
+    );
   };
   // Only this boundary emits the event. Awaiting its settled synchronous
   // write isolates even abort-shaped logger failures; the existing request
@@ -279,7 +331,7 @@ function createRecognitionDiagnostics(
   return {
     diagnostics,
     failed,
-    cancellationReason,
+    providerFailureReason,
     rejected: (error: unknown) => {
       return Promise.allSettled([
         report(
@@ -301,24 +353,24 @@ const completeImageRecognition$ = command(
       readonly operationId: string;
       readonly attempt: ReturnType<typeof createRecognitionDiagnostics>;
     },
-    requestSignal: AbortSignal,
+    providerSignal: AbortSignal,
     signal: AbortSignal,
   ) => {
-    const { diagnostics, failed, cancellationReason } = args.attempt;
+    const { diagnostics, failed, providerFailureReason } = args.attempt;
     const generated = await settle(
       generateTextWithUsage(
         IMAGE_RECOGNITION_MODEL,
         [{ role: "user", content: args.content }],
         IMAGE_RECOGNITION_MAX_TOKENS,
-        { diagnostics },
-        requestSignal,
+        { diagnostics, reasoning: IMAGE_RECOGNITION_REASONING },
+        providerSignal,
       ),
     );
     signal.throwIfAborted();
     if (!generated.ok) {
       return await failed(
         providerError(generated.error),
-        cancellationReason(generated.error) ??
+        providerFailureReason(generated.error) ??
           openRouterFailureReason(generated.error),
       );
     }
@@ -463,17 +515,25 @@ export const imageRecognition$ = command(
       { type: "image_url", image_url: { url: providerImageUrl } },
     ];
     const operationId = randomUUID();
+    // The budget starts with the attempt itself, after admission and reference
+    // resolution, and composes into the existing chain so a client disconnect
+    // and an operation abort keep the meaning they already have.
+    const deadlineSignal = AbortSignal.timeout(
+      IMAGE_RECOGNITION_PROVIDER_DEADLINE_MS,
+    );
+    const providerSignal = AbortSignal.any([requestSignal, deadlineSignal]);
     const attempt = createRecognitionDiagnostics(
       operationId,
       args.auth.runId,
       clientSignal,
       signal,
+      deadlineSignal,
     );
     return await onRejection(
       set(
         completeImageRecognition$,
         { auth: args.auth, content, operationId, attempt },
-        requestSignal,
+        providerSignal,
         signal,
       ),
       attempt.rejected,

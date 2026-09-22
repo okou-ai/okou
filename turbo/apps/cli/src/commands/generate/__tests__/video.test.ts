@@ -395,10 +395,10 @@ describe("okou generate video command", () => {
           const { sourceUrl: _sourceUrl, ...result } = VIDEO_RESULT;
           return HttpResponse.json({
             ...result,
-            url: artifactReferencePath(
+            url: `https://app.okou.ai${artifactReferencePath(
               "00000000-0000-4000-8000-000000000022",
               "video.mp4",
-            ),
+            )}`,
           });
         }),
       );

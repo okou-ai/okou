@@ -1,4 +1,8 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import {
+  isOkouRunModel,
+  type OkouRunModel,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { streamPiNative } from "./native-stream";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
@@ -14,7 +18,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type {
   Api,
   AssistantMessageEventStream,
-  Context,
+  TranscriptContext,
   Model,
 } from "@earendil-works/pi-ai";
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
@@ -28,6 +32,95 @@ import {
 } from "./stream-options";
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
+
+const OKOU_PI_MODEL_CAPABILITIES = {
+  "okou-1.0": {
+    name: "Okou 1.0",
+    cost: {
+      input: 0.2,
+      output: 1.2,
+      cacheRead: 0.02,
+      cacheWrite: 0.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 0.4,
+          output: 1.8,
+          cacheRead: 0.04,
+          cacheWrite: 0.5,
+        },
+      ],
+    },
+  },
+  "okou-1.0-pro": {
+    name: "Okou 1.0 Pro",
+    cost: {
+      input: 5,
+      output: 30,
+      cacheRead: 0.5,
+      cacheWrite: 6.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 10,
+          output: 45,
+          cacheRead: 1,
+          cacheWrite: 12.5,
+        },
+      ],
+    },
+  },
+  "okou-1.0-max": {
+    name: "Okou 1.0 Max",
+    cost: {
+      input: 5,
+      output: 30,
+      cacheRead: 0.5,
+      cacheWrite: 6.25,
+      tiers: [
+        {
+          inputTokensAbove: 272_000,
+          input: 10,
+          output: 45,
+          cacheRead: 1,
+          cacheWrite: 12.5,
+        },
+      ],
+    },
+  },
+} as const satisfies Record<
+  OkouRunModel,
+  {
+    readonly name: string;
+    readonly cost: Model<Api>["cost"];
+  }
+>;
+
+/** Product-owned Pi catalog entries for the independently named Okou models. */
+function okouSourceModel(
+  provider: string,
+  model: string,
+): Model<Api> | undefined {
+  if (provider !== "openrouter" || !isOkouRunModel(model)) {
+    return undefined;
+  }
+  const capabilities = OKOU_PI_MODEL_CAPABILITIES[model];
+  return {
+    id: model,
+    name: capabilities.name,
+    provider,
+    // The source API tag only guards reuse of API-specific compatibility.
+    // Okou executes on OpenRouter Responses without completions compatibility.
+    api: "openai-completions",
+    baseUrl: "https://openrouter.ai/api/v1",
+    // Reasoning is configured by the OpenRouter Preset, not by the client.
+    reasoning: false,
+    input: ["text", "image"],
+    contextWindow: 1_050_000,
+    maxTokens: 128_000,
+    cost: capabilities.cost,
+  };
+}
 
 function providerModels(provider: string): readonly Model<Api>[] {
   switch (provider) {
@@ -72,6 +165,39 @@ function isCodexResponsesModel(
 }
 
 function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  const okouModel = okouSourceModel(provider, model);
+  if (okouModel) {
+    return okouModel;
+  }
+  // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
+  // the product still offers it. Pin the exact 0.85.1 definition so admission,
+  // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.
+  // `api` stays "openai-completions" as upstream shipped it: resolvePiAgentModel
+  // copies `source.compat` only when `source.api === dialect`, so recording the
+  // upstream dialect keeps that guard false and leaves the wire unchanged.
+  // This is the V4 text-only model, priced apart from V4.1; never substitute one
+  // for the other. The OpenRouter route still resolves from the 0.86.1 catalog.
+  if (provider === "deepseek" && model === "deepseek-v4-flash") {
+    return {
+      id: model,
+      name: "DeepSeek V4 Flash",
+      provider,
+      api: "openai-completions",
+      baseUrl: "https://api.deepseek.com",
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        max: "max",
+      },
+      input: ["text"],
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
+    };
+  }
   // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
   // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
   if (
@@ -109,7 +235,7 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
 
 function streamSimpleResponsesWithPolicy(
   model: Model<"openai-responses">,
-  context: Context,
+  context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
   const serviceTier = options?.serviceTier;
@@ -249,7 +375,7 @@ function observeResponsesServiceTier(
 
 const piAgentStream = (
   model: Model<"openai-responses">,
-  context: Context,
+  context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
   if (
@@ -263,7 +389,7 @@ const piAgentStream = (
 
 function piAgentCodexStream(
   model: Model<"openai-codex-responses">,
-  context: Context,
+  context: TranscriptContext,
   accountId: string,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
@@ -301,7 +427,7 @@ function piAgentCodexStream(
 /** Type bridge for Pi's API-generic provider registration callback. */
 export const piAgentRegisteredStream = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream => {
   if (!isResponsesModel(model)) {
@@ -468,15 +594,29 @@ export function resolvePiAgentModel(
     contextWindow: source.contextWindow,
     maxTokens: source.maxTokens,
     headers: source.headers,
-    // Pi's catalog API tag controls only whether its API-specific compatibility
-    // metadata is safe to reuse. It never selects Okou's runtime transport.
-    ...(source.api === dialect && source.compat !== undefined
-      ? { compat: source.compat }
-      : {}),
   };
+  // Pi's catalog API tag controls only whether its API-specific compatibility
+  // metadata is safe to reuse. It never selects Okou's runtime transport.
+  const compat =
+    source.api === dialect && source.compat !== undefined
+      ? source.compat
+      : undefined;
   return dialect === "openai-codex-responses"
-    ? { ...base, api: "openai-codex-responses" }
-    : { ...base, api: "openai-responses" };
+    ? {
+        ...base,
+        api: "openai-codex-responses",
+        // 0.86's Codex adapter resolves an unset `supportsStrictMode` to true
+        // and its catalog never sets the field. Keep strict JSON-schema tools
+        // off; enabling them is out of scope for the 0.86.1 upgrade.
+        // `supportsMidConvoSystemMessages` from the catalog is deliberately
+        // preserved, and asserted on the wire in model.test.ts.
+        compat: { ...compat, supportsStrictMode: false },
+      }
+    : {
+        ...base,
+        api: "openai-responses",
+        ...(compat !== undefined ? { compat } : {}),
+      };
 }
 
 export function isPiAgentModelSupported(config: PiAgentModelConfig): boolean {

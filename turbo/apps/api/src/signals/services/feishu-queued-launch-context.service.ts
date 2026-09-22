@@ -11,6 +11,8 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import type { FeishuDeliveryTarget } from "./feishu-chat-callback-payload";
 import { buildFeishuSystemPrompt } from "./feishu-dispatch.service";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface FeishuQueuedLaunchMaterial {
   readonly triggerSource: FeishuPlatform;
@@ -177,6 +179,7 @@ export async function loadFeishuQueuedLaunchMaterial(
     readonly chatThreadId: string;
     readonly orgId: string;
     readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<FeishuQueuedLaunchMaterial | null> {
   const context = await loadFeishuLaunchContext(db, args);
@@ -195,6 +198,10 @@ export async function loadFeishuQueuedLaunchMaterial(
       threadId: context.threadId,
       messageId: context.messageId,
       senderOpenId: context.senderOpenId,
+      integrationNote: resolveIntegrationNotePrompt({
+        triggerSource: context.platform,
+        featureSwitchContext: args.featureSwitchContext,
+      }),
       history: context.conversationHistory,
     }),
     publicBrand: context.publicBrand,

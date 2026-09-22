@@ -1663,9 +1663,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, source.runId, sourceClaim.sandboxHeaders);
   }, 90_000);
 
-  it("keeps Pi checkpoints intact without completion admission and fences canonical writes", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
+  it("classifies every Pi memory admission prerequisite", () => {
     expect(piMemoryStage1AdmissionPrerequisiteSkipReasonFixture()).toBeNull();
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
@@ -1751,6 +1749,11 @@ describe("CHAT-02: model-first provider policies", () => {
         piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({ triggerSource }),
       ).toBe(prerequisiteByTriggerSource[triggerSource]);
     }
+  });
+
+  it("keeps Pi checkpoints intact and fences canonical writes", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
 
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");

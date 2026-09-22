@@ -96,8 +96,8 @@ describe("X resource accounting during Agent deletion", () => {
     });
     const completion = Promise.allSettled([gate.done]);
     const deletion = Promise.allSettled([
-      gate.withAcquisitionAttemptTracking(async () => {
-        return await bdd.requestDeleteAgent(actor, agent.agentId, [204, 409]);
+      gate.withReleaseAtAcquisitionAttempt(async () => {
+        return await bdd.requestDeleteAgent(actor, agent.agentId, [204]);
       }),
     ]);
     onTestFinished(async () => {
@@ -107,16 +107,14 @@ describe("X resource accounting during Agent deletion", () => {
       await flushWaitUntilForTest();
     });
 
-    // Release at the admission boundary, within Agent deletion's bounded wait.
-    // Without admission the endpoint itself returns 409 while holding the Run
-    // ahead of the blocked ledger mutation; do not wait for a missing test hook.
-    await Promise.race([gate.acquisitionAttempted, deletion]);
+    // Finish the holder's commit at the admission boundary, before Agent
+    // deletion starts its bounded database lock wait.
+    const [deleted] = await deletion;
     gate.release();
     const [released] = await completion;
     if (released.status === "rejected") {
       throw released.reason;
     }
-    const [deleted] = await deletion;
     if (deleted.status === "rejected") {
       throw deleted.reason;
     }

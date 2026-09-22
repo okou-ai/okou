@@ -35,6 +35,7 @@ import * as modelProviderSchema from "./schema/model-provider";
 import * as modelProviderAccountSchema from "./schema/model-provider-account";
 import * as modelProviderGatewaySchema from "./schema/model-provider-gateway";
 import * as orgModelPolicySchema from "./schema/org-model-policy";
+import * as runModelCatalogSchema from "./schema/run-model-catalog";
 import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
@@ -127,6 +128,7 @@ import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
 import * as builtInGenerationJobSchema from "./schema/built-in-generation-job";
 import * as socialKitDownloadJobSchema from "./schema/socialkit-download-job";
+import * as socialDataJobSchema from "./schema/social-data-job";
 import * as bankingSchema from "./schema/banking";
 import * as gmailEventSchema from "./schema/gmail-event";
 import * as notionEventSchema from "./schema/notion-event";
@@ -192,6 +194,7 @@ export const schema = {
   ...modelProviderAccountSchema,
   ...modelProviderGatewaySchema,
   ...orgModelPolicySchema,
+  ...runModelCatalogSchema,
   ...slackOrgInstallationSchema,
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,
@@ -285,6 +288,7 @@ export const schema = {
   ...userArtifactFavoriteSchema,
   ...builtInGenerationJobSchema,
   ...socialKitDownloadJobSchema,
+  ...socialDataJobSchema,
   ...bankingSchema,
   ...gmailEventSchema,
   ...notionEventSchema,

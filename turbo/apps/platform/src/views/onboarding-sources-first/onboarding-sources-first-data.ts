@@ -1,8 +1,11 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
  * Source-first onboarding data. Ids are connector slugs so every screen, the
  * starting-prompt match, and the live connector catalog share one vocabulary.
+ * The fields themselves come from `@okouai/core/onboarding-industry`, which the
+ * completion contract validates against.
  */
 export const FEATURED_SOURCE_SLUGS = [
   "gmail",
@@ -37,22 +40,6 @@ export const SOURCE_FAMILIES = {
 
 export type SourceFamily = keyof typeof SOURCE_FAMILIES;
 
-export const INDUSTRY_IDS = [
-  "marketing",
-  "design",
-  "consulting",
-  "coaching",
-  "finance",
-  "operations",
-  "sales",
-  "software",
-  "research",
-  "investing",
-  "other",
-] as const;
-
-export type IndustryId = (typeof INDUSTRY_IDS)[number];
-
 /**
  * The sources a field actually works in. The step shows this set for the
  * answered field rather than the whole featured list, so the grid is six
@@ -60,7 +47,7 @@ export type IndustryId = (typeof INDUSTRY_IDS)[number];
  * entries are also the ones the starting prompt prefers.
  */
 export const INDUSTRY_SOURCE_SLUGS: Readonly<
-  Record<IndustryId, readonly ConnectorSlug[]>
+  Record<OnboardingIndustry, readonly ConnectorSlug[]>
 > = {
   marketing: [
     "google-ads",
@@ -154,7 +141,7 @@ export const INDUSTRY_SOURCE_SLUGS: Readonly<
 
 /** Sources the prototype prefers first when several are connected. */
 export const INDUSTRY_RECOMMENDED_SOURCES: Readonly<
-  Record<IndustryId, readonly ConnectorSlug[]>
+  Record<OnboardingIndustry, readonly ConnectorSlug[]>
 > = {
   marketing: ["google-ads", "meta-ads", "google-sheets"],
   design: ["google-drive"],

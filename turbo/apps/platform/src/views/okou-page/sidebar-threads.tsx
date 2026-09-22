@@ -76,10 +76,8 @@ import {
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
-import {
-  chatThreadOnlyUnread$,
-  setChatThreadOnlyUnread$,
-} from "../../signals/chat-page/chat-thread-only-unread.ts";
+import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
+import { setChatThreadUnreadFilter$ } from "../../signals/okou-page/chat-thread-filter.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
@@ -957,22 +955,19 @@ function MarkAllReadMenuItem({
   );
 }
 
-function ChatThreadFilterMenuItems() {
+function ChatThreadFilterMenuItems({
+  unreadShortcutEnabled,
+}: {
+  unreadShortcutEnabled: boolean;
+}) {
   const { t } = useTranslation();
   const setCollapsed = useSet(setSessionListCollapsed$);
   const unreadOnly = useGet(chatThreadOnlyUnread$);
-  const setUnreadOnly = useSet(setChatThreadOnlyUnread$);
+  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const showArchived = useGet(chatThreadShowArchived$);
   const setShowArchived = useSet(setChatThreadShowArchived$);
-
-  function toggleUnreadOnly(next: boolean) {
-    setUnreadOnly(next);
-    if (next) {
-      setCollapsed(false);
-    }
-  }
 
   function toggleShowArchived() {
     const next = !showArchived;
@@ -986,7 +981,7 @@ function ChatThreadFilterMenuItems() {
     <>
       <DropdownMenuItem
         onSelect={() => {
-          toggleUnreadOnly(false);
+          setUnreadFilter(false);
         }}
       >
         <Check size={16} className={`mr-2 ${unreadOnly ? "invisible" : ""}`} />
@@ -996,21 +991,31 @@ function ChatThreadFilterMenuItems() {
       </DropdownMenuItem>
       <DropdownMenuItem
         onSelect={() => {
-          toggleUnreadOnly(true);
+          setUnreadFilter(true);
         }}
+        aria-keyshortcuts={
+          unreadShortcutEnabled
+            ? GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
+            : undefined
+        }
       >
         <Check size={16} className={`mr-2 ${unreadOnly ? "" : "invisible"}`} />
         {t(($) => {
           return $.chat.sidebar.unreadOnly;
         })}
+        {unreadShortcutEnabled ? (
+          <ChatThreadMenuShortcut
+            shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
+          />
+        ) : null}
       </DropdownMenuItem>
       {archiveEnabled ? (
         <>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={toggleShowArchived}>
+          <DropdownMenuItem onSelect={toggleShowArchived} disabled={unreadOnly}>
             <Check
               size={16}
-              className={`mr-2 ${showArchived ? "" : "invisible"}`}
+              className={`mr-2 ${showArchived || unreadOnly ? "" : "invisible"}`}
             />
             {t(($) => {
               return $.chat.sidebar.showArchived;
@@ -1029,6 +1034,8 @@ function ChatThreadsListMenu({
 }) {
   const { t } = useTranslation();
   const markAllReadAction = useMarkAllReadMenuAction(showMarkAllRead);
+  const unreadShortcutEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatUnreadOnlyShortcut] === true;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -1052,7 +1059,7 @@ function ChatThreadsListMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
-          className="w-44"
+          className={unreadShortcutEnabled ? "w-56" : "w-44"}
           onClick={(e) => {
             e.stopPropagation();
           }}
@@ -1063,7 +1070,9 @@ function ChatThreadsListMenu({
               <DropdownMenuSeparator />
             </>
           ) : null}
-          <ChatThreadFilterMenuItems />
+          <ChatThreadFilterMenuItems
+            unreadShortcutEnabled={unreadShortcutEnabled}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>
@@ -1180,6 +1189,7 @@ function UnreadChatThreadsContent({
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
+  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
 
   if (list.state === "loading") {
     return (
@@ -1193,11 +1203,25 @@ function UnreadChatThreadsContent({
   }
   if (list.data.items.length === 0) {
     return (
-      <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-        {t(($) => {
-          return $.chat.sidebar.noUnread;
-        })}
-      </p>
+      <div className="px-2 py-2">
+        <p className="text-xs text-nav-copy-muted leading-relaxed">
+          {t(($) => {
+            return $.chat.sidebar.noUnread;
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="link"
+          className="mt-1 h-auto p-0 text-xs"
+          onClick={() => {
+            setUnreadFilter(false);
+          }}
+        >
+          {t(($) => {
+            return $.chat.sidebar.showAllChats;
+          })}
+        </Button>
+      </div>
     );
   }
 

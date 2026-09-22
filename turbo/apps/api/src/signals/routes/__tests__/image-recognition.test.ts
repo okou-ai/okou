@@ -34,6 +34,7 @@ import {
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readUsageStorageCounts$ } from "./helpers/usage-state";
+import { openRouterModelContractError } from "./helpers/openrouter-model-contract";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { imageRecognitionRoutes } from "../image-recognition";
@@ -649,6 +650,60 @@ describe("POST /api/image-recognition", () => {
     expect(JSON.stringify([records(), late.body])).not.toContain(secret);
     restoreText();
 
+    // The attempt's own budget ends a generation that cannot finish. It is
+    // ours rather than the caller's, so it stays an upstream outcome, and its
+    // abort reason is provider-shaped evidence that must not be retained
+    // either. Only a budget containing the slowest recognition observed
+    // succeeding (299.45 s) is taken over here.
+    const deadline = new AbortController();
+    onTestFinished(() => {
+      return deadline.abort();
+    });
+    const budgets: number[] = [];
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      budgets.push(milliseconds);
+      return milliseconds >= 299_450 ? deadline.signal : undefined;
+    });
+    const generating = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(OPENROUTER_URL, async ({ request: generation }) => {
+        const aborted = createDeferredPromise<void>(context.signal);
+        generation.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve(undefined);
+          },
+          { once: true },
+        );
+        generating.resolve(undefined);
+        await aborted.promise;
+        return HttpResponse.error();
+      }),
+    );
+    output.mockClear();
+    const expiring = request();
+    await generating.promise;
+    deadline.abort(new DOMException(secret, "TimeoutError"));
+    const expired = await expiring;
+    context.mocks.abortSignal.timeout.mockReset();
+    expect(budgets).toContain(300_000);
+    expect(expired.status).toBe(502);
+    expect(records()).toStrictEqual([
+      {
+        type: "image_recognition_failure",
+        operation_id: expect.any(String),
+        run_id: actor.runId,
+        duration_ms: expect.any(Number),
+        phase: "fetch",
+        reason: "upstream_timeout",
+        public_status: 502,
+        public_code: "IMAGE_RECOGNITION_FAILED",
+        request_aborted: false,
+        operation_aborted: false,
+      },
+    ]);
+    expect(JSON.stringify([records(), expired.body])).not.toContain(secret);
+
     output.mockClear();
     server.use(
       http.post(OPENROUTER_URL, () => {
@@ -892,7 +947,14 @@ describe("POST /api/image-recognition", () => {
     const requestBodies: unknown[] = [];
     server.use(
       http.post(OPENROUTER_URL, async ({ request }) => {
-        requestBodies.push(await request.json());
+        const body = await request.json();
+        requestBodies.push(body);
+        // The recognition model exposes no effort selection, so an effort sent
+        // to it is a parameter the gateway rejects rather than honors.
+        const contractError = openRouterModelContractError(body);
+        if (contractError) {
+          return contractError;
+        }
         return HttpResponse.json({
           choices: [
             {
@@ -935,6 +997,9 @@ describe("POST /api/image-recognition", () => {
     expect(requestBodies[0]).toMatchObject({
       model: "xiaomi/mimo-v2.5",
       max_tokens: 8192,
+      // Thinking and the visible answer share max_tokens, so recognition asks
+      // for none of it and leaves the whole ceiling to the answer.
+      reasoning: { enabled: false },
       messages: [
         {
           role: "user",

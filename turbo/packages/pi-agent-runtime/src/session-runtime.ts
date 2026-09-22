@@ -79,14 +79,6 @@ function langfuseDebugExtensionFactories(
   return enabled ? [createLangfuseDebugExtension] : [];
 }
 
-const PI_INTERMEDIATE_COMMENTARY_PROMPT = `## Intermediate commentary
-
-As you work, provide brief intermediate text messages to the user. These messages are how you collaborate with the user while working - stating assumptions and sharing updates. Keep them concise and easy to scan. Their purpose is to make your work easy for the user to understand and verify.
-
-If the user's request requires calling tools, start with a brief intermediate message before the first tool call. During longer work, provide additional updates at meaningful points.
-
-Do not put a final response, such as a blocking or clarifying question, in an intermediate message. Intermediate messages are only for partial updates, partial results, or non-blocking context that can provide value while you continue working. An intermediate update does not end the task; continue working when more work remains. The final answer must always be fully self-contained.`;
-
 /**
  * Shell options for the loop's Bash tool.
  *
@@ -300,27 +292,38 @@ async function createPiAgentSession(
               ),
             }
           : {}),
-        resourceLoaderOptions: resourceSnapshot
-          ? measurePiPreparationSync(
-              args.onPreparationTiming,
-              "resource_loader",
-              () => {
-                return {
+        // Both branches are measured so the preheated and sandbox loaders are
+        // comparable under one phase. This observes loader *option* assembly,
+        // which is all either branch does here; upstream discovery and loading
+        // happen inside `session_services` and `session_create`.
+        resourceLoaderOptions: measurePiPreparationSync(
+          args.onPreparationTiming,
+          "resource_loader",
+          () => {
+            return resourceSnapshot
+              ? {
                   ...piPreheatedResourceLoaderOptions({
                     snapshot: resourceSnapshot,
                     appendSystemPrompt,
                     systemPrompt,
                   }),
                   extensionFactories,
-                };
-              },
-              signal,
-            )
-          : { ...sandboxResourceLoaderOptions, extensionFactories },
+                }
+              : { ...sandboxResourceLoaderOptions, extensionFactories };
+          },
+          signal,
+        ),
       });
     },
     signal,
   );
+  // 0.86 resolves an unset `cacheWarming` to `streaming`, so a long tool run
+  // would issue background prompt-cache requests we do not pay for. Pin it off
+  // for every path here, including the no-snapshot fallback that loads settings
+  // from disk. `getCacheWarmingMode()` reads global settings only, which
+  // `applyOverrides()` does not reach, so this setter is the effective one; it
+  // updates the resolved value without persisting the choice to any disk file.
+  services.settingsManager.setCacheWarmingMode("off");
   const created = await measurePiPreparation(
     args.onPreparationTiming,
     "session_create",
@@ -382,21 +385,18 @@ function prepareModelAndPrompt(
         })
       : [];
   const appendSystemPrompt = [
-    PI_INTERMEDIATE_COMMENTARY_PROMPT,
     ...(args.appendSystemPrompt === null ? [] : [args.appendSystemPrompt]),
     ...(memoryRecall.block === null ? [] : [memoryRecall.block]),
   ];
   const systemPrompt = buildOkouHarnessSystemPrompt(
     okouHarnessToolPrompts(args.cwd),
   );
+  // Passing `appendSystemPrompt` at all replaces the official loader's own
+  // append-block discovery, so an empty array must omit the key entirely or a
+  // Sandbox session silently stops loading its APPEND_SYSTEM.md.
   const sandboxResourceLoaderOptions =
-    args.appendSystemPrompt === null && memoryRecall.block === null
-      ? {
-          systemPrompt,
-          appendSystemPromptOverride(base: string[]) {
-            return [PI_INTERMEDIATE_COMMENTARY_PROMPT, ...base];
-          },
-        }
+    appendSystemPrompt.length === 0
+      ? { systemPrompt }
       : { systemPrompt, appendSystemPrompt };
   const model = resolvePiAgentModel(args.model);
   if (!model) {

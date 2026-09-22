@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { addAbortSignal, PassThrough } from "node:stream";
 import { command, type Command } from "ccstate";
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -15,7 +15,6 @@ import { listAllUserOrganizationMemberships } from "../external/clerk-organizati
 import type { Db } from "../external/db";
 import { downloadManifest, downloadS3Buffer } from "../external/s3";
 import { createDeferredPromise, joinAll, onRejection } from "../utils";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { agentInstructions } from "./agent-instructions.service";
 import { readCurrentChatEventHistory } from "./chat-event-history.service";
 import {
@@ -23,7 +22,6 @@ import {
   readAcceptedOfficialWorkflowRevision,
 } from "./official-workflow-catalog-read.service";
 import type { UserExportArchive } from "./user-export-archive.service";
-import { visibleWorkflowCondition } from "./workflow-data.service";
 
 const EXPORT_PAGE_SIZE = 100;
 const CHAT_HISTORY_CONCURRENCY = 4;
@@ -187,7 +185,8 @@ const exportAgents$ = command(
         .where(
           and(
             inArray(agents.orgId, context.orgIds),
-            visibleJoinedAgentCondition(context.userId),
+            // A subject data export carries the subject's own records only.
+            eq(agents.owner, context.userId),
             cursor ? gt(agents.id, cursor) : undefined,
           ),
         )
@@ -259,10 +258,11 @@ const exportWorkflows$ = command(
         .where(
           and(
             inArray(workflows.orgId, context.orgIds),
-            visibleWorkflowCondition({
-              userId: context.userId,
-              role: "member",
-            }),
+            eq(workflows.ownerUserId, context.userId),
+            or(
+              isNull(workflows.officialDefinitionName),
+              eq(workflows.officialInstallationState, "installed"),
+            ),
             cursor ? gt(workflows.id, cursor) : undefined,
           ),
         )

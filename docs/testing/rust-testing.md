@@ -33,6 +33,27 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 cargo test --manifest-path crates/Cargo.toml --profile local -- --nocapture
 ```
 
+### Memory-constrained environments
+
+Keep local validation scoped to the affected crate or test target. When the
+machine is memory-constrained, serialize both compilation and test execution:
+
+```bash
+cargo test --manifest-path crates/Cargo.toml --profile local \
+  -j 1 -p guest-agent -- --test-threads=1
+```
+
+`-j 1` limits Cargo to one compilation job, while `--test-threads=1` limits
+concurrency inside each test executable. They control different stages and may
+both be necessary.
+
+A test-name filter, including `--exact`, is applied only after Cargo compiles
+the crate's complete test executable. It therefore does not reduce compile-time
+memory for a crate with a large inline test suite. If one test target still
+exceeds the available memory when serialized, use a larger execution profile or
+split the test target into smaller compilation units. A narrower local check
+does not replace required CI.
+
 Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
 files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
 use `cargo clippy --profile local --all-targets --all-features`.

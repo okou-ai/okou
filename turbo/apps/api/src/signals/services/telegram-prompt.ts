@@ -10,6 +10,7 @@ export function buildTelegramPrompt(
     readonly rootMessageId?: string | null;
     readonly messageThreadId?: string | number | null;
   },
+  integrationNote: string,
   threadContext: string,
 ): string {
   const headerParts = [
@@ -37,7 +38,12 @@ export function buildTelegramPrompt(
   if (opts.messageThreadId) {
     headerParts.push(`Message thread ID: ${opts.messageThreadId}`);
   }
-  return [CONVERSATION_GUIDANCE, headerParts.join("\n"), threadContext]
+  return [
+    CONVERSATION_GUIDANCE,
+    headerParts.join("\n"),
+    integrationNote,
+    threadContext,
+  ]
     .filter(Boolean)
     .join("\n\n");
 }

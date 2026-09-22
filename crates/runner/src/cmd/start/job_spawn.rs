@@ -16,6 +16,7 @@ use tokio::task::JoinSet;
 use tracing::{error, warn};
 
 use super::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
+use super::blank_pool::BlankPoolDiagnostics;
 use super::factory_lifecycle::SharedFactory;
 use super::heartbeat::WorkspaceCacheStateSnapshot;
 use super::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
@@ -88,6 +89,7 @@ pub(super) struct SpawnContext {
     pub(super) usage_flush_tx: mpsc::Sender<()>,
     pub(super) active_runs: ActiveRuns,
     pub(super) pre_spawn_concurrency: RunnerPreSpawnConcurrency,
+    pub(super) blank_pool_diagnostics: BlankPoolDiagnostics,
     pub(super) budget: Arc<ResourceBudget>,
     pub(super) workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
     pub(super) device_rate_limits: Option<sandbox::DeviceRateLimits>,

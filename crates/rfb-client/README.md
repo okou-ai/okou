@@ -5,8 +5,9 @@ VNC engine tracked by [#34778](https://github.com/vm0-ai/okou/issues/34778).
 It provides verified authentication, framebuffer decoding and caller-driven
 capture/input sessions for the documented reference-server profile. Runner
 integrates this engine through [Run-owned guest RPC](../../docs/runner-vnc-execution.md)
-and the private authority API. CLI and full product acceptance remain later
-delivery slices; VNC remains disabled by default.
+and the private authority API. The CLI, owner configuration and Agent inventory
+compose those contracts without changing this engine; VNC remains disabled by
+default and product acceptance is recorded separately.
 
 ## Contract
 
@@ -225,7 +226,7 @@ input bytes and outcomes, cancellation and output limits. The explicitly invoked
 [TigerVNC acceptance harness](tests/TIGERVNC.md) verifies the independent server
 profile; ordinary tests do not silently claim that interoperability test ran.
 Runner authority and RPC have their own integration coverage. CLI and product
-end-to-end acceptance remain later slices.
+end-to-end acceptance are separate from this crate's verification.
 
 ```sh
 cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client

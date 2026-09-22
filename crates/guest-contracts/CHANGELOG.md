@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.2...guest-contracts-v0.15.3) (2026-09-21)
+
+
+### Performance Improvements
+
+* **pi:** measure pi sandbox startup at parity with codex ([#35896](https://github.com/okou-ai/okou/issues/35896)) ([72604f0](https://github.com/okou-ai/okou/commit/72604f0ca4ea5785ce9be83f57c76a9a493df38f))
+
+## [0.15.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.1...guest-contracts-v0.15.2) (2026-09-21)
+
+
+### Performance Improvements
+
+* **runner:** overlap workspace history restore ([#35766](https://github.com/okou-ai/okou/issues/35766)) ([022ac68](https://github.com/okou-ai/okou/commit/022ac688820391243d31429bbaeda7d423eacac5))
+
 ## [0.15.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.0...guest-contracts-v0.15.1) (2026-09-21)
 
 ## [0.15.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.24...guest-contracts-v0.15.0) (2026-09-21)

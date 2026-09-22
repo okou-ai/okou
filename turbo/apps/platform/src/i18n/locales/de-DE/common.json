@@ -602,13 +602,13 @@
       "loadFailed": "Berechtigungen konnten nicht geladen werden",
       "loadingPermissions": "Berechtigungen werden geladen",
       "onlyMe": "Nur ich",
-      "onlyMeDescription": "Nur du kannst dieses Artefakt ansehen",
+      "onlyMeOption": "Nur ich",
       "organization": "Organisation",
-      "organizationDescription": "Alle in {{organization}} mit dem Link",
-      "organizationDescriptionUnnamed": "Alle in Ihrer Organisation mit dem Link",
+      "organizationOption": "Alle in {{organization}}",
+      "organizationOptionUnnamed": "Alle in Ihrer Organisation",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
-      "publicDescription": "Alle mit dem Link können es ansehen",
+      "publicOption": "Alle mit dem Link",
       "retry": "Erneut versuchen"
     },
     "sidebar": {
@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
-      "importFile": "Eigene Datei importieren",
-      "importFileHint": "Design Ihrer Datei wiederverwenden",
+      "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
@@ -1462,11 +1461,9 @@
           },
           "later": "Später",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Zu Slack hinzufügen",
             "description": "Fügen Sie {{assistantName}} zum Slack-Workspace Ihres Teams hinzu.",
             "note": "Ihre Kolleginnen müssen nicht mehr zuerst zu Ihnen. Sie fragen im Channel, und die Arbeit kommt im Thread zurück, wo alle sie sehen.",
-            "sampleChannel": "# growth",
             "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },
           "workflow": {
@@ -1495,6 +1492,10 @@
         },
         "notEligible": "Nicht berechtigt",
         "pendingState": "{{amount}} ausstehend",
+        "rejected": {
+          "alreadyRedeemed": "Post bereits verwendet",
+          "postMustMention": "Muss {{assistantName}} erwähnen"
+        },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "share": {
           "action": "Teilen",
@@ -1761,8 +1762,6 @@
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
         "make": "Erstellen",
-        "templateCount_one": "{{count}} Vorlage",
-        "templateCount_other": "{{count}} Vorlagen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
@@ -2129,6 +2128,7 @@
       "pinned": "Angepinnt",
       "rename": "Chat umbenennen",
       "renameDescription": "Geben Sie einen neuen Namen für diesen Chat-Thread ein.",
+      "showAllChats": "Alle Chats anzeigen",
       "showArchived": "Archivierte anzeigen",
       "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
@@ -4150,7 +4150,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Zurück",
-        "cancel": "Abbrechen",
         "continue": "Weiter",
         "finish": "Einrichtung abschließen",
         "notNow": "Jetzt nicht",
@@ -4222,24 +4221,32 @@
         "title": "Welche Arbeit machst du?"
       },
       "skills": {
-        "confirm": "Importieren und weiter",
-        "copy": "Importiere eine SKILL.md und sie wird ein Workflow in Okou, startklar über /.",
-        "import": "Datei auswählen",
+        "copied": "Kopiert",
+        "copy": "Füge diesen Prompt in deine eigene Codex- oder Claude-Code-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
+        "copyError": "Der Prompt konnte nicht kopiert werden.",
+        "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
-        "importedTitle": "Dein Workflow ist fertig",
-        "panelCopy": "Aus Codex, Claude Code oder jedem Agenten, der eine schreibt.",
-        "panelTitle": "SKILL.md hier ablegen",
-        "previewCopy": "Wird als Okou-Workflow importiert. Bis du ihn teilst, kannst nur du ihn nutzen.",
-        "previewTitle": "Skill prüfen",
-        "replace": "Andere Datei auswählen",
-        "title": "Bring die Skills mit, die du schon geschrieben hast."
+        "importedLabel": "Importierte Skills",
+        "importedTitle": "Deine Skills sind in Okou",
+        "preparing": "Deine Import-Sitzung wird geöffnet…",
+        "promptCopy": "Er liest die Skills auf deinem Rechner und schreibt sie nach Okou.",
+        "promptLabel": "Prompt für den Skill-Import",
+        "promptTitle": "Führe das in Codex oder Claude Code aus",
+        "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
+        "title": "Bring die Skills mit, die du schon geschrieben hast.",
+        "tryAgain": "Erneut versuchen",
+        "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
       "slack": {
         "add": "Zu Slack hinzufügen",
+        "channelAdminRequired": "Bitte deine Workspace-Administration, Okou zu {{channel}} hinzuzufügen.",
+        "channelUnavailable": "{{channel}} ist in diesem Workspace noch nicht verfügbar.",
+        "connectAction": "Slack verbinden",
         "connectedCopy": "Öffne Slack und erwähne @Okou, um eine Aufgabe zu übergeben.",
         "connectedStatus": "Zu deinem Workspace hinzugefügt",
         "connectedTitle": "Slack ist verbunden",
         "copy": "Einmal hinzufügen, dann @Okou dort erwähnen, wo die Arbeit ohnehin läuft.",
+        "name": "Slack",
         "otherAdded": "Hinzugefügt",
         "otherImessage": "iMessage",
         "othersLabel": "Später hinzufügen – oder jetzt",
@@ -4603,9 +4610,16 @@
         }
       },
       "subscription": {
+        "cancelledNote": "{{provider}} ist nicht verbunden. Du kannst es erneut versuchen oder später verbinden.",
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Läuft auf deinem Plan, nicht auf Okou-Credits."
+        "connect": "{{provider}} verbinden",
+        "connected": "Verbunden",
+        "connecting": "Wird verbunden …",
+        "failedNote": "{{provider}} konnte nicht verbunden werden. Versuch es erneut oder verbinde es später.",
+        "retry": "Erneut versuchen",
+        "rowCopy": "Läuft auf deinem Plan, nicht auf Okou-Credits.",
+        "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
         "copy": "Lade jetzt jemanden ein – oder später über das Workspace-Menü.",
@@ -4613,6 +4627,7 @@
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
         "note": "Sie kommen in diesen Workspace; ihre eigenen Konten bleiben ihre.",
+        "notSent": "Nicht gesendet",
         "panelTitle": "Teammitglied einladen",
         "placeholder": "teammate@company.com",
         "points": {
@@ -4620,6 +4635,7 @@
           "workflows": "Alle hier können die Workflows dieses Workspace ausführen.",
           "workspace": "Sie landen in diesem Workspace, mit den Quellen, die du gerade verbunden hast."
         },
+        "sending": "Wird gesendet…",
         "title": "Hol die Leute dazu, die diese Arbeit machen."
       },
       "welcome": {
@@ -6287,11 +6303,11 @@
       }
     },
     "paidTools": {
-      "description": "Wähle, welche kostenpflichtigen integrierten Tools du verwenden kannst.",
-      "disabledForCreation": "{{tool}} ist in deinen Einstellungen für kostenpflichtige Tools deaktiviert.",
+      "description": "Wähle die kostenpflichtigen Tools, die Okou für deine Aufgaben nutzen darf. Jede Nutzung kostet Credits.",
+      "disabledForCreation": "{{tool}} ist für dich deaktiviert",
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
-      "openSettings": "Einstellungen für kostenpflichtige Tools öffnen",
+      "openSettings": "Einstellungen öffnen",
       "retry": "Erneut versuchen",
       "saveError": "Deine Änderung wurde nicht gespeichert.",
       "saving": "Wird gespeichert…",
@@ -6494,6 +6510,8 @@
         "description": "Wählen Sie Ihre bevorzugte Sprache für die Benutzeroberfläche von {{brandName}}",
         "label": "Sprache",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6901,15 +6919,20 @@
       "preview": "{{title}} in der Vorschau anzeigen",
       "rename": "Vorlage umbenennen"
     },
+    "clearSearch": "Suche löschen",
     "custom": "Eigene",
     "detail": {
       "back": "Eigene Vorlagen",
-      "page": "Seite {{number}}",
-      "sourceFile": "Aus {{filename}}"
+      "page": "Seite {{number}}"
     },
     "empty": {
-      "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
+      "description": "Importiere ein Dokument, eine Präsentation oder ein Bild, um das Design wiederzuverwenden.",
+      "document": "Noch keine Dokumente",
+      "illustration": "Noch keine Bilder",
+      "presentation": "Noch keine Präsentationen",
+      "title": "Mach es zu deiner Vorlage"
     },
+    "importHint": "Importiere ein Dokument, eine Präsentation oder ein Bild.",
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",
@@ -6931,6 +6954,7 @@
       "maps": "Karten",
       "peopleSearch": "Personensuche",
       "seo": "SEO",
+      "socialSearch": "Soziale Suche",
       "translation": "Übersetzung",
       "usage": "Nutzung",
       "weather": "Wetter",
@@ -6985,6 +7009,7 @@
     "configured": "Konfiguriert",
     "credential": {
       "add": "Zugangsdaten hinzufügen",
+      "authentication": "Authentifizierungsmethode",
       "createNew": "Neue Zugangsdaten erstellen",
       "delete": "Zugangsdaten löschen",
       "deleteHelp": "Diese ungenutzten Zugangsdaten löschen? Dies kann nicht rückgängig gemacht werden.",
@@ -6998,14 +7023,21 @@
       "password": "VNC-Passwort",
       "passwordHelp": "Klassische VNC-Passwörter verwenden 1–8 druckbare ASCII-Zeichen. Leerzeichen bleiben erhalten.",
       "passwordHint": "Gib das VNC-Passwort des Servers ein",
-      "replace": "Passwort ersetzen",
-      "replaceHelp": "Lass diese Option deaktiviert, um das gespeicherte Passwort zu behalten. Das Ersetzen betrifft alle Hosts, die diese Zugangsdaten verwenden.",
+      "replace": "Authentifizierung ersetzen",
+      "replaceHelp": "Lass diese Option deaktiviert, um die gespeicherte Authentifizierung beizubehalten. Das Ersetzen betrifft alle Hosts, die diese Zugangsdaten verwenden.",
       "select": "Zugangsdaten auswählen",
-      "sharedHelp_one": "Von {{count}} Host verwendet. Passwortänderungen betreffen diesen Host.",
-      "sharedHelp_other": "Von {{count}} Hosts verwendet. Passwortänderungen betreffen alle diese Hosts.",
+      "sharedHelp_one": "Von {{count}} Host verwendet. Authentifizierungsänderungen betreffen diesen Host.",
+      "sharedHelp_other": "Von {{count}} Hosts verwendet. Authentifizierungsänderungen betreffen alle diese Hosts.",
       "summary_one": "{{count}} Zugangsdaten-Satz konfiguriert",
       "summary_other": "{{count}} Zugangsdaten-Sätze konfiguriert",
-      "unused": "Von keinem gespeicherten Host verwendet."
+      "unused": "Von keinem gespeicherten Host verwendet.",
+      "username": "Benutzername",
+      "usernameHelp": "1–255 UTF-8-Bytes. NUL ist nicht zulässig.",
+      "usernameHint": "Gib den Benutzernamen des Servers ein",
+      "usernamePassword": "Passwort",
+      "usernamePasswordHelp": "1–1023 UTF-8-Bytes. NUL ist nicht zulässig und Leerzeichen bleiben erhalten.",
+      "usernamePasswordHint": "Gib das Passwort für diesen Benutzernamen ein",
+      "usernamePasswordMethod": "Benutzername und Passwort"
     },
     "credentialsTab": "Anmeldeinformationen",
     "delete": "Host löschen",
@@ -7050,10 +7082,13 @@
       "caHelp": "Bis zu 8 CA-Zertifikate, insgesamt 64 KiB. Füge keinen privaten Schlüssel und kein Serverzertifikat ein.",
       "caHint": "Füge die öffentlichen CA-Zertifikate ein, die das Serverzertifikat ausgestellt haben",
       "custom": "Benutzerdefinierte Zertifizierungsstellen",
-      "help": "Erfordert einen VNC-Server mit Unterstützung für VeNCrypt X509Vnc. Das Serverzertifikat muss zum konfigurierten Hostnamen oder zur IP-Adresse passen.",
-      "profile": "Verschlüsseltes VNC (X509Vnc)",
+      "profileLabel": "Sicherheitsprofil",
       "system": "Zertifizierungsstellen des Systems",
-      "title": "Vertrauen in Serverzertifikate"
+      "title": "Vertrauen in Serverzertifikate",
+      "x509Plain": "Verschlüsselter Benutzername und Passwort (X509Plain)",
+      "x509PlainHelp": "Erfordert VeNCrypt X509Plain. TLS überprüft den Server, bevor Benutzername und Passwort gesendet werden.",
+      "x509Vnc": "Verschlüsseltes VNC (X509Vnc)",
+      "x509VncHelp": "Erfordert VeNCrypt X509Vnc. TLS überprüft den Server, bevor das VNC-Passwort gesendet wird."
     },
     "summary_one": "{{count}} konfigurierter Host",
     "summary_other": "{{count}} konfigurierte Hosts",

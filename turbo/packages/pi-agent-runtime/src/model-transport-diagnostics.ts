@@ -21,13 +21,17 @@ const ERROR_CODES = [
   "ERR_STREAM_PREMATURE_CLOSE",
 ] as const;
 
-export interface PiModelTransportFailure {
+/**
+ * A type alias, not an interface: 0.86 restricts diagnostic `details` to
+ * `JsonObject`, and only an alias carries the implicit index signature.
+ */
+export type PiModelTransportFailure = {
   readonly phase: "request" | "response_body";
   readonly signalAborted: boolean;
   readonly errorName?: (typeof ERROR_NAMES)[number];
   readonly errorCode?: (typeof ERROR_CODES)[number];
   readonly causeCode?: (typeof ERROR_CODES)[number];
-}
+};
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
+
 const messageAnchorSchema = z
   .strictObject({
     eventId: z.string().min(1).max(256).optional(),
@@ -47,7 +49,7 @@ export const mcpChatMessageSchema = z.strictObject({
   }),
   role: z.enum(["user", "assistant"]),
   eventType: z.enum(["input.prompt", "input.rejected", "output.message"]),
-  createdAt: z.string(),
+  messageAt: mcpChatOutputTimestampSchema,
   runId: z.string().nullable(),
   text: z.string().max(8192),
   textOffset: z.number().int().nonnegative(),

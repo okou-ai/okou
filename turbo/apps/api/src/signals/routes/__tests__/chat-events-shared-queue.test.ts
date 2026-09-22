@@ -108,6 +108,9 @@ describe("CHAT-02: shared user message queue", () => {
     const claimed = rows.find((message) => {
       return message.revokesEventId === messageId;
     });
+    if (!claimed) {
+      throw new Error("Expected the queued message replacement");
+    }
     expect(claimed).toMatchObject({
       content: null,
       userMessage: {
@@ -125,7 +128,7 @@ describe("CHAT-02: shared user message queue", () => {
       runId,
       revokesEventId: messageId,
     });
-    expect(claimed?.id).not.toBe(messageId);
+    expect(claimed.id).not.toBe(messageId);
     const queued = rows.find((message) => {
       return message.id === messageId;
     });
@@ -138,6 +141,7 @@ describe("CHAT-02: shared user message queue", () => {
       userMessage,
     });
     expect(queued.runId).toBeUndefined();
+    expect(claimed.seqId).toBeGreaterThan(queued.seqId);
 
     const replay = await chat.requestSendEvent(
       actor,

@@ -23,6 +23,7 @@ import { and, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { bindNativeGenerationAttempt } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db } from "../external/db";
@@ -59,7 +60,10 @@ import {
   type GenerationRequestPlan,
   type GenerationSource,
 } from "./morning-brief-generation-prompt";
-import { interpretGenerationOutput } from "./morning-brief-generation-result";
+import {
+  interpretGenerationOutput,
+  morningBriefRejectedContentFacts,
+} from "./morning-brief-generation-result";
 import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
 import {
   acceptMorningBriefGenerationResult,
@@ -107,6 +111,8 @@ import {
  * The rules are described in
  * [the generation contract](../../../../../../docs/morning-brief-generation.md).
  */
+
+const log = logger("MorningBriefGeneration");
 
 /** How long one attempt owns its generation slot. Never the collection lease. */
 const GENERATION_RESERVATION_MS = 60_000;
@@ -1490,6 +1496,19 @@ async function requestAndRecordCharge(
           receiptOutcome: "response_received" as const,
           interpreted: interpretResponse(observed, args.interpret),
         };
+  if (observed !== null && classified.interpreted.kind === "reject") {
+    // The answer itself is never retained, which is why the last lost brief
+    // took a trace and a database to explain at all. These three structural
+    // facts separate a code fence from a prose preamble from a shape violation
+    // immediately, and they carry no evidence, no prose and no byte of what
+    // the model wrote — a length and a boolean reproduce nothing.
+    log.warn("Morning Brief generation output was rejected", {
+      attemptId: args.attemptId,
+      failureReason: classified.interpreted.failureReason,
+      finishReason: observed.finishReason,
+      ...morningBriefRejectedContentFacts(observed.content),
+    });
+  }
   const receipt = receiptValuesOf({
     attemptId: args.attemptId,
     outcome: classified.receiptOutcome,

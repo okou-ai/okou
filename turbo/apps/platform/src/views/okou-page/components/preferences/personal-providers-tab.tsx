@@ -421,17 +421,19 @@ function OAuthAccountRow({
         </div>
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-3 sm:ml-auto sm:shrink-0">
           {account.type === "codex-oauth-token" ? (
-            <OAuthAccountResetCredits account={account} />
+            <OAuthAccountResetCredits
+              account={account}
+              actionPending={actionPending}
+              onReset={onReset}
+            />
           ) : null}
           {!account.needsReconnect ? (
             <SubscriptionUsageRings identity={identity} usage={usage} />
           ) : null}
           <OAuthAccountMenu
-            account={account}
             actionPending={actionPending}
             onReconnect={onReconnect}
             onDisconnect={onDisconnect}
-            onReset={onReset}
           />
         </div>
       </div>
@@ -441,19 +443,32 @@ function OAuthAccountRow({
 
 function OAuthAccountResetCredits({
   account,
+  actionPending,
+  onReset,
 }: {
   readonly account: ModelProviderResponse;
+  readonly actionPending: boolean;
+  readonly onReset: () => void;
 }) {
   const { t } = useTranslation();
   const resetCredits = account.subscriptionResetCredits ?? null;
   const label = formatCodexResetCredits(resetCredits);
+  const resetDisabled = actionPending || resetCredits === 0;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
+        <Button
+          type="button"
+          variant="quiet"
+          size="xs"
           aria-label={label}
-          className="mr-auto flex h-7 min-w-0 cursor-default items-center gap-1.5 rounded-md px-1 text-xs tabular-nums text-muted-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover sm:mr-0"
+          aria-disabled={resetDisabled || undefined}
+          className={`mr-auto h-7 min-w-0 gap-1.5 rounded-md px-1 text-xs tabular-nums sm:mr-0 ${resetDisabled ? "cursor-default opacity-50 hover:bg-transparent active:bg-transparent" : ""}`}
+          onClick={() => {
+            if (!resetDisabled) {
+              onReset();
+            }
+          }}
         >
           <RotateCcw size={14} className="shrink-0" aria-hidden />
           <span className="truncate">
@@ -463,7 +478,7 @@ function OAuthAccountResetCredits({
                 })
               : label}
           </span>
-        </span>
+        </Button>
       </TooltipTrigger>
       <TooltipContent
         side="bottom"
@@ -485,41 +500,16 @@ function OAuthAccountResetCredits({
 }
 
 function OAuthAccountMenu({
-  account,
   actionPending,
   onReconnect,
   onDisconnect,
-  onReset,
 }: {
-  readonly account: ModelProviderResponse;
   readonly actionPending: boolean;
   readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
-  readonly onReset: () => void;
 }) {
   const { t } = useTranslation();
-  const resetCredits = account.subscriptionResetCredits ?? null;
   const menuItems: OAuthMenuItem[] = [
-    ...(account.type === "codex-oauth-token"
-      ? [
-          {
-            kind: "status" as const,
-            label: formatCodexResetCredits(
-              resetCredits,
-              account.subscriptionResetCreditsNextExpiresAt,
-            ),
-          },
-          { kind: "separator" as const },
-          {
-            label: t(($) => {
-              return $.settings.models.actions.resetUsage;
-            }),
-            disabled: actionPending || resetCredits === 0,
-            onSelect: onReset,
-            opensModal: true,
-          },
-        ]
-      : []),
     {
       label: t(($) => {
         return $.settings.models.personal.reconnectAccount;

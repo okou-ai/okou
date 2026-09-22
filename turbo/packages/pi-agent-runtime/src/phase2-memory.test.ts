@@ -758,8 +758,11 @@ describe("Pi memory Phase 2 consolidation engine", () => {
         agentsFiles: 0,
         appendSystemPrompts: 0,
         systemPromptDigest: createHash("sha256")
+          // 0.86 joins named prompt sections with a blank line and renders the
+          // working directory as a `<cwd>` section; the custom prompt is the
+          // unwrapped preamble.
           .update(
-            `${renderPiMemoryPhase2Prompt()}\nCurrent working directory: /phase2-memory\n`,
+            `${renderPiMemoryPhase2Prompt()}\n\n<cwd>\n/phase2-memory\n</cwd>`,
           )
           .digest("hex"),
       },
@@ -788,7 +791,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
       (firstRequest.body.input as Array<Record<string, unknown>>)[0],
     ).toStrictEqual({
       role: "developer",
-      content: `${renderPiMemoryPhase2Prompt()}\nCurrent working directory: /phase2-memory\n`,
+      content: `${renderPiMemoryPhase2Prompt()}\n\n<cwd>\n/phase2-memory\n</cwd>`,
     });
 
     const files = new Map(

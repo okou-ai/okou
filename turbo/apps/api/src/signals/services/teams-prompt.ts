@@ -57,11 +57,10 @@ export function buildTeamsPrompt(args: {
   readonly teamsAppId: string | null;
   readonly botId: string | null;
   readonly botName: string | null;
+  readonly integrationNote: string;
   readonly threadContext: string;
 }): string {
-  return [
-    CONVERSATION_GUIDANCE,
-    "",
+  const currentIntegration = [
     "# Current Integration",
     "You are currently running inside: Microsoft Teams",
     `Tenant ID: ${args.tenantId}`,
@@ -76,10 +75,19 @@ export function buildTeamsPrompt(args: {
     ...optionalLine("Teams app ID", args.teamsAppId),
     ...optionalLine("Bot ID", args.botId),
     ...optionalLine("Bot name", args.botName),
-    args.threadContext,
   ]
     .filter((line): line is string => {
       return line.length > 0;
     })
     .join("\n");
+  return [
+    CONVERSATION_GUIDANCE,
+    currentIntegration,
+    args.integrationNote,
+    args.threadContext,
+  ]
+    .filter((part): part is string => {
+      return part.length > 0;
+    })
+    .join("\n\n");
 }

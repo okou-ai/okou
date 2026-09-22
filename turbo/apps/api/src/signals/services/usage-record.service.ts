@@ -5,7 +5,9 @@ import type {
   UsageRecordScope,
 } from "@okouai/api-contracts/contracts/usage-record";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { usageEvent } from "@okouai/db/schema/usage-event";
 import {
   and,
   asc,
@@ -82,6 +84,23 @@ function tokenExpr(usage: FinalizedUsageRelation) {
   );
 }
 
+/**
+ * Grouping identity for a usage row, resolved without requiring its `agent_runs`
+ * row to survive. `billing_run_attribution` carries the original thread id; the
+ * live `chat_threads` row decides whether the bill still groups by that thread,
+ * so deleting a thread keeps collapsing its usage into the threadless row.
+ *
+ * ROLLOUT FALLBACK — the `agent_runs` join. Surface: DB vs API, for rows written
+ * before migration 1192 whose attribution still reports `thread_context =
+ * 'unknown'`. Removal condition: `pnpm -F @okouai/db billing:attribution`
+ * reports `thread_gaps: 0` and `conflicts: 0` on a complete (non-truncated)
+ * production inventory; the backfill leaves a conflicting row uncaptured on
+ * purpose, so a non-zero conflict count is a human-resolution gate rather than
+ * a reason to drop this join.
+ * Follow-up: the drop pull request of #35875, which deletes this join.
+ */
+const groupingThreadId = sql`COALESCE(${billingRunAttribution.threadId}, ${agentRuns.chatThreadId})`;
+
 function usageRecordRunsWith(
   db: Db,
   userId: string | null,
@@ -93,9 +112,12 @@ function usageRecordRunsWith(
     db
       .select({
         runId: usage.runId,
+        billingRunId: usage.billingRunId,
+        billingAnchorAt: usage.billingAnchorAt,
         userId: usage.userId,
         credits: usageCreditsExpr(usage).as("credits"),
         tokens: tokenExpr(usage).as("tokens"),
+        processedHour: usage.processedHour,
       })
       .from(usage)
       .where(
@@ -112,11 +134,20 @@ function usageRecordRunsWith(
         userId: usageRows.userId,
         credits: usageRows.credits,
         tokens: usageRows.tokens,
-        chatThreadId: agentRuns.chatThreadId,
-        createdAt: agentRuns.createdAt,
+        chatThreadId: chatThreads.id,
+        title: chatThreads.title,
+        createdAt:
+          sql`COALESCE(${usageRows.billingAnchorAt}, ${usageRows.processedHour})`
+            .mapWith(usageEvent.createdAt)
+            .as("usage_created_at"),
       })
       .from(usageRows)
-      .innerJoin(agentRuns, eq(agentRuns.id, usageRows.runId)),
+      .leftJoin(
+        billingRunAttribution,
+        eq(billingRunAttribution.runId, usageRows.billingRunId),
+      )
+      .leftJoin(agentRuns, eq(agentRuns.id, usageRows.runId))
+      .leftJoin(chatThreads, eq(chatThreads.id, groupingThreadId)),
   );
   return { usageRows, runs };
 }
@@ -135,23 +166,23 @@ function threadedUsageRecordWith(db: Db, runs: UsageRecordRuns) {
         threadId: sql`${runs.chatThreadId}::text`
           .mapWith(nullableDriverValueDecoder(pgTextDecoder))
           .as("thread_id"),
-        title: chatThreads.title,
+        title: runs.title,
         credits: safeUsageIntegerSum(runs.credits).as("credits"),
         tokens: safeUsageIntegerSum(runs.tokens).as("tokens"),
         lastActivity: max(runs.createdAt)
-          .mapWith(agentRuns.createdAt)
+          .mapWith(usageEvent.createdAt)
           .as("last_activity"),
       })
       .from(runs)
-      .leftJoin(chatThreads, eq(chatThreads.id, runs.chatThreadId))
       .where(isNotNull(runs.chatThreadId))
-      .groupBy(runs.userId, runs.chatThreadId, chatThreads.title),
+      .groupBy(runs.userId, runs.chatThreadId, runs.title),
   );
 }
 
-// Persisted usage can legitimately outlive its thread or originate without one.
-// Keep this non-navigable row until that historical data is migrated or retired;
-// #35077 tracks the durable-data boundary.
+// Persisted usage can legitimately outlive its thread or originate without one,
+// and an erased thread lands here by design: the ledger keeps the amounts and
+// the opaque identifier, never the title. Keep this non-navigable row until that
+// historical data is migrated or retired; #35077 tracks the durable-data boundary.
 function threadlessUsageRecordWith(db: Db, runs: UsageRecordRuns) {
   return db.$with("threadless").as(
     db
@@ -169,7 +200,7 @@ function threadlessUsageRecordWith(db: Db, runs: UsageRecordRuns) {
         credits: safeUsageIntegerSum(runs.credits).as("credits"),
         tokens: safeUsageIntegerSum(runs.tokens).as("tokens"),
         lastActivity: max(runs.createdAt)
-          .mapWith(agentRuns.createdAt)
+          .mapWith(usageEvent.createdAt)
           .as("last_activity"),
       })
       .from(runs)
@@ -300,7 +331,7 @@ async function queryUsageRecordBreakdown(
   const usageRows = db.$with("usage_rows").as(
     db
       .select({
-        chatThreadId: agentRuns.chatThreadId,
+        chatThreadId: chatThreads.id,
         userId: usage.userId,
         kind: usageBreakdownKindExpr(usage).as("kind"),
         usageKind: sql`${usage.kind}`.mapWith(pgTextDecoder).as("usage_kind"),
@@ -310,7 +341,12 @@ async function queryUsageRecordBreakdown(
         credits: usageCreditsExpr(usage).as("credits"),
       })
       .from(usage)
-      .innerJoin(agentRuns, eq(agentRuns.id, usage.runId))
+      .leftJoin(
+        billingRunAttribution,
+        eq(billingRunAttribution.runId, usage.billingRunId),
+      )
+      .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
+      .leftJoin(chatThreads, eq(chatThreads.id, groupingThreadId))
       .where(
         and(
           eq(usage.orgId, orgId),

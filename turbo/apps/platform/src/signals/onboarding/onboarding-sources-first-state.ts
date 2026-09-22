@@ -1,10 +1,11 @@
 import { command, computed, state } from "ccstate";
-import type { IndustryId } from "../../views/onboarding-sources-first/onboarding-sources-first-data.ts";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
- * Source-first onboarding draft. The screens are frontend-only for now: the
- * connector step drives the live connector catalog, everything else is held
- * here until the onboarding state endpoints land.
+ * Source-first onboarding draft. The connector step drives the live connector
+ * catalog, the invite step records what the invitation API answered, and the
+ * chat-channel step reads the org's own Slack and Teams installations; the
+ * remaining answers are held here until their endpoints land.
  *
  * One application start owns this draft, because a Store lives exactly that
  * long: switching Clerk session or organization replaces the document, so the
@@ -24,25 +25,35 @@ export type SourcesFirstStep =
   | "slack"
   | "ready";
 
-export type SlackSetupStatus = "disconnected" | "installed" | "connected";
-
 export type SubscriptionProvider = "codex" | "claudeCode";
 
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams";
 
+/**
+ * Where one address stands with the invitation API: in flight, accepted by the
+ * API, or refused by it. Nothing but an API answer makes an address invited.
+ */
+export type SourcesFirstInviteStatus = "pending" | "invited" | "failed";
+
+export interface SourcesFirstInvite {
+  readonly email: string;
+  readonly status: SourcesFirstInviteStatus;
+  /** Why the invitation was refused, as the API put it; null otherwise. */
+  readonly failure: string | null;
+}
+
 export interface SourcesFirstDraft {
-  readonly industry: IndustryId | null;
-  readonly invites: readonly string[];
+  readonly industry: OnboardingIndustry | null;
+  /** One entry per address this run tried, with what the API answered. */
+  readonly invites: readonly SourcesFirstInvite[];
   /** Null until the step is answered, so nothing is pre-chosen for the user. */
   readonly experienced: boolean | null;
+  /**
+   * The plan the answer names. Whether it is connected is the account's
+   * answer, read from `/api/me/model-providers`, never held here.
+   */
   readonly provider: SubscriptionProvider | null;
-  readonly providerConnected: boolean;
-  readonly importedWorkflowName: string | null;
-  readonly slackStatus: SlackSetupStatus;
-  readonly slackWorkspace: string;
-  /** Channels picked beside Slack; each still waits for its own install. */
-  readonly chatChannels: readonly ChatChannelId[];
   /** Edited copy of the matched starting prompt, kept across step changes. */
   readonly startingPromptDraft: string;
   /** `industry:source` the draft was generated from, so a later change re-seeds it. */
@@ -55,11 +66,6 @@ function emptyDraft(): SourcesFirstDraft {
     invites: [],
     experienced: null,
     provider: null,
-    providerConnected: false,
-    importedWorkflowName: null,
-    slackStatus: "disconnected",
-    slackWorkspace: "",
-    chatChannels: [],
     startingPromptDraft: "",
     startingPromptKey: "",
   };
@@ -74,21 +80,34 @@ const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
  */
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
+/**
+ * One `onboarding-start` per application start, beside the draft it belongs
+ * to: Back/Forward, a guard redirect and re-entering the flow all run a step
+ * setup again, and Marketing counts runs of the flow rather than step views.
+ */
+const internalStartEventSent$ = state(false);
+
+/** Claims this run's single `onboarding-start`; true only for the first caller. */
+export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
+  if (get(internalStartEventSent$)) {
+    return false;
+  }
+  set(internalStartEventSent$, true);
+  return true;
+});
+
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
   readonly searchOpen: boolean;
   /** What the catalog search is filtered by, kept while its dialog is open. */
   readonly searchQuery: string;
   readonly inviteEmail: string;
-  /** File name waiting for import confirmation, null when no file is chosen. */
-  readonly pendingSkillName: string | null;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   searchOpen: false,
   searchQuery: "",
   inviteEmail: "",
-  pendingSkillName: null,
 });
 
 export const sourcesFirstUi$ = computed((get) => {

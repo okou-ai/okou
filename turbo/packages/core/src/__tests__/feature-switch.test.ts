@@ -27,11 +27,47 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
     expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
+    expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
+    expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
 });
 
 describe("isFeatureEnabled", () => {
+  it("enables Browser native input for staff and honors overrides", () => {
+    const external = { orgId: "org_nonexistent" };
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {})).toBe(
+      false,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, external),
+    ).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, staff)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.BrowserNativeInput]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.BrowserNativeInput, {
+        ...external,
+        overrides: { [FeatureSwitchKey.BrowserNativeInput]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.BrowserNativeInput],
+    ).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description:
+        "Create native web forms that apply user-provided values to exact managed Browser controls",
+      rolloutStage: "beta",
+    });
+  });
+
   it("defaults personal subscription priority by workspace and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_external" }]) {
       expect(
@@ -201,6 +237,32 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
+  it("keeps Okou models off for everyone until an explicit override enables them", () => {
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: staffOrgId },
+      { orgId: staffOrgId, userId: "staff-user", email: "staff@okou.ai" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, context)).toBe(
+        false,
+      );
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OkouModels, {
+          ...context,
+          overrides: { [FeatureSwitchKey.OkouModels]: true },
+        }),
+      ).toBe(true);
+    }
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description:
+        "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
+      rolloutStage: "alpha",
+    });
+  });
+
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
     expect(isFeatureEnabled(FeatureSwitchKey.AvatarNeckSweater, {})).toBe(true);
@@ -336,6 +398,25 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
     expect(
       getFeatureSwitchMetadata()[FeatureSwitchKey.GradientColorThemes]
+        .rolloutStage,
+    ).toBe("released");
+  });
+
+  it("should admit durable exports for every owner and accept an opt-out", () => {
+    expect(FeatureSwitchKey.DurableUserExport).toBe("durableUserExport");
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.DurableUserExport, context),
+      ).toBe(true);
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.DurableUserExport, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.DurableUserExport]: false },
+      }),
+    ).toBe(false);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.DurableUserExport]
         .rolloutStage,
     ).toBe("released");
   });
@@ -493,6 +574,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       true,
     );
@@ -520,6 +602,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
+    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       false,
     );

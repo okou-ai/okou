@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useTranslation } from "react-i18next";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import type { RouteKey } from "../../signals/route-paths.ts";
@@ -10,6 +11,7 @@ import { i18n } from "../../i18n/index.ts";
 import { ShortcutHelpDialog } from "../components/shortcut-help-dialog.tsx";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 type ShortcutLabelId =
   | "blurComposer"
@@ -30,11 +32,13 @@ type ShortcutLabelId =
   | "showShortcuts"
   | "toggleSidebar"
   | "togglePin"
+  | "unreadOnly"
   | "voiceInput";
 
 interface ShortcutDefinition {
   readonly key: string;
   readonly labelId: ShortcutLabelId;
+  readonly featureSwitch?: FeatureSwitchKey;
 }
 
 interface ShortcutSectionDefinition {
@@ -54,6 +58,11 @@ const GLOBAL_NAVIGATION_SHORTCUTS = [
   {
     key: GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding,
     labelId: "searchWorkspace",
+  },
+  {
+    key: GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding,
+    labelId: "unreadOnly",
+    featureSwitch: FeatureSwitchKey.ChatUnreadOnlyShortcut,
   },
   { key: "ctrl+shift+[", labelId: "previousAgent" },
   { key: "ctrl+shift+]", labelId: "nextAgent" },
@@ -197,6 +206,9 @@ function translatedShortcutLabels(): Readonly<Record<ShortcutLabelId, string>> {
     togglePin: i18n.t(($) => {
       return $.appShell.shortcutHelp.shortcuts.togglePin;
     }),
+    unreadOnly: i18n.t(($) => {
+      return $.chat.sidebar.unreadOnly;
+    }),
     voiceInput: i18n.t(($) => {
       return $.chat.voice.input;
     }),
@@ -205,18 +217,26 @@ function translatedShortcutLabels(): Readonly<Record<ShortcutLabelId, string>> {
 
 function localizeShortcutSections(
   sections: readonly ShortcutSectionDefinition[],
+  featureSwitches: Readonly<Record<FeatureSwitchKey, boolean>>,
 ) {
   const sectionTitles = translatedSectionTitles();
   const shortcutLabels = translatedShortcutLabels();
   return sections.map((section) => {
     return {
       title: sectionTitles[section.titleId],
-      shortcuts: section.shortcuts.map((shortcut) => {
-        return {
-          key: shortcut.key,
-          label: shortcutLabels[shortcut.labelId],
-        };
-      }),
+      shortcuts: section.shortcuts
+        .filter((shortcut) => {
+          return (
+            shortcut.featureSwitch === undefined ||
+            featureSwitches[shortcut.featureSwitch] === true
+          );
+        })
+        .map((shortcut) => {
+          return {
+            key: shortcut.key,
+            label: shortcutLabels[shortcut.labelId],
+          };
+        }),
     };
   });
 }
@@ -226,8 +246,10 @@ export function ChatShortcutHelpDialog() {
   const shortcutHelpOpen = useGet(chatShortcutHelpOpen$);
   const setShortcutHelpOpen = useSet(setChatShortcutHelpOpen$);
   const activeRoute = useGet(activeRoute$);
+  const featureSwitches = useGet(featureSwitch$);
   const shortcutSections = localizeShortcutSections(
     shortcutSectionsForRoute(activeRoute),
+    featureSwitches,
   );
 
   return (

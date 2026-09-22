@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { mcpChatMessageSchema } from "./mcp-chat-messages";
-import { mcpFilterTimestampSchema, mcpTimestampKey } from "./mcp-chat-threads";
+import {
+  mcpChatOutputTimestampSchema,
+  mcpFilterTimestampSchema,
+  mcpTimestampKey,
+} from "./mcp-chat-time";
 
 export const mcpSearchChatMessagesInputSchema = z
   .strictObject({
@@ -32,7 +36,7 @@ const searchMatchSchema = z.strictObject({
   agent: z.strictObject({ agentId: z.uuid(), name: z.string().max(512) }),
   role: z.enum(["user", "assistant"]),
   runId: z.string().nullable(),
-  createdAt: z.iso.datetime(),
+  sourceEventAt: mcpChatOutputTimestampSchema,
   excerpt: z.strictObject({
     text: z.string().max(1000),
     offset: z.number().int().nonnegative(),

@@ -20,6 +20,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { expect, test } from "vitest";
 
 import {
@@ -641,7 +642,10 @@ test("Switch Chat, Image, and Video from one model picker in a desktop existing 
  * category, and only the menu's overview sets one, so the two cases differ by
  * viewport rather than by assertion.
  */
-async function openTemporaryImageModelChat(layout: "menu" | "flyout") {
+async function openTemporaryImageModelChat(
+  layout: "menu" | "flyout",
+  extraFeatureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+) {
   if (layout === "menu") {
     setMobileViewport();
   }
@@ -675,6 +679,7 @@ async function openTemporaryImageModelChat(layout: "menu" | "flyout") {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
+      ...extraFeatureSwitches,
     },
   });
 
@@ -710,6 +715,49 @@ test("A temporary image model applies to one new chat and resets for the next", 
   await screen.findByRole("heading", { level: 2 });
   await openCategory("Image");
   expectSelected("Nano Banana 2");
+});
+
+/** The composer's starting tasks, which also choose the run's media type. */
+function taskChip(name: string): HTMLElement {
+  const group = screen.getByRole("group", { name: "Choose a task" });
+  const chip = queryAllByRoleFast("button", group).find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!chip) {
+    throw new Error(`${name} task chip not found`);
+  }
+  return chip;
+}
+
+/**
+ * The composer tray holds one row. A blocked paid tool is the row a member has
+ * to act on, so it takes the tray from the temporary media-model card — but
+ * only once the read settles, because a read in flight has nothing to say.
+ */
+test("A blocked paid tool takes the composer tray from the temporary image model card", async () => {
+  const settleRead = context.mocks.deferred<void>();
+  context.mocks.api(paidToolsContract.get, async ({ respond, withSignal }) => {
+    await withSignal(settleRead.promise);
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  await openTemporaryImageModelChat("menu", {
+    [FeatureSwitchKey.PaidToolControls]: true,
+    [FeatureSwitchKey.ComposerTaskChips]: true,
+  });
+  await chooseMenuMediaModel("Image", "GPT Image 2");
+  click(taskChip("Image"));
+
+  await waitFor(() => {
+    expect(scopeCard("Image model for this chat")).not.toBeNull();
+  });
+  expect(
+    screen.queryByText("Loading your tool settings…"),
+  ).not.toBeInTheDocument();
+
+  settleRead.resolve();
+
+  await screen.findByText("Image generation is off for you");
+  expect(scopeCard("Image model for this chat")).toBeNull();
 });
 
 test("Save a temporary image model as the default for future chats", async () => {

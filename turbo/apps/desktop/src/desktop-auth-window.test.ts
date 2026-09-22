@@ -5,7 +5,10 @@ import { resolveDesktopConfig } from "./config";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { DesktopAuthWindow } from "./desktop-auth-window";
-import { DesktopAuthSession } from "./desktop-auth-session";
+import {
+  DesktopAuthSession,
+  type DesktopAuthRefreshEvent,
+} from "./desktop-auth-session";
 import { installDesktopAuthIpc } from "./desktop-auth-electron";
 import { DESKTOP_AUTH_CHANNELS } from "./desktop-auth-ipc-channels";
 
@@ -17,10 +20,16 @@ interface Contents extends EventEmitter {
   destroyed: boolean;
   popup: (details: { url: string }) => { action: string };
 }
+/** Electron settles `loadURL` on its own schedule, so tests own the timing. */
+interface PendingLoad {
+  promise: Promise<void>;
+  reject: (error: unknown) => void;
+}
 interface TestWindow extends EventEmitter {
   webContents: Contents;
   options: BrowserWindowConstructorOptions;
   destroyed: boolean;
+  load: PendingLoad;
   close: () => void;
 }
 interface InvokeEvent {
@@ -51,12 +60,20 @@ vi.mock("electron", async () => {
   class BrowserWindow extends EventEmitter {
     webContents = new WebContents();
     destroyed = false;
+    load = (() => {
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<void>((_resolve, fail) => {
+        reject = fail;
+      });
+      return { promise, reject };
+    })();
     constructor(readonly options: BrowserWindowConstructorOptions) {
       super();
       electron.windows.push(this);
     }
     async loadURL(url: string) {
       this.webContents.mainFrame.url = url;
+      await this.load.promise;
     }
     isDestroyed() {
       return this.destroyed;
@@ -97,9 +114,22 @@ afterEach(() => {
   electron.storage.clear();
   vi.clearAllMocks();
 });
+/** Every reported restore failure as `classification:message`, in order. */
+function failures(refreshes: readonly DesktopAuthRefreshEvent[]): string[] {
+  return refreshes.flatMap((event) =>
+    event.phase === "failed"
+      ? [
+          `${event.classification}:${
+            event.cause instanceof Error ? event.cause.message : event.cause
+          }`,
+        ]
+      : [],
+  );
+}
 function setup(timeoutMs = 30_000) {
   const config = resolveDesktopConfig();
   const external: string[] = [];
+  const refreshes: DesktopAuthRefreshEvent[] = [];
   const driver = new DesktopAuthWindow({
     authOrigin: origin,
     partition: config.authPartition,
@@ -122,6 +152,9 @@ function setup(timeoutMs = 30_000) {
     consumeUrl: () => `${origin}/desktop-auth/consume`,
     selectOrgUrl: `${origin}/desktop-auth/select-org`,
     runAuthWindow: (request) => driver.run(request),
+    onBackgroundRefresh: (event) => {
+      refreshes.push(event);
+    },
   });
   installDesktopAuthIpc(
     {
@@ -132,7 +165,7 @@ function setup(timeoutMs = 30_000) {
     },
     { rendererUrl, authWindow: driver },
   );
-  return { driver, session, external };
+  return { driver, session, external, refreshes };
 }
 function currentWindow(): TestWindow {
   const window = electron.windows.at(-1);
@@ -519,5 +552,147 @@ describe("Desktop authentication IPC and document lifecycle", () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe("Hidden restore teardown", () => {
+  it("classifies a restore superseded by a newer operation as cancelled", async () => {
+    const { driver, session, refreshes } = setup();
+    const pending = session.getToken();
+    const next = run(driver);
+    const superseded = expect(next.pending).rejects.toThrow("cancelled");
+
+    // Supersession is the caller abandoning the attempt, not a failed restore.
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "cancelled:Desktop auth operation cancelled",
+    ]);
+
+    next.controller.abort();
+    await superseded;
+  });
+
+  it("classifies a restore cancelled by storage clearing as cancelled", async () => {
+    const { driver, session, refreshes } = setup();
+    const pending = session.getToken();
+
+    await driver.clearStorage();
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "cancelled:Desktop auth operation cancelled",
+    ]);
+  });
+
+  it("still reports a restore that exhausts its deadline", async () => {
+    // Node drives `AbortSignal.timeout` from an internal timer that no timer
+    // control can advance, so substituting the deadline signal is the only way
+    // to reach the elapsed state without waiting it out.
+    const deadline = new AbortController();
+    const deadlines: number[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    timeout.mockImplementation((milliseconds) => {
+      deadlines.push(milliseconds);
+      return deadline.signal;
+    });
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    timeout.mockRestore();
+    expect(deadlines).toEqual([30_000]);
+
+    deadline.abort(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+
+    // Nobody abandoned this attempt: it ran out of time, which is genuine
+    // unavailability. It rejects with the message supersession also produces,
+    // so only the cause separates the two.
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "unavailable:Desktop auth operation cancelled",
+    ]);
+  });
+
+  it("still reports a page that fails to load", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+
+    currentWindow().webContents.emit(
+      "did-fail-load",
+      {},
+      -2,
+      "",
+      `${origin}/desktop-auth/token`,
+      true,
+    );
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "unavailable:Desktop auth page failed: -2",
+    ]);
+  });
+
+  it("keeps a load failure that the window closing follows", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    const window = currentWindow();
+
+    window.webContents.emit(
+      "did-fail-load",
+      {},
+      -2,
+      "",
+      `${origin}/desktop-auth/token`,
+      true,
+    );
+    // The failure settled the attempt first, so the teardown it triggers —
+    // the close, and the load rejection that close produces — cannot downgrade
+    // a genuine failure into an expected one.
+    window.close();
+    window.load.reject(new Error("Object has been destroyed"));
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "unavailable:Desktop auth page failed: -2",
+    ]);
+  });
+
+  it("classifies a load rejection that teardown causes as cancelled", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    const window = currentWindow();
+
+    // Electron destroys the window before it emits `closed`, so the pending
+    // load can reject first and reach the caller as the attempt's outcome.
+    window.destroyed = true;
+    window.load.reject(new Error("Object has been destroyed"));
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "cancelled:Desktop auth page could not load",
+    ]);
+  });
+
+  it("still reports the identical load rejection outside a teardown", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+
+    currentWindow().load.reject(
+      Object.assign(new Error("ERR_CONNECTION_REFUSED"), {
+        code: "ERR_CONNECTION_REFUSED",
+        errno: -102,
+      }),
+    );
+
+    // Same rejection, same message, live attempt: a real page that could not
+    // load must keep reporting, so the classification reads the attempt's
+    // state and never the error's wording.
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([
+      "unavailable:Desktop auth page could not load",
+    ]);
   });
 });

@@ -490,7 +490,7 @@ export function parseSocialTarget(input: string): SocialUrlTarget {
   const platform = platformForHostname(url.hostname);
   if (!platform) {
     throw new InvalidArgumentError(
-      "unsupported social host; use LinkedIn, X, Facebook, Instagram, TikTok, or YouTube",
+      "unsupported social host; use LinkedIn, X, Facebook, Instagram, TikTok, or YouTube, or add a saved data job control for Threads, WeChat, and Xiaohongshu URLs",
     );
   }
   return {
@@ -500,6 +500,28 @@ export function parseSocialTarget(input: string): SocialUrlTarget {
     input,
     canonicalUrl: canonicalizeUrl(url, platform),
   };
+}
+
+/**
+ * These platforms are served only by saved data jobs, so they are accepted
+ * here but have no SocialKit tool binding.
+ */
+export const SOCIAL_JOB_ONLY_PLATFORMS = [
+  "threads",
+  "wechat",
+  "xiaohongshu",
+] as const;
+
+export type SocialJobOnlyPlatform = (typeof SOCIAL_JOB_ONLY_PLATFORMS)[number];
+
+export type SocialCommandPlatform = SocialJobOnlyPlatform | SocialPlatform;
+
+export function isJobOnlyPlatform(
+  value: string,
+): value is SocialJobOnlyPlatform {
+  return SOCIAL_JOB_ONLY_PLATFORMS.some((candidate) => {
+    return candidate === value;
+  });
 }
 
 export function parseSocialPlatform(value: string): SocialPlatform {
@@ -514,6 +536,46 @@ export function parseSocialPlatform(value: string): SocialPlatform {
     );
   }
   return platform;
+}
+
+/**
+ * Search is the only command that names a platform without a URL, so it is
+ * the only place a job-only platform can be selected by name.
+ */
+export function parseSearchPlatform(value: string): SocialCommandPlatform {
+  const lower = value.toLowerCase();
+  if (lower === "rednote") {
+    return "xiaohongshu";
+  }
+  return isJobOnlyPlatform(lower) ? lower : parseSocialPlatform(value);
+}
+
+const JOB_ONLY_HOSTS: ReadonlyMap<string, SocialJobOnlyPlatform> = new Map([
+  ["mp.weixin.qq.com", "wechat"],
+  ["threads.com", "threads"],
+  ["threads.net", "threads"],
+  ["www.threads.com", "threads"],
+  ["www.threads.net", "threads"],
+  ["www.xiaohongshu.com", "xiaohongshu"],
+  ["xhslink.cn", "xiaohongshu"],
+  ["xhslink.com", "xiaohongshu"],
+  ["xiaohongshu.com", "xiaohongshu"],
+]);
+
+/**
+ * Returns the platform and URL when it belongs to a job-only platform.
+ * SocialKit target parsing does not recognise them, so job commands check
+ * this first.
+ */
+export function parseJobOnlyTarget(
+  input: string,
+): { readonly platform: SocialJobOnlyPlatform; readonly url: string } | null {
+  const url = URL.parse(input);
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    return null;
+  }
+  const platform = JOB_ONLY_HOSTS.get(url.hostname.toLowerCase());
+  return platform ? { platform, url: url.href } : null;
 }
 
 function urlIntent(

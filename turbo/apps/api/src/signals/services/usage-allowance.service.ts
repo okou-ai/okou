@@ -78,6 +78,13 @@ interface UsageAllowanceWindows {
 interface UsageAllowanceEventInput {
   readonly usageEventId: string;
   readonly runId: string | null;
+  /**
+   * The original run start captured with the usage row, independent of the live
+   * `agent_runs` row. The ledger's context check keeps this NULL for every
+   * context that has no run start, and equal to the event's own creation time
+   * for the runless contexts, so it is safe to prefer it unconditionally.
+   */
+  readonly billingAnchorAt: Date | null;
   readonly grossUnits: number;
   readonly occurredAt: Date;
 }
@@ -85,6 +92,7 @@ interface UsageAllowanceEventInput {
 interface UsageAllowanceCandidate {
   readonly usageEventId: string;
   readonly runId: string | null;
+  readonly billingAnchorAt: Date | null;
   readonly grossUnits: number;
   readonly occurredAt: Date;
 }
@@ -879,6 +887,19 @@ async function insertUsageAllowanceAllocations(
   `);
 }
 
+/**
+ * Anchoring is total: every candidate gets an allowance time. A candidate that
+ * cannot be anchored to a run start falls back to when it happened, which is
+ * what the ledger already does for usage that never had a run. Dropping it
+ * instead would silently charge the event its full gross price.
+ *
+ * ROLLOUT FALLBACK — the `loadRunCreatedAts` lookup. Surface: DB vs API, for
+ * rows written before migration 1119 whose `billing_anchor_at` is still NULL
+ * while their run is alive. Removal condition: `pnpm -F @okouai/db
+ * billing:attribution` reports `pending_anchor_gaps: 0` on a complete
+ * (non-truncated) production inventory. Follow-up: the drop pull request of
+ * #35875, which deletes this lookup.
+ */
 async function anchorUsageAllowanceCandidates(
   tx: UsageAllowanceStore,
   args: {
@@ -889,7 +910,9 @@ async function anchorUsageAllowanceCandidates(
   const runIds = [
     ...new Set(
       args.candidates.flatMap((candidate) => {
-        return candidate.runId ? [candidate.runId] : [];
+        return candidate.runId && !candidate.billingAnchorAt
+          ? [candidate.runId]
+          : [];
       }),
     ),
   ];
@@ -897,16 +920,13 @@ async function anchorUsageAllowanceCandidates(
     orgId: args.orgId,
     runIds,
   });
-  const anchoredCandidates: AnchoredUsageAllowanceCandidate[] = [];
-  for (const candidate of args.candidates) {
-    const allowanceAt = candidate.runId
-      ? runCreatedAtById.get(candidate.runId)
-      : candidate.occurredAt;
-    if (allowanceAt) {
-      anchoredCandidates.push({ ...candidate, allowanceAt });
-    }
-  }
-  return anchoredCandidates;
+  return args.candidates.map((candidate) => {
+    const allowanceAt =
+      candidate.billingAnchorAt ??
+      (candidate.runId ? runCreatedAtById.get(candidate.runId) : undefined) ??
+      candidate.occurredAt;
+    return { ...candidate, allowanceAt };
+  });
 }
 
 async function ensureIssuedWindowsForKind(
@@ -1029,6 +1049,7 @@ export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
       candidates.push({
         usageEventId: event.usageEventId,
         runId: event.runId,
+        billingAnchorAt: event.billingAnchorAt,
         grossUnits: event.grossUnits,
         occurredAt: event.occurredAt,
       });

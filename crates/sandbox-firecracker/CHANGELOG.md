@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.43.17](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.16...sandbox-firecracker-v0.43.17) (2026-09-21)
+
+## [0.43.16](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.15...sandbox-firecracker-v0.43.16) (2026-09-21)
+
+
+### Performance Improvements
+
+* **runner:** overlap workspace history restore ([#35766](https://github.com/okou-ai/okou/issues/35766)) ([022ac68](https://github.com/okou-ai/okou/commit/022ac688820391243d31429bbaeda7d423eacac5))
+
 ## [0.43.15](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.14...sandbox-firecracker-v0.43.15) (2026-09-21)
 
 ## [0.43.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.43.13...sandbox-firecracker-v0.43.14) (2026-09-21)

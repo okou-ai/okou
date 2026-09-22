@@ -79,6 +79,18 @@ pub(crate) enum ExactIdleReservationMiss {
     HistoryGenerationMismatch,
 }
 
+/// Result of one blank reservation attempt while the pool lock is held.
+///
+/// Keeping inventory absence separate from shape incompatibility lets callers
+/// attach the authoritative pool observation to the run without a racy second
+/// lookup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BlankIdleReservationMiss {
+    Empty,
+    Incompatible,
+    Unknown,
+}
+
 impl ExactIdleReservationMiss {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
@@ -284,8 +296,8 @@ impl IdlePool {
         &mut self,
         profile_name: &str,
         device_rate_limits: &Option<DeviceRateLimits>,
-    ) -> Option<ReservedIdleSandbox> {
-        let key = self
+    ) -> Result<ReservedIdleSandbox, BlankIdleReservationMiss> {
+        let Some(key) = self
             .blank_entries
             .iter()
             .filter(|(_, entry)| {
@@ -293,14 +305,27 @@ impl IdlePool {
                     && entry.device_rate_limits() == device_rate_limits
             })
             .min_by_key(|(_, entry)| entry.parked_at)
-            .map(|(key, _)| *key)?;
-        let entry = self.blank_entries.remove(&key)?;
+            .map(|(key, _)| *key)
+        else {
+            return if self.blank_entries.is_empty() {
+                Err(BlankIdleReservationMiss::Empty)
+            } else {
+                Err(BlankIdleReservationMiss::Incompatible)
+            };
+        };
+        let Some(entry) = self.blank_entries.remove(&key) else {
+            return Err(BlankIdleReservationMiss::Unknown);
+        };
         self.bump_revision();
-        Some(ReservedIdleSandbox::parked(entry))
+        Ok(ReservedIdleSandbox::parked(entry))
     }
 
     pub(crate) fn blank_len(&self) -> usize {
         self.blank_entries.len()
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Remove the oldest compatible exact entry that has been idle long enough

@@ -148,7 +148,8 @@ function facts(current: Exclude<Phase, "done">, filter: string) {
       OR (r.id IS NOT NULL AND (r.org_id <> t.org_id OR r.user_id <> t.user_id))) AS conflict,
     ${current === "raw" ? "(t.status <> 'processed' AND (t.billing_anchor_at IS NULL OR t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')))" : "false"} AS pending_anchor_gap,
     ${current === "raw" ? "($7::timestamp IS NOT NULL AND t.created_at >= $7::timestamp AND t.billing_context IN ('legacy_unknown', 'missing_run'))" : "false"} AS new_writer_gap,
-    ${current === "jobs" ? "(t.status IN ('queued', 'running') AND t.billing_context = 'legacy_unknown' AND t.run_id IS NULL)" : "false"} AS pending_generation_gap
+    ${current === "jobs" ? "(t.status IN ('queued', 'running') AND t.billing_context = 'legacy_unknown' AND t.run_id IS NULL)" : "false"} AS pending_generation_gap,
+    ${isRun ? "(a.run_id IS NULL OR a.thread_context = 'unknown')" : "false"} AS thread_gap
     FROM ${tables[current]} t
     LEFT JOIN billing_run_attribution a ON a.run_id = ${identity}
     LEFT JOIN agent_runs r ON r.id = ${identity}
@@ -198,6 +199,7 @@ try {
       count(*) FILTER (WHERE pending_anchor_gap)::int AS pending_anchor_gaps,
       count(*) FILTER (WHERE new_writer_gap)::int AS new_writer_gaps,
       count(*) FILTER (WHERE pending_generation_gap)::int AS pending_generation_gaps,
+      count(*) FILTER (WHERE thread_gap)::int AS thread_gaps,
       ARRAY(SELECT DISTINCT billing_run_id FROM bounded WHERE conflict LIMIT 10) AS conflicting_run_ids
     FROM bounded`,
       [...scope, null, maxRows + 1, writerSince],
@@ -294,9 +296,21 @@ try {
           const result =
             current === "runs"
               ? await client.query(
-                  `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source)
-                SELECT id, org_id, user_id, created_at, billing_usage_source(trigger_source) FROM agent_runs WHERE id = ANY($1::uuid[])
-                ON CONFLICT (run_id) DO NOTHING`,
+                  // Captured identity is never overwritten; the conflict branch
+                  // only fills a grouping identity this pass has not seen yet,
+                  // so repeating the phase converges instead of rewriting. A row
+                  // whose identity disagrees with its run stays reported and
+                  // unmodified, exactly as the source phases below require.
+                  `INSERT INTO billing_run_attribution (run_id, org_id, user_id, run_started_at, source, thread_id, thread_context)
+                SELECT id, org_id, user_id, created_at, billing_usage_source(trigger_source), chat_thread_id,
+                  CASE WHEN chat_thread_id IS NULL THEN 'threadless' ELSE 'thread' END
+                FROM agent_runs WHERE id = ANY($1::uuid[])
+                ON CONFLICT (run_id) DO UPDATE SET thread_id = EXCLUDED.thread_id, thread_context = EXCLUDED.thread_context
+                  WHERE billing_run_attribution.thread_context = 'unknown'
+                    AND billing_run_attribution.org_id = EXCLUDED.org_id
+                    AND billing_run_attribution.user_id = EXCLUDED.user_id
+                    AND billing_run_attribution.run_started_at = EXCLUDED.run_started_at
+                    AND billing_run_attribution.source = EXCLUDED.source`,
                   [ids],
                 )
               : await client.query(

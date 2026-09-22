@@ -164,10 +164,12 @@ function availableCredential(
 /**
  * Pi provider identity for every built-in route that can serve extraction.
  *
- * The built-in route for `deepseek-v4-flash` resolves the native `deepseek`
- * candidate first, so omitting it would skip every built-in Stage 1 run as
- * `provider_model_unsupported`. This maps route provider types only; it does
- * not widen which providers may serve the model.
+ * The built-in extraction route resolves the native `deepseek` candidate first,
+ * so omitting it would skip every built-in Stage 1 run as
+ * `provider_model_unsupported`. `openrouter` is the secondary candidate of that
+ * same model and must stay mapped, otherwise extraction cannot fall through
+ * when the native candidate has no key or is in cooldown. This maps route
+ * provider types only; it does not widen which providers may serve the model.
  */
 function builtInStage1PiProvider(
   type: BuiltInModelRouteProviderType,

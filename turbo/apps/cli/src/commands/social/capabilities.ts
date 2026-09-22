@@ -14,7 +14,151 @@ import {
   SOCIAL_INSTAGRAM_POST_KINDS,
   type SocialPlatform,
 } from "@okouai/api-contracts/contracts/social-discovery";
+import {
+  isJobOnlyPlatform,
+  SOCIAL_JOB_ONLY_PLATFORMS,
+  type SocialCommandPlatform,
+} from "./intents";
 import { socialExportCapabilities } from "./output";
+import {
+  SOCIAL_DATA_MAX_RESULTS,
+  type SocialDataOperation,
+} from "@okouai/api-contracts/contracts/social-data";
+
+interface JobCapability {
+  readonly operation: SocialDataOperation;
+  readonly targets: readonly string[];
+  readonly inputs?: Readonly<Record<string, readonly string[]>>;
+  readonly maxResults?: number;
+  readonly note?: string;
+}
+
+const jobCapabilities: Partial<
+  Record<SocialCommandPlatform, readonly JobCapability[]>
+> = {
+  threads: [
+    {
+      operation: "inspect",
+      targets: ["profile"],
+      note: "Resolves the exact handle through Threads profile search and returns identity fields, not follower counts",
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      note: "Returns matching profiles; Threads post search is unavailable",
+    },
+  ],
+  wechat: [
+    { operation: "inspect", targets: ["official_account_article"] },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: { "--type": ["article", "account", "video"] },
+      note: "Defaults to every result type; one query on a single line",
+    },
+    {
+      operation: "comments",
+      targets: ["official_account_article"],
+      note: "Returns one bounded batch of elected comments with their replies counted",
+    },
+  ],
+  xiaohongshu: [
+    { operation: "inspect", targets: ["profile", "note", "share_link"] },
+    { operation: "posts", targets: ["profile"] },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: {
+        "--sort": ["general", "popularity_descending", "time_descending"],
+      },
+    },
+    { operation: "comments", targets: ["note"] },
+  ],
+  instagram: [
+    { operation: "inspect", targets: ["profile", "post", "reel"] },
+    {
+      operation: "posts",
+      targets: ["profile"],
+      inputs: { "--kind": ["posts", "reels"] },
+      maxResults: 12,
+      note: "One profile request returns the most recent items of the selected kind",
+    },
+    {
+      operation: "comments",
+      targets: ["post", "reel"],
+      note: "Returns one bounded batch; the requested limit does not guarantee that many available comments",
+    },
+  ],
+  tiktok: [
+    { operation: "inspect", targets: ["video", "photo"] },
+    { operation: "posts", targets: ["profile"] },
+    { operation: "search", targets: ["query"] },
+    {
+      operation: "comments",
+      targets: ["video", "photo"],
+      note: "Returns one bounded batch; the requested limit does not guarantee that many available comments",
+    },
+  ],
+  youtube: [
+    { operation: "inspect", targets: ["video", "short"] },
+    {
+      operation: "posts",
+      targets: ["channel"],
+      inputs: {
+        "--sort": ["newest", "popular", "oldest"],
+        "--type": ["video", "shorts"],
+      },
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: {
+        "--sort": ["relevance", "rating", "date", "views"],
+        "--date": ["hour", "today", "week", "month", "year"],
+        "--type": ["video", "shorts"],
+      },
+    },
+    {
+      operation: "comments",
+      targets: ["video", "short"],
+      inputs: { "--sort": ["top", "newest"] },
+    },
+    {
+      operation: "transcript",
+      targets: ["video", "short"],
+      note: "--language accepts a two-letter language code; availability depends on the source",
+    },
+  ],
+  facebook: [
+    { operation: "inspect", targets: ["public_page"] },
+    { operation: "posts", targets: ["public_profile"] },
+    { operation: "search", targets: ["query"] },
+    {
+      operation: "comments",
+      targets: ["post", "video", "reel", "photo"],
+      inputs: { "--sort": ["newest", "relevant", "all"] },
+      note: "Nested replies are excluded",
+    },
+  ],
+  twitter: [
+    { operation: "inspect", targets: ["post"] },
+    {
+      operation: "posts",
+      targets: ["profile"],
+      inputs: { "--sort": ["latest", "top"] },
+    },
+    {
+      operation: "search",
+      targets: ["query"],
+      inputs: { "--sort": ["latest", "top"] },
+    },
+    {
+      operation: "comments",
+      targets: ["conversation"],
+      inputs: { "--sort": ["latest", "top"] },
+    },
+  ],
+};
 
 const SUMMARY_FIELDS_NOTE =
   'Summarize accepts --fields JSON or --fields-file PATH, e.g. {"audience":"Who this video helps"}, plus optional --prompt guidance (not strict JSON Schema)';
@@ -226,22 +370,46 @@ function detailsFor(entry: ReturnType<typeof socialOperationBindings>[number]) {
   };
 }
 
-export function socialCapabilities(platform?: SocialPlatform) {
-  return (platform ? [platform] : socialPlatformSchema.options).map(
-    (selected) => {
-      const entries = socialOperationBindings(selected);
+function jobSection(selected: SocialCommandPlatform) {
+  return {
+    platform: selected === "twitter" ? "x" : selected,
+    controls: ["--dry-run", "--max-credits", "--async", "--request-id"],
+    maxResults: SOCIAL_DATA_MAX_RESULTS,
+    details: jobCapabilities[selected] ?? [],
+    note: "Explicit job controls select these capabilities. Existing commands without them use the standard capabilities above. Deployment availability is checked by the free quote API; unsupported inputs fail before execution.",
+    recovery: "okou social jobs get <job-id> --wait --json",
+  };
+}
+
+export function socialCapabilities(platform?: SocialCommandPlatform) {
+  const platforms: readonly SocialCommandPlatform[] = platform
+    ? [platform]
+    : [...socialPlatformSchema.options, ...SOCIAL_JOB_ONLY_PLATFORMS];
+  return platforms.map((selected) => {
+    if (isJobOnlyPlatform(selected)) {
       return {
         platform: selected,
-        operations: [
-          ...new Set(
-            entries.map((entry) => {
-              return entry.operation;
-            }),
-          ),
-        ].sort(),
-        ...(notes[selected] ? { notes: notes[selected] } : {}),
-        details: entries.map(detailsFor),
+        operations: [],
+        notes: [
+          "Saved data jobs are the only protocol for this platform; the standard Social commands have no tool for it",
+        ],
+        details: [],
+        jobs: jobSection(selected),
       };
-    },
-  );
+    }
+    const entries = socialOperationBindings(selected);
+    return {
+      platform: selected,
+      operations: [
+        ...new Set(
+          entries.map((entry) => {
+            return entry.operation;
+          }),
+        ),
+      ].sort(),
+      ...(notes[selected] ? { notes: notes[selected] } : {}),
+      details: entries.map(detailsFor),
+      jobs: jobSection(selected),
+    };
+  });
 }

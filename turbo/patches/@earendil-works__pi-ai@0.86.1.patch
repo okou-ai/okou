@@ -1,5 +1,5 @@
 diff --git a/dist/api/bedrock-converse-stream.d.ts b/dist/api/bedrock-converse-stream.d.ts
-index 5d44bf071e84329250385366c0e6f623c7d910dd..1bae891a22bffee77ce4766b3b3c1e72633c3df7 100644
+index 5d44bf0..1bae891 100644
 --- a/dist/api/bedrock-converse-stream.d.ts
 +++ b/dist/api/bedrock-converse-stream.d.ts
 @@ -1,6 +1,9 @@
@@ -21,10 +21,10 @@ index 5d44bf071e84329250385366c0e6f623c7d910dd..1bae891a22bffee77ce4766b3b3c1e72
  //# sourceMappingURL=bedrock-converse-stream.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/bedrock-converse-stream.js b/dist/api/bedrock-converse-stream.js
-index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2b1dc97f7 100644
+index 44e3f13..b990fc1 100644
 --- a/dist/api/bedrock-converse-stream.js
 +++ b/dist/api/bedrock-converse-stream.js
-@@ -43,10 +43,11 @@ export const stream = (model, context, options = {}) => {
+@@ -47,10 +47,11 @@ export const stream = (model, context, options = {}) => {
          // over ambient AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY. The SDK default
          // chain already prefers a configured profile over env keys, but only when
          // `credentials` is not set on the client config. See #6957.
@@ -39,7 +39,7 @@ index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2
          const configuredRegion = getConfiguredBedrockRegion(options);
          const hasAmbientConfiguredProfile = Boolean(getProviderEnvValue("AWS_PROFILE"));
          const endpointRegion = getStandardBedrockEndpointRegion(model.baseUrl);
-@@ -118,12 +119,14 @@ export const stream = (model, context, options = {}) => {
+@@ -122,12 +123,14 @@ export const stream = (model, context, options = {}) => {
              config.token = { token: bearerToken };
              config.authSchemePreference = ["httpBearerAuth"];
          }
@@ -55,7 +55,7 @@ index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2
              let observedRawResponse = false;
              if (options.onResponse) {
                  addResponseHeadersMiddleware(client, options.onResponse, model, () => {
-@@ -155,6 +158,7 @@ export const stream = (model, context, options = {}) => {
+@@ -161,6 +164,7 @@ export const stream = (model, context, options = {}) => {
              const command = new ConverseStreamCommand(commandInput);
              const response = await client.send(command, { abortSignal: options.signal });
              responseRequestId = normalizeDiagnosticValue(response.$metadata.requestId);
@@ -63,7 +63,7 @@ index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2
              if (!observedRawResponse && response.$metadata.httpStatusCode !== undefined) {
                  const responseHeaders = {};
                  if (response.$metadata.requestId) {
-@@ -232,6 +236,9 @@ export const stream = (model, context, options = {}) => {
+@@ -238,6 +242,9 @@ export const stream = (model, context, options = {}) => {
              stream.push({ type: "error", reason: output.stopReason, error: output });
              stream.end();
          }
@@ -73,7 +73,7 @@ index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2
      })();
      return stream;
  };
-@@ -384,6 +391,7 @@ export const streamSimple = (model, context, options) => {
+@@ -390,6 +397,7 @@ export const streamSimple = (model, context, options) => {
      const base = {
          ...buildBaseOptions(model, context, options, undefined),
          toolChoice: options?.toolChoice,
@@ -82,7 +82,7 @@ index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2
      if (!options?.reasoning) {
          return stream(model, context, { ...base, reasoning: undefined });
 diff --git a/dist/api/openai-codex-responses.d.ts b/dist/api/openai-codex-responses.d.ts
-index 704476da084be53d6aa194a5f774fa3ad47f5e9a..8274468318617744f206f551fe5c0c22e935c7ef 100644
+index 704476d..8274468 100644
 --- a/dist/api/openai-codex-responses.d.ts
 +++ b/dist/api/openai-codex-responses.d.ts
 @@ -1,6 +1,7 @@
@@ -94,10 +94,10 @@ index 704476da084be53d6aa194a5f774fa3ad47f5e9a..8274468318617744f206f551fe5c0c22
      reasoningSummary?: "auto" | "concise" | "detailed" | "off" | "on" | null;
      serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index bf979d439f531c62494291050722f7e93435280d..429a00309d485aa5506cffa15a040be947c6d43d 100644
+index dfdb6ec..afdb30f 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
-@@ -164,7 +164,10 @@ export const stream = (model, context, options) => {
+@@ -166,7 +166,10 @@ export const stream = (model, context, options) => {
              if (!apiKey) {
                  throw new Error(`No API key for provider: ${model.provider}`);
              }
@@ -106,12 +106,12 @@ index bf979d439f531c62494291050722f7e93435280d..429a00309d485aa5506cffa15a040be9
 +            // Remove after #31373 records the two-hour Runner/Sandbox drain and
 +            // confirms every supported caller supplies accountId.
 +            const accountId = options?.accountId?.trim() || extractAccountId(apiKey);
-             const grammarToolInputProperties = createGrammarToolInputProperties(context.tools, model.compat?.supportsOpenAIGrammarTools ?? false);
+             const grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(normalizedContext.messages), model.compat?.supportsOpenAIGrammarTools ?? false);
              const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
              const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
 diff --git a/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..af6bdff0e88e49509f6c57fbc9814408ec07efce
+index 0000000..af6bdff
 --- /dev/null
 +++ b/dist/utils/provider-queue-timeout.d.ts
 @@ -0,0 +1,2 @@
@@ -119,7 +119,7 @@ index 0000000000000000000000000000000000000000..af6bdff0e88e49509f6c57fbc9814408
 +export declare function isProviderQueueTimeout(error: unknown): boolean;
 diff --git a/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..564f0827716f5295088c8fb69663eaa0fd96fba0
+index 0000000..d4b554b
 --- /dev/null
 +++ b/dist/utils/provider-queue-timeout.js
 @@ -0,0 +1,33 @@
@@ -129,7 +129,7 @@ index 0000000000000000000000000000000000000000..564f0827716f5295088c8fb69663eaa0
 +export function isProviderQueueTimeout(error) {
 +    const normalized = typeof error === "string" ? { message: error } : normalizeProviderError(error);
 +    let message = (normalized.body ?? normalized.message).trim()
-+        .replace(/^(?:OpenAI|Anthropic) API error \(\d{3}\):\s*/i, "")
++        .replace(/^[A-Za-z0-9 ._-]{1,40} API error \(\d{3}\):\s*/i, "")
 +        .replace(/^Codex error: /i, "")
 +        .replace(/^\d{3}(?::| )\s*/, "");
 +    if (message.startsWith("{")) {
@@ -157,7 +157,7 @@ index 0000000000000000000000000000000000000000..564f0827716f5295088c8fb69663eaa0
 +        "we were unable to start processing your request within the 900-second timeout limit. please try again later.";
 +}
 diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
-index a08fefd7e254f494f838ffa95affd6bf279973db..86a16a7dfcf62253756188d6adca9f6a9db00b2b 100644
+index a08fefd..0654751 100644
 --- a/dist/utils/provider-retry.js
 +++ b/dist/utils/provider-retry.js
 @@ -1,3 +1,4 @@
@@ -176,7 +176,7 @@ index a08fefd7e254f494f838ffa95affd6bf279973db..86a16a7dfcf62253756188d6adca9f6a
      if (shouldRetry === "true")
          return true;
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..fa666965fb0e891058fac1ef42c4ee67952a4fd4 100644
+index 6538c63..b84d8fa 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -1,3 +1,4 @@
@@ -184,7 +184,56 @@ index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..fa666965fb0e891058fac1ef42c4ee67
  function buildProviderErrorPattern(patterns) {
      return new RegExp(patterns.join("|"), "i");
  }
-@@ -168,6 +169,8 @@ export function isRetryableAssistantError(message) {
+@@ -163,6 +164,48 @@ export async function retryAssistantCall(produce, policy, signal, callbacks) {
+         await callbacks?.onRetryAttemptStart?.();
+     }
+ }
++/**
++ * Retry reasons Okou's model-request diagnostic identifies structurally.
++ *
++ * Each is transient by construction of `classifyProviderFailure`: a specific
++ * terminal condition in the provider body always outranks the transport status,
++ * so a usage limit, credential failure, billing exhaustion, context/output
++ * limit, unsupported model, safety refusal or queue expiry never reaches this
++ * set even when it arrives as a 429 or 5xx.
++ */
++const OKOU_RETRYABLE_MODEL_REQUEST_REASONS = new Set([
++    "provider_rate_limited",
++    "provider_overloaded",
++    "provider_server_error",
++    "provider_stream_timeout",
++    "response_connection_lost",
++]);
++/**
++ * Read the transient verdict Okou already recorded for the failed request.
++ *
++ * A provider may author an error body carrying none of the text below: the
++ * incident in okou-ai/okou#35577 was an HTTP 503 whose entire body was
++ * `{"detail":"Unable to verify Daybreak Blue access. Please try again."}`.
++ * Okou's runtime observes the HTTP status and the body at the transport
++ * boundary and appends an `okou_model_request` diagnostic, so the classification
++ * exists on the message before this runs. Reading it keeps a transient failure
++ * retryable without widening the text patterns, and the last diagnostic wins so
++ * a retried turn is judged on its own final attempt.
++ *
++ * Remove once upstream classifies structurally rather than by error text.
++ */
++function isOkouRetryableModelRequest(message) {
++    const diagnostics = message.diagnostics;
++    if (!Array.isArray(diagnostics))
++        return false;
++    for (let index = diagnostics.length - 1; index >= 0; index--) {
++        const diagnostic = diagnostics[index];
++        if (diagnostic?.type !== "okou_model_request")
++            continue;
++        return OKOU_RETRYABLE_MODEL_REQUEST_REASONS.has(diagnostic.details?.failureReason);
++    }
++    return false;
++}
+ /**
+  * Classifies whether a failed assistant message looks like a transient provider
+  * or transport error, so callers can decide if the last assistant turn should be
+@@ -176,8 +219,14 @@ export function isRetryableAssistantError(message) {
      if (message.stopReason !== "error" || !message.errorMessage)
          return false;
      const errorMessage = message.errorMessage;
@@ -192,4 +241,11 @@ index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..fa666965fb0e891058fac1ef42c4ee67
 +        return false;
      if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))
          return false;
++    // After both terminal guards, so a known-terminal body stays terminal, and
++    // before the text patterns, which the structured verdict supersedes.
++    if (isOkouRetryableModelRequest(message))
++        return true;
      return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
+ }
+ //# sourceMappingURL=retry.js.map
+\ No newline at end of file

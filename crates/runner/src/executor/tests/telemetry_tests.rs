@@ -19,15 +19,16 @@ use super::super::storage_baseline_observation::{
     BaselineObservationTestEvent, StorageBaselineObserver,
 };
 use super::super::telemetry::{
-    RunnerPreSpawnPhase, elapsed_since_api_start_ms, record_api_startup_boundaries,
-    record_reuse_result,
+    RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
+    record_api_startup_boundaries, record_reuse_result,
 };
 use super::super::{
-    ExactReuseSpeculationTiming, ExecutionHooks, ExecutorConfig, FinalizingHandoffOutcome,
-    FinalizingHandoffReason, JobParams, NewSandboxDispatch, RunnerPreSpawnConcurrency,
-    RunnerPreSpawnOperationTiming, RunnerPreSpawnTiming, SandboxReuseDisposition,
-    SandboxReuseRejection, SessionHistoryRestorePlan, execute_job, execute_job_reuse,
-    execute_job_reuse_with_hooks, execute_job_with_prepared_notifier,
+    BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming, ExecutionHooks,
+    ExecutorConfig, FinalizingHandoffOutcome, FinalizingHandoffReason, JobParams,
+    NewSandboxDispatch, RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming,
+    RunnerPreSpawnTiming, SandboxReuseDisposition, SandboxReuseRejection,
+    SessionHistoryRestorePlan, execute_job, execute_job_reuse, execute_job_reuse_with_hooks,
+    execute_job_with_prepared_notifier,
 };
 use super::support::{
     api_storage, context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
@@ -102,6 +103,62 @@ fn pre_finalization_deadline_records_bounded_handoff_outcome() {
                     && operation.3.as_deref() == Some("pre_finalization_deadline")
             })
     );
+}
+
+#[test]
+fn blank_pool_selection_records_one_latest_bounded_outcome() {
+    let mut telemetry = new_telemetry();
+    let mut timing = RunnerPreSpawnTiming::start_after_claim();
+    timing.record_blank_pool_selection(BlankPoolSelection::Miss(
+        BlankPoolSelectionReason::EmptyInventory,
+    ));
+    timing.record_blank_pool_selection(BlankPoolSelection::Miss(
+        BlankPoolSelectionReason::HeadroomReserved,
+    ));
+
+    RunnerSpawnTiming::start(Some(timing)).record_claim_to_executor_start(&mut telemetry);
+
+    let operations = telemetry.pending_ops_with_outcome_snapshot();
+    let matching: Vec<_> = operations
+        .iter()
+        .filter(|operation| operation.0 == "runner_claim_blank_pool_selection")
+        .collect();
+    assert_eq!(matching.len(), 1, "blank selection should emit once");
+    assert!(matching[0].1);
+    assert_eq!(matching[0].2.as_deref(), Some("miss"));
+    assert_eq!(matching[0].3.as_deref(), Some("headroom_reserved"));
+}
+
+#[test]
+fn blank_pool_selection_reason_vocabulary_is_stable() {
+    for (reason, expected) in [
+        (BlankPoolSelectionReason::EmptyInventory, "empty_inventory"),
+        (
+            BlankPoolSelectionReason::IncompatibleShape,
+            "incompatible_shape",
+        ),
+        (
+            BlankPoolSelectionReason::RefillInProgress,
+            "refill_in_progress",
+        ),
+        (
+            BlankPoolSelectionReason::ForegroundPreempted,
+            "foreground_preempted",
+        ),
+        (
+            BlankPoolSelectionReason::ResourceUnavailable,
+            "resource_unavailable",
+        ),
+        (
+            BlankPoolSelectionReason::HeadroomReserved,
+            "headroom_reserved",
+        ),
+        (BlankPoolSelectionReason::MaxIdle, "max_idle"),
+        (BlankPoolSelectionReason::DisabledPlan, "disabled_plan"),
+        (BlankPoolSelectionReason::Unknown, "unknown"),
+    ] {
+        assert_eq!(reason.as_str(), expected);
+    }
 }
 
 #[test]
@@ -2072,9 +2129,9 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
         None,
     );
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
-    let reserved = pool
-        .reserve_blank("vm0/default", &None)
-        .expect("blank sandbox should be compatible");
+    let Ok(reserved) = pool.reserve_blank("vm0/default", &None) else {
+        panic!("blank sandbox should be compatible");
+    };
     let (idle_sandbox, budget_lease) = match reserved.try_unpark_for_run(RunId::new_v4()).await {
         IdleUnparkResult::Reused {
             sandbox,
@@ -2086,6 +2143,8 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     };
 
     let cancel = tokio_util::sync::CancellationToken::new();
+    let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_claim();
+    pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
     let (outcome, telemetry) = execute_job_reuse_with_hooks(
         crate::executor::ReusedSandboxDispatch {
             factory: &MockSandboxFactory::new(),
@@ -2096,7 +2155,12 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
         &config,
         &params,
         RunCancellationSignals::hard_only(cancel),
-        ExecutionHooks::none(),
+        ExecutionHooks {
+            sandbox_prepared: None,
+            active_input_source: None,
+            pre_spawn_timing: Some(pre_spawn_timing),
+            session_history_restore_plan: SessionHistoryRestorePlan::Default,
+        },
     )
     .await;
 
@@ -2107,6 +2171,12 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     );
     assert_has_action(&telemetry, "sandbox_reuse_miss");
     assert_has_action(&telemetry, "sandbox_blank_pool_hit");
+    let blank_selection = telemetry.pending_ops_with_outcome_snapshot();
+    assert!(blank_selection.iter().any(|operation| {
+        operation.0 == "runner_claim_blank_pool_selection"
+            && operation.2.as_deref() == Some("hit")
+            && operation.3.is_none()
+    }));
     assert_lacks_action(&telemetry, "sandbox_reuse_hit");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_factory_create");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start");

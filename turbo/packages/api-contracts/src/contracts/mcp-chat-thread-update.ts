@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { chatThreadServiceTierSchema } from "./chat-threads";
 import { mcpChatModelIdSchema } from "./mcp-chat-discovery";
+import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
 import { mcpChatThreadSchema } from "./mcp-chat-threads";
 
 export const mcpUpdateChatThreadInputSchema = z.strictObject({
@@ -33,9 +34,9 @@ export const mcpUpdateChatThreadOutputSchema = z.strictObject({
   titleTruncated: z.boolean(),
   model: mcpChatThreadSchema.shape.model,
   serviceTier: chatThreadServiceTierSchema.nullable(),
-  updatedAt: z.iso.datetime(),
-  acceptedAt: z.iso.datetime(),
-  retryUntil: z.iso.datetime(),
+  metadataUpdatedAt: mcpChatOutputTimestampSchema,
+  acceptedAt: mcpChatOutputTimestampSchema,
+  retryUntil: mcpChatOutputTimestampSchema,
   replayed: z.boolean(),
   url: z.url(),
 });

@@ -1,5 +1,9 @@
 import { useGet, useSet } from "ccstate-react";
 import {
+  captureSourceOnboardingBack$,
+  captureSourceOnboardingSkipped$,
+} from "../../signals/bootstrap/source-onboarding-telemetry.ts";
+import {
   nextSourcesFirstStep,
   previousSourcesFirstStep,
   sourcesFirstDraft$,
@@ -10,7 +14,7 @@ import {
   type SourcesFirstStep,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { detachedNavigateTo$, searchParams$ } from "../../signals/route.ts";
 
 const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
   industry: ROUTES.onboarding,
@@ -31,6 +35,8 @@ interface SourcesFirstFlowState {
   readonly goBack: (() => void) | undefined;
   /** Moves to the next step; the last step's action is its own. */
   readonly goNext: () => void;
+  /** The same move, from a step's own Skip or Not now. */
+  readonly goSkip: () => void;
   readonly goTo: (step: SourcesFirstStep) => void;
 }
 
@@ -44,11 +50,26 @@ export function useSourcesFirstFlow(
   const flow = useGet(sourcesFirstFlow$);
   const draft = useGet(sourcesFirstDraft$);
   const navigate = useSet(detachedNavigateTo$);
+  const searchParams = useGet(searchParams$);
+  const captureBack = useSet(captureSourceOnboardingBack$);
+  const captureSkipped = useSet(captureSourceOnboardingSkipped$);
   const previous = previousSourcesFirstStep(step, flow, draft.experienced);
   const progress = sourcesFirstProgress(step, flow, draft.experienced);
 
   const goTo = (target: SourcesFirstStep): void => {
-    navigate(STEP_ROUTES[target], { searchParams: new URLSearchParams() });
+    // Every step keeps the query it arrived with, so the Marketing `prompt`
+    // handoff and a `redeemCode` still reach the last step's completion and
+    // first request.
+    navigate(STEP_ROUTES[target], {
+      searchParams: new URLSearchParams(searchParams),
+    });
+  };
+
+  const goNext = (): void => {
+    const next = nextSourcesFirstStep(step, flow, draft.experienced);
+    if (next) {
+      goTo(next);
+    }
   };
 
   return {
@@ -58,14 +79,14 @@ export function useSourcesFirstFlow(
     totalSteps: progress.total,
     goBack: previous
       ? () => {
+          captureBack(step);
           goTo(previous);
         }
       : undefined,
-    goNext: () => {
-      const next = nextSourcesFirstStep(step, flow, draft.experienced);
-      if (next) {
-        goTo(next);
-      }
+    goNext,
+    goSkip: () => {
+      captureSkipped(step);
+      goNext();
     },
     goTo,
   };

@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Textarea, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -14,6 +14,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { searchParams$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { TemplatePickerEntryCategory } from "../../signals/okou-page/template-picker-entry.ts";
+import { videoPickersVisible$ } from "../../signals/okou-page/video-picker-visibility.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { OnboardingConnectorSetup } from "./onboarding-connectors.tsx";
 import { onboardingMakeOptions } from "./onboarding-data.ts";
@@ -196,7 +197,11 @@ export function OnboardingMakePage() {
   const searchParams = useGet(searchParams$);
   const pageSignal = useGet(pageSignal$);
   const { navigateTo } = useOnboardingNavigation();
-  const makeOptions = onboardingMakeOptions(t);
+  const videoPickers = useLoadable(videoPickersVisible$);
+  const showVideo = videoPickers.state === "hasData" && videoPickers.data;
+  const makeOptions = onboardingMakeOptions(t).filter((option) => {
+    return option.id !== "video" || showVideo;
+  });
 
   if (searchParams.has("prompt")) {
     return <PromptOnboarding />;

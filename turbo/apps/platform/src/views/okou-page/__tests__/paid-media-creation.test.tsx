@@ -63,9 +63,7 @@ test("Paid tool guidance requires both UI rollouts", async () => {
     within(dialog).queryByText("Loading your tool settings…"),
   ).not.toBeInTheDocument();
   expect(
-    within(dialog).queryByText(
-      "Image generation is disabled in your paid tool settings.",
-    ),
+    within(dialog).queryByText("Image generation is off for you"),
   ).not.toBeInTheDocument();
 });
 
@@ -98,12 +96,10 @@ test.each(["image", "video"] as const)(
     const editor = await setupComposer(false);
     await selectCreation(mode);
     await fill(editor, "Create a launch scene");
-    expect(
-      screen.queryByText("Open paid tool settings"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Open settings")).not.toBeInTheDocument();
     click(button("Send"));
     await screen.findByText(
-      `${mode === "image" ? "Image" : "Video"} generation is disabled in your paid tool settings.`,
+      `${mode === "image" ? "Image" : "Video"} generation is off for you`,
     );
     expect(capture.runPrompts).toStrictEqual([]);
     expect(editor).toHaveTextContent("Create a launch scene");
@@ -126,10 +122,8 @@ test("An image creation notice opens settings and a confirmed save restores crea
   });
   const editor = await setupComposer(true, true);
   click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
-  await screen.findByText(
-    "Image generation is disabled in your paid tool settings.",
-  );
-  click(button("Open paid tool settings"));
+  await screen.findByText("Image generation is off for you");
+  click(button("Open settings"));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const toggle = await within(dialog).findByRole("switch", {
     name: "Image generation",
@@ -149,9 +143,7 @@ test("An image creation notice opens settings and a confirmed save restores crea
   });
   await waitFor(() => {
     return expect(
-      screen.queryByText(
-        "Image generation is disabled in your paid tool settings.",
-      ),
+      screen.queryByText("Image generation is off for you"),
     ).not.toBeInTheDocument();
   });
   await fill(editor, "Create an image of a launch scene");
@@ -229,20 +221,14 @@ test("Gallery notices follow each paid branch without blocking unrelated preview
     userEvent.setup({ delay: null }),
     "Illustration",
   );
-  await within(dialog).findByText(
-    "Image generation is disabled in your paid tool settings.",
-  );
+  await within(dialog).findByText("Image generation is off for you");
   click(tabByText("Avatar"));
-  await within(dialog).findByText(
-    "Avatar video generation is disabled in your paid tool settings.",
-  );
+  await within(dialog).findByText("Avatar video generation is off for you");
   click(tabByText("Video"));
   await within(dialog).findByLabelText(
     `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
   );
-  expect(
-    within(dialog).queryByText(/is disabled in your paid tool settings/),
-  ).not.toBeInTheDocument();
+  expect(within(dialog).queryByText(/is off for you/)).not.toBeInTheDocument();
 });
 
 test("A selected disabled video template can still be discussed without a Create intent", async () => {
@@ -255,9 +241,7 @@ test("A selected disabled video template can still be discussed without a Create
     userEvent.setup({ delay: null }),
     "Video",
   );
-  await within(dialog).findByText(
-    "Video generation is disabled in your paid tool settings.",
-  );
+  await within(dialog).findByText("Video generation is off for you");
   click(
     await within(dialog).findByLabelText(
       `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
@@ -309,13 +293,9 @@ test("A stale workspace preference response never replaces the current owner's n
     ).not.toBeInTheDocument();
   });
   expect(
-    screen.queryByText(
-      "Image generation is disabled in your paid tool settings.",
-    ),
+    screen.queryByText("Image generation is off for you"),
   ).not.toBeInTheDocument();
   click(screen.getByRole("combobox", { name: "Choose a type" }));
   click(await screen.findByRole("option", { name: "Video" }));
-  await screen.findByText(
-    "Video generation is disabled in your paid tool settings.",
-  );
+  await screen.findByText("Video generation is off for you");
 });

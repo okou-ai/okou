@@ -82,6 +82,9 @@ pub(super) struct Observed {
     pub(super) closed: AtomicUsize,
     pub(super) reject_reused_channels: AtomicBool,
     pub(super) input: Mutex<Vec<u8>>,
+    pub(super) forwards: Mutex<Vec<(String, u32, String, u32)>>,
+    pub(super) reject_forwards: AtomicBool,
+    pub(super) fail_forward_connect: AtomicBool,
 }
 
 pub(super) struct TestNetwork {
@@ -183,6 +186,7 @@ pub(super) struct Harness {
     _control_peer: tokio::net::UnixStream,
     dispatcher: Option<RpcRun>,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
+    forwarded: TcpListener,
     peer: JoinHandle<()>,
 }
 
@@ -297,6 +301,8 @@ impl Harness {
         let observed = Arc::new(Observed::default());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target = listener.local_addr().unwrap();
+        let forwarded = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let forward_target = forwarded.local_addr().unwrap();
         let network = Arc::new(TestNetwork {
             target: Mutex::new(target),
             answers: Mutex::new(vec!["93.184.216.34:22".parse().unwrap()]),
@@ -360,7 +366,7 @@ impl Harness {
                     accepted = listener.accept() => {
                         let Ok((socket, _)) = accepted else { break; };
                         let config = Arc::clone(&config);
-                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, delayed: None, pty: false, opened: false };
+                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, delayed: None, forwards: Vec::new(), forward_target, pty: false, opened: false };
                         sessions.spawn(async move { if let Ok(session) = server::run_stream(config, socket, handler).await { let _ = session.await; } });
                     }
                     _ = sessions.join_next(), if !sessions.is_empty() => (),
@@ -382,6 +388,7 @@ impl Harness {
             _control_peer: control_peer,
             dispatcher: Some(dispatcher),
             incoming,
+            forwarded,
             peer,
         }
     }
@@ -420,6 +427,16 @@ impl Harness {
             &self.lifecycle,
         )
         .await
+    }
+    pub(super) fn ssh(&self) -> Arc<super::super::Run> {
+        self.dispatcher.as_ref().unwrap().ssh().unwrap()
+    }
+    pub(super) async fn accept_forwarded(&self) -> TcpStream {
+        tokio::time::timeout(Duration::from_secs(5), self.forwarded.accept())
+            .await
+            .unwrap()
+            .unwrap()
+            .0
     }
     pub(super) async fn shutdown(&mut self) {
         if let Some(dispatcher) = self.dispatcher.take() {
@@ -620,6 +637,8 @@ struct Peer {
     output: Option<Outgoing>,
     process: Option<process::Process>,
     delayed: Option<JoinHandle<()>>,
+    forwards: Vec<JoinHandle<()>>,
+    forward_target: SocketAddr,
     pty: bool,
     opened: bool,
 }
@@ -628,6 +647,9 @@ impl Drop for Peer {
     fn drop(&mut self) {
         if let Some(delayed) = self.delayed.take() {
             delayed.abort();
+        }
+        for forward in self.forwards.drain(..) {
+            forward.abort();
         }
         self.observed.closed.fetch_add(1, Ordering::SeqCst);
     }
@@ -735,6 +757,45 @@ impl server::Handler for Peer {
         self.output = None;
         self.pty = false;
         reply.accept().await;
+        Ok(())
+    }
+    async fn channel_open_direct_tcpip(
+        &mut self,
+        channel: Channel<server::Msg>,
+        host_to_connect: &str,
+        port_to_connect: u32,
+        originator_address: &str,
+        originator_port: u32,
+        reply: server::ChannelOpenHandle,
+        _session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        self.observed.forwards.lock().unwrap().push((
+            host_to_connect.to_owned(),
+            port_to_connect,
+            originator_address.to_owned(),
+            originator_port,
+        ));
+        if self.observed.reject_forwards.load(Ordering::SeqCst) {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+        if self.observed.fail_forward_connect.load(Ordering::SeqCst) {
+            reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;
+            return Ok(());
+        }
+        let Ok(mut target) = TcpStream::connect(self.forward_target).await else {
+            reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;
+            return Ok(());
+        };
+        reply.accept().await;
+        let mut stream = channel.into_stream();
+        self.forwards.push(tokio::spawn(async move {
+            let _ = tokio::io::copy_bidirectional(&mut stream, &mut target).await;
+            let _ = stream.shutdown().await;
+            let _ = target.shutdown().await;
+        }));
         Ok(())
     }
     async fn exec_request(

@@ -1,5 +1,8 @@
 import { command, computed, state } from "ccstate";
-import { detachedNavigateTo$ } from "../route.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isEditableTarget } from "@okouai/ui";
+import { detachedNavigateTo$, pathParams$ } from "../route.ts";
+import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
@@ -12,6 +15,11 @@ import { displayedPinnedAgents$ } from "./pinned-agents.ts";
 import { writeToClipboard } from "./clipboard.ts";
 import { isStandaloneMode } from "./settings/connectors.ts";
 import { setupThreadNumberShortcuts$ } from "./thread-number-shortcuts.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import {
+  setChatThreadUnreadFilter$,
+  toggleChatThreadUnreadFilter$,
+} from "./chat-thread-filter.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
 
@@ -81,6 +89,32 @@ const navigateAdjacentPinnedAgent$ = command(
   },
 );
 
+export const selectPinnedAgent$ = command(
+  (
+    { get, set },
+    selection: { readonly agentId: string; readonly hasUnread: boolean },
+  ) => {
+    const routeAgentId = get(pathParams$)?.agentId;
+    if (
+      get(activeRoute$) === "agentChat" &&
+      typeof routeAgentId === "string" &&
+      routeAgentId === selection.agentId
+    ) {
+      if (selection.hasUnread) {
+        set(toggleChatThreadUnreadFilter$);
+      } else {
+        set(setChatThreadUnreadFilter$, false);
+      }
+      return;
+    }
+
+    set(setChatThreadUnreadFilter$, false);
+    set(detachedNavigateTo$, ROUTES.agentChat, {
+      pathParams: { agentId: selection.agentId },
+    });
+  },
+);
+
 const internalSidebarOff$ = state(false);
 
 export const sidebarOff$ = computed((get) => {
@@ -91,9 +125,23 @@ export const toggleSidebarOff$ = command(({ get, set }) => {
   set(internalSidebarOff$, !get(internalSidebarOff$));
 });
 
-function shouldHandleUniversalSearchShortcut(event: KeyboardEvent): boolean {
+function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
   return !event.repeat && !event.isComposing && event.keyCode !== 229;
 }
+
+const shouldHandleUnreadOnlyShortcut$ = command(
+  ({ get }, event: KeyboardEvent): boolean => {
+    if (
+      get(featureSwitch$)[FeatureSwitchKey.ChatUnreadOnlyShortcut] !== true ||
+      !shouldHandleShortcutPress(event)
+    ) {
+      return false;
+    }
+    return !(
+      /Linux/u.test(navigator.userAgent) && isEditableTarget(event.target)
+    );
+  },
+);
 
 export const setupGlobalKeyboardShortcuts$ = command(
   ({ set }, signal: AbortSignal) => {
@@ -105,6 +153,15 @@ export const setupGlobalKeyboardShortcuts$ = command(
           allowInEditableTarget: true,
           run: () => {
             set(toggleSidebarOff$);
+          },
+        },
+        [GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding]: {
+          allowInEditableTarget: true,
+          shouldHandle: (event) => {
+            return set(shouldHandleUnreadOnlyShortcut$, event);
+          },
+          run: () => {
+            set(toggleChatThreadUnreadFilter$);
           },
         },
         "mod+l": {
@@ -124,7 +181,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         },
         [GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding]: {
           allowInEditableTarget: true,
-          shouldHandle: shouldHandleUniversalSearchShortcut,
+          shouldHandle: shouldHandleShortcutPress,
           run: (event) => {
             event.stopPropagation();
             set(openThreeColumnSearchDialog$);

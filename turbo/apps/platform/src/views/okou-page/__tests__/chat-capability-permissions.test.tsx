@@ -210,6 +210,40 @@ test.each([
   },
 );
 
+test("Expose the full permission scope on the card itself", async () => {
+  const connectorSlug = "scope-service";
+  const permission = "meeting:read:list_meetings";
+  installPermissionMetadata((slug) => {
+    return slug === connectorSlug
+      ? permissionMetadata({
+          connectorSlug,
+          label: "Scope Service",
+          permissions: [permission],
+        })
+      : null;
+  });
+  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
+    return respond(200, []);
+  });
+  installActionConversation({
+    lines: [permissionActionUrl({ connectorSlug, permission })],
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+
+  await readyChat();
+  const card = await screen.findByTestId("permission-action-card");
+  await waitFor(() => {
+    expect(getButton("Confirm", card)).toBeEnabled();
+  });
+  expect(
+    within(card).getByTitle("Scope Service permissions"),
+  ).toHaveTextContent("Scope Service permissions");
+  expect(within(card).getByTitle(`Allow ${permission}`)).toHaveTextContent(
+    `Allow ${permission}`,
+  );
+});
+
 test("Fail closed and recover clearly from permission errors", async () => {
   const connectorSlug = "recovery-service";
   const connectorPermission = "records.read";

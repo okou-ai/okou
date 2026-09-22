@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Play } from "lucide-react";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
@@ -21,7 +21,7 @@ import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 const THUMBNAIL_CLASS =
   "grid size-[72px] shrink-0 place-items-center overflow-hidden rounded-xl";
 
-export const NODE_CLASS = "rounded-md border bg-card";
+const NODE_CLASS = "rounded-md border bg-card";
 
 // The only illustrated palette the product already owns is the agent avatar's:
 // five hair colours over one skin tone. Taking the tiles from there keeps the
@@ -59,24 +59,11 @@ function kindAccent(kind: StartCardKind): string {
 // The wash is the largest area of colour on the page — three 72px squares in a
 // row — so it is the one strength that carries no drawing and is laid down
 // lighter than the bands inside the art, which have white paper under them.
-export const TILE_ALPHA = "1A";
+const TILE_ALPHA = "1A";
 const BAND_ALPHA = "24";
-export const LINE_ALPHA = "59";
-export const SOFT_ALPHA = "40";
+const LINE_ALPHA = "59";
+const SOFT_ALPHA = "40";
 const FILL_ALPHA = "8C";
-
-/**
- * The avatar palette the illustrated tiles draw from, for surfaces outside the
- * start-card row that have to stay in the same family.
- */
-export const ILLUSTRATION_ACCENTS = Object.freeze({
-  slides: "#E88033",
-  website: "#3EB7B8",
-  illustration: "#EDC43E",
-  video: "#FF81B2",
-  avatar: "#C77242",
-  workflow: "#97918A",
-});
 
 /** A resolved connector mark, or `undefined` while the catalog is loading. */
 type WorkflowArtIcon = StartCardConnectorIcon | undefined;
@@ -425,7 +412,8 @@ export function StartCards({
   onSelectPrompt: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const kinds = useGet(startCardKinds$);
+  const kindsLoadable = useLoadable(startCardKinds$);
+  const kinds = kindsLoadable.state === "hasData" ? kindsLoadable.data : [];
   const workflowTemplate = useGet(startCardWorkflowTemplate$);
   const composerSignals = useGet(agentChatComposerSignals$);
   const setTemplateCategory = useSet(

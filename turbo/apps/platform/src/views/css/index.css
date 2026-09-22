@@ -78,6 +78,16 @@
   --color-chart-blue-500: #2a78d6;
   --color-chart-blue-600: #1c5cab;
   --color-chart-orange: #eb6834;
+  /* The paper a brand illustration is printed on.
+
+     Taken from the Brand assets file's own artboard background, which is a
+     bound Figma variable there. It is deliberately the same value in Light and
+     Dark: the band is a sheet the drawing sits on rather than a UI surface, the
+     same argument `--border-width-illustration` already makes for stroke
+     weights. Holding it constant is what lets one exported drawing serve both
+     themes instead of needing a second asset per illustration. */
+  --color-illustration-canvas: #faf5f3;
+
   --color-chart-green: #1baf7a;
   --color-chart-gold: #eda100;
   --color-chart-red: #e34948;
@@ -474,8 +484,10 @@ body {
 #root {
   box-sizing: border-box;
   /* Base UI appends top-level portals after #root and nests descendant portals
-     under their owning portal. Isolating the app lets that DOM order define
-     floating-layer priority without global z-index values on every primitive. */
+     under their owning portal. Fixed positioning already isolates the app in
+     browser tabs; isolation preserves that stacking boundary when standalone
+     mode switches to absolute positioning below. Keep app layers inside this
+     boundary so portal order can place floating surfaces above them. */
   isolation: isolate;
   position: fixed;
   top: 0;

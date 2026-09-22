@@ -114,6 +114,10 @@ export const testUsageStateActionBodySchema = z.discriminatedUnion("action", [
     run_id: z.string(),
   }),
   z.object({
+    action: z.literal("delete-billing-attribution"),
+    run_id: z.string(),
+  }),
+  z.object({
     action: z.literal("seed-usage-overflow-grain"),
     org_id: z.string(),
     user_id: z.string(),

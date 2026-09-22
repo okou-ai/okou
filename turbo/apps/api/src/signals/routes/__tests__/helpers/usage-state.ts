@@ -388,6 +388,15 @@ export const deleteRun$ = command(
   },
 );
 
+export const deleteBillingAttribution$ = command(
+  async (_, runId: string, signal: AbortSignal): Promise<void> => {
+    await postAction(signal, {
+      action: "delete-billing-attribution",
+      run_id: runId,
+    });
+  },
+);
+
 export const seedUsageOverflowGrain$ = command(
   async (
     _,

@@ -27,6 +27,8 @@ const POST_RESULT_RELEASE_ONE_SOCKET: &str = ".vm0-post-result-release-1.sock";
 const POST_RESULT_RELEASE_TWO_SOCKET: &str = ".vm0-post-result-release-2.sock";
 const TRANSCRIPT_FENCE_PADDING_BYTES: usize = 16 * 1024;
 const STDOUT_STREAM_CHUNK_BYTES: usize = 8 * 1024;
+const OVERSIZED_RECORD_HEAD: &str =
+    r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":""#;
 const TOOL_OOM_PARENT_HEADROOM_BYTES: u64 = 192 * 1024 * 1024;
 const TOOL_OOM_RUNTIME_BYTES: usize = 128 * 1024 * 1024;
 const TOOL_MARKER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -238,6 +240,9 @@ pub(super) fn run_stdout_over_limit_scenario(output_format: &str, newline: bool)
 
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
+    // A real oversized record opens like any other one, so the reader's
+    // bounded prefix scan sees a record head before the padding.
+    let _ = stdout.write_all(OVERSIZED_RECORD_HEAD.as_bytes());
     let _ = write_stdout_limit(&mut stdout, b'x');
     let suffix: &[u8] = if newline { b"x\n" } else { b"x" };
     let _ = stdout.write_all(suffix);

@@ -4133,13 +4133,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         [200],
       );
       expect(synced.body).toMatchObject({ id: "private-drive-file" });
-      const multipart = Buffer.from(upload.bodies[0]!);
-      expect(multipart.toString("utf8")).toContain("application/zip");
-      const zip = new AdmZip(
-        multipart.subarray(
-          multipart.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04])),
-        ),
-      );
+      expect(upload.contentTypeHeaders).toStrictEqual(["application/zip"]);
+      expect(upload.contentRangeHeaders[0]).toMatch(/^bytes 0-\d+\/\d+$/u);
+      const zip = new AdmZip(Buffer.from(upload.bodies[0]!));
       expect(
         zip
           .getEntries()
@@ -4239,13 +4235,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       [200],
     );
 
-    const multipart = Buffer.from(upload.bodies[0]!);
-    expect(multipart.toString("utf8")).toContain("application/zip");
-    const zip = new AdmZip(
-      multipart.subarray(
-        multipart.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04])),
-      ),
-    );
+    expect(upload.contentTypeHeaders).toStrictEqual(["application/zip"]);
+    expect(upload.contentRangeHeaders[0]).toMatch(/^bytes 0-\d+\/\d+$/u);
+    const zip = new AdmZip(Buffer.from(upload.bodies[0]!));
     expect(
       zip
         .getEntries()
@@ -4322,10 +4314,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       [200],
     );
 
-    const multipart = Buffer.from(upload.bodies[0]!).toString("utf8");
-    expect(multipart).toContain("text/html");
-    expect(multipart).not.toContain("application/zip");
-    expect(multipart).toContain(index);
+    expect(upload.contentTypeHeaders[0]).toContain("text/html");
+    expect(upload.contentTypeHeaders[0]).not.toContain("application/zip");
+    expect(Buffer.from(upload.bodies[0]!).toString("utf8")).toBe(index);
   });
 
   it("groups run uploads and reports google drive sync status", async () => {
@@ -4490,9 +4481,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       "Bearer drive-access-drive-ok",
     ]);
     expect(uploadRecorder.folderQueries).toHaveLength(2);
-    expect(uploadRecorder.contentTypeHeaders[0]).toMatch(
-      /^multipart\/related; boundary=multipart-/u,
-    );
+    // The session carries the metadata; the content request carries the bytes.
+    expect(uploadRecorder.metadata[0]).toContain('"name":"data.csv"');
+    expect(uploadRecorder.contentTypeHeaders[0]).toBe("text/csv");
     // Fetch derives this forbidden request header from the Buffer body at the
     // transport layer. Supplying it explicitly is rejected by instrumented
     // Node/Undici and would be visible to MSW here.
@@ -4842,12 +4833,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
       // The metadata asks Drive to convert while the part still declares the
       // uploaded bytes' own type.
-      const multipart = Buffer.from(uploadRecorder.bodies[0]!).toString("utf8");
+      const multipart = uploadRecorder.metadata[0]!;
       expect(multipart).toContain(
         '"mimeType":"application/vnd.google-apps.presentation"',
       );
-      expect(multipart).toContain(
-        "Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      expect(uploadRecorder.uploadContentTypeHeaders[0]).toBe(
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       );
       expect(readback.presentationIds).toStrictEqual(["drive-slides-deck"]);
 
@@ -4891,7 +4882,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     );
 
     expect(synced.body).toMatchObject({ id: "drive-plain-deck" });
-    const multipart = Buffer.from(uploadRecorder.bodies[0]!).toString("utf8");
+    const multipart = uploadRecorder.metadata[0]!;
     expect(multipart).toContain(
       '"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"',
     );

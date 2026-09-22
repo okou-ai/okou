@@ -42,6 +42,11 @@ export const SUPPORTED_USER_LOCALES = [
   "it-IT",
   "fr-FR",
   "hi-IN",
+  // Chinese is split by script rather than by region: Simplified and
+  // Traditional are not interchangeable for a reader, and a zh-TW browser must
+  // not resolve to the Simplified bundle.
+  "zh-Hans",
+  "zh-Hant",
 ] as const;
 export const userLocaleSchema = z.enum(SUPPORTED_USER_LOCALES);
 export type UserLocale = z.infer<typeof userLocaleSchema>;

@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { getModelDisplayName } from "../model-display-name";
 
 describe("getModelDisplayName", () => {
+  it("formats Okou model aliases", () => {
+    expect(getModelDisplayName("okou-1.0")).toBe("Okou 1.0");
+    expect(getModelDisplayName("okou-1.0-pro")).toBe("Okou 1.0 Pro");
+    expect(getModelDisplayName("okou-1.0-max")).toBe("Okou 1.0 Max");
+  });
+
   it("uses friendly labels for OpenAI model IDs", () => {
     expect(getModelDisplayName("gpt-6-astra")).toBe("GPT 6 Astra");
     expect(getModelDisplayName("openai/gpt-6-astra")).toBe("GPT 6 Astra");

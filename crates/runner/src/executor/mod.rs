@@ -66,9 +66,10 @@ pub(crate) use env::validate_resume_session_id;
 use reused_sandbox::{ReusedSandboxRun, execute_reused_sandbox};
 use sandbox_run::{FreshPreparation, NewSandboxHooks, execute_new_sandbox_with_prepared_notifier};
 pub(crate) use telemetry::{
-    ExactReuseSpeculationTiming, FinalizingDiagnostics, FinalizingExactIdleLookup,
-    FinalizingHandoffOutcome, FinalizingHandoffReason, RunnerPreSpawnConcurrency,
-    RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
+    BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
+    FinalizingDiagnostics, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
+    FinalizingHandoffReason, RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming,
+    RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency, record_reuse_result};
 

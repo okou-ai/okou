@@ -104,6 +104,7 @@ export {
   SheetDescription,
 } from "./components/ui/sheet";
 export { Radio, RadioGroup } from "./components/ui/radio";
+export { MENU_ROW_HEIGHT_CLASS } from "./components/ui/menu-row";
 export {
   RunningIndicator,
   type RunningIndicatorProps,

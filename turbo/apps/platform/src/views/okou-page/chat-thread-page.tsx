@@ -148,7 +148,7 @@ import {
   captureRecommendedFollowupSelected,
   captureRecommendedFollowupsShown,
 } from "../../lib/posthog.ts";
-import { getCreditUsageDisplayName } from "../../lib/credit-usage-display.ts";
+import { buildCreditUsageDisplayRows } from "../../lib/credit-usage-display.ts";
 import {
   FileAttachmentChip,
   PreviewableAudioAttachmentChip,
@@ -3205,8 +3205,15 @@ function ChatThreadEmptyState({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
-  const renderedGroupsReady =
-    useLastResolved(thread.visibleRenderedChatGroupsReady$) ?? false;
+  const initialEventsReady = useGet(thread.initialEventsReady$);
+  const renderedGroupsReady = useLastLoadable(
+    thread.visibleRenderedChatGroupsReady$,
+  );
+  const showTranscript =
+    renderedGroupsReady.state === "hasError" ||
+    (initialEventsReady &&
+      renderedGroupsReady.state === "hasData" &&
+      renderedGroupsReady.data);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
   const sharingPhase = useGet(thread.sharing.phase$);
 
@@ -3217,9 +3224,10 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
         data-message-container
         className={cn(
           CHAT_THREAD_MESSAGE_LIST_CLASS,
+          // Preserve the mounted layout for scroll restoration while loading.
+          !showTranscript && "invisible",
           sharingPhase !== "idle" && "pr-10 lg:pr-0",
         )}
-        style={{ visibility: renderedGroupsReady ? "visible" : "hidden" }}
       >
         <ChatThreadSessionError thread={thread} />
         <ChatThreadEmptyState thread={thread} />
@@ -3689,14 +3697,12 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
     return null;
   }
 
-  // The overlay covers the pane while the transcript loads, so it takes the
-  // canvas fill rather than the page's: over a gradient palette a `--background`
-  // cover is a flat block that snaps to the canvas the moment the first events
-  // arrive.
+  // The transcript hides its content while loading. Keep this placeholder
+  // transparent so the workspace's pane-sized gradient remains continuous.
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-workspace-canvas"
+      className="absolute inset-0 z-10 overflow-hidden pointer-events-none"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
@@ -3718,10 +3724,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   const pageSignal = useGet(pageSignal$);
   const standalonePwa = isStandalonePwa();
 
-  const measureLocator = useSet(thread.locator.measure$);
-
   const handleScroll = (event: ReactUIEvent<HTMLDivElement>) => {
-    measureLocator(pageSignal);
     if (
       event.currentTarget.scrollTop > CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX
     ) {
@@ -7706,65 +7709,6 @@ function formatCredits(value: number): string {
   return value.toLocaleString(i18n.resolvedLanguage);
 }
 
-interface RunUsageDisplayRow {
-  readonly key: string;
-  readonly label: string;
-  readonly credits: number;
-}
-
-function isUsageModelBackedKind(kind: string): boolean {
-  return kind === "model" || kind === "image" || kind === "video";
-}
-
-function isUsageCategoryPart(part: string): boolean {
-  return part.startsWith("tokens.") || part.startsWith("output_");
-}
-
-function parseUsageKind(kind: string): {
-  readonly kind: string;
-  readonly provider?: string;
-} {
-  const parts = kind.split("/");
-  const parsedKind = parts[0];
-  if (isUsageModelBackedKind(parsedKind) && parts.length >= 2) {
-    const categoryIndex = parts.findIndex((part, index) => {
-      return index > 1 && isUsageCategoryPart(part);
-    });
-    const providerParts =
-      categoryIndex > 1 ? parts.slice(1, categoryIndex) : parts.slice(1);
-    const provider = providerParts.join("/");
-    if (provider) {
-      return { kind: parsedKind, provider };
-    }
-  }
-
-  return { kind };
-}
-
-function buildRunUsageDisplayRows(
-  usage: ChatEventUsagePayload,
-): readonly RunUsageDisplayRow[] {
-  const rows = new Map<string, RunUsageDisplayRow>();
-
-  for (const kindBreakdown of usage.breakdown) {
-    const parsed = parseUsageKind(kindBreakdown.kind);
-    for (const providerBreakdown of kindBreakdown.providers) {
-      const provider = parsed.provider ?? providerBreakdown.provider;
-      const key = `${parsed.kind}:${provider}`;
-      const existing = rows.get(key);
-      const credits = Math.max(0, providerBreakdown.credits);
-      rows.set(key, {
-        key,
-        label:
-          existing?.label ?? getCreditUsageDisplayName(parsed.kind, provider),
-        credits: (existing?.credits ?? 0) + credits,
-      });
-    }
-  }
-
-  return Array.from(rows.values());
-}
-
 function UsageChip({
   usage,
   title,
@@ -7779,7 +7723,17 @@ function UsageChip({
   setOpen: (open: boolean) => void;
 }) {
   const total = formatCredits(usage.totalCredits);
-  const displayRows = buildRunUsageDisplayRows(usage);
+  const displayRows = buildCreditUsageDisplayRows(
+    usage.breakdown.flatMap((kindBreakdown) => {
+      return kindBreakdown.providers.map((providerBreakdown) => {
+        return {
+          kind: kindBreakdown.kind,
+          provider: providerBreakdown.provider,
+          credits: Math.max(0, providerBreakdown.credits),
+        };
+      });
+    }),
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -626,11 +626,61 @@ describe("Morning Brief platform-funded generation", () => {
     });
   });
 
+  it("accepts a brief the model wrapped in a code fence", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    scriptProvider(() => {
+      return completion({
+        content: `\`\`\`json\n${deliverContent()}\n\`\`\``,
+        cost: 0.001,
+      });
+    });
+
+    const response = await accept(generate(f), [200]);
+    const body = expectGenerated(response.body);
+    // The fence is framing around the answer, not part of it.
+    expect(body.generation.state).toBe("succeeded");
+    expect(body.generation.failureReason).toBeNull();
+    expect(
+      body.generation.result?.decision === "deliver" &&
+        body.generation.result.markdown,
+    ).toContain("# Release readiness");
+  });
+
   it.each([
     ["malformed JSON", { content: "not json at all" }, "invalid_json"],
     [
       "a citation this request never supplied",
       { content: deliverContent("m99") },
+      "unknown_source_reference",
+    ],
+    [
+      "prose introducing an otherwise valid answer",
+      {
+        content: `Here is your brief:\n\`\`\`json\n${deliverContent()}\n\`\`\``,
+      },
+      "invalid_json",
+    ],
+    [
+      "prose after the answer's closing fence",
+      { content: `\`\`\`json\n${deliverContent()}\n\`\`\`\nHope that helps!` },
+      "invalid_json",
+    ],
+    [
+      "two answers inside one fence",
+      {
+        content: `\`\`\`json\n${deliverContent()}\n${deliverContent()}\n\`\`\``,
+      },
+      "invalid_json",
+    ],
+    [
+      "a fenced value that is not a single JSON object",
+      { content: "```json\n[1, 2]\n```" },
+      "invalid_shape",
+    ],
+    [
+      "a fenced citation this request never supplied",
+      { content: `\`\`\`json\n${deliverContent("m99")}\n\`\`\`` },
       "unknown_source_reference",
     ],
     [

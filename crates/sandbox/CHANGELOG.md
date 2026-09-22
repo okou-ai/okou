@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.4](https://github.com/okou-ai/okou/compare/sandbox-v0.23.3...sandbox-v0.23.4) (2026-09-21)
+
+
+### Performance Improvements
+
+* **runner:** overlap workspace history restore ([#35766](https://github.com/okou-ai/okou/issues/35766)) ([022ac68](https://github.com/okou-ai/okou/commit/022ac688820391243d31429bbaeda7d423eacac5))
+
 ## [0.23.3](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.2...sandbox-v0.23.3) (2026-09-20)
 
 

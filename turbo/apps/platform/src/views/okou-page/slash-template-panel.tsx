@@ -146,10 +146,8 @@ function SlashTemplateDetailPane({
     category: SlashTemplateCategory,
   ) => void;
 }) {
-  const { t } = useTranslation();
   const previews = slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
-  const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
   return (
     <div
       // The flyout's own surface: it floats beside the index rather than inside
@@ -166,24 +164,6 @@ function SlashTemplateDetailPane({
         above a white gutter. The trailing space lives inside the scroller.
       */}
       <div className="flex h-full flex-col px-4 pt-4">
-        <div className="flex shrink-0 items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Icon size={18} className="text-muted-foreground" aria-hidden />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[14px] font-medium">
-              {slashTemplateCategoryLabel(category)}
-            </span>
-            <span className="block truncate text-[12px] text-muted-foreground">
-              {t(
-                ($) => {
-                  return $.chat.composer.slashPanel.templateCount;
-                },
-                { count: previews.length },
-              )}
-            </span>
-          </span>
-        </div>
         {/*
           The scroller reaches the pane's right edge and pads its content back,
           so the overlay scrollbar — which draws inward from the viewport edge —
@@ -195,11 +175,8 @@ function SlashTemplateDetailPane({
           The 1px top and left padding is what keeps the cards' hairline visible.
           `ring` is an outset shadow and `overflow-y-auto` clips to the padding
           box on both axes, so without it the top row and the left column lose
-          the edge of their ring. The grid stays where it was: `-ml-px` cancels
-          the left padding, and the top gap is written as 11px + 1px rather than
-          a negative margin, because that would collide with `mt-3` on the same
-          property. The bottom stays unpadded, since the covers are meant to
-          bleed off that edge.
+          the edge of their ring. `-ml-px` cancels the left padding. The bottom
+          stays unpadded, since the covers are meant to bleed off that edge.
         */}
         {/*
           Keyed by category so each type gets its own scroller. The pane stays
@@ -211,7 +188,7 @@ function SlashTemplateDetailPane({
         <div
           key={category}
           data-slot="slash-template-covers"
-          className="mt-[11px] -ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px"
+          className="-ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px"
         >
           {/*
             Illustration keeps each cover's own proportion, so its covers go in
@@ -286,6 +263,7 @@ function SlashTemplateDetailFlyout({
   return (
     <Popover open>
       <PopoverContent
+        aria-label={slashTemplateCategoryLabel(category)}
         anchor={slashPanelAnchor}
         side="right"
         align="start"

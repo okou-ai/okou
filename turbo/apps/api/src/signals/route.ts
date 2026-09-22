@@ -143,6 +143,7 @@ import { scrapeRoutes } from "./routes/scrape";
 import { peopleSearchRoutes } from "./routes/people-search";
 import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
+import { socialDataRoutes } from "./routes/social-data";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
 import { vncAccessRoutes } from "./routes/vnc-access";
@@ -152,6 +153,7 @@ import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { browserRoutes } from "./routes/browser";
 import { browserAuthorizationRoutes } from "./routes/browser-authorization";
+import { browserUserActionRoutes } from "./routes/browser-user-actions";
 import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
@@ -190,6 +192,7 @@ import { integrationsTelegramRoutes } from "./routes/integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "./routes/integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "./routes/integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "./routes/integrations-telegram-upload-init";
+import { skillImportRoutes } from "./routes/skill-import";
 import { slackChannelsRoutes } from "./routes/slack-channels";
 import { slackCommandsRoutes } from "./routes/slack-commands";
 import { slackConnectRoutes } from "./routes/slack-connect";
@@ -348,6 +351,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...peopleSearchRoutes,
   ...webSearchRoutes,
   ...socialRoutes,
+  ...socialDataRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
   ...vncAccessRoutes,
@@ -357,6 +361,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnerSshRoutes,
   ...browserRoutes,
   ...browserAuthorizationRoutes,
+  ...browserUserActionRoutes,
   ...modelPoliciesRoutes,
   ...modelProviderGatewayRoutes,
   ...modelProvidersRoutes,
@@ -404,6 +409,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,
+  ...skillImportRoutes,
   ...integrationsGithubRoutes,
   ...slackConnectRoutes,
   ...slackOauthRoutes,

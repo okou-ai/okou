@@ -1,9 +1,10 @@
 import {
   assertErasureSubjectWritable,
+  setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
@@ -50,12 +51,10 @@ type ChatThreadAgentReadWriteOutcome<T> =
   | { readonly outcome: "closed" };
 
 async function setChatThreadAgentReadDeadlines(tx: Tx): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${AGENT_READ_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${AGENT_READ_STATEMENT_TIMEOUT}, true)`,
-  );
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: AGENT_READ_LOCK_TIMEOUT,
+    statementTimeout: AGENT_READ_STATEMENT_TIMEOUT,
+  });
 }
 
 /**

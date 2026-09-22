@@ -25,6 +25,9 @@ async fn telemetry_flush_includes_start_loop_claim_phase_spans() {
                 .body_includes("runner_claim_active_status_publish")
                 .body_includes("runner_claim_spawn_job_setup")
                 .body_includes("runner_claim_task_schedule_wait")
+                .body_includes("runner_claim_blank_pool_selection")
+                .body_includes(r#""outcome":"miss""#)
+                .body_includes(r#""reason":"disabled_plan""#)
                 .body_includes(r#""runner_pre_spawn_concurrency_bucket":"1""#)
                 .body_includes(r#""runner_resource_budget_vcpu_utilization_bucket":"26_50""#)
                 .body_includes(r#""runner_resource_budget_memory_utilization_bucket":"0_25""#)
@@ -291,7 +294,7 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
 }
 
 #[tokio::test]
-async fn invalid_resume_session_emits_no_reuse_telemetry() {
+async fn invalid_resume_session_flushes_blank_selection_without_reuse_telemetry() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -300,6 +303,18 @@ async fn invalid_resume_session_emits_no_reuse_telemetry() {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
                 .body_includes("sandbox_reuse_");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"success":true,"id":"ok"}"#);
+        })
+        .await;
+    let blank_selection_mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/telemetry")
+                .body_includes("runner_claim_blank_pool_selection")
+                .body_includes(r#""outcome":"miss""#)
+                .body_includes(r#""reason":"disabled_plan""#);
             then.status(200)
                 .header("content-type", "application/json")
                 .body(r#"{"success":true,"id":"ok"}"#);
@@ -329,6 +344,7 @@ async fn invalid_resume_session_emits_no_reuse_telemetry() {
     shutdown(&env, run_handle).await;
 
     reuse_telemetry_mock.assert_calls_async(0).await;
+    blank_selection_mock.assert_calls_async(1).await;
 }
 
 #[tokio::test]
