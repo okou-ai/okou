@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.211.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.1...runner-rs-v0.211.0) (2026-09-22)
+
+
+### Features
+
+* expose ssh-backed vnc access ([#36116](https://github.com/okou-ai/okou/issues/36116)) ([05910d3](https://github.com/okou-ai/okou/commit/05910d386aebd37b12637adf5dea4a935c9a0198))
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
 ## [0.210.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.0...runner-rs-v0.210.1) (2026-09-22)
 
 

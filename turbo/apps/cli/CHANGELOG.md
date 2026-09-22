@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.355.0](https://github.com/okou-ai/okou/compare/cli-v9.354.0...cli-v9.355.0) (2026-09-22)
+
+
+### Features
+
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.493.0
+    * @okouai/core bumped to 8.700.1
+    * @okouai/pi-agent-runtime bumped to 1.37.0
+
 ## [9.354.0](https://github.com/okou-ai/okou/compare/cli-v9.353.0...cli-v9.354.0) (2026-09-22)
 
 

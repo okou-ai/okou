@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.700.1](https://github.com/okou-ai/okou/compare/core-v8.700.0...core-v8.700.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove released chat feature switches ([#36144](https://github.com/okou-ai/okou/issues/36144)) ([3d77ae2](https://github.com/okou-ai/okou/commit/3d77ae255476951c7e7bd72dadf0723b74637c36))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.493.0
+
 ## [8.700.0](https://github.com/okou-ai/okou/compare/core-v8.699.0...core-v8.700.0) (2026-09-22)
 
 
