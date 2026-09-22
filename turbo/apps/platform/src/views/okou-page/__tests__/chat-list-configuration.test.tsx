@@ -56,7 +56,7 @@ async function openMediaCategory(
  */
 function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
   const row = queryAllByRoleFast("menuitemradio", panel).find((option) => {
-    return option.textContent?.replace(/\$+$/u, "").trim() === label;
+    return option.getAttribute("aria-label") === label;
   });
   if (!row) {
     throw new Error(`Expected a ${label} row in the open model panel`);
