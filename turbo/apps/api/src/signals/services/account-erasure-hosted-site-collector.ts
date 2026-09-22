@@ -345,37 +345,6 @@ async function erasePrefix(
   return { requestRef: requestReference(lease, "erased") };
 }
 
-/** The prefixes one lease is answerable for.
- *
- * An erase item owns the single prefix its selector captured. The collector's
- * own item is keyed by the subject, and `executeErasureWork` sends it straight
- * to verification once its capture is complete. What that item is answerable
- * for is that no deployment is left unaccounted for, which is a bounded
- * question: every captured prefix already has its own item, its own list and
- * its own proof, so re-walking the account here would duplicate that work and
- * owe an unbounded number of round trips inside a lease that is not renewed
- * while they run. It therefore reads one page. After the relational sweep that
- * page is empty; before it, a surviving deployment whose bytes are still there
- * fails here rather than passing on the strength of the items alone.
- */
-async function verifiablePrefixes(
-  db: Db,
-  lease: ErasureLease,
-): Promise<readonly string[] | undefined> {
-  const prefix = await leasePrefix(lease);
-  if (prefix !== undefined) {
-    return [prefix];
-  }
-  const subject = await leaseSubject(lease);
-  if (!subject) {
-    return undefined;
-  }
-  const rows = await hostedSiteErasurePrefixPage(db, subject);
-  return rows.map((row) => {
-    return row.prefix;
-  });
-}
-
 /** Absence, read back from the provider rather than inferred from the delete.
  *
  * A row count proves nothing here: the catalog row may already be gone. What
@@ -383,23 +352,36 @@ async function verifiablePrefixes(
  * what stops the hosted origin serving a request, because it resolves one by
  * reading an object under that prefix. Retiring the publication itself is the
  * relational sweep deleting `hosted_sites`; this sink owns the bytes.
+ *
+ * An erase item owns one captured prefix. The collector's own item is keyed by
+ * the subject and owns the enumeration instead, so it reads no object at all.
+ * That is not a weaker completion claim: `finalizeErasureJob` already requires
+ * every erase item to carry a terminal proof, so no prefix can go unproven,
+ * and `assertCaptureComplete` already requires this item to have reached
+ * `captureComplete` with an enumeration reference before the capture could
+ * seal. Making it re-list the account's prefixes instead would assert a fact
+ * the erase items already own, and would only be true if those items ran
+ * first — an ordering `claimErasureWork` does not provide, since it orders by
+ * `available_at` and then by row id. That is a coin flip, not a check.
  */
 async function verifyPrefixAbsent(
-  db: Db,
   lease: ErasureLease,
   producerBoundary: string,
 ): Promise<ErasureProof | ErasureUnresolved> {
-  const prefixes = await verifiablePrefixes(db, lease);
-  if (prefixes === undefined) {
-    return unresolved("selector_missing");
-  }
+  const prefix = await leasePrefix(lease);
   const bucket = hostedSitesBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
-  const store = createStore();
-  for (const prefix of prefixes) {
-    const remaining = await store.get(
+  if (prefix === undefined) {
+    // The collector's own item. Its selector must still be this sink's
+    // subject, or the lease does not belong here.
+    const subject = await leaseSubject(lease);
+    if (!subject) {
+      return unresolved("selector_missing");
+    }
+  } else {
+    const remaining = await createStore().get(
       listHostedSitesObjectsUnderPrefix(bucket, prefix),
     );
     if (remaining.length > 0) {
@@ -466,7 +448,7 @@ export function createHostedSiteErasureCollector(db: Db): ErasureHandler {
       return await erasePrefix(lease, signal);
     },
     verify: async (lease, producerBoundary) => {
-      return await verifyPrefixAbsent(db, lease, producerBoundary);
+      return await verifyPrefixAbsent(lease, producerBoundary);
     },
   };
 }

@@ -284,8 +284,8 @@ describe("dormant hosted-site object erasure", () => {
       sql`DELETE FROM hosted_deployments WHERE site_id = ${siteId}`,
     );
 
-    // One captured prefix plus the collector's own item, which verifies every
-    // prefix still readable for the subject — none, now that the row is gone.
+    // One captured prefix, plus the collector's own item, which owns the
+    // enumeration rather than any object.
     await expect(
       runVerification(captured.job.id, captured.handler),
     ).resolves.toBe(2);
@@ -429,7 +429,10 @@ describe("dormant hosted-site object erasure", () => {
     );
 
     const captured = await capture(userId);
-    // Every deployment gets its own item, plus the collector's own.
+    // Every deployment gets its own item, plus the collector's own. None of
+    // the rows is deleted here, so the collector item cannot be leaning on an
+    // empty account: the per-prefix proofs are what carry object absence, in
+    // whatever order `claimErasureWork` hands the items out.
     await expect(
       runVerification(captured.job.id, captured.handler),
     ).resolves.toBe(121);
