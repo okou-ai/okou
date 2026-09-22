@@ -572,6 +572,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["✅ Waiting for review"]);
   });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
 
   openChatListMenu();
   click(menuItemByText("Archived"));
@@ -585,6 +586,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
   });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
 
   openChatListMenu();
   click(menuItemByText("All chats"));
@@ -598,6 +600,9 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["Release plan"]);
   });
+  expect(
+    within(sidebar()).queryByText("Show all chats"),
+  ).not.toBeInTheDocument();
 });
 
 test("Hide the current chat after archiving it", async () => {
@@ -642,6 +647,14 @@ test("Hide the current chat after archiving it", async () => {
     expect(within(sidebar()).queryByText("New Thread")).not.toBeInTheDocument();
     expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   });
+
+  click(buttonByText("Show all chats", sidebar()));
+  await expect(
+    within(sidebar()).findByText("New Thread"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(sidebar()).queryByText("No archived chats"),
+  ).not.toBeInTheDocument();
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {
