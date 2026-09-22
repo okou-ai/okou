@@ -82,7 +82,10 @@ test.each(["page", "shared-worker"] as const)(
         serializeSharedDatabaseError(error),
       );
       for (const captured of [error, transferred]) {
-        captureSentryLogError("ExpectedFailure", ["Operation failed", captured]);
+        captureSentryLogError("ExpectedFailure", [
+          "Operation failed",
+          captured,
+        ]);
         const report = context.mocks.sentry().reports.at(-1);
         expect(report).toMatchObject({ type: "exception", error: captured });
         const event: ErrorEvent = {
