@@ -3,6 +3,7 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import {
   SKILL_IMPORT_LIMITS,
   skillImportSessionsContract,
@@ -25,6 +26,7 @@ import { now } from "../../../lib/time.ts";
 import { pathname } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 vi.hoisted(() => {
   // Product analytics resolves the deployment environment at module load.
@@ -179,6 +181,12 @@ function getButtonByName(name: string): HTMLElement {
   return button;
 }
 
+async function waitForContinueEnabled(): Promise<void> {
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+}
+
 /** The control of the answer card carrying `name`, as a user would aim at it. */
 function answerRadio(name: string): HTMLElement {
   const card = screen.getByText(name).closest("label");
@@ -230,7 +238,10 @@ function mockChatChannelInstalls(): void {
  * The skills step belongs to the branch a plan answer opens, so the run walks
  * into it the way a person does.
  */
-async function openSkillsStep(): Promise<void> {
+async function openSkillsStep(
+  provider: "Codex" | "Claude Code" = CODEX_CARD,
+  fromStart = false,
+): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -242,16 +253,33 @@ async function openSkillsStep(): Promise<void> {
   await setupPage({
     context,
     locale: "en-US",
-    path: ROUTES.onboardingExperience,
+    path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
     host: "app.okou.ai",
     featureSwitches: SOURCES_FIRST_ON,
   });
+
+  if (fromStart) {
+    await screen.findByRole("heading", {
+      name: "What kind of work do you do?",
+    });
+    click(answerRadio("Marketing & content"));
+    await waitForContinueEnabled();
+    click(getButtonByName("Continue"));
+    await screen.findByRole("heading", {
+      name: "Okou is for you, and shared across your whole team.",
+    });
+    click(getButtonByName("Continue"));
+    await screen.findByRole("heading", {
+      name: "Bring the people who do this work with you.",
+    });
+    click(getButtonByName("Not now"));
+  }
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
 
-  click(answerRadio(CODEX_CARD));
+  click(answerRadio(provider));
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
   });
@@ -262,12 +290,40 @@ async function openSkillsStep(): Promise<void> {
   ).resolves.toBeInTheDocument();
 }
 
+test("The skills step requires a selected tool", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  mockConnectedSource();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingSkills,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingExperience);
+});
+
 test("The step hands over the prompt its session produced, and copies it whole", async () => {
   const posthog = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockAgentWorkflows();
 
   await openSkillsStep();
+
+  expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Paste this prompt into your own Codex session and it brings the skills on your machine into Okou.",
+    ),
+  ).toBeInTheDocument();
 
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt).toHaveTextContent(PROMPT_OPENING);
@@ -293,6 +349,59 @@ test("The step hands over the prompt its session produced, and copies it whole",
   // The token is the session; it belongs on the clipboard and nowhere else.
   expect(JSON.stringify(posthog.events)).not.toContain(SESSION_TOKEN);
 });
+
+test("The skills step names Claude Code when it was selected", async () => {
+  mockAgentWorkflows();
+
+  await openSkillsStep("Claude Code");
+
+  expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Paste this prompt into your own Claude Code session and it brings the skills on your machine into Okou.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test.each([
+  { card: "Codex" as const, provider: "codex" },
+  { card: "Claude Code" as const, provider: "claudeCode" },
+])(
+  "Finishing onboarding sends the selected $card model preference",
+  async ({ card, provider }) => {
+    mockAgentWorkflows();
+    mockChatLifecycle(context);
+    let sentProvider: string | undefined;
+    context.mocks.api(
+      onboardingCompleteContract.complete,
+      ({ query, respond }) => {
+        sentProvider = query?.modelProvider;
+        context.mocks.data.onboardingStatus({
+          needsOnboarding: false,
+          onboardingComplete: true,
+        });
+        return respond(200, {
+          onboardingComplete: true,
+          needsOnboarding: false,
+        });
+      },
+    );
+
+    await openSkillsStep(card, true);
+    click(getButtonByName("Continue"));
+    await expect(
+      screen.findByRole("heading", { name: SLACK_QUESTION }),
+    ).resolves.toBeInTheDocument();
+    click(getButtonByName("Skip for now"));
+    await expect(
+      screen.findByRole("heading", { name: "Okou is ready for you" }),
+    ).resolves.toBeInTheDocument();
+    click(getButtonByName("Start with Okou"));
+    await waitFor(() => {
+      expect(sentProvider).toBe(provider);
+    });
+  },
+);
 
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();

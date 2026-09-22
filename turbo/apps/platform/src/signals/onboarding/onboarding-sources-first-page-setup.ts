@@ -26,7 +26,7 @@ import {
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
-import { updatePage$ } from "../react-router.ts";
+import { page$, updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
@@ -101,7 +101,9 @@ function createSourcesFirstPageSetup(
   config: SourcesFirstPageConfig,
 ): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    set(showAppSkeleton$);
+    if (!get(page$)) {
+      set(showAppSkeleton$);
+    }
 
     if (!(await set(sourcesFirstEnabled$, signal))) {
       signal.throwIfAborted();
@@ -140,7 +142,7 @@ function createSourcesFirstPageSetup(
       }
     }
 
-    if (!sourcesFirstSteps(flow, draft.experienced).includes(config.step)) {
+    if (!sourcesFirstSteps(flow, draft.provider).includes(config.step)) {
       // The step is not part of this run's branch, for example a member
       // opening the invite step or a new user opening the skills step.
       set(redirectTo$, ROUTES.onboardingExperience);

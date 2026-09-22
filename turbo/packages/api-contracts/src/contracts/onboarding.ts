@@ -54,6 +54,15 @@ export const onboardingIndustrySchema = z.enum(ONBOARDING_INDUSTRY_IDS);
 
 export type OnboardingIndustry = z.infer<typeof onboardingIndustrySchema>;
 
+export const onboardingSubscriptionProviderSchema = z.enum([
+  "codex",
+  "claudeCode",
+]);
+
+export type OnboardingSubscriptionProvider = z.infer<
+  typeof onboardingSubscriptionProviderSchema
+>;
+
 /**
  * Onboarding status contract for GET /api/onboarding/status
  */
@@ -75,6 +84,13 @@ export const onboardingCompleteContract = c.router({
     method: "POST",
     path: "/api/onboarding/complete",
     headers: authHeadersSchema,
+    // A query field keeps older API deployments able to complete onboarding:
+    // they ignore this optional preference and retain the existing model seed.
+    query: z
+      .object({
+        modelProvider: onboardingSubscriptionProviderSchema.optional(),
+      })
+      .optional(),
     body: z
       .object({
         // Semantic IANA validation happens after core completion so an invalid

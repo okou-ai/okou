@@ -1,8 +1,13 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import {
+  connectorCatalogStatus$,
+  reloadBuiltinConnectors$,
+} from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
   sourcesFirstInviteSendable,
@@ -24,6 +29,7 @@ import {
   type SourcesFirstInvite,
   type SubscriptionProvider,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import { waitForSourcesFirstCatalog$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import {
   connectOnboardingSubscription$,
   onboardingSubscriptionStatus$,
@@ -45,10 +51,20 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
+  const catalog = useLastLoadable(connectorCatalogStatus$);
+  const pageSignal = useGet(pageSignal$);
+  const [catalogWait, waitForCatalog] = useLoadableSet(
+    waitForSourcesFirstCatalog$,
+  );
+  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const captureIndustrySelected = useSet(
     captureSourceOnboardingIndustrySelected$,
   );
   const flow = useSourcesFirstFlow("industry");
+  const continueToSources = async (): Promise<void> => {
+    await waitForCatalog(pageSignal);
+    flow.goNext();
+  };
 
   return (
     <OnboardingStepLayout
@@ -63,8 +79,13 @@ export function OnboardingIndustryPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
-      onPrimary={flow.goNext}
-      primaryDisabled={flow.draft.industry === null}
+      onPrimary={() => {
+        detach(continueToSources(), Reason.DomCallback);
+      }}
+      primaryDisabled={
+        flow.draft.industry === null || catalog.state === "hasError"
+      }
+      primaryBusy={catalogWait.state === "loading"}
       onBack={flow.goBack}
     >
       <RadioGroup
@@ -92,6 +113,28 @@ export function OnboardingIndustryPage() {
           );
         })}
       </RadioGroup>
+      {catalog.state === "hasError" ? (
+        <div
+          role="alert"
+          className="mt-4 flex items-center justify-between gap-3 text-sm text-muted-foreground"
+        >
+          <p>
+            {t(($) => {
+              return $.connectors.catalog.directory.builtinLoadFailed;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={retryCatalog}
+          >
+            {t(($) => {
+              return $.connectors.catalog.directory.retry;
+            })}
+          </Button>
+        </div>
+      ) : null}
     </OnboardingStepLayout>
   );
 }
@@ -465,7 +508,7 @@ export function OnboardingExperiencePage() {
   // The answer decides the branch, so the next step is resolved from the
   // answer itself instead of the one this render was built from.
   const goNext = (): void => {
-    const next = nextSourcesFirstStep("experience", flow.flow, experienced);
+    const next = nextSourcesFirstStep("experience", flow.flow, provider);
     if (next) {
       flow.goTo(next);
     }

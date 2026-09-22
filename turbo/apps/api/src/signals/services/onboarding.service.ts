@@ -2,6 +2,7 @@ import { command, computed, type Computed } from "ccstate";
 import type {
   OnboardingIndustry,
   OnboardingStatusResponse,
+  OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/public-brand";
@@ -23,6 +24,7 @@ import {
 } from "./morning-brief-preference.service";
 import type { WorkflowMember } from "./workflow-data.service";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
+import { initializeOnboardingOrgModelPolicies } from "./model-policy.service";
 
 const L = logger("onboarding.service");
 
@@ -47,6 +49,8 @@ async function markOnboardingComplete(
   db: Db,
   orgId: string,
   industry: OnboardingIndustry | undefined,
+  modelProvider: OnboardingSubscriptionProvider | undefined,
+  userId: string,
 ): Promise<boolean> {
   const updatedAt = nowDate();
   // An unanswered field leaves the column alone: the make-something flow never
@@ -79,6 +83,14 @@ async function markOnboardingComplete(
       },
     );
 
+    if (rows.length > 0 && modelProvider !== undefined) {
+      await initializeOnboardingOrgModelPolicies(
+        tx,
+        orgId,
+        userId,
+        modelProvider,
+      );
+    }
     return rows.length > 0;
   });
 }
@@ -124,6 +136,7 @@ interface CompleteOnboardingArgs {
   readonly member: WorkflowMember;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
+  readonly modelProvider?: OnboardingSubscriptionProvider;
 }
 
 interface MorningBriefOnboardingOutcome {
@@ -260,6 +273,8 @@ export const completeOnboarding$ = command(
       writeDb,
       args.orgId,
       args.industry,
+      args.modelProvider,
+      args.member.userId,
     );
     signal.throwIfAborted();
 

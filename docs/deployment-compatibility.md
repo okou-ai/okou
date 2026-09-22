@@ -17,6 +17,17 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Onboarding model preference
+
+The source-first App sends its optional Codex or Claude Code choice as a query
+parameter on `POST /api/onboarding/complete`. An older API ignores that parameter
+and completes onboarding with the existing model seed; a newer API accepts older
+App requests without it and keeps the same seed. No database migration is needed.
+On first completion, the newer API replaces only an untouched default model seed
+with the chosen subscription models in the same transaction as the completion
+marker. A repeated completion or an already customized model policy leaves the
+policy unchanged. A member's onboarding flow does not call this admin-only route.
+
 ## Slack ingress failed status retirement (2026-09-20)
 
 Migration `1179_retire_slack_ingress_failed_status` rewrites every

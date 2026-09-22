@@ -4215,7 +4215,7 @@
       },
       "skills": {
         "copied": "已复制",
-        "copy": "导入一个SKILL.md，它就会变成Okou里的工作流，输入/即可运行。",
+        "copy": "将此提示词粘贴到你的{{provider}}会话中，它会把你本机的技能导入Okou。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
         "importedCopy": "已导入为Okou工作流。",
@@ -4224,7 +4224,7 @@
         "preparing": "正在打开导入会话…",
         "promptCopy": "它会读取你本机上的技能，并写入Okou。",
         "promptLabel": "技能导入提示词",
-        "promptTitle": "在Codex或Claude Code中运行",
+        "promptTitle": "在{{provider}}中运行",
         "startError": "无法打开导入会话。",
         "title": "把你已经写好的技能带过来。",
         "tryAgain": "重试",
@@ -4272,11 +4272,6 @@
       "sources": {
         "copy": "它在云端运行，直接用你团队已有的工具。产出提升10倍，协作更顺，成本更低。先连接一个数据源开始。",
         "note": "连接哪些账号，由你决定。",
-        "searchAction": "找到适合你工作的数据源",
-        "searchCopy": "按任务或应用名称搜索完整目录。",
-        "searchEmpty": "没有匹配的数据源",
-        "searchPlaceholder": "按任务或应用名称搜索",
-        "searchTitle": "找到适合你工作的数据源",
         "title": "Okou为你所用，也服务你的整个团队。"
       },
       "startingPrompt": {

@@ -49,12 +49,16 @@ export const completeOnboarding$ = command(
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    // Only the source-first flow asks for a field, and only an answered one is
-    // sent: the make-something flow leaves the draft empty, and the ready
-    // step's display fallback is not an answer worth storing.
-    const industry = get(sourcesFirstDraft$).industry;
+    // Only the source-first flow asks for these fields. The make-something flow
+    // leaves the draft empty, and the ready step's display fallback is not an
+    // answer worth storing.
+    const { industry, provider } = get(sourcesFirstDraft$);
     await accept(
       onboardingClient.complete({
+        query:
+          industry === null || provider === null
+            ? {}
+            : { modelProvider: provider },
         body: industry === null ? { timezone } : { timezone, industry },
         fetchOptions: { signal },
       }),

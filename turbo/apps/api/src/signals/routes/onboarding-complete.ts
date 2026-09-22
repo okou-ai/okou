@@ -4,10 +4,11 @@ import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onbo
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { completeOnboarding$ } from "../services/onboarding.service";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 
 const completeBody$ = bodyResultOf(onboardingCompleteContract.complete);
+const completeQuery$ = queryOf(onboardingCompleteContract.complete);
 
 const forbidden = Object.freeze({
   status: 403 as const,
@@ -31,6 +32,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
+  const query = get(completeQuery$);
 
   return await set(
     completeOnboarding$,
@@ -39,6 +41,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       member: { userId: auth.userId, role: auth.orgRole },
       timezone: body.data.timezone,
       industry: body.data.industry,
+      modelProvider: query?.modelProvider,
     },
     signal,
   );

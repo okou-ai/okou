@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
+import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 
 /**
  * Source-first onboarding draft. The connector step drives the live connector
@@ -25,7 +26,7 @@ export type SourcesFirstStep =
   | "slack"
   | "ready";
 
-export type SubscriptionProvider = "codex" | "claudeCode";
+export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams";
@@ -98,15 +99,10 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
-  readonly searchOpen: boolean;
-  /** What the catalog search is filtered by, kept while its dialog is open. */
-  readonly searchQuery: string;
   readonly inviteEmail: string;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
-  searchOpen: false,
-  searchQuery: "",
   inviteEmail: "",
 });
 
@@ -164,27 +160,27 @@ const MEMBER_BASE_STEPS = [
 
 /**
  * Step order for one run. Members skip invite and Slack; answering the AI
- * experience question with a plan adds the skills step before Slack.
+ * experience question with a selected plan adds the skills step before Slack.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): readonly SourcesFirstStep[] {
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
-  const experiencedSteps: readonly SourcesFirstStep[] =
-    experienced === true ? ["skills"] : [];
+  const skillSteps: readonly SourcesFirstStep[] =
+    provider === null ? [] : ["skills"];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
-  return [...base, ...experiencedSteps, ...slackStep, "ready"];
+  return [...base, ...skillSteps, ...slackStep, "ready"];
 }
 
 /** Progress markers: one per step of this run. */
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): { readonly current: number; readonly total: number } {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
@@ -193,9 +189,9 @@ export function sourcesFirstProgress(
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return index > 0 ? (steps[index - 1] ?? null) : null;
 }
@@ -204,9 +200,9 @@ export function previousSourcesFirstStep(
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return index === -1 ? null : (steps[index + 1] ?? null);
 }
