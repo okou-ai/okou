@@ -193,28 +193,22 @@ async function readDeploymentPage(
   return rows;
 }
 
-/** Every prefix this sink would capture for a subject, in enumeration order.
+/** The first bounded page of prefixes this sink would capture for a subject.
  *
- * Exposed so a caller can state what the capture covers without driving the
- * job. It reads the same rows by the same predicate the paged inventory does.
+ * One page, not the whole account. A caller that wants every prefix wants the
+ * job's captured items, which is what the erase items are; this reads the same
+ * rows by the same predicate so a caller can state what a capture starts from
+ * without driving the job, and so verification owes a bounded number of
+ * provider round trips.
  */
-export async function hostedSiteErasurePrefixes(
+export async function hostedSiteErasurePrefixPage(
   db: Db,
   subject: ErasureSubject,
 ): Promise<{ readonly relation: string; readonly prefix: string }[]> {
-  const prefixes: { relation: string; prefix: string }[] = [];
-  let cursor: { readonly ordinal: number; readonly id: string } | undefined;
-  for (;;) {
-    const page = await readDeploymentPage(db, subject.subjectId, cursor);
-    const last = page[page.length - 1];
-    if (!last) {
-      return prefixes;
-    }
-    for (const row of page) {
-      prefixes.push({ relation: row.relation, prefix: row.r2Prefix });
-    }
-    cursor = { ordinal: last.ordinal, id: last.id };
-  }
+  const page = await readDeploymentPage(db, subject.subjectId, undefined);
+  return page.map((row) => {
+    return { relation: row.relation, prefix: row.r2Prefix };
+  });
 }
 
 function enumerationReference(subject: ErasureSubject): string {
@@ -355,11 +349,14 @@ async function erasePrefix(
  *
  * An erase item owns the single prefix its selector captured. The collector's
  * own item is keyed by the subject, and `executeErasureWork` sends it straight
- * to verification once its capture is complete, so it is answerable for every
- * prefix still readable for that subject. After the relational sweep that set
- * is empty, and the per-prefix proofs carry the evidence; before it, a
- * surviving deployment whose bytes are still there fails here rather than
- * passing on the strength of the items alone.
+ * to verification once its capture is complete. What that item is answerable
+ * for is that no deployment is left unaccounted for, which is a bounded
+ * question: every captured prefix already has its own item, its own list and
+ * its own proof, so re-walking the account here would duplicate that work and
+ * owe an unbounded number of round trips inside a lease that is not renewed
+ * while they run. It therefore reads one page. After the relational sweep that
+ * page is empty; before it, a surviving deployment whose bytes are still there
+ * fails here rather than passing on the strength of the items alone.
  */
 async function verifiablePrefixes(
   db: Db,
@@ -373,7 +370,7 @@ async function verifiablePrefixes(
   if (!subject) {
     return undefined;
   }
-  const rows = await hostedSiteErasurePrefixes(db, subject);
+  const rows = await hostedSiteErasurePrefixPage(db, subject);
   return rows.map((row) => {
     return row.prefix;
   });
@@ -383,8 +380,9 @@ async function verifiablePrefixes(
  *
  * A row count proves nothing here: the catalog row may already be gone. What
  * this asserts is that listing the captured prefix returns no object, which is
- * also what revokes serving, because the hosted origin resolves a request by
- * reading an object under that prefix.
+ * what stops the hosted origin serving a request, because it resolves one by
+ * reading an object under that prefix. Retiring the publication itself is the
+ * relational sweep deleting `hosted_sites`; this sink owns the bytes.
  */
 async function verifyPrefixAbsent(
   db: Db,

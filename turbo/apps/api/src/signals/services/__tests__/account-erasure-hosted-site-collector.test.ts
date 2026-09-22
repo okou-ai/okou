@@ -19,7 +19,7 @@ import { nowDate } from "../../../lib/time";
 import {
   HOSTED_SITE_ERASURE_COLLECTOR_VERSION,
   createHostedSiteErasureCollector,
-  hostedSiteErasurePrefixes,
+  hostedSiteErasurePrefixPage,
 } from "../account-erasure-hosted-site-collector";
 import { encryptErasureSelector } from "../account-erasure-selector";
 
@@ -220,7 +220,9 @@ describe("dormant hosted-site object erasure", () => {
     handler: ReturnType<typeof createHostedSiteErasureCollector>,
   ): Promise<number> {
     let executed = 0;
-    for (let round = 0; round < 16; round += 1) {
+    // `claimErasureWork` caps a claim at eight items, so allow enough rounds
+    // for the largest fixture below to drain.
+    for (let round = 0; round < 64; round += 1) {
       const claimed = await claimErasureWork(db, jobId, "verification");
       if (claimed.length === 0) {
         return executed;
@@ -373,6 +375,52 @@ describe("dormant hosted-site object erasure", () => {
     ).rejects.toThrow("account_erasure:work_unresolved");
   });
 
+  it("resumes the capture across more deployments than one page holds", async () => {
+    const userId = account("paged");
+    const orgId = `org_hosted_${randomUUID().replaceAll("-", "")}`;
+    const siteId = await createSite(userId, orgId);
+    onTestFinished(async () => {
+      await db.execute(
+        sql`DELETE FROM hosted_deployments WHERE site_id = ${siteId}`,
+      );
+      await db.execute(
+        sql`DELETE FROM private_hosted_deployments WHERE site_id = ${siteId}`,
+      );
+      await db.execute(sql`DELETE FROM hosted_sites WHERE id = ${siteId}`);
+    });
+    // More than `MAX_INVENTORY_PAGE`, and spanning both tables, so the cursor
+    // has to resume inside one table and then cross into the next.
+    const prefixes: string[] = [];
+    for (let index = 0; index < 120; index += 1) {
+      const prefix = `sites/${randomUUID()}`;
+      prefixes.push(prefix);
+      await createDeployment({
+        userId,
+        orgId,
+        siteId,
+        prefix,
+        private: index >= 90,
+      });
+    }
+    const bucket = bucketWithObjects(
+      prefixes.map((prefix) => {
+        return `${prefix}/index.html`;
+      }),
+    );
+
+    const captured = await capture(userId);
+    // Every deployment gets its own item, plus the collector's own.
+    expect(await runVerification(captured.job.id, captured.handler)).toBe(121);
+    expect(bucket.live.size).toBe(0);
+
+    const finished = await finalizeErasureJob(
+      db,
+      captured.job.id,
+      captured.sealed,
+    );
+    expect(finished.state).toBe("verified_erased");
+  });
+
   it("enumerates both deployment tables in one ordered capture", async () => {
     const userId = account("both");
     const other = account("other");
@@ -413,7 +461,7 @@ describe("dormant hosted-site object erasure", () => {
       private: false,
     });
 
-    const prefixes = await hostedSiteErasurePrefixes(db, {
+    const prefixes = await hostedSiteErasurePrefixPage(db, {
       subjectKind: "user",
       subjectId: userId,
     });
