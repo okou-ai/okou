@@ -153,7 +153,12 @@ const PLATFORM_FILE_CDN_HOSTS = [
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
-const URL_TOKEN_OPENING_PREFIX_PATTERN = /^[({<"'“‘（【《「『[]*$/u;
+const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
+  /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
+const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
+const URL_TOKEN_PRECEDING_GRAPHEME_BASE_PATTERN = /([\s\S])[\p{M}\p{Sk}]*$/u;
+const URL_TOKEN_TRAILING_EMOJI_SEQUENCE_PATTERN =
+  /(?:[#*0-9]\uFE0F?\u20E3|\u{1F3F4}[\u{E0061}-\u{E007A}]+\u{E007F})$/u;
 const MARKDOWN_LINK_TOKEN_PREFIX_PATTERN = /\[[^\]\n]+\]\($/u;
 
 // URL.canParse is unavailable on iOS Safari < 17. Instead of relying on it (or
@@ -635,8 +640,31 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
     return true;
   }
 
-  const tokenPrefix = /\S*$/u.exec(prefix)?.[0] ?? "";
-  return URL_TOKEN_OPENING_PREFIX_PATTERN.test(tokenPrefix);
+  // Keycaps and subdivision flags end in enclosing or tag characters whose
+  // bases are deliberately not general delimiters. Accept only their complete
+  // standard sequences instead of treating arbitrary digits or controls as a
+  // boundary.
+  if (URL_TOKEN_TRAILING_EMOJI_SEQUENCE_PATTERN.test(prefix)) {
+    return true;
+  }
+
+  // Presentation selectors, combining marks, and skin-tone modifiers belong
+  // to the preceding grapheme. Classifying its base keeps composite emoji as
+  // delimiters without treating a decomposed letter as punctuation.
+  const previousCodePoint =
+    URL_TOKEN_PRECEDING_GRAPHEME_BASE_PATTERN.exec(prefix)?.[1] ?? "";
+  if (!previousCodePoint || /\s/u.test(previousCodePoint)) {
+    return true;
+  }
+
+  // Marked splits both `label：https://...` and `prefixhttps://...` into a
+  // text token followed by a link token. Accept language-independent
+  // typographic delimiters, but keep identifier, path, glob, assignment,
+  // query and address connectors embedded in their original content.
+  return (
+    URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN.test(previousCodePoint) &&
+    !URL_TOKEN_EMBEDDING_DELIMITER_PATTERN.test(previousCodePoint)
+  );
 }
 
 function createBrowserUserActionBlock(
