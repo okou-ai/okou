@@ -80,7 +80,7 @@ use crate::telemetry::{
     HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
     WorkspaceSessionHistoryTelemetry, session_history_prefix_extension_action_type,
 };
-use crate::types::{ExecutionContext, WorkspaceReuseResult};
+use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
 const SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR: &str = "session history download failed";
@@ -739,7 +739,7 @@ impl ProcessWaitOutcome {
 }
 
 async fn request_guest_process_cancel(
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     guest_process_pid: u32,
     process_cancel: &mut Option<GuestProcessCancelHandle>,
     timeout: Duration,
@@ -767,7 +767,7 @@ async fn request_guest_process_cancel(
 }
 
 async fn force_cancel_guest_process<F>(
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     guest_process_pid: u32,
     process_cancel: &mut Option<GuestProcessCancelHandle>,
     process_cancel_timeouts: ProcessCancelTimeouts,
@@ -859,7 +859,7 @@ fn control_closed_before_cancellation(outcome: &ProcessControlOutcome) -> bool {
 }
 
 async fn send_cooperative_user_cancellation(
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     process_control: &GuestProcessControlHandle,
     hard_cancel: &CancellationToken,
     timeout: Duration,
@@ -900,7 +900,7 @@ async fn send_cooperative_user_cancellation(
 }
 
 async fn wait_for_cooperative_user_cancellation<F>(
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     guest_process_pid: u32,
     process_control: &GuestProcessControlHandle,
     process_cancel: &mut Option<GuestProcessCancelHandle>,
@@ -1172,7 +1172,7 @@ fn guest_kernel_oom_killed_agent_domain(
 /// user-facing stderr. Metadata alone does not select terminal semantics;
 /// correlated kernel evidence is evaluated separately for a proven agent OOM.
 fn take_oom_evidence(
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     diagnostic: &mut String,
 ) -> Option<guest_contracts::oom_evidence::OomEvidence> {
     let split = guest_contracts::oom_evidence::split_diagnostic(diagnostic);

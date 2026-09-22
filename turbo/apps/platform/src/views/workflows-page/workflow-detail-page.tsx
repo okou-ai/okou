@@ -4539,20 +4539,22 @@ function AutomationCreateMenu({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="neutral"
-          className="shrink-0 gap-1.5 px-3 hover:bg-control-surface active:bg-control-surface [&_svg]:size-3.5"
-        >
-          <Plus size={14} />
-          <span>
-            {i18n.t(($) => {
-              return $.workflows.automations.common.addAutomation;
-            })}
-          </span>
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            className="shrink-0 gap-1.5 px-3 hover:bg-control-surface active:bg-control-surface [&_svg]:size-3.5"
+          >
+            <Plus size={14} />
+            <span>
+              {i18n.t(($) => {
+                return $.workflows.automations.common.addAutomation;
+              })}
+            </span>
+          </Button>
+        }
+      />
       <DialogContent smMaxWidth={880}>
         <DialogHeader>
           <DialogTitle>
@@ -8968,32 +8970,34 @@ function AutomationEditButton({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          disabled={busy}
-          aria-label={copy.editAutomation}
-          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
-          onClick={() => {
-            if (
-              automation.kind === "schedule" &&
-              automation.schedule.type === "cron"
-            ) {
-              setEditingScheduleCronFields(
-                parseWorkflowCronFields(automation.schedule, displayTimezone),
-              );
-            }
-            if (isGoogleCalendarWorkflowAutomation(automation)) {
-              setEditingGoogleCalendarId(automation.eventConfig.calendarId);
-            }
-            setEditingAutomationId(automation.id);
-          }}
-        >
-          <Pencil size={14} />
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={busy}
+            aria-label={copy.editAutomation}
+            className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
+            onClick={() => {
+              if (
+                automation.kind === "schedule" &&
+                automation.schedule.type === "cron"
+              ) {
+                setEditingScheduleCronFields(
+                  parseWorkflowCronFields(automation.schedule, displayTimezone),
+                );
+              }
+              if (isGoogleCalendarWorkflowAutomation(automation)) {
+                setEditingGoogleCalendarId(automation.eventConfig.calendarId);
+              }
+              setEditingAutomationId(automation.id);
+            }}
+          >
+            <Pencil size={14} />
+          </Button>
+        }
+      />
       <TooltipContent>
         <p className="text-xs">{copy.editAutomation}</p>
       </TooltipContent>
@@ -9031,34 +9035,36 @@ function AutomationControls({
       <TooltipProvider delayDuration={200}>
         <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                aria-label={copy.runNow}
-                className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
-                onClick={() => {
-                  detach(
-                    (async () => {
-                      const result = await runNow(automation.id, pageSignal);
-                      navigate(ROUTES.chat, {
-                        pathParams: { threadId: result.chatThreadId },
-                      });
-                    })(),
-                    Reason.DomCallback,
-                    "run workflow automation now",
-                  );
-                }}
-              >
-                {busy ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Play size={14} />
-                )}
-              </Button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={busy}
+                  aria-label={copy.runNow}
+                  className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
+                  onClick={() => {
+                    detach(
+                      (async () => {
+                        const result = await runNow(automation.id, pageSignal);
+                        navigate(ROUTES.chat, {
+                          pathParams: { threadId: result.chatThreadId },
+                        });
+                      })(),
+                      Reason.DomCallback,
+                      "run workflow automation now",
+                    );
+                  }}
+                >
+                  {busy ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                </Button>
+              }
+            />
             <TooltipContent>
               <p className="text-xs">{copy.runNow}</p>
             </TooltipContent>
@@ -9120,24 +9126,26 @@ function AutomationMoreActionsMenu({
   return (
     <DropdownMenu>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={disabled || deleting}
-                aria-label={i18n.t(($) => {
-                  return $.workflows.automations.common.moreActions;
-                })}
-                className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground data-popup-open:bg-state-selected-hover data-popup-open:text-foreground"
-              />
-            }
-          >
-            <EllipsisVertical size={14} />
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={disabled || deleting}
+                  aria-label={i18n.t(($) => {
+                    return $.workflows.automations.common.moreActions;
+                  })}
+                  className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground data-popup-open:bg-state-selected-hover data-popup-open:text-foreground"
+                />
+              }
+            >
+              <EllipsisVertical size={14} />
+            </DropdownMenuTrigger>
+          }
+        />
         <TooltipContent>
           <p className="text-xs">
             {i18n.t(($) => {

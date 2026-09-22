@@ -16,11 +16,13 @@ export function PriceTierBadge({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-            {tier}
-          </span>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
+              {tier}
+            </span>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {description}
         </TooltipContent>

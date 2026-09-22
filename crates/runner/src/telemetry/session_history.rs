@@ -4,7 +4,7 @@ use api_contracts::generated::constants::runners::{
 };
 use serde::Serialize;
 
-use crate::types::{
+use runner_types::types::{
     ResumeSessionHistoryDownloadSource, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     SessionHistorySizeBucket,
 };
@@ -421,7 +421,7 @@ const fn bool_string_value(value: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ResumeSessionHistoryRefKind;
+    use runner_types::types::ResumeSessionHistoryRefKind;
 
     fn metadata(
         download_source: ResumeSessionHistoryDownloadSource,

@@ -89,13 +89,15 @@ export function UsageBreakdownBar({
           const width = `${(segment.credits / credits) * 100}%`;
           return (
             <Tooltip key={segment.kind}>
-              <TooltipTrigger asChild>
-                <div
-                  className={`${meta.color} h-full cursor-default first:rounded-l-full last:rounded-r-full transition-shadow hover:z-10 hover:ring-2 hover:ring-foreground/30`}
-                  style={{ width }}
-                  data-testid={`${testIdPrefix}-${segment.kind}`}
-                />
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <div
+                    className={`${meta.color} h-full cursor-default first:rounded-l-full last:rounded-r-full transition-shadow hover:z-10 hover:ring-2 hover:ring-foreground/30`}
+                    style={{ width }}
+                    data-testid={`${testIdPrefix}-${segment.kind}`}
+                  />
+                }
+              />
               <TooltipContent
                 side="top"
                 sideOffset={8}

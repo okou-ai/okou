@@ -456,8 +456,8 @@ fn network_log_row(entry: &DnsLogEntry<'_>, timestamp: DateTime<Utc>) -> serde_j
 mod tests {
     use super::*;
 
-    use crate::ids::RunId;
     use crate::network_log_drain::{NetworkLogDrainContext, NetworkLogDrainProducer};
+    use runner_types::ids::RunId;
     use tokio::io::AsyncWriteExt;
 
     fn assert_query_event(entry: &DnsLogEntry<'_>, expected_query_type: &str) {
@@ -979,7 +979,7 @@ mod tests {
         producer
             .drain(
                 NetworkLogDrainContext {
-                    run_id: RunId::nil(),
+                    run_id: RunId::from(uuid::Uuid::nil()),
                     source_ip: "10.0.0.1",
                     path: &path,
                     generation: 1,

@@ -16,9 +16,9 @@ use super::super::{
     WorkspaceImagePrepareRequest, WorkspaceImagePromotionRequest,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::ids::RunId;
 use crate::paths::{HomePaths, RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_types::ids::RunId;
 
 #[tokio::test]
 async fn thread_cache_is_reusable_across_runs() {

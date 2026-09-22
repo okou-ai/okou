@@ -114,11 +114,11 @@ function resizeWindow(): void {
 
 function selectChatListFilter(
   sidebar: HTMLElement,
-  filter: "All chats" | "Unread only",
+  filter: "All chats" | "Unread",
 ): void {
   click(within(sidebar).getByLabelText("Open chat list menu"));
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === filter;
+    return candidate.textContent?.trim().startsWith(filter);
   });
   if (!item) {
     throw new Error(`${filter} menu item is missing`);
@@ -318,7 +318,7 @@ test("Show every unread conversation beyond the current history window", async (
   const sidebar = screen.getByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
-  selectChatListFilter(sidebar, "Unread only");
+  selectChatListFilter(sidebar, "Unread");
   await within(sidebar).findAllByTestId("sidebar-skeleton");
   expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
   expect(
@@ -340,7 +340,7 @@ test("Show every unread conversation beyond the current history window", async (
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
   expect(within(sidebar).queryByText("History 70")).not.toBeInTheDocument();
 
-  selectChatListFilter(sidebar, "Unread only");
+  selectChatListFilter(sidebar, "Unread");
   const lastUnreadTitle = await within(sidebar).findByText("History 70");
   const lastUnreadLink = lastUnreadTitle.closest("a");
   if (!lastUnreadLink) {
@@ -373,7 +373,7 @@ test("Do not retain rows or show an empty state when the list query fails", asyn
 
   const sidebar = screen.getByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");
-  selectChatListFilter(sidebar, "Unread only");
+  selectChatListFilter(sidebar, "Unread");
 
   await waitFor(() => {
     expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
@@ -484,17 +484,7 @@ function mockPinnedGrid(): string {
 }
 
 function pinToggle(container: HTMLElement, name: "Pin" | "Unpin"): HTMLElement {
-  const row = within(container).getByText("Agent 5").closest('[role="option"]');
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Fifth agent is missing from the pin manager");
-  }
-  const button = queryAllByRoleFast("button", row).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!button) {
-    throw new Error(`${name} button is missing from the pin manager`);
-  }
-  return button;
+  return within(container).getByRole("option", { name: `Agent 5 ${name}` });
 }
 
 test("Refresh virtualization after pinning adds a grid row and unpinning removes it", async () => {
@@ -523,7 +513,10 @@ test("Refresh virtualization after pinning adds a grid row and unpinning removes
     expect(rows()).toHaveLength(18);
   });
   await waitFor(() => {
-    return expect(pinToggle(dialog, "Unpin")).toBeEnabled();
+    return expect(pinToggle(dialog, "Unpin")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
   click(pinToggle(dialog, "Unpin"));
   await waitFor(() => {

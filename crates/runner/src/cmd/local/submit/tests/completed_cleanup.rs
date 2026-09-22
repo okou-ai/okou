@@ -5,9 +5,9 @@ use super::support::{
     TEST_SUBMIT_RENDEZVOUS_TIMEOUT, run_submit_and_write_result, submit_args_for_test,
     submit_queue_entry, wait_for_job_and_write_result, write_queue_job_file,
 };
-use crate::ids::RunId;
 use crate::local_queue::{self, JobResponse};
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 #[tokio::test]
 async fn submit_returns_failure_for_nonzero_job_response() {

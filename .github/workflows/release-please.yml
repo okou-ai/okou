@@ -172,6 +172,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/process-control-ipc--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/process-launch--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/runner--sha']) }},
+              ${{ toJSON(steps.release.outputs['crates/runner-types--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/sandbox--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/sandbox-firecracker--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/sandbox-mock--sha']) }},
@@ -253,6 +254,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/process-control-ipc--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/process-launch--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/runner--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['crates/runner-types--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/sandbox--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/sandbox-firecracker--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/sandbox-mock--tag_name']) }},
@@ -1055,6 +1057,43 @@ jobs:
                   type: mrkdwn
                   text: "*Host Worker* ❌ Deploy failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
+  # Publish the release commit's CLI artifact under its version so runner
+  # rootfs builds install the CLI by version (#35967). Fails the release when
+  # the version is already published with different bytes: one version must
+  # identify exactly one runtime build for API-first handoff parity.
+  publish-cli-versioned-artifact:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      cli-version: ${{ steps.publish.outputs.cli-version }}
+      pi-agent-runtime-version: ${{ steps.publish.outputs.pi-agent-runtime-version }}
+      package-url: ${{ steps.publish.outputs.package-url }}
+      manifest-url: ${{ steps.publish.outputs.manifest-url }}
+      package-sha256: ${{ steps.publish.outputs.package-sha256 }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      CLI_STATIC_BASE_URL: https://static.okou.io
+      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.release-please.outputs.release_target }}
+
+      - name: Publish versioned CLI artifact
+        id: publish
+        shell: bash
+        env:
+          ARTIFACT_SHA: ${{ needs.release-please.outputs.release_target }}
+          RELEASE_MANIFEST_PATH: .release-please-manifest.json
+        run: bash .github/scripts/publish-okou-cli-versioned-artifact.sh
+
   # Fan-in barrier: non-API build-phase and release validation jobs must finish
   # (success or skipped) before deployment-phase jobs start. If any included build
   # or validation fails, this job fails, which in turn blocks jobs that keep a
@@ -1071,6 +1110,7 @@ jobs:
       - build-runner-production
       - sbom
       - resolve-image-cache
+      - publish-cli-versioned-artifact
     # Use always() so this job runs even when upstream build jobs are skipped.
     # !cancelled() is insufficient — it still propagates "skipped" from needs
     # dependencies, which causes builds-complete (and transitively
@@ -2219,6 +2259,7 @@ jobs:
         resolve-image-cache,
         build-runner-release-assets,
         runner-production-host-groups,
+        publish-cli-versioned-artifact,
       ]
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
@@ -2389,6 +2430,11 @@ jobs:
           # (decoded in previous step).
           R2_ACCOUNT_ID: ${{ needs.resolve-image-cache.outputs.r2-account-id }}
           R2_USER_STORAGES_BUCKET_NAME: ${{ needs.resolve-image-cache.outputs.r2-bucket }}
+          # Versioned Okou CLI published for this release commit; the rootfs
+          # installs it so Pi runs exec the CLI instead of npx-installing it.
+          OKOU_CLI_PACKAGE_URL: ${{ needs.publish-cli-versioned-artifact.outputs.package-url }}
+          OKOU_CLI_MANIFEST_URL: ${{ needs.publish-cli-versioned-artifact.outputs.manifest-url }}
+          OKOU_CLI_PACKAGE_SHA256: ${{ needs.publish-cli-versioned-artifact.outputs.package-sha256 }}
         run: |
           cd ansible
           ansible-playbook \
@@ -2403,6 +2449,9 @@ jobs:
             -e "r2_access_key_id=${R2_ACCESS_KEY_ID:-}" \
             -e "r2_secret_access_key=${R2_SECRET_ACCESS_KEY:-}" \
             -e "r2_bucket=${R2_USER_STORAGES_BUCKET_NAME:-}" \
+            -e "okou_cli_package_url=${OKOU_CLI_PACKAGE_URL:?versioned CLI artifact URL is required}" \
+            -e "okou_cli_manifest_url=${OKOU_CLI_MANIFEST_URL:?versioned CLI manifest URL is required}" \
+            -e "okou_cli_package_sha256=${OKOU_CLI_PACKAGE_SHA256:?versioned CLI package sha256 is required}" \
             -v
 
       - name: Calculate duration

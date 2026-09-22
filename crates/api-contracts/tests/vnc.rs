@@ -1,9 +1,10 @@
 use api_contracts::generated::types::runners::vnc::{
-    CheckRequest, CheckRequestRunnerIdentity, CheckResponse, ResolveRequest,
-    ResolveRequestRunnerIdentity, ResolveRequestSupportedProfile,
+    CheckRequest, CheckRequestExpectedTransport, CheckRequestRunnerIdentity, CheckResponse,
+    ResolveRequest, ResolveRequestRunnerIdentity, ResolveRequestSupportedProfile,
     ResolveRequestSupportedProfileAuthMethod, ResolveRequestSupportedProfileSecurityType,
-    ResolveResponse, ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
-    ResolveResponseResolvedSecurityX509VncTrust,
+    ResolveRequestSupportedProfileTransportType, ResolveResponse,
+    ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
+    ResolveResponseResolvedSecurityX509VncTrust, ResolveResponseResolvedTransportTransport,
 };
 use serde_json::{Value, json};
 
@@ -129,6 +130,68 @@ fn private_handoff_rejects_unknown_tags_and_mixed_variant_fields() {
 }
 
 #[test]
+fn capable_handoff_requires_an_explicit_transport_and_server_identity() {
+    let direct: ResolveResponse = serde_json::from_value(json!({
+        "outcome": "resolved_transport", "host": "vnc.example.com", "port": 5900,
+        "generation": 5, "serverName": "desktop.internal",
+        "transport": {"type": "direct"},
+        "authentication": {"method": "vnc_password", "password": "secret"},
+        "security": {"type": "x509_vnc", "trust": {"mode": "system"}}
+    }))
+    .unwrap();
+    let ResolveResponse::ResolvedTransport {
+        server_name,
+        transport,
+        ..
+    } = direct
+    else {
+        panic!("expected capable direct authority");
+    };
+    assert_eq!(server_name, "desktop.internal");
+    assert!(matches!(
+        transport,
+        ResolveResponseResolvedTransportTransport::Direct
+    ));
+
+    let ssh: ResolveResponse = serde_json::from_value(json!({
+        "outcome": "resolved_transport", "host": "private.internal", "port": 5900,
+        "generation": 6, "serverName": "certificate.internal",
+        "transport": {
+            "type": "ssh",
+            "connectionId": "00000000-0000-4000-8000-000000000003",
+            "generation": 9
+        },
+        "authentication": {
+            "method": "username_password", "username": "operator", "password": "secret"
+        },
+        "security": {"type": "x509_plain", "trust": {"mode": "system"}}
+    }))
+    .unwrap();
+    let ResolveResponse::ResolvedTransport { transport, .. } = ssh else {
+        panic!("expected SSH authority");
+    };
+    assert!(matches!(
+        transport,
+        ResolveResponseResolvedTransportTransport::Ssh {
+            connection_id,
+            generation: 9
+        } if connection_id == "00000000-0000-4000-8000-000000000003"
+    ));
+
+    for missing in ["serverName", "transport"] {
+        let mut invalid = json!({
+            "outcome": "resolved_transport", "host": "vnc.example.com", "port": 5900,
+            "generation": 5, "serverName": "desktop.internal",
+            "transport": {"type": "direct"},
+            "authentication": {"method": "vnc_password", "password": "secret"},
+            "security": {"type": "x509_vnc", "trust": {"mode": "system"}}
+        });
+        invalid.as_object_mut().unwrap().remove(missing);
+        assert!(serde_json::from_value::<ResolveResponse>(invalid).is_err());
+    }
+}
+
+#[test]
 fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
     for password in ["".to_owned(), format!("secret-canary{}", "界".repeat(342))] {
         let mut invalid = resolved();
@@ -156,7 +219,7 @@ fn malformed_credentials_and_duplicate_fields_do_not_expose_passwords() {
 }
 
 #[test]
-fn resolve_request_advertises_only_the_two_exact_supported_pairs() {
+fn resolve_request_advertises_the_four_exact_supported_tuples() {
     let request = ResolveRequest {
         connection_id: "00000000-0000-4000-8000-000000000001".to_owned(),
         runner_identity: ResolveRequestRunnerIdentity {
@@ -167,18 +230,32 @@ fn resolve_request_advertises_only_the_two_exact_supported_pairs() {
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+            },
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+            },
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
             },
         ],
     };
     assert_eq!(
         serde_json::to_value(request).unwrap()["supportedProfiles"],
         json!([
-            {"authMethod":"vnc_password","securityType":"x509_vnc"},
-            {"authMethod":"username_password","securityType":"x509_plain"}
+            {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
+            {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
+            {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
+            {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"}
         ])
     );
 }
@@ -192,6 +269,10 @@ fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
             heartbeat_generation: 5_000_000_000,
         },
         expected_generation: 5,
+        expected_transport: Some(CheckRequestExpectedTransport::Ssh {
+            connection_id: "00000000-0000-4000-8000-000000000003".to_owned(),
+            generation: 7,
+        }),
     };
     assert_eq!(
         serde_json::to_value(request).unwrap(),
@@ -201,8 +282,28 @@ fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
                 "runnerId": "00000000-0000-4000-8000-000000000002",
                 "heartbeatGeneration": 5_000_000_000_i64
             },
-            "expectedGeneration": 5
+            "expectedGeneration": 5,
+            "expectedTransport": {
+                "type": "ssh",
+                "connectionId": "00000000-0000-4000-8000-000000000003",
+                "generation": 7
+            }
         })
+    );
+    let legacy = CheckRequest {
+        connection_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+        runner_identity: CheckRequestRunnerIdentity {
+            runner_id: "00000000-0000-4000-8000-000000000002".to_owned(),
+            heartbeat_generation: 5_000_000_000,
+        },
+        expected_generation: 5,
+        expected_transport: None,
+    };
+    assert!(
+        serde_json::to_value(legacy)
+            .unwrap()
+            .get("expectedTransport")
+            .is_none()
     );
     for (outcome, expected) in [
         ("valid", CheckResponse::Valid),

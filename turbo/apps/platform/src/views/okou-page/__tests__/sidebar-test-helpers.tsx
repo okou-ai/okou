@@ -315,9 +315,18 @@ export function menuItemByText(text: string): HTMLElement {
 export function queryMenuItemByText(text: string): HTMLElement | null {
   return (
     queryAllByRoleFast("menuitem").find((candidate) => {
+      const semanticContent = candidate.cloneNode(true);
+      if (!(semanticContent instanceof HTMLElement)) {
+        return false;
+      }
+      for (const hidden of semanticContent.querySelectorAll(
+        '[aria-hidden="true"]',
+      )) {
+        hidden.remove();
+      }
       return (
         candidate.getAttribute("aria-label") === text ||
-        candidate.textContent?.replace(/\s+/g, " ").trim() === text
+        semanticContent.textContent?.replace(/\s+/g, " ").trim() === text
       );
     }) ?? null
   );

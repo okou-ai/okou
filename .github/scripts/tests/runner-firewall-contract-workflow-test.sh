@@ -61,15 +61,16 @@ def assert_gate(values, results, expected, label):
 
 
 scenarios = [
-    ('runner', ['crates/runner/src/types.rs'], 'coverage', True, True),
+    ('runner-types', ['crates/runner-types/src/types.rs'], 'coverage', True, True),
     ('other-crate', ['crates/xtask/src/main.rs'], 'coverage', False, True),
     ('ci', ['.github/workflows/crates.yml'], 'coverage', True, True),
     ('fixture-only', [corpus], standalone, False, True),
-    ('fixture-and-rust', [corpus, 'crates/runner/src/types.rs'], 'coverage', True, True),
+    ('fixture-and-rust', [corpus, 'crates/runner-types/src/types.rs'], 'coverage', True, True),
     ('fixture-and-ci', [corpus, '.github/workflows/crates.yml'], 'coverage', True, True),
     ('unrelated', ['README.md'], None, False, False),
-    ('other-shared-fixture', ['turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json'],
-     None, False, True),
+    ('firewall-semantics-fixture',
+     ['turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json'],
+     standalone, False, True),
 ]
 
 with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-') as temporary:
@@ -96,11 +97,14 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-') as tempor
     # Cargo is the external boundary; dependency traversal and Git change
     # detection still run through the actual repository scripts.
     metadata = directory / 'metadata.json'
-    names = ['ably-subscriber', 'api-contracts', 'runner', 'sandbox-firecracker',
+    names = ['ably-subscriber', 'api-contracts', 'runner', 'runner-types', 'sandbox-firecracker',
              'nbd-cow', 'guest-control-tests', 'xtask']
     metadata.write_text(json.dumps({'packages': [
-        {'name': name, 'dependencies': ([{'name': 'api-contracts', 'path': str(repo / 'crates/api-contracts')}]
-                                       if name == 'runner' else [])}
+        {'name': name, 'dependencies': (
+            [{'name': 'runner-types', 'path': str(repo / 'crates/runner-types')}]
+            if name == 'runner' else
+            [{'name': 'api-contracts', 'path': str(repo / 'crates/api-contracts')}]
+            if name == 'runner-types' else [])}
         for name in names
     ]}))
     bin_dir = directory / 'bin'

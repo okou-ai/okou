@@ -132,7 +132,7 @@ async fn outer_job_panic_after_handoff_keeps_successor_owned_sandbox() {
         .expect("successor should complete with the handed-off sandbox");
     assert_eq!(
         successor_completion.reuse_result,
-        Some(crate::types::SandboxReuseResult::Reused)
+        Some(runner_types::types::SandboxReuseResult::Reused)
     );
     assert_eq!(
         successor_completion.sandbox_id, predecessor_completion.sandbox_id,

@@ -1007,14 +1007,16 @@ function AddTelegramBotDialogFrame({
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button type="button" size="sm" disabled={disabled}>
-          <Plus size={16} />
-          {t(($) => {
-            return $.connectors.providerSettings.telegram.addBot;
-          })}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button type="button" size="sm" disabled={disabled}>
+            <Plus size={16} />
+            {t(($) => {
+              return $.connectors.providerSettings.telegram.addBot;
+            })}
+          </Button>
+        }
+      />
       <DialogContent smMaxWidth={640}>
         <DialogHeader>
           <DialogTitle>
@@ -1035,6 +1037,13 @@ function AddTelegramBotDialogFrame({
           })}
           onSubmit={(event) => {
             event.preventDefault();
+            if (flow.step === "create") {
+              if (canSubmit) {
+                onAddBot();
+              }
+            } else if (flow.canGoNext && !flow.checkingTarget && !adding) {
+              flow.goNext();
+            }
           }}
         >
           <AddTelegramBotProgress step={flow.step} />
@@ -1058,8 +1067,6 @@ function AddTelegramBotDialogFrame({
             canSubmit={canSubmit}
             onCancel={onCancel}
             onBack={flow.goBack}
-            onNext={flow.goNext}
-            onAddBot={onAddBot}
           />
         </form>
       </DialogContent>
@@ -1278,8 +1285,6 @@ function AddTelegramBotDialogFooter({
   canSubmit,
   onCancel,
   onBack,
-  onNext,
-  onAddBot,
 }: {
   step: AddTelegramStep;
   adding: boolean;
@@ -1288,8 +1293,6 @@ function AddTelegramBotDialogFooter({
   canSubmit: boolean;
   onCancel: () => void;
   onBack: () => void;
-  onNext: () => void;
-  onAddBot: () => void;
 }) {
   const { t } = useTranslation();
   const isTokenStep = step === "token";
@@ -1317,12 +1320,7 @@ function AddTelegramBotDialogFooter({
         )}
       </Button>
       {isCreateStep ? (
-        <Button
-          type="button"
-          disabled={!canSubmit}
-          className="gap-2"
-          onClick={onAddBot}
-        >
+        <Button type="submit" disabled={!canSubmit} className="gap-2">
           {adding ? (
             <Loader2 size={16} className="animate-spin" />
           ) : (
@@ -1338,10 +1336,9 @@ function AddTelegramBotDialogFooter({
         </Button>
       ) : (
         <Button
-          type="button"
+          type="submit"
           disabled={!canGoNext || !!checkingTarget || adding}
           className="gap-2"
-          onClick={onNext}
         >
           {checkingTarget ? (
             <>
@@ -1605,24 +1602,26 @@ function TelegramMoreActions({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          disabled={disabled}
-          variant="quiet"
-          size="icon-sm"
-          className="shrink-0 disabled:opacity-50"
-          aria-label={t(
-            ($) => {
-              return $.connectors.providerSettings.telegram.moreOptions;
-            },
-            { bot: botLabel },
-          )}
-        >
-          <EllipsisVertical size={16} />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            disabled={disabled}
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0 disabled:opacity-50"
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.telegram.moreOptions;
+              },
+              { bot: botLabel },
+            )}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
       <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
         {bot.isConnected ? (
           <button

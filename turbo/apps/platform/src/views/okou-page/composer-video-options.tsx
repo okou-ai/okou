@@ -379,32 +379,34 @@ function ComposerVideoOptionsChipBody({
 
   return (
     <Popover open={open && !templatePickerMounted} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground"
-          aria-label={t(
-            ($) => {
-              return $.chat.templates.videoOptionsLabel;
-            },
-            { spec },
-          )}
-          aria-description={
-            config.supportsGenerateAudio ? audioLabel : undefined
-          }
-        >
-          <span className="tabular-nums">{spec}</span>
-          {config.supportsGenerateAudio &&
-            (resolved.generateAudio ? (
-              <Volume2 size={14} aria-hidden />
-            ) : (
-              <VolumeX size={14} aria-hidden />
-            ))}
-          <ChevronDown className="shrink-0 opacity-50" aria-hidden />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            className="shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground"
+            aria-label={t(
+              ($) => {
+                return $.chat.templates.videoOptionsLabel;
+              },
+              { spec },
+            )}
+            aria-description={
+              config.supportsGenerateAudio ? audioLabel : undefined
+            }
+          >
+            <span className="tabular-nums">{spec}</span>
+            {config.supportsGenerateAudio &&
+              (resolved.generateAudio ? (
+                <Volume2 size={14} aria-hidden />
+              ) : (
+                <VolumeX size={14} aria-hidden />
+              ))}
+            <ChevronDown className="shrink-0 opacity-50" aria-hidden />
+          </Button>
+        }
+      />
       <PopoverContent
         align="start"
         side="top"

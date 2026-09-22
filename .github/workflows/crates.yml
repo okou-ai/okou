@@ -163,10 +163,10 @@ jobs:
             echo "mitm-addon-test-inputs-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # The Rust runner independently validates the shared firewall base
-          # URL contract. Run its focused conformance test when only the
+          # The Rust runner independently validates the shared firewall
+          # contracts. Run its focused conformance tests when only a
           # TypeScript-owned corpus changes, without selecting runner images.
-          if git diff --name-only "$BASE_REF" HEAD | grep -qx "turbo/packages/connectors/src/__tests__/firewall-base-url-validation-contract.json"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -Eqx "turbo/packages/connectors/src/__tests__/(firewall-base-url-validation-contract|firewall-semantics-contract)\.json"; then
             echo "runner-firewall-contract-inputs-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "runner-firewall-contract-inputs-changed=false" >> "$GITHUB_OUTPUT"
@@ -573,9 +573,11 @@ jobs:
           shared-key: runner-firewall-contract
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Check runner firewall base URL contract
+      - name: Check runner firewall contracts
         working-directory: crates
-        run: cargo test -p runner types::tests::firewall_base_url_validation_matches_shared_contract -- --exact
+        run: |
+          cargo test -p runner-types --test firewall_base_url_contract firewall_base_url_validation_matches_shared_contract -- --exact
+          cargo test -p runner-types --test firewall_rule_contract firewall_rule_validation_matches_shared_contract -- --exact
 
       - name: Report peak memory
         if: always()

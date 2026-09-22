@@ -7,10 +7,13 @@ use base64::Engine;
 use rfb_client::{PlainCredentials, TrustRoots, VncPassword, X509Authentication};
 use rustls::pki_types::CertificateDer;
 use serde::{Serialize, de::DeserializeOwned};
+use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::Failure;
-use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcessIdentity};
+use runner_types::ids::RunId;
+
+use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
 
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
@@ -29,8 +32,16 @@ pub(super) struct Credential {
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) generation: i64,
+    pub(super) server_name: String,
+    pub(super) transport: Transport,
     pub(super) authentication: X509Authentication,
     pub(super) roots: TrustRoots,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Transport {
+    Direct,
+    Ssh { connection: Uuid, generation: i64 },
 }
 
 impl Authority {
@@ -92,23 +103,41 @@ impl Authority {
         &self,
         run: RunId,
         connection: uuid::Uuid,
+        supports_ssh: bool,
     ) -> Result<Credential, Failure> {
+        let mut supported_profiles = vec![
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+            },
+            ResolveRequestSupportedProfile {
+                auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
+                security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+            },
+        ];
+        if supports_ssh {
+            supported_profiles.extend([
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
+                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                },
+                ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
+                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                },
+            ]);
+        }
         let request = ResolveRequest {
             connection_id: connection.to_string(),
             runner_identity: ResolveRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
-            supported_profiles: vec![
-                ResolveRequestSupportedProfile {
-                    auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
-                    security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
-                },
-                ResolveRequestSupportedProfile {
-                    auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
-                    security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
-                },
-            ],
+            supported_profiles,
         };
         let response = self
             .call(
@@ -118,22 +147,49 @@ impl Authority {
                 &request,
             )
             .await?;
-        let (host, port, generation, authentication, security) = match response {
-            ResolveResponse::Unavailable => return Err(Failure::Unavailable),
-            ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
-            ResolveResponse::Resolved {
-                host,
-                port,
-                generation,
-                authentication,
-                security,
-            } => (host, port, generation, authentication, security),
-        };
+        let (host, port, generation, server_name, transport, authentication, security) =
+            match response {
+                ResolveResponse::Unavailable => return Err(Failure::Unavailable),
+                ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
+                ResolveResponse::Resolved { .. } => return Err(Failure::Authority),
+                ResolveResponse::ResolvedTransport {
+                    host,
+                    port,
+                    generation,
+                    server_name,
+                    transport,
+                    authentication,
+                    security,
+                } => (
+                    host,
+                    port,
+                    generation,
+                    server_name,
+                    transport,
+                    authentication,
+                    security,
+                ),
+            };
         let port = u16::try_from(port).map_err(|_| Failure::Authority)?;
         if port == 0 || !(1..=i64::from(i32::MAX)).contains(&generation) {
             return Err(Failure::Authority);
         }
         super::network::validate_host(&host)?;
+        let transport = match transport {
+            ResolveResponseResolvedTransportTransport::Direct => Transport::Direct,
+            ResolveResponseResolvedTransportTransport::Ssh {
+                connection_id,
+                generation,
+            } => {
+                if !supports_ssh || !(1..=i64::from(i32::MAX)).contains(&generation) {
+                    return Err(Failure::Authority);
+                }
+                Transport::Ssh {
+                    connection: connection_id.parse().map_err(|_| Failure::Authority)?,
+                    generation,
+                }
+            }
+        };
         let (authentication, trust) = match (authentication, security) {
             (
                 ResolveResponseResolvedAuthentication::VncPassword { password },
@@ -169,6 +225,8 @@ impl Authority {
             host,
             port,
             generation,
+            server_name,
+            transport,
             authentication,
             roots,
         })
@@ -179,7 +237,18 @@ impl Authority {
         run: RunId,
         connection: uuid::Uuid,
         generation: i64,
+        transport: Transport,
     ) -> Result<(), Failure> {
+        let expected_transport = Some(match transport {
+            Transport::Direct => CheckRequestExpectedTransport::Direct,
+            Transport::Ssh {
+                connection,
+                generation,
+            } => CheckRequestExpectedTransport::Ssh {
+                connection_id: connection.to_string(),
+                generation,
+            },
+        });
         let request = CheckRequest {
             connection_id: connection.to_string(),
             runner_identity: CheckRequestRunnerIdentity {
@@ -187,6 +256,7 @@ impl Authority {
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
             expected_generation: generation,
+            expected_transport,
         };
         match self
             .call(

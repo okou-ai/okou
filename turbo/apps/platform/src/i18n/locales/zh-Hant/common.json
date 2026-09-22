@@ -1722,6 +1722,45 @@
       "upgradeToRun": "升級到 Pro 才能執行 {{assistantName}}",
       "upgradeWorkspace": "升級你的工作區"
     },
+    "browserInput": {
+      "applyFailed": "無法新增資訊。你填寫的內容仍然保留，請重試。",
+      "applying": "正在新增資訊",
+      "applyingDescription": "瀏覽器正在完成這個請求。",
+      "callbackFailed": "未能通知 Agent，請再次點擊「繼續」。",
+      "cancel": "取消",
+      "cancelFailed": "無法取消這個請求，請重試。",
+      "cancelled": "請求已取消",
+      "cancelledDescription": "沒有新增任何資訊。繼續以通知 Agent。",
+      "cancelling": "正在取消…",
+      "completed": "資訊已新增",
+      "completedDescription": "資訊已新增到瀏覽器。繼續以通知 Agent。",
+      "continue": "繼續",
+      "continuing": "正在繼續…",
+      "delivered": "已通知 Agent",
+      "deliveredDescription": "Agent 現在可以繼續了。",
+      "description": "請輸入這個網站所需的資訊。",
+      "documentTitle": "瀏覽器資訊輸入",
+      "expired": "請求已過期",
+      "expiredDescription": "瀏覽器已關閉，或這個請求已不再有效。",
+      "loadFailed": "無法載入這個請求",
+      "loadFailedDescription": "請稍後重試。",
+      "loading": "正在載入瀏覽器輸入",
+      "loadingDescription": "正在檢查這個請求…",
+      "open": "輸入資訊",
+      "optional": "（選填）",
+      "required": "（必填）",
+      "retry": "重試",
+      "site": "網站",
+      "stale": "欄位已變更",
+      "staleDescription": "請讓 Agent 建立一個新請求。",
+      "submit": "新增到瀏覽器",
+      "submitting": "正在新增…",
+      "title": "在瀏覽器中輸入資訊",
+      "unavailable": "請求不可用",
+      "unavailableDescription": "這個瀏覽器資訊輸入請求無效或已不可用。",
+      "uncertain": "請檢查瀏覽器",
+      "uncertainDescription": "瀏覽器可能已收到這些資訊。重試前，請先讓 Agent 檢查。"
+    },
     "cards": {
       "viewDetails": "檢視詳情"
     },
@@ -2098,6 +2137,7 @@
       "allCaughtUp": "已全部看完",
       "allChats": "全部聊天",
       "archive": "歸檔聊天",
+      "archived": "已歸檔",
       "chatsWith": "與{{agentName}}的聊天",
       "chatThreads": "聊天會話",
       "delete": "刪除聊天",
@@ -2109,6 +2149,7 @@
       "movePinDown": "下移",
       "movePinUp": "上移",
       "newChatWith": "與{{agentName}}新建聊天",
+      "noArchived": "沒有已歸檔的聊天",
       "noUnread": "沒有未讀聊天",
       "openChatMenu": "開啟聊天選單",
       "openListMenu": "開啟聊天列表選單",
@@ -2117,13 +2158,12 @@
       "rename": "重新命名聊天",
       "renameDescription": "為這個聊天會話輸入新名稱。",
       "showAllChats": "顯示全部聊天",
-      "showArchived": "顯示已歸檔",
       "showArchivedChats": "顯示已歸檔的聊天",
       "titlePlaceholder": "聊天標題",
       "unarchive": "取消歸檔",
       "unpin": "取消置頂",
       "unread": "未讀",
-      "unreadOnly": "僅看未讀"
+      "unreadOnly": "未讀"
     },
     "startCards": {
       "kinds": {
@@ -3375,13 +3415,24 @@
         "connectTitle": "連線到Lark"
       },
       "slack": {
+        "accountInUseDescription": "這個Slack帳號已連線到另一個Okou帳號。請先在原帳號中中斷連線，然後重試。",
+        "accountInUseTitle": "Slack帳號已被連線",
+        "accountMismatchDescription": "你的Okou帳號目前在這裡使用Slack帳號{{currentAccount}}。要切換到開啟此連結的{{requestedAccount}}嗎？",
+        "accountMismatchDescriptionWorkspace": "你的Okou帳號目前在{{workspace}}使用Slack帳號{{currentAccount}}。要切換到開啟此連結的{{requestedAccount}}嗎？",
+        "accountMismatchTitle": "切換Slack帳號？",
         "connectDescription": "把你的帳號關聯到這個Slack工作區，就可以直接在Slack裡與你的智能體交流。",
         "connectTitle": "連線到Slack",
+        "errorFallback": "無法檢查或開始Slack連線，請重試。",
         "invalidDescription": "此頁面需要從Slack連線連結開啟。",
+        "keepAccount": "保留{{account}}",
         "open": "開啟Slack",
         "successDescription": "在任意頻道@已安裝的機器人，或給它發私信，即可開始對話。",
         "successDescriptionWorkspace": "你已連線到{{workspace}}。在任意頻道@已安裝的機器人，或給它發私信，即可開始對話。",
-        "successTitle": "已連線到Slack！"
+        "successTitle": "已連線到Slack！",
+        "switchAccount": "切換到{{account}}",
+        "workspaceMismatchDescription": "此Slack工作區不屬於你目前的Okou組織。請切換組織，或聯絡管理員處理。",
+        "workspaceMismatchDescriptionNamed": "你目前的Okou組織已連線到{{workspace}}。請切換組織，或請管理員先解除安裝，再連線此Slack工作區。",
+        "workspaceMismatchTitle": "Slack工作區不相符"
       },
       "teams": {
         "connectDescription": "關聯你的Teams帳號，就可以直接在Microsoft Teams裡與你的智能體交流。",
@@ -5792,8 +5843,7 @@
     "status": {
       "availableNow": "當前可用",
       "inUse_one": "{{limit}}個名額中已使用{{active}}個",
-      "inUse_other": "{{limit}}個名額中已使用{{active}}個",
-      "waitingForSandbox": "等待沙箱"
+      "inUse_other": "{{limit}}個名額中已使用{{active}}個"
     },
     "tiers": {
       "custom": "自定義",
@@ -6440,16 +6490,15 @@
         }
       },
       "emailSubscription": {
-        "description": "各個工作區的可選郵件，包括簡報和提醒。",
+        "description": "透過郵件接收簡報、提醒和其他工作區更新。",
+        "descriptionWithEmail": "接收傳送至 {{email}} 的簡報、提醒和其他工作區更新。",
         "loading": "正在檢查郵件訂閱…",
         "retryMessage": "無法儲存或載入你的郵件訂閱，請重試。",
         "saving": "儲存中…",
         "sectionTitle": "郵件訂閱",
-        "subscribed": "已訂閱",
-        "title": "接收來自Okou的郵件",
+        "title": "郵件更新",
         "unavailable": "郵件不可用",
-        "unavailableDescription": "請在「帳號與安全」中檢查你的郵箱；如果郵件被攔截，請聯絡客服。",
-        "unsubscribed": "已取消訂閱"
+        "unavailableDescription": "請在「帳號與安全」中檢查你的郵箱；如果郵件被攔截，請聯絡客服。"
       },
       "language": {
         "description": "選擇{{brandName}}介面的顯示語言",
@@ -6475,13 +6524,11 @@
         "chatOnly": "僅聊天",
         "checkEmailSubscription": "投遞狀態請檢視上方的郵件訂閱。",
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
-        "description": "每天早上7:00（按你所在時區）獲取該工作區的當日重點。",
-        "emailOff": "郵件已關閉，晨報仍會出現在聊天中。",
-        "emailWhenReady": "晨報準備好後，你會收到郵件。",
+        "description": "每天早上 7:00（按你的時區）接收當日重點。",
         "loading": "正在載入晨報設定…",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
-        "nextBrief": "下一份晨報 {{date}}（{{timezone}}）",
+        "nextBrief": "下一份晨報 {{date}}",
         "paused": "已暫停",
         "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",

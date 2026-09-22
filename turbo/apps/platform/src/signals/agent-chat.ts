@@ -7,7 +7,7 @@ import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
-import { chatThreadShowArchived$ } from "./chat-page/chat-thread-show-archived.ts";
+import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
 import { isChatThreadArchived } from "./chat-page/chat-thread-title.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
@@ -100,7 +100,7 @@ export interface ChatThreadListSignals {
 
 interface ChatThreadListFilter {
   readonly archiveEnabled: boolean;
-  readonly showArchived: boolean;
+  readonly onlyArchived: boolean;
 }
 
 function sortChatThreads(threads: EventDrivenChatThread[]) {
@@ -136,11 +136,11 @@ function createChatThreadListSignals(
   });
   const threads$ = computed((get): EventDrivenChatThread[] => {
     return get(allThreads$).filter((thread) => {
-      return !(
-        filter.archiveEnabled &&
-        !filter.showArchived &&
-        isChatThreadArchived(thread.title)
-      );
+      if (!filter.archiveEnabled) {
+        return true;
+      }
+      const archived = isChatThreadArchived(thread.title);
+      return filter.onlyArchived ? archived : !archived;
     });
   });
   const threadIds$ = computed((get): readonly string[] => {
@@ -161,7 +161,7 @@ function createChatThreadListSignals(
       return threadId ? get(threadIds$).includes(threadId) : false;
     }),
     hasHiddenArchivedThreads$: computed((get): boolean => {
-      if (!filter.archiveEnabled || filter.showArchived) {
+      if (!filter.archiveEnabled || filter.onlyArchived) {
         return false;
       }
       return get(allThreads$).some((thread) => {
@@ -177,21 +177,21 @@ export const currentChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
     const archiveEnabled =
       get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] ?? false;
-    const showArchived = archiveEnabled && get(chatThreadShowArchived$);
+    const onlyArchived = archiveEnabled && get(chatThreadOnlyArchived$);
 
     const agentId = get(currentChatAgentScope$) ?? (await get(defaultAgentId$));
 
     return createChatThreadListSignals(agentId, {
       archiveEnabled,
-      showArchived,
+      onlyArchived,
     });
   },
 );
 
 // Indicators bound the unread list. Keep their asynchronous dependency out of
 // the all-chats projection and its synchronous virtual window.
-// Unread only always includes archived threads, so an archived thread never
-// hides an unread message.
+// The Unread filter always includes archived threads, so an archived thread
+// never hides an unread message.
 export const unreadChatThreads$ = computed(
   async (get): Promise<EventDrivenChatThread[]> => {
     const agentId = await get(currentChatAgentId$);

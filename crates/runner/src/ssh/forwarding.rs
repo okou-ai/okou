@@ -99,6 +99,7 @@ impl Run {
     pub(crate) async fn open_direct_tcpip(
         &self,
         connection: Uuid,
+        expected_generation: i64,
         host: &str,
         port: u16,
         cancelled: CancellationToken,
@@ -129,13 +130,15 @@ impl Run {
                     &mut attempt,
                 )))
                 .await??;
-            attempt.generation = Some(
-                credential
-                    .trust
-                    .lock()
-                    .map_err(|_| FailureReason::Protocol)?
-                    .generation,
-            );
+            let generation = credential
+                .trust
+                .lock()
+                .map_err(|_| FailureReason::Protocol)?
+                .generation;
+            attempt.generation = Some(generation);
+            if generation != expected_generation {
+                return Err(FailureReason::ConfigurationChanged);
+            }
             attempt.connecting = true;
             let lease = self
                 .sessions
@@ -217,7 +220,7 @@ fn validate_target(host: &str, port: u16) -> Result<(), FailureReason> {
             Err(FailureReason::UnsafeDestination)
         };
     }
-    if crate::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
+    if runner_types::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
         || host.split('.').any(|label| {
             label.is_empty()
                 || label.len() > 63

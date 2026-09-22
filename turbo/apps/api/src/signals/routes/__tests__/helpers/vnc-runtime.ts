@@ -3,6 +3,7 @@ import {
   runnerVncContract,
   type RunnerVncResolveRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
+import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -16,6 +17,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { runnerVncRoutes } from "../../runner-vnc";
+import { sshAccessRoutes } from "../../ssh-access";
 import { testSshConnectionStateRoutes } from "../../test-ssh-connection-state";
 import { testVncAuthorityStateRoutes } from "../../test-vnc-authority-state";
 import { vncAccessRoutes } from "../../vnc-access";
@@ -45,6 +47,14 @@ export const vncProfiles = Object.freeze([
     securityType: "x509_plain" as const,
   },
 ]);
+export const vncTransportProfiles = Object.freeze(
+  vncProfiles.flatMap((profile) => {
+    return [
+      { ...profile, transportType: "direct" as const },
+      { ...profile, transportType: "ssh" as const },
+    ];
+  }),
+);
 export const vncPassword = " secret ";
 type Owner = { readonly orgId: string; readonly userId: string };
 type RuntimeBody = Extract<
@@ -93,6 +103,11 @@ export function createVncRuntimeApi(context: TestContext) {
   const access = () => {
     return setupApp({ context, routes: vncAccessRoutes })(
       agentVncAccessContract,
+    );
+  };
+  const sshAccess = () => {
+    return setupApp({ context, routes: sshAccessRoutes })(
+      agentSshAccessContract,
     );
   };
   const state = () => {
@@ -179,6 +194,20 @@ export function createVncRuntimeApi(context: TestContext) {
       [200],
     );
   }
+  async function grantSsh(
+    owner: Owner & { readonly agentId: string },
+    enabled: boolean,
+  ) {
+    authenticate(owner);
+    return await accept(
+      sshAccess().update({
+        headers: vncSessionHeaders,
+        params: { agentId: owner.agentId },
+        body: { enabled },
+      }),
+      [200],
+    );
+  }
   async function fixture(
     options: {
       readonly grant?: boolean;
@@ -251,6 +280,7 @@ export function createVncRuntimeApi(context: TestContext) {
     authenticate,
     runtime,
     grant,
+    grantSsh,
     fixture,
     resolve,
     resolved,

@@ -17,11 +17,11 @@ use crate::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload,
     IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
 };
-use crate::ids::RunId;
 use crate::paths::short_digest;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::status::{StatusResult, StatusTracker};
-use crate::types::reuse_key_kind;
+use runner_types::ids::RunId;
+use runner_types::types::reuse_key_kind;
 
 pub(super) type SharedIdlePool = Arc<tokio::sync::Mutex<IdlePool>>;
 
@@ -491,7 +491,7 @@ mod tests {
         let budget = Arc::new(ResourceBudget::new(2, 4096, 1.0, 0));
         let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
         let request = IdleParkRequest::new(IdleParkRequestParts {
-            run_id: crate::ids::RunId::new_v4(),
+            run_id: runner_types::ids::RunId::new_v4(),
             sandbox,
             factory,
             reuse_key: fixture.reuse_key.clone(),

@@ -1725,6 +1725,45 @@
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
       "upgradeWorkspace": "Upgrade your workspace"
     },
+    "browserInput": {
+      "applyFailed": "Couldn't add the information. Your entries are still here. Try again.",
+      "applying": "Adding information",
+      "applyingDescription": "The browser is finishing this request.",
+      "callbackFailed": "The agent wasn't notified. Try Continue again.",
+      "cancel": "Cancel",
+      "cancelFailed": "Couldn't cancel this request. Try again.",
+      "cancelled": "Request cancelled",
+      "cancelledDescription": "No information was added. Continue to notify the agent.",
+      "cancelling": "Cancelling…",
+      "completed": "Information added",
+      "completedDescription": "The information was added to the browser. Continue to notify the agent.",
+      "continue": "Continue",
+      "continuing": "Continuing…",
+      "delivered": "Agent notified",
+      "deliveredDescription": "The agent can continue now.",
+      "description": "Enter the information requested for this site.",
+      "documentTitle": "Browser input",
+      "expired": "Request expired",
+      "expiredDescription": "The browser closed or this request is no longer active.",
+      "loadFailed": "Couldn't load this request",
+      "loadFailedDescription": "Try again in a moment.",
+      "loading": "Loading browser input",
+      "loadingDescription": "Checking this request…",
+      "open": "Enter information",
+      "optional": "(Optional)",
+      "required": "(Required)",
+      "retry": "Retry",
+      "site": "Site",
+      "stale": "Fields changed",
+      "staleDescription": "Ask the agent to create a new request.",
+      "submit": "Add to browser",
+      "submitting": "Adding…",
+      "title": "Enter information in browser",
+      "unavailable": "Request unavailable",
+      "unavailableDescription": "This browser input request is invalid or no longer available.",
+      "uncertain": "Check the browser",
+      "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
+    },
     "cards": {
       "viewDetails": "View details"
     },
@@ -2106,6 +2145,7 @@
       "allCaughtUp": "All caught up",
       "allChats": "All chats",
       "archive": "Archive chat",
+      "archived": "Archived",
       "chatsWith": "Chats with {{agentName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
@@ -2117,6 +2157,7 @@
       "movePinDown": "Move down",
       "movePinUp": "Move up",
       "newChatWith": "New chat with {{agentName}}",
+      "noArchived": "No archived chats",
       "noUnread": "No unread chats",
       "openChatMenu": "Open chat menu",
       "openListMenu": "Open chat list menu",
@@ -2125,13 +2166,12 @@
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
       "showAllChats": "Show all chats",
-      "showArchived": "Show archived",
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
       "unarchive": "Unarchive chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
-      "unreadOnly": "Unread only"
+      "unreadOnly": "Unread"
     },
     "startCards": {
       "kinds": {
@@ -3379,13 +3419,24 @@
         "connectTitle": "Connect to Lark"
       },
       "slack": {
+        "accountInUseDescription": "This Slack account is connected to another Okou account. Disconnect it there before trying again.",
+        "accountInUseTitle": "Slack account already connected",
+        "accountMismatchDescription": "Your Okou account currently uses Slack account {{currentAccount}} here. Switch to {{requestedAccount}}, the account that opened this link?",
+        "accountMismatchDescriptionWorkspace": "Your Okou account currently uses Slack account {{currentAccount}} in {{workspace}}. Switch to {{requestedAccount}}, the account that opened this link?",
+        "accountMismatchTitle": "Switch Slack account?",
         "connectDescription": "Link your account to this Slack workspace so you can interact with your agent directly from Slack.",
         "connectTitle": "Connect to Slack",
+        "errorFallback": "Could not check or start the Slack connection. Try again.",
         "invalidDescription": "This page is meant to be opened from a Slack connect link.",
+        "keepAccount": "Keep {{account}}",
         "open": "Open Slack",
         "successDescription": "Mention the installed bot in any channel or send a DM to start chatting.",
         "successDescriptionWorkspace": "You're connected to {{workspace}}. Mention the installed bot in any channel or send a DM to start chatting.",
-        "successTitle": "Connected to Slack!"
+        "successTitle": "Connected to Slack!",
+        "switchAccount": "Switch to {{account}}",
+        "workspaceMismatchDescription": "This Slack workspace is not available to your current Okou organization. Switch organizations or ask an admin for help.",
+        "workspaceMismatchDescriptionNamed": "Your current Okou organization is connected to {{workspace}}. Switch organizations or ask an admin to uninstall it before connecting this Slack workspace.",
+        "workspaceMismatchTitle": "Slack workspace doesn't match"
       },
       "teams": {
         "connectDescription": "Link your Teams account so you can interact with your agent directly from Microsoft Teams.",
@@ -5796,8 +5847,7 @@
     "status": {
       "availableNow": "Available now",
       "inUse_one": "{{active}} of {{limit}} slot in use",
-      "inUse_other": "{{active}} of {{limit}} slots in use",
-      "waitingForSandbox": "Waiting for Sandbox"
+      "inUse_other": "{{active}} of {{limit}} slots in use"
     },
     "tiers": {
       "custom": "Custom",
@@ -6445,16 +6495,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Optional emails, including briefs and reminders, across your workspaces.",
+        "description": "Receive briefs, reminders, and other workspace updates by email.",
+        "descriptionWithEmail": "Receive briefs, reminders, and other workspace updates at {{email}}.",
         "loading": "Checking email subscription…",
         "retryMessage": "Could not save or load your email subscription. Try again.",
         "saving": "Saving…",
         "sectionTitle": "Email subscriptions",
-        "subscribed": "Subscribed",
-        "title": "Receive emails from Okou",
+        "title": "Email updates",
         "unavailable": "Email unavailable",
-        "unavailableDescription": "Check your email in Account & security, or contact support if delivery is blocked.",
-        "unsubscribed": "Unsubscribed"
+        "unavailableDescription": "Check your email in Account & security, or contact support if delivery is blocked."
       },
       "language": {
         "description": "Choose your preferred language for the {{brandName}} interface",
@@ -6480,13 +6529,11 @@
         "chatOnly": "Chat only",
         "checkEmailSubscription": "Check your email subscription above for delivery status.",
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent. Retry when reconciliation finishes.",
-        "description": "Get your daily priorities at 7:00 AM in your time zone for this workspace.",
-        "emailOff": "Email is off. Your brief will still appear in Chat.",
-        "emailWhenReady": "You’ll receive an email when your brief is ready.",
+        "description": "Daily priorities at 7:00 AM in your time zone.",
         "loading": "Loading Morning Brief settings...",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
-        "nextBrief": "Next brief {{date}} ({{timezone}})",
+        "nextBrief": "Next {{date}}",
         "paused": "Paused",
         "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",

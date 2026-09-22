@@ -1,7 +1,10 @@
+import { createRef } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { Dialog, DialogContent, DialogTitle } from "../dialog";
+import { Button } from "../button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -97,33 +100,75 @@ describe("DropdownMenu", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("opens when its trigger is composed with a tooltip", async () => {
-    render(
-      <DropdownMenu>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <DropdownMenuTrigger
-                  render={<button type="button">Download options</button>}
-                />
-              }
-            />
-            <TooltipContent>Download artifact</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <DropdownMenuContent>
-          <DropdownMenuItem>Download</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>,
-    );
+  it.each(["pointer", "Enter", "Space"])(
+    "preserves one tooltip/menu/button trigger for %s activation and focus restoration",
+    async (activation) => {
+      const user = userEvent.setup();
+      const tooltipRef = createRef<HTMLButtonElement>();
+      const menuRef = createRef<HTMLButtonElement>();
+      const buttonRef = createRef<HTMLElement>();
+      const onClick = vi.fn();
+      const { container } = render(
+        <DropdownMenu>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                ref={tooltipRef}
+                render={
+                  <DropdownMenuTrigger
+                    ref={menuRef}
+                    render={
+                      <Button
+                        ref={buttonRef}
+                        onClick={onClick}
+                        aria-label="Download options"
+                      >
+                        Download
+                      </Button>
+                    }
+                  />
+                }
+              />
+              <TooltipContent>Download artifact</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Download</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>,
+      );
 
-    fireEvent.click(screen.getByRole("button", { name: "Download options" }));
+      const trigger = screen.getByRole("button", { name: "Download options" });
+      expect(container.querySelectorAll("button")).toHaveLength(1);
+      expect(tooltipRef.current).toBe(trigger);
+      expect(menuRef.current).toBe(trigger);
+      expect(buttonRef.current).toBe(trigger);
+      expect(trigger).toHaveAttribute("type", "button");
+      expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+      await user.hover(trigger);
+      expect(await screen.findByText("Download artifact")).toBeInTheDocument();
+      if (activation === "pointer") {
+        await user.click(trigger);
+      } else {
+        await user.tab();
+        await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+      }
 
-    expect(
-      await screen.findByRole("menuitem", { name: "Download" }),
-    ).toBeVisible();
-  });
+      expect(
+        await screen.findByRole("menuitem", { name: "Download" }),
+      ).toBeInTheDocument();
+      expect(onClick).toHaveBeenCalledOnce();
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      await waitFor(() => {
+        expect(screen.queryByText("Download artifact")).not.toBeInTheDocument();
+      });
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+      });
+    },
+  );
 
   it("opens a submenu when its trigger is clicked", async () => {
     render(
@@ -162,9 +207,9 @@ describe("DropdownMenu", () => {
             <DropdownMenuContent>
               <TooltipProvider>
                 <Tooltip open>
-                  <TooltipTrigger asChild>
-                    <DropdownMenuItem>Download</DropdownMenuItem>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={<DropdownMenuItem>Download</DropdownMenuItem>}
+                  />
                   <TooltipContent>Download artifact</TooltipContent>
                 </Tooltip>
               </TooltipProvider>

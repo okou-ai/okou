@@ -372,6 +372,8 @@ export function mockChatLifecycle(
     }) => void;
     onSendRequest?: (body: {
       prompt: string;
+      clientEventId?: string;
+      chatThreadSortEventId?: string;
       threadId?: string;
       clientThreadId?: string;
       userMessage?: UserMessageDocument;
@@ -868,6 +870,8 @@ export function mockChatLifecycle(
 
     options?.onSendRequest?.({
       prompt: body.prompt,
+      clientEventId: body.clientEventId,
+      chatThreadSortEventId: body.chatThreadSortEventId,
       threadId: body.threadId,
       clientThreadId: body.clientThreadId,
       userMessage: body.userMessage,

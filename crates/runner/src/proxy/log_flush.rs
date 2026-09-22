@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 use super::control::{self, ControlHandle, ControlTarget};
 

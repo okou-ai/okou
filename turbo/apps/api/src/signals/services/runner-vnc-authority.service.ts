@@ -4,7 +4,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, eq, or } from "drizzle-orm";
@@ -30,6 +32,10 @@ export async function currentRunnerVncAuthority(
       host: vncConnections.host,
       port: vncConnections.port,
       transportType: vncConnections.transportType,
+      sshConnectionId: vncConnections.sshConnectionId,
+      sshGeneration: sshConnections.generation,
+      sshGrantAgentId: agentSshAccess.agentId,
+      x509ServerName: vncConnections.x509ServerName,
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
       caBundle: vncConnections.caBundle,
@@ -62,6 +68,14 @@ export async function currentRunnerVncAuthority(
         eq(agentVncAccess.userId, agentRuns.userId),
       ),
     )
+    .leftJoin(
+      agentSshAccess,
+      and(
+        eq(agentSshAccess.agentId, agents.id),
+        eq(agentSshAccess.orgId, agentRuns.orgId),
+        eq(agentSshAccess.userId, agentRuns.userId),
+      ),
+    )
     .innerJoin(
       vncConnections,
       and(
@@ -76,6 +90,14 @@ export async function currentRunnerVncAuthority(
         eq(vncCredentials.id, vncConnections.credentialId),
         eq(vncCredentials.orgId, agentRuns.orgId),
         eq(vncCredentials.userId, agentRuns.userId),
+      ),
+    )
+    .leftJoin(
+      sshConnections,
+      and(
+        eq(sshConnections.id, vncConnections.sshConnectionId),
+        eq(sshConnections.orgId, agentRuns.orgId),
+        eq(sshConnections.userId, agentRuns.userId),
       ),
     )
     .where(

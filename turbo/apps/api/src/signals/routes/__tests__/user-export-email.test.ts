@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
+import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { onTestFinished } from "vitest";
@@ -14,6 +15,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { authMeRoutes } from "../auth-me";
 import { emailSubscriptionRoutes } from "../email-subscription";
+import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { userExportRoutes } from "../user-export";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 import {
@@ -22,7 +24,7 @@ import {
 } from "./helpers/clerk-users";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import { installUserExportStorage } from "./helpers/user-export-storage";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -32,12 +34,7 @@ function client() {
   return setupApp({ context, routes: userExportRoutes })(userExportContract);
 }
 
-/**
- * The completion email is owed by both execution modes; these cases cover the
- * legacy streaming exporter, which a new export reaches only when its owner
- * opts out of durable admission.
- */
-async function actor() {
+function actor() {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   const email = `${userId}@example.test`;
@@ -59,20 +56,13 @@ async function actor() {
       imageUrl: "https://images.example.test/export-user.png",
     },
   ]);
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId, orgId },
-    { [FeatureSwitchKey.DurableUserExport]: false },
-  );
-  installUserExportStorage(context);
+  installDurableUserExportStorage(context);
   context.mocks.resend.send.mockResolvedValue({
     data: { id: `resend_${randomUUID()}` },
     error: null,
   });
   // Provider pacing is independent of export recipient resolution.
   mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
-  const downloadUrl = `https://r2.example.com/${randomUUID()}/export.zip`;
-  context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
   const outbox = createEmailOutboxStateApi(context);
   onTestFinished(async () => {
     const items = await outbox.findItems({ toAddress: email, subject });
@@ -84,25 +74,42 @@ async function actor() {
       );
     }
   });
-  return { userId, orgId, email, downloadUrl, outbox };
+  return { userId, orgId, email, outbox };
 }
 
-async function exportData(downloadUrl: string) {
+async function exportData(userId: string): Promise<string> {
   const started = await accept(client().post({ headers }), [202]);
   await flushWaitUntilForTest();
+  await accept(
+    setupApp({ context, routes: testUserExportWorkRoutes })(
+      testUserExportWorkContract,
+    ).action({
+      body: {
+        action: "run",
+        userId,
+        jobId: started.body.jobId,
+        maxSteps: 200,
+      },
+    }),
+    [200],
+  );
   const status = await accept(client().get({ headers }), [200]);
   expect(status.body.job).toMatchObject({
     id: started.body.jobId,
     status: "completed",
-    downloadUrl,
+    downloadUrl: expect.any(String),
     error: null,
   });
+  if (!status.body.job?.downloadUrl) {
+    throw new Error("Expected a downloadable completed export");
+  }
+  return status.body.job.downloadUrl;
 }
 
 test.each(["cold", "warm"])(
   "delivers export email with a %s user cache",
   async (cache) => {
-    const current = await actor();
+    const current = actor();
     if (cache === "warm") {
       await accept(
         setupApp({ context, routes: authMeRoutes })(authContract).me({
@@ -115,7 +122,7 @@ test.each(["cold", "warm"])(
         new Error("Cache should remain available"),
       );
     }
-    await exportData(current.downloadUrl);
+    const downloadUrl = await exportData(current.userId);
     const item = await current.outbox.findItem({
       toAddress: current.email,
       subject,
@@ -125,8 +132,8 @@ test.each(["cold", "warm"])(
       expect.objectContaining({
         to: current.email,
         subject,
-        html: expect.stringContaining(current.downloadUrl),
-        text: expect.stringContaining(current.downloadUrl),
+        html: expect.stringContaining(downloadUrl),
+        text: expect.stringContaining(downloadUrl),
       }),
       expect.anything(),
     );
@@ -159,7 +166,7 @@ test.each(["cold", "warm"])(
 );
 
 test("sends a requested export once after completion even when optional emails are disabled", async () => {
-  const current = await actor();
+  const current = actor();
   await updateFeatureSwitchesForUser(context, current, {
     [FeatureSwitchKey.MorningBrief]: true,
   });
@@ -172,6 +179,7 @@ test("sends a requested export once after completion even when optional emails a
   );
   const entered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
+  let blockCompletion = false;
   onTestFinished(() => {
     if (!release.settled()) {
       release.resolve();
@@ -179,7 +187,7 @@ test("sends a requested export once after completion even when optional emails a
   });
   const storage = context.mocks.s3.send.getMockImplementation();
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-    if (command instanceof CompleteMultipartUploadCommand) {
+    if (command instanceof CompleteMultipartUploadCommand && blockCompletion) {
       entered.resolve();
       await release.promise;
     }
@@ -187,6 +195,21 @@ test("sends a requested export once after completion even when optional emails a
   });
 
   const started = await accept(client().post({ headers }), [202]);
+  await flushWaitUntilForTest();
+  blockCompletion = true;
+  const worker = accept(
+    setupApp({ context, routes: testUserExportWorkRoutes })(
+      testUserExportWorkContract,
+    ).action({
+      body: {
+        action: "run",
+        userId: current.userId,
+        jobId: started.body.jobId,
+        maxSteps: 200,
+      },
+    }),
+    [200],
+  );
   await entered.promise;
   expect(
     (await accept(client().get({ headers }), [200])).body.job,
@@ -203,14 +226,17 @@ test("sends a requested export once after completion even when optional emails a
   expect(context.mocks.resend.send).not.toHaveBeenCalled();
 
   release.resolve();
-  await flushWaitUntilForTest();
-  expect(
-    (await accept(client().get({ headers }), [200])).body.job,
-  ).toMatchObject({
+  await worker;
+  const completed = await accept(client().get({ headers }), [200]);
+  expect(completed.body.job).toMatchObject({
     id: started.body.jobId,
     status: "completed",
-    downloadUrl: current.downloadUrl,
+    downloadUrl: expect.any(String),
   });
+  const downloadUrl = completed.body.job?.downloadUrl;
+  if (!downloadUrl) {
+    throw new Error("Expected a downloadable completed export");
+  }
   const item = await current.outbox.findItem({
     toAddress: current.email,
     subject,
@@ -221,7 +247,7 @@ test("sends a requested export once after completion even when optional emails a
     expect.objectContaining({
       to: current.email,
       subject,
-      text: expect.stringContaining(current.downloadUrl),
+      text: expect.stringContaining(downloadUrl),
     }),
     expect.anything(),
   );
@@ -236,9 +262,9 @@ test.each([
 ])(
   "keeps the export downloadable after a %s email lookup",
   async (_label, error) => {
-    const current = await actor();
+    const current = actor();
     context.mocks.clerk.users.getUser.mockRejectedValue(error);
-    await exportData(current.downloadUrl);
+    await exportData(current.userId);
     const items = await current.outbox.findItems({
       toAddress: current.email,
       subject,

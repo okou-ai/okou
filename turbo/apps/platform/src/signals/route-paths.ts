@@ -22,6 +22,7 @@ export const ROUTES = {
   legacySharedArtifact: "/share/artifacts/:artifactShareId",
   sharedThread: "/share/threads/:id",
   browser: "/browsers/:browserThreadId",
+  browserUserAction: "/browser/actions/:browserActionToken",
   browserAuthorize: "/browser/authorize/:requestToken",
   ideas: "/ideas",
   connectors: "/connectors",

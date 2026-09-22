@@ -18,8 +18,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{FailureReason, Scope, SshRuntime, io::GuestIo, observation::Attempt, pool, sessions};
-use crate::ids::RunId;
 use protocol::{Direction, Effects, Failure, FileFailure, Outcome, Request};
+use runner_types::ids::RunId;
 
 pub(super) fn capacity() -> Arc<Semaphore> {
     Arc::new(Semaphore::new(protocol::CAPACITY))

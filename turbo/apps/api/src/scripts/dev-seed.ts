@@ -214,6 +214,20 @@ function buildSeedSkillValues(
   });
 }
 
+export function getMetadataOnlySeedSkillNames(
+  names: readonly string[],
+  publishedVolumes: readonly { readonly url: string }[],
+): readonly string[] {
+  const publishedUrls = new Set(
+    publishedVolumes.map((volume) => {
+      return volume.url;
+    }),
+  );
+  return names.filter((name) => {
+    return !publishedUrls.has(resolveSkillRef(name));
+  });
+}
+
 function buildStorageSeedSql(
   systemOrgId: string,
   volumeOrgUserId: string,
@@ -795,16 +809,8 @@ async function devSeed() {
   );
   writeLine(`Seeded ${seededVolumeCount} official skill volume entries`);
 
-  const seededVolumeStorageNames = new Set(
-    seedSkillVolumes.map((volume) => {
-      return volume.storageName;
-    }),
-  );
   const fallbackSkillValues = buildSeedSkillValues(
-    SEED_SKILLS.filter((name) => {
-      const fullPath = resolveSkillRef(name).replace("https://github.com/", "");
-      return !seededVolumeStorageNames.has(getSkillStorageName(fullPath));
-    }),
+    getMetadataOnlySeedSkillNames(SEED_SKILLS, seedSkillVolumes),
   );
   if (fallbackSkillValues.length > 0) {
     const timestamp = nowDate();

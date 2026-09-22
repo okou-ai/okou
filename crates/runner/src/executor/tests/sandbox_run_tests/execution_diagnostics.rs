@@ -86,7 +86,7 @@ async fn execute_prepared_marks_stdout_incomplete_when_process_cancel_send_fails
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -156,7 +156,7 @@ async fn execute_prepared_marks_stdout_incomplete_when_terminal_grace_expires() 
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -315,7 +315,7 @@ async fn execute_inner_preserves_system_stream_log_after_nonzero_exit_guest_copy
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -378,7 +378,7 @@ async fn execute_prepared_sandbox_run_logs_discovered_guest_session_id() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -429,7 +429,7 @@ async fn execute_prepared_sandbox_run_discovers_guest_session_id_after_nonzero_e
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -443,7 +443,7 @@ async fn execute_prepared_sandbox_run_discovers_guest_session_id_after_nonzero_e
     assert_eq!(outcome.exit_code(), 7);
     assert_eq!(
         outcome.workspace_reuse_result,
-        Some(crate::types::WorkspaceReuseResult::NotConfigured),
+        Some(runner_types::types::WorkspaceReuseResult::NotConfigured),
     );
     assert_eq!(outcome.error(), Some("Agent exited with code 7"));
     assert_eq!(
@@ -486,7 +486,7 @@ async fn execute_prepared_sandbox_run_canonicalizes_codex_discovered_cli_agent_s
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -537,7 +537,7 @@ async fn execute_prepared_sandbox_run_ignores_non_uuid_codex_discovered_cli_agen
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1401,7 +1401,7 @@ async fn execute_inner_nonzero_records_agent_execute_error() {
     assert_eq!(outcome.exit_code(), 7);
     assert_eq!(
         outcome.workspace_reuse_result,
-        Some(crate::types::WorkspaceReuseResult::NotConfigured),
+        Some(runner_types::types::WorkspaceReuseResult::NotConfigured),
     );
     assert_eq!(
         outcome.sandbox_reuse_disposition,

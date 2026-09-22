@@ -1,6 +1,5 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -13,7 +12,6 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 type WorkAction = "run" | "inspect" | "cleanup" | "make-cleanup-due" | "delete";
@@ -33,16 +31,12 @@ async function work(
   return response.body;
 }
 
-async function createActor() {
+function createActor() {
   const user = createBddApi(context).user();
   if (!user.orgId) {
     throw new Error("Export cleanup tests require an organization");
   }
-  const actor = { ...user, orgId: user.orgId };
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.DurableUserExport]: true,
-  });
-  return actor;
+  return { ...user, orgId: user.orgId };
 }
 
 function registerCleanup(user: ApiTestUser, jobId: string) {
@@ -85,7 +79,7 @@ async function completedExport(user: ApiTestUser) {
 }
 
 test("cleans staging in bounded pages, retaining the result download until its expiry", async () => {
-  const user = await createActor();
+  const user = createActor();
   const storage = installDurableUserExportStorage(context);
   const result = await completedExport(user);
   const original = storage.download(result.downloadUrl);
@@ -128,7 +122,7 @@ test("cleans staging in bounded pages, retaining the result download until its e
 });
 
 test("reclaims an expired completed export and its durable inventory", async () => {
-  const user = await createActor();
+  const user = createActor();
   const storage = installDurableUserExportStorage(context);
   const result = await completedExport(user);
   const api = createOpsLogsApi(context);
@@ -156,7 +150,7 @@ test("reclaims an expired completed export and its durable inventory", async () 
 });
 
 test("reclaims unrecorded multipart uploads only after their provider-side grace period", async () => {
-  const user = await createActor();
+  const user = createActor();
   const storage = installDurableUserExportStorage(context);
   const result = await completedExport(user);
   const current = nowDate();
@@ -187,7 +181,7 @@ test("reclaims unrecorded multipart uploads only after their provider-side grace
 });
 
 test("does not delete staged data or abort uploads while an export worker still owns its job", async () => {
-  const user = await createActor();
+  const user = createActor();
   const entered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
   let held = false;

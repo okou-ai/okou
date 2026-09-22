@@ -18,7 +18,7 @@ use crate::active_input::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, ActiveInputBatch, ActiveInputSource,
     ApiActiveInputRecovery, local_active_input_delivery_id,
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 mod read_failures;
 

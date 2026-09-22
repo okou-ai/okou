@@ -22,7 +22,8 @@ impl PendingList {
         let peer = Peer::new().await;
         let resolved = json_response(
             "200 OK",
-            &json!({"outcome":"resolved","host":"vnc.example.test","port":5900,"generation":7,
+            &json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
+                "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"vnc_password","password":" secret "},
                 "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":peer.ca}}})
             .to_string(),

@@ -734,7 +734,6 @@ const concurrencyInfoSchema = z.object({
   tier: orgTierSchema,
   limit: z.number(),
   active: z.number(),
-  waiting: z.number().optional(),
   available: z.number(),
   memberUsage: z.array(concurrencyMemberUsageSchema),
 });

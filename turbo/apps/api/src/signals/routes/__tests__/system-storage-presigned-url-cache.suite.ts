@@ -469,6 +469,33 @@ describe("system storage presigned URL cache", () => {
     ]);
   });
 
+  it("refreshes a hard-expired row with a new exact URL", async () => {
+    const fixture = createOwnedSystemStorageFixture("hard-expired");
+    const versionId = createVersionId("hard-expired");
+    await claimOwnedStorage(fixture);
+    registerOwnedStorageCleanup(fixture);
+    await seedOwnedStorageVersion({ fixture, versionId, archiveSize: 1024 });
+    await seedOwnedStorageCacheRow({
+      fixture,
+      versionId,
+      presignedUrl: "https://r2.example.com/hard-expired",
+      expiresAt: new Date(nowDate().getTime() - 60_000),
+      refreshAfter: new Date(nowDate().getTime() - 60_000),
+    });
+    const runFixture = await entitledDirectRunActor();
+    const signedCount = mockUniquePresignedUrls();
+    const objectKey = storageArchiveKey(fixture, versionId);
+
+    const refreshed = await createAndClaimOwnedSystemStorage({
+      ...runFixture,
+      fixture,
+      prompt: "refresh the hard-expired owned system storage URL",
+    });
+
+    expect(refreshed.mount.archiveUrl).toBe(expectedPresignedUrl(objectKey, 1));
+    expect(signedCount(objectKey)).toBe(1);
+  });
+
   it("prefers owned system storage and falls back to the primary organization", async () => {
     const storages = createStoragesBddApi(context);
     const runFixture = await entitledDirectRunActor();

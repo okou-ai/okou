@@ -7,14 +7,15 @@ mod protocol;
 mod scope;
 mod sessions;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
+use runner_types::ids::RunId;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcessIdentity};
+use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
 use authority::Authority;
 use network::{Network, PublicNetwork};
 use scope::Scope;
@@ -67,6 +68,32 @@ impl From<rfb_client::Error> for Failure {
     }
 }
 
+impl From<crate::ssh::FailureReason> for Failure {
+    fn from(error: crate::ssh::FailureReason) -> Self {
+        use crate::ssh::FailureReason;
+        match error {
+            FailureReason::Unavailable => Self::Unavailable,
+            FailureReason::AuthorityFailure => Self::Authority,
+            FailureReason::InvalidCredential
+            | FailureReason::UnsupportedCredential
+            | FailureReason::HostKeyMismatch
+            | FailureReason::UnsupportedHostKey => Self::InvalidCredential,
+            FailureReason::CredentialResourceLimit | FailureReason::ResourceExhausted => {
+                Self::ResourceExhausted
+            }
+            FailureReason::UnsafeDestination => Self::UnsafeDestination,
+            FailureReason::NetworkFailure
+            | FailureReason::Disconnected
+            | FailureReason::Transport => Self::Network,
+            FailureReason::ConfigurationChanged => Self::ConfigurationChanged,
+            FailureReason::AuthenticationFailed => Self::AuthenticationFailed,
+            FailureReason::Protocol | FailureReason::ExecRejected => Self::Protocol,
+            FailureReason::TimedOut => Self::TimedOut,
+            FailureReason::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
 pub(crate) struct VncRuntime {
     authority: Authority,
     network: Arc<dyn Network>,
@@ -94,7 +121,12 @@ impl VncRuntime {
         })))
     }
 
-    pub(crate) fn for_run(self: &Arc<Self>, run: RunId, cancel: &CancellationToken) -> Arc<Run> {
-        Arc::new(Run::new(Arc::clone(self), run, cancel.child_token()))
+    pub(crate) fn for_run(
+        self: &Arc<Self>,
+        run: RunId,
+        cancel: &CancellationToken,
+        ssh: Option<Arc<crate::ssh::Run>>,
+    ) -> Arc<Run> {
+        Arc::new(Run::new(Arc::clone(self), run, cancel.child_token(), ssh))
     }
 }

@@ -3522,7 +3522,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.209.1"
+version = "0.209.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3566,6 +3566,7 @@ dependencies = [
  "rsa",
  "runner-rpc-client",
  "runner-rpc-proto",
+ "runner-types",
  "russh",
  "rustix",
  "rustls",
@@ -3620,6 +3621,20 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "runner-types"
+version = "0.1.1"
+dependencies = [
+ "api-contracts",
+ "idna",
+ "sandbox",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+ "url",
+ "uuid",
 ]
 
 [[package]]

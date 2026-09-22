@@ -4,11 +4,11 @@ use sandbox::{DeviceRateLimits, Sandbox, SandboxFactory, SandboxId};
 use sandbox_mock::{MockSandbox, MockSandboxFactory};
 
 use crate::guest_timezone::GuestTimezoneIntent;
-use crate::ids::RunId;
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::workspace_image_cache::WorkspaceImagePromotionContext;
+use runner_types::ids::RunId;
 
 use super::ParkedIdleCandidate;
 use super::entry::{IdleSandboxMetadata, IdleSandboxResources};

@@ -221,32 +221,34 @@ function AvatarPreviewWithShuffle() {
       </div>
       <TooltipProvider delayDuration={800} skipDelayDuration={0}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              tabIndex={-1}
-              disabled={!dialogSignal}
-              className="absolute -right-1 -bottom-1 flex h-7 w-7 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border hover:text-foreground transition-colors"
-              onClick={() => {
-                if (dialogSignal) {
-                  shuffle(dialogSignal);
-                }
-              }}
-              aria-label={t(($) => {
-                return $.avatar.randomize;
-              })}
-            >
-              <Dices
-                key={shuffleRevision}
-                size={14}
-                className={
-                  shuffleRevision > 0
-                    ? "motion-safe:animate-avatar-dice-spin"
-                    : undefined
-                }
-              />
-            </button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                tabIndex={-1}
+                disabled={!dialogSignal}
+                className="absolute -right-1 -bottom-1 flex h-7 w-7 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border hover:text-foreground transition-colors"
+                onClick={() => {
+                  if (dialogSignal) {
+                    shuffle(dialogSignal);
+                  }
+                }}
+                aria-label={t(($) => {
+                  return $.avatar.randomize;
+                })}
+              >
+                <Dices
+                  key={shuffleRevision}
+                  size={14}
+                  className={
+                    shuffleRevision > 0
+                      ? "motion-safe:animate-avatar-dice-spin"
+                      : undefined
+                  }
+                />
+              </button>
+            }
+          />
           <TooltipContent side="bottom">
             <p className="text-xs">
               {t(($) => {
@@ -476,18 +478,20 @@ export function AvatarMaker({
       ) : (
         <TooltipProvider delayDuration={200}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={openMaker}
-                className="h-12 w-12 shrink-0 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                aria-label={t(($) => {
-                  return $.avatar.create;
-                })}
-              >
-                <Wand size={16} />
-              </button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  onClick={openMaker}
+                  className="h-12 w-12 shrink-0 rounded-full border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  aria-label={t(($) => {
+                    return $.avatar.create;
+                  })}
+                >
+                  <Wand size={16} />
+                </button>
+              }
+            />
             <TooltipContent side="bottom">
               <p className="text-xs">
                 {t(($) => {

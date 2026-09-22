@@ -31,9 +31,9 @@ use std::time::{Duration, Instant};
 
 use crate::active_input::ActiveInputSource;
 use crate::error::RunnerResult;
-use crate::ids::RunId;
 use crate::runner_process_identity::RunnerProcessIdentity;
-use crate::types::{CompleteRequest, ExecutionContext, HeartbeatState};
+use runner_types::ids::RunId;
+use runner_types::types::{CompleteRequest, ExecutionContext, HeartbeatState};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -839,7 +839,7 @@ mod tests {
 
     #[test]
     fn claimed_job_rejects_mismatched_api_context() {
-        let expected_run_id = RunId::nil();
+        let expected_run_id = RunId::from(uuid::Uuid::nil());
         let context_run_id = RunId::new_v4();
 
         let Err(err) = ClaimedJob::api(
@@ -861,7 +861,7 @@ mod tests {
 
     #[test]
     fn claimed_job_accepts_matching_api_context() {
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
 
         let claimed = ClaimedJob::api(run_id, minimal_context(run_id), api_claim_timing())
             .expect("matching context is valid");
@@ -875,7 +875,7 @@ mod tests {
 
     #[test]
     fn claimed_job_local_context_has_no_api_claim_timing() {
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
 
         let claimed = ClaimedJob::local(run_id, minimal_context(run_id))
             .expect("matching local context is valid");

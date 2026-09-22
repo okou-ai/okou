@@ -8,7 +8,7 @@ use super::super::session_restore::SessionRestoreDiagnostics;
 use super::super::{EXIT_SIGKILL, EXIT_SIGNAL_KILL, ResourceFailureKind, SandboxReuseResult};
 use super::environment::{AgentEnvDiagnostics, AgentEnvKeyDiagnostics};
 use super::stdout_stream::AgentStdoutStreamDiagnostics;
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(in crate::executor) fn should_collect_agent_abnormal_exit_diagnostics(
     wait_cancelled: bool,

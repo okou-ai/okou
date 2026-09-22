@@ -437,15 +437,14 @@ const createTemplateScenarios = [
 ] as const;
 
 test.each(createTemplateScenarios)(
-  "$commandLabel adds multiple templates without replacing the existing text or chip",
+  "$commandLabel adds a template without replacing the existing text",
   async ({ mode, pickerLabel, selectLabel, templates }) => {
     setupModels();
     mockChatLifecycle(context);
     const editor = await setupComposer();
-    const user = userEvent.setup({ delay: null });
-    const [first, second] = templates;
-    if (!first || !second) {
-      throw new Error(`Expected two ${mode} templates`);
+    const [first] = templates;
+    if (!first) {
+      throw new Error(`Expected a ${mode} template`);
     }
     await chooseCommand(editor, "Our launch /", mode);
     click(button(pickerLabel));
@@ -455,7 +454,57 @@ test.each(createTemplateScenarios)(
       expect(composerInlineTemplates()).toHaveLength(1);
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    await user.paste(" for the cover. ");
+    expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+    expect(editor).toHaveTextContent("Our launch");
+    expect(button(pickerLabel)).toBeInTheDocument();
+  },
+);
+
+async function setupExistingDraftTemplate(
+  scenario: (typeof createTemplateScenarios)[number],
+) {
+  const { mode, templates } = scenario;
+  setupModels();
+  mockChatLifecycle(context);
+  const [first, second] = templates;
+  if (!first || !second) {
+    throw new Error(`Expected two ${mode} templates`);
+  }
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Our launch " },
+          {
+            type: "template",
+            titleSnapshot: first.title,
+            template: first.request,
+          },
+          { type: "text", text: " for the cover. " },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  const editor = await setupComposer();
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(1);
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.paste(" /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  await enterCreateMode(mode, menu);
+  return { editor, first, second };
+}
+
+test.each(createTemplateScenarios)(
+  "$commandLabel adds another template without replacing existing content",
+  async (scenario) => {
+    const { pickerLabel, selectLabel } = scenario;
+    const { editor, first, second } =
+      await setupExistingDraftTemplate(scenario);
     click(button(pickerLabel));
     await screen.findByRole("dialog");
     click(await screen.findByLabelText(`${selectLabel} ${second.title}`));

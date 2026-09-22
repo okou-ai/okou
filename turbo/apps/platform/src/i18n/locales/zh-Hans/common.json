@@ -1722,6 +1722,45 @@
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",
       "upgradeWorkspace": "升级你的工作区"
     },
+    "browserInput": {
+      "applyFailed": "无法添加信息。你填写的内容仍然保留，请重试。",
+      "applying": "正在添加信息",
+      "applyingDescription": "浏览器正在完成这个请求。",
+      "callbackFailed": "未能通知 Agent，请再次点击“继续”。",
+      "cancel": "取消",
+      "cancelFailed": "无法取消这个请求，请重试。",
+      "cancelled": "请求已取消",
+      "cancelledDescription": "没有添加任何信息。继续以通知 Agent。",
+      "cancelling": "正在取消…",
+      "completed": "信息已添加",
+      "completedDescription": "信息已添加到浏览器。继续以通知 Agent。",
+      "continue": "继续",
+      "continuing": "正在继续…",
+      "delivered": "已通知 Agent",
+      "deliveredDescription": "Agent 现在可以继续了。",
+      "description": "请输入这个网站所需的信息。",
+      "documentTitle": "浏览器信息输入",
+      "expired": "请求已过期",
+      "expiredDescription": "浏览器已关闭，或这个请求已不再有效。",
+      "loadFailed": "无法加载这个请求",
+      "loadFailedDescription": "请稍后重试。",
+      "loading": "正在加载浏览器输入",
+      "loadingDescription": "正在检查这个请求…",
+      "open": "输入信息",
+      "optional": "（选填）",
+      "required": "（必填）",
+      "retry": "重试",
+      "site": "网站",
+      "stale": "字段已变化",
+      "staleDescription": "请让 Agent 创建一个新请求。",
+      "submit": "添加到浏览器",
+      "submitting": "正在添加…",
+      "title": "在浏览器中输入信息",
+      "unavailable": "请求不可用",
+      "unavailableDescription": "这个浏览器信息输入请求无效或已不可用。",
+      "uncertain": "请检查浏览器",
+      "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
+    },
     "cards": {
       "viewDetails": "查看详情"
     },
@@ -2098,6 +2137,7 @@
       "allCaughtUp": "已全部看完",
       "allChats": "全部聊天",
       "archive": "归档聊天",
+      "archived": "已归档",
       "chatsWith": "与{{agentName}}的聊天",
       "chatThreads": "聊天会话",
       "delete": "删除聊天",
@@ -2109,6 +2149,7 @@
       "movePinDown": "下移",
       "movePinUp": "上移",
       "newChatWith": "与{{agentName}}新建聊天",
+      "noArchived": "没有已归档的聊天",
       "noUnread": "没有未读聊天",
       "openChatMenu": "打开聊天菜单",
       "openListMenu": "打开聊天列表菜单",
@@ -2117,13 +2158,12 @@
       "rename": "重命名聊天",
       "renameDescription": "为这个聊天会话输入新名称。",
       "showAllChats": "显示全部聊天",
-      "showArchived": "显示已归档",
       "showArchivedChats": "显示已归档的聊天",
       "titlePlaceholder": "聊天标题",
       "unarchive": "取消归档",
       "unpin": "取消置顶",
       "unread": "未读",
-      "unreadOnly": "仅看未读"
+      "unreadOnly": "未读"
     },
     "startCards": {
       "kinds": {
@@ -3375,13 +3415,24 @@
         "connectTitle": "连接到Lark"
       },
       "slack": {
+        "accountInUseDescription": "这个Slack账号已连接到另一个Okou账号。请先在原账号中断开连接，然后重试。",
+        "accountInUseTitle": "Slack账号已被连接",
+        "accountMismatchDescription": "你的Okou账号当前在这里使用Slack账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
+        "accountMismatchDescriptionWorkspace": "你的Okou账号当前在{{workspace}}使用Slack账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
+        "accountMismatchTitle": "切换Slack账号？",
         "connectDescription": "把你的账号关联到这个Slack工作区，就可以直接在Slack里与你的智能体交流。",
         "connectTitle": "连接到Slack",
+        "errorFallback": "无法检查或开始Slack连接，请重试。",
         "invalidDescription": "此页面需要从Slack连接链接打开。",
+        "keepAccount": "保留{{account}}",
         "open": "打开Slack",
         "successDescription": "在任意频道@已安装的机器人，或给它发私信，即可开始对话。",
         "successDescriptionWorkspace": "你已连接到{{workspace}}。在任意频道@已安装的机器人，或给它发私信，即可开始对话。",
-        "successTitle": "已连接到Slack！"
+        "successTitle": "已连接到Slack！",
+        "switchAccount": "切换到{{account}}",
+        "workspaceMismatchDescription": "此Slack工作区不属于你当前的Okou组织。请切换组织，或联系管理员处理。",
+        "workspaceMismatchDescriptionNamed": "你当前的Okou组织已连接到{{workspace}}。请切换组织，或让管理员先卸载，再连接此Slack工作区。",
+        "workspaceMismatchTitle": "Slack工作区不匹配"
       },
       "teams": {
         "connectDescription": "关联你的Teams账号，就可以直接在Microsoft Teams里与你的智能体交流。",
@@ -5792,8 +5843,7 @@
     "status": {
       "availableNow": "当前可用",
       "inUse_one": "{{limit}}个名额中已使用{{active}}个",
-      "inUse_other": "{{limit}}个名额中已使用{{active}}个",
-      "waitingForSandbox": "等待沙箱"
+      "inUse_other": "{{limit}}个名额中已使用{{active}}个"
     },
     "tiers": {
       "custom": "自定义",
@@ -6440,16 +6490,15 @@
         }
       },
       "emailSubscription": {
-        "description": "各个工作区的可选邮件，包括简报和提醒。",
+        "description": "通过邮件接收简报、提醒和其他工作区更新。",
+        "descriptionWithEmail": "接收发送至 {{email}} 的简报、提醒和其他工作区更新。",
         "loading": "正在检查邮件订阅…",
         "retryMessage": "无法保存或加载你的邮件订阅，请重试。",
         "saving": "保存中…",
         "sectionTitle": "邮件订阅",
-        "subscribed": "已订阅",
-        "title": "接收来自Okou的邮件",
+        "title": "邮件更新",
         "unavailable": "邮件不可用",
-        "unavailableDescription": "请在「账号与安全」中检查你的邮箱；如果邮件被拦截，请联系客服。",
-        "unsubscribed": "已取消订阅"
+        "unavailableDescription": "请在「账号与安全」中检查你的邮箱；如果邮件被拦截，请联系客服。"
       },
       "language": {
         "description": "选择{{brandName}}界面的显示语言",
@@ -6475,13 +6524,11 @@
         "chatOnly": "仅聊天",
         "checkEmailSubscription": "投递状态请查看上方的邮件订阅。",
         "conflict": "晨报的安装状态不一致，暂时无法使用。请在状态同步完成后重试。",
-        "description": "每天早上7:00（按你所在时区）获取该工作区的当日重点。",
-        "emailOff": "邮件已关闭，晨报仍会出现在聊天中。",
-        "emailWhenReady": "晨报准备好后，你会收到邮件。",
+        "description": "每天早上 7:00（按你的时区）接收当日重点。",
         "loading": "正在加载晨报设置…",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
-        "nextBrief": "下一份晨报 {{date}}（{{timezone}}）",
+        "nextBrief": "下一份晨报 {{date}}",
         "paused": "已暂停",
         "preparationFailed": "晨报设置会自动重试，你也可以现在就重试。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",

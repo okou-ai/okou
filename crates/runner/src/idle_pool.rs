@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 use sandbox::{DeviceRateLimits, SandboxId};
 use tokio::sync::watch;
 
-use crate::ids::RunId;
 use crate::status::{BlankSandbox, IdleSandbox};
-use crate::types::{HeldSandboxState, ReusableSandboxState};
+use runner_types::ids::RunId;
+use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 
 mod entry;
 mod park_transition;

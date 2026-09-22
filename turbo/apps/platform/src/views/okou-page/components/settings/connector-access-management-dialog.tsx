@@ -177,25 +177,27 @@ function AgentAccessRow({
       {canManage && (
         <TooltipProvider delayDuration={200}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                onClick={() => {
-                  onManage(row);
-                }}
-                aria-label={t(
-                  ($) => {
-                    return $.connectors.access.managePermissionsFor;
-                  },
-                  { connector: connectorLabel, agent: name },
-                )}
-                variant="quiet"
-                size="icon-sm"
-                className="shrink-0"
-              >
-                <SlidersHorizontal size={16} />
-              </Button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  onClick={() => {
+                    onManage(row);
+                  }}
+                  aria-label={t(
+                    ($) => {
+                      return $.connectors.access.managePermissionsFor;
+                    },
+                    { connector: connectorLabel, agent: name },
+                  )}
+                  variant="quiet"
+                  size="icon-sm"
+                  className="shrink-0"
+                >
+                  <SlidersHorizontal size={16} />
+                </Button>
+              }
+            />
             <TooltipContent>
               {t(($) => {
                 return $.connectors.access.managePermissions;

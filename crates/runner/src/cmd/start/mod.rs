@@ -55,7 +55,7 @@ use uuid::Uuid;
 
 use crate::duration::duration_ms as saturated_duration_ms;
 #[cfg(test)]
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 use crate::config::{self, ProfileConfig};
 use crate::deps;
@@ -689,6 +689,16 @@ async fn run_start_with_home(
         touch_mtime(profile_paths.rootfs_paths().dir());
         touch_mtime(profile_paths.snapshot_paths().dir());
     }
+    let installed_okou_cli = resource_locks.uniform_installed_okou_cli().cloned();
+    match &installed_okou_cli {
+        Some(installed) => info!(
+            cli_version = %installed.versions.cli,
+            pi_agent_runtime_version = %installed.versions.pi_agent_runtime,
+            pi_sdk_version = %installed.versions.pi_sdk,
+            "installed Okou CLI advertised for claims"
+        ),
+        None => info!("no installed Okou CLI recorded for every profile; claims advertise none"),
+    }
 
     let log_paths = LogPaths::new(home.logs_dir());
     crate::log_file::ensure_log_dir(log_paths.dir()).map_err(|e| {
@@ -950,6 +960,7 @@ async fn run_start_with_home(
                 runner_hostname: hostname.clone(),
                 group,
                 supported_profiles: profiles,
+                installed_okou_cli,
             },
             BuiltinFirewallCatalogCachePaths {
                 cache_path: paths.builtin_firewall_catalog_cache(),

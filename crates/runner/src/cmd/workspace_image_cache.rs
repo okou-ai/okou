@@ -310,9 +310,9 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    use crate::ids::RunId;
     use crate::paths::workspace_image_cache_key;
     use crate::workspace_image_cache::CacheEntryPaths;
+    use runner_types::ids::RunId;
 
     fn tmp_image_path(home: &HomePaths, cache_key: &str, run_id: RunId) -> PathBuf {
         CacheEntryPaths::new(&home.workspace_image_cache_dir(), cache_key).tmp_image(run_id)

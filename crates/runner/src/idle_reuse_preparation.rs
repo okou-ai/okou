@@ -15,9 +15,9 @@ use tracing::{info, warn};
 use crate::helper_exec::{
     format_helper_exec_failure, helper_exec_succeeded, helper_exec_termination_label,
 };
-use crate::ids::RunId;
 use crate::paths::guest;
 use crate::workspace_mount::WORKSPACE_MOUNT_TIMEOUT;
+use runner_types::ids::RunId;
 
 const REUSE_PREPARATION_TIMEOUT: Duration = Duration::from_secs(10);
 const MIN_REUSE_ROOTFS_AVAILABLE_BYTES: u64 = 128 * 1024 * 1024;

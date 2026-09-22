@@ -6,7 +6,7 @@ use flate2::{Compression, write::GzEncoder};
 
 use super::build_storage_plan;
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
-use crate::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
+use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
 
 fn storage(
     mount_path: &Path,

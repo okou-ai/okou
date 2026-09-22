@@ -373,7 +373,7 @@ function PinnedAgentGridCard({
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip disabled={isDragInFlight}>
-        <TooltipTrigger asChild>{card}</TooltipTrigger>
+        <TooltipTrigger render={card} />
         <TooltipContent side="top">
           <p className="text-xs">{displayName}</p>
         </TooltipContent>

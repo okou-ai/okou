@@ -1,7 +1,7 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { EllipsisVertical, Pencil, Plus, Trash } from "lucide-react";
+import { Cable, EllipsisVertical, Pencil, Plus, Trash } from "lucide-react";
 import {
   Button,
   Checkbox,
@@ -46,6 +46,7 @@ import {
 import { settingsDialogSignal$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
+import { CustomConnectorIcon } from "../settings/custom-connector-icon.tsx";
 import { SettingsSectionHeading } from "../settings/settings-section-heading.tsx";
 
 const ZERO_BORDER = {
@@ -114,7 +115,7 @@ function AddConnectionMenu() {
   );
 }
 
-function ConnectionCard({
+function ConnectionRow({
   connection,
 }: {
   connection: ModelProviderConnectionResponse;
@@ -126,71 +127,85 @@ function ConnectionCard({
   if (!settingsDialogSignal) {
     return null;
   }
+  const protocols = connection.surfaces
+    .map((surface) => {
+      return surface.protocol === "anthropic-messages"
+        ? t(($) => {
+            return $.settings.models.gateways.protocols.anthropicMessages;
+          })
+        : t(($) => {
+            return $.settings.models.gateways.protocols.openaiResponses;
+          });
+    })
+    .join(" · ");
   return (
     <div
-      className="flex items-center gap-3 rounded-xl bg-card px-4 py-3"
-      style={ZERO_BORDER}
+      data-testid={`model-provider-connection-row-${connection.id}`}
+      className="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-[3.75rem] after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_236px_96px_36px]"
     >
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">
+      <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
+          <CustomConnectorIcon
+            id={connection.id}
+            displayName={connection.displayName}
+            size={22}
+          />
+        </span>
+        <p className="min-w-0 truncate text-sm font-medium text-foreground">
           {connection.displayName}
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {connection.surfaces
-            .map((surface) => {
-              return surface.protocol === "anthropic-messages"
-                ? t(($) => {
-                    return $.settings.models.gateways.protocols
-                      .anthropicMessages;
-                  })
-                : t(($) => {
-                    return $.settings.models.gateways.protocols.openaiResponses;
-                  });
-            })
-            .join(" · ")}
-        </p>
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              showTooltip
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-lg"
-              aria-label={t(($) => {
-                return $.settings.models.gateways.actions;
+      <div className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                showTooltip
+                type="button"
+                variant="quiet"
+                size="icon-sm"
+                className="shrink-0 rounded-lg"
+                aria-label={t(($) => {
+                  return $.settings.models.gateways.actions;
+                })}
+              />
+            }
+          >
+            <EllipsisVertical size={15} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => {
+                openEdit(connection, settingsDialogSignal);
+              }}
+            >
+              <Pencil size={14} />
+              {t(($) => {
+                return $.settings.shared.edit;
               })}
-            />
-          }
-        >
-          <EllipsisVertical size={15} />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onClick={() => {
-              openEdit(connection, settingsDialogSignal);
-            }}
-          >
-            <Pencil size={14} />
-            {t(($) => {
-              return $.settings.shared.edit;
-            })}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onClick={() => {
-              openDelete(connection);
-            }}
-          >
-            <Trash size={14} />
-            {t(($) => {
-              return $.settings.shared.delete;
-            })}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => {
+                openDelete(connection);
+              }}
+            >
+              <Trash size={14} />
+              {t(($) => {
+                return $.settings.shared.delete;
+              })}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <div className="col-start-1 row-start-2 flex min-w-0 items-center lg:col-start-2 lg:row-start-1">
+        <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+          <span className="flex size-7 shrink-0 items-center justify-center">
+            <Cable size={16} />
+          </span>
+          <span className="min-w-0 truncate">{protocols}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -519,7 +534,7 @@ export function ModelProviderConnectionsSection() {
     return null;
   }
   return (
-    <section className="flex flex-col gap-4">
+    <section className="flex flex-col gap-3">
       <SettingsSectionHeading
         title={t(($) => {
           return $.settings.models.gateways.title;
@@ -539,12 +554,18 @@ export function ModelProviderConnectionsSection() {
           })}
         </p>
       ) : (
-        <div className="grid gap-2">
-          {connections.map((connection) => {
-            return (
-              <ConnectionCard key={connection.id} connection={connection} />
-            );
-          })}
+        <div
+          className="overflow-hidden rounded-xl bg-card"
+          style={ZERO_BORDER}
+          data-testid="model-provider-connections-list"
+        >
+          <div className="p-2">
+            {connections.map((connection) => {
+              return (
+                <ConnectionRow key={connection.id} connection={connection} />
+              );
+            })}
+          </div>
         </div>
       )}
       <ConnectionDialog />

@@ -24,10 +24,6 @@ function buildHref(
   return `${search ? `${path}?${search}` : path}${fragment}`;
 }
 
-function isNewTabClick(e: MouseEvent<HTMLAnchorElement>): boolean {
-  return e.metaKey || e.ctrlKey || e.shiftKey;
-}
-
 // ---------------------------------------------------------------------------
 // Link component
 // ---------------------------------------------------------------------------
@@ -52,16 +48,22 @@ export function Link({
 
   const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
-    if (e.defaultPrevented) {
+    const target = e.currentTarget.target;
+    if (
+      e.defaultPrevented ||
+      e.button !== 0 ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey ||
+      (target && target !== "_self") ||
+      e.currentTarget.hasAttribute("download")
+    ) {
       return;
     }
-    e.preventDefault();
 
-    if (isNewTabClick(e)) {
-      window.open(`${window.location.origin}${href}`, "_blank");
-    } else {
-      navigate(pathname, options);
-    }
+    e.preventDefault();
+    navigate(pathname, options);
   };
 
   return (

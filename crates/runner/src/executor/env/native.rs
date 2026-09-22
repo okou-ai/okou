@@ -3,7 +3,7 @@ use api_contracts::generated::types::runners::runs::PiModelConfigV4;
 use serde_json::Value;
 
 use super::{has_exact_object_fields, is_valid_pi_credential_header};
-use crate::types::ExecutionContext;
+use runner_types::types::ExecutionContext;
 
 fn field<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
     value
@@ -59,10 +59,10 @@ pub(super) fn validate(value: &Value) -> Result<(), String> {
     let model = field(value, "model")?;
     let url = url::Url::parse(base).map_err(|_| "Pi native URL is invalid")?;
     let host = url.host_str().ok_or("Pi native URL host is missing")?;
-    let raw_authority = crate::firewall_hostname_policy::raw_url_authority(base)
+    let raw_authority = runner_types::firewall_hostname_policy::raw_url_authority(base)
         .ok_or("Pi native URL authority is missing")?;
-    crate::firewall_hostname_policy::validate_raw_url_host(
-        crate::firewall_hostname_policy::raw_host_from_authority(raw_authority),
+    runner_types::firewall_hostname_policy::validate_raw_url_host(
+        runner_types::firewall_hostname_policy::raw_host_from_authority(raw_authority),
         "Pi native",
     )?;
     if !valid_text(base, 2048)
@@ -88,7 +88,7 @@ pub(super) fn validate(value: &Value) -> Result<(), String> {
         url::Host::Ipv4(ip) => Some(std::net::IpAddr::V4(ip)),
         url::Host::Ipv6(ip) => Some(std::net::IpAddr::V6(ip)),
         url::Host::Domain(_) => None,
-    }) && !crate::firewall_hostname_policy::is_public_ip_address(ip)
+    }) && !runner_types::firewall_hostname_policy::is_public_ip_address(ip)
     {
         return Err("Pi native inference requires a public destination".into());
     }

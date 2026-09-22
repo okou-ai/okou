@@ -63,7 +63,7 @@ import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import { createRouteMocks } from "./route-test";
 import { githubOauthRoutes } from "../../github-oauth";
 import { integrationsGithubRoutes } from "../../integrations-github";
-import { testSlackStateRoutes } from "../../test-slack-state";
+import { testSlackStateRoutes } from "../../slack-state-preview";
 import { featureSwitchesRoutes } from "../../feature-switches";
 import { integrationsAgentPhoneRoutes } from "../../integrations-agentphone";
 import { integrationsGithubUploadCompleteRoutes } from "../../integrations-github-upload-complete";

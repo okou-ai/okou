@@ -1722,6 +1722,45 @@
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
       "upgradeWorkspace": "ワークスペースをアップグレードする"
     },
+    "browserInput": {
+      "applyFailed": "情報を追加できませんでした。入力内容は保持されています。もう一度お試しください。",
+      "applying": "情報を追加しています",
+      "applyingDescription": "ブラウザでこのリクエストを完了しています。",
+      "callbackFailed": "エージェントに通知できませんでした。もう一度「続行」をお試しください。",
+      "cancel": "キャンセル",
+      "cancelFailed": "リクエストをキャンセルできませんでした。もう一度お試しください。",
+      "cancelled": "リクエストをキャンセルしました",
+      "cancelledDescription": "情報は追加されていません。続行してエージェントに通知してください。",
+      "cancelling": "キャンセルしています…",
+      "completed": "情報を追加しました",
+      "completedDescription": "ブラウザに情報を追加しました。続行してエージェントに通知してください。",
+      "continue": "続行",
+      "continuing": "続行しています…",
+      "delivered": "エージェントに通知しました",
+      "deliveredDescription": "エージェントは作業を続行できます。",
+      "description": "このサイトで求められている情報を入力してください。",
+      "documentTitle": "ブラウザ入力",
+      "expired": "リクエストの有効期限が切れました",
+      "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
+      "loadFailed": "このリクエストを読み込めませんでした",
+      "loadFailedDescription": "しばらくしてからもう一度お試しください。",
+      "loading": "ブラウザ入力を読み込んでいます",
+      "loadingDescription": "リクエストを確認しています…",
+      "open": "情報を入力",
+      "optional": "（任意）",
+      "required": "（必須）",
+      "retry": "再試行",
+      "site": "サイト",
+      "stale": "フィールドが変更されました",
+      "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
+      "submit": "ブラウザに追加",
+      "submitting": "追加しています…",
+      "title": "ブラウザに情報を入力",
+      "unavailable": "リクエストを利用できません",
+      "unavailableDescription": "このブラウザ入力リクエストは無効か、利用できなくなっています。",
+      "uncertain": "ブラウザを確認してください",
+      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
+    },
     "cards": {
       "viewDetails": "詳細を表示"
     },
@@ -2098,6 +2137,7 @@
       "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
       "archive": "チャットをアーカイブ",
+      "archived": "アーカイブ済み",
       "chatsWith": "{{agentName}} とのチャット",
       "chatThreads": "チャットスレッド",
       "delete": "チャットを削除する",
@@ -2109,6 +2149,7 @@
       "movePinDown": "下に移動",
       "movePinUp": "上に移動",
       "newChatWith": "{{agentName}} との新しいチャット",
+      "noArchived": "アーカイブ済みのチャットはありません",
       "noUnread": "未読のチャットはありません",
       "openChatMenu": "チャットメニューを開く",
       "openListMenu": "チャットリストメニューを開く",
@@ -2117,13 +2158,12 @@
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
       "showAllChats": "すべてのチャットを表示",
-      "showArchived": "アーカイブ済みを表示",
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
       "unarchive": "アーカイブを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
-      "unreadOnly": "未読のみ"
+      "unreadOnly": "未読"
     },
     "startCards": {
       "kinds": {
@@ -3375,13 +3415,24 @@
         "connectTitle": "Lark に接続します"
       },
       "slack": {
+        "accountInUseDescription": "このSlackアカウントは別のOkouアカウントに接続されています。もう一方で接続を解除してから、もう一度お試しください。",
+        "accountInUseTitle": "Slackアカウントはすでに接続されています",
+        "accountMismatchDescription": "現在、このOkouアカウントではSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
+        "accountMismatchDescriptionWorkspace": "現在、このOkouアカウントでは{{workspace}}でSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
+        "accountMismatchTitle": "Slackアカウントを切り替えますか？",
         "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
         "connectTitle": "Slack に接続します",
+        "errorFallback": "Slack接続を確認または開始できませんでした。もう一度お試しください。",
         "invalidDescription": "このページは、Slack 接続リンクから開かれるように設計されています。",
+        "keepAccount": "{{account}}を維持",
         "open": "Slack を開く",
         "successDescription": "チャットを開始するには、任意のチャンネルでインストール済みのボットにメンションするか、DM を送信してください。",
         "successDescriptionWorkspace": "{{workspace}} に接続しています。チャットを開始するには、任意のチャンネルでインストール済みのボットにメンションするか、DM を送信してください。",
-        "successTitle": "Slack に接続しました!"
+        "successTitle": "Slack に接続しました!",
+        "switchAccount": "{{account}}に切り替える",
+        "workspaceMismatchDescription": "このSlackワークスペースは現在のOkou組織では利用できません。組織を切り替えるか、管理者にお問い合わせください。",
+        "workspaceMismatchDescriptionNamed": "現在のOkou組織は{{workspace}}に接続されています。組織を切り替えるか、管理者にアンインストールを依頼してから、このSlackワークスペースに接続してください。",
+        "workspaceMismatchTitle": "Slackワークスペースが一致しません"
       },
       "teams": {
         "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams からエージェントと直接対話できるようになります。",
@@ -5792,8 +5843,7 @@
     "status": {
       "availableNow": "現在利用可能",
       "inUse_one": "{{limit}} スロットの {{active}} が使用中です",
-      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です",
-      "waitingForSandbox": "Sandbox を待機中"
+      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です"
     },
     "tiers": {
       "custom": "カスタム",
@@ -6440,16 +6490,15 @@
         }
       },
       "emailSubscription": {
-        "description": "すべてのワークスペースのブリーフやリマインダーなど、任意のメールを管理します。",
+        "description": "ブリーフ、リマインダー、その他のワークスペース更新をメールで受け取ります。",
+        "descriptionWithEmail": "{{email}} でブリーフ、リマインダー、その他のワークスペース更新を受け取ります。",
         "loading": "メール配信設定を確認中…",
         "retryMessage": "メール配信設定を保存または読み込めませんでした。もう一度お試しください。",
         "saving": "保存中…",
         "sectionTitle": "メール配信設定",
-        "subscribed": "配信登録済み",
-        "title": "Okouからのメールを受け取る",
+        "title": "メール通知",
         "unavailable": "メールを利用できません",
-        "unavailableDescription": "「アカウントとセキュリティ」でメールアドレスを確認してください。配信がブロックされている場合はサポートにお問い合わせください。",
-        "unsubscribed": "配信停止中"
+        "unavailableDescription": "「アカウントとセキュリティ」でメールアドレスを確認してください。配信がブロックされている場合はサポートにお問い合わせください。"
       },
       "language": {
         "description": "{{brandName}}のインターフェースで使用する言語を選択します",
@@ -6475,13 +6524,11 @@
         "chatOnly": "チャットのみ",
         "checkEmailSubscription": "上のメール配信設定で配信状況を確認してください。",
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
-        "description": "このワークスペースの毎日の優先事項を、お使いのタイムゾーンの午前7時に確認できます。",
-        "emailOff": "メールはオフです。ブリーフは引き続きチャットに表示されます。",
-        "emailWhenReady": "ブリーフの準備ができるとメールが届きます。",
+        "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
         "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "nextBrief": "次のブリーフ {{date}}（{{timezone}}）",
+        "nextBrief": "次のブリーフ {{date}}",
         "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",

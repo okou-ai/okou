@@ -91,6 +91,18 @@ export const PI_MODEL_CONFIG_LEGACY_GENERATION = 1;
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
+/**
+ * Lowest `@okouai/cli` release whose `__agent-loop` understands the current
+ * launch payload and API-first handoff contract. The API records it in every
+ * Pi launch config; a rootfs whose installed CLI is older keeps launching the
+ * commit-addressed package. Raise it whenever a launch-payload or handoff field
+ * becomes required rather than optional.
+ */
+export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.352.7";
+/** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
+export const releaseVersionSchema = z
+  .string()
+  .regex(/^\d+\.\d+\.\d+$/, "Release versions are MAJOR.MINOR.PATCH");
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_CANDIDATES = 256;
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_UTF8_BYTES = 21_036_800;
 export const sessionHistoryEncodingSchema = z.enum([
@@ -151,6 +163,20 @@ export const runnerClaimCapabilitiesSchema = z
       .refine((generations) => {
         return new Set(generations).size === generations.length;
       }, "Pi model-config generations must be unique"),
+  })
+  .strict()
+  .readonly();
+
+/**
+ * Versions of the Okou CLI bundle installed into a runner's rootfs at build
+ * time. Advertised on claim so the API can observe (and, once the npx launch
+ * path is retired, gate) API-first handoff parity. `piSdk` is informational.
+ */
+export const runnerInstalledVersionsSchema = z
+  .object({
+    cli: releaseVersionSchema,
+    piAgentRuntime: releaseVersionSchema,
+    piSdk: z.string().min(1).max(64),
   })
   .strict()
   .readonly();
@@ -1017,6 +1043,16 @@ export const piApiFirstTurnConfigSchema = z
     deadlineAt: z.number().int().positive(),
     baseSession: piSessionCheckpointSchema,
     sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
+    /**
+     * `@okouai/pi-agent-runtime` release the API prepared this turn with. The
+     * guest execs the rootfs-installed CLI only when its bundled runtime is
+     * exactly this version; the CLI itself restarts a pending-tool handoff
+     * from H0 as `sandbox-first` on mismatch. Absent from launch configs
+     * captured before versioned CLI artifacts existed.
+     */
+    requiredPiAgentRuntimeVersion: releaseVersionSchema.optional(),
+    /** Lowest installed CLI release allowed to run this launch payload. */
+    minCliVersion: releaseVersionSchema.optional(),
   })
   .strict()
   .readonly();
@@ -1459,7 +1495,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  *
  * This is the canonical producer schema. The runner's `ExecutionContext` is a
  * tolerant consumer projection and intentionally does not mirror every field.
- * See `crates/runner/src/types.rs`.
+ * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
   runId: z.uuid(),
@@ -1581,6 +1617,7 @@ export const runnersJobClaimContract = c.router({
       runnerHostname: runnerHostnameSchema.optional(),
       capabilities: runnerClaimCapabilitiesSchema,
       telemetry: runnerClaimTelemetrySchema.optional(),
+      installedVersions: runnerInstalledVersionsSchema.optional(),
     }),
     responses: {
       200: executionContextSchema,
@@ -1911,6 +1948,9 @@ export type PiModelCredentialBinding = z.infer<
 >;
 export type RunnerClaimCapabilities = z.infer<
   typeof runnerClaimCapabilitiesSchema
+>;
+export type RunnerInstalledVersions = z.infer<
+  typeof runnerInstalledVersionsSchema
 >;
 export type PiLaunchConfig = z.infer<typeof piLaunchConfigSchema>;
 export type PiMemoryPhase2Maintenance = z.infer<

@@ -10,7 +10,7 @@ import type {
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import { testSlackStateRoutes } from "../../test-slack-state";
+import { testSlackStateRoutes } from "../../slack-state-preview";
 
 const SLACK_STATE_ROUTE = "/api/test/slack-state";
 

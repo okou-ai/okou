@@ -9,7 +9,7 @@ use tokio::io::unix::AsyncFd;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::host_file::{self, DirMode};
-use crate::types::MAX_HELD_WORKSPACE_STATES;
+use runner_types::types::MAX_HELD_WORKSPACE_STATES;
 
 use super::WorkspaceImageCache;
 use super::entry::is_cache_key_name;
@@ -526,9 +526,9 @@ mod tests {
         CACHE_FORMAT_VERSION, WORKSPACE_DRIVE_LAYOUT, WorkspaceCacheTerminalStatus,
     };
     use super::*;
-    use crate::ids::RunId;
     use crate::paths::{HomePaths, RunnerPaths};
     use crate::storage_fingerprints::StorageFingerprints;
+    use runner_types::ids::RunId;
 
     const TEST_PROFILE_NAME: &str = "vm0/default";
     const TEST_WORKING_DIR: &str = "/workspace";

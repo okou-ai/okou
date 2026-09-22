@@ -9,9 +9,9 @@ use std::process::ExitCode;
 use clap::Args;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::local_queue;
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 #[derive(Args)]
 pub struct CancelArgs {

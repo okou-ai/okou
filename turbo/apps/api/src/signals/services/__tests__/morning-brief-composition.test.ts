@@ -7,9 +7,9 @@ import {
   morningBriefSourceBudget,
   morningBriefSourceWaves,
   MORNING_BRIEF_COLLECTION_PHASE_MS,
-  MORNING_BRIEF_FINAL_CHECK_RESERVE_MS,
-  MORNING_BRIEF_MAX_CONCURRENT_SOURCES,
+  MORNING_BRIEF_COMMIT_RESERVE_MS,
   MORNING_BRIEF_NEW_READ_CUTOFF_MS,
+  MORNING_BRIEF_MAX_CONCURRENT_SOURCES,
   MORNING_BRIEF_SOURCE_READ_RESERVE_MS,
   morningBriefSourceReadCutoff,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
@@ -36,23 +36,7 @@ import { normalizeMorningBriefCalendar } from "../morning-brief-calendar-source"
 import { normalizeMorningBriefChat } from "../morning-brief-chat-source";
 import { normalizeMorningBriefGithub } from "../morning-brief-github-source";
 import { normalizeMorningBriefGmail } from "../morning-brief-gmail-source";
-import {
-  normalizeMorningBriefSlack,
-  MORNING_BRIEF_SLACK_READ_SURFACE,
-} from "../morning-brief-slack-source";
-import {
-  boundMorningBriefDescriptors,
-  morningBriefDescriptorRetainUntil,
-  morningBriefScopeDigest,
-  morningBriefSourcesToRevalidate,
-  MORNING_BRIEF_ACCOUNT_REF_MAX_BYTES,
-  MORNING_BRIEF_DESCRIPTOR_MAX_BYTES,
-  MORNING_BRIEF_DESCRIPTOR_SET_MAX_BYTES,
-  MORNING_BRIEF_MAX_RETAINED_DESCRIPTORS,
-  MORNING_BRIEF_OUTBOX_DEADLINE_MS,
-  MORNING_BRIEF_RESULT_RETENTION_MS,
-  type MorningBriefRetainedSourceDescriptor,
-} from "../morning-brief-source-authority";
+import { normalizeMorningBriefSlack } from "../morning-brief-slack-source";
 import {
   morningBriefEnvelopeBytes,
   buildMorningBriefProviderRequest,
@@ -434,6 +418,8 @@ describe("collection phase bounds", () => {
       ),
     ).toBeTruthy();
     expect(morningBriefMayStartRead(phaseStartedAt, atCutoff)).toBeFalsy();
+    // The commit reserve is what keeps these two instants apart: the attempt
+    // is still alive here, and that is where it finalizes.
     expect(
       morningBriefMayStartRead(
         phaseStartedAt,
@@ -461,7 +447,7 @@ describe("collection phase bounds", () => {
     const at = new Date(phaseStartedAt.getTime() + 20_000);
     const budget = morningBriefSourceBudget("slack", phaseStartedAt, at);
 
-    // Slack's own ceiling is 30s, but only 20s of the phase remain.
+    // Slack's own ceiling is 30s, but only 23s of readable phase remain.
     expect(budget.deadlineAt.getTime()).toBe(
       phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS,
     );
@@ -486,242 +472,6 @@ describe("collection phase bounds", () => {
       ["calendar", "gmail", "github"],
       ["slack", "chat"],
     ]);
-  });
-});
-
-describe("retained source authority", () => {
-  const descriptorSources: readonly MorningBriefSourceKind[] = [
-    "calendar",
-    "gmail",
-    "github",
-    "slack",
-    "chat",
-  ];
-
-  function descriptorAtBytes(
-    source: MorningBriefSourceKind,
-    targetBytes: number,
-    prefix = "",
-  ): MorningBriefRetainedSourceDescriptor {
-    const base: MorningBriefRetainedSourceDescriptor = {
-      source,
-      connectionId: null,
-      accountRef: null,
-      scopeDigest: "",
-      endpoints: [],
-      membershipId: "orgmem_bound",
-      agentId: "agent_bound",
-      capturedAt: "2026-09-17T06:00:00.000Z",
-      containers: [prefix],
-      contributed: false,
-    };
-    const baseBytes = Buffer.byteLength(JSON.stringify(base), "utf8");
-    if (baseBytes > targetBytes) {
-      throw new Error(
-        `Descriptor base exceeds ${targetBytes.toString()} bytes`,
-      );
-    }
-    const sized = {
-      ...base,
-      containers: [`${prefix}${"a".repeat(targetBytes - baseBytes)}`],
-    };
-    expect(Buffer.byteLength(JSON.stringify(sized), "utf8")).toBe(targetBytes);
-    return sized;
-  }
-
-  function descriptorSetAtBytes(
-    targetBytes: number,
-  ): readonly MorningBriefRetainedSourceDescriptor[] {
-    // JSON array serialization costs two brackets and one comma between each
-    // descriptor. Spread the object bytes across all five distinct sources so
-    // no individual descriptor approaches its own 2 KiB ceiling.
-    const objectBytes = targetBytes - (descriptorSources.length + 1);
-    const base = Math.floor(objectBytes / descriptorSources.length);
-    let remainder = objectBytes % descriptorSources.length;
-    return descriptorSources.map((source, index) => {
-      const bytes = base + (remainder > 0 ? 1 : 0);
-      remainder = Math.max(0, remainder - 1);
-      return descriptorAtBytes(source, bytes, index === 0 ? '早"escaped' : "");
-    });
-  }
-
-  const descriptor: MorningBriefRetainedSourceDescriptor = {
-    source: "slack",
-    connectionId: null,
-    accountRef: "T123:U456",
-    scopeDigest: morningBriefScopeDigest(["conversations.history"]),
-    endpoints: [],
-    membershipId: "orgmem_1",
-    agentId: "agent_1",
-    capturedAt: "2026-09-17T06:00:00.000Z",
-    containers: ["C1"],
-    contributed: true,
-  };
-
-  /** A connector-backed source proves a connection, an account and endpoints. */
-  const gmailDescriptor: MorningBriefRetainedSourceDescriptor = {
-    ...descriptor,
-    source: "gmail",
-    connectionId: "conn_1",
-    accountRef: "owner@example.test",
-    endpoints: ["https://gmail.googleapis.com/gmail/v1/users/me/messages"],
-    containers: ["thread-1"],
-  };
-
-  it("digests an unchanged grant identically regardless of order", () => {
-    expect(morningBriefScopeDigest(["b", "a", "a"])).toBe(
-      morningBriefScopeDigest(["a", "b"]),
-    );
-    expect(morningBriefScopeDigest(["a"])).not.toBe(
-      morningBriefScopeDigest(["a", "b"]),
-    );
-  });
-
-  it("rejects a duplicate source rather than silently keeping one", () => {
-    expect(
-      boundMorningBriefDescriptors([descriptor, { ...descriptor }]),
-    ).toStrictEqual({ kind: "rejected", reason: "duplicate-source" });
-  });
-
-  it.each([8191, 8192] as const)(
-    "reports and accepts the exact %i-byte serialized descriptor set",
-    (bytes) => {
-      const descriptors = descriptorSetAtBytes(bytes);
-      const bounded = boundMorningBriefDescriptors(descriptors);
-
-      expect(bounded).toMatchObject({ kind: "bounded", bytes });
-      expect(Buffer.byteLength(JSON.stringify(descriptors), "utf8")).toBe(
-        bytes,
-      );
-    },
-  );
-
-  it("rejects an 8,193-byte serialized descriptor set", () => {
-    const descriptors = descriptorSetAtBytes(8193);
-
-    expect(boundMorningBriefDescriptors(descriptors)).toStrictEqual({
-      kind: "rejected",
-      reason: "set-too-large",
-    });
-  });
-
-  it("counts array brackets and separators in the five-descriptor counterexample", () => {
-    const descriptors = descriptorSources.map((source, index) => {
-      return descriptorAtBytes(source, index === 4 ? 1632 : 1640);
-    });
-
-    expect(
-      descriptors.reduce((total, entry) => {
-        return total + Buffer.byteLength(JSON.stringify(entry), "utf8");
-      }, 0),
-    ).toBe(8192);
-    expect(Buffer.byteLength(JSON.stringify(descriptors), "utf8")).toBe(8198);
-    expect(boundMorningBriefDescriptors(descriptors)).toStrictEqual({
-      kind: "rejected",
-      reason: "set-too-large",
-    });
-  });
-
-  it("accepts a 2 KiB descriptor and rejects the next serialized byte", () => {
-    expect(
-      boundMorningBriefDescriptors([descriptorAtBytes("chat", 2048)]).kind,
-    ).toBe("bounded");
-    expect(
-      boundMorningBriefDescriptors([descriptorAtBytes("chat", 2049)]),
-    ).toStrictEqual({ kind: "rejected", reason: "descriptor-too-large" });
-  });
-
-  it("rejects an oversized account reference", () => {
-    expect(
-      boundMorningBriefDescriptors([
-        { ...descriptor, accountRef: "a".repeat(129) },
-      ]).kind,
-    ).toBe("rejected");
-  });
-
-  it("rejects supplied material whose account was never proved", () => {
-    // Null identity is "not observed", never "any account": a later check given
-    // this descriptor would have nothing to ask the provider about.
-    expect(
-      boundMorningBriefDescriptors([{ ...gmailDescriptor, accountRef: null }]),
-    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
-    expect(
-      boundMorningBriefDescriptors([
-        { ...gmailDescriptor, connectionId: null },
-      ]),
-    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
-    expect(
-      boundMorningBriefDescriptors([{ ...gmailDescriptor, endpoints: [] }]),
-    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
-  });
-
-  it("accepts an unproven source that supplied nothing", () => {
-    // An unconfigured connector has no retained input, so there is nothing for
-    // a later check to defend and no reason to fail the whole composition.
-    expect(
-      boundMorningBriefDescriptors([
-        {
-          ...gmailDescriptor,
-          connectionId: null,
-          accountRef: null,
-          scopeDigest: "",
-          endpoints: [],
-          containers: [],
-          contributed: false,
-        },
-      ]).kind,
-    ).toBe("bounded");
-  });
-
-  it("revalidates supplied-but-uncited material and skips sources that supplied none", () => {
-    const supplied = morningBriefSourcesToRevalidate([
-      descriptor,
-      { ...gmailDescriptor, contributed: false },
-    ]);
-
-    expect(
-      supplied.map((entry) => {
-        return entry.source;
-      }),
-    ).toStrictEqual(["slack"]);
-  });
-
-  it("retains descriptors through the linked outbox deadline past result expiry", () => {
-    const reservedAt = new Date("2026-09-17T06:00:00.000Z");
-    // A Chat commit one minute before the 24h result expiry creates the outbox
-    // request then, so its original 15-minute deadline lands after expiry.
-    const outboxCreatedAt = new Date(
-      reservedAt.getTime() + MORNING_BRIEF_RESULT_RETENTION_MS - 60_000,
-    );
-
-    const retainUntil = morningBriefDescriptorRetainUntil(
-      reservedAt,
-      outboxCreatedAt,
-    );
-
-    expect(retainUntil.getTime() - reservedAt.getTime()).toBe(
-      MORNING_BRIEF_RESULT_RETENTION_MS -
-        60_000 +
-        MORNING_BRIEF_OUTBOX_DEADLINE_MS,
-    );
-    expect(retainUntil.getTime() - reservedAt.getTime()).toBeLessThanOrEqual(
-      MORNING_BRIEF_RESULT_RETENTION_MS + MORNING_BRIEF_OUTBOX_DEADLINE_MS,
-    );
-  });
-
-  it("does not extend retention for an obligation that resolves early", () => {
-    const reservedAt = new Date("2026-09-17T06:00:00.000Z");
-
-    expect(
-      morningBriefDescriptorRetainUntil(
-        reservedAt,
-        new Date(reservedAt.getTime() + 60_000),
-      ).getTime() - reservedAt.getTime(),
-    ).toBe(MORNING_BRIEF_RESULT_RETENTION_MS);
-    expect(
-      morningBriefDescriptorRetainUntil(reservedAt, null).getTime() -
-        reservedAt.getTime(),
-    ).toBe(MORNING_BRIEF_RESULT_RETENTION_MS);
   });
 });
 
@@ -1035,8 +785,12 @@ describe("truncation provenance", () => {
 describe("declared bounds", () => {
   it("pins the documented collection and request ceilings", () => {
     expect(MORNING_BRIEF_COLLECTION_PHASE_MS).toBe(45_000);
-    expect(MORNING_BRIEF_FINAL_CHECK_RESERVE_MS).toBe(5000);
-    expect(MORNING_BRIEF_NEW_READ_CUTOFF_MS).toBe(40_000);
+    // The reserve funds the commit, not an authority check. It is the smallest
+    // value that keeps a read finishing one second past the cutoff inside the
+    // phase, which is what lets the attempt report its per-source facts
+    // instead of settling as deadline-exceeded.
+    expect(MORNING_BRIEF_COMMIT_RESERVE_MS).toBe(2000);
+    expect(MORNING_BRIEF_NEW_READ_CUTOFF_MS).toBe(43_000);
     expect(MORNING_BRIEF_MAX_CONCURRENT_SOURCES).toBe(3);
     expect(MORNING_BRIEF_REQUEST_MAX_BYTES).toBe(128 * 1024);
     expect(MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES).toBe(1024 * 1024);
@@ -1044,8 +798,8 @@ describe("declared bounds", () => {
 
   it("leaves every source budget time to finish rather than to read", () => {
     expect(MORNING_BRIEF_SOURCE_READ_RESERVE_MS).toBe(3000);
-    // A full budget keeps the fixed reserve for the release proof, the release
-    // fence and the projection that turns a read into a bundle.
+    // A full budget keeps the fixed reserve for the projection that turns a
+    // read into a bundle.
     expect(morningBriefSourceReadCutoff(20_000, 0)).toBe(17_000);
     // A short budget buys a short read, never no read at all. Subtracting the
     // fixed reserve from a one-second budget would move the cutoff to the
@@ -1093,22 +847,10 @@ describe("declared bounds", () => {
     expect(morningBriefStoragePhaseRemainingMs(expiresAt, 5010)).toBeNull();
   });
 
-  it("pins the retained descriptor bounds", () => {
-    expect(MORNING_BRIEF_MAX_RETAINED_DESCRIPTORS).toBe(5);
-    expect(MORNING_BRIEF_DESCRIPTOR_MAX_BYTES).toBe(2048);
-    expect(MORNING_BRIEF_DESCRIPTOR_SET_MAX_BYTES).toBe(8192);
-    expect(MORNING_BRIEF_ACCOUNT_REF_MAX_BYTES).toBe(128);
-  });
-
-  it("offers both Chinese scripts and digests the read surface", () => {
+  it("offers both Chinese scripts", () => {
     expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toHaveLength(12);
     expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toContain("zh-Hans");
     expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toContain("zh-Hant");
-    expect(MORNING_BRIEF_SLACK_READ_SURFACE).toStrictEqual([
-      "users.conversations",
-      "conversations.history",
-      "conversations.replies",
-    ]);
   });
 });
 

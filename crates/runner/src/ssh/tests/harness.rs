@@ -29,9 +29,9 @@ use super::super::{SshRuntime, network::Network};
 use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
 use crate::{
     http::{HttpClient, HttpClientConfig},
-    ids::RunId,
     runner_process_identity::RunnerProcessIdentity,
 };
+use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 pub(super) const TOKEN: &str = "vm0_official_test-only";
@@ -400,12 +400,35 @@ impl Harness {
     }
 
     pub(super) async fn resolve(&self, body: Value) -> Mock<'_> {
+        self.resolve_for_run(self.run, body).await
+    }
+
+    pub(super) async fn resolve_for_run(&self, run: RunId, body: Value) -> Mock<'_> {
         self.api.mock_async(|when, then| {
-            when.method("POST").path(format!("/api/runners/runs/{}/ssh/resolve", self.run))
+            when.method("POST").path(format!("/api/runners/runs/{run}/ssh/resolve"))
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId": CONNECTION, "runnerIdentity": {"runnerId": self.identity.runner_id(), "heartbeatGeneration": self.identity.heartbeat_generation()}}));
             then.status(200).json_body(body);
         }).await
+    }
+
+    pub(super) async fn restart_with_vnc(&mut self, vnc: Arc<crate::vnc::VncRuntime>) {
+        self.shutdown().await;
+        let (incoming, receiver) = mpsc::channel(32);
+        self.incoming = incoming;
+        self.dispatcher = Some(
+            RpcRuntime {
+                ssh: Some(Arc::clone(&self.runtime)),
+                vnc: Some(vnc),
+                usage: None,
+            }
+            .start(
+                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+                "sandbox-authoritative".into(),
+                self.run,
+                &self.cancel,
+            ),
+        );
     }
 
     pub(super) async fn request(&self, params: Value) -> Vec<Value> {

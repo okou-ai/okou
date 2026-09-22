@@ -7,7 +7,7 @@ use tokio_util::task::AbortOnDropHandle;
 
 use super::*;
 use crate::idle_pool::IdleSandboxKind;
-use crate::types::WorkspaceReuseResult;
+use runner_types::types::WorkspaceReuseResult;
 
 const WAIT: Duration = Duration::from_secs(2);
 

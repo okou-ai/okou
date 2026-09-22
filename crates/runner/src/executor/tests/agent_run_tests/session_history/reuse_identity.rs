@@ -38,7 +38,7 @@ use crate::executor::{
 use crate::restored_session_identity::{
     RestoredSessionHistoryHashSizeRelationship, RestoredSessionIdentityMismatchReason,
 };
-use crate::types::{
+use runner_types::types::{
     ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind, SandboxReuseResult,
 };
@@ -49,7 +49,10 @@ const SESSION_HISTORY_IDENTITY_REUSE_VERIFY_ERROR: &str =
 fn context_with_checkpointed_session_identity(
     session_id: &str,
     history: &[u8],
-) -> (crate::types::ExecutionContext, RestoredSessionIdentity) {
+) -> (
+    runner_types::types::ExecutionContext,
+    RestoredSessionIdentity,
+) {
     let mut ctx = minimal_context();
     ctx.resume_session = Some(ResumeSession {
         cli_agent_session_id: session_id.into(),
@@ -136,7 +139,7 @@ async fn assert_checkpointed_final_identity_helper_failure_falls_back(
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -231,7 +234,7 @@ async fn run_in_sandbox_skips_checkpointed_final_session_history_restore() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -307,7 +310,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_is_cancelled() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -377,7 +380,7 @@ async fn run_in_sandbox_drops_checkpointed_identity_when_agent_exits_nonzero() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -512,7 +515,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_reports
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -609,7 +612,7 @@ async fn run_in_sandbox_restores_when_checkpointed_final_identity_helper_exec_er
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -726,7 +729,7 @@ async fn run_in_sandbox_restores_when_skip_verified_identity_mismatches_request(
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -855,7 +858,7 @@ async fn run_in_sandbox_records_mismatch_fallback_and_restores_prestarted_histor
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -968,7 +971,7 @@ async fn run_in_sandbox_records_requested_larger_prefix_outcomes_without_changin
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -1085,7 +1088,7 @@ async fn run_in_sandbox_records_missing_idle_identity_reuse_fallback() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1178,7 +1181,7 @@ async fn reused_sandbox_fallback_materializes_prune_eligible_codex_zstd_as_raw()
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
             prev_storage: None,
         },
         &mut telemetry,

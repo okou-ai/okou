@@ -23,7 +23,7 @@ pub use sandbox_firecracker::SnapshotOutputPaths as SnapshotPaths;
 use sha2::{Digest, Sha256};
 
 use crate::error::RunnerResult;
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const WORKSPACE_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"workspace-image-cache:v1\0";
 
@@ -387,6 +387,15 @@ impl RootfsPaths {
         [self.rootfs()]
     }
 
+    /// Sidecar copy of the Okou CLI manifest installed into this rootfs.
+    ///
+    /// Written by `runner build` before `rootfs.ext4` is committed and only
+    /// when the build installed a versioned CLI artifact, so its absence means
+    /// the rootfs launches the CLI through the legacy commit-addressed path.
+    pub fn okou_cli_manifest(&self) -> PathBuf {
+        self.dir.join("okou-cli.json")
+    }
+
     /// Derive snapshot paths nested under this rootfs.
     pub fn snapshot(&self, snapshot_hash: &str) -> SnapshotPaths {
         SnapshotPaths::new(self.dir.join("snapshots").join(snapshot_hash))
@@ -670,7 +679,7 @@ mod tests {
     #[test]
     fn log_paths_structure() {
         let lp = LogPaths::new(PathBuf::from("/test/logs"));
-        let id = RunId::nil();
+        let id = RunId::from(uuid::Uuid::nil());
         let paths = [
             (
                 lp.network_log(id),
@@ -743,7 +752,7 @@ mod tests {
     #[test]
     fn is_gc_eligible_log_temp_matching() {
         let lp = LogPaths::new(PathBuf::from("/test/logs"));
-        let id = RunId::nil();
+        let id = RunId::from(uuid::Uuid::nil());
         let paths = [
             lp.network_log(id),
             lp.system_log(id),

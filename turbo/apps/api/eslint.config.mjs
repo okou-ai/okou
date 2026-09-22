@@ -460,6 +460,24 @@ export default [
     },
   },
   {
+    files: ["src/signals/routes/desktop-updates.ts"],
+    rules: {
+      // An exhausted manifest read is a bounded, recovered outcome that needs
+      // no intervention, so `warn` only put every single one into the
+      // production error review. A sustained rate is still the real signal and
+      // the record carries the `failure_class`, `attempts` and
+      // `provider_status` a genuine GitHub outage needs, so it has to survive
+      // Axiom's info default; debug would drop it and the request log's `503`
+      // is retained for too few days to stand in for it.
+      "api/no-logger-info": [
+        "error",
+        {
+          allowedMessages: ["Desktop update manifest upstream unavailable"],
+        },
+      ],
+    },
+  },
+  {
     files: ["src/**/*.ts"],
     ignores: [
       "src/**/__tests__/**",
@@ -671,6 +689,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // Storage-manifest telemetry is intentionally absent from every API
+      // response. This focused contract test records the finite dimensions at
+      // the collector boundary; route suites retain cache/result behavior.
+      "src/signals/services/__tests__/system-storage-presigned-url-cache.telemetry.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
       // ship a debug parameter. This suite drives the route's own admission
@@ -864,6 +886,9 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // Storage-manifest timing dimensions have no HTTP observation surface;
+      // route suites separately own externally visible cache behavior.
+      "src/signals/services/__tests__/system-storage-presigned-url-cache.telemetry.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.

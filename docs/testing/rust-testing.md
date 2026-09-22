@@ -62,16 +62,18 @@ use `cargo clippy --profile local --all-targets --all-features`.
 
 ### Shared firewall contract in CI
 
-The Crates coverage job runs
-`types::tests::firewall_base_url_validation_matches_shared_contract` as part of
-the full Rust suite. When coverage is selected, the dedicated
-`runner-firewall-contract-test` job is skipped to avoid compiling the runner test
-executable twice.
+The Crates coverage job runs the `runner-types` integration tests
+`firewall_base_url_validation_matches_shared_contract` and
+`firewall_rule_validation_matches_shared_contract` as part of the full Rust
+suite. When coverage is selected, the dedicated
+`runner-firewall-contract-test` job is skipped to avoid compiling the same
+integration tests twice.
 
-A change only to
+A change only to either
 `turbo/packages/connectors/src/__tests__/firewall-base-url-validation-contract.json`
-still selects the dedicated Rust check and existing Python contract validation,
-without selecting full Rust coverage or runner images. The dedicated check keeps
+or `turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json`
+still selects the dedicated Rust checks and existing Python contract validation,
+without selecting full Rust coverage or runner images. The dedicated job keeps
 its existing `runner-firewall-contract` rust-cache snapshot.
 
 The Crates gate requires the selected owner to succeed. Failed, cancelled, or

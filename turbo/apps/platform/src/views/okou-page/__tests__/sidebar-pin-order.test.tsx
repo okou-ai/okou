@@ -6,6 +6,7 @@ import {
   chatThreadPinContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -235,4 +236,48 @@ test("touch users can move a pin up and down through the thread menu", async () 
       "Regular thread",
     ]);
   });
+});
+
+test("Hide pin move actions while filtering to archived chats", async () => {
+  const caseId = 67;
+  const auth = chatListAuth(caseId);
+  const pinnedAt = "2026-09-01T00:00:00Z";
+  const snapshot = [
+    chatListThread(3, "✅ First archived pin", {
+      pinnedAt,
+      pinOrder: "a0",
+    }),
+    chatListThread(2, "Visible pin", { pinnedAt, pinOrder: "a1" }),
+    chatListThread(1, "✅ Last archived pin", {
+      pinnedAt,
+      pinOrder: "a2",
+    }),
+  ];
+  installChatListAgent(context);
+  installChatListStream(context, { caseId, snapshot });
+  await setupPage({
+    context,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    auth,
+    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+  await screen.findByText("Visible pin");
+
+  click(screen.getByLabelText("Open chat list menu"));
+  click(menuItem("Archived"));
+  await screen.findByText("✅ First archived pin");
+  expect(sidebarThreadTitles()).toStrictEqual([
+    "✅ First archived pin",
+    "✅ Last archived pin",
+  ]);
+
+  click(menuButton("✅ First archived pin"));
+  await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem").filter((item) => {
+      const label = item.textContent?.trim();
+      return label === "Move up" || label === "Move down";
+    }),
+  ).toHaveLength(0);
 });

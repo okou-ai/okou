@@ -45,12 +45,16 @@ import {
   type SystemStoragePresignedUrlRequest,
   type ReadOnlyStoragePresignedUrlCacheStatus,
   type ReadOnlyStoragePresignedUrlRequest,
+  type StorageManifestCacheBranch,
+  type StorageManifestCacheEntryKind,
+  type StorageManifestCacheObservationContext,
   type StoragePresignedUrlResult,
   type WorkflowSkillStoragePresignedUrlCacheStatus,
   type WorkflowSkillStoragePresignedUrlRequest,
 } from "./system-storage-presigned-url-cache.service";
 import {
   measureApiDispatchTiming,
+  measureApiDispatchTimingSync,
   type ApiDispatchTimingCollector,
   type ApiDispatchTimingActionType,
   type ApiDispatchTimingDimensions,
@@ -62,7 +66,7 @@ import { normalizeMountOverlay } from "./storage-mount-overlay";
 
 import { publishPiResourceVersionIndex } from "./pi-resource-version-index.service";
 
-type StorageManifestEntryKind = "compose" | "additional" | "artifact";
+type StorageManifestEntryKind = StorageManifestCacheEntryKind;
 export type StorageManifestSource =
   | "system_skill"
   | "connector_skill"
@@ -297,6 +301,7 @@ interface StorageManifestEntryPhaseTimings {
 
 interface ResolvedStorageEntries {
   readonly input: BuildStorageManifestEntriesArgs;
+  readonly branch: StorageManifestCacheBranch;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
   readonly resolved: ResolvedStorageManifestEntryPlans;
 }
@@ -405,6 +410,35 @@ function storageManifestCountBucket(count: number): StorageManifestCountBucket {
     return "9_16";
   }
   return "17_plus";
+}
+
+function storageManifestCacheObservation(args: {
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly branch: StorageManifestCacheBranch;
+  readonly entryKind: StorageManifestEntryKind;
+}): StorageManifestCacheObservationContext | undefined {
+  if (!args.timing) {
+    return undefined;
+  }
+  return {
+    timing: args.timing,
+    branch: args.branch,
+    entryKind: args.entryKind,
+  };
+}
+
+function storageManifestMaterializationDimensions(args: {
+  readonly branch: StorageManifestCacheBranch;
+  readonly entryKind: StorageManifestEntryKind;
+  readonly entryCount: number;
+}): ApiDispatchTimingDimensions {
+  return {
+    storage_manifest_branch: args.branch,
+    storage_manifest_entry_kind: args.entryKind,
+    storage_manifest_entry_count_bucket: storageManifestCountBucket(
+      args.entryCount,
+    ),
+  };
 }
 
 function emptyStorageManifestSourceCounts(): StorageManifestSourceCounts {
@@ -2151,15 +2185,28 @@ function buildStorageEntriesFromPlans(args: {
   readonly db: Db;
   readonly bucket: string;
   readonly plans: readonly ResolvedManifestStoragePlan[];
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly branch: StorageManifestCacheBranch;
+  readonly entryKind: Extract<
+    StorageManifestEntryKind,
+    "compose" | "additional"
+  >;
   readonly stats?: StorageManifestBuildStats;
 }): Computed<Promise<readonly PreparedReadOnlyStorageEntry[]>> {
   return computed(async (get) => {
     const systemPlans = args.plans.filter(isSystemOwnedStoragePlan);
     args.stats?.recordSystemResolvedStorage(systemPlans.length);
+    const observation = storageManifestCacheObservation(args);
+    const dimensions = storageManifestMaterializationDimensions({
+      branch: args.branch,
+      entryKind: args.entryKind,
+      entryCount: args.plans.length,
+    });
 
     const systemUrlsByCacheKeyPromise = get(
       resolveSystemStoragePresignedUrls({
         db: args.db,
+        observation,
         requests: systemPlans.map((plan) => {
           return systemStoragePresignedUrlRequest({
             bucket: args.bucket,
@@ -2171,6 +2218,7 @@ function buildStorageEntriesFromPlans(args: {
     const workflowSkillUrlsByCacheKeyPromise = get(
       resolveWorkflowSkillStoragePresignedUrls({
         db: args.db,
+        observation,
         requests: args.plans
           .filter((plan) => {
             return (
@@ -2189,6 +2237,7 @@ function buildStorageEntriesFromPlans(args: {
     const readOnlyUrlsByCacheKeyPromise = get(
       resolveReadOnlyStoragePresignedUrls({
         db: args.db,
+        observation,
         requests: args.plans
           .filter((plan) => {
             return (
@@ -2205,35 +2254,58 @@ function buildStorageEntriesFromPlans(args: {
       }),
     );
 
-    const [systemUrls, workflowUrls, readOnlyUrls] = await joinAll([
-      systemUrlsByCacheKeyPromise,
-      workflowSkillUrlsByCacheKeyPromise,
-      readOnlyUrlsByCacheKeyPromise,
-    ]);
-    return args.plans.map((plan) => {
-      if (isSystemOwnedStoragePlan(plan)) {
-        return buildSystemStorageEntry({
+    const joinResults = async () => {
+      return await joinAll([
+        systemUrlsByCacheKeyPromise,
+        workflowSkillUrlsByCacheKeyPromise,
+        readOnlyUrlsByCacheKeyPromise,
+      ]);
+    };
+    const [systemUrls, workflowUrls, readOnlyUrls] =
+      args.plans.length === 0
+        ? await joinResults()
+        : await measureApiDispatchTiming(
+            args.timing,
+            "api_dispatch_prepare_storage_manifest_cache_join_results",
+            "nested",
+            joinResults,
+            dimensions,
+          );
+    const constructEntries = () => {
+      return args.plans.map((plan) => {
+        if (isSystemOwnedStoragePlan(plan)) {
+          return buildSystemStorageEntry({
+            bucket: args.bucket,
+            plan,
+            urlsByCacheKey: systemUrls,
+            stats: args.stats,
+          });
+        }
+        if (isWorkflowSkillStoragePlan(plan)) {
+          return buildWorkflowSkillStorageEntry({
+            bucket: args.bucket,
+            plan,
+            urlsByCacheKey: workflowUrls,
+            stats: args.stats,
+          });
+        }
+        return buildReadOnlyStorageEntry({
           bucket: args.bucket,
           plan,
-          urlsByCacheKey: systemUrls,
+          urlsByCacheKey: readOnlyUrls,
           stats: args.stats,
         });
-      }
-      if (isWorkflowSkillStoragePlan(plan)) {
-        return buildWorkflowSkillStorageEntry({
-          bucket: args.bucket,
-          plan,
-          urlsByCacheKey: workflowUrls,
-          stats: args.stats,
-        });
-      }
-      return buildReadOnlyStorageEntry({
-        bucket: args.bucket,
-        plan,
-        urlsByCacheKey: readOnlyUrls,
-        stats: args.stats,
       });
-    });
+    };
+    return args.plans.length === 0
+      ? constructEntries()
+      : measureApiDispatchTimingSync(
+          args.timing,
+          "api_dispatch_prepare_storage_manifest_construct_entries",
+          "nested",
+          constructEntries,
+          dimensions,
+        );
   });
 }
 
@@ -2697,6 +2769,7 @@ async function resolveStorageManifestEntryPlans(args: {
 
 function generatePreparedStorageEntriesFromPlans(args: {
   readonly input: BuildStorageManifestEntriesArgs;
+  readonly branch: StorageManifestCacheBranch;
   readonly phaseTimings: StorageManifestEntryPhaseTimings;
   readonly resolved: ResolvedStorageManifestEntryPlans;
 }): Computed<Promise<PreparedStorageEntries>> {
@@ -2723,6 +2796,9 @@ function generatePreparedStorageEntriesFromPlans(args: {
               db: args.input.db,
               bucket: args.input.bucket,
               plans: finalComposePlans,
+              timing: args.input.timing,
+              branch: args.branch,
+              entryKind: "compose",
               stats: args.input.stats,
             }),
           );
@@ -2733,6 +2809,9 @@ function generatePreparedStorageEntriesFromPlans(args: {
               db: args.input.db,
               bucket: args.input.bucket,
               plans: finalAdditionalPlans,
+              timing: args.input.timing,
+              branch: args.branch,
+              entryKind: "additional",
               stats: args.input.stats,
             }),
           );
@@ -2752,33 +2831,53 @@ function generatePreparedStorageEntriesFromPlans(args: {
             resolveReadOnlyStoragePresignedUrls({
               db: args.input.db,
               requests,
+              observation: storageManifestCacheObservation({
+                timing: args.input.timing,
+                branch: args.branch,
+                entryKind: "artifact",
+              }),
             }),
           );
-          return args.resolved.artifactInputs.map((input) => {
-            if (input.resolved.fileCount === 0) {
+          const constructEntries = () => {
+            return args.resolved.artifactInputs.map((input) => {
+              if (input.resolved.fileCount === 0) {
+                return buildPreparedWritebackStorageEntry({
+                  bucket: args.input.bucket,
+                  input,
+                  archiveUrl: undefined,
+                  cacheStatus: undefined,
+                  stats: args.input.stats,
+                });
+              }
+              const request = readOnlyStoragePresignedUrlRequest({
+                bucket: args.input.bucket,
+                resolved: input.resolved,
+              });
+              const result = urlsByCacheKey.get(
+                readOnlyStoragePresignedUrlCacheKey(request),
+              );
               return buildPreparedWritebackStorageEntry({
                 bucket: args.input.bucket,
                 input,
-                archiveUrl: undefined,
-                cacheStatus: undefined,
+                archiveUrl: result?.url,
+                cacheStatus: result?.status,
                 stats: args.input.stats,
               });
-            }
-            const request = readOnlyStoragePresignedUrlRequest({
-              bucket: args.input.bucket,
-              resolved: input.resolved,
             });
-            const result = urlsByCacheKey.get(
-              readOnlyStoragePresignedUrlCacheKey(request),
-            );
-            return buildPreparedWritebackStorageEntry({
-              bucket: args.input.bucket,
-              input,
-              archiveUrl: result?.url,
-              cacheStatus: result?.status,
-              stats: args.input.stats,
-            });
-          });
+          };
+          return args.resolved.artifactInputs.length === 0
+            ? constructEntries()
+            : measureApiDispatchTimingSync(
+                args.input.timing,
+                "api_dispatch_prepare_storage_manifest_construct_entries",
+                "nested",
+                constructEntries,
+                storageManifestMaterializationDimensions({
+                  branch: args.branch,
+                  entryKind: "artifact",
+                  entryCount: args.resolved.artifactInputs.length,
+                }),
+              );
         }),
       ],
     );
@@ -2795,6 +2894,7 @@ function generatePreparedStorageEntriesFromPlans(args: {
 
 async function resolveStorageEntries(
   input: BuildStorageManifestEntriesArgs,
+  branch: StorageManifestCacheBranch,
 ): Promise<ResolvedStorageEntries> {
   const phaseTimings = createStorageManifestEntryPhaseTimings(input);
   const resolved = await resolveStorageManifestEntryPlans({
@@ -2805,7 +2905,7 @@ async function resolveStorageEntries(
     phaseTimings.additional.flushResolve();
     phaseTimings.artifact.flushResolve();
   });
-  return { input, phaseTimings, resolved };
+  return { input, branch, phaseTimings, resolved };
 }
 
 function materializeStorageEntries(
@@ -2976,6 +3076,7 @@ function resolveEntriesFromPersistedStorageMounts(args: {
   readonly db: Db;
   readonly bucket: string;
   readonly mounts: readonly PersistedStorageMount[];
+  readonly branch: "captured";
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
 }): Computed<Promise<ResolvedStorageEntries>> {
@@ -2999,6 +3100,10 @@ async function resolveValidatedPersistedStorageMounts(args: {
   readonly bucket: string;
   readonly storageIndex: StorageIndex;
   readonly mounts: readonly PersistedStorageMount[];
+  readonly branch: Extract<
+    StorageManifestCacheBranch,
+    "session_writeback" | "captured"
+  >;
   readonly timing?: ApiDispatchTimingCollector;
   readonly stats?: StorageManifestBuildStats;
 }): Promise<ResolvedStorageEntries> {
@@ -3033,7 +3138,7 @@ async function resolveValidatedPersistedStorageMounts(args: {
       "artifact",
       resolved.artifactInputs.length,
     );
-    return { input, phaseTimings, resolved };
+    return { input, branch: args.branch, phaseTimings, resolved };
   })().finally(() => {
     phaseTimings.compose.flushResolve();
     phaseTimings.additional.flushResolve();
@@ -3050,7 +3155,10 @@ async function resolveSessionWritebackStorageMounts(args: {
   readonly stats?: StorageManifestBuildStats;
 }): Promise<ResolvedStorageEntries> {
   assertUniquePersistedMountPaths(args.mounts);
-  return await resolveValidatedPersistedStorageMounts(args);
+  return await resolveValidatedPersistedStorageMounts({
+    ...args,
+    branch: "session_writeback",
+  });
 }
 
 function combinePreparedStorageEntries<
@@ -3257,10 +3365,13 @@ function resolveStorageWithSessionOverlay(
       ],
       timing: args.timing,
     });
-    const requestedEntriesPromise = resolveStorageEntries({
-      ...request.input,
-      storageIndex,
-    });
+    const requestedEntriesPromise = resolveStorageEntries(
+      {
+        ...request.input,
+        storageIndex,
+      },
+      "requested",
+    );
     const sessionWritebackEntriesPromise =
       canonicalWritebackMounts.length === 0
         ? Promise.resolve(undefined)
@@ -3368,6 +3479,7 @@ export function resolveCapturedAgentRunStorage(args: {
       resolveEntriesFromPersistedStorageMounts({
         ...args,
         bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+        branch: "captured",
       }),
     );
     return {

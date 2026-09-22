@@ -333,7 +333,7 @@ describe("buildGenerationTemplatePrompt", () => {
     }
     expect(result.prompt).toContain(`Template: ${item.title} (${item.id})`);
     expect(result.prompt).toContain(
-      `Template source: okou-ai/vm0-skills@main:${item.sourcePath}`,
+      `Template source: okou-ai/okou-skills@main:${item.sourcePath}`,
     );
     expect(result.prompt).not.toContain("nexu-io/open-design");
     expect(result.prompt).toContain(

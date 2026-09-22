@@ -13,10 +13,10 @@ use sandbox_mock::{MockSandboxFactory, MockSandboxOverrides};
 use sha2::{Digest, Sha256};
 
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-use crate::ids::RunId;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
+use runner_types::ids::RunId;
 
 use super::*;
 

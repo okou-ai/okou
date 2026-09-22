@@ -14,6 +14,118 @@ import { hasCurrentVncMembership } from "./vnc-owner-lifecycle.service";
 import { currentRunnerVncAuthority } from "./runner-vnc-authority.service";
 import { isVncProfileCompatible } from "./vnc-configuration.utils";
 
+type CurrentVncAuthority = NonNullable<
+  Awaited<ReturnType<typeof currentRunnerVncAuthority>>
+>;
+
+type TransportSnapshot =
+  | { readonly type: "direct" }
+  | {
+      readonly type: "ssh";
+      readonly connectionId: string;
+      readonly generation: number;
+    };
+
+function storedTransportSnapshot(row: CurrentVncAuthority): TransportSnapshot {
+  if (row.transportType === "direct") {
+    if (row.sshConnectionId !== null || row.sshGeneration !== null) {
+      throw new Error("Direct VNC connection has an invalid SSH reference");
+    }
+    return { type: "direct" };
+  }
+  if (row.sshConnectionId === null) {
+    throw new Error("SSH VNC connection is missing its SSH reference");
+  }
+  if (row.sshGeneration === null) {
+    throw new Error("SSH VNC connection references a missing SSH connection");
+  }
+  return {
+    type: "ssh",
+    connectionId: row.sshConnectionId,
+    generation: row.sshGeneration,
+  };
+}
+
+function hasTransportAuthority(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+) {
+  return transport.type === "direct" || row.sshGrantAgentId !== null;
+}
+
+function sameTransport(left: TransportSnapshot, right: TransportSnapshot) {
+  return (
+    left.type === right.type &&
+    (left.type === "direct" ||
+      (right.type === "ssh" &&
+        left.connectionId === right.connectionId &&
+        left.generation === right.generation))
+  );
+}
+
+function matchesExpectedTransport(
+  current: TransportSnapshot,
+  expected: RunnerVncCheckRequest["expectedTransport"],
+) {
+  if (current.type === "direct") {
+    // Old Runner -> new API: pre-transport Runners omit this snapshot. Remove
+    // omission support after the replacement fleet and its two-hour Runs have
+    // drained; #35894 owns that rollout evidence and retirement gate.
+    return expected === undefined || expected.type === "direct";
+  }
+  return (
+    expected?.type === "ssh" &&
+    expected.connectionId === current.connectionId &&
+    expected.generation === current.generation
+  );
+}
+
+function selectedCapability(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+  profiles: RunnerVncResolveRequest["supportedProfiles"],
+) {
+  const matchesProfile = (
+    profile: RunnerVncResolveRequest["supportedProfiles"][number],
+  ) => {
+    return (
+      profile.authMethod === row.authMethod &&
+      profile.securityType === row.securityType
+    );
+  };
+  const explicit = profiles.find((profile) => {
+    return matchesProfile(profile) && profile.transportType === transport.type;
+  });
+  if (explicit || transport.type === "ssh") {
+    return explicit;
+  }
+  // Old Runner -> new API: pre-transport Runners advertise only the profile
+  // pair. Remove this legacy direct selection and response after the replacement
+  // fleet and its two-hour Runs have drained; #35894 owns the retirement gate.
+  return profiles.find((profile) => {
+    return matchesProfile(profile) && profile.transportType === undefined;
+  });
+}
+
+async function isSameCurrentHandoff(
+  current: Awaited<ReturnType<typeof currentRunnerVncAuthority>>,
+  initial: CurrentVncAuthority,
+  transport: TransportSnapshot,
+  clerk: ClerkClient,
+  signal: AbortSignal,
+) {
+  if (!current) {
+    return false;
+  }
+  const currentTransport = storedTransportSnapshot(current);
+  return (
+    hasTransportAuthority(current, currentTransport) &&
+    current.generation === initial.generation &&
+    sameTransport(currentTransport, transport) &&
+    (await hasCurrentVncMembership(clerk, current, signal))
+  );
+}
+
 export async function checkRunnerVnc(
   db: Db,
   clerk: ClerkClient,
@@ -27,9 +139,14 @@ export async function checkRunnerVnc(
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
   }
+  const transport = storedTransportSnapshot(row);
+  if (!hasTransportAuthority(row, transport)) {
+    return { outcome: "unavailable" };
+  }
   return {
     outcome:
-      row.generation === input.expectedGeneration
+      row.generation === input.expectedGeneration &&
+      matchesExpectedTransport(transport, input.expectedTransport)
         ? "valid"
         : "configuration_changed",
   };
@@ -45,21 +162,20 @@ export async function resolveRunnerVnc(
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
   }
-  if (row.transportType === "ssh") {
-    return { outcome: "unsupported_profile" };
-  }
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
   }
-  if (
-    !input.supportedProfiles.some((profile) => {
-      return (
-        profile.authMethod === row.authMethod &&
-        profile.securityType === row.securityType
-      );
-    })
-  ) {
+  const transport = storedTransportSnapshot(row);
+  const capability = selectedCapability(
+    row,
+    transport,
+    input.supportedProfiles,
+  );
+  if (!capability) {
     return { outcome: "unsupported_profile" };
+  }
+  if (!hasTransportAuthority(row, transport)) {
+    return { outcome: "unavailable" };
   }
   if (
     (row.trustMode === "system" && row.caBundle !== null) ||
@@ -103,19 +219,23 @@ export async function resolveRunnerVnc(
     );
   }
   const current = await currentRunnerVncAuthority(db, input, signal);
-  if (
-    !current ||
-    current.generation !== row.generation ||
-    !(await hasCurrentVncMembership(clerk, current, signal))
-  ) {
+  if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
     return { outcome: "unavailable" };
   }
-  return {
-    outcome: "resolved",
+  const resolved = {
     host: row.host,
     port: row.port,
     generation: row.generation,
     security: security.data,
     authentication: authentication.data,
+  };
+  if (capability.transportType === undefined) {
+    return { outcome: "resolved", ...resolved };
+  }
+  return {
+    outcome: "resolved_transport",
+    ...resolved,
+    serverName: row.x509ServerName ?? row.host,
+    transport,
   };
 }

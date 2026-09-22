@@ -4,7 +4,7 @@ use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootP
 
 use super::{ArchiveSource, ArtifactAction, StorageAction, build_storage_plan};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
-use crate::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
+use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
 
 fn storage(
     mount_path: &str,

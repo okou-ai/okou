@@ -87,7 +87,7 @@ const SLACK_REPLIES_URL = "https://slack.com/api/conversations.replies";
 
 /** The documented absolute phase and the cutoff that sits inside it. */
 const COLLECTION_PHASE_MS = 45_000;
-const NEW_READ_CUTOFF_MS = 40_000;
+const NEW_READ_CUTOFF_MS = 43_000;
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
@@ -1053,7 +1053,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     const pending = startCompose(fixture, { anchor: anchorFor(at) });
 
     await gmail.firstList;
-    // Past the 40-second cutoff and still inside the 45-second phase: the first
+    // Past the 43-second cutoff and still inside the 45-second phase: the first
     // wave may finish, and nothing new may start.
     mockNow(at + NEW_READ_CUTOFF_MS + 1000);
     held.resolve();
@@ -1213,87 +1213,6 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       ).toBeTruthy();
     },
   );
-
-  it.each([
-    { name: "before", offset: -1000, expired: false },
-    { name: "at", offset: 0, expired: true },
-    { name: "after", offset: 1, expired: true },
-  ])(
-    "decides the held final authority read $name the deadline",
-    async ({ offset, expired }) => {
-      const fixture = await setupOwner({ slack: true });
-      const at = freezeClock();
-      const deadlineAt = at + 10_000;
-      const initialAuthorityReady = createDeferredPromise<
-        ReturnType<typeof holdMorningBriefMembershipLookup>
-      >(context.signal);
-      let installed = false;
-      stubInstructionStorage(() => {
-        if (installed) {
-          return;
-        }
-        installed = true;
-        // The archive download occurs only after all source jobs have settled.
-        // This first hold therefore targets retained proof admission without a
-        // Clerk call ordinal.
-        initialAuthorityReady.resolve(
-          holdMorningBriefMembershipLookup(
-            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-            context.signal,
-          ),
-        );
-      });
-      await bdd.updateAgentInstructions(
-        fixture.actor,
-        fixture.agentId,
-        "Write in Polish.",
-      );
-      await seedMembership(fixture);
-      // Advance only after the source's own release proof. Language and the
-      // retained phase then share the four seconds left before the tighter
-      // outer reservation, without denying source admission at the cutoff.
-      stubSlackMessage(at, () => {
-        mockNow(at + 6000);
-      });
-      const pending = startCompose(fixture, {
-        anchor: anchorFor(at),
-        deadlineAt: new Date(deadlineAt).toISOString(),
-      });
-
-      const initialAuthority = await initialAuthorityReady.promise;
-      await initialAuthority.waitForArrival();
-      // Slack's retained proof has no Clerk membership lookup of its own. By
-      // installing the next exact lookup before releasing admission, this hold
-      // can only be the final owner proof after the remote source re-proof.
-      const finalAuthority = holdMorningBriefMembershipLookup(
-        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-        context.signal,
-      );
-      initialAuthority.release();
-      await finalAuthority.waitForArrival();
-      mockNow(deadlineAt + offset);
-      finalAuthority.release();
-      const response = await accept(pending, [200]);
-
-      if (!expired) {
-        expect(response.body.result).toBe("composed");
-        if (response.body.result === "composed") {
-          expect(
-            response.body.composition.language?.instructions,
-          ).toMatchObject({ state: "available" });
-        }
-        return;
-      }
-      expect(response.body.result).toBe("incomplete");
-      if (response.body.result !== "incomplete") {
-        return;
-      }
-      expect(response.body.reason).toBe("deadline-exceeded");
-      expect(response.body.detail).toContain("final authority check");
-      expect(response.body.sources.length).toBeGreaterThan(0);
-    },
-  );
-
   it.each([
     { name: "one millisecond before", offset: -1, expired: false },
     { name: "at", offset: 0, expired: true },
@@ -1305,21 +1224,16 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       const fixture = await setupOwner({ slack: true });
       const at = freezeClock();
       const deadlineAt = at + 10_000;
-      const initialAuthorityReady = createDeferredPromise<
-        ReturnType<typeof holdMorningBriefMembershipLookup>
-      >(context.signal);
-      let installed = false;
+      // The archive download sits between the language context's own head
+      // version read and the final instruction-version fence, so arming there
+      // catches the fence and only the fence. Nothing else can schedule this:
+      // every membership lookup now happens inside collection, so there is no
+      // post-collection Clerk call left to pause on.
+      const archiveRead = createDeferredPromise<void>(context.signal);
       stubInstructionStorage(() => {
-        if (installed) {
-          return;
+        if (!archiveRead.settled()) {
+          archiveRead.resolve();
         }
-        installed = true;
-        initialAuthorityReady.resolve(
-          holdMorningBriefMembershipLookup(
-            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-            context.signal,
-          ),
-        );
       });
       await bdd.updateAgentInstructions(
         fixture.actor,
@@ -1345,14 +1259,10 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
             deadlineAt: new Date(deadlineAt).toISOString(),
           });
 
-          const initialAuthority = await initialAuthorityReady.promise;
-          await initialAuthority.waitForArrival();
-          const finalAuthority = holdMorningBriefMembershipLookup(
-            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-            context.signal,
-          );
-          initialAuthority.release();
-          await finalAuthority.waitForArrival();
+          // The archive download sits between the language context's own head
+          // version read and the final instruction-version fence, so arming
+          // once it has been served catches that fence and only that fence.
+          await archiveRead.promise;
           versionRead.arm();
 
           // A different organization's storage write must also remain free
@@ -1376,7 +1286,6 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
           );
           expect(unrelated.body.content).toBe("Unrelated Agent instructions.");
 
-          finalAuthority.release();
           await versionRead.waitForArrival();
           mockNow(deadlineAt + offset);
           versionRead.release();

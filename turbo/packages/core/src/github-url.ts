@@ -146,7 +146,7 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
 /** Default owner for bare skill name resolution */
 export const DEFAULT_SKILLS_OWNER = "okou-ai";
 /** Default repository for bare skill name resolution */
-export const DEFAULT_SKILLS_REPO = "vm0-skills";
+export const DEFAULT_SKILLS_REPO = "okou-skills";
 /** Default branch for bare skill name resolution */
 export const DEFAULT_SKILLS_BRANCH = "main";
 
@@ -155,7 +155,7 @@ export const DEFAULT_SKILLS_BRANCH = "main";
  *
  * Supports two formats:
  * - **Bare name** (no `/` and no `https://`): e.g. `"slack"` →
- *   `https://github.com/okou-ai/vm0-skills/tree/main/slack`
+ *   `https://github.com/okou-ai/okou-skills/tree/main/slack`
  * - **Full GitHub URL**: validated by `parseGitHubUrl()` and returned as-is.
  *
  * @param input - Bare skill name or full GitHub URL

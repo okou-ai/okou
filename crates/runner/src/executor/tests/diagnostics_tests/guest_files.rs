@@ -11,20 +11,20 @@ use super::super::super::diagnostics::{
 };
 use super::super::super::{SMALL_GUEST_FILE_MAX_BYTES, guest_runtime_path};
 use super::super::support::sandbox_read_file_error;
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 #[tokio::test]
 async fn read_guest_error_file_returns_content() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some(b"checkpoint error: disk full".to_vec())));
-    let msg = read_guest_error_file(&sandbox, RunId::nil()).await;
+    let msg = read_guest_error_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
     assert_eq!(msg.as_deref(), Some("checkpoint error: disk full"));
     let calls = sandbox.read_file_calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(
         calls[0].path,
         guest_runtime_path(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             guest_contracts::runtime_paths::checkpoint_error_file
         )
         .unwrap()
@@ -36,7 +36,7 @@ async fn read_guest_error_file_returns_content() {
 async fn read_guest_error_file_returns_none_on_missing_file() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(None));
-    let msg = read_guest_error_file(&sandbox, RunId::nil()).await;
+    let msg = read_guest_error_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
     assert!(msg.is_none());
 }
 
@@ -44,7 +44,7 @@ async fn read_guest_error_file_returns_none_on_missing_file() {
 async fn read_guest_error_file_returns_none_on_empty_content() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some(b"   \n  ".to_vec())));
-    let msg = read_guest_error_file(&sandbox, RunId::nil()).await;
+    let msg = read_guest_error_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
     assert!(msg.is_none());
 }
 
@@ -52,7 +52,7 @@ async fn read_guest_error_file_returns_none_on_empty_content() {
 async fn read_guest_error_file_returns_none_on_read_error() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Err(sandbox_read_file_error("guest read failed")));
-    let msg = read_guest_error_file(&sandbox, RunId::nil()).await;
+    let msg = read_guest_error_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
     assert!(msg.is_none());
 }
 
@@ -61,7 +61,8 @@ async fn read_guest_cli_agent_session_id_returns_trimmed_content_from_runtime_pa
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some(b" session-abc \n".to_vec())));
 
-    let session_id = read_guest_cli_agent_session_id(&sandbox, RunId::nil()).await;
+    let session_id =
+        read_guest_cli_agent_session_id(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert_eq!(session_id.as_deref(), Some("session-abc"));
     let calls = sandbox.read_file_calls();
@@ -69,7 +70,7 @@ async fn read_guest_cli_agent_session_id_returns_trimmed_content_from_runtime_pa
     assert_eq!(
         calls[0].path,
         guest_runtime_path(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             guest_contracts::runtime_paths::session_id_file
         )
         .unwrap()
@@ -82,7 +83,7 @@ async fn read_guest_cli_agent_session_id_returns_none_on_missing_or_empty_file()
     let missing = MockSandbox::new("test");
     missing.push_read_file_result(Ok(None));
     assert!(
-        read_guest_cli_agent_session_id(&missing, RunId::nil())
+        read_guest_cli_agent_session_id(&missing, RunId::from(uuid::Uuid::nil()))
             .await
             .is_none()
     );
@@ -90,7 +91,7 @@ async fn read_guest_cli_agent_session_id_returns_none_on_missing_or_empty_file()
     let empty = MockSandbox::new("test");
     empty.push_read_file_result(Ok(Some(b" \n ".to_vec())));
     assert!(
-        read_guest_cli_agent_session_id(&empty, RunId::nil())
+        read_guest_cli_agent_session_id(&empty, RunId::from(uuid::Uuid::nil()))
             .await
             .is_none()
     );
@@ -101,7 +102,8 @@ async fn read_guest_cli_agent_session_id_rejects_invalid_content() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some(b" ../session \n".to_vec())));
 
-    let session_id = read_guest_cli_agent_session_id(&sandbox, RunId::nil()).await;
+    let session_id =
+        read_guest_cli_agent_session_id(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(session_id.is_none());
 }
@@ -111,7 +113,8 @@ async fn read_guest_cli_agent_session_id_rejects_overlong_content() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some("a".repeat(129).into_bytes())));
 
-    let session_id = read_guest_cli_agent_session_id(&sandbox, RunId::nil()).await;
+    let session_id =
+        read_guest_cli_agent_session_id(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(session_id.is_none());
 }
@@ -130,7 +133,7 @@ async fn read_guest_failure_diagnostic_file_returns_valid_diagnostic() {
     .with_session_history_status(SessionHistoryStatus::Present);
     sandbox.push_read_file_result(Ok(Some(serde_json::to_vec(&diagnostic).unwrap())));
 
-    let read = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let read = read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert_eq!(read, Some(diagnostic));
     let calls = sandbox.read_file_calls();
@@ -138,7 +141,7 @@ async fn read_guest_failure_diagnostic_file_returns_valid_diagnostic() {
     assert_eq!(
         calls[0].path,
         guest_runtime_path(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             guest_contracts::runtime_paths::failure_diagnostic_file
         )
         .unwrap()
@@ -158,7 +161,7 @@ async fn read_guest_failure_diagnostic_file_accepts_unknown_schema_field() {
     json["schemaVersion"] = serde_json::json!(999);
     sandbox.push_read_file_result(Ok(Some(serde_json::to_vec(&json).unwrap())));
 
-    let read = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let read = read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert_eq!(read, Some(diagnostic));
 }
@@ -199,7 +202,7 @@ async fn read_guest_failure_diagnostic_file_accepts_unknown_event_attempt_field(
         serde_json::json!(true);
     sandbox.push_read_file_result(Ok(Some(serde_json::to_vec(&json).unwrap())));
 
-    let read = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let read = read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert_eq!(read, Some(diagnostic));
 }
@@ -209,7 +212,8 @@ async fn read_guest_failure_diagnostic_file_returns_none_on_missing_file() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(None));
 
-    let diagnostic = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let diagnostic =
+        read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(diagnostic.is_none());
 }
@@ -219,7 +223,8 @@ async fn read_guest_failure_diagnostic_file_returns_none_on_empty_content() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some(b" \n\t".to_vec())));
 
-    let diagnostic = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let diagnostic =
+        read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(diagnostic.is_none());
 }
@@ -229,7 +234,8 @@ async fn read_guest_failure_diagnostic_file_returns_none_on_malformed_json() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Ok(Some(b"{not-json".to_vec())));
 
-    let diagnostic = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let diagnostic =
+        read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(diagnostic.is_none());
 }
@@ -239,7 +245,8 @@ async fn read_guest_failure_diagnostic_file_returns_none_on_read_error() {
     let sandbox = MockSandbox::new("test");
     sandbox.push_read_file_result(Err(sandbox_read_file_error("guest read failed")));
 
-    let diagnostic = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let diagnostic =
+        read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(diagnostic.is_none());
 }
@@ -252,7 +259,8 @@ async fn read_guest_failure_diagnostic_file_returns_none_on_oversized_content() 
         SMALL_GUEST_FILE_MAX_BYTES as usize + 1
     ])));
 
-    let diagnostic = read_guest_failure_diagnostic_file(&sandbox, RunId::nil()).await;
+    let diagnostic =
+        read_guest_failure_diagnostic_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
 
     assert!(diagnostic.is_none());
 }

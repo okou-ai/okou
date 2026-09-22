@@ -17,11 +17,6 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 
 import {
-  morningBriefProvenAuthority,
-  type MorningBriefSourceAuthorityProof,
-  type MorningBriefRetainedSourceDescriptor,
-} from "./morning-brief-source-authority";
-import {
   morningBriefItemFacts,
   type MorningBriefSourceBranch,
   type MorningBriefSourceCollection,
@@ -185,38 +180,5 @@ export function normalizeMorningBriefGithub(
     // side of them, so the remainder stays explicitly unknown instead of
     // becoming a total nothing observed.
     omittedBySource: { known: 0, unknownRemaining: bundle.limits.length > 0 },
-  };
-}
-
-/**
- * The credential-free descriptor a later phase revalidates GitHub against.
- *
- * `accountRef` is the canonical external identity pinned by the shared reader,
- * while `containers` names the repositories that contributed, so a later check
- * can ask about the real account and scope of this input. The provider login
- * remains on the normalized item; it is not a substitute for the connector
- * identity stored in the selected account row.
- */
-export function morningBriefGithubDescriptor(args: {
-  /** What this source's reads were actually authorized by, or null. */
-  readonly proof: MorningBriefSourceAuthorityProof | null;
-  readonly membershipId: string;
-  readonly agentId: string;
-  readonly capturedAt: Date;
-  readonly contributed: boolean;
-  readonly containers: readonly string[];
-}): MorningBriefRetainedSourceDescriptor {
-  const proven = morningBriefProvenAuthority(args.proof);
-  return {
-    source: "github",
-    connectionId: proven.connectionId,
-    accountRef: args.proof?.accountRef ?? null,
-    scopeDigest: proven.scopeDigest,
-    endpoints: proven.endpoints,
-    membershipId: args.membershipId,
-    agentId: args.agentId,
-    capturedAt: args.capturedAt.toISOString(),
-    contributed: args.contributed,
-    containers: args.containers,
   };
 }

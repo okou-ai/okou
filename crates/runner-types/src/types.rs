@@ -12,11 +12,11 @@ use crate::firewall_hostname_policy::{raw_host_from_authority, raw_url_authority
 use crate::ids::RunId;
 use crate::storage_manifest::StorageManifest;
 
-pub(crate) const MAX_HELD_SANDBOX_STATES: usize = 1024;
-pub(crate) const MAX_HELD_WORKSPACE_STATES: usize = 1024;
-pub(crate) const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
-pub(crate) const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
-pub(crate) const WORKSPACE_AFFINITY_VERSION: u8 = 1;
+pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
+pub const MAX_HELD_WORKSPACE_STATES: usize = 1024;
+pub const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
+pub const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
+pub const WORKSPACE_AFFINITY_VERSION: u8 = 1;
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -45,7 +45,7 @@ pub struct Job {
     pub runner_preference: Option<serde_json::Value>,
 }
 
-pub(crate) fn reuse_key_kind(reuse_key: &str) -> &'static str {
+pub fn reuse_key_kind(reuse_key: &str) -> &'static str {
     if reuse_key.starts_with("thread:") {
         "thread"
     } else {
@@ -54,7 +54,7 @@ pub(crate) fn reuse_key_kind(reuse_key: &str) -> &'static str {
 }
 
 impl Job {
-    pub(crate) fn reuse_key(&self) -> Option<&str> {
+    pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
     }
 }
@@ -84,7 +84,7 @@ pub struct ExecutionContext {
     pub vars: Option<HashMap<String, String>>,
     pub sandbox_token: String,
     #[serde(default)]
-    pub(crate) storage_manifest: Option<StorageManifest>,
+    pub storage_manifest: Option<StorageManifest>,
     #[serde(default)]
     pub environment: Option<HashMap<String, String>>,
     /// Trusted API-authored agent environment.
@@ -215,7 +215,7 @@ impl Firewall {
     /// schema, and payload, then owns base-variable resolution, final
     /// credentialed-destination and host-policy checks, matcher compilation,
     /// and request-time enforcement.
-    pub(crate) fn validate_for_cache(&self) -> Result<(), String> {
+    pub fn validate_for_cache(&self) -> Result<(), String> {
         self.validate_shape()?;
         for (index, api) in self.apis.iter().enumerate() {
             api.validate_for_cache()
@@ -224,7 +224,7 @@ impl Firewall {
         Ok(())
     }
 
-    pub(crate) fn validate_for_connector_runtime(&self) -> Result<(), String> {
+    pub fn validate_for_connector_runtime(&self) -> Result<(), String> {
         self.validate_shape()?;
         let mut api_ids = HashSet::new();
         for (index, api) in self.apis.iter().enumerate() {
@@ -292,13 +292,14 @@ impl FirewallApi {
         }
         validate_firewall_base_for_cache(&self.base)?;
         self.auth.validate_for_cache()?;
+        let allow_aws_predicates = self.auth.aws_sigv4.is_some();
         if let Some(host_policy) = &self.host_policy {
             host_policy.validate_for_cache()?;
         }
         if let Some(permissions) = &self.permissions {
             let mut seen_names = HashSet::new();
             for permission in permissions {
-                permission.validate_for_cache()?;
+                permission.validate_for_cache(allow_aws_predicates)?;
                 if !seen_names.insert(permission.name.as_str()) {
                     return Err(format!(
                         "permission name {:?} must be unique per api",
@@ -321,7 +322,7 @@ pub struct FirewallPermission {
 }
 
 impl FirewallPermission {
-    fn validate_for_cache(&self) -> Result<(), String> {
+    fn validate_for_cache(&self, allow_aws_predicates: bool) -> Result<(), String> {
         if self.name.is_empty() {
             return Err("permission name must be non-empty".to_string());
         }
@@ -341,7 +342,7 @@ impl FirewallPermission {
             ));
         }
         for rule in &self.rules {
-            validate_firewall_permission_rule(rule)
+            validate_firewall_permission_rule(rule, allow_aws_predicates)
                 .map_err(|e| format!("permission {:?} rule {:?}: {e}", self.name, rule))?;
         }
         Ok(())
@@ -351,6 +352,7 @@ impl FirewallPermission {
 const VALID_FIREWALL_RULE_METHODS: &[&str] = &[
     "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "ANY",
 ];
+const AWS_RULE_SEPARATOR: &str = " AWS ";
 
 struct FirewallRuleSegmentParam<'a> {
     name: &'a str,
@@ -361,16 +363,17 @@ struct FirewallRuleSegmentParam<'a> {
 
 const DNS_LABEL_MAX_LENGTH: usize = 63;
 
-fn validate_firewall_permission_rule(rule: &str) -> Result<(), String> {
-    let Some((method, path)) = rule.split_once(' ') else {
+fn validate_firewall_permission_rule(rule: &str, allow_aws_predicates: bool) -> Result<(), String> {
+    let Some((method, remainder)) = rule.split_once(' ') else {
         return Err("must be \"METHOD /path\"".to_string());
     };
-    if method.is_empty() || path.is_empty() {
+    if method.is_empty() || remainder.is_empty() {
         return Err("must be \"METHOD /path\"".to_string());
     }
     if !VALID_FIREWALL_RULE_METHODS.contains(&method) {
         return Err(format!("unknown method {method:?}"));
     }
+    let path = validate_firewall_rule_remainder(remainder, allow_aws_predicates)?;
     if !path.starts_with('/') {
         return Err("path must start with \"/\"".to_string());
     }
@@ -407,6 +410,108 @@ fn validate_firewall_permission_rule(rule: &str) -> Result<(), String> {
             return Err(format!(
                 "greedy parameter {:?} cannot be combined with a literal prefix or suffix",
                 param.name
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_firewall_rule_remainder(
+    remainder: &str,
+    allow_aws_predicates: bool,
+) -> Result<&str, String> {
+    let Some((raw_path, predicates)) = remainder.split_once(AWS_RULE_SEPARATOR) else {
+        return Ok(remainder);
+    };
+    if predicates.contains(AWS_RULE_SEPARATOR) {
+        return Err("AWS predicates may appear only once".to_string());
+    }
+    validate_firewall_aws_predicates(predicates)?;
+    if !allow_aws_predicates {
+        return Err("AWS predicates require api.auth.awsSigv4".to_string());
+    }
+
+    let Some((path, query_requirements)) = raw_path.split_once('?') else {
+        return Ok(raw_path);
+    };
+    validate_firewall_aws_query_requirements(query_requirements)?;
+    Ok(path)
+}
+
+fn validate_firewall_aws_predicates(predicates: &str) -> Result<(), String> {
+    if predicates.is_empty() {
+        return Err("AWS predicates are required after \"AWS\"".to_string());
+    }
+
+    let mut seen = HashSet::new();
+    for predicate in predicates.split(' ') {
+        if predicate.is_empty() {
+            return Err("AWS predicates must be separated by a single space".to_string());
+        }
+        let Some((key, value)) = predicate.split_once('=') else {
+            return Err(format!("AWS predicate {predicate:?} must be key=value"));
+        };
+        if key.is_empty() || value.is_empty() || value.contains('=') {
+            return Err(format!("AWS predicate {predicate:?} must be key=value"));
+        }
+        if !matches!(key, "sigv4" | "action" | "target") {
+            return Err(format!("unsupported AWS predicate {key:?}"));
+        }
+        if !seen.insert(key) {
+            return Err(format!("duplicate AWS predicate {key:?}"));
+        }
+        if !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+        {
+            return Err(format!("AWS predicate {key:?} has an invalid value"));
+        }
+    }
+
+    if !seen.contains("sigv4") {
+        return Err("AWS predicate \"sigv4\" is required".to_string());
+    }
+    if seen.contains("action") && seen.contains("target") {
+        return Err("AWS predicates \"action\" and \"target\" cannot be combined".to_string());
+    }
+    Ok(())
+}
+
+fn validate_firewall_aws_query_requirements(requirements: &str) -> Result<(), String> {
+    if requirements.is_empty() {
+        return Err("AWS query requirements must not be empty".to_string());
+    }
+
+    let mut seen = HashSet::new();
+    for requirement in requirements.split('&') {
+        if requirement.is_empty() {
+            return Err("AWS query requirements must not contain empty entries".to_string());
+        }
+        let (key, value) = requirement
+            .split_once('=')
+            .map_or((requirement, None), |(key, value)| (key, Some(value)));
+        if key.is_empty()
+            || !key.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-')
+            })
+        {
+            return Err(format!(
+                "AWS query requirement {requirement:?} has an invalid key"
+            ));
+        }
+        if !seen.insert(key) {
+            return Err(format!("duplicate AWS query requirement {key:?}"));
+        }
+        if let Some(value) = value
+            && value != "*"
+            && (value.is_empty()
+                || !value.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric()
+                        || matches!(byte, b'.' | b'_' | b'~' | b':' | b'{' | b'}' | b'-')
+                }))
+        {
+            return Err(format!(
+                "AWS query requirement {requirement:?} has an invalid value"
             ));
         }
     }
@@ -1336,7 +1441,7 @@ pub enum ConnectorRuntimeTargetRegistration {
 }
 
 impl ConnectorRuntimeTargetRegistration {
-    pub(crate) fn target(&self) -> ConnectorRuntimeTarget {
+    pub fn target(&self) -> ConnectorRuntimeTarget {
         match self {
             Self::Builtin { connector_slug, .. } => ConnectorRuntimeTarget::Builtin {
                 connector_slug: connector_slug.clone(),
@@ -1350,14 +1455,14 @@ impl ConnectorRuntimeTargetRegistration {
         }
     }
 
-    pub(crate) fn custom_base_url_vars(&self) -> Option<&HashMap<String, String>> {
+    pub fn custom_base_url_vars(&self) -> Option<&HashMap<String, String>> {
         match self {
             Self::Custom { base_url_vars, .. } => Some(base_url_vars),
             Self::Builtin { .. } => None,
         }
     }
 
-    pub(crate) fn source_id(&self) -> Option<&str> {
+    pub fn source_id(&self) -> Option<&str> {
         match self {
             Self::Builtin { source_id, .. } | Self::Custom { source_id, .. } => {
                 source_id.as_deref()
@@ -1367,7 +1472,7 @@ impl ConnectorRuntimeTargetRegistration {
 }
 
 impl ConnectorRuntimeTarget {
-    pub(crate) fn log_identity(&self) -> String {
+    pub fn log_identity(&self) -> String {
         match self {
             Self::Builtin { connector_slug } => format!("builtin:{connector_slug}"),
             Self::Custom {
@@ -1537,7 +1642,7 @@ where
 }
 
 impl ExecutionContext {
-    pub(crate) fn reuse_key(&self) -> Option<&str> {
+    pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
     }
 
@@ -1777,27 +1882,25 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn firewall_base_url_validation_matches_shared_contract() {
-        let mismatches: Vec<String> =
-            crate::test_fixtures::firewall_base_url_contract::firewall_base_url_validation_cases()
-                .into_iter()
-                .filter_map(|test_case| {
-                    let result = validate_firewall_base_for_cache(&test_case.base);
-                    (result.is_ok() != test_case.expected_valid).then(|| {
-                        format!(
-                            "shared case {:?} produced unexpected result for {:?}: {:?}",
-                            test_case.name,
-                            test_case.base,
-                            result.err()
-                        )
-                    })
-                })
-                .collect();
+    fn firewall_validation_rejects_aws_rule_without_aws_auth() {
+        let firewall: Firewall = serde_json::from_value(serde_json::json!({
+            "name": "aws",
+            "apis": [{
+                "base": "https://ec2.us-east-1.amazonaws.com",
+                "auth": {"headers": {}},
+                "permissions": [{
+                    "name": "ec2:AcceptAddressTransfer",
+                    "rules": ["GET / AWS sigv4=ec2 action=AcceptAddressTransfer"]
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let error = firewall.validate_for_cache().unwrap_err();
 
         assert!(
-            mismatches.is_empty(),
-            "firewall base URL contract mismatches:\n{}",
-            mismatches.join("\n")
+            error.contains("AWS predicates require api.auth.awsSigv4"),
+            "unexpected error: {error}"
         );
     }
 

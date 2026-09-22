@@ -5,10 +5,6 @@ mod authority;
 mod cache;
 mod engine;
 mod files;
-#[allow(
-    dead_code,
-    reason = "the crate-private stream is consumed by the follow-up VNC composition in #35892"
-)]
 mod forwarding;
 mod io;
 mod keys;
@@ -32,8 +28,11 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcessIdentity};
+use runner_types::ids::RunId;
+
+use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
+pub(crate) use forwarding::DirectTcpIpStream;
 use io::GuestIo;
 use network::{Network, PublicNetwork};
 

@@ -50,8 +50,8 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::restored_session_identity::{RestoredSessionIdentity, RestoredSessionIdentityFields};
+use runner_types::ids::RunId;
 
 use super::fs::{
     remove_workspace_cache_path_if_exists, secure_workspace_cache_publication_file,

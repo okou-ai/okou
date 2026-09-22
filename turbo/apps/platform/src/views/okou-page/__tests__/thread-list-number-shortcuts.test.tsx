@@ -348,7 +348,7 @@ test("Number filtered threads and give the search dialog priority over the list"
   });
   click(fastButton("Open chat list menu"));
   const unreadOnly = queryAllByRoleFast("menuitem").find((item) => {
-    return item.textContent?.trim() === "Unread only";
+    return item.textContent?.trim().startsWith("Unread");
   });
   if (!unreadOnly) {
     throw new Error("Expected unread filter");

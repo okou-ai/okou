@@ -140,6 +140,225 @@ export type AccountOwnershipEntry =
  */
 export type NonOwnershipReason = "provider_identity" | "covered_by_parent";
 
+/** One join step from the rows selected so far up to `parent`.
+ *
+ * `childColumns` name columns on the table below this hop — the descendant
+ * itself for the first hop, the previous hop's `parent` afterwards. The two
+ * lists are positional pairs, exactly as a catalogue foreign key's are.
+ */
+export interface DescendantReachHop {
+  readonly childColumns: readonly string[];
+  readonly parent: string;
+  readonly parentColumns: readonly string[];
+}
+
+/** How a descendant with no catalogue foreign key to a declared parent is
+ * nevertheless reached, and why that join key is the right one.
+ *
+ * A missing foreign key is usually deliberate: a durable receipt, a retryable
+ * cleanup intent or a projection has to outlive the row it came from, so the
+ * schema declines the constraint. The column still holds the parent's id. This
+ * is the declaration that says so, and `basis` is why — a reach without a
+ * reason is a guess about which rows belong to the account.
+ *
+ * The path may be longer than one hop. A catalogue key that lands on a table
+ * which is itself a descendant, rather than on a declared parent, is reachable
+ * only by continuing up to the root that names the account.
+ */
+export interface DescendantReach {
+  readonly path: readonly DescendantReachHop[];
+  readonly basis: string;
+}
+
+/** The longest declared path. Nothing needs more than this today, and a bound
+ * keeps a mistaken declaration from generating an unbounded nest of
+ * subqueries on a path that ends in a `DELETE`.
+ */
+const MAX_REACH_HOPS = 4;
+
+/** Explicit sweep selectors for descendants the catalogue cannot join.
+ *
+ * Every entry is measured against the live schema by the relational plan: the
+ * guard below only checks that the declaration is well formed and that the
+ * columns exist, and the sweep is what actually uses it.
+ */
+export const DESCENDANT_REACH: Readonly<
+  Record<string, readonly DescendantReach[]>
+> = {
+  active_input_delivery_items: [
+    {
+      path: [
+        {
+          childColumns: ["delivery_id"],
+          parent: "active_input_deliveries",
+          parentColumns: ["id"],
+        },
+        {
+          childColumns: ["chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The catalogue key lands on `active_input_deliveries`, which is a `chat_threads` descendant rather than a declared parent, so the join continues through the delivery row that carries the thread.",
+    },
+  ],
+  browser_session_resize_states: [
+    {
+      path: [
+        {
+          childColumns: ["provider_session_id"],
+          parent: "browser_session_instances",
+          parentColumns: ["provider_session_id"],
+        },
+        {
+          childColumns: ["browser_session_id"],
+          parent: "browser_sessions",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The catalogue key lands on `browser_session_instances`, a `browser_sessions` descendant rather than a declared parent. `browser_session_id` is the instance's session reference, and it is nullable for rows written by the previous browser-ID API, so the thread reach below covers the rest.",
+    },
+    {
+      path: [
+        {
+          childColumns: ["provider_session_id"],
+          parent: "browser_session_instances",
+          parentColumns: ["provider_session_id"],
+        },
+        {
+          childColumns: ["chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "`browser_session_instances.chat_thread_id` is a non-null immutable attribution key the schema keeps precisely because provider cleanup outlives either parent, so it reaches every instance including those whose nullable session reference was never written.",
+    },
+  ],
+  browser_session_screenshot_deletions: [
+    {
+      path: [
+        {
+          childColumns: ["chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The schema deliberately declines a thread foreign key so object cleanup stays retryable after the thread is deleted. The non-null column is still the thread's id.",
+    },
+  ],
+  browser_session_screenshots: [
+    {
+      path: [
+        {
+          childColumns: ["chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The row deliberately outlives chat-thread deletion so the reconciler can remove the final screenshot object, so no foreign key exists. Its primary key is the thread's id.",
+    },
+  ],
+  chat_agent_run_context: [
+    {
+      path: [
+        {
+          childColumns: ["source_chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The source ids intentionally carry no foreign keys because the provenance must survive deletion of the live source run, thread or agent. `source_chat_thread_id` is non-null and is the account's thread.",
+    },
+  ],
+  chat_event_search_message_watermarks: [
+    {
+      path: [
+        {
+          childColumns: ["chat_thread_id"],
+          parent: "chat_threads",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The durable search projection does not depend on a `chat_events` row and takes no foreign key, but its primary key is the thread's id.",
+    },
+  ],
+  official_automation_result_email_claims: [
+    {
+      path: [
+        {
+          childColumns: ["run_id"],
+          parent: "agent_runs",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The dedupe identity deliberately has no foreign keys so a terminal callback stays redrivable after its run, automation and outbox row are gone. `run_id` is non-null and is half of the primary key.",
+    },
+    {
+      path: [
+        {
+          childColumns: ["workflow_automation_id"],
+          parent: "workflow_automations",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "`workflow_automation_id` is the other half of the same non-null primary key, so a claim whose run row was already removed is still reached through the automation that produced it.",
+    },
+  ],
+  stripe_workflow_deliveries: [
+    {
+      path: [
+        {
+          childColumns: ["automation_id"],
+          parent: "workflow_automations",
+          parentColumns: ["id"],
+        },
+      ],
+      basis:
+        "The column is deliberately not a foreign key so a pending delivery survives automation deletion long enough to record a terminal state. It is non-null and is the automation's id.",
+    },
+  ],
+};
+
+/** A descendant whose account attribution does not exist in the schema.
+ *
+ * This is not a relaxation. The rows hold account data, no column and no
+ * reachable join identifies whose, and inventing one would either leave the
+ * account's rows behind or delete another account's. Declaring the gap keeps
+ * `assertRelationalSweepComplete` refusing a completion claim, names the
+ * schema change that would close it, and stops the table from looking merely
+ * forgotten.
+ */
+export interface UnattributableDescendant {
+  readonly basis: string;
+  readonly remedy: string;
+}
+
+export const UNATTRIBUTABLE_DESCENDANTS: Readonly<
+  Record<string, UnattributableDescendant>
+> = {
+  email_outbox: {
+    basis:
+      "`source_run_id` and `source_workflow_automation_id` are the only producer references, they are nullable, and the check constraint makes them all-or-nothing. The credit low-balance alert, both user-export writers and the Morning Brief delivery writer set neither, so those rows carry a recipient address and a rendered message body with no reachable owner.",
+    remedy:
+      "An additive account column written by every producer. A join cannot substitute for it: a recipient address is not an account identity.",
+  },
+  feishu_chat_ingress: {
+    basis:
+      "The row is keyed by the organization installation and the provider event id, and the only account identity is the sender inside the opaque `payload` text. Sweeping by `installation_id` would delete every other member's ingress in the same installation.",
+    remedy:
+      "An additive sender or connection column written at admission, joinable to `feishu_org_connections` within the installation.",
+  },
+};
+
 /** Vocabulary columns that are deliberately not their table's sweep key.
  *
  * A vocabulary column must appear either in its entry's declared ownership or
@@ -248,7 +467,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   browser_session_resize_states: {
     coverage: "user_descendant",
-    parents: ["browser_sessions"],
+    parents: ["browser_sessions", "chat_threads"],
   },
   browser_session_screenshot_deletions: {
     coverage: "user_descendant",
@@ -384,9 +603,13 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
+  // Declared unattributable below: no column names the account, and the two
+  // producer references are nullable. `morning_brief_deliveries` was listed as
+  // a parent while no column ever carried a delivery id; Morning Brief email
+  // is linked by `source_workflow_automation_id` like any other automation.
   email_outbox: {
     coverage: "user_descendant",
-    parents: ["agent_runs", "workflow_automations", "morning_brief_deliveries"],
+    parents: ["agent_runs", "workflow_automations"],
   },
   email_suppressions: { coverage: "not_account_scoped" },
   export_jobs: { coverage: "user_root", ownership: ["user_id"] },
@@ -396,10 +619,11 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   feishu_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
   feishu_org_connections: { coverage: "user_root", ownership: ["user_id"] },
-  feishu_org_events: {
-    coverage: "user_descendant",
-    parents: ["feishu_org_connections"],
-  },
+  // A provider retry receipt keyed by the organization installation and the
+  // Feishu event id. It carries no account identity and no message content,
+  // and its only foreign key is to an `organization_owned` installation, so
+  // erasing one member must not discard the installation's deduplication.
+  feishu_org_events: { coverage: "not_account_scoped" },
   feishu_org_installations: {
     coverage: "organization_owned",
     association: ["owner_user_id"],
@@ -503,9 +727,14 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_root",
     ownership: ["user_id"],
   },
+  // A platform provider-cost fact. The schema states it carries no
+  // organization, user, Agent, thread, occurrence or source identity and no
+  // prompt or generated text, and that it must survive owner deletion: once
+  // the owner-scoped generation row is gone the `attempt_id` linkage is gone
+  // with it and what remains is an unattributable cost.
   morning_brief_platform_generation_receipts: {
-    coverage: "user_descendant",
-    parents: ["morning_brief_generations"],
+    coverage: "billing_preserved",
+    ownership: [],
   },
   morning_brief_rollout: { coverage: "not_account_scoped" },
   morning_brief_schedule_claims: {
@@ -597,9 +826,12 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     ownership: ["user_id"],
   },
   pi_resource_snapshots: { coverage: "not_account_scoped" },
+  // `pi_resource_version_indexes_version_fk` points at `storage_versions`,
+  // which is itself a root. The previous declaration named the grandparent, so
+  // the catalogue could not match it to a declared parent.
   pi_resource_version_indexes: {
     coverage: "user_descendant",
-    parents: ["storages"],
+    parents: ["storage_versions"],
   },
   pi_stable_context_artifact_resources: {
     coverage: "user_descendant",
@@ -812,7 +1044,11 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_root",
     ownership: ["owner_user_id", "created_by"],
   },
-  x_resource_reads: { coverage: "user_descendant", parents: ["agent_runs"] },
+  // Shared daily read deduplication for the single X billing account. The row
+  // is `(utc_day, resource_type, resource_id)`: an X post or user id, never an
+  // Okou account, and the schema declines a run or account key precisely so
+  // erasing one account cannot reset another customer's deduplication.
+  x_resource_reads: { coverage: "not_account_scoped" },
 };
 
 export interface OwnershipTable {
@@ -896,9 +1132,100 @@ function assertColumnsDeclared(
   }
 }
 
+/** Fails when a declared reach does not describe a join the schema can make.
+ *
+ * The guard checks the declaration's shape and its columns. Whether the join
+ * actually reaches the account is the relational plan's job, against the live
+ * catalogue — this is what stops a typo or a renamed column from becoming a
+ * `DELETE` matched on a column that is not there.
+ */
+function assertReachDeclared(
+  table: string,
+  entry: AccountOwnershipEntry,
+  columns: ReadonlyMap<string, ReadonlySet<string>>,
+  reaches: readonly DescendantReach[],
+): void {
+  if (entry.coverage !== "user_descendant") {
+    fail("reach_not_a_descendant", table);
+  }
+  for (const reach of reaches) {
+    if (reach.basis.length === 0) {
+      fail("reach_basis_missing", table);
+    }
+    if (reach.path.length === 0 || reach.path.length > MAX_REACH_HOPS) {
+      fail("reach_path_invalid", table);
+    }
+    const last = reach.path[reach.path.length - 1];
+    if (!last || !entry.parents.includes(last.parent)) {
+      fail("reach_parent_undeclared", `${table}->${last?.parent ?? ""}`);
+    }
+    let below = table;
+    for (const hop of reach.path) {
+      if (
+        hop.childColumns.length === 0 ||
+        hop.childColumns.length !== hop.parentColumns.length
+      ) {
+        fail("reach_columns_unpaired", `${table}->${hop.parent}`);
+      }
+      const belowColumns = columns.get(below);
+      const parentColumns = columns.get(hop.parent);
+      if (!belowColumns || !parentColumns) {
+        fail("reach_unknown_table", `${table}->${hop.parent}`);
+      }
+      for (const column of hop.childColumns) {
+        if (!belowColumns.has(column)) {
+          fail("reach_column_missing", `${below}.${column}`);
+        }
+      }
+      for (const column of hop.parentColumns) {
+        if (!parentColumns.has(column)) {
+          fail("reach_column_missing", `${hop.parent}.${column}`);
+        }
+      }
+      below = hop.parent;
+    }
+  }
+}
+
+/** Checks every declared reach and every declared unattributable descendant.
+ *
+ * Split from the coverage guard so each stays one reviewable rule rather than
+ * one function that happens to run both.
+ */
+function assertDescendantReachDeclared(
+  columns: ReadonlyMap<string, ReadonlySet<string>>,
+): void {
+  for (const [name, reaches] of Object.entries(DESCENDANT_REACH)) {
+    const entry = ACCOUNT_OWNERSHIP_INVENTORY[name];
+    if (!entry) {
+      fail("reach_unknown_table", name);
+    }
+    if (name in UNATTRIBUTABLE_DESCENDANTS) {
+      // A table is reached or it is declared unreachable, never both: the two
+      // declarations would disagree about whether its rows can be deleted.
+      fail("reach_unattributable_conflict", name);
+    }
+    assertReachDeclared(name, entry, columns, reaches);
+  }
+  for (const [name, declaration] of Object.entries(
+    UNATTRIBUTABLE_DESCENDANTS,
+  )) {
+    if (ACCOUNT_OWNERSHIP_INVENTORY[name]?.coverage !== "user_descendant") {
+      fail("unattributable_not_a_descendant", name);
+    }
+    if (declaration.basis.length === 0 || declaration.remedy.length === 0) {
+      fail("unattributable_basis_missing", name);
+    }
+  }
+}
 export function assertOwnershipInventoryCoverage(
   tables: readonly OwnershipTable[],
 ): void {
+  const columns = new Map<string, ReadonlySet<string>>(
+    tables.map((table) => {
+      return [table.name, new Set(table.columns)];
+    }),
+  );
   const present = new Set<string>();
   for (const table of tables) {
     const entry = ACCOUNT_OWNERSHIP_INVENTORY[table.name];
@@ -932,6 +1259,7 @@ export function assertOwnershipInventoryCoverage(
       }
     }
   }
+  assertDescendantReachDeclared(columns);
 }
 
 /** The application schema as the guard sees it: the barrel plus the modules it

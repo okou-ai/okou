@@ -8,8 +8,8 @@ use super::super::support::{
 use super::blank_session_history::history_context;
 
 use crate::paths::RunnerPaths;
-use crate::types::{SandboxReuseResult, WorkspaceReuseResult};
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
 
 #[tokio::test(start_paused = true)]
 async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution() {

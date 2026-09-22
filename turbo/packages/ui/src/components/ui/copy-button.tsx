@@ -106,7 +106,7 @@ const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
     return (
       <TooltipProvider>
         <Tooltip open={copied}>
-          <TooltipTrigger asChild>{button}</TooltipTrigger>
+          <TooltipTrigger render={button} />
           <TooltipContent>
             <p>Copied!</p>
           </TooltipContent>

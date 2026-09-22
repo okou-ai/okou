@@ -65,6 +65,8 @@ fn guest_cli_flags_match_inventory() {
         .get_arguments()
         .filter(|arg| arg.get_value_parser().type_id() == TypeId::of::<PathBuf>())
         .filter_map(|arg| arg.get_long())
+        // The CLI artifact is a versioned bundle, not a guest binary.
+        .filter(|long| *long != "okou-cli-artifact")
         .map(str::to_owned)
         .collect();
     let expected: BTreeSet<_> = guest_definitions()
@@ -97,6 +99,39 @@ async fn explicit_guest_paths_resolve_every_inventory_entry() {
             guest.definition.name
         );
     }
+}
+
+#[test]
+fn build_args_reject_okou_cli_artifact_with_warm_rootfs_cache() {
+    let mut args = build_args();
+    args.extend([
+        "--okou-cli-artifact".to_string(),
+        "/tmp/okou-cli".to_string(),
+        "--warm-rootfs-cache".to_string(),
+    ]);
+
+    let error = <TestBuildCli as clap::Parser>::try_parse_from(args)
+        .err()
+        .expect("combined flags should fail");
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+}
+
+#[test]
+fn build_args_parse_okou_cli_artifact_dir() {
+    let mut args = build_args();
+    args.extend([
+        "--okou-cli-artifact".to_string(),
+        "/tmp/okou-cli".to_string(),
+    ]);
+
+    let cli = <TestBuildCli as clap::Parser>::try_parse_from(args).unwrap();
+
+    assert_eq!(
+        cli.args.okou_cli_artifact.as_deref(),
+        Some(std::path::Path::new("/tmp/okou-cli"))
+    );
+    assert_eq!(BuildMode::from_args(&cli.args), BuildMode::FullImage);
 }
 
 #[test]

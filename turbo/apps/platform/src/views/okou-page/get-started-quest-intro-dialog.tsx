@@ -184,6 +184,7 @@ function IntroLayout({
   onSecondary,
   confirmLabel,
   onConfirm,
+  confirmIsEscape = false,
   children,
 }: {
   title: string;
@@ -195,6 +196,13 @@ function IntroLayout({
   onSecondary: () => void;
   confirmLabel: string;
   onConfirm: () => void;
+  /**
+   * Whether confirm is the way *out* of the step rather than the way through
+   * it. A step whose real action lives in its own body has no primary to give,
+   * and dressing its escape hatch as one makes the loudest control on the
+   * screen the one that leaves.
+   */
+  confirmIsEscape?: boolean;
   /** Only the quests that hand something over draw a body under the figure. */
   children?: ReactNode;
 }) {
@@ -222,17 +230,42 @@ function IntroLayout({
         </Badge>
       )}
       {children}
-      <DialogFooter className="mt-auto">
-        <Button type="button" variant="outline" onClick={onSecondary}>
-          {secondaryLabel}
-        </Button>
-        <Button
-          type="button"
-          onClick={onConfirm}
-          data-testid="quest-intro-confirm"
-        >
-          {confirmLabel}
-        </Button>
+      {/* `sm:items-center` so a link and a button on the same row share a
+          baseline: the link has no control height of its own, and a stretched
+          text link draws its hover underline at the bottom of a 36px box. */}
+      <DialogFooter className="mt-auto sm:items-center">
+        {confirmIsEscape ? (
+          <>
+            {/* First in DOM order so it is first in the tab ring and, on the
+                narrow `flex-col-reverse` footer, ends up under the button
+                that is now the only one carrying a fill. */}
+            <Button
+              type="button"
+              variant="link"
+              onClick={onConfirm}
+              data-testid="quest-intro-confirm"
+              className="px-0 text-muted-foreground hover:text-foreground sm:mr-auto"
+            >
+              {confirmLabel}
+            </Button>
+            <Button type="button" variant="outline" onClick={onSecondary}>
+              {secondaryLabel}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button type="button" variant="outline" onClick={onSecondary}>
+              {secondaryLabel}
+            </Button>
+            <Button
+              type="button"
+              onClick={onConfirm}
+              data-testid="quest-intro-confirm"
+            >
+              {confirmLabel}
+            </Button>
+          </>
+        )}
       </DialogFooter>
     </>
   );
@@ -314,6 +347,11 @@ function ConnectorIntro({
         return $.chat.agentPage.getStarted.intro.connector.confirm;
       })}
       onConfirm={onConfirm}
+      // The step is finished by pressing a tile, and a tile is not a button
+      // shape -- so the only control with a fill said `Browse all connectors`,
+      // which is the exit. The catalog below is the action; leaving it is a
+      // link.
+      confirmIsEscape
     >
       {/* The connectors themselves are the illustration: every one of them
           connects in one press, which is the claim the abstract figure was

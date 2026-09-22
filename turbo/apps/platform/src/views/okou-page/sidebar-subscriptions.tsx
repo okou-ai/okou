@@ -228,27 +228,29 @@ function AccountMenuSubscriptionUsageBar({
         {windowLabel}
       </span>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            role="progressbar"
-            aria-label={t(
-              ($) => {
-                return $.settings.accountMenu.subscriptions.usageRemaining;
-              },
-              { provider: providerLabel, window: windowLabel },
-            )}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={remainingPercent ?? undefined}
-            className={`block h-1.5 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
-          >
+        <TooltipTrigger
+          render={
             <span
-              className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
-              style={{ width: `${width}%` }}
-            />
-          </span>
-        </TooltipTrigger>
+              tabIndex={0}
+              role="progressbar"
+              aria-label={t(
+                ($) => {
+                  return $.settings.accountMenu.subscriptions.usageRemaining;
+                },
+                { provider: providerLabel, window: windowLabel },
+              )}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={remainingPercent ?? undefined}
+              className={`block h-1.5 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
+            >
+              <span
+                className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
+                style={{ width: `${width}%` }}
+              />
+            </span>
+          }
+        />
         <TooltipContent side="right" align="center" className="max-w-56">
           {reset === null ? (
             <p className="text-xs">

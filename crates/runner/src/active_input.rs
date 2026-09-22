@@ -15,9 +15,9 @@ use api_contracts::generated::{
 };
 
 use crate::error::RunnerResult;
-use crate::ids::RunId;
 use crate::local_queue::{ActiveInputEntry, LocalQueue};
 use crate::provider::ApiClient;
+use runner_types::ids::RunId;
 
 /// Shared active-input payload limit across API, vsock, and guest process-control IPC.
 pub(crate) const ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES: usize =

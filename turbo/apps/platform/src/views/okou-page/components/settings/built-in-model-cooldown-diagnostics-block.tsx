@@ -170,14 +170,16 @@ function CooldownCancellationDialogBody({
         })}
       </p>
       <DialogFooter>
-        <DialogClose asChild>
-          <Button type="button" variant="outline" disabled={cancelling}>
-            {t(($) => {
-              return $.settings.preferences.debug.builtInModelCooldown
-                .keepCooldown;
-            })}
-          </Button>
-        </DialogClose>
+        <DialogClose
+          render={
+            <Button type="button" variant="outline" disabled={cancelling}>
+              {t(($) => {
+                return $.settings.preferences.debug.builtInModelCooldown
+                  .keepCooldown;
+              })}
+            </Button>
+          }
+        />
         <Button
           type="button"
           variant="destructive"
@@ -215,21 +217,23 @@ function CooldownCancellationControl({
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 border-destructive/40 px-2.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-          disabled={loading}
-        >
-          <CircleX className="h-3.5 w-3.5" />
-          {t(($) => {
-            return $.settings.preferences.debug.builtInModelCooldown
-              .cancelAction;
-          })}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 border-destructive/40 px-2.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={loading}
+          >
+            <CircleX className="h-3.5 w-3.5" />
+            {t(($) => {
+              return $.settings.preferences.debug.builtInModelCooldown
+                .cancelAction;
+            })}
+          </Button>
+        }
+      />
       <CooldownCancellationDialogBody
         cooldown={cooldown}
         cancelling={cancelling}

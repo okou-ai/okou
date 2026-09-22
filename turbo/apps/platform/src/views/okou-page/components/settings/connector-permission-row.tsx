@@ -61,22 +61,24 @@ export function ConnectorPermissionRow({
           {showManage ? (
             <TooltipProvider delayDuration={200}>
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    onClick={onManage}
-                    variant="quiet"
-                    size="icon-xs"
-                    aria-label={t(
-                      ($) => {
-                        return $.connectors.card.managePermissionsFor;
-                      },
-                      { connector: label },
-                    )}
-                  >
-                    <SlidersHorizontal size={15} />
-                  </Button>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      onClick={onManage}
+                      variant="quiet"
+                      size="icon-xs"
+                      aria-label={t(
+                        ($) => {
+                          return $.connectors.card.managePermissionsFor;
+                        },
+                        { connector: label },
+                      )}
+                    >
+                      <SlidersHorizontal size={15} />
+                    </Button>
+                  }
+                />
                 <TooltipContent side="top">
                   <p className="text-xs">
                     {t(($) => {

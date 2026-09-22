@@ -24,17 +24,33 @@ import {
 export const MORNING_BRIEF_COLLECTION_PHASE_MS = 45_000;
 
 /**
- * Held back for the final authority checks and the guarded commit.
+ * Held back from reading so a started read can still be finalized.
+ *
+ * It funds the work between the last source answering and the COMMIT that
+ * makes the occurrence durable: the language-context read, the member locale
+ * read, request assembly and the instruction-version fence. It does **not**
+ * fund an authority check — every provider request is authorized before it is
+ * issued, and nothing re-asks afterwards.
  *
  * It is a reserve, not a grace period: a source read that has not started by
  * the cutoff does not start at all, because a read that finishes after the
- * commit window has nowhere to be finalized.
+ * commit window has nowhere to be finalized. Collapsing it to zero is what
+ * makes a read admitted at 44.9 s settle the attempt as `deadline-exceeded`
+ * instead of reporting the per-source facts it actually established.
+ *
+ * The size is bounded by the composition suite, which requires a read
+ * finishing one second past the cutoff to still settle as
+ * `incomplete-coverage`: the attempt has to be alive at `cutoff + 1000`, so
+ * anything at or below 1000 ms reclassifies it. Measured against
+ * `will not call an exhausted collection a quiet morning`, 1000 ms fails and
+ * 1001 ms passes. This is the smallest round value above that boundary, which
+ * keeps the classification off a one-millisecond margin.
  */
-export const MORNING_BRIEF_FINAL_CHECK_RESERVE_MS = 5000;
+export const MORNING_BRIEF_COMMIT_RESERVE_MS = 2000;
 
 /** No new provider read is admitted at or after this point in the phase. */
 export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
-  MORNING_BRIEF_COLLECTION_PHASE_MS - MORNING_BRIEF_FINAL_CHECK_RESERVE_MS;
+  MORNING_BRIEF_COLLECTION_PHASE_MS - MORNING_BRIEF_COMMIT_RESERVE_MS;
 
 /**
  * Held back inside **one source's** own budget so it can stop by its own clock.
@@ -48,8 +64,8 @@ export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
  * already returned successfully.
  *
  * So the last stretch of every source budget belongs to finishing, not to
- * reading. New provider reads stop here; the release proof, the release fence
- * and the bundle projection spend what is left, and the source hands back the
+ * reading. New provider reads stop here; the bundle projection that turns a
+ * read into a collection spends what is left, and the source hands back the
  * partial evidence it really holds.
  */
 export const MORNING_BRIEF_SOURCE_READ_RESERVE_MS = 3000;

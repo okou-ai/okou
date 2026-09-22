@@ -1725,6 +1725,45 @@
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
       "upgradeWorkspace": "अपने वर्कस्पेस को अपग्रेड करें"
     },
+    "browserInput": {
+      "applyFailed": "जानकारी जोड़ी नहीं जा सकी। आपकी प्रविष्टियाँ अभी भी यहाँ हैं। फिर से प्रयास करें।",
+      "applying": "जानकारी जोड़ी जा रही है",
+      "applyingDescription": "ब्राउज़र इस अनुरोध को पूरा कर रहा है।",
+      "callbackFailed": "एजेंट को सूचना नहीं मिली। जारी रखें पर फिर से प्रयास करें।",
+      "cancel": "रद्द करें",
+      "cancelFailed": "अनुरोध रद्द नहीं किया जा सका। फिर से प्रयास करें।",
+      "cancelled": "अनुरोध रद्द किया गया",
+      "cancelledDescription": "कोई जानकारी नहीं जोड़ी गई। एजेंट को सूचित करने के लिए जारी रखें।",
+      "cancelling": "रद्द किया जा रहा है…",
+      "completed": "जानकारी जोड़ दी गई",
+      "completedDescription": "जानकारी ब्राउज़र में जोड़ दी गई। एजेंट को सूचित करने के लिए जारी रखें।",
+      "continue": "जारी रखें",
+      "continuing": "जारी है…",
+      "delivered": "एजेंट को सूचित किया गया",
+      "deliveredDescription": "एजेंट अब जारी रख सकता है।",
+      "description": "इस साइट के लिए माँगी गई जानकारी दर्ज करें।",
+      "documentTitle": "ब्राउज़र इनपुट",
+      "expired": "अनुरोध की अवधि समाप्त",
+      "expiredDescription": "ब्राउज़र बंद हो गया है या यह अनुरोध अब सक्रिय नहीं है।",
+      "loadFailed": "यह अनुरोध लोड नहीं हो सका",
+      "loadFailedDescription": "कुछ देर में फिर से प्रयास करें।",
+      "loading": "ब्राउज़र इनपुट लोड हो रहा है",
+      "loadingDescription": "इस अनुरोध की जाँच हो रही है…",
+      "open": "जानकारी दर्ज करें",
+      "optional": "(वैकल्पिक)",
+      "required": "(आवश्यक)",
+      "retry": "फिर से प्रयास करें",
+      "site": "साइट",
+      "stale": "फ़ील्ड बदल गए हैं",
+      "staleDescription": "एजेंट से नया अनुरोध बनाने के लिए कहें।",
+      "submit": "ब्राउज़र में जोड़ें",
+      "submitting": "जोड़ा जा रहा है…",
+      "title": "ब्राउज़र में जानकारी दर्ज करें",
+      "unavailable": "अनुरोध उपलब्ध नहीं है",
+      "unavailableDescription": "यह ब्राउज़र इनपुट अनुरोध अमान्य है या अब उपलब्ध नहीं है।",
+      "uncertain": "ब्राउज़र जाँचें",
+      "uncertainDescription": "ब्राउज़र को जानकारी मिल गई हो सकती है। दोबारा प्रयास करने से पहले एजेंट से जाँच करने को कहें।"
+    },
     "cards": {
       "viewDetails": "विवरण देखें"
     },
@@ -2106,6 +2145,7 @@
       "allCaughtUp": "सब पूरा हो गया",
       "allChats": "सभी चैट",
       "archive": "चैट आर्काइव करें",
+      "archived": "आर्काइव की गई",
       "chatsWith": "{{agentName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
       "delete": "चैट हटाएं",
@@ -2117,6 +2157,7 @@
       "movePinDown": "नीचे ले जाएँ",
       "movePinUp": "ऊपर ले जाएँ",
       "newChatWith": "{{agentName}} के साथ नई चैट",
+      "noArchived": "कोई आर्काइव की गई चैट नहीं",
       "noUnread": "कोई अपठित चैट नहीं",
       "openChatMenu": "चैट मेनू खोलें",
       "openListMenu": "चैट सूची मेनू खोलें",
@@ -2125,13 +2166,12 @@
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
       "showAllChats": "सभी चैट दिखाएं",
-      "showArchived": "आर्काइव की गई चैट दिखाएं",
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
       "unarchive": "आर्काइव से निकालें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
-      "unreadOnly": "केवल अपठित"
+      "unreadOnly": "अपठित"
     },
     "startCards": {
       "kinds": {
@@ -3387,13 +3427,24 @@
         "connectTitle": "Lark से कनेक्ट करें"
       },
       "slack": {
+        "accountInUseDescription": "यह Slack खाता किसी अन्य Okou खाते से जुड़ा है। दोबारा कोशिश करने से पहले वहां से इसका कनेक्शन हटाएं।",
+        "accountInUseTitle": "Slack खाता पहले से जुड़ा है",
+        "accountMismatchDescription": "आपका Okou खाता अभी यहां Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
+        "accountMismatchDescriptionWorkspace": "आपका Okou खाता अभी {{workspace}} में Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
+        "accountMismatchTitle": "Slack खाता बदलें?",
         "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
         "connectTitle": "Slack से कनेक्ट करें",
+        "errorFallback": "Slack कनेक्शन की जांच या शुरुआत नहीं हो सकी। फिर से कोशिश करें।",
         "invalidDescription": "यह पेज Slack कनेक्ट लिंक से खोला जाना है।",
+        "keepAccount": "{{account}} बनाए रखें",
         "open": "Slack खोलें",
         "successDescription": "किसी भी चैनल में इंस्टॉल किए गए बॉट का उल्लेख करें या चैट शुरू करने के लिए DM भेजें।",
         "successDescriptionWorkspace": "आप {{workspace}} से कनेक्ट हैं. किसी भी चैनल में इंस्टॉल किए गए बॉट का उल्लेख करें या चैट शुरू करने के लिए DM भेजें।",
-        "successTitle": "Slack से जुड़ा!"
+        "successTitle": "Slack से जुड़ा!",
+        "switchAccount": "{{account}} पर स्विच करें",
+        "workspaceMismatchDescription": "यह Slack वर्कस्पेस आपके वर्तमान Okou संगठन के लिए उपलब्ध नहीं है। संगठन बदलें या किसी एडमिन से मदद मांगें।",
+        "workspaceMismatchDescriptionNamed": "आपका वर्तमान Okou संगठन {{workspace}} से जुड़ा है। संगठन बदलें या इस Slack वर्कस्पेस को जोड़ने से पहले किसी एडमिन से इसे अनइंस्टॉल करने के लिए कहें।",
+        "workspaceMismatchTitle": "Slack वर्कस्पेस मेल नहीं खाता"
       },
       "teams": {
         "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
@@ -5804,8 +5855,7 @@
     "status": {
       "availableNow": "अभी उपलब्ध",
       "inUse_one": "{{limit}} स्लॉट का {{active}} उपयोग में है",
-      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है",
-      "waitingForSandbox": "Sandbox की प्रतीक्षा"
+      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
     },
     "tiers": {
       "custom": "कस्टम",
@@ -6453,16 +6503,15 @@
         }
       },
       "emailSubscription": {
-        "description": "आपके सभी कार्यस्थानों में ब्रीफ़ और रिमाइंडर सहित वैकल्पिक ईमेल।",
+        "description": "ईमेल से ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
+        "descriptionWithEmail": "{{email}} पर ब्रीफ़, रिमाइंडर और अन्य कार्यस्थान अपडेट प्राप्त करें।",
         "loading": "ईमेल सदस्यता जाँची जा रही है…",
         "retryMessage": "आपकी ईमेल सदस्यता सहेजी या लोड नहीं की जा सकी। फिर से कोशिश करें।",
         "saving": "सहेजा जा रहा है…",
         "sectionTitle": "ईमेल सदस्यताएँ",
-        "subscribed": "सदस्यता चालू है",
-        "title": "Okou से ईमेल प्राप्त करें",
+        "title": "ईमेल अपडेट",
         "unavailable": "ईमेल उपलब्ध नहीं है",
-        "unavailableDescription": "खाता और सुरक्षा में अपना ईमेल जाँचें या डिलीवरी ब्लॉक होने पर सहायता से संपर्क करें।",
-        "unsubscribed": "सदस्यता बंद है"
+        "unavailableDescription": "खाता और सुरक्षा में अपना ईमेल जाँचें या डिलीवरी ब्लॉक होने पर सहायता से संपर्क करें।"
       },
       "language": {
         "description": "{{brandName}} इंटरफ़ेस के लिए अपनी पसंदीदा भाषा चुनें",
@@ -6488,13 +6537,11 @@
         "chatOnly": "केवल चैट",
         "checkEmailSubscription": "डिलीवरी की स्थिति के लिए ऊपर ईमेल सदस्यता देखें।",
         "conflict": "इंस्टॉलेशन स्थिति असंगत होने के कारण Morning Brief अस्थायी रूप से उपलब्ध नहीं है। मिलान पूरा होने पर फिर से कोशिश करें।",
-        "description": "इस कार्यस्थान की दैनिक प्राथमिकताएँ अपने समय क्षेत्र में सुबह 7 बजे प्राप्त करें।",
-        "emailOff": "ईमेल बंद है। आपका ब्रीफ़ चैट में दिखता रहेगा।",
-        "emailWhenReady": "ब्रीफ़ तैयार होने पर आपको ईमेल मिलेगा।",
+        "description": "अपने समय क्षेत्र में सुबह 7:00 बजे दैनिक प्राथमिकताएँ प्राप्त करें।",
         "loading": "Morning Brief सेटिंग लोड हो रही हैं...",
         "missingDefaultAgent": "Morning Brief चालू करने से पहले उपयोग योग्य डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
-        "nextBrief": "अगला ब्रीफ़ {{date}} ({{timezone}})",
+        "nextBrief": "अगला ब्रीफ़ {{date}}",
         "paused": "रुका हुआ",
         "preparationFailed": "सेटअप अपने आप फिर से आज़माया जाएगा। आप अभी भी दोबारा कोशिश कर सकते हैं।",
         "preparing": "आपका पहला मॉर्निंग ब्रीफ़ तैयार हो रहा है। आप इसे कभी भी बंद कर सकते हैं।",

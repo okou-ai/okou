@@ -410,11 +410,13 @@ function CreateAgentAvatarPreview() {
               />
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
-                      <Wand size={10} />
-                    </span>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
+                        <Wand size={10} />
+                      </span>
+                    }
+                  />
                   <TooltipContent side="bottom">
                     <p className="text-xs">
                       {t(($) => {
@@ -735,11 +737,13 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
             {showCreator ? (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="block w-fit max-w-full truncate text-sm font-medium text-foreground underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
-                      {displayName}
-                    </span>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <span className="block w-fit max-w-full truncate text-sm font-medium text-foreground underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
+                        {displayName}
+                      </span>
+                    }
+                  />
                   <TooltipContent
                     side="bottom"
                     align="start"
