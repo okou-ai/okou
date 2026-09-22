@@ -1,86 +1,7 @@
-//! Conservative containment proof shared by the existing diagnostic emitters.
+//! Cgroup attribution shared by the existing diagnostic emitters.
 
-use super::{EvidenceStatus, MemorySnapshot, OomEvidence};
+use super::{EvidenceStatus, OomEvidence};
 use crate::diagnostics::WorkloadResourceLimitDiagnostic;
-
-/// Which guard refused to treat observed OOM kills as contained tool OOM.
-///
-/// The proof is a chain of independent rejection conditions, so the boolean it
-/// collapses into cannot say where it stopped. Each variant names one guard and
-/// maps to a stable snake_case token carrying no evidence content, so unproven
-/// records remain groupable by cause instead of by one fused label.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContainmentRejection {
-    /// The operation is not the controlled Agent process.
-    ProcessClassNotAgent,
-    /// The operation is not supervised.
-    LifecycleNotSupervised,
-    /// The terminal diagnostic carried no evidence at all.
-    EvidenceAbsent,
-    /// The evidence belongs to a different exec route than the reporting one.
-    OperationSequenceMismatch,
-    /// No native runtime progress was observed for this operation.
-    RuntimeProgressAbsent,
-    /// The sample time is not a parsable timestamp.
-    SampledAtUnparsable,
-    /// The operation-owned cgroup path carries no exec sequence.
-    OperationSequenceAbsent,
-    /// The operation identity is not a UUID.
-    OperationIdNotUuid,
-    /// The Guest boot identity is absent or is not a UUID.
-    GuestBootIdInvalid,
-    /// The monotonic initialization boundary is missing.
-    StartedBoottimeAbsent,
-    /// Native progress is newer than the sample it must precede.
-    ProgressAfterSample,
-    /// Incidents were dropped past the retention cap, so evidence is partial.
-    IncidentsDropped,
-    /// No incident was retained.
-    IncidentsEmpty,
-    /// Two sampled groups share one cgroup inode.
-    DuplicateGroupInode,
-    /// The kernel reader state cannot be supplemented by counters.
-    KernelStatusUnusable,
-    /// The sampled groups failed their identity or counter validation.
-    GroupsInvalid,
-    /// The workload kill counter is unknown or records no kill.
-    WorkloadOomKillAbsent,
-    /// The tools subtree does not account for every workload kill.
-    ToolsOomKillMismatch,
-    /// Counters moved after the last retained incident witnessed them.
-    ContinuationWitnessStale,
-    /// A retained incident failed its own identity, ordering, counter, or
-    /// kernel-record checks.
-    IncidentUnproven,
-}
-
-impl ContainmentRejection {
-    /// Stable, bounded token for logs and aggregation.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ContainmentRejection::ProcessClassNotAgent => "process_class_not_agent",
-            ContainmentRejection::LifecycleNotSupervised => "lifecycle_not_supervised",
-            ContainmentRejection::EvidenceAbsent => "evidence_absent",
-            ContainmentRejection::OperationSequenceMismatch => "operation_sequence_mismatch",
-            ContainmentRejection::RuntimeProgressAbsent => "runtime_progress_absent",
-            ContainmentRejection::SampledAtUnparsable => "sampled_at_unparsable",
-            ContainmentRejection::OperationSequenceAbsent => "operation_sequence_absent",
-            ContainmentRejection::OperationIdNotUuid => "operation_id_not_uuid",
-            ContainmentRejection::GuestBootIdInvalid => "guest_boot_id_invalid",
-            ContainmentRejection::StartedBoottimeAbsent => "started_boottime_absent",
-            ContainmentRejection::ProgressAfterSample => "progress_after_sample",
-            ContainmentRejection::IncidentsDropped => "incidents_dropped",
-            ContainmentRejection::IncidentsEmpty => "incidents_empty",
-            ContainmentRejection::DuplicateGroupInode => "duplicate_group_inode",
-            ContainmentRejection::KernelStatusUnusable => "kernel_status_unusable",
-            ContainmentRejection::GroupsInvalid => "groups_invalid",
-            ContainmentRejection::WorkloadOomKillAbsent => "workload_oom_kill_absent",
-            ContainmentRejection::ToolsOomKillMismatch => "tools_oom_kill_mismatch",
-            ContainmentRejection::ContinuationWitnessStale => "continuation_witness_stale",
-            ContainmentRejection::IncidentUnproven => "incident_unproven",
-        }
-    }
-}
 
 impl OomEvidence {
     /// Sequence of the operation-owned cgroup, for correlation with its exec route.
@@ -96,248 +17,46 @@ impl OomEvidence {
         parts.next().is_none().then_some(sequence)
     }
 
-    /// Positive native progress plus complete operation counters prove that the
-    /// OOM kills were confined to managed tool leaves. Kernel truncation alone
-    /// is harmless only when these independent, complete counters suffice.
-    /// Neither process names nor exit codes participate in this proof.
+    /// Whether retained guest kernel records name a victim in the agent's own
+    /// containment domain.
     ///
-    /// The guards are independent rejection conditions, so the first one that
-    /// refuses is reported. Their order decides which guard is named, never
-    /// whether the evidence is rejected; keep it stable so production records
-    /// partition consistently.
-    pub fn containment_rejection(&self) -> Option<ContainmentRejection> {
-        let Some(progress) = self.runtime_progress_at else {
-            return Some(ContainmentRejection::RuntimeProgressAbsent);
-        };
-        let Some(sampled) = timestamp_ms(&self.sampled_at) else {
-            return Some(ContainmentRejection::SampledAtUnparsable);
-        };
-        // Operation identity first, then sampling order, then the shape of the
-        // retained evidence, then source completeness: each guard is read only
-        // once the identity it depends on is established.
-        let guards = [
-            (
-                self.operation_sequence().is_none(),
-                ContainmentRejection::OperationSequenceAbsent,
-            ),
-            (
-                uuid::Uuid::parse_str(&self.operation_id).is_err(),
-                ContainmentRejection::OperationIdNotUuid,
-            ),
-            (
-                self.guest_boot_id
-                    .as_ref()
-                    .is_none_or(|id| uuid::Uuid::parse_str(id).is_err()),
-                ContainmentRejection::GuestBootIdInvalid,
-            ),
-            (
-                self.started_boottime_us == 0,
-                ContainmentRejection::StartedBoottimeAbsent,
-            ),
-            (
-                progress > sampled,
-                ContainmentRejection::ProgressAfterSample,
-            ),
-            (
-                self.dropped_incidents != 0,
-                ContainmentRejection::IncidentsDropped,
-            ),
-            (
-                self.incidents.is_empty(),
-                ContainmentRejection::IncidentsEmpty,
-            ),
-            (
-                self.groups.iter().enumerate().any(|(index, group)| {
-                    self.groups
-                        .iter()
-                        .take(index)
-                        .any(|other| other.inode == group.inode)
-                }),
-                ContainmentRejection::DuplicateGroupInode,
-            ),
-            (
-                !usable_kernel_status(self.kernel_status),
-                ContainmentRejection::KernelStatusUnusable,
-            ),
-            (
-                !valid_groups(&self.groups, &self.groups),
-                ContainmentRejection::GroupsInvalid,
-            ),
-        ];
-        for (rejected, rejection) in guards {
-            if rejected {
-                return Some(rejection);
-            }
-        }
-        let total = self.groups[0].delta.oom_kill;
-        if !total.is_some_and(|count| count > 0) {
-            return Some(ContainmentRejection::WorkloadOomKillAbsent);
-        }
-        if total != self.groups[2].delta.oom_kill {
-            return Some(ContainmentRejection::ToolsOomKillMismatch);
-        }
-        // A counter increase after the last retained incident is not covered by
-        // its continuation witness (including deferred kernel/counter races).
-        if self.incidents.last().is_none_or(|incident| {
-            [
-                (&incident.groups[0], &self.groups[0]),
-                (&incident.groups[2], &self.groups[2]),
-            ]
-            .into_iter()
-            .any(|(observed, current)| {
-                let observed = &observed.delta;
-                let current = &current.delta;
-                observed.oom != current.oom
-                    || observed.oom_kill != current.oom_kill
-                    || observed.oom_group_kill != current.oom_group_kill
+    /// Shell tools run in separately contained `<workload>/tools/tool-*` leaves.
+    /// The kernel routinely reclaims those without ending the run, so only the
+    /// workload domain itself and its runtime leaf attribute a terminated agent.
+    /// Evidence whose identity could not be correlated cannot attribute anything.
+    ///
+    /// Runner derives the user-visible OOM failure from this, so its result must
+    /// stay decided by the kernel record alone. Every other consumer only chooses
+    /// how loudly to log.
+    pub fn agent_domain_oom_kill(&self) -> bool {
+        let workload = self.groups[0].cgroup.as_str();
+        let runtime = format!("{workload}/runtime");
+        self.incidents
+            .iter()
+            .filter(|incident| {
+                !matches!(
+                    incident.kernel_status,
+                    EvidenceStatus::Recreated | EvidenceStatus::Uncorrelated
+                )
             })
-        }) {
-            return Some(ContainmentRejection::ContinuationWitnessStale);
-        }
-        let incidents_proven = self.incidents.iter().enumerate().all(|(index, incident)| {
-            incident.id == format!("{}:{}", self.operation_id, index + 1)
-                && incident.after_observation
-                && incident.before_cleanup
-                && timestamp_ms(&incident.captured_at).is_some_and(|captured| captured < progress)
-                && usable_kernel_status(incident.kernel_status)
-                && valid_groups(&incident.groups, &self.groups)
-                && incident.groups[0].delta.oom_kill == incident.groups[2].delta.oom_kill
-                && incident.groups[0].delta.oom_kill <= total
-                && incident.kernel_events.iter().all(|event| {
-                    event.source == "guest"
-                        && event.boottime_us >= self.started_boottime_us
-                        && self
-                            .kernel_cursor
-                            .is_some_and(|cursor| event.sequence <= cursor)
-                        && event.victim_pid > 0
-                        && !event.victim_comm.is_empty()
-                        && event.victim_comm.len() <= 16
-                        && !event.victim_comm.chars().any(char::is_control)
-                        && matches!(
-                            event.constraint.as_str(),
-                            "CONSTRAINT_MEMCG"
-                                | "CONSTRAINT_NONE"
-                                | "CONSTRAINT_CPUSET"
-                                | "CONSTRAINT_MEMORY_POLICY"
-                        )
-                        && event.oom_cgroup.as_ref().is_none_or(|trigger| {
-                            trigger == "/"
-                                || trigger == "/vm0-exec"
-                                || self.groups[0]
-                                    .cgroup
-                                    .strip_prefix(trigger.as_str())
-                                    .is_some_and(|suffix| {
-                                        suffix.is_empty() || suffix.starts_with('/')
-                                    })
-                                || trigger == &self.groups[2].cgroup
-                                || trigger == &event.task_cgroup
-                        })
-                        && event
-                            .task_cgroup
-                            .strip_prefix(&format!("{}/tool-", self.groups[2].cgroup))
-                            .is_some_and(|leaf| {
-                                !leaf.is_empty() && leaf.bytes().all(|c| c.is_ascii_digit())
-                            })
-                })
-        });
-        (!incidents_proven).then_some(ContainmentRejection::IncidentUnproven)
+            .flat_map(|incident| incident.kernel_events.iter())
+            .any(|event| {
+                event.boottime_us >= self.started_boottime_us
+                    && (event.task_cgroup == workload || event.task_cgroup == runtime)
+            })
     }
 
-    /// Whether every containment guard accepted. Derived from
-    /// [`Self::containment_rejection`] so the proof and the reported reason
-    /// cannot drift apart.
-    pub fn proves_contained_tool_oom(&self) -> bool {
-        self.containment_rejection().is_none()
-    }
-
-    /// Preserve PID exhaustion and any counters newer than the containment proof.
+    /// Preserve PID exhaustion and any counters the kernel attributed to the
+    /// agent's own containment domain.
     pub fn proves_contained_resource_limit(&self, limit: &WorkloadResourceLimitDiagnostic) -> bool {
         let events = &self.groups[0].events;
-        self.proves_contained_tool_oom()
+        !self.agent_domain_oom_kill()
             && limit.pids_max_events == 0
             && events.max == Some(limit.memory_max_events)
             && events.oom == Some(limit.memory_oom_events)
             && events.oom_kill == Some(limit.memory_oom_kill_events)
             && events.oom_group_kill == Some(limit.memory_oom_group_kill_events)
     }
-
-    /// Preserve the strict v1 API payload while retaining local continuation
-    /// context in the trusted terminal transport and on-disk evidence.
-    pub fn telemetry_evidence(&self) -> Self {
-        let mut evidence = self.clone();
-        evidence.runtime_progress_at = None;
-        evidence
-    }
-}
-
-fn timestamp_ms(value: &str) -> Option<u64> {
-    chrono::DateTime::parse_from_rfc3339(value)
-        .ok()?
-        .timestamp_millis()
-        .try_into()
-        .ok()
-}
-
-fn usable_kernel_status(status: EvidenceStatus) -> bool {
-    // Missing/truncated kernel records can be supplemented by complete cgroup
-    // counters. Malformed or explicitly uncorrelated records cannot.
-    matches!(
-        status,
-        EvidenceStatus::Available
-            | EvidenceStatus::Missing
-            | EvidenceStatus::Truncated
-            | EvidenceStatus::Overwritten
-            | EvidenceStatus::Unavailable
-            | EvidenceStatus::Denied
-    )
-}
-
-fn valid_groups(groups: &[MemorySnapshot; 3], current: &[MemorySnapshot; 3]) -> bool {
-    groups
-        .iter()
-        .zip(current)
-        .zip(["workload", "runtime", "tools"])
-        .all(|((group, latest), role)| {
-            let path = if role == "workload" {
-                current[0].cgroup.clone()
-            } else {
-                format!("{}/{role}", current[0].cgroup)
-            };
-            group.role == role
-                && group.cgroup == path
-                && group.inode.is_some_and(|inode| inode > 0)
-                && group.inode == latest.inode
-                && group.baseline == latest.baseline
-                && group.local_baseline == latest.local_baseline
-                && matches!(
-                    group.status,
-                    EvidenceStatus::Available | EvidenceStatus::Partial
-                )
-                && group.delta == group.events.delta(&group.baseline)
-                && group.local_delta == group.local_events.delta(&group.local_baseline)
-                && [
-                    group.delta.oom,
-                    group.delta.oom_kill,
-                    group.delta.oom_group_kill,
-                    group.local_delta.oom,
-                    group.local_delta.oom_kill,
-                    group.local_delta.oom_group_kill,
-                ]
-                .iter()
-                .all(Option::is_some)
-                && group.local_delta.oom <= group.delta.oom
-                && group.delta.oom <= latest.delta.oom
-                && group.delta.oom_kill <= latest.delta.oom_kill
-                && group.delta.oom_group_kill <= latest.delta.oom_group_kill
-                && group.local_delta.oom_kill == Some(0)
-                && group.local_delta.oom_group_kill == Some(0)
-                && (role != "runtime"
-                    || (group.delta.oom == Some(0)
-                        && group.delta.oom_kill == Some(0)
-                        && group.delta.oom_group_kill == Some(0)))
-        })
-        && groups[0].delta.oom >= groups[2].delta.oom
-        && groups[0].delta.oom_group_kill == groups[2].delta.oom_group_kill
 }
 
 #[cfg(test)]
@@ -348,351 +67,149 @@ mod tests {
         serde_json::from_str(include_str!("../../tests/fixtures/contained-tool-oom.json")).unwrap()
     }
 
-    #[test]
-    fn native_continuation_and_complete_counters_prove_tool_containment() {
-        let evidence = fixture();
-        assert_eq!(evidence.operation_sequence(), Some(7));
-        assert_eq!(evidence.containment_rejection(), None);
-        assert!(evidence.proves_contained_tool_oom());
-        // MainThread is a tool comm here, not a runtime ownership signal.
-        assert_eq!(
-            evidence.incidents[0].kernel_events[0].victim_comm,
-            "MainThread"
-        );
+    /// The same payload as [`fixture`] before `runtime_progress_at` was removed.
+    fn legacy_fixture() -> OomEvidence {
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json"
+        ))
+        .unwrap()
     }
 
-    /// One mutation, the guard it must trip, and that guard's stable token.
-    type RejectionCase = (fn(&mut OomEvidence), ContainmentRejection, &'static str);
+    fn agent_domain_fixture() -> OomEvidence {
+        serde_json::from_str(include_str!("../../tests/fixtures/oom-evidence-v1.json")).unwrap()
+    }
+
+    fn with_victim(evidence: &OomEvidence, task_cgroup: &str) -> OomEvidence {
+        let mut evidence = evidence.clone();
+        evidence.incidents[0].kernel_events[0].task_cgroup = task_cgroup.to_string();
+        evidence
+    }
 
     #[test]
-    fn each_rejecting_guard_reports_its_own_reason() {
-        // One mutation per guard, each built so the named guard is the one
-        // that refuses. Where a guard's condition makes a later guard
-        // unsatisfiable by construction, the earlier, reported one is named.
-        let cases: &[RejectionCase] = &[
-            (
-                |e| e.runtime_progress_at = None,
-                ContainmentRejection::RuntimeProgressAbsent,
-                "runtime_progress_absent",
-            ),
-            (
-                |e| e.sampled_at = "not-a-timestamp".into(),
-                ContainmentRejection::SampledAtUnparsable,
-                "sampled_at_unparsable",
-            ),
-            (
-                // Rename the operation-owned cgroup everywhere, so only its
-                // sequence segment stops parsing.
-                |e| {
-                    let renamed = serde_json::to_string(e)
-                        .unwrap()
-                        .replace("exec-281-7-3", "exec-281-x-3");
-                    *e = serde_json::from_str(&renamed).unwrap();
-                },
-                ContainmentRejection::OperationSequenceAbsent,
-                "operation_sequence_absent",
-            ),
-            (
-                |e| {
-                    e.operation_id = "not-a-uuid".into();
-                    e.incidents[0].id = "not-a-uuid:1".into();
-                },
-                ContainmentRejection::OperationIdNotUuid,
-                "operation_id_not_uuid",
-            ),
-            (
-                |e| e.guest_boot_id = None,
-                ContainmentRejection::GuestBootIdInvalid,
-                "guest_boot_id_invalid",
-            ),
-            (
-                |e| e.started_boottime_us = 0,
-                ContainmentRejection::StartedBoottimeAbsent,
-                "started_boottime_absent",
-            ),
-            (
-                |e| e.runtime_progress_at = Some(u64::MAX),
-                ContainmentRejection::ProgressAfterSample,
-                "progress_after_sample",
-            ),
-            (
-                |e| e.dropped_incidents = 1,
-                ContainmentRejection::IncidentsDropped,
-                "incidents_dropped",
-            ),
-            (
-                |e| e.incidents.clear(),
-                ContainmentRejection::IncidentsEmpty,
-                "incidents_empty",
-            ),
-            (
-                |e| {
-                    e.groups[1].inode = e.groups[0].inode;
-                    e.incidents[0].groups[1].inode = e.groups[0].inode;
-                },
-                ContainmentRejection::DuplicateGroupInode,
-                "duplicate_group_inode",
-            ),
-            (
-                |e| e.kernel_status = EvidenceStatus::Uncorrelated,
-                ContainmentRejection::KernelStatusUnusable,
-                "kernel_status_unusable",
-            ),
-            (
-                |e| e.groups[1].status = EvidenceStatus::Recreated,
-                ContainmentRejection::GroupsInvalid,
-                "groups_invalid",
-            ),
-            (
-                // Every counter stays internally consistent; none records a kill.
-                |e| {
-                    for index in [0, 2] {
-                        e.groups[index].events.oom_kill = Some(0);
-                        e.groups[index].delta.oom_kill = Some(0);
-                        e.incidents[0].groups[index].events.oom_kill = Some(0);
-                        e.incidents[0].groups[index].delta.oom_kill = Some(0);
-                    }
-                },
-                ContainmentRejection::WorkloadOomKillAbsent,
-                "workload_oom_kill_absent",
-            ),
-            (
-                // The workload kill is not accounted for by the tools subtree,
-                // while the continuation witness still matches the sample.
-                |e| {
-                    e.groups[2].events.oom_kill = Some(0);
-                    e.groups[2].delta.oom_kill = Some(0);
-                    e.incidents[0].groups[2].events.oom_kill = Some(0);
-                    e.incidents[0].groups[2].delta.oom_kill = Some(0);
-                },
-                ContainmentRejection::ToolsOomKillMismatch,
-                "tools_oom_kill_mismatch",
-            ),
-            (
-                // A counter moved after the last incident witnessed it.
-                |e| {
-                    for index in [0, 2] {
-                        e.groups[index].events.oom = Some(2);
-                        e.groups[index].delta.oom = Some(2);
-                    }
-                },
-                ContainmentRejection::ContinuationWitnessStale,
-                "continuation_witness_stale",
-            ),
-            (
-                |e| e.incidents[0].before_cleanup = false,
-                ContainmentRejection::IncidentUnproven,
-                "incident_unproven",
-            ),
-        ];
+    fn only_the_workload_domain_and_its_runtime_leaf_attribute_a_killed_agent() {
+        let evidence = agent_domain_fixture();
+        let workload = evidence.groups[0].cgroup.clone();
+        assert_eq!(workload, "/vm0-exec/exec-281-10-3/workload");
 
-        for (mutate, expected, token) in cases {
-            let mut evidence = fixture();
-            mutate(&mut evidence);
-            assert_eq!(
-                evidence.containment_rejection(),
-                Some(*expected),
-                "token={token}"
+        for victim in [workload.clone(), format!("{workload}/runtime")] {
+            assert!(
+                with_victim(&evidence, &victim).agent_domain_oom_kill(),
+                "agent domain victim must be attributed: {victim}"
             );
-            assert_eq!(expected.as_str(), *token);
-            assert!(!evidence.proves_contained_tool_oom(), "token={token}");
         }
-    }
-
-    #[test]
-    fn partial_kernel_evidence_requires_complete_counter_and_continuation_proof() {
-        for status in [
-            EvidenceStatus::Truncated,
-            EvidenceStatus::Overwritten,
-            EvidenceStatus::Missing,
-            EvidenceStatus::Denied,
-            EvidenceStatus::Unavailable,
-        ] {
-            let mut evidence = fixture();
-            evidence.kernel_status = status;
-            evidence.incidents[0].kernel_status = status;
-            evidence.incidents[0].kernel_events.clear();
-            assert!(evidence.proves_contained_tool_oom(), "status={status:?}");
-            evidence.groups[1].delta.oom_kill = None;
-            assert!(!evidence.proves_contained_tool_oom());
-        }
-        let mut evidence = fixture();
-        evidence.groups[1].status = EvidenceStatus::Partial;
-        evidence.groups[1].peak = None;
-        assert!(
-            evidence.proves_contained_tool_oom(),
-            "optional byte fields are not kill counters"
-        );
-    }
-
-    #[test]
-    fn missing_null_regressing_or_conflicting_counters_never_mean_zero() {
-        for group in 0..3 {
-            for field in ["oom", "oom_kill", "oom_group_kill"] {
-                for section in [
-                    "baseline",
-                    "events",
-                    "delta",
-                    "local_baseline",
-                    "local_events",
-                    "local_delta",
-                ] {
-                    let mut value = serde_json::to_value(fixture()).unwrap();
-                    value["groups"][group][section][field] = serde_json::Value::Null;
-                    let evidence: OomEvidence = serde_json::from_value(value.clone()).unwrap();
-                    assert!(
-                        !evidence.proves_contained_tool_oom(),
-                        "{group}/{section}/{field}"
-                    );
-                    value["groups"][group][section]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove(field);
-                    let evidence: OomEvidence = serde_json::from_value(value).unwrap();
-                    assert!(!evidence.proves_contained_tool_oom());
-                }
-            }
-        }
-        let mut evidence = fixture();
-        evidence.groups[1].baseline.oom_kill = Some(1);
-        assert!(!evidence.proves_contained_tool_oom());
-    }
-
-    #[test]
-    fn runtime_control_unknown_and_mixed_victims_remain_unproven() {
         for victim in [
-            "/vm0-exec/exec-281-7-3/control",
-            "/vm0-exec/exec-281-7-3/workload",
-            "/vm0-exec/exec-281-7-3/workload/runtime",
-            "/vm0-exec/exec-281-7-3/workload/tools",
-            "/vm0-exec/exec-281-8-3/workload/tools/tool-1",
-            "/vm0-exec/exec-281-7-3/workload/tools/tool-1/../runtime",
+            format!("{workload}/tools"),
+            format!("{workload}/tools/tool-1"),
+            format!("{workload}/runtime/nested"),
+            format!("{workload}-sibling"),
+            "/vm0-exec/exec-281-11-3/workload".to_string(),
         ] {
-            let mut evidence = fixture();
-            let mut mixed = evidence.incidents[0].kernel_events[0].clone();
-            mixed.task_cgroup = victim.into();
-            evidence.incidents[0].kernel_events.push(mixed);
-            assert!(!evidence.proves_contained_tool_oom(), "victim={victim}");
-        }
-        let mut evidence = fixture();
-        evidence.groups[1].events.oom_kill = Some(1);
-        evidence.groups[1].delta.oom_kill = Some(1);
-        assert!(!evidence.proves_contained_tool_oom());
-    }
-
-    #[test]
-    fn contradictory_hierarchical_counters_remain_unproven() {
-        for retained in [false, true] {
-            for field in ["oom", "oom_group_kill"] {
-                let mut value = serde_json::to_value(fixture()).unwrap();
-                let groups = if retained {
-                    &mut value["incidents"][0]["groups"]
-                } else {
-                    &mut value["groups"]
-                };
-                // Each counter delta is arithmetically valid in isolation, but
-                // the tool subtree cannot exceed its enclosing workload.
-                groups[2]["events"][field] = 2.into();
-                groups[2]["delta"][field] = 2.into();
-                let evidence: OomEvidence = serde_json::from_value(value).unwrap();
-                assert!(!evidence.proves_contained_tool_oom());
-            }
-            let mut evidence = fixture();
-            let groups = if retained {
-                &mut evidence.incidents[0].groups
-            } else {
-                &mut evidence.groups
-            };
-            groups[2].local_events.oom = Some(2);
-            groups[2].local_delta.oom = Some(2);
-            assert!(!evidence.proves_contained_tool_oom());
+            assert!(
+                !with_victim(&evidence, &victim).agent_domain_oom_kill(),
+                "victim outside the agent domain must not be attributed: {victim}"
+            );
         }
     }
 
     #[test]
-    fn stale_identity_corruption_and_absent_or_early_progress_remain_unproven() {
-        let mutations: &[fn(&mut OomEvidence)] = &[
-            |e| e.runtime_progress_at = None,
-            |e| e.runtime_progress_at = Some(1),
-            |e| e.runtime_progress_at = Some(u64::MAX),
-            |e| e.sampled_at = "bad".into(),
-            |e| e.guest_boot_id = None,
-            |e| e.operation_id = "stale".into(),
-            |e| e.groups[1].inode = Some(99),
-            |e| e.groups[1].inode = Some(0),
-            |e| e.groups[2].cgroup.push_str("/stale"),
-            |e| e.groups[0].status = EvidenceStatus::Recreated,
-            |e| e.incidents[0].id = "another-operation:1".into(),
-            |e| e.incidents[0].kernel_status = EvidenceStatus::Uncorrelated,
-            |e| e.incidents[0].kernel_status = EvidenceStatus::Partial,
-            |e| e.incidents[0].before_cleanup = false,
-            |e| e.incidents[0].kernel_events[0].boottime_us = 1,
-            |e| e.incidents[0].kernel_events[0].source = "host".into(),
-            |e| e.kernel_cursor = Some(1),
-            |e| e.dropped_incidents = 1,
-            |e| e.incidents[0].captured_at = e.sampled_at.clone(),
-            |e| {
-                e.groups[0].events.oom = Some(2);
-                e.groups[0].delta.oom = Some(2);
-            },
-            |e| {
-                for i in [0, 2] {
-                    e.groups[i].delta.oom_kill = Some(2);
-                    e.groups[i].events.oom_kill = Some(2);
-                }
-            },
-        ];
-        for (index, mutate) in mutations.iter().enumerate() {
-            let mut evidence = fixture();
-            mutate(&mut evidence);
-            assert!(!evidence.proves_contained_tool_oom(), "mutation={index}");
-        }
+    fn a_tool_only_kill_is_not_an_agent_domain_kill() {
+        let contained = fixture();
+        assert_eq!(contained.operation_sequence(), Some(7));
+        assert_eq!(
+            contained.incidents[0].kernel_events[0].task_cgroup,
+            "/vm0-exec/exec-281-7-3/workload/tools/tool-1"
+        );
+        assert!(!contained.agent_domain_oom_kill());
+        assert!(agent_domain_fixture().agent_domain_oom_kill());
     }
 
     #[test]
-    fn independent_resource_limits_and_newer_counters_remain_actionable() {
+    fn agent_domain_attribution_requires_a_correlated_record_from_this_operation() {
+        let evidence = agent_domain_fixture();
+
+        let mut stale = evidence.clone();
+        stale.incidents[0].kernel_events[0].boottime_us = evidence.started_boottime_us - 1;
+        assert!(
+            !stale.agent_domain_oom_kill(),
+            "record precedes this operation"
+        );
+
+        for kernel_status in [EvidenceStatus::Recreated, EvidenceStatus::Uncorrelated] {
+            let mut uncorrelated = evidence.clone();
+            uncorrelated.incidents[0].kernel_status = kernel_status;
+            assert!(
+                !uncorrelated.agent_domain_oom_kill(),
+                "uncorrelated identity cannot attribute a victim: {kernel_status:?}"
+            );
+        }
+
+        let mut without_records = evidence;
+        without_records.incidents[0].kernel_events.clear();
+        assert!(!without_records.agent_domain_oom_kill());
+    }
+
+    #[test]
+    fn resource_limit_containment_requires_every_counter_to_match() {
         let evidence = fixture();
-        let mut limit = WorkloadResourceLimitDiagnostic {
+        let matching = WorkloadResourceLimitDiagnostic {
             memory_max_events: 2,
             memory_oom_events: 1,
             memory_oom_kill_events: 1,
             memory_oom_group_kill_events: 0,
             pids_max_events: 0,
         };
-        assert!(evidence.proves_contained_resource_limit(&limit));
-        limit.pids_max_events = 1;
-        assert!(!evidence.proves_contained_resource_limit(&limit));
-        limit.pids_max_events = 0;
-        limit.memory_oom_kill_events = 2;
-        assert!(!evidence.proves_contained_resource_limit(&limit));
+        assert!(evidence.proves_contained_resource_limit(&matching));
+
+        let mutations: &[(&str, fn(&mut WorkloadResourceLimitDiagnostic))] = &[
+            ("pids_max_events", |limit| limit.pids_max_events = 1),
+            ("memory_max_events", |limit| limit.memory_max_events = 3),
+            ("memory_oom_events", |limit| limit.memory_oom_events = 2),
+            ("memory_oom_kill_events", |limit| {
+                limit.memory_oom_kill_events = 2
+            }),
+            ("memory_oom_group_kill_events", |limit| {
+                limit.memory_oom_group_kill_events = 1
+            }),
+        ];
+        for (field, mutate) in mutations {
+            let mut limit = matching;
+            mutate(&mut limit);
+            assert!(
+                !evidence.proves_contained_resource_limit(&limit),
+                "field={field}"
+            );
+        }
     }
 
     #[test]
-    fn continuation_is_retained_locally_without_changing_the_strict_telemetry_contract() {
+    fn a_hard_limit_reached_by_an_agent_domain_kill_is_never_contained() {
+        let limit = WorkloadResourceLimitDiagnostic {
+            memory_max_events: 2,
+            memory_oom_events: 1,
+            memory_oom_kill_events: 1,
+            memory_oom_group_kill_events: 0,
+            pids_max_events: 0,
+        };
         let evidence = fixture();
-        let encoded = serde_json::to_vec(&evidence).unwrap();
-        assert_eq!(super::super::decode_evidence(&encoded).unwrap(), evidence);
-        let mut expected = serde_json::to_value(&evidence).unwrap();
-        expected
-            .as_object_mut()
-            .unwrap()
-            .remove("runtime_progress_at");
+        let workload = evidence.groups[0].cgroup.clone();
+        assert!(evidence.proves_contained_resource_limit(&limit));
+        assert!(
+            !with_victim(&evidence, &workload).proves_contained_resource_limit(&limit),
+            "the agent's own domain being killed is not a contained tool limit"
+        );
+    }
+
+    #[test]
+    fn an_old_producers_runtime_progress_field_is_ignored() {
+        // An older guest image still transports `runtime_progress_at`. It is an
+        // unknown field to this consumer, so it decodes to the same evidence and
+        // re-encodes without it.
+        let legacy = legacy_fixture();
+        assert_eq!(legacy, fixture());
         assert_eq!(
-            serde_json::to_value(evidence.telemetry_evidence()).unwrap(),
-            expected
+            serde_json::to_value(&legacy).unwrap(),
+            serde_json::to_value(fixture()).unwrap()
         );
-        let without_progress: OomEvidence = serde_json::from_value(expected).unwrap();
-        assert!(!without_progress.proves_contained_tool_oom());
-        let diagnostic = format!(
-            "{}{}\n{}{}",
-            super::super::EVIDENCE_PREFIX,
-            serde_json::to_string(&without_progress).unwrap(),
-            super::super::EVIDENCE_PREFIX,
-            serde_json::to_string(&evidence).unwrap()
-        );
-        assert_eq!(
-            super::super::split_diagnostic(&diagnostic).malformed_lines,
-            1
-        );
+        assert!(!legacy.agent_domain_oom_kill());
     }
 }

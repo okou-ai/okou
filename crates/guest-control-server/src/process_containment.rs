@@ -1322,24 +1322,12 @@ fn serve_oom_evidence(
             return;
         }
         let reason = match request[0] {
-            1 | 3 => CaptureReason::Sample,
-            2 | 4 => CaptureReason::CliError,
+            1 => CaptureReason::Sample,
+            2 => CaptureReason::CliError,
             _ => return,
         };
-        let progress = if request[0] >= 3 {
-            let mut bytes = [0; 8];
-            if stream.read_exact(&mut bytes).is_err() {
-                return;
-            }
-            Some(u64::from_be_bytes(bytes))
-        } else {
-            None
-        };
         let evidence = match monitor.lock() {
-            Ok(mut monitor) => {
-                monitor.record_runtime_progress(progress);
-                monitor.capture(reason)
-            }
+            Ok(mut monitor) => monitor.capture(reason),
             Err(_) => return,
         };
         // Never retain the monitor lock while waiting for a recipient.
@@ -1987,24 +1975,11 @@ mod tests {
         assert!(first.incidents.is_empty());
         assert_eq!(error.incidents.len(), 1);
         assert!(error.incidents[0].kernel_events.is_empty());
-        let progress = 1_000_u64;
+        // Guest Agent and this root owner ship in the same guest image, so the
+        // request alphabet is exactly `1` and `2`. Anything else ends the
+        // exchange rather than reading a payload the peer did not promise.
         client.write_all(&[3]).unwrap();
-        client.write_all(&progress.to_be_bytes()).unwrap();
-        let continued = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
-        assert_eq!(continued.runtime_progress_at, Some(progress));
-        assert_eq!(continued.operation_id, first.operation_id);
-        client.write_all(&[4]).unwrap();
-        client.write_all(&u64::MAX.to_be_bytes()).unwrap();
-        let future = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
-        assert_eq!(
-            future.runtime_progress_at,
-            Some(progress),
-            "future timestamps cannot prove survival"
-        );
-        assert!(
-            !future.proves_contained_tool_oom(),
-            "native activity alone never proves tool containment"
-        );
+        assert!(guest_contracts::oom_evidence::read_evidence(&client).is_err());
         drop(cancel_writer);
         done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         worker.join().unwrap();

@@ -2,8 +2,6 @@
 
 mod containment;
 
-pub use containment::ContainmentRejection;
-
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -187,12 +185,6 @@ pub struct OomEvidence {
     pub started_boottime_us: u64,
     /// Source sample time.
     pub sampled_at: String,
-    /// Latest validated native Pi message timestamp in Unix milliseconds.
-    /// Ordering after an incident must be checked before using it as proof.
-    /// Supplied only by the operation's authenticated Guest Agent. This local
-    /// observability context is not part of the version-1 telemetry API.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_progress_at: Option<u64>,
     /// Last consumed kernel sequence, absent before the first record.
     pub kernel_cursor: Option<u64>,
     /// Availability of the bounded kernel reader at this sample.
@@ -392,6 +384,35 @@ mod tests {
         assert_eq!(
             serde_json::to_value(evidence).unwrap(),
             serde_json::from_str::<serde_json::Value>(FIXTURE).unwrap()
+        );
+    }
+
+    /// A real pre-removal payload: identical to `contained-tool-oom.json` except
+    /// that it still carries the retired `runtime_progress_at` field.
+    const LEGACY_RUNTIME_PROGRESS_FIXTURE: &str =
+        include_str!("../tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json");
+
+    #[test]
+    fn evidence_written_by_an_older_guest_image_still_decodes() {
+        // Guest Control Server ships in the guest image and Guest Control Client
+        // in the Runner host, so a long-lived sandbox can pair an old producer
+        // with a new consumer. `runtime_progress_at` is now simply unknown here.
+        assert!(
+            LEGACY_RUNTIME_PROGRESS_FIXTURE.contains(r#""runtime_progress_at": 1789527602000"#)
+        );
+        let legacy =
+            decode_evidence(LEGACY_RUNTIME_PROGRESS_FIXTURE.as_bytes()).expect("legacy payload");
+        let current: OomEvidence =
+            serde_json::from_str(include_str!("../tests/fixtures/contained-tool-oom.json"))
+                .unwrap();
+
+        assert_eq!(legacy, current);
+        // A new producer omits the field; an older consumer declared it
+        // `#[serde(default)]`, so the omission decodes there as `None`.
+        assert!(
+            !serde_json::to_string(&legacy)
+                .unwrap()
+                .contains("runtime_progress_at")
         );
     }
 
