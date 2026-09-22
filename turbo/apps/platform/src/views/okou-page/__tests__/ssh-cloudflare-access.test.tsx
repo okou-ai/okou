@@ -1,4 +1,5 @@
 import {
+  CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   sshCloudflareAccessContract,
   type SshCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -260,6 +261,9 @@ test("Raw and invalid token paste stays in the focused Access field", async () =
     "CF-Access-Client-Id: candidate-id\nX-Access-Client-Secret: unknown-secret",
     "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: candidate-secret\nextra",
     "CF-Access-Client-Id: candidate-id\n\nCF-Access-Client-Secret: candidate-secret",
+    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: ",
+    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: non-ascii-密钥",
+    `CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: ${"x".repeat(CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH + 1)}`,
   ];
   for (const clipboard of invalidPairs) {
     await fill(clientId, "");
