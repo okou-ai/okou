@@ -2,6 +2,7 @@
 // (SKILL.md is never shown), automations, visibility controls, metadata
 // editing, slash use, copy, and delete.
 import type { FormEvent, ReactNode } from "react";
+import { Field } from "@base-ui/react/field";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { OfficialWorkflowInstallationDefinition } from "@okouai/api-contracts/contracts/official-workflows";
@@ -8163,34 +8164,31 @@ function CreatedWebhookAutomationView({
   readonly automation: WebhookWorkflowAutomationSummary;
   readonly onDone: () => void;
 }) {
+  const copy = workflowWebhookCopy();
   const curlExample = signedWebhookCurlExample(automation);
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-        {i18n.t(($) => {
-          return $.workflows.automations.webhook.url;
-        })}
-        {automation.webhookUrl ? (
-          <WebhookReadonlyField
-            value={automation.webhookUrl}
-            onCopy={() => {
-              copyText(automation.webhookUrl ?? "");
-            }}
-          />
-        ) : null}
-      </label>
+      {automation.webhookUrl ? (
+        <WebhookReadonlyField
+          label={copy.url}
+          value={automation.webhookUrl}
+          onCopy={() => {
+            copyText(automation.webhookUrl ?? "");
+          }}
+        />
+      ) : (
+        <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          {copy.url}
+        </div>
+      )}
       {automation.webhookSecret ? (
-        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-          {i18n.t(($) => {
-            return $.workflows.automations.webhook.secret;
-          })}
-          <WebhookReadonlyField
-            value={automation.webhookSecret}
-            onCopy={() => {
-              copyText(automation.webhookSecret ?? "");
-            }}
-          />
-        </label>
+        <WebhookReadonlyField
+          label={copy.secret}
+          value={automation.webhookSecret}
+          onCopy={() => {
+            copyText(automation.webhookSecret ?? "");
+          }}
+        />
       ) : null}
       <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
         {i18n.t(($) => {
@@ -8227,22 +8225,27 @@ function CreatedWebhookAutomationView({
 }
 
 function WebhookReadonlyField({
+  label,
   value,
   onCopy,
 }: {
+  readonly label: string;
   readonly value: string;
   readonly onCopy: () => void;
 }) {
   return (
-    <div className="flex min-w-0 gap-2">
-      <Input readOnly value={value} className="min-w-0" />
-      <Button type="button" variant="outline" onClick={onCopy}>
-        <Copy size={14} />
-        {i18n.t(($) => {
-          return $.workflows.automations.webhook.copy;
-        })}
-      </Button>
-    </div>
+    <Field.Root className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+      <Field.Label>{label}</Field.Label>
+      <div className="flex min-w-0 gap-2">
+        <Input readOnly value={value} className="min-w-0" />
+        <Button type="button" variant="outline" onClick={onCopy}>
+          <Copy size={14} />
+          {i18n.t(($) => {
+            return $.workflows.automations.webhook.copy;
+          })}
+        </Button>
+      </div>
+    </Field.Root>
   );
 }
 
@@ -8283,24 +8286,20 @@ function RevealWebhookSecretDialog({
         </DialogHeader>
         {secret ? (
           <div className="flex min-w-0 flex-col gap-3">
-            <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-              {copy.url}
-              <WebhookReadonlyField
-                value={secret.webhookUrl}
-                onCopy={() => {
-                  copyText(secret.webhookUrl);
-                }}
-              />
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-              {copy.secret}
-              <WebhookReadonlyField
-                value={secret.webhookSecret}
-                onCopy={() => {
-                  copyText(secret.webhookSecret);
-                }}
-              />
-            </label>
+            <WebhookReadonlyField
+              label={copy.url}
+              value={secret.webhookUrl}
+              onCopy={() => {
+                copyText(secret.webhookUrl);
+              }}
+            />
+            <WebhookReadonlyField
+              label={copy.secret}
+              value={secret.webhookSecret}
+              onCopy={() => {
+                copyText(secret.webhookSecret);
+              }}
+            />
             {curlExample ? (
               <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
                 {copy.signedCurl}
