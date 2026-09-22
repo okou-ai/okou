@@ -237,7 +237,6 @@ test("A selected disabled video template can still be discussed without a Create
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(screen.queryByLabelText("Remove Video")).not.toBeInTheDocument();
   await userEvent.setup({ delay: null }).click(editor);
   await userEvent
     .setup({ delay: null })

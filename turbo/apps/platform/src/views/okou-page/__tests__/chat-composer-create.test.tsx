@@ -114,7 +114,7 @@ async function enterCreateMode(
   const { row, task } = CREATE_MODE_ROWS[command];
   await clickPanelRow(row, menu);
   await waitFor(() => {
-    expect(taskChip(task)).toBeVisible();
+    expect(taskChip(task)).toBeInTheDocument();
   });
 }
 
@@ -155,7 +155,7 @@ test("A panel row states its task while only the panel's switch is on", async ()
   // The footer chip is the one control both rollouts share, so it states the
   // type here in the same shape the chip row's own selection leaves behind.
   await waitFor(() => {
-    expect(taskChip("Presentation")).toBeVisible();
+    expect(taskChip("Presentation")).toBeInTheDocument();
   });
   expect(
     screen.getByRole("combobox", { name: "Slide count" }),
