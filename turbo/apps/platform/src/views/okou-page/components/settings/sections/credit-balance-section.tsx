@@ -128,7 +128,7 @@ function UsagePackSegmentBar({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <div
         data-testid={`${testIdPrefix}-bar`}
         className="mt-4 flex h-2 w-full gap-[3px]"
@@ -476,7 +476,7 @@ function UsagePackMemberBalancesDialog({
         }
       }}
     >
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         <Tooltip>
           <TooltipTrigger
             render={

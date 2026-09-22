@@ -1113,34 +1113,32 @@ function WebsiteTemplateCard({
   };
 
   return (
+    // Keep the full-card preview below the independent Use action locally.
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.previewWebsite;
-        },
-        {
-          title: item.title,
-        },
-      )}
-      onClick={preview}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          preview();
-        }
-      }}
       className={cn(
         TEMPLATE_TILE_WRAPPER,
-        "cursor-zoom-in focus-visible:outline-none",
+        TEMPLATE_TILE_RING,
+        "isolate cursor-zoom-in has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
       )}
     >
+      <button
+        type="button"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.previewWebsite;
+          },
+          {
+            title: item.title,
+          },
+        )}
+        onClick={preview}
+        className="absolute inset-0 z-10 cursor-zoom-in focus-visible:outline-none"
+      />
       <div
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "aspect-[16/9] group-focus-visible/tile:ring-1 group-focus-visible/tile:ring-ring",
+          "aspect-[16/9]",
           selected && TEMPLATE_TILE_RING_SELECTED,
         )}
       >
@@ -1168,7 +1166,12 @@ function WebsiteTemplateCard({
           draggable={false}
           className="pointer-events-none h-full w-full bg-background object-cover"
         />
-        <div className={TEMPLATE_TILE_SCRIM} />
+        <div
+          className={cn(
+            TEMPLATE_TILE_SCRIM,
+            "group-has-[:focus-visible]/tile:opacity-100",
+          )}
+        />
         {selected ? (
           <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Check size={14} />
@@ -1185,11 +1188,13 @@ function WebsiteTemplateCard({
             },
           )}
           aria-pressed={selected}
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             onSelect(item);
           }}
-          className={cn(TEMPLATE_TILE_USE, "cursor-pointer")}
+          className={cn(
+            TEMPLATE_TILE_USE,
+            "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+          )}
         >
           {t(($) => {
             return $.artifacts.templates.use;
@@ -2939,7 +2944,7 @@ function PptCard({
         </button>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
-        <TooltipProvider delayDuration={300}>
+        <TooltipProvider delay={300}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -3660,6 +3665,18 @@ function TemplatePickerCategoryNav({
     },
   ];
 
+  const categoryItems = categoryOptions.map(({ value, label, Icon }) => {
+    return {
+      value,
+      label: (
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4" />
+          {label}
+        </span>
+      ),
+    };
+  });
+
   return (
     <>
       <div
@@ -3670,7 +3687,22 @@ function TemplatePickerCategoryNav({
             : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
         )}
       >
-        <Select value={selectedCategory} onValueChange={onChange}>
+        <Select
+          items={categoryItems}
+          value={selectedCategory}
+          onValueChange={(value, details) => {
+            if (
+              value === null ||
+              !categoryItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            onChange(value);
+          }}
+        >
           <SelectTrigger
             aria-label={t(($) => {
               return $.artifacts.templates.category;
@@ -3684,13 +3716,10 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.flatMap(({ value, label, Icon }) => {
+            {categoryItems.flatMap(({ value, label }) => {
               return [
                 <SelectItem key={value} value={value}>
-                  <span className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </span>
+                  {label}
                 </SelectItem>,
                 ...(value === "custom"
                   ? [<SelectSeparator key={`${value}-rule`} />]
@@ -4308,7 +4337,7 @@ function ImportedPptCardCaption({
 }) {
   return (
     <div className={TEMPLATE_TILE_CAPTION}>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4520,7 +4549,7 @@ function ImportedPresentationTemplateRenameControl({
           }}
         />
       </div>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -6176,7 +6205,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
 function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   const { label, prewarm, open } = useTemplatePickerTrigger(signals);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -6278,7 +6307,7 @@ function CreateWorkflowPromptButton({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -7817,7 +7846,7 @@ function ConnectorsPopoverButton({
         handleOpenChange(open);
       }}
     >
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <PopoverTrigger
             render={
@@ -8333,7 +8362,7 @@ function MicButton({
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -8561,7 +8590,7 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9081,7 +9110,7 @@ function ComposerSendButton({
     </Button>
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9143,7 +9172,7 @@ function ModelConfigurationWarning({
   blocker: ComposerSubmitBlocker;
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={

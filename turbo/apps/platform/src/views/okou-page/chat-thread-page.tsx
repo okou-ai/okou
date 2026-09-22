@@ -533,7 +533,7 @@ function ChatThreadHeaderIconButton({
   onClick: () => void;
 }) {
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -875,7 +875,7 @@ function ChatThreadEmojiMenuButton({
   const setEmojiPreview = useSet(setChatThreadEmojiPreview$);
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Popover
         open={open}
         onOpenChange={(nextOpen) => {
@@ -2480,12 +2480,21 @@ function HeaderIntervalField({
   readonly defaultIntervalSeconds: number;
 }) {
   const { t } = useTranslation();
+  const intervalItems = getWorkflowIntervalSecondOptions(
+    defaultIntervalSeconds,
+  ).map((seconds) => {
+    return {
+      value: String(seconds),
+      label: formatWorkflowIntervalSeconds(seconds),
+    };
+  });
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {t(($) => {
         return $.chat.automations.every;
       })}
       <Select
+        items={intervalItems}
         name="intervalSeconds"
         defaultValue={String(defaultIntervalSeconds)}
         disabled={disabled}
@@ -2499,15 +2508,13 @@ function HeaderIntervalField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {getWorkflowIntervalSecondOptions(defaultIntervalSeconds).map(
-            (seconds) => {
-              return (
-                <SelectItem key={seconds} value={String(seconds)}>
-                  {formatWorkflowIntervalSeconds(seconds)}
-                </SelectItem>
-              );
-            },
-          )}
+          {intervalItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </label>
@@ -7910,7 +7917,7 @@ function RelatedArtifactsDialog({
   );
   return (
     <Dialog>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -7968,7 +7975,7 @@ function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
     return null;
   }
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -8046,7 +8053,7 @@ function PagedGroupPrimaryActions({
       data-testid="chat-event-actions"
     >
       {showActivityLogs && firstRunId && (
-        <TooltipProvider delayDuration={300}>
+        <TooltipProvider delay={300}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -8087,7 +8094,7 @@ function PagedGroupPrimaryActions({
           copyAction={onCopy}
           render={({ onClick, ref }, { copied }) => {
             return (
-              <TooltipProvider delayDuration={300}>
+              <TooltipProvider delay={300}>
                 <Tooltip>
                   <TooltipTrigger
                     render={

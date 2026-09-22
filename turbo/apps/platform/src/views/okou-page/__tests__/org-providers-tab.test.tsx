@@ -912,6 +912,43 @@ test("Keep cloud onboarding hidden while native routes are supported", async () 
   ).not.toBeInTheDocument();
 });
 
+test("Reselecting the current model or provider preserves the API key draft", async () => {
+  await openAddApiKeyModelDialog();
+  const dialog = screen.getByRole("dialog", { name: "Add model" });
+  const key = screen.getByPlaceholderText("Enter your API key");
+  await fill(key, "sk-ant-draft");
+
+  const provider = within(dialog)
+    .getAllByRole("combobox")
+    .find((picker) => {
+      return picker.textContent?.includes("Anthropic");
+    });
+  if (!provider) {
+    throw new Error("Expected the Anthropic provider picker");
+  }
+  click(provider);
+  click(await screen.findByRole("option", { name: "Anthropic" }));
+  expect(key).toHaveValue("sk-ant-draft");
+
+  const model = within(dialog)
+    .getAllByRole("combobox")
+    .find((picker) => {
+      return picker.textContent?.includes("Claude Opus 4.8");
+    });
+  if (!model) {
+    throw new Error("Expected the current model picker");
+  }
+  click(model);
+  click(await screen.findByRole("option", { name: "Claude Opus 4.8" }));
+  expect(radioByName(/API key/u, dialog)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(screen.getByPlaceholderText("Enter your API key")).toHaveValue(
+    "sk-ant-draft",
+  );
+});
+
 test("Connect a workspace API key to a model route", async () => {
   await openAddApiKeyModelDialog();
   const dialog = screen.getByRole("dialog", { name: "Add model" });

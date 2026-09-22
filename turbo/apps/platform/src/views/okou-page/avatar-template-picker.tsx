@@ -127,6 +127,7 @@ function CatalogFilterField<T extends string>({
   readonly disabled?: boolean;
   readonly onChange: (value: T | undefined) => void;
 }) {
+  const items = [{ value: ALL_FILTER_VALUE, label: allLabel }, ...options];
   const selectedLabel =
     options.find((option) => {
       return option.value === value;
@@ -137,9 +138,10 @@ function CatalogFilterField<T extends string>({
         {label}
       </p>
       <Select
+        items={items}
         value={value ?? ALL_FILTER_VALUE}
         disabled={disabled}
-        onValueChange={(nextValue) => {
+        onValueChange={(nextValue, details) => {
           if (nextValue === ALL_FILTER_VALUE) {
             onChange(undefined);
             return;
@@ -147,9 +149,11 @@ function CatalogFilterField<T extends string>({
           const nextOption = options.find((option) => {
             return option.value === nextValue;
           });
-          if (nextOption) {
-            onChange(nextOption.value);
+          if (!nextOption) {
+            details.cancel();
+            return;
           }
+          onChange(nextOption.value);
         }}
       >
         <SelectTrigger
@@ -159,8 +163,7 @@ function CatalogFilterField<T extends string>({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL_FILTER_VALUE}>{allLabel}</SelectItem>
-          {options.map((option) => {
+          {items.map((option) => {
             return (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}

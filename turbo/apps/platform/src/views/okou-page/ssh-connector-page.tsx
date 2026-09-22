@@ -407,6 +407,22 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
   const credentials = useLoadable(sshCredentials$);
   const editor = useGet(sshCredentialEditor$);
   const choose = useSet(chooseSshCredential$);
+  const credentialItems = [
+    ...(credentials.state === "hasData" && credentials.data
+      ? credentials.data.map((credential) => {
+          return {
+            value: credential.id,
+            label: `${credential.name} · ${credential.username}`,
+          };
+        })
+      : []),
+    {
+      value: "new",
+      label: t(($) => {
+        return $.ssh.credential.createNew;
+      }),
+    },
+  ];
   return (
     <fieldset className="grid min-w-0 gap-4">
       <legend className="mb-3 text-sm font-semibold">
@@ -433,9 +449,16 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
           </p>
         ) : (
           <Select
+            items={credentialItems}
             disabled={disabled}
             value={editor.selection || null}
-            onValueChange={choose}
+            onValueChange={(value, details) => {
+              if (value === null) {
+                details.cancel();
+                return;
+              }
+              choose(value);
+            }}
           >
             <SelectTrigger id="ssh-selected-credential">
               <SelectValue
@@ -445,18 +468,13 @@ function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
               />
             </SelectTrigger>
             <SelectContent>
-              {credentials.data.map((credential) => {
+              {credentialItems.map((item) => {
                 return (
-                  <SelectItem key={credential.id} value={credential.id}>
-                    {credential.name} · {credential.username}
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 );
               })}
-              <SelectItem value="new">
-                {t(($) => {
-                  return $.ssh.credential.createNew;
-                })}
-              </SelectItem>
             </SelectContent>
           </Select>
         )}

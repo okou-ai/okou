@@ -978,14 +978,43 @@ function BankingDurationSelect({
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
+  const items = [
+    {
+      value: "1h",
+      label: t(($) => {
+        return $.chat.banking.oneHour;
+      }),
+    },
+    {
+      value: "24h",
+      label: t(($) => {
+        return $.chat.banking.oneDay;
+      }),
+    },
+    {
+      value: "7d",
+      label: t(($) => {
+        return $.chat.banking.sevenDays;
+      }),
+    },
+    {
+      value: "30d",
+      label: t(($) => {
+        return $.chat.banking.thirtyDays;
+      }),
+    },
+  ];
   return (
     <Select
+      items={items}
       value={controller.ui.duration}
       disabled={disabled}
-      onValueChange={(value) => {
-        if (isBankingGrantDuration(value)) {
-          controller.updateUi({ duration: value });
+      onValueChange={(value, details) => {
+        if (value === null || !isBankingGrantDuration(value)) {
+          details.cancel();
+          return;
         }
+        controller.updateUi({ duration: value });
       }}
     >
       <SelectTrigger
@@ -997,26 +1026,13 @@ function BankingDurationSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="1h">
-          {t(($) => {
-            return $.chat.banking.oneHour;
-          })}
-        </SelectItem>
-        <SelectItem value="24h">
-          {t(($) => {
-            return $.chat.banking.oneDay;
-          })}
-        </SelectItem>
-        <SelectItem value="7d">
-          {t(($) => {
-            return $.chat.banking.sevenDays;
-          })}
-        </SelectItem>
-        <SelectItem value="30d">
-          {t(($) => {
-            return $.chat.banking.thirtyDays;
-          })}
-        </SelectItem>
+        {items.map((item) => {
+          return (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );

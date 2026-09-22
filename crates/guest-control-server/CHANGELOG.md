@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.39](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.38...guest-control-server-v0.21.39) (2026-09-22)
+
+
+### Bug Fixes
+
+* **guest-contracts:** derive exec log severity from the agent-domain kill ([#36077](https://github.com/okou-ai/okou/issues/36077)) ([0360058](https://github.com/okou-ai/okou/commit/03600589df8d44b36e58b1aefb97235598840a6e)), closes [#36027](https://github.com/okou-ai/okou/issues/36027)
+
 ## [0.21.38](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.37...guest-control-server-v0.21.38) (2026-09-22)
 
 ## [0.21.37](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.36...guest-control-server-v0.21.37) (2026-09-21)

@@ -267,7 +267,7 @@ function ExpandedHeader() {
         <div className="min-w-0 flex-1">
           <OrgSwitcher />
         </div>
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={

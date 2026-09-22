@@ -318,7 +318,7 @@ export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
 });
 export const chooseSshAccessConfig$ = command(
   ({ get, set }, configId: string | null) => {
-    if (configId !== null) {
+    if (configId !== null && configId !== get(transportEditor$).configId) {
       set(transportEditor$, (current) => {
         return { ...current, configId };
       });
@@ -362,11 +362,11 @@ export const sshCredentialEditor$ = computed((get) => {
 });
 export const chooseSshCredential$ = command(
   ({ get, set }, value: string | null) => {
+    if (value === null || value === get(credentialEditor$).selection) {
+      return;
+    }
     if (get(conflict$) === SSH_ERROR_CODES.CREDENTIAL_NOT_FOUND) {
       set(conflict$, null);
-    }
-    if (value === null) {
-      return;
     }
     set(cancelSshPrivateKeyFile$);
     set(credentialEditor$, (current) => {
