@@ -29,11 +29,6 @@ export { CopyButton, type CopyButtonProps } from "./components/ui/copy-button";
 export { Input } from "./components/ui/input";
 export { Kbd, KbdGroup } from "./components/ui/kbd";
 export {
-  MultiSelectCombobox,
-  type ComboboxOption,
-  type MultiSelectComboboxProps,
-} from "./components/ui/multi-select-combobox";
-export {
   Dialog,
   DialogClose,
   DialogTrigger,
