@@ -65,7 +65,7 @@ export const READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 256;
 const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
   "presentation-template-preview-url-v1";
 export const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
-export const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 500;
+export const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
@@ -663,6 +663,15 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
     if (args.input.logicalLookupCount < 2) {
       return undefined;
     }
+    const requestedCount =
+      args.input.systemRequests.length +
+      args.input.workflowSkillRequests.length +
+      args.input.readOnlyRequests.length;
+    if (
+      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
+    ) {
+      return undefined;
+    }
     const pairs = storageManifestPresignedUrlCacheLookupPairs(args.input);
     if (
       pairs.length === 0 ||
@@ -708,11 +717,7 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       {
         storage_manifest_branch: args.observation?.branch ?? "unobserved",
         storage_manifest_cache_requested_count_bucket:
-          storageManifestCacheCountBucket(
-            args.input.systemRequests.length +
-              args.input.workflowSkillRequests.length +
-              args.input.readOnlyRequests.length,
-          ),
+          storageManifestCacheCountBucket(requestedCount),
         storage_manifest_cache_unique_key_count_bucket:
           storageManifestCacheCountBucket(pairs.length),
         storage_manifest_cache_logical_lookup_count_bucket:

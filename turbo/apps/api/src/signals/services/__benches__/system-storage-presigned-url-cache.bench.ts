@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { createStore } from "ccstate";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { test } from "vitest";
+import { beforeEach, test } from "vitest";
 import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -25,9 +25,9 @@ import {
   type WorkflowSkillStoragePresignedUrlRequest,
 } from "../system-storage-presigned-url-cache.service";
 
-testContext();
+const context = testContext();
 const store = createStore();
-const BENCH_SIZES = [1, 4, 17, 64, 500, 501] as const;
+const BENCH_SIZES = [1, 4, 17, 51, 52, 64, 500, 501] as const;
 const BACKGROUND_ROW_COUNT = 5000;
 const INSERT_CHUNK_SIZE = 500;
 const benchOptions = {
@@ -38,6 +38,12 @@ const benchOptions = {
 const queryPlanRowSchema = z.object({ "QUERY PLAN": z.string() });
 
 type CacheInsert = typeof systemStoragePresignedUrlCache.$inferInsert;
+
+beforeEach(() => {
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    "https://r2.example.com/storage-cache-bench/fresh?sig=bench",
+  );
+});
 
 interface CacheLookupPair {
   readonly scope: StorageManifestPresignedUrlCacheScope;
@@ -343,7 +349,7 @@ const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
       ]);
       const db = store.set(writeDb$);
       await db.execute(sql`ANALYZE ${systemStoragePresignedUrlCache}`);
-      for (const pairCount of [17, 500] as const) {
+      for (const pairCount of [17, 51, 500] as const) {
         const planFixture = fixtures.get(pairCount);
         if (!planFixture) {
           throw new Error(
