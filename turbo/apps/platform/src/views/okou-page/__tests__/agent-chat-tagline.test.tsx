@@ -79,7 +79,7 @@ test("The greeting shows its complete sentence, one box per word", async () => {
     tokens(text).map((box) => {
       return box.textContent;
     }),
-  ).toEqual(fullLine.split(" "));
+  ).toStrictEqual(fullLine.split(" "));
 });
 
 test("The avatar leads the sentence", async () => {
@@ -147,5 +147,5 @@ test("Switching agents starts a fresh greeting", async () => {
   const current = await greeting();
   expect(current.text.textContent).toBe(current.fullLine);
   expect(current.tagline).toHaveAccessibleName(current.fullLine);
-  expect(tokens(current.text).length).toBe(current.fullLine.split(" ").length);
+  expect(tokens(current.text)).toHaveLength(current.fullLine.split(" ").length);
 });
