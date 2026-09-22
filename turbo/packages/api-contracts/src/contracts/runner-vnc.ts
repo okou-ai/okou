@@ -2,12 +2,17 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
-import { VNC_HOST_MAX_LENGTH, vncSecuritySchema } from "./vnc-connections";
+import { VNC_HOST_MAX_LENGTH, vncTrustSchema } from "./vnc-connections";
 import { vncAuthenticationSchema } from "./vnc-credentials";
 
 const c = initContract();
 
 const generationSchema = z.int().positive().max(2_147_483_647);
+
+export const runnerVncSecuritySchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("x509_vnc"), trust: vncTrustSchema }).strict(),
+  z.object({ type: z.literal("x509_plain"), trust: vncTrustSchema }).strict(),
+]);
 
 const commonRequestSchema = z
   .object({
@@ -56,7 +61,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
       port: z.int().min(1).max(65_535),
       generation: generationSchema,
       authentication: vncAuthenticationSchema,
-      security: vncSecuritySchema,
+      security: runnerVncSecuritySchema,
     })
     .strict(),
 ]);

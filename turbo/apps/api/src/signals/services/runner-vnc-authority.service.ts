@@ -29,6 +29,7 @@ export async function currentRunnerVncAuthority(
       userId: agentRuns.userId,
       host: vncConnections.host,
       port: vncConnections.port,
+      transportType: vncConnections.transportType,
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
       caBundle: vncConnections.caBundle,

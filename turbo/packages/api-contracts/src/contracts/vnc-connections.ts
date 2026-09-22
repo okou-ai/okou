@@ -15,9 +15,17 @@ const displayNameSchema = z
   .trim()
   .min(1)
   .max(VNC_DISPLAY_NAME_MAX_LENGTH);
-const hostSchema = z.string().trim().min(1).max(VNC_HOST_MAX_LENGTH);
+const hostSchema = z.string().min(1).max(VNC_HOST_MAX_LENGTH);
 const portSchema = z.int().min(1).max(65_535);
 const generationSchema = z.int().positive().max(2_147_483_647);
+const directTransportSchema = z.object({ type: z.literal("direct") }).strict();
+const sshTransportSchema = z
+  .object({ type: z.literal("ssh"), connectionId: z.uuid() })
+  .strict();
+export const vncTransportSchema = z.discriminatedUnion("type", [
+  directTransportSchema,
+  sshTransportSchema,
+]);
 
 export const vncTrustSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("system") }).strict(),
@@ -30,10 +38,18 @@ export const vncTrustSchema = z.discriminatedUnion("mode", [
 ]);
 
 const vncX509VncSecurityVariantSchema = z
-  .object({ type: z.literal("x509_vnc"), trust: vncTrustSchema })
+  .object({
+    type: z.literal("x509_vnc"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+  })
   .strict();
 const vncX509PlainSecurityVariantSchema = z
-  .object({ type: z.literal("x509_plain"), trust: vncTrustSchema })
+  .object({
+    type: z.literal("x509_plain"),
+    trust: vncTrustSchema,
+    serverName: hostSchema.optional(),
+  })
   .strict();
 // Keep current-only Runner schemas as one-variant discriminated unions so the
 // Rust generator preserves the existing enum-shaped wire type.
@@ -56,6 +72,7 @@ export const createVncConnectionRequestSchema = z
     port: portSchema.default(5900),
     credential: vncCredentialSelectionSchema,
     security: vncSecuritySchema,
+    transport: vncTransportSchema.optional(),
   })
   .strict();
 
@@ -67,6 +84,7 @@ export const updateVncConnectionRequestSchema = z
     port: portSchema.optional(),
     credential: vncCredentialSelectionSchema.optional(),
     security: vncSecuritySchema.optional(),
+    transport: vncTransportSchema.optional(),
   })
   .strict()
   .refine(
@@ -76,7 +94,8 @@ export const updateVncConnectionRequestSchema = z
         body.host !== undefined ||
         body.port !== undefined ||
         body.credential !== undefined ||
-        body.security !== undefined
+        body.security !== undefined ||
+        body.transport !== undefined
       );
     },
     { message: "At least one VNC connection field must be updated" },
@@ -86,7 +105,7 @@ export const vncConnectionPathParamsSchema = z
   .object({ connectionId: z.uuid() })
   .strict();
 
-export const vncConnectionResponseSchema = z
+export const vncConnectionMetadataSchema = z
   .object({
     id: z.uuid(),
     displayName: z.string(),
@@ -100,6 +119,11 @@ export const vncConnectionResponseSchema = z
     updatedAt: z.string().datetime(),
   })
   .strict();
+
+export const vncConnectionResponseSchema = z.union([
+  vncConnectionMetadataSchema,
+  vncConnectionMetadataSchema.extend({ transport: sshTransportSchema }),
+]);
 
 export const vncConnectionsListResponseSchema = z
   .object({ connections: z.array(vncConnectionResponseSchema) })
@@ -170,3 +194,4 @@ export type UpdateVncConnectionRequest = z.infer<
 export type VncConnectionResponse = z.infer<typeof vncConnectionResponseSchema>;
 export type VncTrust = z.infer<typeof vncTrustSchema>;
 export type VncSecurity = z.infer<typeof vncSecuritySchema>;
+export type VncTransport = z.infer<typeof vncTransportSchema>;

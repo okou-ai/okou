@@ -39,6 +39,13 @@ try {
     ),
   );
   await client.query(`
+    CREATE TABLE ssh_connections (
+      id uuid PRIMARY KEY,
+      org_id text NOT NULL,
+      user_id text NOT NULL
+    );
+  `);
+  await client.query(`
     CREATE TABLE agent_vnc_access (
       org_id text NOT NULL,
       user_id text NOT NULL,
@@ -76,6 +83,8 @@ try {
     "1182_wet_felicia_hardy.sql",
     "1183_wild_natasha_romanoff.sql",
     "1184_lovely_christian_walker.sql",
+    "1196_dizzy_archangel.sql",
+    "1197_puzzling_aaron_stack.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -89,6 +98,27 @@ try {
       )
     ).rows,
     credentialsBefore,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT id::text,transport_type,ssh_connection_id::text,x509_server_name FROM vnc_connections ORDER BY id",
+      )
+    ).rows,
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000003",
+        transport_type: "direct",
+        ssh_connection_id: null,
+        x509_server_name: null,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000008",
+        transport_type: "direct",
+        ssh_connection_id: null,
+        x509_server_name: null,
+      },
+    ],
   );
   assert.deepEqual(
     (
@@ -162,7 +192,61 @@ try {
              ('00000000-0000-4000-8000-000000000005','org','other','Other',NULL,'vnc_password','other-ciphertext');
     INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode)
       VALUES ('00000000-0000-4000-8000-000000000004','org','owner','Plain desktop','plain.example.com','00000000-0000-4000-8000-000000000002','username_password','x509_plain','system');
+    INSERT INTO ssh_connections (id,org_id,user_id)
+      VALUES ('00000000-0000-4000-8000-000000000010','org','owner'),
+             ('00000000-0000-4000-8000-000000000011','org','other');
   `);
+
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT transport_type,ssh_connection_id,x509_server_name FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000004'",
+      )
+    ).rows,
+    [
+      {
+        transport_type: "direct",
+        ssh_connection_id: null,
+        x509_server_name: null,
+      },
+    ],
+  );
+  await client.query(
+    "UPDATE vnc_connections SET transport_type='ssh',ssh_connection_id='00000000-0000-4000-8000-000000000010',x509_server_name='plain-tls.example.com' WHERE id='00000000-0000-4000-8000-000000000004'",
+  );
+  await rejects(
+    "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000010'",
+    {
+      code: /^(23503|23001)$/,
+      constraint: "vnc_connections_ssh_owner_fk",
+    },
+  );
+  for (const assignment of [
+    "transport_type='direct'",
+    "ssh_connection_id=NULL",
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000004'`,
+      { code: "23514", constraint: "chk_vnc_connections_transport" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_connections SET ssh_connection_id='00000000-0000-4000-8000-000000000011' WHERE id='00000000-0000-4000-8000-000000000004'",
+    { code: "23503", constraint: "vnc_connections_ssh_owner_fk" },
+  );
+  for (const serverName of [
+    "TLS.EXAMPLE.COM",
+    "tls.example.com/path",
+    "",
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET x509_server_name='${serverName}' WHERE id='00000000-0000-4000-8000-000000000004'`,
+      {
+        code: "23514",
+        constraint: "chk_vnc_connections_x509_server_name",
+      },
+    );
+  }
 
   for (const assignment of [
     "org_id='foreign'",
@@ -300,6 +384,7 @@ try {
   );
 
   await client.query("DELETE FROM vnc_connections");
+  await client.query("DELETE FROM ssh_connections");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,

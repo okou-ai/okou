@@ -7,6 +7,7 @@ import {
   VNC_CA_CERTIFICATES_MAX_COUNT,
   VNC_HOST_MAX_LENGTH,
   type VncSecurity,
+  type VncTransport,
   type VncTrust,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncAuthentication } from "@okouai/api-contracts/contracts/vnc-credentials";
@@ -33,6 +34,11 @@ const failures = {
     code: VNC_ERROR_CODES.INVALID_HOST,
     message: "Invalid VNC host",
   },
+  invalidServerName: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_SERVER_NAME,
+    message: "Invalid VNC X.509 server name",
+  },
   invalidTrust: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_TRUST,
@@ -52,6 +58,11 @@ const failures = {
     kind: "not_found",
     code: VNC_ERROR_CODES.CONNECTION_NOT_FOUND,
     message: "VNC connection not found",
+  },
+  sshConnectionNotFound: {
+    kind: "not_found",
+    code: VNC_ERROR_CODES.SSH_CONNECTION_NOT_FOUND,
+    message: "VNC SSH connection not found",
   },
   credentialConflict: {
     kind: "conflict",
@@ -96,16 +107,18 @@ function containsWhitespaceOrControl(value: string): boolean {
   });
 }
 
-export function canonicalizeVncHost(host: string): VncResult<string> {
-  const trimmed = host.trim();
-  const value = trimmed.endsWith(".") ? trimmed.slice(0, -1) : trimmed;
+function canonicalizeVncIdentity(
+  input: string,
+  failure: "invalidHost" | "invalidServerName",
+): VncResult<string> {
+  const value = input.endsWith(".") ? input.slice(0, -1) : input;
   if (
     value.length === 0 ||
     value.length > VNC_HOST_MAX_LENGTH ||
     containsWhitespaceOrControl(value) ||
     /[[\]@/\\?#%]/u.test(value)
   ) {
-    return vncFailure("invalidHost");
+    return vncFailure(failure);
   }
   const ipVersion = isIP(value);
   if (ipVersion === 4) {
@@ -118,7 +131,7 @@ export function canonicalizeVncHost(host: string): VncResult<string> {
     };
   }
   if (value.includes(":")) {
-    return vncFailure("invalidHost");
+    return vncFailure(failure);
   }
   const ascii = domainToASCII(value).toLowerCase();
   const labels = ascii.split(".");
@@ -139,21 +152,107 @@ export function canonicalizeVncHost(host: string): VncResult<string> {
       );
     })
   ) {
-    return vncFailure("invalidHost");
+    return vncFailure(failure);
   }
   return { ok: true, value: ascii };
+}
+
+export function canonicalizeVncHost(host: string): VncResult<string> {
+  return canonicalizeVncIdentity(host, "invalidHost");
+}
+
+function canonicalizeVncServerName(serverName: string): VncResult<string> {
+  return canonicalizeVncIdentity(serverName, "invalidServerName");
+}
+
+function isPrivateIpv4(host: string): boolean {
+  const [first = -1, second = -1] = host.split(".").map(Number);
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
+function isPrivateIpv6(host: string): boolean {
+  if (host === "::" || host === "::1") {
+    return true;
+  }
+  const first = Number.parseInt(host.split(":", 1)[0] ?? "", 16);
+  if ((first & 0xfe_00) === 0xfc_00 || (first & 0xff_c0) === 0xfe_80) {
+    return true;
+  }
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u.exec(host);
+  if (!mapped?.[1] || !mapped[2]) {
+    return false;
+  }
+  const high = Number.parseInt(mapped[1], 16);
+  const low = Number.parseInt(mapped[2], 16);
+  return isPrivateIpv4(
+    `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`,
+  );
+}
+
+function isPrivateOrLoopbackHost(host: string): boolean {
+  const version = isIP(host);
+  return version === 4
+    ? isPrivateIpv4(host)
+    : version === 6 && isPrivateIpv6(host);
+}
+
+export function prepareVncTransport(
+  transport: VncTransport | undefined,
+  host: string,
+): VncResult<{
+  readonly transportType: "direct" | "ssh";
+  readonly sshConnectionId: string | null;
+}> {
+  if (transport?.type === "ssh") {
+    return {
+      ok: true,
+      value: {
+        transportType: "ssh",
+        sshConnectionId: transport.connectionId,
+      },
+    };
+  }
+  return isPrivateOrLoopbackHost(host)
+    ? vncFailure("invalidHost")
+    : {
+        ok: true,
+        value: { transportType: "direct", sshConnectionId: null },
+      };
 }
 
 export function prepareVncSecurity(security: VncSecurity): VncResult<{
   readonly securityType: VncSecurity["type"];
   readonly trustMode: "system" | "custom_ca";
   readonly caBundle: string | null;
+  readonly x509ServerName: string | null;
 }> {
   const trust = prepareVncTrust(security.trust);
   if (!trust.ok) {
     return trust;
   }
-  return { ok: true, value: { securityType: security.type, ...trust.value } };
+  const serverName =
+    security.serverName === undefined
+      ? undefined
+      : canonicalizeVncServerName(security.serverName);
+  if (serverName !== undefined && !serverName.ok) {
+    return serverName;
+  }
+  return {
+    ok: true,
+    value: {
+      securityType: security.type,
+      ...trust.value,
+      x509ServerName: serverName?.value ?? null,
+    },
+  };
 }
 
 export function isVncProfileCompatible(

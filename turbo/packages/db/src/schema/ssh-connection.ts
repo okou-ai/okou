@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -36,6 +37,11 @@ export const sshConnections = pgTable(
   },
   (table) => {
     return [
+      unique("uq_ssh_connections_owner_id").on(
+        table.id,
+        table.orgId,
+        table.userId,
+      ),
       foreignKey({
         name: "ssh_connections_cloudflare_access_owner_fk",
         columns: [table.cloudflareAccessId, table.orgId, table.userId],

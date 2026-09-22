@@ -1,0 +1,1 @@
+ALTER TABLE "ssh_connections" ADD CONSTRAINT "uq_ssh_connections_owner_id" UNIQUE("id","org_id","user_id");

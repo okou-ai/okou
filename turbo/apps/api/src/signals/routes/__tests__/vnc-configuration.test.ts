@@ -4,12 +4,15 @@ import { rootCertificates } from "node:tls";
 import { describe, expect, it } from "vitest";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { vncConnectionsRoutes } from "../vnc-connections";
+import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRouteMocks } from "./helpers/route-test";
+import { inlineSshKey } from "./helpers/ssh-credential";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -36,6 +39,11 @@ function credentials() {
 function connections() {
   return setupApp({ context, routes: vncConnectionsRoutes })(
     vncConnectionsContract,
+  );
+}
+function sshConnectionsClient() {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
   );
 }
 async function owner(
@@ -153,6 +161,8 @@ describe("VNC owner configuration", () => {
     expect(hosts[0]?.host).toBe("vnc.example.com");
     expect(hosts[0]?.port).toBe(5900);
     expect(hosts[0]?.security).toStrictEqual(security);
+    expect(hosts[0]).not.toHaveProperty("transport");
+    expect(hosts[0]?.security).not.toHaveProperty("serverName");
     expect(
       (await accept(connections().summary({ headers }), [200])).body,
     ).toStrictEqual({ configuredCount: 2 });
@@ -205,6 +215,134 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([]);
+  });
+
+  it("persists typed SSH routes, certificate identity and restrictive deletion", async () => {
+    useSecretKmsProbe();
+    const routeOwner = await owner();
+    const ssh = await accept(
+      sshConnectionsClient().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+
+    for (const host of ["127.0.0.1", "0:0:0:0:0:0:0:1", "::ffff:192.168.1.8"]) {
+      const directPrivate = await rawRequest(
+        "/api/vnc/connections",
+        hostBody(host),
+      );
+      expect(directPrivate.status).toBe(400);
+      expect(directPrivate.body).toMatchObject({
+        error: { code: "VNC_INVALID_HOST" },
+      });
+    }
+
+    const tunneled = await accept(
+      connections().create({
+        headers,
+        body: {
+          ...hostBody("127.0.0.1"),
+          security: {
+            ...security,
+            serverName: "DESKTOP.Internal.Example.",
+          },
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [201],
+    );
+    expect(tunneled.body).toMatchObject({
+      host: "127.0.0.1",
+      generation: 1,
+      transport: { type: "ssh", connectionId: ssh.body.id },
+      security: { ...security, serverName: "desktop.internal.example" },
+    });
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([tunneled.body]);
+
+    await owner({ orgId: routeOwner.orgId });
+    const foreign = await accept(
+      connections().create({
+        headers,
+        body: {
+          ...hostBody("10.0.0.8"),
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [404],
+    );
+    expect(foreign.body.error.code).toBe("VNC_SSH_CONNECTION_NOT_FOUND");
+    expect(
+      (await accept(credentials().list({ headers }), [200])).body.credentials,
+    ).toStrictEqual([]);
+    await owner(routeOwner);
+
+    const referenced = await accept(
+      sshConnectionsClient().delete({
+        headers,
+        params: { connectionId: ssh.body.id },
+      }),
+      [409],
+    );
+    expect(referenced.body.error.code).toBe("SSH_CONNECTION_IN_USE");
+
+    const renamed = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: tunneled.body.id },
+        body: { expectedGeneration: 1, displayName: "Renamed desktop" },
+      }),
+      [200],
+    );
+    expect(renamed.body).toMatchObject({
+      generation: 2,
+      transport: { type: "ssh", connectionId: ssh.body.id },
+    });
+
+    const direct = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: tunneled.body.id },
+        body: {
+          expectedGeneration: 2,
+          host: "public.example.com",
+          transport: { type: "direct" },
+        },
+      }),
+      [200],
+    );
+    expect(direct.body).toMatchObject({
+      host: "public.example.com",
+      generation: 3,
+      security: { ...security, serverName: "desktop.internal.example" },
+    });
+    expect(direct.body).not.toHaveProperty("transport");
+    const clearedIdentity = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: tunneled.body.id },
+        body: { expectedGeneration: 3, security },
+      }),
+      [200],
+    );
+    expect(clearedIdentity.body.generation).toBe(4);
+    expect(clearedIdentity.body.security).toStrictEqual(security);
+    expect(clearedIdentity.body).not.toHaveProperty("transport");
+    await accept(
+      sshConnectionsClient().delete({
+        headers,
+        params: { connectionId: ssh.body.id },
+      }),
+      [204],
+    );
   });
 
   it("rejects non-ASCII and oversized passwords without truncating or echoing them", async () => {
@@ -489,6 +627,8 @@ describe("VNC owner configuration", () => {
       "user@vnc.example.com",
       "vnc.example.com/path",
       "bad host",
+      " vnc.example.com",
+      "vnc.example.com ",
       "localhost:5900",
       "-bad.example",
       "a".repeat(254),
@@ -502,6 +642,23 @@ describe("VNC owner configuration", () => {
         (await rawRequest("/api/vnc/connections", { ...hostBody(), port }))
           .status,
       ).toBe(400);
+    }
+    for (const serverName of [
+      "https://desktop.example.com",
+      "desktop.example.com/path",
+      "desktop.example.com%eth0",
+      "bad server name",
+      " desktop.example.com",
+      "desktop.example.com ",
+    ]) {
+      const response = await rawRequest("/api/vnc/connections", {
+        ...hostBody(),
+        security: { ...security, serverName },
+      });
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        error: { code: "VNC_INVALID_SERVER_NAME" },
+      });
     }
     const certificate = rootCertificates[0];
     expect(certificate).toBeDefined();

@@ -1,11 +1,11 @@
-import type {
-  RunnerVncCheckRequest,
-  RunnerVncCheckResponse,
-  RunnerVncResolveRequest,
-  RunnerVncResolveResponse,
+import {
+  runnerVncSecuritySchema,
+  type RunnerVncCheckRequest,
+  type RunnerVncCheckResponse,
+  type RunnerVncResolveRequest,
+  type RunnerVncResolveResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { vncAuthenticationSchema } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { vncSecuritySchema } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { Db } from "../external/db";
 import type { ClerkClient } from "../external/clerk";
 import { decryptStoredSecretValue } from "./crypto.utils";
@@ -45,6 +45,9 @@ export async function resolveRunnerVnc(
   if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
     return { outcome: "unavailable" };
   }
+  if (row.transportType === "ssh") {
+    return { outcome: "unsupported_profile" };
+  }
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
   }
@@ -64,7 +67,7 @@ export async function resolveRunnerVnc(
   ) {
     throw new Error("VNC connection has an invalid stored trust configuration");
   }
-  const security = vncSecuritySchema.safeParse({
+  const security = runnerVncSecuritySchema.safeParse({
     type: row.securityType,
     trust:
       row.trustMode === "system"
