@@ -37,6 +37,14 @@ export const MORNING_BRIEF_COLLECTION_PHASE_MS = 45_000;
  * commit window has nowhere to be finalized. Collapsing it to zero is what
  * makes a read admitted at 44.9 s settle the attempt as `deadline-exceeded`
  * instead of reporting the per-source facts it actually established.
+ *
+ * The size is bounded by the composition suite, which requires a read
+ * finishing one second past the cutoff to still settle as
+ * `incomplete-coverage`: the attempt has to be alive at `cutoff + 1000`, so
+ * anything at or below 1000 ms reclassifies it. Measured against
+ * `will not call an exhausted collection a quiet morning`, 1000 ms fails and
+ * 1001 ms passes. This is the smallest round value above that boundary, which
+ * keeps the classification off a one-millisecond margin.
  */
 export const MORNING_BRIEF_COMMIT_RESERVE_MS = 2000;
 
