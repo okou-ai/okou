@@ -940,8 +940,8 @@ test("Reselecting the current model or provider preserves the API key draft", as
   }
   click(model);
   click(await screen.findByRole("option", { name: "Claude Opus 4.8" }));
-  expect(radioByName(/API key/u, dialog)).toHaveAttribute(
-    "aria-checked",
+  expect(routeButtonByName(/API key/u, dialog)).toHaveAttribute(
+    "aria-pressed",
     "true",
   );
   expect(screen.getByPlaceholderText("Enter your API key")).toHaveValue(
