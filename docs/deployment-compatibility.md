@@ -773,6 +773,7 @@ Compatibility is negotiated per run rather than by deployment order:
   `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
   and require `ahead` or `identical`. Retained Runner tags are not constrained:
   the guest ignores unknown launch-config fields.
+
 - `piLaunchConfig.apiFirstTurn` also accepts the optional
   `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
   code-determined session construction (the system prompt template and the
@@ -2711,21 +2712,24 @@ handoff-only design. See [API-first run usage handoff](api-run-usage.md).
 
 ## Current-run usage general availability
 
-Current-run usage is generally available without a rollout switch. Promote the
-Runner before the API: the updated Runner installs the `run.usage` consumer for
-every official API-backed assignment, while the older API can continue gating
-its prompt and `run-usage:read` capability during that promotion. After the API
-promotion, every newly created official Run receives both. Already-created Runs
-retain their minted capability and stable prompt snapshot; create a new Run to
-obtain the generally available command. Stored overrides for the retired switch
-are ignored by the registered-key filter and require no database migration.
+Current-run usage is generally available without a rollout switch. The normal
+release promotes the API before the Runner. During that bounded interval, the
+new API grants the prompt and `run-usage:read` capability, while an old Runner
+that captured the switch as disabled returns `unavailable` with
+`not_dispatched`. The CLI reports that as assignment-unavailable and directs the
+caller to create a new Run after Runner promotion; a Runner predating the method
+returns `unknown_method`, reported as unsupported Runner. Neither response uses
+a fallback or automatic retry.
 
-A newer API served by a Runner from the staged rollout can temporarily receive
-`unavailable` with `not_dispatched`; a Runner predating the method returns
-`unknown_method`. The CLI reports these as assignment-unavailable and
-unsupported Runner respectively, with no fallback or automatic retry. The
-source DTOs, guest RPC framing, handoff metadata and observational accounting
-semantics are unchanged.
+After Runner promotion, every newly created official Run receives the prompt,
+capability and installed `run.usage` consumer. The reverse skew is also safe: a
+new Runner with the previous API installs the assignment-bound consumer while
+that API continues gating prompt and capability discovery. Already-created Runs
+retain their minted capability, stable prompt snapshot and Runner ownership;
+create a new Run after promotion to obtain the generally available command.
+Stored overrides for the retired switch are ignored by the registered-key
+filter and require no database migration. The source DTOs, guest RPC framing,
+handoff metadata and observational accounting semantics are unchanged.
 
 ## DeepSeek V4.1 Flash Pi coverage
 
