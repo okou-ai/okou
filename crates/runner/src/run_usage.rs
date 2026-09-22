@@ -3,6 +3,7 @@
 use std::{future::Future, io, sync::Arc, time::Duration};
 
 use runner_rpc_proto::{Delivery, ErrorCode, Response, ResponseWriter};
+use runner_types::{ids::RunId, types::ExecutionContext};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::Instant;
@@ -10,9 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     guest_rpc,
-    ids::RunId,
     proxy::{CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, TokenTotals},
-    types::ExecutionContext,
 };
 
 const FEATURE_SWITCH: &str = "runUsage";

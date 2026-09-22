@@ -9,7 +9,7 @@ use std::{
 use tokio::net::TcpStream;
 
 use super::Failure;
-use crate::firewall_hostname_policy::is_public_ip_address;
+use runner_types::firewall_hostname_policy::is_public_ip_address;
 
 #[async_trait]
 pub(super) trait Network: Send + Sync {
@@ -41,7 +41,7 @@ pub(super) fn validate_host(host: &str) -> Result<(), Failure> {
     // URL, escaped, bracketed or search-domain-relative interpretations.
     if host.len() > 253
         || !host.is_ascii()
-        || crate::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
+        || runner_types::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
         || host.split('.').any(|label| {
             label.is_empty()
                 || label.len() > 63

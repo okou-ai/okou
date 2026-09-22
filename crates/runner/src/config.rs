@@ -321,10 +321,10 @@ pub(crate) fn normalize_api_base_url(value: &str) -> RunnerResult<String> {
         ));
     }
 
-    let raw_authority = crate::firewall_hostname_policy::raw_url_authority(value)
+    let raw_authority = runner_types::firewall_hostname_policy::raw_url_authority(value)
         .ok_or_else(|| RunnerError::Config("server.url must include a host".into()))?;
-    crate::firewall_hostname_policy::validate_raw_url_host(
-        crate::firewall_hostname_policy::raw_host_from_authority(raw_authority),
+    runner_types::firewall_hostname_policy::validate_raw_url_host(
+        runner_types::firewall_hostname_policy::raw_host_from_authority(raw_authority),
         "server.url",
     )
     .map_err(RunnerError::Config)?;

@@ -1495,7 +1495,7 @@ export const claimCompatibleStoredExecutionContextSchema =
  *
  * This is the canonical producer schema. The runner's `ExecutionContext` is a
  * tolerant consumer projection and intentionally does not mirror every field.
- * See `crates/runner/src/types.rs`.
+ * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
   runId: z.uuid(),

@@ -6,9 +6,9 @@ use super::support::{submit_args_for_test, submit_queue_entry, write_queue_job_f
 use crate::active_input::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
-use crate::ids::RunId;
 use crate::local_queue::{self, JobRequest, JobResponse};
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 const TEST_QUEUE_WATCH_TIMEOUT: Duration = Duration::from_secs(5);
 const TEST_QUEUE_WATCH_INTERVAL: Duration = Duration::from_millis(1);

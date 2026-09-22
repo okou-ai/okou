@@ -14,13 +14,13 @@ use super::super::support::{
     shutdown, test_profiles, wait_cancel_handle, wait_idle_pool_len,
 };
 use crate::paths::RunnerPaths;
-use crate::storage_manifest::{ArtifactEntry, StorageManifest};
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
-use crate::types::{
+use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_types::storage_manifest::{ArtifactEntry, StorageManifest};
+use runner_types::types::{
     ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,
     ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult, WorkspaceReuseResult,
 };
-use crate::workspace_image_cache::WorkspaceImageCache;
 
 const WAIT: Duration = Duration::from_secs(5);
 const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";

@@ -17,7 +17,7 @@ import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testSlackStateRoutes } from "../test-slack-state";
+import { testSlackStateRoutes } from "../slack-state-preview";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { seedRun$ } from "./helpers/usage-state";

@@ -55,7 +55,7 @@ use uuid::Uuid;
 
 use crate::duration::duration_ms as saturated_duration_ms;
 #[cfg(test)]
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 use crate::config::{self, ProfileConfig};
 use crate::deps;

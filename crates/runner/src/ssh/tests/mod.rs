@@ -306,7 +306,7 @@ async fn cancelled_dns_does_not_block_guest_park_or_the_next_runs_quota() {
     assert_eq!(terminal(&frames)["failure_reason"], "cancelled");
     assert_eq!(terminal(&frames)["effects"], "not_started");
     drop(h.control.try_fence_normal_operations().unwrap());
-    h.restart(crate::ids::RunId::new_v4()).await;
+    h.restart(runner_types::ids::RunId::new_v4()).await;
     let mut pending = Vec::new();
     for _ in 0..8 {
         pending.push(h.open().await);

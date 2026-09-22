@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use sandbox::SandboxId;
 
-use crate::ids::RunId;
 use crate::paths::{RunnerPaths, scoped_workspace_image_cache_key};
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::types::ExecutionContext;
 use crate::workspace_image_cache::{
     WorkspaceCacheCheckoutResult, WorkspaceCacheTerminalStatus, WorkspaceImageCache,
     WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest, WorkspaceImagePromotionOutcome,
     WorkspaceImagePromotionRequest, WorkspaceSessionHistorySidecarRepresentation,
 };
+use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
 
 pub(in crate::executor::tests) async fn seed_workspace_image_cache(
     cache: &WorkspaceImageCache,

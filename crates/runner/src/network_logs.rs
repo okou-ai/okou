@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 
 use crate::error::{ApiFailureKind, ApiRequestContext, ApiTransportCause, RunnerError};
 use crate::http::HttpClient;
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 /// Network log entry from the per-run JSONL file.
 ///
@@ -1499,7 +1499,7 @@ mod tests {
     async fn upload_network_logs_posts_payload_and_keeps_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let first = json!({
             "timestamp": "2026-02-15T10:00:00Z",
             "action": "ALLOW",
@@ -1554,7 +1554,7 @@ mod tests {
     async fn upload_network_logs_splits_batches_by_entry_limit() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let logs: Vec<_> = (0..=NETWORK_LOG_UPLOAD_MAX_BATCH_ENTRIES)
             .map(|idx| {
                 json!({
@@ -1605,7 +1605,7 @@ mod tests {
     async fn upload_network_logs_allows_exact_batch_budget() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let logs = one_entry_per_batch_logs(NETWORK_LOG_UPLOAD_MAX_BATCHES);
         tokio::fs::write(&path, network_log_content(&logs))
             .await
@@ -1642,7 +1642,7 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let body = "x".repeat(INCIDENT_BODY_BYTES);
         let mut content = String::with_capacity(INCIDENT_SOURCE_BYTES);
         for sequence in 0..INCIDENT_ENTRY_COUNT {
@@ -1723,7 +1723,7 @@ mod tests {
     async fn upload_network_logs_stops_at_batch_budget() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let uploaded_count = NETWORK_LOG_UPLOAD_MAX_BATCHES;
         let logs = one_entry_per_batch_logs(uploaded_count + 2);
         let content = network_log_content(&logs);
@@ -1805,7 +1805,7 @@ mod tests {
     async fn upload_network_logs_splits_batches_by_estimated_bytes() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let large_value = "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES / 2);
         let first = json!({
             "timestamp": "2026-02-15T10:00:00Z",
@@ -1858,7 +1858,7 @@ mod tests {
     async fn upload_network_logs_skips_oversized_entry_and_continues() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let oversized_value = "x".repeat(NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES);
         let oversized = json!({
             "timestamp": "2026-02-15T10:00:00Z",
@@ -1926,7 +1926,7 @@ mod tests {
         let http = http_for_server(&server);
         let (_, events) = await_with_frozen_time(capture_async_log_events(upload_network_logs(
             &http,
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SANDBOX_TOKEN,
             &path,
         )))
@@ -1957,7 +1957,7 @@ mod tests {
     async fn upload_network_logs_allows_exact_source_byte_budget() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let log = json!({ "sequence": 1 });
         let mut content = network_log_content(std::slice::from_ref(&log)).into_bytes();
         content.resize(NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES as usize, b' ');
@@ -1998,7 +1998,7 @@ mod tests {
     async fn upload_network_logs_skips_malformed_lines() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let first = json!({
             "timestamp": "2026-02-15T10:00:00Z",
             "host": "first-valid.example",
@@ -2043,7 +2043,7 @@ mod tests {
     async fn upload_network_logs_preserves_valid_entries_around_invalid_utf8_line() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let first = json!({
             "timestamp": "2026-02-15T10:00:00Z",
             "host": "first-valid.example",
@@ -2089,7 +2089,7 @@ mod tests {
     async fn upload_network_logs_flushes_pending_batch_after_truncated_multibyte_sequence() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let first = json!({
             "timestamp": "2026-02-15T10:00:00Z",
             "host": "first-valid.example",
@@ -2128,7 +2128,7 @@ mod tests {
     async fn upload_network_logs_stops_after_rejected_batch() {
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let logs = one_entry_per_batch_logs(3);
         tokio::fs::write(&path, network_log_content(&logs))
             .await
@@ -2192,7 +2192,7 @@ mod tests {
             })
             .await;
         let http = http_for_server(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().unwrap();
 
         let missing =
@@ -2236,7 +2236,7 @@ mod tests {
         let http = http_for_server(&server);
         let (outcome, events) = capture_async_log_events(upload_network_logs(
             &http,
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SANDBOX_TOKEN,
             &path,
         ))
@@ -2312,7 +2312,7 @@ mod tests {
         .unwrap();
         let upload = capture_async_log_events(upload_network_logs(
             &http,
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SANDBOX_TOKEN,
             &path,
         ));
@@ -2412,7 +2412,7 @@ mod tests {
         let (outcome, events) = await_with_frozen_time(async {
             let upload = capture_async_log_events(upload_network_logs(
                 &http,
-                RunId::nil(),
+                RunId::from(uuid::Uuid::nil()),
                 SANDBOX_TOKEN,
                 &path,
             ));
@@ -2473,7 +2473,7 @@ mod tests {
         let (outcome, events) = await_with_frozen_time(async {
             let upload = capture_async_log_events(upload_network_logs(
                 &http,
-                RunId::nil(),
+                RunId::from(uuid::Uuid::nil()),
                 SANDBOX_TOKEN,
                 &path,
             ));
@@ -2550,7 +2550,7 @@ mod tests {
         .unwrap();
         let (outcome, events) = capture_async_log_events(upload_network_logs(
             &http,
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SANDBOX_TOKEN,
             &path,
         ))

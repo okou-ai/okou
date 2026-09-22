@@ -6,7 +6,7 @@ use super::super::support::{
     wait_discover_entered, wait_idle_pool_len, wait_status_idle_empty_with_active_run,
 };
 
-use crate::types::SandboxReuseResult;
+use runner_types::types::SandboxReuseResult;
 
 fn reusable_candidate(run_id: RunId, session_id: &str) -> crate::provider::JobCandidate {
     crate::provider::JobCandidate::new(run_id, "vm0/default".into())

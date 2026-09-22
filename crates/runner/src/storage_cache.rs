@@ -4155,14 +4155,14 @@ mod tests {
     use tokio::net::TcpListener;
 
     use crate::http::{HttpClient, HttpClientConfig};
-    use crate::ids::RunId;
     use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
-    use crate::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
     use crate::storage_plan::build_storage_plan;
     use crate::test_fixtures::raw_http::{
         RawHttpAction, RawHttpTestServer, http_response, join_raw_http_task, json_response,
         read_http_request,
     };
+    use runner_types::ids::RunId;
+    use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
 
     const CACHE_TEST_RUNTIME_DIR: &str = "/tmp/storage-cache-test-runtime";
 
@@ -4198,7 +4198,12 @@ mod tests {
             client_session_id: "runner-session-test".to_string(),
         })
         .unwrap();
-        JobTelemetry::new(http, RunId::nil(), "test-token".to_string(), None)
+        JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "test-token".to_string(),
+            None,
+        )
     }
 
     fn assert_op(ops: &[(String, bool, Option<String>)], action_type: &str, success: bool) {

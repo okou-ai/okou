@@ -404,7 +404,7 @@ async fn targeted_run_wide_invalidation_and_replacement_retire_existing_ids() {
     assert_eq!(rpc(&h, "list", json!({})).await["sessions"], json!([]));
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
-    h.restart(crate::ids::RunId::new_v4()).await;
+    h.restart(runner_types::ids::RunId::new_v4()).await;
     assert_eq!(
         rpc(&h, "status", json!({"sessionId":id})).await["failure_reason"],
         "unavailable"
@@ -465,7 +465,7 @@ async fn credential_cache_saturation_does_not_create_a_global_session_cap() {
     let mut h = Harness::new(Reply::Hold).await;
     let mut registrations = Vec::new();
     for _ in 0..256 {
-        let registration = h.runtime.cache.register(crate::ids::RunId::new_v4());
+        let registration = h.runtime.cache.register(runner_types::ids::RunId::new_v4());
         let _access = registration.lookup(uuid::Uuid::new_v4()).unwrap();
         registrations.push(registration);
     }

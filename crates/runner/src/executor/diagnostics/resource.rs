@@ -6,7 +6,7 @@ use super::super::{
     ResourceFailureDiagnostics, ResourceFailureKind, SandboxReuseResult,
 };
 use crate::helper_exec::{helper_exec_succeeded, helper_exec_termination_label};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const ROOTFS_FULL_AVAILABLE_KB_THRESHOLD: u64 = 1024;
 const DF_BLOCKS_MARKER: &str = "VM0_DF_BLOCKS_V1";

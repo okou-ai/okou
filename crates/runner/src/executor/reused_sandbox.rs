@@ -15,8 +15,8 @@ use super::{ExecuteOutcome, ExecutionFailure, ExecutorConfig, JobParams, NewSand
 use crate::error::RunnerError;
 use crate::idle_pool::IdleSandboxKind;
 use crate::telemetry::JobTelemetry;
-use crate::types::ExecutionContext;
 use crate::workspace_image_cache::WorkspaceImageLease;
+use runner_types::types::ExecutionContext;
 
 const BLANK_PREFETCH_REPLACEMENT: &str = "runner_blank_sandbox_retry_without_codex_prefetch";
 
@@ -139,7 +139,7 @@ pub(super) async fn execute_reused_sandbox(
 struct BlankReplacement {
     sandbox_id: sandbox::SandboxId,
     error: RunnerError,
-    reuse_result: crate::types::SandboxReuseResult,
+    reuse_result: runner_types::types::SandboxReuseResult,
     inputs: PreparedRunInputs,
 }
 

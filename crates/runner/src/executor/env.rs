@@ -22,8 +22,8 @@ use super::cli_framework::{
     EffectiveCliFramework, effective_cli_framework, normalized_cli_agent_type,
 };
 use super::{JOB_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir, guest_runtime_path};
-use crate::ids::RunId;
-use crate::types::{
+use runner_types::ids::RunId;
+use runner_types::types::{
     ConnectorRuntimeTargetRegistration, ExecutionContext, SandboxReuseResult, WorkspaceReuseResult,
 };
 

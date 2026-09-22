@@ -8,7 +8,7 @@ use tokio::fs;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::types::MAX_HELD_WORKSPACE_STATES;
+use runner_types::types::MAX_HELD_WORKSPACE_STATES;
 
 use super::entry::{CacheEntryPaths, is_cache_key_name};
 use super::fs::{

@@ -8,6 +8,25 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.656.1](https://github.com/okou-ai/okou/compare/api-v1.656.0...api-v1.656.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **api:** handle retryable telemetry ingest failures ([#35953](https://github.com/okou-ai/okou/issues/35953)) ([785a8de](https://github.com/okou-ai/okou/commit/785a8de9dc834b02d596aa35ec49feef71d61d02))
+* **api:** map Clerk invitation conflicts ([#35991](https://github.com/okou-ai/okou/issues/35991)) ([b052a84](https://github.com/okou-ai/okou/commit/b052a841d0c194a14174374b84dd8f8ea1550d70))
+* **slack:** handle connection identity conflicts ([#35994](https://github.com/okou-ai/okou/issues/35994)) ([bcfc8f3](https://github.com/okou-ai/okou/commit/bcfc8f36a5b43b7fd1fe2c6c70de594f7d42160b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.1
+    * @okouai/core bumped to 8.698.0
+    * @okouai/db bumped to 1.286.2
+    * @okouai/pi-agent-runtime bumped to 1.35.4
+
 ## [1.656.0](https://github.com/okou-ai/okou/compare/api-v1.655.1...api-v1.656.0) (2026-09-22)
 
 

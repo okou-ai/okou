@@ -121,7 +121,7 @@ pub(crate) async fn prepare_workspace_image_from_active_sandbox(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 "workspace image cache promotion preparation panicked"
             );
@@ -154,7 +154,7 @@ fn log_guest_operation_failure(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 skipped_after_cancellation,
                 error = %error,
@@ -202,7 +202,7 @@ impl PreparedWorkspaceImagePromotion {
                     sandbox_id = %self.promotion.sandbox_id(),
                     profile_name = self.promotion.profile_name(),
                     reuse_key_fingerprint = %crate::paths::short_digest(self.promotion.reuse_key()),
-                    reuse_key_kind = crate::types::reuse_key_kind(self.promotion.reuse_key()),
+                    reuse_key_kind = runner_types::types::reuse_key_kind(self.promotion.reuse_key()),
                     reason = self.reason,
                     "workspace image cache promotion publish panicked"
                 );
@@ -246,7 +246,7 @@ impl PreparedWorkspaceImagePromotion {
                     sandbox_id = %promotion.sandbox_id(),
                     profile_name = promotion.profile_name(),
                     reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                    reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                    reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                     reason = self.reason,
                     error = %e,
                     "workspace image cache promotion failed"
@@ -367,7 +367,7 @@ async fn export_session_history_sidecar(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 error = %e,
                 "workspace image cache session history sidecar export admission failed"
@@ -421,7 +421,7 @@ async fn export_session_history_sidecar(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 helper_exit_code,
                 failure_stage,
@@ -435,7 +435,7 @@ async fn export_session_history_sidecar(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 error = %format_helper_exec_failure("session history sidecar export", &result),
                 "workspace image cache session history sidecar export failed"
@@ -458,7 +458,7 @@ async fn export_session_history_sidecar(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 "workspace image cache session history sidecar export returned invalid metadata"
             );
@@ -516,7 +516,7 @@ async fn export_session_history_sidecar(
             sandbox_id = %promotion.sandbox_id(),
             profile_name = promotion.profile_name(),
             reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-            reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+            reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
             reason,
             copied_bytes = copied.bytes_copied,
             encoded_size = metadata.encoded_size,
@@ -545,7 +545,7 @@ pub(crate) async fn prepare_workspace_image_from_parked_sandbox(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 error = %e,
                 "workspace image cache promotion skipped because idle sandbox unpark failed"
@@ -559,7 +559,7 @@ pub(crate) async fn prepare_workspace_image_from_parked_sandbox(
                 sandbox_id = %promotion.sandbox_id(),
                 profile_name = promotion.profile_name(),
                 reuse_key_fingerprint = %crate::paths::short_digest(promotion.reuse_key()),
-                reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key()),
+                reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key()),
                 reason,
                 "workspace image cache promotion skipped because idle sandbox unpark panicked"
             );
@@ -582,7 +582,7 @@ pub(crate) async fn abandon_unpublished_workspace_promotion(
     let sandbox_id = promotion.sandbox_id();
     let profile_name = promotion.profile_name().to_owned();
     let reuse_key_fingerprint = crate::paths::short_digest(promotion.reuse_key());
-    let reuse_key_kind = crate::types::reuse_key_kind(promotion.reuse_key());
+    let reuse_key_kind = runner_types::types::reuse_key_kind(promotion.reuse_key());
     match promotion.abandon_unpublished(reason).await {
         Ok(abandoned) => abandoned,
         Err(e) => {

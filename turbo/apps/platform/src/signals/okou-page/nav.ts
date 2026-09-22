@@ -4,7 +4,6 @@ import { isEditableTarget } from "@okouai/ui";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
-import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
@@ -219,16 +218,6 @@ export const setSidebarExpanded$ = command(({ set }, expanded: boolean) => {
   set(internalSidebarExpanded$, expanded);
 });
 
-export type SidebarNavId =
-  | "chat"
-  | "agents"
-  | "artifacts"
-  | "connectors"
-  | "workflows"
-  | "works"
-  | "settings"
-  | "queues";
-
 export function isChatRoute(key: RouteKey | null): boolean {
   return (
     key === "home" ||
@@ -237,26 +226,6 @@ export function isChatRoute(key: RouteKey | null): boolean {
     key === "chat"
   );
 }
-
-export const handleNavSelect$ = command(({ set }, id: SidebarNavId) => {
-  if (id === "queues") {
-    set(openQueueDrawer$);
-  } else {
-    const navRoutes = {
-      chat: ROUTES.home,
-      agents: ROUTES.agents,
-      artifacts: ROUTES.artifacts,
-      connectors: ROUTES.connectors,
-      workflows: ROUTES.workflows,
-      works: ROUTES.works,
-      settings: ROUTES.settings,
-    } satisfies Record<
-      Exclude<SidebarNavId, "queues">,
-      (typeof ROUTES)[keyof typeof ROUTES]
-    >;
-    set(detachedNavigateTo$, navRoutes[id]);
-  }
-});
 
 export type AccountAction = "lab" | "signout";
 

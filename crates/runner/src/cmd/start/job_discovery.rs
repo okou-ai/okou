@@ -132,7 +132,6 @@ use crate::idle_pool::{
     ReusableIdleSandbox, SpeculativeIdleSandbox, SpeculativeIdleUnparkResult,
     SpeculativeReparkResult,
 };
-use crate::ids::RunId;
 use crate::lifecycle::RunnerMode;
 use crate::paths::short_digest;
 use crate::provider::{
@@ -145,7 +144,8 @@ use crate::run_cancellation::{
 use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
-use crate::types::{
+use runner_types::ids::RunId;
+use runner_types::types::{
     CompleteRequest, ExecutionContext, HeldWorkspaceState, SandboxReuseResult,
     WORKSPACE_AFFINITY_VERSION, reuse_key_kind,
 };

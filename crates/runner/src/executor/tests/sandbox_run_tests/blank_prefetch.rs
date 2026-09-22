@@ -68,7 +68,7 @@ async fn execute_blank(
         RunStart {
             restore_guest_state: true,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

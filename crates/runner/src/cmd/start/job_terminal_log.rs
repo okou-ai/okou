@@ -12,7 +12,7 @@ use guest_contracts::diagnostics::{
 use tracing::info;
 
 use crate::executor::{self, ExecutionFailureKind};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) fn log_terminal_job_outcome(
     run_id: RunId,
@@ -598,7 +598,13 @@ mod tests {
         let captured = CapturedEvents::default();
         let subscriber = tracing_subscriber::registry().with(captured.clone());
         tracing::subscriber::with_default(subscriber, || {
-            log_terminal_job_outcome(RunId::nil(), exit_code, reused, cancelled, failure);
+            log_terminal_job_outcome(
+                RunId::from(uuid::Uuid::nil()),
+                exit_code,
+                reused,
+                cancelled,
+                failure,
+            );
         });
         let events = captured.entries();
         assert_eq!(events.len(), 1, "captured events: {events:#?}");
@@ -683,7 +689,11 @@ mod tests {
             finished.fields.get("message").map(String::as_str),
             Some("job finished")
         );
-        assert_field_eq(&finished, "run_id", &RunId::nil().to_string());
+        assert_field_eq(
+            &finished,
+            "run_id",
+            &RunId::from(uuid::Uuid::nil()).to_string(),
+        );
         assert_field_eq(&finished, "exit_code", "0");
         assert_field_eq(&finished, "reused", "true");
         assert!(!finished.fields.contains_key("error"));
@@ -696,7 +706,11 @@ mod tests {
             cancelled.fields.get("message").map(String::as_str),
             Some("job cancelled")
         );
-        assert_field_eq(&cancelled, "run_id", &RunId::nil().to_string());
+        assert_field_eq(
+            &cancelled,
+            "run_id",
+            &RunId::from(uuid::Uuid::nil()).to_string(),
+        );
         assert_field_eq(&cancelled, "exit_code", "130");
         assert_field_eq(&cancelled, "reused", "false");
         assert!(!cancelled.fields.contains_key("error"));
@@ -737,7 +751,11 @@ mod tests {
                 Some("job execution failed")
             );
             assert_field_eq(&event, "error", &failure_error);
-            assert_field_eq(&event, "run_id", &RunId::nil().to_string());
+            assert_field_eq(
+                &event,
+                "run_id",
+                &RunId::from(uuid::Uuid::nil()).to_string(),
+            );
             assert_field_eq(&event, "exit_code", "1");
             assert_field_eq(&event, "failure_reason", reason.as_str());
             assert_field_eq(&event, "failure_class", "cli_nonzero");
@@ -1720,7 +1738,7 @@ mod tests {
         assert_field_kind(&timeout_event, "guest_duration_ms", "u64");
 
         for event in [&generic_event, &timeout_event] {
-            assert_field_eq(event, "run_id", &RunId::nil().to_string());
+            assert_field_eq(event, "run_id", &RunId::from(uuid::Uuid::nil()).to_string());
             assert_field_eq(event, "exit_code", "124");
             assert_field_eq(event, "reused", "false");
             assert_field_eq(event, "error", "Timeout");

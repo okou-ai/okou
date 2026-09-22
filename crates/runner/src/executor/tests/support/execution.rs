@@ -16,7 +16,7 @@ use super::super::super::{
 use super::config::test_telemetry;
 use crate::error::RunnerResult;
 use crate::run_cancellation::RunCancellationSignals;
-use crate::types::{ExecutionContext, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 pub(in crate::executor::tests) const RUN_IN_SANDBOX_TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -79,7 +79,7 @@ pub(in crate::executor::tests) fn spawn_run_in_sandbox_test_with_timeouts(
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -107,7 +107,7 @@ pub(in crate::executor::tests) fn spawn_run_in_sandbox_test_with_cancellation(
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,

@@ -326,10 +326,10 @@ function createTemplatePickerListSignals() {
       set(internalTemplatePickerPresentationScrollTop$, scrollTop);
     },
   );
-  const restoreTemplatePickerPresentationScroll$ = command(
-    ({ get }, node: HTMLElement) => {
+  const restoreTemplatePickerPresentationScrollRef$ = onRef<HTMLDivElement>(
+    command(({ get }, node: HTMLDivElement) => {
       node.scrollTop = get(internalTemplatePickerPresentationScrollTop$);
-    },
+    }),
   );
 
   // Inline illustration cards show a hero image plus a variant thumbnail strip.
@@ -359,7 +359,7 @@ function createTemplatePickerListSignals() {
       templatePickerWorkflowCategory$,
       setTemplatePickerWorkflowCategory$,
       setTemplatePickerPresentationScrollTop$,
-      restoreTemplatePickerPresentationScroll$,
+      restoreTemplatePickerPresentationScrollRef$,
       illustrationVariantIndex$,
       setIllustrationVariantIndex$,
       ...avatarTemplates,
@@ -406,6 +406,57 @@ function createTemplateCardSignals() {
   };
 }
 
+function createTemplatePickerFocusSignals(
+  dialog: ReturnType<typeof createTemplatePickerDialogSignals>,
+  previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
+  imported: ReturnType<typeof createImportedPresentationTemplateSignals>,
+) {
+  const pendingPreviewTriggerId$ = state<string | null>(null);
+  const closeOpenedTemplate$ = command(({ get, set }) => {
+    const templateId = get(previews.openedTemplateId$);
+    set(
+      pendingPreviewTriggerId$,
+      templateId === null ? null : `built-in:${templateId}`,
+    );
+    set(previews.closeOpenedTemplate$);
+  });
+  const closeImportedPresentationTemplatePreview$ = command(({ get, set }) => {
+    const templateId = get(imported.importedPresentationTemplatePreviewId$);
+    set(
+      pendingPreviewTriggerId$,
+      templateId === null ? null : `imported:${templateId}`,
+    );
+    set(imported.closeImportedPresentationTemplatePreview$);
+  });
+  const restoreTemplatePreviewTriggerRef$ = onRef<HTMLButtonElement>(
+    command(({ get, set }, element: HTMLButtonElement) => {
+      if (element.dataset.templatePreviewId === get(pendingPreviewTriggerId$)) {
+        element.focus({ preventScroll: true });
+        set(pendingPreviewTriggerId$, null);
+      }
+    }),
+  );
+  const focusTemplatePreviewRef$ = onRef<HTMLDivElement>(
+    command((_, element: HTMLDivElement) => {
+      element.focus({ preventScroll: true });
+    }),
+  );
+  const completeTemplatePickerClose$ = command(({ get, set }) => {
+    if (get(dialog.templatePickerOpen$)) {
+      return;
+    }
+    set(pendingPreviewTriggerId$, null);
+    set(dialog.completeTemplatePickerClose$);
+  });
+  return {
+    closeOpenedTemplate$,
+    closeImportedPresentationTemplatePreview$,
+    restoreTemplatePreviewTriggerRef$,
+    focusTemplatePreviewRef$,
+    completeTemplatePickerClose$,
+  };
+}
+
 export function createComposerUiSignals() {
   const basic = createBasicComposerUiSignals();
   const dialog = createTemplatePickerDialogSignals();
@@ -429,6 +480,11 @@ export function createComposerUiSignals() {
       ...cards.signals,
       ...previews,
       ...importedPresentationTemplates,
+      ...createTemplatePickerFocusSignals(
+        dialog,
+        previews,
+        importedPresentationTemplates,
+      ),
     },
   };
 }

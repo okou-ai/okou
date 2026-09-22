@@ -1035,6 +1035,13 @@ function AddTelegramBotDialogFrame({
           })}
           onSubmit={(event) => {
             event.preventDefault();
+            if (flow.step === "create") {
+              if (canSubmit) {
+                onAddBot();
+              }
+            } else if (flow.canGoNext && !flow.checkingTarget && !adding) {
+              flow.goNext();
+            }
           }}
         >
           <AddTelegramBotProgress step={flow.step} />
@@ -1058,8 +1065,6 @@ function AddTelegramBotDialogFrame({
             canSubmit={canSubmit}
             onCancel={onCancel}
             onBack={flow.goBack}
-            onNext={flow.goNext}
-            onAddBot={onAddBot}
           />
         </form>
       </DialogContent>
@@ -1278,8 +1283,6 @@ function AddTelegramBotDialogFooter({
   canSubmit,
   onCancel,
   onBack,
-  onNext,
-  onAddBot,
 }: {
   step: AddTelegramStep;
   adding: boolean;
@@ -1288,8 +1291,6 @@ function AddTelegramBotDialogFooter({
   canSubmit: boolean;
   onCancel: () => void;
   onBack: () => void;
-  onNext: () => void;
-  onAddBot: () => void;
 }) {
   const { t } = useTranslation();
   const isTokenStep = step === "token";
@@ -1317,12 +1318,7 @@ function AddTelegramBotDialogFooter({
         )}
       </Button>
       {isCreateStep ? (
-        <Button
-          type="button"
-          disabled={!canSubmit}
-          className="gap-2"
-          onClick={onAddBot}
-        >
+        <Button type="submit" disabled={!canSubmit} className="gap-2">
           {adding ? (
             <Loader2 size={16} className="animate-spin" />
           ) : (
@@ -1338,10 +1334,9 @@ function AddTelegramBotDialogFooter({
         </Button>
       ) : (
         <Button
-          type="button"
+          type="submit"
           disabled={!canGoNext || !!checkingTarget || adding}
           className="gap-2"
-          onClick={onNext}
         >
           {checkingTarget ? (
             <>

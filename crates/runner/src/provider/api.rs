@@ -49,16 +49,16 @@ use crate::error::{
     RunnerError, RunnerResult,
 };
 use crate::http::{ApiRequestBuilder, HttpClient};
-use crate::ids::RunId;
 use crate::run_cancellation::RunCancellationRegistry;
 use crate::runner_process_identity::RunnerProcessIdentity;
-use crate::types::{
+use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
+use runner_types::ids::RunId;
+use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
     ExecutionContext, HeartbeatState, Job, PollResponse,
 };
 #[cfg(test)]
-use crate::types::{SandboxReuseResult, WorkspaceReuseResult};
-use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
+use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
@@ -2119,7 +2119,7 @@ mod tests {
                 then.status(200).delay(Duration::from_secs(6));
             })
             .await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let sync = server
             .mock_async(|when, then| {
                 when.method(POST)
@@ -2534,20 +2534,20 @@ mod tests {
             allocated_memory_mb: 4096,
             running_count: 1,
             admittable_profiles: vec![crate::profile::DEFAULT_PROFILE.to_string()],
-            held_sandbox_states: vec![crate::types::HeldSandboxState {
+            held_sandbox_states: vec![runner_types::types::HeldSandboxState {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
-                reusable_sandbox: crate::types::ReusableSandboxState {
+                reusable_sandbox: runner_types::types::ReusableSandboxState {
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
                     history_generation_run_id: None,
                 },
             }],
-            held_workspace_states: vec![crate::types::HeldWorkspaceState {
+            held_workspace_states: vec![runner_types::types::HeldWorkspaceState {
                 reuse_key: "thread:heartbeat-test".to_string(),
                 last_completed_at: "2026-07-08T00:00:00.000Z".to_string(),
-                workspace_caches: vec![crate::types::WorkspaceCacheCapability {
+                workspace_caches: vec![runner_types::types::WorkspaceCacheCapability {
                     profile: crate::profile::DEFAULT_PROFILE.to_string(),
-                    workspace_affinity_version: crate::types::WORKSPACE_AFFINITY_VERSION,
+                    workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
             mode: "running".to_string(),
@@ -3372,7 +3372,7 @@ mod tests {
     fn claim_request_body_serializes_validated_identity_and_runner_timing() {
         let now = std::time::Instant::now();
         let candidate = JobCandidate::new_with_timing_for_test(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             crate::profile::DEFAULT_PROFILE.to_string(),
             now.checked_sub(Duration::from_millis(25)).unwrap(),
             Some(now.checked_sub(Duration::from_millis(7)).unwrap()),
@@ -3462,8 +3462,11 @@ mod tests {
             RunnerPreferenceTier::WorkspaceCache,
             Instant::now() + Duration::from_secs(60),
         );
-        let active = JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-            .with_runner_preference_for_test(active_preference);
+        let active = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_runner_preference_for_test(active_preference);
         let active_body = claim_request_body_for_test(&active);
         assert_eq!(
             active_body["telemetry"]["runnerPreference"]["kind"],
@@ -3487,8 +3490,11 @@ mod tests {
             RunnerPreferenceTier::ExactSandbox,
             Instant::now() - Duration::from_secs(1),
         );
-        let expired = JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-            .with_runner_preference_for_test(expired_preference);
+        let expired = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_runner_preference_for_test(expired_preference);
         let expired_body = claim_request_body_for_test(&expired);
         assert_eq!(
             expired_body["telemetry"]["runnerPreferenceClaimState"],
@@ -3500,17 +3506,22 @@ mod tests {
             RunnerPreferenceTier::FinalizingPredecessor,
             Instant::now() + Duration::from_secs(60),
         );
-        let cleared = JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-            .with_runner_preference_for_test(cleared_preference)
-            .without_runner_preference(RunnerPreferenceRemovalReason::Cleared);
+        let cleared = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_runner_preference_for_test(cleared_preference)
+        .without_runner_preference(RunnerPreferenceRemovalReason::Cleared);
         let cleared_body = claim_request_body_for_test(&cleared);
         assert_eq!(
             cleared_body["telemetry"]["runnerPreferenceClaimState"],
             "cleared"
         );
-        let no_preference =
-            JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-                .with_no_runner_preference_for_test(RunnerNoPreferenceReason::NoViableHolder);
+        let no_preference = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_no_runner_preference_for_test(RunnerNoPreferenceReason::NoViableHolder);
         let no_preference_body = claim_request_body_for_test(&no_preference);
         assert_eq!(
             no_preference_body["telemetry"]["runnerPreference"]["kind"],
@@ -3529,13 +3540,15 @@ mod tests {
 
     #[test]
     fn claim_request_body_serializes_ably_timing_splits() {
-        let mut candidate =
-            JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-                .with_discovery_source(JobDiscoverySource::Ably)
-                .with_direct_candidate_timing(
-                    Some(Duration::from_millis(3)),
-                    Some(Duration::from_millis(5)),
-                );
+        let mut candidate = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_discovery_source(JobDiscoverySource::Ably)
+        .with_direct_candidate_timing(
+            Some(Duration::from_millis(3)),
+            Some(Duration::from_millis(5)),
+        );
         candidate.mark_provider_discovery_returned();
         candidate.mark_main_loop_handling_started();
         candidate.mark_local_admission_started();
@@ -3562,13 +3575,15 @@ mod tests {
 
     #[test]
     fn claim_request_body_omits_ably_only_timing_splits_for_poll_candidates() {
-        let mut candidate =
-            JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-                .with_discovery_source(JobDiscoverySource::Poll)
-                .with_direct_candidate_timing(
-                    Some(Duration::from_millis(3)),
-                    Some(Duration::from_millis(5)),
-                );
+        let mut candidate = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_discovery_source(JobDiscoverySource::Poll)
+        .with_direct_candidate_timing(
+            Some(Duration::from_millis(3)),
+            Some(Duration::from_millis(5)),
+        );
         candidate.mark_provider_discovery_returned();
         candidate.mark_main_loop_handling_started();
         candidate.mark_local_admission_started();
@@ -3600,12 +3615,14 @@ mod tests {
 
     #[test]
     fn claim_request_body_saturates_wire_timing_to_js_safe_integer() {
-        let candidate =
-            JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-                .with_poll_timing(
-                    Duration::MAX,
-                    Duration::from_millis(CLAIM_TELEMETRY_DURATION_MS_MAX + 1),
-                );
+        let candidate = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_poll_timing(
+            Duration::MAX,
+            Duration::from_millis(CLAIM_TELEMETRY_DURATION_MS_MAX + 1),
+        );
 
         let body = claim_request_body_for_test(&candidate);
 
@@ -3623,7 +3640,7 @@ mod tests {
     fn claim_request_body_omits_missing_local_admission_timing() {
         let now = std::time::Instant::now();
         let candidate = JobCandidate::new_with_timing_for_test(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             crate::profile::DEFAULT_PROFILE.to_string(),
             now.checked_sub(Duration::from_millis(25)).unwrap(),
             None,
@@ -3668,9 +3685,11 @@ mod tests {
 
     #[test]
     fn claim_request_body_serializes_ably_discovery_source_without_poll_timing() {
-        let candidate =
-            JobCandidate::new(RunId::nil(), crate::profile::DEFAULT_PROFILE.to_string())
-                .with_discovery_source(JobDiscoverySource::Ably);
+        let candidate = JobCandidate::new(
+            RunId::from(uuid::Uuid::nil()),
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        )
+        .with_discovery_source(JobDiscoverySource::Ably);
 
         let body = claim_request_body_for_test(&candidate);
 
@@ -4781,7 +4800,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_not_found_is_unavailable() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -4801,7 +4820,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_conflict_is_api_status_error() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -4824,7 +4843,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_error_includes_json_path_without_body_values() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -4875,7 +4894,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_error_redacts_values_that_look_like_field_errors() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -4926,7 +4945,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_error_includes_missing_field_name() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -4981,7 +5000,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_rejects_resume_history_ref_without_encoding() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -5038,7 +5057,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_error_redacts_dynamic_map_keys() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let path = format!("/api/runners/jobs/{run_id}/claim");
         let mock = server
             .mock_async(|when, then| {
@@ -5088,7 +5107,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_path_uses_current_codex_schema_fields() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let codex_error = claim_decode_error(
             &server,
             run_id,
@@ -5120,7 +5139,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_path_redacts_policy_refresh_key_then_resumes_static_field() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let error = claim_decode_error(
             &server,
             run_id,
@@ -5151,7 +5170,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_path_redacts_colliding_dynamic_keys() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let error = claim_decode_error(
             &server,
             run_id,
@@ -5178,7 +5197,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_claim_decode_path_redacts_codex_header_keys() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let error = claim_decode_error(
             &server,
             run_id,
@@ -5361,7 +5380,7 @@ mod tests {
             .complete(
                 "sandbox-token",
                 &CompleteRequest {
-                    run_id: RunId::nil(),
+                    run_id: RunId::from(uuid::Uuid::nil()),
                     exit_code: 1,
                     failure_reason: None,
                     error: Some("boom".to_string()),
@@ -5386,7 +5405,7 @@ mod tests {
     #[tokio::test]
     async fn api_client_complete_serializes_no_reuse_key() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST)
@@ -5630,7 +5649,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_claim_accepts_current_minimal_response() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
@@ -5697,7 +5716,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_claim_attaches_active_input_source_for_thread_bound_pi() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
@@ -5737,7 +5756,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_claim_ignores_additive_unknown_top_level_fields() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
@@ -5774,7 +5793,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_claim_ignores_api_local_secret_env_keys() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
@@ -5968,7 +5987,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_claim_rejects_run_id_mismatch() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let context_run_id = RunId::new_v4();
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
@@ -6008,7 +6027,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_claim_carries_sandbox_token_to_completion() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
@@ -6159,7 +6178,7 @@ mod tests {
     #[tokio::test]
     async fn api_provider_complete_uses_sandbox_token_from_completion_auth() {
         let server = MockServer::start_async().await;
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST)
@@ -6201,7 +6220,10 @@ mod tests {
         );
 
         provider
-            .complete(complete_request(RunId::nil()), CompletionAuth::local())
+            .complete(
+                complete_request(RunId::from(uuid::Uuid::nil())),
+                CompletionAuth::local(),
+            )
             .await;
 
         mock.assert_calls_async(0).await;
@@ -6225,7 +6247,7 @@ mod tests {
 
         provider
             .complete(
-                complete_request(RunId::nil()),
+                complete_request(RunId::from(uuid::Uuid::nil())),
                 CompletionAuth::sandbox_token(RunId::new_v4(), "sandbox-token".to_string()),
             )
             .await;
@@ -6237,7 +6259,7 @@ mod tests {
     async fn api_provider_complete_does_not_retry_permanent_http_failure() {
         let mut server = complete_sequence_server(vec![400]).await;
         let api_url = server.url();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let provider = api_provider_for_test(
             api_url,
             CancellationToken::new(),
@@ -6290,7 +6312,7 @@ mod tests {
         ] {
             let mut server = complete_sequence_server(vec![status.as_u16(), 200]).await;
             let api_url = server.url();
-            let run_id = RunId::nil();
+            let run_id = RunId::from(uuid::Uuid::nil());
             let provider = api_provider_for_test(
                 api_url,
                 CancellationToken::new(),
@@ -6333,7 +6355,7 @@ mod tests {
         ])
         .await;
         let api_url = server.url();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let provider = api_provider_for_test(
             api_url,
             CancellationToken::new(),
@@ -6383,7 +6405,7 @@ mod tests {
                 },
             ])
             .await;
-            let run_id = RunId::nil();
+            let run_id = RunId::from(uuid::Uuid::nil());
             let provider = api_provider_for_test(
                 server.url(),
                 CancellationToken::new(),
@@ -6471,7 +6493,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let provider = api_provider_for_test(
             api_url,
             CancellationToken::new(),
@@ -6496,7 +6518,7 @@ mod tests {
     async fn api_provider_complete_stops_after_two_transient_failures() {
         let mut server = complete_sequence_server(vec![500, 500]).await;
         let api_url = server.url();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let provider = api_provider_for_test(
             api_url,
             CancellationToken::new(),

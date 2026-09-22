@@ -83,7 +83,7 @@ pub(crate) fn validate_cancels_dir(group_dir: &Path) -> io::Result<PathBuf> {
 
 pub(crate) fn ensure_run_inputs_dir(
     group_dir: &Path,
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
 ) -> io::Result<PathBuf> {
     ensure_group_dir(group_dir)?;
     let inputs_dir = super::inputs_dir(group_dir);
@@ -106,7 +106,7 @@ pub(crate) fn validate_inputs_dir(group_dir: &Path) -> io::Result<PathBuf> {
 
 pub(crate) fn validate_run_inputs_dir(
     group_dir: &Path,
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
 ) -> io::Result<PathBuf> {
     validate_inputs_dir(group_dir)?;
     let run_dir = super::run_inputs_dir(group_dir, run_id);

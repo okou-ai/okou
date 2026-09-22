@@ -311,11 +311,27 @@ function useRejectionCopy(): Record<string, string | undefined> {
  * them; what is left is the part the dialog cannot know -- how far along this
  * user is. Facts, not prose.
  */
-function useQuestState(quest: GetStartedQuest): string | null {
+function useQuestState(
+  quest: GetStartedQuest,
+  /** Consecutive days, which only the check-in row states. */
+  checkinStreak: number,
+): string | null {
   const { t } = useTranslation();
   const rejection = useRejectionCopy();
   if (quest.status === "inReview") {
     return null;
+  }
+  if (quest.key === "checkin") {
+    // The streak is the whole reason anyone comes back tomorrow, and it is the
+    // one fact about this quest that neither its name nor its reward carries.
+    return checkinStreak > 0
+      ? t(
+          ($) => {
+            return $.chat.agentPage.getStarted.streak;
+          },
+          { amount: formatLocalizedNumber(checkinStreak) },
+        )
+      : null;
   }
   if (quest.status === "rejected") {
     // Saying only that it was turned down invites the same submission again,
@@ -356,14 +372,26 @@ function useQuestState(quest: GetStartedQuest): string | null {
 function QuestRowBody({
   quest,
   copy,
+  checkinStreak,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
+  checkinStreak: number;
 }) {
   const { t } = useTranslation();
   const done = quest.status === "done" && !quest.canEarnMore;
   const actionable = quest.canEarnMore && quest.status !== "inReview";
-  const state = useQuestState(quest);
+  const state = useQuestState(quest, checkinStreak);
+  // The check-in is the one quest whose name depends on its state: every other
+  // row names a thing to do once, and this one is asked again tomorrow, so
+  // once today is claimed it reports what happened instead of repeating the
+  // instruction.
+  const name =
+    quest.key === "checkin" && done
+      ? t(($) => {
+          return $.chat.agentPage.getStarted.checkedIn;
+        })
+      : copy.name;
   return (
     <>
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
@@ -373,7 +401,7 @@ function QuestRowBody({
         <span
           className={`block truncate ${done ? "text-muted-foreground" : ""}`}
         >
-          {copy.name}
+          {name}
         </span>
         {/* What it pays leads the second line; a finished quest keeps the
             figure, because the row is still worth what it earned. */}
@@ -408,17 +436,21 @@ function QuestRow({
   quest,
   copy,
   onSelect,
+  checkinStreak,
   opensModal = false,
   pending = false,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
   onSelect: (() => void) | null;
+  checkinStreak: number;
   /** Whether selecting the row opens a dialog rather than navigating. */
   opensModal?: boolean;
   pending?: boolean;
 }) {
-  const body = <QuestRowBody quest={quest} copy={copy} />;
+  const body = (
+    <QuestRowBody quest={quest} copy={copy} checkinStreak={checkinStreak} />
+  );
   const testId = `get-started-quest-${quest.key}`;
 
   // A quest with nothing left to open is a status line, not a control, so it
@@ -640,129 +672,6 @@ function useQuestActions(
   return actions as Record<GetStartedQuestKey, () => void>;
 }
 
-/**
- * The check-in, promoted out of the list.
- *
- * It obeys the same rule as a quest row -- the title over what it pays, the
- * control centred on that pair -- so the button lines up the way every other
- * button does. The track is not part of the control, so it takes the full
- * width underneath instead of sitting beside it: a progress bar next to a
- * button reads as if the button belonged to the bar.
- */
-function CheckinBlock({
-  quest,
-  streak,
-  pending,
-  onSelect,
-}: {
-  quest: GetStartedQuest;
-  streak: number;
-  pending: boolean;
-  onSelect: (() => void) | null;
-}) {
-  const { t } = useTranslation();
-  const claimed = !quest.canEarnMore;
-  const title = claimed
-    ? t(($) => {
-        return $.chat.agentPage.getStarted.checkedIn;
-      })
-    : t(($) => {
-        return $.chat.agentPage.getStarted.checkin.name;
-      });
-  const action = t(($) => {
-    return $.chat.agentPage.getStarted.checkin.action;
-  });
-  const body = (
-    <>
-      <div className="grid grid-cols-[minmax(0,1fr)_76px] items-center gap-3">
-        <div className="min-w-0">
-          <p
-            className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}
-          >
-            {title}
-            {streak > 0 && (
-              <span className="text-muted-foreground">
-                {" · "}
-                {t(
-                  ($) => {
-                    return $.chat.agentPage.getStarted.streak;
-                  },
-                  { amount: formatLocalizedNumber(streak) },
-                )}
-              </span>
-            )}
-          </p>
-          <span className="mt-0.5 flex">
-            <QuestReward amount={quest.rewardAmount} earned={claimed} />
-          </span>
-        </div>
-        <span className="flex items-center justify-end">
-          {claimed ? (
-            <Check className="shrink-0 text-chart-green" />
-          ) : (
-            <QuestAction label={action} />
-          )}
-        </span>
-      </div>
-      <div className="mt-2.5 flex items-center gap-1">
-        {STREAK_SEGMENTS.map((index) => {
-          return (
-            <span
-              key={index}
-              className={`h-1.5 flex-1 rounded-full ${
-                index < streak
-                  ? "bg-primary"
-                  : index === streak && !claimed
-                    ? "border border-primary"
-                    : "bg-card"
-              }`}
-            />
-          );
-        })}
-      </div>
-    </>
-  );
-  // Claimed, so there is nothing left to press: a status line rather than a
-  // control, the same way a finished quest row renders.
-  //
-  // `block` is load-bearing on the pressable branch. `DropdownMenuItem` ships
-  // `flex items-center`, and a caller's utility only removes a base utility in
-  // the same group, so naming no display left this block's two rows -- the
-  // header and the streak track -- laid out side by side. The track is a flex
-  // item with no basis, so it shrank to its content and its seven `flex-1`
-  // segments each measured 0px: the whole week read as 24px of bare gaps.
-  // Every quest row escaped this only by starting with `grid`.
-  const className = `-mx-1 mt-2 block rounded-lg px-1 py-1.5 [&_svg]:size-4 [&_svg]:shrink-0 ${
-    pending ? "opacity-50" : ""
-  }`;
-  if (onSelect === null) {
-    return (
-      <div
-        className={`${className} text-sm`}
-        data-testid="get-started-quest-checkin"
-      >
-        {body}
-      </div>
-    );
-  }
-  return (
-    <DropdownMenuItem
-      className={className}
-      onClick={onSelect}
-      closeOnClick={false}
-      disabled={pending}
-      aria-busy={pending}
-      data-testid="get-started-quest-checkin"
-    >
-      {body}
-    </DropdownMenuItem>
-  );
-}
-
-// A week of check-ins is the span the track shows; a longer streak keeps the
-// track full rather than growing it.
-const STREAK_SEGMENTS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
-
 /** The reward rules, unfolded in place rather than behind another surface. */
 function RewardsNote() {
   const { t } = useTranslation();
@@ -816,19 +725,18 @@ function GetStartedPanel({
   const opensModal = (quest: GetStartedQuest): boolean => {
     return quest.key === "share" || (introEnabled && questHasIntro(quest.key));
   };
-  // Finished work sinks to the bottom: what is still claimable leads the list.
-  const setupQuests = quests
-    .filter((quest) => {
-      return quest.key !== "checkin";
-    })
-    .sort((left, right) => {
-      const settled = (quest: GetStartedQuest): number => {
-        return quest.status === "done" && !quest.canEarnMore ? 1 : 0;
-      };
-      return settled(left) - settled(right);
-    });
-  const checkinQuest = quests.find((quest) => {
-    return quest.key === "checkin";
+  // The check-in leads whatever its state, because it is asked again tomorrow:
+  // a daily row that changes place with the day would have to be found again
+  // every morning. Behind it, finished work sinks to the bottom, so what is
+  // still claimable leads the rest of the list.
+  const orderedQuests = [...quests].sort((left, right) => {
+    const rank = (quest: GetStartedQuest): number => {
+      if (quest.key === "checkin") {
+        return 0;
+      }
+      return quest.status === "done" && !quest.canEarnMore ? 2 : 1;
+    };
+    return rank(left) - rank(right);
   });
   const selectHandler = (quest: GetStartedQuest): (() => void) | null => {
     return quest.canEarnMore && quest.status !== "inReview"
@@ -836,49 +744,41 @@ function GetStartedPanel({
       : null;
   };
 
-  // 420px with a 16px outer radius and an 8px tray, so the inner blocks sit at
-  // 8 and stay concentric. Every block pads 12, which puts the ring, the tiles
-  // and the note on one content edge.
+  // 420px with a 16px outer radius and an 8px tray. The totals are the panel
+  // talking about the whole list rather than about any one quest, so they take
+  // a header line on the tray and leave every row on one grid: one tile
+  // column, one title column, one 76px trailing slot, one content edge.
   return (
     <DropdownMenuContent align="end" className="w-[420px] rounded-[16px] p-2">
-      <div className="rounded-lg bg-muted px-3 py-2.5">
-        <div className="flex items-center gap-3">
-          <QuestRing completed={summary.completed} total={summary.total} />
-          <p className="min-w-0 flex-1 text-[13px] font-semibold tabular-nums">
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.toGo;
-              },
-              { amount: formatLocalizedNumber(summary.remainingCredits) },
-            )}
-          </p>
-          <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.earned;
-              },
-              { amount: formatLocalizedNumber(summary.earnedCredits) },
-            )}
-          </p>
-        </div>
-        {checkinQuest && (
-          <CheckinBlock
-            quest={checkinQuest}
-            streak={summary.checkinStreak}
-            pending={checkinPending}
-            onSelect={selectHandler(checkinQuest)}
-          />
-        )}
+      <div className="flex items-baseline justify-between gap-3 px-3 pb-2 pt-1.5">
+        <p className="min-w-0 truncate text-[13px] font-semibold tabular-nums">
+          {t(
+            ($) => {
+              return $.chat.agentPage.getStarted.toGo;
+            },
+            { amount: formatLocalizedNumber(summary.remainingCredits) },
+          )}
+        </p>
+        <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {t(
+            ($) => {
+              return $.chat.agentPage.getStarted.earned;
+            },
+            { amount: formatLocalizedNumber(summary.earnedCredits) },
+          )}
+        </p>
       </div>
-      <div className="mt-2">
-        {setupQuests.map((quest) => {
+      <div>
+        {orderedQuests.map((quest) => {
           return (
             <QuestRow
               key={quest.key}
               quest={quest}
               copy={copy[quest.key]}
               onSelect={selectHandler(quest)}
+              checkinStreak={summary.checkinStreak}
               opensModal={opensModal(quest)}
+              pending={quest.key === "checkin" && checkinPending}
             />
           );
         })}

@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use tokio::time::Instant;
 
 use super::control::{self, ControlHandle, ControlTarget};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_QUANTITY: u64 = (1 << 53) - 1;

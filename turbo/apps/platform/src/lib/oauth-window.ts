@@ -1,3 +1,4 @@
+import { appendCapturedPreviewBypassToUrl } from "./preview-bypass-cookie.ts";
 import { now } from "./time.ts";
 
 /**
@@ -14,5 +15,6 @@ export function openFreshOAuth(url: string): void {
     fresh.searchParams.set("prompt", prompt);
   }
   fresh.searchParams.set("_t", String(now()));
+  appendCapturedPreviewBypassToUrl(fresh);
   window.open(fresh.toString(), "_blank");
 }

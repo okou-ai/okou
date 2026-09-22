@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use super::super::{SubmitArgs, SubmitPlan};
 use super::support::{mode, submit_queue_entry};
-use crate::ids::RunId;
 use crate::local_queue;
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 #[test]
 fn write_job_file_creates_private_job_file() {

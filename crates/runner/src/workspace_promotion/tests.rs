@@ -31,12 +31,12 @@ use sandbox_mock::{
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
-use crate::ids::RunId;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::workspace_image_cache::{
     WorkspaceCacheCheckoutResult, WorkspaceImageCache, WorkspaceImageLeaseIdentity,
     WorkspaceImagePrepareRequest,
 };
+use runner_types::ids::RunId;
 
 fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777

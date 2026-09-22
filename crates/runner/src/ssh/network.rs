@@ -1,7 +1,7 @@
 //! Public destination validation binds the entire DNS answer set to one socket.
 
-use crate::firewall_hostname_policy::is_public_ip_address;
 use async_trait::async_trait;
+use runner_types::firewall_hostname_policy::is_public_ip_address;
 use std::{
     io,
     net::{IpAddr, SocketAddr},
@@ -45,7 +45,9 @@ pub(super) async fn destination(
         // scoped, URL, escaped, bracketed, or search-domain-relative input.
         if host.len() > 253
             || !host.is_ascii()
-            || crate::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
+            || runner_types::firewall_hostname_policy::is_ipv4_literal_like(
+                host.trim_end_matches('.'),
+            )
             || host.split('.').any(|label| {
                 label.is_empty()
                     || label.len() > 63

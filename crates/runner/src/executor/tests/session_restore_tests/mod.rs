@@ -17,7 +17,7 @@ use super::super::session_restore::{
     restore_session as restore_session_with_reuse_result,
 };
 use super::support::{CapturedEvent, CapturedEvents, minimal_context};
-use crate::types::{
+use runner_types::types::{
     ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,
     ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult,
 };

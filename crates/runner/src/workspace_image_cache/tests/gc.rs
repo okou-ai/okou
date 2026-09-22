@@ -17,10 +17,10 @@ use super::support::{
     write_current_cache_entry,
 };
 use crate::error::RunnerError;
-use crate::ids::RunId;
 use crate::paths::{HomePaths, RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::types::MAX_HELD_WORKSPACE_STATES;
+use runner_types::ids::RunId;
+use runner_types::types::MAX_HELD_WORKSPACE_STATES;
 
 #[tokio::test]
 async fn global_gc_preserves_other_group_cache_entries_when_under_budget() {

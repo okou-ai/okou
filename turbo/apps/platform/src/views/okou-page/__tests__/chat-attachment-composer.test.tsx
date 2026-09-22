@@ -108,12 +108,47 @@ test.each([false, true])(
     const pdf = new File(["pdf contents"], "brief.pdf", {
       type: "application/pdf",
     });
+    // Drag-over exposes file metadata before the browser releases file data.
+    fireEvent.dragOver(composerRoot(), {
+      dataTransfer: { types: ["Files"], items: [], files: [] },
+    });
     fireEvent.drop(composerRoot(), {
-      dataTransfer: { files: [pdf] },
+      dataTransfer: { types: ["Files"], files: [pdf] },
     });
 
     await expect(screen.findByText("brief.pdf")).resolves.toBeVisible();
     await expect(findNamedButton("Remove brief.pdf")).resolves.toBeVisible();
+  },
+);
+
+test.each([
+  { format: "text/plain", content: "Dropped planning notes" },
+  { format: "text/uri-list", content: "https://example.com/brief" },
+  { format: "text/html", content: "<p>Editor planning notes</p>" },
+])(
+  "The editor accepts a $format drag as message content",
+  async ({ format, content }) => {
+    mockAttachmentChat(context);
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const editor = await screen.findByRole("textbox", { name: "Message" });
+    const plainText =
+      format === "text/html" ? "Editor planning notes" : content;
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", plainText);
+    dataTransfer.setData(format, content);
+    // Happy DOM has no hit-testing/layout engine. These browser geometry
+    // boundaries let the real ProseMirror drop handler locate the editor.
+    vi.spyOn(document, "elementFromPoint").mockReturnValue(editor);
+    vi.spyOn(editor, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 300, 100),
+    );
+
+    fireEvent.drop(editor, { dataTransfer, clientX: 1, clientY: 1 });
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(plainText);
+      expect(getNamedButton("Send")).toBeEnabled();
+    });
   },
 );
 
