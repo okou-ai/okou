@@ -292,13 +292,14 @@ impl FirewallApi {
         }
         validate_firewall_base_for_cache(&self.base)?;
         self.auth.validate_for_cache()?;
+        let allow_aws_predicates = self.auth.aws_sigv4.is_some();
         if let Some(host_policy) = &self.host_policy {
             host_policy.validate_for_cache()?;
         }
         if let Some(permissions) = &self.permissions {
             let mut seen_names = HashSet::new();
             for permission in permissions {
-                permission.validate_for_cache()?;
+                permission.validate_for_cache(allow_aws_predicates)?;
                 if !seen_names.insert(permission.name.as_str()) {
                     return Err(format!(
                         "permission name {:?} must be unique per api",
@@ -321,7 +322,7 @@ pub struct FirewallPermission {
 }
 
 impl FirewallPermission {
-    fn validate_for_cache(&self) -> Result<(), String> {
+    fn validate_for_cache(&self, allow_aws_predicates: bool) -> Result<(), String> {
         if self.name.is_empty() {
             return Err("permission name must be non-empty".to_string());
         }
@@ -341,7 +342,7 @@ impl FirewallPermission {
             ));
         }
         for rule in &self.rules {
-            validate_firewall_permission_rule(rule)
+            validate_firewall_permission_rule(rule, allow_aws_predicates)
                 .map_err(|e| format!("permission {:?} rule {:?}: {e}", self.name, rule))?;
         }
         Ok(())
@@ -351,6 +352,7 @@ impl FirewallPermission {
 const VALID_FIREWALL_RULE_METHODS: &[&str] = &[
     "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "ANY",
 ];
+const AWS_RULE_SEPARATOR: &str = " AWS ";
 
 struct FirewallRuleSegmentParam<'a> {
     name: &'a str,
@@ -361,16 +363,17 @@ struct FirewallRuleSegmentParam<'a> {
 
 const DNS_LABEL_MAX_LENGTH: usize = 63;
 
-fn validate_firewall_permission_rule(rule: &str) -> Result<(), String> {
-    let Some((method, path)) = rule.split_once(' ') else {
+fn validate_firewall_permission_rule(rule: &str, allow_aws_predicates: bool) -> Result<(), String> {
+    let Some((method, remainder)) = rule.split_once(' ') else {
         return Err("must be \"METHOD /path\"".to_string());
     };
-    if method.is_empty() || path.is_empty() {
+    if method.is_empty() || remainder.is_empty() {
         return Err("must be \"METHOD /path\"".to_string());
     }
     if !VALID_FIREWALL_RULE_METHODS.contains(&method) {
         return Err(format!("unknown method {method:?}"));
     }
+    let path = validate_firewall_rule_remainder(remainder, allow_aws_predicates)?;
     if !path.starts_with('/') {
         return Err("path must start with \"/\"".to_string());
     }
@@ -407,6 +410,108 @@ fn validate_firewall_permission_rule(rule: &str) -> Result<(), String> {
             return Err(format!(
                 "greedy parameter {:?} cannot be combined with a literal prefix or suffix",
                 param.name
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_firewall_rule_remainder(
+    remainder: &str,
+    allow_aws_predicates: bool,
+) -> Result<&str, String> {
+    let Some((raw_path, predicates)) = remainder.split_once(AWS_RULE_SEPARATOR) else {
+        return Ok(remainder);
+    };
+    if predicates.contains(AWS_RULE_SEPARATOR) {
+        return Err("AWS predicates may appear only once".to_string());
+    }
+    validate_firewall_aws_predicates(predicates)?;
+    if !allow_aws_predicates {
+        return Err("AWS predicates require api.auth.awsSigv4".to_string());
+    }
+
+    let Some((path, query_requirements)) = raw_path.split_once('?') else {
+        return Ok(raw_path);
+    };
+    validate_firewall_aws_query_requirements(query_requirements)?;
+    Ok(path)
+}
+
+fn validate_firewall_aws_predicates(predicates: &str) -> Result<(), String> {
+    if predicates.is_empty() {
+        return Err("AWS predicates are required after \"AWS\"".to_string());
+    }
+
+    let mut seen = HashSet::new();
+    for predicate in predicates.split(' ') {
+        if predicate.is_empty() {
+            return Err("AWS predicates must be separated by a single space".to_string());
+        }
+        let Some((key, value)) = predicate.split_once('=') else {
+            return Err(format!("AWS predicate {predicate:?} must be key=value"));
+        };
+        if key.is_empty() || value.is_empty() || value.contains('=') {
+            return Err(format!("AWS predicate {predicate:?} must be key=value"));
+        }
+        if !matches!(key, "sigv4" | "action" | "target") {
+            return Err(format!("unsupported AWS predicate {key:?}"));
+        }
+        if !seen.insert(key) {
+            return Err(format!("duplicate AWS predicate {key:?}"));
+        }
+        if !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+        {
+            return Err(format!("AWS predicate {key:?} has an invalid value"));
+        }
+    }
+
+    if !seen.contains("sigv4") {
+        return Err("AWS predicate \"sigv4\" is required".to_string());
+    }
+    if seen.contains("action") && seen.contains("target") {
+        return Err("AWS predicates \"action\" and \"target\" cannot be combined".to_string());
+    }
+    Ok(())
+}
+
+fn validate_firewall_aws_query_requirements(requirements: &str) -> Result<(), String> {
+    if requirements.is_empty() {
+        return Err("AWS query requirements must not be empty".to_string());
+    }
+
+    let mut seen = HashSet::new();
+    for requirement in requirements.split('&') {
+        if requirement.is_empty() {
+            return Err("AWS query requirements must not contain empty entries".to_string());
+        }
+        let (key, value) = requirement
+            .split_once('=')
+            .map_or((requirement, None), |(key, value)| (key, Some(value)));
+        if key.is_empty()
+            || !key.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-')
+            })
+        {
+            return Err(format!(
+                "AWS query requirement {requirement:?} has an invalid key"
+            ));
+        }
+        if !seen.insert(key) {
+            return Err(format!("duplicate AWS query requirement {key:?}"));
+        }
+        if let Some(value) = value
+            && value != "*"
+            && (value.is_empty()
+                || !value.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric()
+                        || matches!(byte, b'.' | b'_' | b'~' | b':' | b'{' | b'}' | b'-')
+                }))
+        {
+            return Err(format!(
+                "AWS query requirement {requirement:?} has an invalid value"
             ));
         }
     }
@@ -1775,6 +1880,29 @@ impl WorkspaceReuseResult {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn firewall_validation_rejects_aws_rule_without_aws_auth() {
+        let firewall: Firewall = serde_json::from_value(serde_json::json!({
+            "name": "aws",
+            "apis": [{
+                "base": "https://ec2.us-east-1.amazonaws.com",
+                "auth": {"headers": {}},
+                "permissions": [{
+                    "name": "ec2:AcceptAddressTransfer",
+                    "rules": ["GET / AWS sigv4=ec2 action=AcceptAddressTransfer"]
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let error = firewall.validate_for_cache().unwrap_err();
+
+        assert!(
+            error.contains("AWS predicates require api.auth.awsSigv4"),
+            "unexpected error: {error}"
+        );
+    }
 
     #[test]
     fn raw_url_path_does_not_treat_query_or_fragment_content_as_path() {
