@@ -187,7 +187,6 @@ export const mapsSearch$ = command(
       generateVertexMapsSearch(args.body, requestSignal),
     );
     signal.throwIfAborted();
-    requestSignal.throwIfAborted();
     if (!generated.ok) {
       return providerError(generated.error);
     }
@@ -198,6 +197,8 @@ export const mapsSearch$ = command(
       );
     }
 
+    // A parsed provider result has incurred billable work. From this point,
+    // client disconnect no longer owns settlement; the command owner does.
     const billingQuantity = providerCostMicros(generated.value);
     const creditsCharged =
       billingQuantity === 0

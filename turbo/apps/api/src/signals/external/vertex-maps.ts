@@ -39,6 +39,10 @@ const MAPS_SYSTEM_INSTRUCTION = [
 ].join("\n");
 
 const tokenCountSchema = z.number().int().nonnegative().safe();
+const responsePartSchema = z.object({
+  text: z.string(),
+  thought: z.boolean().optional(),
+});
 const mapsChunkSchema = z.object({
   maps: z.object({
     uri: z.string(),
@@ -47,6 +51,7 @@ const mapsChunkSchema = z.object({
 });
 const groundingSupportSchema = z.object({
   segment: z.object({
+    partIndex: tokenCountSchema.optional(),
     startIndex: tokenCountSchema.optional(),
     endIndex: tokenCountSchema,
     text: z.string().optional(),
@@ -66,12 +71,7 @@ const responseSchema = z.object({
         finishReason: z.string(),
         content: z
           .object({
-            parts: z.array(
-              z.object({
-                text: z.string(),
-                thought: z.boolean().optional(),
-              }),
-            ),
+            parts: z.array(responsePartSchema),
           })
           .optional(),
         groundingMetadata: z
@@ -219,6 +219,28 @@ function utf8Segment(
 
 type MapsChunk = z.infer<typeof mapsChunkSchema>;
 type GroundingSupport = z.infer<typeof groundingSupportSchema>;
+type ResponsePart = z.infer<typeof responsePartSchema>;
+
+interface ParsedAnswer {
+  readonly text: string;
+  readonly parts: readonly ResponsePart[];
+  readonly visiblePartStartBytes: readonly (number | undefined)[];
+}
+
+function parseAnswer(parts: readonly ResponsePart[]): ParsedAnswer {
+  let text = "";
+  let byteLength = 0;
+  const visiblePartStartBytes = parts.map((part) => {
+    if (part.thought) {
+      return undefined;
+    }
+    const startByte = byteLength;
+    text += part.text;
+    byteLength += Buffer.byteLength(part.text, "utf8");
+    return startByte;
+  });
+  return { text, parts, visiblePartStartBytes };
+}
 
 function isBlockedFinishReason(finishReason: string): boolean {
   return (
@@ -256,14 +278,29 @@ function parseMapsSources(
 
 function parseMapsCitations(
   supports: readonly GroundingSupport[] | undefined,
-  answer: string,
+  answer: ParsedAnswer,
   sourceCount: number,
 ): MapsSearchCitation[] {
   return (supports ?? []).map((support) => {
-    const startByte = support.segment.startIndex ?? 0;
-    const text = utf8Segment(answer, startByte, support.segment.endIndex);
+    const partIndex = support.segment.partIndex ?? 0;
+    const part = answer.parts[partIndex];
+    const partStartByte = answer.visiblePartStartBytes[partIndex];
+    const localStartByte = support.segment.startIndex ?? 0;
+    const text =
+      part && partStartByte !== undefined
+        ? utf8Segment(part.text, localStartByte, support.segment.endIndex)
+        : undefined;
+    const startByte =
+      partStartByte === undefined ? undefined : partStartByte + localStartByte;
+    const endByte =
+      partStartByte === undefined
+        ? undefined
+        : partStartByte + support.segment.endIndex;
     if (
       !text ||
+      startByte === undefined ||
+      endByte === undefined ||
+      utf8Segment(answer.text, startByte, endByte) !== text ||
       (support.segment.text !== undefined && support.segment.text !== text) ||
       support.groundingChunkIndices.some((index) => {
         return index >= sourceCount;
@@ -273,7 +310,7 @@ function parseMapsCitations(
     }
     return {
       startByte,
-      endByte: support.segment.endIndex,
+      endByte,
       text,
       sourceIndices: [...support.groundingChunkIndices],
     };
@@ -296,21 +333,14 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
   if (finishReason) {
     throw new VertexMapsError(502, finishReason);
   }
-  const answer = (candidate.content?.parts ?? [])
-    .filter((part) => {
-      return !part.thought;
-    })
-    .map((part) => {
-      return part.text;
-    })
-    .join("");
+  const answer = parseAnswer(candidate.content?.parts ?? []);
   if (
-    answer.trim().length === 0 ||
-    answer.length > MAPS_SEARCH_MAX_ANSWER_CHARS
+    answer.text.trim().length === 0 ||
+    answer.text.length > MAPS_SEARCH_MAX_ANSWER_CHARS
   ) {
     throw new VertexMapsError(
       502,
-      answer.length > MAPS_SEARCH_MAX_ANSWER_CHARS
+      answer.text.length > MAPS_SEARCH_MAX_ANSWER_CHARS
         ? "invalid_response"
         : "empty_output",
     );
@@ -330,7 +360,7 @@ function parseVertexMapsResponse(body: string): VertexMapsResult {
     throw new VertexMapsError(502, "invalid_response");
   }
   return {
-    answer,
+    answer: answer.text,
     grounded: grounding !== undefined,
     sources,
     citations,

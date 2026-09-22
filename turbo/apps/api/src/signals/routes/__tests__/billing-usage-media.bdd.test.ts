@@ -1251,6 +1251,9 @@ describe("BILL-02: maps and banking visible boundaries", () => {
       { query: "coffee near 1 Market Street, San Francisco" },
       [503],
     );
+    expect(missingMapsProvider.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
     expectApiError(missingMapsProvider.body);
     expect(missingMapsProvider.body.error.code).toBe("NOT_CONFIGURED");
 
@@ -1273,6 +1276,9 @@ describe("BILL-02: maps and banking visible boundaries", () => {
       },
       [400],
     );
+    expect(invalidLocation.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
     expectApiError(invalidLocation.body);
     expect(invalidLocation.body.error.code).toBe("BAD_REQUEST");
 
@@ -1281,6 +1287,9 @@ describe("BILL-02: maps and banking visible boundaries", () => {
       admin,
       { query: "coffee near 1 Market Street, San Francisco" },
       [402],
+    );
+    expect(insufficientMapsCredits.headers.get("cache-control")).toBe(
+      "private, no-store",
     );
     expectApiError(insufficientMapsCredits.body);
     expect(insufficientMapsCredits.body.error.code).toBe(

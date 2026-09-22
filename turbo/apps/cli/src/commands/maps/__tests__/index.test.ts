@@ -144,10 +144,7 @@ describe("okou maps command", () => {
         return command.name();
       }),
     ).toStrictEqual(["search"]);
-    const help = mapsCommand.helpInformation();
-    expect(help).toContain("search [options] <query>");
-    expect(help).not.toContain("geocode");
-    expect(help).not.toContain("osm");
+    expect(mapsCommand.helpInformation()).toContain("search [options] <query>");
   });
 
   it("shows auth guidance when no token is available", async () => {

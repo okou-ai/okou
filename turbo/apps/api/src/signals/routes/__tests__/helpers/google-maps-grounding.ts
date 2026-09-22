@@ -11,6 +11,7 @@ interface GroundingSource {
 }
 
 interface GroundingSupport {
+  readonly partIndex?: number;
   readonly startIndex?: number;
   readonly endIndex: number;
   readonly text?: string;
@@ -19,6 +20,10 @@ interface GroundingSupport {
 
 interface VertexMapsResponseOptions {
   readonly answer?: string;
+  readonly parts?: readonly {
+    readonly text: string;
+    readonly thought?: boolean;
+  }[];
   readonly sources?: readonly GroundingSource[];
   readonly supports?: readonly GroundingSupport[];
   readonly inputTokens?: number;
@@ -50,7 +55,10 @@ export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
     candidates: [
       {
         finishReason: "STOP",
-        content: { role: "model", parts: [{ text: answer }] },
+        content: {
+          role: "model",
+          parts: options.parts ?? [{ text: answer }],
+        },
         groundingMetadata: {
           groundingChunks: sources.map((source) => {
             return { maps: source };
@@ -58,6 +66,9 @@ export function vertexMapsResponse(options: VertexMapsResponseOptions = {}) {
           groundingSupports: supports.map((support) => {
             return {
               segment: {
+                ...(support.partIndex === undefined
+                  ? {}
+                  : { partIndex: support.partIndex }),
                 ...(support.startIndex === undefined
                   ? {}
                   : { startIndex: support.startIndex }),

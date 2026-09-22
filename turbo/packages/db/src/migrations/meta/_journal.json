@@ -848,6 +848,13 @@
       "when": 1790059286347,
       "tag": "1198_minor_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 1199,
+      "version": "7",
+      "when": 1790078620211,
+      "tag": "1199_maps_grounding_provider_cost",
+      "breakpoints": true
     }
   ]
 }

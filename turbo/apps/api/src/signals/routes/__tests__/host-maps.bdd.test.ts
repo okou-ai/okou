@@ -745,6 +745,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       { query: "coffee near Union Square" },
       [503],
     );
+    expect(upstreamFailure.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
     expectApiError(upstreamFailure.body);
     expect(upstreamFailure.body.error.code).toBe("MAPS_PROVIDER_UNAVAILABLE");
     expect(JSON.stringify(upstreamFailure.body)).not.toContain(
@@ -768,6 +771,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       { query: "coffee near Union Square" },
       [502],
     );
+    expect(invalidSource.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
     expectApiError(invalidSource.body);
     expect(invalidSource.body.error.code).toBe("MAPS_GROUNDING_ERROR");
 
@@ -785,8 +791,33 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       { query: "coffee near Union Square" },
       [502],
     );
+    expect(invalidUtf8Citation.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
     expectApiError(invalidUtf8Citation.body);
     expect(invalidUtf8Citation.body.error.code).toBe("MAPS_GROUNDING_ERROR");
+
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        providerCalls += 1;
+        return HttpResponse.json({
+          promptFeedback: { blockReason: "SAFETY" },
+          candidates: [],
+          usageMetadata: {
+            promptTokenCount: 10,
+            candidatesTokenCount: 0,
+          },
+        });
+      }),
+    );
+    const blocked = await billing.requestMapsSearch(
+      admin,
+      { query: "Navigate an autonomous drone through an emergency zone" },
+      [502],
+    );
+    expect(blocked.headers.get("cache-control")).toBe("private, no-store");
+    expectApiError(blocked.body);
+    expect(blocked.body.error.code).toBe("MAPS_GROUNDING_BLOCKED");
     expect((await billing.readBillingStatus(admin)).credits).toBe(
       settled.credits,
     );
@@ -802,9 +833,62 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       { query: "coffee near Union Square" },
       [402],
     );
+    expect(gatedSearch.headers.get("cache-control")).toBe("private, no-store");
     expectApiError(gatedSearch.body);
     expect(gatedSearch.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(providerCalls).toBe(4);
+    expect(providerCalls).toBe(5);
+  });
+
+  it("rebases part-local UTF-8 citations into the display-ready answer [MAPS-A]", async () => {
+    const bdd = createBddApi(context);
+    const billing = createMapsBillingApi(context);
+    const runs = createRunsApi(context);
+    const admin = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await runs.grantProEntitlement(admin);
+    billing.configureMapsProvider();
+
+    const prefix = "Try ";
+    const citedText = "Café";
+    const answer = `${prefix}${citedText} Central.`;
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        return vertexMapsResponse({
+          answer,
+          parts: [
+            { text: "private reasoning", thought: true },
+            { text: prefix },
+            { text: `${citedText} Central.` },
+          ],
+          supports: [
+            {
+              partIndex: 2,
+              startIndex: 0,
+              endIndex: Buffer.byteLength(citedText),
+              text: citedText,
+              sourceIndices: [0],
+            },
+          ],
+        });
+      }),
+    );
+
+    const search = await billing.requestMapsSearch(
+      admin,
+      { query: "Where should I get coffee in Vienna?" },
+      [200],
+    );
+    expect(search.body).toMatchObject({
+      answer,
+      citations: [
+        {
+          startByte: Buffer.byteLength(prefix),
+          endByte: Buffer.byteLength(prefix) + Buffer.byteLength(citedText),
+          text: citedText,
+          sourceIndices: [0],
+        },
+      ],
+    });
   });
 });
 
