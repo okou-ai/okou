@@ -1461,7 +1461,7 @@ function ComposerModelMenu({
         }
         className={
           flyoutLayout
-            ? "w-[188px] max-w-[calc(100vw-16px)]"
+            ? "w-[188px] max-w-[calc(100vw-16px)] data-starting-style:opacity-100 data-starting-style:[transform:scale(1)]"
             : "w-[304px] max-w-[calc(100vw-16px)] overscroll-contain"
         }
       >

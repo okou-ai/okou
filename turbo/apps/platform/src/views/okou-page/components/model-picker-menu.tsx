@@ -62,7 +62,7 @@ function MenuHeader({
       {onBack && (
         <DropdownMenuItem
           closeOnClick={false}
-          className="-ml-1 w-7 shrink-0 justify-center px-0 text-muted-foreground hover:text-foreground"
+          className="-ml-1 w-7 shrink-0 justify-center px-0 text-muted-foreground hover:text-foreground data-highlighted:bg-transparent data-highlighted:hover:bg-state-hover data-highlighted:focus-visible:bg-state-hover"
           aria-label={backLabel}
           onClick={onBack}
         >
