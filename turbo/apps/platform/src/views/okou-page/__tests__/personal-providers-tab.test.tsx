@@ -319,10 +319,18 @@ test("Review personal subscriptions through account identity", async () => {
   const codexTable = screen.getByRole("table", {
     name: "ChatGPT (Codex)",
   });
-  for (const table of [claudeTable, codexTable]) {
-    expect(within(table).getByText("Account")).toBeInTheDocument();
-    expect(within(table).getByText("Plan")).toBeInTheDocument();
-    expect(within(table).getByText("Usage")).toBeInTheDocument();
+  const claudeHeading = screen.getByRole("heading", {
+    name: "Claude Code OAuth",
+  });
+  const codexHeading = screen.getByRole("heading", {
+    name: "ChatGPT (Codex)",
+  });
+  for (const [table, heading] of [
+    [claudeTable, claudeHeading],
+    [codexTable, codexHeading],
+  ] as const) {
+    expect(table.parentElement).toContainElement(heading);
+    expect(queryAllByRoleFast("columnheader", table)).toHaveLength(0);
   }
   expect(within(claudeTable).getByText("No accounts connected.")).toBeVisible();
   expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(

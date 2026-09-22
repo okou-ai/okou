@@ -6144,11 +6144,6 @@
         "accountFallback": "Akun {{number}}",
         "accountsDescription": "Pilih akun yang digunakan setiap penyedia untuk eksekusi baru.",
         "accountsSectionTitle": "Akun pribadi",
-        "accountTable": {
-          "account": "Akun",
-          "plan": "Paket",
-          "usage": "Penggunaan"
-        },
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
         "addAccount": "Tambah akun",

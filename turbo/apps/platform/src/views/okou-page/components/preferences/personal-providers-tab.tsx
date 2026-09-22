@@ -383,94 +383,71 @@ function PersonalProviderAccountTable({
   })?.id;
 
   return (
-    <section className="flex flex-col gap-2" aria-labelledby={headingId}>
-      <div className="flex items-center gap-2 px-1">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
-          <ProviderIcon type={group.type} size={18} />
-        </span>
-        <h4 id={headingId} className="text-sm font-medium text-foreground">
-          {group.title}
-        </h4>
-      </div>
+    <section aria-labelledby={headingId}>
       <div
-        role="table"
-        aria-labelledby={headingId}
         className="overflow-hidden rounded-xl bg-card"
         style={{
           border: "var(--border-width-surface) solid hsl(var(--gray-400))",
         }}
       >
-        <div role="rowgroup">
-          <div
-            role="row"
-            className="hidden grid-cols-[minmax(0,1fr)_96px_236px_36px] gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid"
-          >
-            <span role="columnheader">
-              {t(($) => {
-                return $.settings.models.personal.accountTable.account;
-              })}
-            </span>
-            <span role="columnheader">
-              {t(($) => {
-                return $.settings.models.personal.accountTable.plan;
-              })}
-            </span>
-            <span role="columnheader">
-              {t(($) => {
-                return $.settings.models.personal.accountTable.usage;
-              })}
-            </span>
-            <span role="columnheader" />
-          </div>
+        <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
+            <ProviderIcon type={group.type} size={18} />
+          </span>
+          <h4 id={headingId} className="text-sm font-medium text-foreground">
+            {group.title}
+          </h4>
         </div>
-        {isLoading ? (
-          <div role="rowgroup" className="p-2">
-            <OAuthAccountTableRowSkeleton />
-          </div>
-        ) : group.accounts.length === 0 ? (
-          <div role="rowgroup" className="p-2">
-            <div role="row" className="rounded-lg px-3 py-5">
-              <div role="cell" className="text-xs text-muted-foreground">
-                {t(($) => {
-                  return $.settings.models.personal.noAccounts;
-                })}
+        <div role="table" aria-labelledby={headingId}>
+          {isLoading ? (
+            <div role="rowgroup" className="p-2">
+              <OAuthAccountTableRowSkeleton />
+            </div>
+          ) : group.accounts.length === 0 ? (
+            <div role="rowgroup" className="p-2">
+              <div role="row" className="rounded-lg px-3 py-5">
+                <div role="cell" className="text-xs text-muted-foreground">
+                  {t(($) => {
+                    return $.settings.models.personal.noAccounts;
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <RadioGroup
-            render={<div />}
-            role="rowgroup"
-            className="p-2"
-            value={activeId ?? ""}
-            disabled={actionPending}
-            onValueChange={(id: string) => {
-              if (id !== activeId) {
-                onActivate(id);
-              }
-            }}
-          >
-            {group.accounts.map((account, index) => {
-              return (
-                <OAuthAccountTableRow
-                  key={account.id}
-                  account={account}
-                  fallbackIndex={index + 1}
-                  actionPending={actionPending}
-                  onReconnect={() => {
-                    onReconnect(group.type, account.id);
-                  }}
-                  onDisconnect={() => {
-                    onDisconnect(account, index + 1);
-                  }}
-                  onReset={() => {
-                    onReset(account);
-                  }}
-                />
-              );
-            })}
-          </RadioGroup>
-        )}
+          ) : (
+            <RadioGroup
+              render={<div />}
+              role="rowgroup"
+              className="p-2"
+              value={activeId ?? ""}
+              disabled={actionPending}
+              onValueChange={(id: string) => {
+                if (id !== activeId) {
+                  onActivate(id);
+                }
+              }}
+            >
+              {group.accounts.map((account, index) => {
+                return (
+                  <OAuthAccountTableRow
+                    key={account.id}
+                    account={account}
+                    fallbackIndex={index + 1}
+                    actionPending={actionPending}
+                    onReconnect={() => {
+                      onReconnect(group.type, account.id);
+                    }}
+                    onDisconnect={() => {
+                      onDisconnect(account, index + 1);
+                    }}
+                    onReset={() => {
+                      onReset(account);
+                    }}
+                  />
+                );
+              })}
+            </RadioGroup>
+          )}
+        </div>
       </div>
     </section>
   );

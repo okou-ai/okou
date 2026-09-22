@@ -6156,11 +6156,6 @@
         "accountFallback": "Konto {{number}}",
         "accountsDescription": "Wähle das Konto, das jeder Anbieter für neue Ausführungen verwendet.",
         "accountsSectionTitle": "Persönliche Konten",
-        "accountTable": {
-          "account": "Konto",
-          "plan": "Tarif",
-          "usage": "Nutzung"
-        },
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktiv",
         "addAccount": "Konto hinzufügen",

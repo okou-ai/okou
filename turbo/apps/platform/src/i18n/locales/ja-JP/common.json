@@ -6144,11 +6144,6 @@
         "accountFallback": "アカウント {{number}}",
         "accountsDescription": "新しい実行で各プロバイダーが使用するアカウントを選択します。",
         "accountsSectionTitle": "個人アカウント",
-        "accountTable": {
-          "account": "アカウント",
-          "plan": "プラン",
-          "usage": "使用量"
-        },
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "使用中",
         "addAccount": "アカウントを追加",
