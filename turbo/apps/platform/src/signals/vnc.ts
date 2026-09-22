@@ -177,6 +177,23 @@ export function vncCredentialMatchesProfile(
   return credential.authMethod === vncAuthMethodForProfile(profile);
 }
 
+export function vncSshConnectionId(
+  connection: VncConnectionResponse,
+): string | null {
+  const transport = "transport" in connection ? connection.transport : null;
+  if (
+    typeof transport !== "object" ||
+    transport === null ||
+    !("type" in transport) ||
+    transport.type !== "ssh" ||
+    !("connectionId" in transport) ||
+    typeof transport.connectionId !== "string"
+  ) {
+    return null;
+  }
+  return transport.connectionId;
+}
+
 function initialVncProfile(
   connection: VncConnectionResponse | null,
   credential: VncCredentialResponse | null,
@@ -193,6 +210,8 @@ const editor$ = state({
   selection: "",
   profile: "x509_vnc" as VncProfile,
   trust: "system" as "system" | "custom_ca",
+  transport: "direct" as "direct" | "ssh",
+  sshConnectionId: "",
   replace: false,
 });
 const uncertain$ = state(false);
@@ -257,6 +276,27 @@ export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
     });
   }
 });
+export const chooseVncTransport$ = command(
+  ({ get, set }, transport: string | null) => {
+    if (
+      !get(editorLocked$) &&
+      (transport === "direct" || transport === "ssh")
+    ) {
+      set(editor$, (current): Editor => {
+        return { ...current, transport };
+      });
+    }
+  },
+);
+export const chooseVncSshConnection$ = command(
+  ({ get, set }, sshConnectionId: string | null) => {
+    if (sshConnectionId !== null && !get(editorLocked$)) {
+      set(editor$, (current): Editor => {
+        return { ...current, sshConnectionId };
+      });
+    }
+  },
+);
 export const replaceVncAuthentication$ = command(
   ({ get, set }, replace: boolean) => {
     if (get(editorLocked$)) {
@@ -278,6 +318,8 @@ export const closeVncDialog$ = command(({ set }) => {
     selection: "",
     profile: "x509_vnc",
     trust: "system",
+    transport: "direct",
+    sshConnectionId: "",
     replace: false,
   });
 });
@@ -322,6 +364,22 @@ export const mountVncSecret$ = onRef(
   }),
 );
 
+function initialVncEditor(
+  kind: VncDialogState["kind"],
+  connection: VncConnectionResponse | null,
+  credential: VncCredentialResponse | null,
+): Editor {
+  const sshConnectionId = connection ? vncSshConnectionId(connection) : null;
+  return {
+    selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
+    profile: initialVncProfile(connection, credential),
+    trust: connection?.security.trust.mode ?? "system",
+    transport: sshConnectionId ? "ssh" : "direct",
+    sshConnectionId: sshConnectionId ?? "",
+    replace: false,
+  };
+}
+
 export const openVncDialog$ = command(
   async (
     { get, set },
@@ -337,12 +395,7 @@ export const openVncDialog$ = command(
     const connection = resource && "host" in resource ? resource : null;
     const credential = resource && "authMethod" in resource ? resource : null;
     set(closeVncDialog$);
-    set(editor$, {
-      selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
-      profile: initialVncProfile(connection, credential),
-      trust: connection?.security.trust.mode ?? "system",
-      replace: false,
-    });
+    set(editor$, initialVncEditor(kind, connection, credential));
     const dialog: VncDialogState = {
       identity,
       kind,
@@ -434,20 +487,28 @@ interface Editor {
   readonly selection: string;
   readonly profile: VncProfile;
   readonly trust: "system" | "custom_ca";
+  readonly transport: "direct" | "ssh";
+  readonly sshConnectionId: string;
   readonly replace: boolean;
 }
 
 function connectionFields(form: HTMLFormElement, editor: Editor) {
+  const serverName = textField(form, "serverName").trim();
   return {
     displayName: textField(form, "displayName"),
     host: textField(form, "host"),
     port: Number(textField(form, "port")),
+    transport:
+      editor.transport === "ssh"
+        ? { type: "ssh" as const, connectionId: editor.sshConnectionId }
+        : { type: "direct" as const },
     credential:
       editor.selection === "new"
         ? { create: credentialFields(form, editor.profile) }
         : { id: editor.selection },
     security: {
       type: editor.profile,
+      ...(serverName ? { serverName } : {}),
       trust:
         editor.trust === "system"
           ? { mode: "system" as const }

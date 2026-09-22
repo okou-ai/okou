@@ -1058,11 +1058,12 @@ export const saveSsh$ = command(
         }
         const params = { connectionId: connection.id };
         if (dialog.kind === "delete") {
-          await accept(
+          const result = await accept(
             client.delete({ params, fetchOptions: { signal } }),
-            [204],
+            [204, 409],
             signal,
           );
+          conflicted = result.status === 409 ? result.body.error.code : null;
         } else if (dialog.kind === "reset") {
           const result = await accept(
             client.resetHostKey({

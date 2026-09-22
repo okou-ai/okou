@@ -6868,6 +6868,7 @@
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
       "credentialUnavailable": "This SSH credential is no longer available. Select an existing credential or create a new one.",
       "failed": "Could not save the SSH change. Try again.",
+      "hostInUse": "This SSH host is used by a VNC route. Select another SSH host for those VNC routes, switch them explicitly to Direct, or delete them before deleting this host.",
       "hostUnavailable": "This SSH host is no longer available. Return to the host list and choose an existing host.",
       "invalidHost": "Enter a hostname or IP address without a URL scheme, path or spaces.",
       "invalidInput": "Some SSH settings are invalid. Check the fields and try again.",
@@ -7063,7 +7064,7 @@
       "ownerChanged": "Your workspace access changed. Refresh before continuing.",
       "revisionExhausted": "This configuration can no longer be updated. Create a new one."
     },
-    "host": "Hostname or IP address",
+    "host": "RFB destination host",
     "hostHint": "e.g. desktop.example.com",
     "hostsTab": "Hosts",
     "label": "VNC",
@@ -7071,7 +7072,7 @@
     "loading": "Loading VNC configuration…",
     "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
-    "port": "Port",
+    "port": "RFB destination port",
     "retry": "Retry",
     "save": "Save",
     "saveRecovery": {
@@ -7086,6 +7087,9 @@
       "caHint": "Paste the public CA certificates that issued the server certificate",
       "custom": "Custom certificate authorities",
       "profileLabel": "Security profile",
+      "serverName": "TLS certificate identity",
+      "serverNameHelp": "Optional. Leave blank to verify the certificate against the RFB destination host. Set this only when the certificate uses a different DNS name.",
+      "serverNameHint": "e.g. desktop.internal.example.com",
       "system": "System certificate authorities",
       "title": "Server certificate trust",
       "x509Plain": "Encrypted username and password (X509Plain)",
@@ -7096,6 +7100,22 @@
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
     "title": "VNC remote access",
+    "transport": {
+      "destination": "RFB destination",
+      "destinationHelp": "For SSH routes, this host and port are reached from the selected SSH server, not directly from the Runner.",
+      "direct": "Direct from Runner",
+      "empty": "No saved SSH hosts are available. Add one in SSH settings before using this route.",
+      "loadFailed": "Could not load saved SSH hosts.",
+      "loading": "Loading saved SSH hosts…",
+      "select": "Select a saved SSH host",
+      "selectionUnavailable": "The selected SSH host is no longer available. Select another host or switch explicitly to Direct.",
+      "ssh": "Through saved SSH host",
+      "sshConnection": "SSH host",
+      "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. The Agent needs both VNC and SSH access.",
+      "title": "Connection route",
+      "unavailable": "SSH settings are not available for this account.",
+      "via": "SSH host:"
+    },
     "unavailable": "VNC is not available in this workspace."
   },
   "workflows": {

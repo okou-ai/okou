@@ -74,6 +74,11 @@ export function localizedSshError(code: string): string | undefined {
         return $.ssh.errors.hostUnavailable;
       });
     }
+    case SSH_ERROR_CODES.CONNECTION_IN_USE: {
+      return i18n.t(($) => {
+        return $.ssh.errors.hostInUse;
+      });
+    }
     case SSH_ERROR_CODES.GENERATION_CONFLICT: {
       return i18n.t(($) => {
         return $.ssh.errors.configurationChanged;

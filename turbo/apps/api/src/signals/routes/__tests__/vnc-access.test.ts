@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncHostsContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -14,12 +15,14 @@ import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
+import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { inlineSshKey } from "./helpers/ssh-credential";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -73,6 +76,12 @@ function token(
 
 function inventory() {
   return setupApp({ context, routes: vncAccessRoutes })(vncHostsContract);
+}
+
+function sshConnections() {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
 }
 
 async function visibility(agentId: string, value: "public" | "private") {
@@ -237,6 +246,68 @@ describe("explicit VNC grants and current Agent inventory", () => {
       inventory().list({ headers: token({ ...current, ...other }) }),
       [404],
     );
+  });
+
+  it("requires both VNC and SSH grants for SSH-backed inventory rows", async () => {
+    const current = await owner();
+    const runtime = { ...current, ...(await api.runtime(current)) };
+    const ssh = await accept(
+      sshConnections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "VNC gateway",
+          host: "gateway.example.com",
+          credential: inlineSshKey("deploy", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const direct = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          ...vncConnectionBody(),
+          displayName: "Direct desktop",
+          host: "direct.example.com",
+        },
+      }),
+      [201],
+    );
+    const tunneled = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          ...vncConnectionBody(),
+          id: randomUUID(),
+          displayName: "Tunneled desktop",
+          host: "127.0.0.1",
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [201],
+    );
+    await api.grant(runtime, true);
+
+    const listIds = async () => {
+      const result = await accept(
+        inventory().list({ headers: token(runtime) }),
+        [200],
+      );
+      expect(JSON.stringify(result.body)).not.toContain(ssh.body.id);
+      return result.body.hosts.map((entry) => {
+        return entry.id;
+      });
+    };
+
+    await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
+    await api.grantSsh(runtime, true);
+    await expect(listIds()).resolves.toStrictEqual([
+      direct.body.id,
+      tunneled.body.id,
+    ]);
+    await api.grantSsh(runtime, false);
+    await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
   });
 
   it("returns both exact supported pairs without decrypting credentials", async () => {
