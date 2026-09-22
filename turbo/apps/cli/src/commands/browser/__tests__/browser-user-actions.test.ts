@@ -486,6 +486,30 @@ describe("okou browser user-action commands", () => {
     expect(output).not.toContain("requestToken");
   });
 
+  it("fails closed on a malformed successful API response", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/browser/user-actions", () => {
+        return HttpResponse.json({ actionUrl: ACTION_URL }, { status: 201 });
+      }),
+    );
+
+    await expect(
+      browserCommand.parseAsync([
+        "node",
+        "okou",
+        "interaction-request",
+        "--reason",
+        "Complete the passkey prompt",
+        "--callback-prompt",
+        "Continue after the user completes the passkey prompt",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(spawnSyncMock).not.toHaveBeenCalled();
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
+    expect(consoleError.mock.calls.flat().join("\n")).not.toContain(ACTION_URL);
+  });
+
   it("rejects invalid field metadata before Browser or API access", async () => {
     let apiRequests = 0;
     installCreateRoute(() => {

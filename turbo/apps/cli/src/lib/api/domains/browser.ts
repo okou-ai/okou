@@ -31,7 +31,10 @@ async function authorizationClient() {
 }
 
 async function userActionClient() {
-  return initClient(browserUserActionsContract, await getClientConfig());
+  return initClient(browserUserActionsContract, {
+    ...(await getClientConfig()),
+    validateResponse: true,
+  });
 }
 
 export async function createBrowserAuthorizationRequest(): Promise<BrowserAuthorizationRequestCreateResponse> {
