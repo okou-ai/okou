@@ -1304,8 +1304,9 @@ export async function initializeOnboardingOrgModelPolicies(
   await lockPolicyWrites(db, orgId);
   const existing = await loadRows(db, orgId, true);
   const standardSeed = getDefaultOrgModelPolicySeed();
-  // An org may have read the old untouched seed before this API version was
-  // deployed, then finish onboarding on the new version.
+  // An older API may have written this untouched seed before onboarding finishes.
+  // Remove after old API writers drain and no incomplete org retains that seed;
+  // track the removal in #36167.
   const previousSeed = standardSeed.map((seed) => {
     return seed.model === "gpt-6-luna"
       ? { ...seed, model: "gpt-5.6-luna" as const }

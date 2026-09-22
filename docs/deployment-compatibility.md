@@ -26,7 +26,9 @@ an older API when completing a Codex or Claude Code onboarding choice. Migration
 `1199_gpt_6_luna_policy_admission` enables new GPT-6 Luna organization policies
 before the API starts serving the new default; it does not rewrite existing
 policies. The GPT-6 Luna runtime route and pricing must be available before this
-default is deployed.
+default is deployed. Remove the old-seed recognition after old API writers drain
+and no incomplete-onboarding organization retains the untouched old seed; #36167
+tracks the production inventory and removal.
 
 The source-first App sends its optional Codex or Claude Code choice as a query
 parameter on `POST /api/onboarding/complete`. An older API ignores that parameter
