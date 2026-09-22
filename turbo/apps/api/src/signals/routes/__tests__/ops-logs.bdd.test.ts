@@ -354,13 +354,13 @@ describe("OPS-01: user data export", () => {
 
   it("exports owned threads, instructions, workflows, and current memory in format v4", async () => {
     const bdd = createBddApi(context);
+    bdd.acceptAgentStorageWrites();
     const chat = createChatFilesBddApi(context);
     const misc = createMiscRoutesApi(context);
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected an organization for the export actor");
     }
-    bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Export Agent",
       visibility: "private",
