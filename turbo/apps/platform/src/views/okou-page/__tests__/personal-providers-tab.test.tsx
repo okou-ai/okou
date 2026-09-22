@@ -325,14 +325,19 @@ test("Review personal subscriptions through account identity", async () => {
   const codexHeading = screen.getByRole("heading", {
     name: "ChatGPT (Codex)",
   });
-  for (const [table, heading] of [
-    [claudeTable, claudeHeading],
-    [codexTable, codexHeading],
+  for (const [table, heading, name] of [
+    [claudeTable, claudeHeading, "Claude Code OAuth"],
+    [codexTable, codexHeading, "ChatGPT (Codex)"],
   ] as const) {
-    expect(table.parentElement).toContainElement(heading);
+    const accountGroup = screen.getByRole("radiogroup", { name });
+    expect(accountGroup.parentElement).toContainElement(heading);
+    expect(accountGroup).toContainElement(table);
+    expect(table).toHaveAttribute("aria-labelledby", heading.id);
     expect(queryAllByRoleFast("columnheader", table)).toHaveLength(0);
   }
-  expect(within(claudeTable).getByText("No accounts connected.")).toBeVisible();
+  expect(
+    within(claudeTable).getByText("No accounts connected."),
+  ).toBeInTheDocument();
   expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(
     rowA,
   );
@@ -668,14 +673,44 @@ test("Offer Pro when personal subscription providers are unavailable", async () 
   ).resolves.toBeInTheDocument();
 });
 
-test("Start and close personal Claude login", async () => {
+test("Offer Pro from personal account groups when BYOK is unavailable", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "admin",
+  });
+  context.mocks.data.personalModelProviders([]);
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: false,
+  });
+
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const upgradeButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Upgrade Pro to use";
+  });
+  if (!upgradeButton) {
+    throw new Error("Upgrade Pro button not found");
+  }
+  click(upgradeButton);
+
+  await expect(
+    screen.findByRole("heading", { name: "Choose a plan" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Start and close personal Claude login from the account menu", async () => {
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
     role: "member",
   });
   context.mocks.data.personalModelProviders([]);
-  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
+  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ body, respond }) => {
+    expect(body).toStrictEqual({ scope: "personal", mode: "add" });
     return respond(200, {
       sessionToken: "mock-personal-claude-code-session",
       type: "claude-code",
@@ -686,19 +721,19 @@ test("Start and close personal Claude login", async () => {
     });
   });
 
-  await openModelSettings();
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
 
-  const claudeCodeRow = await screen.findByTestId(
-    "oauth-card-claude-code-oauth-token",
-  );
-  expect(
-    within(claudeCodeRow).getByText("Claude Code OAuth"),
-  ).toBeInTheDocument();
-  const connectButton = connectButtonInRow(
-    claudeCodeRow,
-    "Connect Claude Code OAuth",
-  );
-  click(connectButton);
+  const addAccountButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Add account";
+  });
+  if (!addAccountButton) {
+    throw new Error("Add account button not found");
+  }
+  click(addAccountButton);
+  const addAccountMenu = await screen.findByRole("menu");
+  click(within(addAccountMenu).getByText("Claude Code OAuth"));
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
@@ -710,9 +745,7 @@ test("Start and close personal Claude login", async () => {
     expect(
       screen.queryAllByTestId("claude-code-device-auth-code"),
     ).toHaveLength(0);
-    expect(
-      connectButtonInRow(claudeCodeRow, "Connect Claude Code OAuth"),
-    ).toBeEnabled();
+    expect(addAccountButton).toBeEnabled();
   });
 });
 
