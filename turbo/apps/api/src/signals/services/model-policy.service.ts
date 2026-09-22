@@ -1079,9 +1079,7 @@ async function listOrgModelPolicies(
     orgId,
     userId,
   );
-  const capabilities = member.priorityEnabled
-    ? await loadOrgPlanCapabilities(db, orgId)
-    : null;
+  const capabilities = await loadOrgPlanCapabilities(db, orgId);
   const providers = await listOrgProviderRoutes(db, orgId);
   const surfaces = await listOrgSurfaceRoutes(db, orgId);
   const providersById = new Map(
@@ -1111,9 +1109,6 @@ async function listOrgModelPolicies(
       )
         ? { ...policy, runtimeProviderType: runtimeRoute?.providerType ?? null }
         : policy;
-      if (!member.priorityEnabled) {
-        return administrative;
-      }
       const effective = await resolveEffectivePolicyRoute({
         db,
         orgId,
@@ -1166,7 +1161,9 @@ async function listOrgModelPolicies(
   return {
     policies,
     revision: policyRevision(persistedRows),
-    writePreconditionRequired: member.priorityEnabled,
+    // Permanent since the personal subscription priority rollout completed.
+    // Removing the field needs its own client-compatibility window.
+    writePreconditionRequired: true,
     modelsAvailableToAdd: modelsAvailableToAdd(
       persistedRows,
       modelsAllowedForNewPolicy,
@@ -1302,16 +1299,6 @@ export const updateOrgModelPolicies$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<OrgModelPoliciesResponse>> => {
     const db = set(writeDb$);
-    const context = await loadUserFeatureSwitchContext(
-      db,
-      params.orgId,
-      params.userId,
-    );
-    signal.throwIfAborted();
-    const priorityEnabled = isFeatureEnabled(
-      FeatureSwitchKey.PersonalSubscriptionPriority,
-      context,
-    );
     const refreshConflict = () => {
       return {
         ok: false as const,
@@ -1321,7 +1308,7 @@ export const updateOrgModelPolicies$ = command(
       };
     };
     // Reject unidentified old writers before even the lazy seed/default path.
-    if (priorityEnabled && !params.revision) {
+    if (!params.revision) {
       return refreshConflict();
     }
     const written = await db.transaction(async (tx) => {

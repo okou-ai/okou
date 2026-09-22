@@ -106,7 +106,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });
       const thread = await chat.createThread(actor, { agentId });
@@ -162,7 +161,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: `retry-subscription-${randomUUID()}`,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PiLoop]: true,
       });
       mockPiResourceArchiveDownloads();
@@ -354,7 +352,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: `cancelled-subscription-${randomUUID()}`,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });
       const thread = await chat.createThread(actor, { agentId });
@@ -463,7 +460,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
       });
       await configureOrganizationGptModel(actor);

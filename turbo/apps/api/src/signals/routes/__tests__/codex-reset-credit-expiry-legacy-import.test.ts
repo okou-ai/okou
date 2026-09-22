@@ -59,79 +59,75 @@ async function legacyRotation(
 }
 
 describe("legacy subscription import expiry isolation", () => {
-  it.each([false, true])(
-    "preserves unrelated Retry-After across an old same-identity rotation, priority=%s",
-    async (priority) => {
-      mockNow(Date.UTC(2030, 0, 1));
-      const remote = upstream();
-      const a = await fixture({
-        accounts: true,
-        priority,
-        orgId: `org_${randomUUID()}`,
-        userId: `user_${randomUUID()}`,
-      });
-      const bIdentity = randomUUID();
-      const b = await addAccount(bIdentity);
-      const bRequests: string[] = [];
-      remote.details = (request) => {
-        if (request.headers.get("chatgpt-account-id") === bIdentity) {
-          bRequests.push(request.url);
-          return new HttpResponse(null, {
-            status: 429,
-            headers: { "Retry-After": "120" },
-          });
-        }
-        return expiryResponse(remote.expiry);
-      };
-      const cooled = await a.list();
-      expect(cooled).toContainEqual(
+  it("preserves unrelated Retry-After across an old same-identity rotation", async () => {
+    mockNow(Date.UTC(2030, 0, 1));
+    const remote = upstream();
+    const a = await fixture({
+      accounts: true,
+      orgId: `org_${randomUUID()}`,
+      userId: `user_${randomUUID()}`,
+    });
+    const bIdentity = randomUUID();
+    const b = await addAccount(bIdentity);
+    const bRequests: string[] = [];
+    remote.details = (request) => {
+      if (request.headers.get("chatgpt-account-id") === bIdentity) {
+        bRequests.push(request.url);
+        return new HttpResponse(null, {
+          status: 429,
+          headers: { "Retry-After": "120" },
+        });
+      }
+      return expiryResponse(remote.expiry);
+    };
+    const cooled = await a.list();
+    expect(cooled).toContainEqual(
+      expect.objectContaining({
+        id: b,
+        subscriptionResetCreditsNextExpiresAt: null,
+      }),
+    );
+    expect(bRequests).toHaveLength(1);
+    const start = now();
+    const rotated = credentials(a.auth.accountId);
+    await legacyRotation(a, rotated);
+    remote.details = (request) => {
+      if (request.headers.get("chatgpt-account-id") === bIdentity) {
+        bRequests.push(request.url);
+      } else {
+        expect(request.headers.get("authorization")).toBe(
+          `Bearer ${rotated.accessToken}`,
+        );
+      }
+      return expiryResponse(remote.expiry);
+    };
+    for (const elapsed of [0, 119_999]) {
+      mockNow(start + elapsed);
+      const listed = await a.list();
+      expect(listed).toContainEqual(
+        expect.objectContaining({
+          id: a.id,
+          isActive: true,
+          subscriptionResetCreditsNextExpiresAt: remote.expiry,
+        }),
+      );
+      expect(listed).toContainEqual(
         expect.objectContaining({
           id: b,
           subscriptionResetCreditsNextExpiresAt: null,
         }),
       );
       expect(bRequests).toHaveLength(1);
-      const start = now();
-      const rotated = credentials(a.auth.accountId);
-      await legacyRotation(a, rotated);
-      remote.details = (request) => {
-        if (request.headers.get("chatgpt-account-id") === bIdentity) {
-          bRequests.push(request.url);
-        } else {
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${rotated.accessToken}`,
-          );
-        }
-        return expiryResponse(remote.expiry);
-      };
-      for (const elapsed of [0, 119_999]) {
-        mockNow(start + elapsed);
-        const listed = await a.list();
-        expect(listed).toContainEqual(
-          expect.objectContaining({
-            id: a.id,
-            isActive: true,
-            subscriptionResetCreditsNextExpiresAt: remote.expiry,
-          }),
-        );
-        expect(listed).toContainEqual(
-          expect.objectContaining({
-            id: b,
-            subscriptionResetCreditsNextExpiresAt: null,
-          }),
-        );
-        expect(bRequests).toHaveLength(1);
-      }
-      mockNow(start + 120_000);
-      await expect(a.list()).resolves.toContainEqual(
-        expect.objectContaining({
-          id: b,
-          subscriptionResetCreditsNextExpiresAt: remote.expiry,
-        }),
-      );
-      expect(bRequests).toHaveLength(2);
-    },
-  );
+    }
+    mockNow(start + 120_000);
+    await expect(a.list()).resolves.toContainEqual(
+      expect.objectContaining({
+        id: b,
+        subscriptionResetCreditsNextExpiresAt: remote.expiry,
+      }),
+    );
+    expect(bRequests).toHaveLength(2);
+  });
 
   it("preserves an unrelated cached expiry across an old same-identity rotation", async () => {
     mockNow(Date.UTC(2030, 0, 1));

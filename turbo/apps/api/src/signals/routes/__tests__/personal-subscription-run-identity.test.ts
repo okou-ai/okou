@@ -16,7 +16,6 @@ import {
   holdPersonalSubscriptionProviderRowLockFixture,
   observePreparedLaunchAdmissionFixture,
 } from "../../../test-fixtures/personal-subscription";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
   upsertOrgPlanEntitlementFixture,
@@ -162,7 +161,6 @@ async function connect(
 async function fixture(
   type: SubscriptionType,
   accountsEnabled = true,
-  priorityEnabled = true,
   historicalFirst = false,
 ) {
   const bdd = createBddApi(context);
@@ -175,7 +173,6 @@ async function fixture(
   await support.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PiLoop]: false,
     [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
-    [FeatureSwitchKey.PersonalSubscriptionPriority]: false,
   });
   mockClaudeCodeTokenEndpoint();
   const connected = historicalFirst
@@ -192,9 +189,6 @@ async function fixture(
       modelProviderId: null,
     },
   ]);
-  await support.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.PersonalSubscriptionPriority]: priorityEnabled,
-  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Subscription identity",
     visibility: "private",
@@ -394,7 +388,7 @@ describe("personal subscription run identity", () => {
   });
 
   it("preserves proven singleton recovery while both UI switches remain off", async () => {
-    const f = await fixture("codex-oauth-token", false, false);
+    const f = await fixture("codex-oauth-token", false);
     const runId = await f.start();
     const claim = await f.claim(runId);
     const captured = accountId(claim, f.type);
@@ -787,15 +781,10 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it.each([
-    [false, "completed"],
-    [true, "completed"],
-    [false, "timeout"],
-    [true, "timeout"],
-  ] as const)(
-    "settles the canonical run with priority %s and %s while a second dispatcher prepares the same head",
-    async (priority, terminalStatus) => {
-      const f = await fixture("codex-oauth-token", true, priority);
+  it.each(["completed", "timeout"] as const)(
+    "settles the canonical run with %s while a second dispatcher prepares the same head",
+    async (terminalStatus) => {
+      const f = await fixture("codex-oauth-token", true);
       const chat = createChatFilesBddApi(context);
       const thread = await chat.createThread(f.actor, { agentId: f.agentId });
       const firstPrepared = createDeferredPromise<void>(context.signal);
@@ -1115,25 +1104,19 @@ describe("personal subscription run identity", () => {
     await runs.requestCancelRun(f.actor, second, [200]);
   }, 20_000);
 
-  it.each([false, true])(
-    "reuses the same Claude identity with initial priority %s",
-    async (priority) => {
-      const f = await fixture("claude-code-oauth-token", true, priority);
-      const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, f.type);
-      expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
-      await support.updateFeatureSwitches(f.actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      });
-      await support.deletePersonalModelProviderAccount(f.actor, captured);
-      expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
-      await expect(resolve(claim, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-      });
-      await runs.requestCancelRun(f.actor, runId, [200]);
-    },
-  );
+  it("reuses the same Claude identity across a reconnect", async () => {
+    const f = await fixture("claude-code-oauth-token", true);
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const captured = accountId(claim, f.type);
+    expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
+    await support.deletePersonalModelProviderAccount(f.actor, captured);
+    expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+    });
+    await runs.requestCancelRun(f.actor, runId, [200]);
+  });
 
   it.each([
     "user.banned",
@@ -1239,21 +1222,6 @@ describe("personal subscription run identity", () => {
       });
     },
   );
-
-  it("writes exact bindings while priority is off and preserves the old hard disconnect", async () => {
-    const f = await fixture("codex-oauth-token", false, false);
-    const runId = await f.start();
-    const claim = await f.claim(runId);
-    expect(accountId(claim, f.type)).toBeTruthy();
-    await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-    const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      authBody(claim, f.type),
-      [424],
-    );
-    expect(denied.status).toBe(424);
-    await runs.requestCancelRun(f.actor, runId, [200]);
-  });
 
   it.each([
     "completed",
@@ -1466,7 +1434,7 @@ describe("actual historical subscription writers", () => {
     async (type) => {
       // Only an actual historical writer can leave a singleton without a
       // concrete account. All observations below use production APIs.
-      const f = await fixture(type, true, false, true);
+      const f = await fixture(type, true, true);
       const [first, second, listed] = await Promise.all([
         f.start(),
         f.start(),
@@ -1501,75 +1469,63 @@ describe("actual historical subscription writers", () => {
     },
   );
 
-  it.each([false, true])(
-    "returns 404 when exact reset itself imports a different old identity, priority=%s",
-    async (priority) => {
-      const f = await fixture("codex-oauth-token", true, priority);
-      const first = await f.start();
-      const a = await f.claim(first);
-      const captured = accountId(a, f.type);
-      const consumeRequests: (string | null)[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-          ({ request }) => {
-            consumeRequests.push(request.headers.get("chatgpt-account-id"));
-            return HttpResponse.json({ code: "reset", windows_reset: 1 });
-          },
-        ),
-      );
-      const b = await writeHistoricalSubscription(
-        f.actor,
-        f.type,
-        "identity-b",
-        2,
-      );
-      // No list, admission or auth between the old write and reset: this very
-      // request passes the connected check, imports B and retires/deletes A.
-      const idempotencyKey = randomUUID();
-      const reset = await support.resetPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        idempotencyKey,
-        [404],
-      );
-      expect(reset.status).toBe(404);
-      expect(consumeRequests).toStrictEqual([]);
-      expect(
-        (
-          await support.resetPersonalModelProviderAccount(
-            f.actor,
-            captured,
-            idempotencyKey,
-            [404],
-          )
-        ).status,
-      ).toBe(404);
-      if (priority) {
-        await expect(resolve(a, f.type)).resolves.toMatchObject({
-          Authorization: `Bearer ${f.connected.token}`,
-          "ChatGPT-Account-ID": "identity-a",
-        });
-      } else {
-        const denied = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${a.sandboxToken}` },
-          authBody(a, f.type),
-          [424],
-        );
-        expect(denied.status).toBe(424);
-      }
-      const second = await f.start();
-      const selected = await f.claim(second);
-      expect(accountId(selected, f.type)).not.toBe(captured);
-      await expect(resolve(selected, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${b.token}`,
-        "ChatGPT-Account-ID": "identity-b",
-      });
-      expect(consumeRequests).toStrictEqual([]);
-      await runs.requestCancelRun(f.actor, first, [200]);
-      await runs.requestCancelRun(f.actor, second, [200]);
-    },
-  );
+  it("returns 404 when exact reset itself imports a different old identity", async () => {
+    const f = await fixture("codex-oauth-token", true);
+    const first = await f.start();
+    const a = await f.claim(first);
+    const captured = accountId(a, f.type);
+    const consumeRequests: (string | null)[] = [];
+    server.use(
+      http.post(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+        ({ request }) => {
+          consumeRequests.push(request.headers.get("chatgpt-account-id"));
+          return HttpResponse.json({ code: "reset", windows_reset: 1 });
+        },
+      ),
+    );
+    const b = await writeHistoricalSubscription(
+      f.actor,
+      f.type,
+      "identity-b",
+      2,
+    );
+    // No list, admission or auth between the old write and reset: this very
+    // request passes the connected check, imports B and retires/deletes A.
+    const idempotencyKey = randomUUID();
+    const reset = await support.resetPersonalModelProviderAccount(
+      f.actor,
+      captured,
+      idempotencyKey,
+      [404],
+    );
+    expect(reset.status).toBe(404);
+    expect(consumeRequests).toStrictEqual([]);
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          idempotencyKey,
+          [404],
+        )
+      ).status,
+    ).toBe(404);
+    await expect(resolve(a, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    const second = await f.start();
+    const selected = await f.claim(second);
+    expect(accountId(selected, f.type)).not.toBe(captured);
+    await expect(resolve(selected, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${b.token}`,
+      "ChatGPT-Account-ID": "identity-b",
+    });
+    expect(consumeRequests).toStrictEqual([]);
+    await runs.requestCancelRun(f.actor, first, [200]);
+    await runs.requestCancelRun(f.actor, second, [200]);
+  });
 
   it("does not expose a retained terminal refresh state to the reset that imports its replacement", async () => {
     const f = await fixture("codex-oauth-token");
@@ -1725,20 +1681,16 @@ describe("actual historical subscription writers", () => {
   });
 
   it.each([
-    ["claude-code-oauth-token", false, false],
-    ["claude-code-oauth-token", true, false],
-    ["codex-oauth-token", false, false],
-    ["codex-oauth-token", true, false],
-    ["claude-code-oauth-token", false, true],
-    ["claude-code-oauth-token", true, true],
-    ["codex-oauth-token", false, true],
-    ["codex-oauth-token", true, true],
+    ["claude-code-oauth-token", false],
+    ["claude-code-oauth-token", true],
+    ["codex-oauth-token", false],
+    ["codex-oauth-token", true],
   ] as const)(
-    "uses the old %s same-identity update without visiting settings (accounts %s, priority %s)",
-    async (type, accounts, priority) => {
+    "uses the old %s same-identity update without visiting settings (accounts %s)",
+    async (type, accounts) => {
       // Infrastructure exception: only the named fixture can manufacture an old
       // server artifact's singleton SQL after today's API seeds the concrete row.
-      const f = await fixture(type, accounts, priority, true);
+      const f = await fixture(type, accounts, true);
       const first = await f.start();
       const firstClaim = await f.claim(first);
       const captured = accountId(firstClaim, type);
@@ -1996,7 +1948,7 @@ describe("actual historical subscription writers", () => {
   );
 
   it("fails opaque identity ambiguity even when usage metadata succeeds", async () => {
-    const f = await fixture("claude-code-oauth-token", false, false, true);
+    const f = await fixture("claude-code-oauth-token", false, true);
     const first = await f.start();
     const claim = await f.claim(first);
     await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
@@ -2023,7 +1975,7 @@ describe("actual historical subscription writers", () => {
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
     "fails a pre-stability %s context after actual old hard deletion and recovers a fresh selection",
     async (type) => {
-      const f = await fixture(type, true, false);
+      const f = await fixture(type, true);
       const first = await f.start();
       const original = await f.claim(first);
       await historicalDeleteSubscriptionFixture(f.actor, type);
@@ -2183,9 +2135,9 @@ describe("historical writer consumer fences", () => {
     ["claude-code-oauth-token", true, "session"],
     ["codex-oauth-token", false, "session"],
   ] as const)(
-    "admits equivalent reencrypted %s bundles with priority %s through %s without final KMS",
-    async (type, priority, mode) => {
-      const f = await fixture(type, priority, priority);
+    "admits equivalent reencrypted %s bundles with accounts %s through %s without final KMS",
+    async (type, accounts, mode) => {
+      const f = await fixture(type, accounts);
       const initial = await createHistoricalPinnedSubscriptionRunFixture(
         {
           owner: f.actor,
@@ -2322,15 +2274,10 @@ describe("historical writer consumer fences", () => {
     20_000,
   );
 
-  it.each([
-    [false, "completed"],
-    [true, "completed"],
-    [false, "timeout"],
-    [true, "timeout"],
-  ] as const)(
-    "rejects a late old Codex writer without waiting for KMS or blocking %s/%s cleanup",
-    async (priority, terminalStatus) => {
-      const f = await fixture("codex-oauth-token", true, priority);
+  it.each(["completed", "timeout"] as const)(
+    "rejects a late old Codex writer without waiting for KMS or blocking %s cleanup",
+    async (terminalStatus) => {
+      const f = await fixture("codex-oauth-token", true);
       const runId = await f.start();
       const claim = await f.claim(runId);
       if (!f.actor.orgId) {
@@ -2827,15 +2774,10 @@ describe("historical exact selection and retained-only parent", () => {
     },
   );
 
-  it.each([
-    ["claude-code-oauth-token", false],
-    ["claude-code-oauth-token", true],
-    ["codex-oauth-token", false],
-    ["codex-oauth-token", true],
-  ] as const)(
-    "rejects a captured %s source replaced by an old writer, priority=%s",
-    async (type, priority) => {
-      const f = await fixture(type, true, priority);
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "rejects a captured %s source replaced by an old writer",
+    async (type) => {
+      const f = await fixture(type, true);
       const replacement = await writeHistoricalSubscription(
         f.actor,
         type,
@@ -3175,7 +3117,7 @@ test("discards a delayed legacy Claude profile when explicit account activation 
 });
 
 test("keeps a seeded Claude identity shared after a type-wide disconnect and reconnect", async () => {
-  const f = await fixture("claude-code-oauth-token", true, true, true);
+  const f = await fixture("claude-code-oauth-token", true, true);
   const runId = await f.start();
   const claim = await f.claim(runId);
   const captured = accountId(claim, f.type);
@@ -3274,7 +3216,7 @@ describe("personal priority connection boundaries", () => {
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
     "keeps %s unseeded singleton and historical retained-parent reconnect personal",
     async (type) => {
-      const f = await fixture(type, false, true, true);
+      const f = await fixture(type, false, true);
       await configureOrganizationApi(f, "custom");
       const first = await f.start();
       const a = await f.claim(first);
@@ -3422,54 +3364,6 @@ describe("personal priority connection boundaries", () => {
       expect(rejected.status).toBe(400);
     },
   );
-
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "preserves priority-off %s organization routing and Built-in credit admission",
-    async (type) => {
-      const f = await fixture(type, false, false);
-      await configureOrganizationApi(f, "custom");
-      const custom = await f.start();
-      await expect(readRunModelSourceFixture(custom)).resolves.toMatchObject({
-        modelProvider:
-          type === "codex-oauth-token" ? "openai-api-key" : "anthropic-api-key",
-        modelProviderCredentialScope: "org",
-      });
-      await runs.requestCancelRun(f.actor, custom, [200]);
-      await configureOrganizationApi(f, "built-in");
-      if (!f.actor.orgId) {
-        throw new Error("Expected an organization");
-      }
-      await seedOrgMetadata({ orgId: f.actor.orgId, tier: "pro", credits: 0 });
-      const rejected = await createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "Built-in requires model credits",
-        },
-        [201],
-      );
-      expect(rejected.body).toMatchObject({ runId: null });
-      await seedOrgMetadata({
-        orgId: f.actor.orgId,
-        tier: "pro",
-        credits: 1_000_000,
-      });
-      await seedBuiltInModelCandidateKeys(context, f.model);
-      const builtin = await f.start();
-      await expect(readRunModelSourceFixture(builtin)).resolves.toMatchObject({
-        modelProvider: "built-in",
-        modelProviderCredentialScope: "org",
-        creditAdmitted: true,
-        builtInModelKeyId: expect.any(String),
-      });
-      await runs.requestCancelRun(f.actor, builtin, [200]);
-      const policies = await createMiscRoutesApi(context).listModelPolicies(
-        f.actor,
-      );
-      expect(policies.policies[0]).not.toHaveProperty("memberEffective");
-    },
-  );
 });
 
 describe("member-effective model policy contract", () => {
@@ -3594,15 +3488,10 @@ describe("member-effective model policy contract", () => {
     await runs.requestCancelRun(f.actor, sent.body.runId, [200]);
   });
 
-  it.each([
-    ["claude-code-oauth-token", true],
-    ["claude-code-oauth-token", false],
-    ["codex-oauth-token", true],
-    ["codex-oauth-token", false],
-  ] as const)(
-    "requires the configured %s subscription with priority %s",
-    async (type, priority) => {
-      const f = await fixture(type, false, priority);
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "requires the configured %s subscription",
+    async (type) => {
+      const f = await fixture(type, false);
       await support.deletePersonalModelProvider(f.actor, f.type, [204]);
       const sent = await createChatFilesBddApi(context).requestSendEvent(
         f.actor,

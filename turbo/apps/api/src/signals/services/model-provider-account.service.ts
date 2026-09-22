@@ -6,11 +6,7 @@ import {
   type ModelProviderResponse,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   modelProviderAccounts,
@@ -702,7 +698,6 @@ async function applyAccountMutation(
     readonly mode: PersonalProviderAccountMutation;
     readonly metadata: ReturnType<typeof accountMetadataValues>;
     readonly encryptedSecrets: readonly EncryptedAccountSecret[];
-    readonly retainReplaced: boolean;
   },
 ): Promise<
   | { readonly account: AccountRow; readonly created: boolean }
@@ -816,10 +811,6 @@ export async function upsertPersonalModelProviderAccount(
   args: UpsertPersonalAccountArgs,
   signal: AbortSignal,
 ): Promise<UpsertPersonalAccountResult> {
-  const retainReplaced = isFeatureEnabled(
-    FeatureSwitchKey.PersonalSubscriptionPriority,
-    args.featureSwitchContext,
-  );
   const resolvedMetadata = await resolveConnectionIdentityMetadata(
     args,
     signal,
@@ -922,7 +913,6 @@ export async function upsertPersonalModelProviderAccount(
         mode: args.mode,
         metadata,
         encryptedSecrets,
-        retainReplaced,
       });
       if ("status" in result) {
         return result;
@@ -1232,12 +1222,7 @@ export async function deletePersonalModelProviderAccount(
     return notFound("Resource not found");
   }
   const identityProof =
-    !args.disconnectAll &&
-    initial.account.type === CLAUDE_CODE_TYPE &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PersonalSubscriptionPriority,
-      args.featureSwitchContext,
-    )
+    !args.disconnectAll && initial.account.type === CLAUDE_CODE_TYPE
       ? await prepareClaudeAccountIdentities(
           { ...args, type: initial.account.type },
           signal,
@@ -1278,11 +1263,7 @@ export async function deletePersonalModelProviderAccount(
     if (!current) {
       return notFound("Resource not found");
     }
-    const retain = isFeatureEnabled(
-      FeatureSwitchKey.PersonalSubscriptionPriority,
-      args.featureSwitchContext,
-    );
-    await retirePersonalModelProviderAccount(tx, current.account, retain);
+    await retirePersonalModelProviderAccount(tx, current.account);
     const [replacement] = await tx
       .select()
       .from(modelProviderAccounts)
@@ -1519,22 +1500,19 @@ export function visiblePersonalModelProviderCondition(db: ReadonlyDb) {
 async function retirePersonalModelProviderAccount(
   db: Db,
   account: AccountRow,
-  retain: boolean,
 ): Promise<void> {
-  const [reference] = retain
-    ? await db
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.modelProviderId, account.id),
-            eq(agentRuns.orgId, account.orgId),
-            eq(agentRuns.userId, account.userId),
-            inArray(agentRuns.status, ["queued", "pending", "running"]),
-          ),
-        )
-        .limit(1)
-    : [];
+  const [reference] = await db
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.modelProviderId, account.id),
+        eq(agentRuns.orgId, account.orgId),
+        eq(agentRuns.userId, account.userId),
+        inArray(agentRuns.status, ["queued", "pending", "running"]),
+      ),
+    )
+    .limit(1);
   if (reference) {
     await db
       .update(modelProviderAccounts)
@@ -1576,7 +1554,7 @@ async function applyStableAccountMutation(
     target?.isActive === true ||
     selected?.isActive === true;
   if (replacing) {
-    await retirePersonalModelProviderAccount(db, target, args.retainReplaced);
+    await retirePersonalModelProviderAccount(db, target);
   }
   if (active) {
     await db
@@ -1664,7 +1642,7 @@ export async function cleanupDisconnectedPersonalModelProviderAccounts(
     if (!current) {
       continue;
     }
-    await retirePersonalModelProviderAccount(db, current, true);
+    await retirePersonalModelProviderAccount(db, current);
     const [remaining] = await db
       .select({ id: modelProviderAccounts.id })
       .from(modelProviderAccounts)
@@ -1994,10 +1972,6 @@ async function importLegacySubscriptionBundle(
           secret.description ?? `Personal ${args.type} account secret`,
       };
     }),
-    retainReplaced: isFeatureEnabled(
-      FeatureSwitchKey.PersonalSubscriptionPriority,
-      args.featureSwitchContext,
-    ),
   });
   if ("status" in result) {
     return false;

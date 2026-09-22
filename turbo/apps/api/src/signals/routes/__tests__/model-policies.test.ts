@@ -100,9 +100,28 @@ function makeBuiltInPolicy(
 }
 
 function apiClient() {
-  return setupApp({ context, routes: modelPoliciesRoutes })(
+  const client = setupApp({ context, routes: modelPoliciesRoutes })(
     modelPoliciesMainContract,
   );
+  // The write precondition is mandatory, so a write carries the revision the
+  // caller would have just read. Cases that exercise the precondition itself
+  // pass `revision` explicitly, including `undefined`, and are left untouched.
+  return {
+    ...client,
+    update: async (args: Parameters<typeof client.update>[0]) => {
+      if ("revision" in args.body) {
+        return await client.update(args);
+      }
+      const current = await client.list({ headers: args.headers });
+      if (current.status !== 200) {
+        return await client.update(args);
+      }
+      return await client.update({
+        ...args,
+        body: { ...args.body, revision: current.body.revision },
+      });
+    },
+  };
 }
 
 function authHeaders() {
@@ -1584,9 +1603,6 @@ describe("GET/PUT /api/model-policies", () => {
     await providers.deleteOrgModelProvider(fixture, "openai-api-key", [204]);
     // Plan state is infrastructure-owned; subscriptions require a BYOK plan.
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-    });
     useSession(fixture);
     const preferences = setupApp({
       context,
@@ -2185,8 +2201,13 @@ describe("GET/PUT /api/model-policies", () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
+    const current = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
     const response = await putRawModelPolicies(
       JSON.stringify({
+        revision: current.body.revision,
         policies: [
           {
             model: "claude-haiku-4-5",
@@ -2278,13 +2299,6 @@ test.each([
 );
 
 describe("conditional organization model policy writes", () => {
-  async function enablePriority(fixture: ModelPolicyFixture) {
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-    });
-    useSession(fixture);
-  }
-
   it("rejects missing and stale snapshots without erasing another admin's model or preference", async () => {
     const fixture = seedFixture();
     useSession(fixture);
@@ -2305,7 +2319,7 @@ describe("conditional organization model policy writes", () => {
       }),
       [200],
     );
-    await enablePriority(fixture);
+    useSession(fixture);
     const first = await accept(
       apiClient().list({ headers: authHeaders() }),
       [200],
@@ -2449,7 +2463,7 @@ describe("conditional organization model policy writes", () => {
         }),
         [200],
       );
-      await enablePriority(fixture);
+      useSession(fixture);
       const read = await accept(
         apiClient().list({ headers: authHeaders() }),
         [200],
@@ -2578,7 +2592,7 @@ describe("conditional organization model policy writes", () => {
       }),
       [200],
     );
-    await enablePriority(fixture);
+    useSession(fixture);
     const snapshot = await accept(
       apiClient().list({ headers: authHeaders() }),
       [200],
@@ -2666,9 +2680,6 @@ describe("conditional policy writes and persisted repair boundaries", () => {
       }),
       [200],
     );
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-    });
     useSession(fixture);
     const snapshot = await accept(
       apiClient().list({ headers: authHeaders() }),
@@ -2751,9 +2762,6 @@ describe("conditional policy writes and persisted repair boundaries", () => {
         }),
         [200],
       );
-      await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      });
       useSession(fixture);
       const previous = await accept(
         apiClient().list({ headers: authHeaders() }),
