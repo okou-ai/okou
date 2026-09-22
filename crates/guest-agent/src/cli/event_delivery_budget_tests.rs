@@ -39,6 +39,10 @@ fn body(event: &Value, transport: bool) -> Result<String, String> {
 }
 
 fn text_event(framework: Framework, text: &str) -> Value {
+    text_event_at_sequence(framework, text, 19)
+}
+
+fn text_event_at_sequence(framework: Framework, text: &str, sequence: u32) -> Value {
     let mut event = match framework {
         Framework::Pi => {
             json!({"type":"assistant","message":{"id":"message","role":"assistant","model":"test","usage":{"input_tokens":2},"content":[{"type":"text","text":text}]}})
@@ -50,7 +54,7 @@ fn text_event(framework: Framework, text: &str) -> Value {
     if let Some(event) = event.as_object_mut() {
         event.insert("memoryCitation".into(), json!({"entries":[{"path":"memory.md","lineStart":1,"lineEnd":2,"note":"citation-你好\"\\\n"}],"rolloutIds":[]}));
     }
-    events::prepare_event_for_delivery(event, 19, &SecretMasker::from_raw(""))
+    events::prepare_event_for_delivery(event, sequence, &SecretMasker::from_raw(""))
 }
 
 fn collaboration_event(states: Value) -> Result<Value, &'static str> {
@@ -472,10 +476,17 @@ async fn delivery_request_log_names_the_delivered_record_type() {
     let system_log_path = tmp.path().join("system.log");
     let _system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
 
-    for (framework, labels) in [
-        (Framework::Pi, "event_type=assistant item_type=text"),
+    // The system log is process-global, so use sequences unique to this test
+    // and select only the lines emitted for the event under assertion.
+    for (framework, sequence, labels) in [
+        (
+            Framework::Pi,
+            4_000_000_019,
+            "event_type=assistant item_type=text",
+        ),
         (
             Framework::Codex,
+            4_000_000_020,
             "event_type=item.completed item_type=agent_message",
         ),
     ] {
@@ -492,31 +503,37 @@ async fn delivery_request_log_names_the_delivered_record_type() {
             Duration::ZERO,
         )
         .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, false).unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, sequence, false).unwrap();
         runtime
             .sender()
             .try_send_for_framework(
-                19,
-                text_event(framework, "ordinary delivery"),
+                sequence,
+                text_event_at_sequence(framework, "ordinary delivery", sequence),
                 framework,
                 &SecretMasker::from_raw(""),
             )
             .unwrap();
         let report = runtime.finish().await.unwrap();
-        assert_eq!(report.last_acknowledged_sequence, Some(19));
+        assert_eq!(report.last_acknowledged_sequence, Some(sequence));
         request.assert_calls_async(1).await;
 
         let log = std::fs::read_to_string(&system_log_path).unwrap();
+        let sequence_range = format!("first_sequence={sequence} last_sequence={sequence}");
         let delivered = log
             .lines()
-            .rfind(|line| line.contains("Event delivery request:"))
+            .find(|line| line.contains("Event delivery request:") && line.contains(&sequence_range))
             .expect("ordinary delivery is logged");
         assert!(
-            delivered.contains("first_sequence=19 last_sequence=19 events=1 conservative_bytes=")
+            delivered.contains("events=1 conservative_bytes=")
                 && delivered.contains(&format!("{labels} result=success")),
             "unexpected delivery line: {delivered}"
         );
         // The labels reach the ordinary line, not only the reduction one.
-        assert!(!log.contains("event reduced for delivery"));
+        assert!(
+            !log.lines().any(|line| {
+                line.contains(&format!("event reduced for delivery: seq={sequence} "))
+            }),
+            "ordinary delivery was unexpectedly reduced: {log}"
+        );
     }
 }
