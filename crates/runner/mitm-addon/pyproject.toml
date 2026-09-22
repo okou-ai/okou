@@ -24,7 +24,7 @@ test = [
 
 [tool.uv]
 package = false
-required-version = "==0.11.32"
+required-version = "==0.12.17"
 
 [tool.ruff]
 line-length = 100
