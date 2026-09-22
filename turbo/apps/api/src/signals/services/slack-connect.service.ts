@@ -8,7 +8,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { slackUserAgentPreferences } from "@okouai/db/schema/slack-user-agent-preference";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 
 import {
   buildAppHomeView,
@@ -388,10 +388,6 @@ async function resolveSlackConnectLinkStatus(
   if (requestedConnection && requestedConnection.userId !== args.userId) {
     return { kind: "slack_account_in_use" };
   }
-  if (requestedConnection?.userId === args.userId) {
-    return { kind: "connected" };
-  }
-
   const [currentConnection] = await db
     .select({ slackUserId: slackOrgConnections.slackUserId })
     .from(slackOrgConnections)
@@ -399,6 +395,7 @@ async function resolveSlackConnectLinkStatus(
       and(
         eq(slackOrgConnections.userId, args.userId),
         eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+        ne(slackOrgConnections.slackUserId, args.slackUserId),
       ),
     )
     .limit(1);
@@ -409,24 +406,52 @@ async function resolveSlackConnectLinkStatus(
       requestedSlackUserId: args.slackUserId,
     };
   }
+  if (requestedConnection?.userId === args.userId) {
+    return { kind: "connected" };
+  }
 
   return { kind: "connect" };
 }
 
-export function slackConnectStatus(args: {
+interface SlackConnectStatusArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly isAdmin: boolean;
-  readonly workspaceId?: string;
-  readonly slackUserId?: string;
-}): Computed<
-  Promise<{
-    readonly isConnected: boolean;
-    readonly isAdmin: boolean;
-    readonly workspaceName?: string | null;
-    readonly defaultAgentName?: string | null;
-    readonly linkStatus?: SlackConnectLinkStatus;
-  }>
+}
+
+interface SlackConnectLinkStatusArgs extends SlackConnectStatusArgs {
+  readonly workspaceId: string;
+  readonly slackUserId: string;
+}
+
+interface SlackConnectStatusResponse {
+  readonly isConnected: boolean;
+  readonly isAdmin: boolean;
+  readonly workspaceName?: string | null;
+  readonly defaultAgentName?: string | null;
+}
+
+export function slackConnectStatus(
+  args: SlackConnectLinkStatusArgs,
+): Computed<
+  Promise<
+    SlackConnectStatusResponse & { readonly linkStatus: SlackConnectLinkStatus }
+  >
+>;
+export function slackConnectStatus(
+  args: SlackConnectStatusArgs,
+): Computed<Promise<SlackConnectStatusResponse>>;
+export function slackConnectStatus(
+  args: SlackConnectStatusArgs & {
+    readonly workspaceId?: string;
+    readonly slackUserId?: string;
+  },
+): Computed<
+  Promise<
+    SlackConnectStatusResponse & {
+      readonly linkStatus?: SlackConnectLinkStatus;
+    }
+  >
 > {
   return computed(async (get) => {
     const db = get(db$);

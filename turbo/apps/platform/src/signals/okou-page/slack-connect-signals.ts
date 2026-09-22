@@ -14,7 +14,6 @@ interface SlackConnectWorkspaceStatus {
 export type SlackConnectStatus =
   | ({ readonly kind: "connect" } & SlackConnectWorkspaceStatus)
   | ({ readonly kind: "success" } & SlackConnectWorkspaceStatus)
-  | { readonly kind: "status_error"; readonly message: string }
   | (Exclude<
       SlackConnectLinkStatus,
       { readonly kind: "connect" | "connected" }
@@ -38,34 +37,19 @@ export const slackConnectStatus$ = computed(
     }
 
     const client = get(apiClient$)(slackConnectContract);
-    const [result] = await Promise.allSettled([
-      accept(
-        client.getLinkStatus({ query: { workspaceId, slackUserId } }),
-        [200],
-      ),
-    ]);
-    if (result?.status !== "fulfilled") {
-      return {
-        kind: "status_error",
-        message: result?.reason instanceof Error ? result.reason.message : "",
-      };
-    }
-
-    const { linkStatus, workspaceName } = result.value.body;
+    const result = await accept(
+      client.getLinkStatus({ query: { workspaceId, slackUserId } }),
+      [200],
+    );
+    const { linkStatus, workspaceName } = result.body;
     const workspace = workspaceName === undefined ? {} : { workspaceName };
-    if (linkStatus?.kind === "connected") {
+    if (linkStatus.kind === "connected") {
       return { kind: "success", ...workspace };
     }
-    if (linkStatus?.kind === "connect") {
+    if (linkStatus.kind === "connect") {
       return { kind: "connect", ...workspace };
     }
-    if (linkStatus) {
-      return { ...linkStatus, ...workspace };
-    }
-
-    return result.value.body.isConnected
-      ? { kind: "success", ...workspace }
-      : { kind: "connect", ...workspace };
+    return { ...linkStatus, ...workspace };
   },
 );
 
@@ -74,19 +58,14 @@ export const effectiveError$ = computed((get) => {
   return params.get("error") ?? "";
 });
 
-// Init: trigger connection status resolution and handle URL-driven redirect.
-export const initSlackConnectPage$ = command(
-  async ({ get }, signal: AbortSignal) => {
-    const params = get(searchParams$);
-    const initialStatus = params.get("status");
-    await get(slackConnectStatus$);
-    signal.throwIfAborted();
-
-    if (initialStatus === "connected") {
-      window.location.href = "slack://open";
-    }
-  },
-);
+// Init: handle the URL-driven redirect. The view owns status loading.
+export const initSlackConnectPage$ = command(({ get }, signal: AbortSignal) => {
+  signal.throwIfAborted();
+  const params = get(searchParams$);
+  if (params.get("status") === "connected") {
+    window.location.href = "slack://open";
+  }
+});
 
 // Connect account
 export const connectSlackAccount$ = command(
@@ -102,18 +81,19 @@ export const connectSlackAccount$ = command(
     const channelId = params.get("c");
     const threadTs = params.get("t");
 
+    const requestUserScopes = true;
+    const body = {
+      workspaceId,
+      slackUserId,
+      requestUserScopes,
+      ...(channelId ? { channelId } : {}),
+      ...(threadTs ? { threadTs } : {}),
+    } satisfies Parameters<typeof client.connect>[0]["body"];
+    const request = { body, fetchOptions: { signal } };
     const result = await accept(
-      client.connect({
-        body: {
-          workspaceId,
-          slackUserId,
-          requestUserScopes: true,
-          intent,
-          ...(channelId ? { channelId } : {}),
-          ...(threadTs ? { threadTs } : {}),
-        },
-        fetchOptions: { signal },
-      }),
+      intent === "switch"
+        ? client.switchAccount(request)
+        : client.connect(request),
       [202],
     );
     signal.throwIfAborted();

@@ -90,19 +90,6 @@ function PageContent() {
   if (status.kind === "error") {
     return <ConnectErrorState message={status.message} />;
   }
-  if (status.kind === "status_error") {
-    return (
-      <ConnectErrorState
-        message={
-          status.message ||
-          t(($) => {
-            return $.connectors.providerConnect.slack.errorFallback;
-          })
-        }
-      />
-    );
-  }
-
   // Success state
   if (status.kind === "success") {
     return <SlackSuccessState workspaceName={workspaceName} />;

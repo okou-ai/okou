@@ -14,14 +14,19 @@ import { describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
+import { setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { testSlackStateRoutes } from "../slack-state-preview";
+import {
+  slackStatePreviewRoutes,
+  testSlackStateRoutes,
+} from "../slack-state-preview";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { seedRun$ } from "./helpers/usage-state";
-import { createFixtureTracker } from "./helpers/route-test";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const store = createStore();
+const mocks = createRouteMocks(context);
 
 const SLACK_STATE_ROUTE = "/api/test/slack-state";
 const TELEGRAM_STATE_ROUTE = "/api/test/telegram-state";
@@ -65,6 +70,13 @@ function requestApp(path: string, init?: RequestInit): Promise<Response> {
 
 async function readJson<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
+}
+
+function requestRegisteredSlackPreview(path: string, init: RequestInit) {
+  return setupRawAppRequest({ context, routes: slackStatePreviewRoutes })(
+    path,
+    init,
+  );
 }
 
 function postSlackState(body: unknown): Promise<Response> {
@@ -253,6 +265,59 @@ async function dispatchTelegramMessage(args: {
     context.signal,
   );
 }
+
+describe("registered /api/test/slack-state preview route", () => {
+  it("stays hidden in production before authentication", async () => {
+    mockEnv("ENV", "production");
+
+    const response = await requestRegisteredSlackPreview(
+      `${SLACK_STATE_ROUTE}?team_id=T_PRODUCTION`,
+      { method: "GET" },
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toBe("Not found");
+  });
+
+  it("requires authentication in an allowed preview", async () => {
+    mockEnv("ENV", "preview");
+    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+
+    const response = await requestRegisteredSlackPreview(
+      `${SLACK_STATE_ROUTE}?team_id=T_UNAUTHENTICATED`,
+      { headers: { "x-vercel-protection-bypass": "preview-secret" } },
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
+  });
+
+  it("allows an authenticated organization request in preview", async () => {
+    mockEnv("ENV", "preview");
+    mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+    const userId = uniqueId("user_preview");
+    const orgId = uniqueId("org_preview");
+    mocks.clerk.session(userId, orgId, "org:member");
+
+    const response = await requestRegisteredSlackPreview(
+      `${SLACK_STATE_ROUTE}?team_id=T_AUTHENTICATED`,
+      {
+        headers: {
+          authorization: "Bearer clerk-session",
+          "x-vercel-protection-bypass": "preview-secret",
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      installation: null,
+      connections: [],
+    });
+  });
+});
 
 describe("GET /api/test/slack-state", () => {
   it("returns 404 outside allowed test environments", async () => {

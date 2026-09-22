@@ -57,4 +57,17 @@ export const apiIntegrationsSlackConnectHandlers = [
         "https://api.okou.ai/api/slack/oauth/connect?connectorState=mock-entry",
     });
   }),
+
+  // POST /api/integrations/slack/connect/switch — replace the Slack account
+  mockApi(slackConnectContract.switchAccount, ({ respond }) => {
+    if (mockData.postError) {
+      return respond(400, {
+        error: { message: mockData.postError, code: "BAD_REQUEST" },
+      });
+    }
+    return respond(202, {
+      authorizationUrl:
+        "https://api.okou.ai/api/slack/oauth/connect?connectorState=mock-switch",
+    });
+  }),
 ];

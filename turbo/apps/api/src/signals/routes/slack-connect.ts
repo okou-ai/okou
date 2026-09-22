@@ -43,12 +43,14 @@ const getSlackConnectLinkStatusInner$ = computed(async (get) => {
 const startConnectorOAuth$ = command(
   async (
     { get },
-    body: {
-      readonly workspaceId: string;
-      readonly slackUserId: string;
-      readonly channelId?: string;
-      readonly threadTs?: string;
-      readonly intent?: "connect" | "switch";
+    args: {
+      readonly flow: "connect" | "switch";
+      readonly body: {
+        readonly workspaceId: string;
+        readonly slackUserId: string;
+        readonly channelId?: string;
+        readonly threadTs?: string;
+      };
     },
     signal: AbortSignal,
   ) => {
@@ -56,7 +58,7 @@ const startConnectorOAuth$ = command(
     const [installation] = await get(db$)
       .select({ orgId: slackOrgInstallations.orgId })
       .from(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.slackWorkspaceId, body.workspaceId))
+      .where(eq(slackOrgInstallations.slackWorkspaceId, args.body.workspaceId))
       .limit(1);
     signal.throwIfAborted();
     if (
@@ -87,13 +89,13 @@ const startConnectorOAuth$ = command(
         authorizationUrl: buildSlackConnectorOAuthStartUrl(
           getOAuthApiOrigin(get(request$).raw),
           {
-            flow: body.intent === "switch" ? "switch" : "connect",
+            flow: args.flow,
             orgId: auth.orgId,
             userId: auth.userId,
-            workspaceId: body.workspaceId,
-            slackUserId: body.slackUserId,
-            channelId: body.channelId,
-            threadTs: body.threadTs,
+            workspaceId: args.body.workspaceId,
+            slackUserId: args.body.slackUserId,
+            channelId: args.body.channelId,
+            threadTs: args.body.threadTs,
           },
         ),
       },
@@ -108,8 +110,30 @@ const connectInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
 
-  return await set(startConnectorOAuth$, bodyResult.data, signal);
+  return await set(
+    startConnectorOAuth$,
+    { flow: "connect", body: bodyResult.data },
+    signal,
+  );
 });
+
+const switchAccountInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const bodyResult = await get(
+      bodyResultOf(slackConnectContract.switchAccount),
+    );
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+
+    return await set(
+      startConnectorOAuth$,
+      { flow: "switch", body: bodyResult.data },
+      signal,
+    );
+  },
+);
 
 const slackConnectAuth = {
   requireOrganization: true,
@@ -133,5 +157,9 @@ export const slackConnectRoutes: readonly RouteEntry[] = [
   {
     route: slackConnectContract.connect,
     handler: authRoute(slackConnectWriteAuth, connectInner$),
+  },
+  {
+    route: slackConnectContract.switchAccount,
+    handler: authRoute(slackConnectWriteAuth, switchAccountInner$),
   },
 ];

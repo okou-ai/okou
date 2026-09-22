@@ -24,12 +24,22 @@ const slackConnectStatusSchema = z.object({
   isAdmin: z.boolean(),
   workspaceName: z.string().nullable().optional(),
   defaultAgentName: z.string().nullable().optional(),
-  linkStatus: slackConnectLinkStatusSchema.optional(),
+});
+
+const slackConnectLinkStatusResponseSchema = slackConnectStatusSchema.extend({
+  linkStatus: slackConnectLinkStatusSchema,
+});
+
+const slackConnectOAuthBodySchema = z.object({
+  workspaceId: z.string().min(1),
+  slackUserId: z.string().min(1),
+  channelId: z.string().optional(),
+  threadTs: z.string().optional(),
+  requestUserScopes: z.literal(true),
 });
 
 /**
- * Slack connect contract (GET/POST /api/integrations/slack/connect)
- * Manages per-user Slack connection.
+ * Slack connect contract for per-user status and OAuth starts.
  */
 export const slackConnectContract = c.router({
   getStatus: {
@@ -51,7 +61,7 @@ export const slackConnectContract = c.router({
       slackUserId: z.string().min(1),
     }),
     responses: {
-      200: slackConnectStatusSchema,
+      200: slackConnectLinkStatusResponseSchema,
       401: apiErrorSchema,
     },
     summary: "Check the status of a Slack connection link",
@@ -60,14 +70,7 @@ export const slackConnectContract = c.router({
     method: "POST",
     path: "/api/integrations/slack/connect",
     headers: authHeadersSchema,
-    body: z.object({
-      workspaceId: z.string().min(1),
-      slackUserId: z.string().min(1),
-      channelId: z.string().optional(),
-      threadTs: z.string().optional(),
-      requestUserScopes: z.literal(true),
-      intent: z.enum(["connect", "switch"]).optional(),
-    }),
+    body: slackConnectOAuthBodySchema,
     responses: {
       202: z.object({ authorizationUrl: z.string().url() }),
       400: apiErrorSchema,
@@ -76,6 +79,20 @@ export const slackConnectContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Connect user to Slack workspace",
+  },
+  switchAccount: {
+    method: "POST",
+    path: "/api/integrations/slack/connect/switch",
+    headers: authHeadersSchema,
+    body: slackConnectOAuthBodySchema,
+    responses: {
+      202: z.object({ authorizationUrl: z.string().url() }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Switch the user's Slack account for a workspace",
   },
 });
 

@@ -153,16 +153,19 @@ async function startConnect(
     readonly intent?: "connect" | "switch";
   } = {},
 ): Promise<URL> {
+  const client = clients()(slackConnectContract);
+  const requestUserScopes = true;
+  const body = {
+    workspaceId: current.workspaceId,
+    slackUserId: current.slackUserId,
+    requestUserScopes,
+    ...(origin.channelId ? { channelId: origin.channelId } : {}),
+    ...(origin.threadTs ? { threadTs: origin.threadTs } : {}),
+  } satisfies Parameters<typeof client.connect>[0]["body"];
   const pending = await accept(
-    clients()(slackConnectContract).connect({
-      headers,
-      body: {
-        workspaceId: current.workspaceId,
-        slackUserId: current.slackUserId,
-        requestUserScopes: true,
-        ...origin,
-      },
-    }),
+    origin.intent === "switch"
+      ? client.switchAccount({ headers, body })
+      : client.connect({ headers, body }),
     [202],
   );
   return await start(pending.body.authorizationUrl);

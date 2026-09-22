@@ -167,6 +167,7 @@ test("A connected Slack workspace shows success and next actions", async () => {
       isConnected: true,
       isAdmin: false,
       workspaceName: "Acme Workspace",
+      linkStatus: { kind: "connected" },
     });
   });
   const params = new URLSearchParams({
@@ -192,7 +193,11 @@ test("Slack Connect continues to user OAuth before opening Slack", async () => {
     "https://api.okou.ai/api/slack/oauth/connect?connectorState=signed-entry";
   let submitted: unknown;
   context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
-    return respond(200, { isConnected: false, isAdmin: false });
+    return respond(200, {
+      isConnected: false,
+      isAdmin: false,
+      linkStatus: { kind: "connect" },
+    });
   });
   context.mocks.api(slackConnectContract.connect, ({ body, respond }) => {
     submitted = body;
@@ -215,7 +220,6 @@ test("Slack Connect continues to user OAuth before opening Slack", async () => {
     channelId: "C_ORIGIN",
     threadTs: "42.0",
     requestUserScopes: true,
-    intent: "connect",
   });
 });
 
@@ -341,7 +345,7 @@ test("Slack Connect offers an OAuth-verified account switch", async () => {
       },
     });
   });
-  context.mocks.api(slackConnectContract.connect, ({ body, respond }) => {
+  context.mocks.api(slackConnectContract.switchAccount, ({ body, respond }) => {
     submitted = body;
     return respond(202, { authorizationUrl });
   });
@@ -364,7 +368,6 @@ test("Slack Connect offers an OAuth-verified account switch", async () => {
     workspaceId: "T_WORKSPACE",
     slackUserId: "U_NEW_ACCOUNT",
     requestUserScopes: true,
-    intent: "switch",
   });
 });
 
