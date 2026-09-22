@@ -406,18 +406,6 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
-  it("should release chat unread shortcuts", () => {
-    const key = FeatureSwitchKey.ChatUnreadOnlyShortcut;
-    expect(isFeatureEnabled(key, {})).toBe(true);
-    expect(isFeatureEnabled(key, { orgId: "org_nonexistent" })).toBe(true);
-    expect(
-      isFeatureEnabled(key, {
-        overrides: { [key]: false },
-      }),
-    ).toBe(false);
-    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
-  });
-
   it("should link user message urls for every reader and accept an opt-out", () => {
     expect(FeatureSwitchKey.UserMessageLinks).toBe("userMessageLinks");
     // A share link is read without a session, so the signed-out visitor's
@@ -593,7 +581,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
 
@@ -619,7 +606,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 

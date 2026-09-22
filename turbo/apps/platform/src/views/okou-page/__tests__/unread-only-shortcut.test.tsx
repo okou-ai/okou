@@ -2,7 +2,6 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
   buttonByText,
@@ -79,11 +78,7 @@ function unreadOnlyMenuItem(): HTMLElement {
   return item;
 }
 
-function preparePage(
-  userAgent: string,
-  enabled: boolean,
-  unread = false,
-): Promise<void> {
+function preparePage(userAgent: string, unread = false): Promise<void> {
   context.mocks.browser.userAgent(userAgent);
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
@@ -98,16 +93,13 @@ function preparePage(
   return setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatUnreadOnlyShortcut]: enabled,
-    },
   });
 }
 
 test.each(platforms)(
   "Toggle unread-only chats and expose the shortcut on $name",
   async ({ ctrlKey, helpParts, label, metaKey, userAgent }) => {
-    await preparePage(userAgent, true);
+    await preparePage(userAgent);
 
     const list = await screen.findByTestId("chat-list-column");
     await expect(
@@ -187,7 +179,7 @@ test.each(platforms)(
 );
 
 test("Keep Show all chats after the unread rows", async () => {
-  await preparePage(platforms[0].userAgent, true, true);
+  await preparePage(platforms[0].userAgent, true);
 
   const list = await screen.findByTestId("chat-list-column");
   await expect(
@@ -214,7 +206,7 @@ test("Keep Show all chats after the unread rows", async () => {
 });
 
 test("Show all chats from the empty unread state", async () => {
-  await preparePage(platforms[0].userAgent, true);
+  await preparePage(platforms[0].userAgent);
 
   const list = await screen.findByTestId("chat-list-column");
   await expect(
@@ -234,39 +226,9 @@ test("Show all chats from the empty unread state", async () => {
   expect(within(list).queryByText("No unread chats")).not.toBeInTheDocument();
 });
 
-test("Leave the browser shortcut and hints untouched when the rollout is off", async () => {
-  const { userAgent, metaKey, ctrlKey, label } = platforms[0];
-  await preparePage(userAgent, false);
-
-  const list = await screen.findByTestId("chat-list-column");
-  await expect(
-    within(list).findByText("Release plan"),
-  ).resolves.toBeInTheDocument();
-
-  openChatListMenu();
-  const menuItem = unreadOnlyMenuItem();
-  expect(menuItem).not.toHaveAttribute("aria-keyshortcuts");
-  expect(menuItem).not.toHaveTextContent(label);
-  fireEvent.keyDown(menuItem, { key: "Escape" });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  composer.focus();
-  const event = unreadShortcutEvent({ ctrlKey, metaKey });
-  composer.dispatchEvent(event);
-  expect(event.defaultPrevented).toBeFalsy();
-  expect(within(list).getByText("Release plan")).toBeInTheDocument();
-
-  fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
-  const dialog = await screen.findByRole("dialog", {
-    name: "Keyboard Shortcuts",
-  });
-  expect(within(dialog).queryByText("Unread")).not.toBeInTheDocument();
-});
-
 test("Preserve Linux Unicode input while allowing the shortcut outside editors", async () => {
   await preparePage(
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36",
-    true,
   );
 
   const list = await screen.findByTestId("chat-list-column");

@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isEditableTarget } from "@okouai/ui";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
@@ -14,7 +13,6 @@ import { displayedPinnedAgents$ } from "./pinned-agents.ts";
 import { writeToClipboard } from "./clipboard.ts";
 import { isStandaloneMode } from "./settings/connectors.ts";
 import { setupThreadNumberShortcuts$ } from "./thread-number-shortcuts.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import {
   setChatThreadUnreadFilter$,
   toggleChatThreadUnreadFilter$,
@@ -128,19 +126,14 @@ function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
   return !event.repeat && !event.isComposing && event.keyCode !== 229;
 }
 
-const shouldHandleUnreadOnlyShortcut$ = command(
-  ({ get }, event: KeyboardEvent): boolean => {
-    if (
-      get(featureSwitch$)[FeatureSwitchKey.ChatUnreadOnlyShortcut] !== true ||
-      !shouldHandleShortcutPress(event)
-    ) {
-      return false;
-    }
-    return !(
-      /Linux/u.test(navigator.userAgent) && isEditableTarget(event.target)
-    );
-  },
-);
+function shouldHandleUnreadOnlyShortcut(event: KeyboardEvent): boolean {
+  if (!shouldHandleShortcutPress(event)) {
+    return false;
+  }
+  return !(
+    /Linux/u.test(navigator.userAgent) && isEditableTarget(event.target)
+  );
+}
 
 export const setupGlobalKeyboardShortcuts$ = command(
   ({ set }, signal: AbortSignal) => {
@@ -156,9 +149,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         },
         [GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding]: {
           allowInEditableTarget: true,
-          shouldHandle: (event) => {
-            return set(shouldHandleUnreadOnlyShortcut$, event);
-          },
+          shouldHandle: shouldHandleUnreadOnlyShortcut,
           run: () => {
             set(toggleChatThreadUnreadFilter$);
           },

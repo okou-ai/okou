@@ -74,7 +74,6 @@ export enum FeatureSwitchKey {
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatThreadArchiving = "chatThreadArchiving",
-  ChatUnreadOnlyShortcut = "chatUnreadOnlyShortcut",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",
