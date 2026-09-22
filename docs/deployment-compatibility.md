@@ -2986,3 +2986,46 @@ while jobs or usage receipts remain outstanding. Disable new admissions,
 finish or cancel admitted jobs, and verify durable settlement receipts before
 such a rollback. Database expansion is retained. A merged PR does not prove
 fleet parity, the drain, or paid-provider readiness.
+
+## Browser native input foundation (#35821)
+
+The `browser_user_action_requests` table must exist before an API instance that
+serves `browserNativeInput` starts. The schema is additive: older APIs ignore
+the table, and rollback leaves it in place. There is no backfill or production
+data operation.
+
+The row is deliberately not an audit record. Its token hash is the primary
+key; searchable ownership, agent/thread authorization, provider-session
+identity, state, the strict versioned payload, and the two operational
+transition timestamps are the only persisted fields. Variant-specific callback
+and exact-target data live only in that payload. Do not add a copied Browser
+expiry, originating run, diagnostic reason, or created/updated timestamps.
+
+Keep `browserNativeInput` globally disabled during mixed-version deployment.
+Its initial registry policy is staff-only, but an explicit override must not be
+enabled until every serving API instance and Clerk account-cleanup worker has
+this implementation. Older API instances reject the new routes and older
+cleanup workers do not explicitly remove outstanding requests.
+
+The API rejects unknown persisted payload versions instead of guessing. A
+nonterminal request is usable only while its exact `browser_session_instances`
+row is active and both `timeout_at` and the renewable `idle_expires_at` are in
+the future. Guarded lease updates must not revive an already expired Browser.
+Terminal requests remain readable after their Browser lease expires so the
+Platform can retry notification only; values are never stored and Browser
+mutation is never retried. Rolling back the API requires disabling the switch
+first. The retained expansion table needs no contraction until all requests
+created by the newer API are outside their product retention window.
+
+Browser access is request-scoped and bounded. The CLI resolves each input to a
+`backendNodeId` in one exact `pageTargetId` and then stops operating the Browser.
+Input creation uses at most one provider lookup and one short-lived, read-only
+CDP connection to validate those identifiers and derive the document and
+control fingerprints. Application uses one provider lookup and one short-lived
+CDP connection to revalidate, mutate, and verify all fields. The API does not
+query selectors or rediscover controls.
+
+Direct-interaction creation, read, cancel, and complete are database-only. They
+capture no page or DOM metadata and have no open endpoint. The existing
+thread-scoped Browser card opens the current Browser and its normal viewer
+heartbeat owns Browser access and lease renewal.

@@ -820,6 +820,13 @@
       "when": 1790002441693,
       "tag": "1194_okou_model_policy_addability",
       "breakpoints": true
+    },
+    {
+      "idx": 1195,
+      "version": "7",
+      "when": 1790039254583,
+      "tag": "1195_gigantic_rick_jones",
+      "breakpoints": true
     }
   ]
 }
