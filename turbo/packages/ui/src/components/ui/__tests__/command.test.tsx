@@ -20,7 +20,9 @@ import { DialogDescription, DialogTitle } from "../dialog";
 function BasicCommand() {
   const [selected, setSelected] = useState<string[]>([]);
   const select = (value: string) => {
-    setSelected((previous) => {return [...previous, value]});
+    setSelected((previous) => {
+      return [...previous, value];
+    });
   };
   const [query, setQuery] = useState("");
   return (
@@ -39,13 +41,28 @@ function BasicCommand() {
     >
       <CommandInput aria-label="Search" />
       <CommandList>
-        <CommandItem value="alpha" onClick={() => {return select("alpha")}}>
+        <CommandItem
+          value="alpha"
+          onClick={() => {
+            return select("alpha");
+          }}
+        >
           Alpha
         </CommandItem>
-        <CommandItem value="bravo" onClick={() => {return select("bravo")}}>
+        <CommandItem
+          value="bravo"
+          onClick={() => {
+            return select("bravo");
+          }}
+        >
           Bravo
         </CommandItem>
-        <CommandItem value="charlie" onClick={() => {return select("charlie")}}>
+        <CommandItem
+          value="charlie"
+          onClick={() => {
+            return select("charlie");
+          }}
+        >
           Charlie
         </CommandItem>
       </CommandList>
@@ -163,7 +180,9 @@ describe("Command", () => {
                   key={value}
                   value={value}
                   onClick={() => {
-                    setSelected((previous) => {return [...previous, value]});
+                    setSelected((previous) => {
+                      return [...previous, value];
+                    });
                   }}
                 >
                   {item}
