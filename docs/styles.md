@@ -322,7 +322,7 @@ the existing media-aware text hover utility.
 
 `Button` represents an action; `ToggleButton` represents a persistent pressed
 state. Both render through the internal `ButtonBase` in `button-base.tsx`, which
-owns the Base UI button primitive, ref forwarding, render/asChild composition,
+owns the Base UI button primitive, ref forwarding, render composition,
 native-title handling and optional tooltip. Their typography, radius and focus
 styles also share one base definition. Dimensions, icon sizing, transitions and
 disabled appearance remain owned by each styled control. `ToggleButton` keeps
@@ -513,12 +513,10 @@ every control to make one word look centered.
 
 Use `Button variant="neutral"` for neutral actions and
 `SelectTrigger variant="neutral"` for neutral select controls. Each component
-owns its utilities; their public API does not export class strings. Use
-`Button asChild variant="neutral"` around a router `Link` for navigation styled
-as a button, and compose `Button` with `DialogTrigger` for dialog actions. The
-existing components own the interaction contract; `neutral` is only a visual
-variant. Link composition preserves the native anchor, ref, and navigation
-behavior without adding a wrapper.
+owns its utilities. Style navigation with a native anchor or Router `Link` and
+`buttonVariants({ variant: "neutral" })`; compose dialog actions with
+`DialogTrigger render={<Button variant="neutral" />}`. The final element owns
+its interaction contract; `neutral` is only a visual variant.
 
 The components compose
 `border border-control-border bg-control-surface text-foreground [&:hover]:bg-state-hover-overlay`
@@ -541,6 +539,67 @@ treatment.
 Preserve consumer-specific interaction colors when extracting shared styles. The
 official workflow Configure button, for example, retains its existing
 `hover:bg-primary-hover active:bg-primary-pressed` overrides.
+
+### Semantic elements and Base UI composition
+
+Choose the final DOM element before choosing the styling or primitive:
+
+| Intent                             | Element and composition                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Action or toggle                   | Native `Button` / `ToggleButton`; keep the default `nativeButton={true}`.                                                                              |
+| Button-styled navigation           | Native `<a>` or Router `Link` with `buttonVariants`; preserve destination, target, download, ref, and browser navigation behavior.                     |
+| Input activation                   | Native `<label>` with `buttonVariants`; preserve `htmlFor` or the nested input association. Do not add button keyboard semantics to an ordinary label. |
+| Trigger or close action            | `DialogTrigger`, `DialogClose`, `PopoverTrigger`, `PopoverClose`, `SheetTrigger`, `SheetClose`, or `DropdownMenuTrigger` with `render={<Button />}`.   |
+| Intentional non-button action host | On primitives exposing `nativeButton`, set it to `false` when rendering a non-button element; the primitive still supplies button semantics.           |
+| Tooltip target                     | `TooltipTrigger render={...}` with the actual target. Tooltip has no `nativeButton` prop.                                                              |
+
+Base UI Button enforces button semantics even with `nativeButton={false}`.
+Do not render a semantic link through it. `Button variant="link"` remains a
+button action with link-like styling; navigation uses an anchor or Router Link.
+Use `cn()` when combining variants with extra utilities so caller geometry keeps
+its existing precedence:
+
+```tsx
+<Link
+  pathname={ROUTES.workflows}
+  className={cn(buttonVariants({ variant: "neutral", size: "sm" }), "h-9")}
+>
+  Browse workflows
+</Link>
+```
+
+Compose multiple primitives through nested `render` props, with one final
+interactive DOM element. Keep primitive-owned behavior on the primitive and
+element-specific props on the rendered element. A custom render target must
+forward its ref and spread all received props onto that same element. Do not
+add a wrapper or manually clone/merge handlers to simulate the removed legacy
+composition API.
+
+```tsx
+<Dialog>
+  <Tooltip>
+    <TooltipTrigger
+      render={<DialogTrigger render={<Button variant="neutral" />} />}
+    >
+      Add automation
+    </TooltipTrigger>
+    <TooltipContent>Choose an automation</TooltipContent>
+  </Tooltip>
+  <DialogContent>{/* Dialog title and content */}</DialogContent>
+</Dialog>
+```
+
+Preserve disabled/loading state, accessible names and relationships, composed
+refs, single activation, popup open/close order, and focus restoration. A
+non-button tooltip target keeps its original semantics and focusability.
+Existing full-card buttons keep their hit area. Shared Dialog viewport,
+safe-area, and portal ownership remain at the shared component boundary.
+
+The project locks Base UI 1.7.0 and uses shadcn `base-vega`. Verify the installed
+primitive's public types before adopting a newer documentation example. See
+[Base UI composition](https://base-ui.com/react/handbook/composition),
+[Button semantics](https://base-ui.com/react/components/button#rendering-links-as-buttons),
+and [shadcn links](https://ui.shadcn.com/docs/components/base/button#as-link).
 
 ### Chat scrollbars
 
@@ -567,7 +626,7 @@ overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
 `IconButton` from `@okouai/ui` owns a neutral 36px square control, the shared
 radius, muted hover fill, and keyboard focus ring. Its `aria-label` is required;
 callers provide the icon, foreground, opacity, and positioning. It reuses
-`ButtonBase` for native button behavior, refs, render/asChild composition, and
+`ButtonBase` for native button behavior, refs, render composition, and
 optional tooltip support. Tooltip stays off by default. Use `Button` for action
 variants; `IconButton` preserves the neutral dialog and sheet close treatment.
 Compose it through `DialogClose` or `SheetClose` using `render` so Base UI keeps

@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  RefreshCw,
 } from "lucide-react";
 import {
   Button,
@@ -18,7 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
   Textarea,
-  surfaceVariants,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { findWorkflowTemplateItem } from "@okouai/core/workflow-template-items";
@@ -31,10 +29,15 @@ import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
+import { WorkflowCover } from "./workflow-cover.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowResultPreview } from "./workflow-result-preview.tsx";
 
-const CARDS_PER_PAGE = 3;
 const DETAIL_ORDER = ["one", "two", "three"] as const;
 
 function WorkflowConnectors({
@@ -60,7 +63,12 @@ function WorkflowConnectors({
   );
 }
 
-function WorkflowCard({
+/**
+ * One cover on the shelf, the same tile every other type's shelf carries: the
+ * art in its own box, one line of caption under it. The description, the
+ * connector names and the steps live in the dialog the tile opens.
+ */
+function WorkflowTile({
   item,
   onSelect,
 }: {
@@ -77,35 +85,22 @@ function WorkflowCard({
     },
   )[item.id];
   return (
-    <button
+    <Button
       type="button"
-      aria-label={copy.title}
-      data-slot="workflow-recommendation-card"
-      className={cn(
-        surfaceVariants({ interactive: true }),
-        "group grid min-w-0 grid-cols-[42%_minmax(0,1fr)] overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex sm:flex-col",
-      )}
+      variant="quiet"
+      data-slot="workflow-recommendation-tile"
+      className={cn(RAIL_TILE, "w-[200px]")}
       onClick={() => {
         onSelect(item);
       }}
     >
-      <WorkflowResultPreview id={item.id} />
-      <span className="flex min-w-0 flex-1 flex-col gap-1.5 p-3">
-        <span className="line-clamp-2 text-[13px] font-medium leading-[18px]">
-          {copy.title}
-        </span>
-        <span className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">
-          {copy.description}
-        </span>
-        <span className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <WorkflowConnectors item={item} />
-          <ArrowRight
-            className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-            aria-hidden
-          />
-        </span>
+      <span className="block aspect-video overflow-hidden rounded-xl border border-border bg-muted">
+        <WorkflowCover item={item} />
       </span>
-    </button>
+      <span className={RAIL_TILE_CAPTION} title={copy.title}>
+        {copy.title}
+      </span>
+    </Button>
   );
 }
 
@@ -222,7 +217,7 @@ function WorkflowSteps({ item }: { readonly item: WorkflowRecommendation }) {
   const detail = copy.items[item.id];
   return (
     <div className="space-y-5">
-      <WorkflowResultPreview id={item.id} large />
+      <WorkflowResultPreview id={item.id} />
       <div className="space-y-3">
         <h3 className="text-xs font-medium">{copy.whatHappens}</h3>
         <ol className="space-y-3">
@@ -392,6 +387,11 @@ function WorkflowDialog({ signals }: { readonly signals: ComposerSignals }) {
   );
 }
 
+/**
+ * The Workflow shelf: the same header line, rail and cover metrics as every
+ * other type's shelf, so the tab stops being the one panel laid out as a grid.
+ * All nine recommendations ride one rail; the pagers move it.
+ */
 export function ComposerWorkflowRecommendations({
   signals,
 }: {
@@ -404,38 +404,37 @@ export function ComposerWorkflowRecommendations({
     },
     { returnObjects: true },
   );
-  const page = useGet(signals.taskChips.ideaPages$).workflow;
-  const nextIdeas = useSet(signals.taskChips.nextIdeas$);
+  const label = t(($) => {
+    return $.chat.taskChips.shelf.workflows;
+  });
   const open = useSet(signals.taskChips.workflows.open$);
   const browse = useSet(signals.taskChips.workflows.browse$);
-  const pageItems = WORKFLOW_RECOMMENDATIONS.slice(
-    page * CARDS_PER_PAGE,
-    (page + 1) * CARDS_PER_PAGE,
-  );
   return (
     <div
+      className="flex min-w-0 flex-col gap-3"
       role="group"
-      aria-label={t(($) => {
-        return $.chat.taskChips.ideasLabel;
-      })}
-      className="min-w-0 space-y-3"
+      aria-label={label}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-        <p className="text-xs text-muted-foreground">{copy.heading}</p>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-base font-medium">{label}</p>
         <Button
+          type="button"
           variant="quiet"
           size="xs"
-          className="gap-1.5 font-normal"
+          className="shrink-0 gap-1.5 font-normal"
           onClick={browse}
         >
           {copy.browse}
           <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-        {pageItems.map((item) => {
+      <ComposerRail
+        signals={signals}
+        rail="templates:workflow"
+        gap="gap-3"
+        items={WORKFLOW_RECOMMENDATIONS.map((item) => {
           return (
-            <WorkflowCard
+            <WorkflowTile
               key={item.id}
               item={item}
               onSelect={() => {
@@ -444,25 +443,7 @@ export function ComposerWorkflowRecommendations({
             />
           );
         })}
-      </div>
-      <div className="flex justify-end">
-        <Button
-          variant="quiet"
-          size="xs"
-          className="gap-2 font-normal"
-          onClick={() => {
-            nextIdeas(
-              "workflow",
-              Math.ceil(WORKFLOW_RECOMMENDATIONS.length / CARDS_PER_PAGE),
-            );
-          }}
-        >
-          <RefreshCw className="size-3.5" aria-hidden />
-          {t(($) => {
-            return $.chat.taskChips.moreIdeas;
-          })}
-        </Button>
-      </div>
+      />
       <WorkflowDialog signals={signals} />
     </div>
   );

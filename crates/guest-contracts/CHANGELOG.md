@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.3...guest-contracts-v0.16.0) (2026-09-22)
+
+
+### Features
+
+* **runner:** install the versioned okou cli into the rootfs and gate its use by runtime version ([#36000](https://github.com/okou-ai/okou/issues/36000)) ([8d8f3a3](https://github.com/okou-ai/okou/commit/8d8f3a3e14d23f7471e0773bd9acb988f59217af))
+
 ## [0.15.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.2...guest-contracts-v0.15.3) (2026-09-21)
 
 

@@ -2382,17 +2382,17 @@
       },
       "ideasLabel": "Ideeën om te beginnen",
       "label": "Taken om te beginnen",
-      "moreIdeas": "Meer ideeën",
       "moreTemplates": "Meer sjablonen",
       "presentationTemplates": "Presentatiesjablonen",
       "removeTask": "Verwijder {{task}}",
       "shelf": {
         "browseStyles": "Blader door alle stijlen",
         "browseTemplates": "Alle sjablonen bekijken",
-        "image": "Image styles",
+        "image": "Afbeeldingsstijlen",
         "nextPage": "Volgende pagina",
         "previousPage": "Vorige pagina",
-        "website": "Websitesjablonen"
+        "website": "Websitesjablonen",
+        "workflows": "Workflows"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "Workflows doorbladeren",
         "close": "Sluiten",
         "contextPrefix": "Wat belangrijk is voor mij: {{context}}",
-        "heading": "Wat wilt u van uw bord halen?",
         "items": {
           "competitors": {
             "cadence": "Dagelijks of wekelijks",

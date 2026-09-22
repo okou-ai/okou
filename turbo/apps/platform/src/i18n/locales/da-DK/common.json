@@ -2382,17 +2382,17 @@
       },
       "ideasLabel": "Idéer til at komme i gang",
       "label": "Opgaver for at komme i gang",
-      "moreIdeas": "Flere ideer",
       "moreTemplates": "Flere skabeloner",
       "presentationTemplates": "Præsentationsskabeloner",
       "removeTask": "Fjern {{task}}",
       "shelf": {
         "browseStyles": "Gennemse alle stilarter",
         "browseTemplates": "Gennemse alle skabeloner",
-        "image": "Image styles",
+        "image": "Billedstile",
         "nextPage": "Næste side",
         "previousPage": "Forrige side",
-        "website": "Hjemmesideskabeloner"
+        "website": "Hjemmesideskabeloner",
+        "workflows": "Arbejdsgange"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "Gennemse arbejdsgange",
         "close": "Luk",
         "contextPrefix": "Hvad der betyder noget for mig: {{context}}",
-        "heading": "Hvad vil du gerne have fjernet fra din tallerken?",
         "items": {
           "competitors": {
             "cadence": "Dagligt eller ugentligt",

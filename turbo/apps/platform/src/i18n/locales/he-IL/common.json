@@ -2428,17 +2428,17 @@
       },
       "ideasLabel": "רעיונות להתחלה",
       "label": "משימות להתחלה",
-      "moreIdeas": "רעיונות נוספים",
       "moreTemplates": "תבניות נוספות",
       "presentationTemplates": "תבניות מצגות",
       "removeTask": "הסר {{task}}",
       "shelf": {
         "browseStyles": "עיין בכל הסגנונות",
         "browseTemplates": "עיין בכל התבניות",
-        "image": "Image styles",
+        "image": "סגנונות תמונה",
         "nextPage": "עמוד הבא",
         "previousPage": "עמוד קודם",
-        "website": "תבניות אתרים"
+        "website": "תבניות אתרים",
+        "workflows": "תהליכי עבודה"
       },
       "tasks": {
         "image": "Image",
@@ -2573,7 +2573,6 @@
         "browse": "עיין בזרימות עבודה",
         "close": "סגור",
         "contextPrefix": "מה שחשוב לי: {{context}}",
-        "heading": "מה תרצה להוריד מהצלחת שלך?",
         "items": {
           "competitors": {
             "cadence": "יומי או שבועי",

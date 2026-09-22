@@ -1,3 +1,4 @@
+import { cn } from "@okouai/ui/lib/utils";
 import { CopyButton, surfaceVariants } from "@okouai/ui";
 import {
   useGet,
@@ -27,7 +28,7 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -1558,18 +1559,20 @@ function TelegramConnectAction({
   }
 
   return (
-    <Button asChild variant="outline" size="sm" className="h-9 justify-center">
-      <Link
-        pathname={ROUTES.telegramConnect}
-        options={{
-          searchParams: new URLSearchParams({ bot: bot.id }),
-        }}
-      >
-        {t(($) => {
-          return $.connectors.actions.connect;
-        })}
-      </Link>
-    </Button>
+    <Link
+      pathname={ROUTES.telegramConnect}
+      options={{
+        searchParams: new URLSearchParams({ bot: bot.id }),
+      }}
+      className={cn(
+        buttonVariants({ variant: "outline", size: "sm" }),
+        "h-9 justify-center",
+      )}
+    >
+      {t(($) => {
+        return $.connectors.actions.connect;
+      })}
+    </Link>
   );
 }
 
@@ -2220,27 +2223,23 @@ export function TelegramSettingsPage() {
       <header className="shrink-0 bg-transparent px-4 pt-10 pb-3 sm:px-6">
         <div className="mx-auto max-w-[900px]">
           <div className="mb-4">
-            <Button
-              asChild
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-2 px-2 text-muted-foreground hover:text-foreground"
+            <Link
+              pathname={ROUTES.works}
+              title={t(($) => {
+                return $.connectors.providerSettings.telegram
+                  .backToIntegrations;
+              })}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",
+              )}
             >
-              <Link
-                pathname={ROUTES.works}
-                title={t(($) => {
-                  return $.connectors.providerSettings.telegram
-                    .backToIntegrations;
-                })}
-              >
-                <ArrowLeft size={17} />
-                {t(($) => {
-                  return $.connectors.providerSettings.telegram
-                    .backToIntegrations;
-                })}
-              </Link>
-            </Button>
+              <ArrowLeft size={17} />
+              {t(($) => {
+                return $.connectors.providerSettings.telegram
+                  .backToIntegrations;
+              })}
+            </Link>
           </div>
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">

@@ -2382,17 +2382,17 @@
       },
       "ideasLabel": "Başlamak için fikirler",
       "label": "Başlamak için görevler",
-      "moreIdeas": "Daha fazla fikir",
       "moreTemplates": "Daha fazla şablon",
       "presentationTemplates": "Sunum şablonları",
       "removeTask": "{{task}}'i kaldır",
       "shelf": {
         "browseStyles": "Tüm stillere göz at",
         "browseTemplates": "Tüm şablonlara göz at",
-        "image": "Image styles",
+        "image": "Görsel stilleri",
         "nextPage": "Sonraki sayfa",
         "previousPage": "Önceki sayfa",
-        "website": "Web sitesi şablonları"
+        "website": "Web sitesi şablonları",
+        "workflows": "İş akışları"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "İş akışlarına göz at",
         "close": "Kapat",
         "contextPrefix": "Benim için önemli olan: {{context}}",
-        "heading": "Tabağınızdan neyi çıkarmak istersiniz?",
         "items": {
           "competitors": {
             "cadence": "Günlük veya haftalık",

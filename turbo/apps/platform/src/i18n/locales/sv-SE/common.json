@@ -2382,17 +2382,17 @@
       },
       "ideasLabel": "Idéer för att komma igång",
       "label": "Uppgifter att komma igång med",
-      "moreIdeas": "Fler idéer",
       "moreTemplates": "Fler mallar",
       "presentationTemplates": "Presentationsmallar",
       "removeTask": "Ta bort {{task}}",
       "shelf": {
         "browseStyles": "Bläddra bland alla stilar",
         "browseTemplates": "Bläddra bland alla mallar",
-        "image": "Image styles",
+        "image": "Bildstilar",
         "nextPage": "Nästa sida",
         "previousPage": "Föregående sida",
-        "website": "Webbplatsmallar"
+        "website": "Webbplatsmallar",
+        "workflows": "Arbetsflöden"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "Bläddra bland arbetsflöden",
         "close": "Stäng",
         "contextPrefix": "Vad som är viktigt för mig: {{context}}",
-        "heading": "Vad vill du ta bort från din tallrik?",
         "items": {
           "competitors": {
             "cadence": "Dagligen eller veckovis",

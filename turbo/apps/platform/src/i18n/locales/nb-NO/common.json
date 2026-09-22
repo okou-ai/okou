@@ -2382,17 +2382,17 @@
       },
       "ideasLabel": "Ideer for å komme i gang",
       "label": "Oppgaver for å komme i gang",
-      "moreIdeas": "Flere ideer",
       "moreTemplates": "Flere maler",
       "presentationTemplates": "Presentasjonsmaler",
       "removeTask": "Fjern {{task}}",
       "shelf": {
         "browseStyles": "Bla gjennom alle stiler",
         "browseTemplates": "Bla gjennom alle maler",
-        "image": "Image styles",
+        "image": "Bildestiler",
         "nextPage": "Neste side",
         "previousPage": "Forrige side",
-        "website": "Nettstedsmaler"
+        "website": "Nettstedsmaler",
+        "workflows": "Arbeidsflyter"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "Bla gjennom arbeidsflyter",
         "close": "Lukk",
         "contextPrefix": "Hva som betyr noe for meg: {{context}}",
-        "heading": "Hva vil du at jeg skal ta av tallerkenen din?",
         "items": {
           "competitors": {
             "cadence": "Daglig eller ukentlig",

@@ -2474,17 +2474,17 @@
       },
       "ideasLabel": "Nápady pro začátek",
       "label": "Úkoly pro začátek",
-      "moreIdeas": "Více nápadů",
       "moreTemplates": "Další šablony",
       "presentationTemplates": "Šablony prezentací",
       "removeTask": "Odebrat {{task}}",
       "shelf": {
         "browseStyles": "Procházet všechny styly",
         "browseTemplates": "Procházet všechny šablony",
-        "image": "Image styles",
+        "image": "Styly obrázků",
         "nextPage": "Další stránka",
         "previousPage": "Předchozí stránka",
-        "website": "Šablony webových stránek"
+        "website": "Šablony webových stránek",
+        "workflows": "Pracovní postupy"
       },
       "tasks": {
         "image": "Image",
@@ -2620,7 +2620,6 @@
         "browse": "Procházet pracovní postupy",
         "close": "Zavřít",
         "contextPrefix": "Co je pro mě důležité: {{context}}",
-        "heading": "Co byste chtěli, abych si vzal z talíře?",
         "items": {
           "competitors": {
             "cadence": "Denně nebo týdně",

@@ -1,7 +1,7 @@
 import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { Button } from "@okouai/ui/components/ui/button";
+import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -94,17 +94,18 @@ export function ConnectorRedirectingPage({
             )}
           </p>
         )}
-        <Button variant="outline" asChild>
-          <Link pathname={ROUTES.home}>
-            <ArrowLeft size={16} aria-hidden="true" />
-            {t(
-              ($) => {
-                return $.connectors.redirect.back;
-              },
-              { brandName },
-            )}
-          </Link>
-        </Button>
+        <Link
+          pathname={ROUTES.home}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          {t(
+            ($) => {
+              return $.connectors.redirect.back;
+            },
+            { brandName },
+          )}
+        </Link>
       </div>
       {connectorSlug === "mercury" ? (
         <MercuryDisclosure className="w-full border-t border-border/50 pt-4 text-left" />

@@ -27,7 +27,11 @@ jq -e \
     and .commitSha == $commit_sha
     and .package.path == "package.tgz"
     and (.package.sha256 | type == "string" and test("^[0-9a-f]{64}$"))
-    and (.package.size | type == "number" and . > 0)' \
+    and (.package.size | type == "number" and . > 0)
+    and (.versions | type == "object")
+    and (.versions.cli | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    and (.versions.piAgentRuntime | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    and (.versions.piSdk | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+\\+okou\\.[0-9a-f]{12}$"))' \
   "$artifact_dir/manifest.json" >/dev/null
 
 package_sha256="$(sha256sum "$artifact_dir/package.tgz" | cut -d ' ' -f 1)"
@@ -54,8 +58,11 @@ jq -e \
   "$artifact_dir/ready.json" >/dev/null
 
 package_json="$(tar -xOf "$artifact_dir/package.tgz" package/package.json)"
-jq -e '
+manifest_cli_version="$(jq -er '.versions.cli' "$artifact_dir/manifest.json")"
+jq -e \
+  --arg cli_version "$manifest_cli_version" '
   .name == "@okouai/cli"
+  and .version == $cli_version
   and .private == true
   and (.bin | type == "object")
   and ((.bin | keys) == ["okou"])

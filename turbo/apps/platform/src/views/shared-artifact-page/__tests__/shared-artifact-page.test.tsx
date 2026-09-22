@@ -8,6 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
@@ -188,6 +189,24 @@ test("the standalone viewer restores the selected app color theme", async () => 
     );
   });
   expect(action("link", "Continue with Okou")).toBeInTheDocument();
+});
+
+test("the viewer's continuation link retains its tooltip and navigation semantics", async () => {
+  const user = userEvent.setup();
+  await openViewer();
+  const link = action("link", "Continue with Okou");
+  const href = link.getAttribute("href");
+  expect(href).toContain("https://app.okou.ai/?prompt=");
+  expect(queryAction("button", "Continue with Okou")).toBeUndefined();
+  await user.hover(link);
+  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+    "Continue with Okou",
+  );
+  expect(link).toHaveAttribute("href", href);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
 });
 
 test.each([

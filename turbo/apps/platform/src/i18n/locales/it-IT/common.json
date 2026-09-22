@@ -2428,7 +2428,6 @@
       },
       "ideasLabel": "Idee per iniziare",
       "label": "Attività per iniziare",
-      "moreIdeas": "Altre idee",
       "moreTemplates": "Altri modelli",
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
@@ -2438,7 +2437,8 @@
         "image": "Stili immagine",
         "nextPage": "Pagina successiva",
         "previousPage": "Pagina precedente",
-        "website": "Modelli sito web"
+        "website": "Modelli sito web",
+        "workflows": "Flussi di lavoro"
       },
       "tasks": {
         "image": "Immagine",
@@ -2572,7 +2572,6 @@
         "browse": "Esplora i workflow",
         "close": "Chiudi",
         "contextPrefix": "Per me è importante: {{context}}",
-        "heading": "Quale attività vuoi delegare?",
         "items": {
           "competitors": {
             "cadence": "Ogni giorno o ogni settimana",

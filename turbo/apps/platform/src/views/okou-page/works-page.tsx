@@ -8,7 +8,7 @@ import {
   Download,
   Settings,
 } from "lucide-react";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
@@ -612,25 +612,21 @@ function GithubCard() {
           />
         ) : null}
         {githubData && !githubData.isInstalled && githubData.installUrl ? (
-          <Button
-            asChild
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 rounded-lg"
+          <a
+            data-testid="github-install-button"
+            href={githubData.installUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "h-8 shrink-0 gap-1.5 rounded-lg",
+            )}
           >
-            <a
-              data-testid="github-install-button"
-              href={githubData.installUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Download size={14} />
-              {t(($) => {
-                return $.works.github.install;
-              })}
-            </a>
-          </Button>
+            <Download size={14} />
+            {t(($) => {
+              return $.works.github.install;
+            })}
+          </a>
         ) : null}
         {githubData?.isInstalled && !githubData.isConnected ? (
           <Button

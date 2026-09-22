@@ -2382,17 +2382,17 @@
       },
       "ideasLabel": "Ideat aloittamiseen",
       "label": "Tehtävät aloittamiseen",
-      "moreIdeas": "Lisää ideoita",
       "moreTemplates": "Lisää malleja",
       "presentationTemplates": "Esitysmallit",
       "removeTask": "Poista {{task}}",
       "shelf": {
         "browseStyles": "Selaa kaikkia tyylejä",
         "browseTemplates": "Selaa kaikkia malleja",
-        "image": "Image styles",
+        "image": "Kuvatyylit",
         "nextPage": "Seuraava sivu",
         "previousPage": "Edellinen sivu",
-        "website": "Verkkosivuston mallit"
+        "website": "Verkkosivuston mallit",
+        "workflows": "Työnkulut"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "Selaa työnkulkuja",
         "close": "Sulje",
         "contextPrefix": "Mikä minulle on tärkeää: {{context}}",
-        "heading": "Mitä haluaisit minun ottavan pois lautaseltasi?",
         "items": {
           "competitors": {
             "cadence": "Päivittäin tai viikoittain",

@@ -11,6 +11,43 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.942.0](https://github.com/okou-ai/okou/compare/app-v0.941.2...app-v0.942.0) (2026-09-22)
+
+
+### Features
+
+* **core:** release user message links to every reader ([#36021](https://github.com/okou-ai/okou/issues/36021)) ([a0adec6](https://github.com/okou-ai/okou/commit/a0adec6432eff599d2e7da0740a1216416e2deb1))
+* **platform:** give the connector step a search box and demote its exit ([#36039](https://github.com/okou-ai/okou/issues/36039)) ([9f93d23](https://github.com/okou-ai/okou/commit/9f93d23bac242715ae19a5251a346fea07b2930e))
+* **platform:** make the daily check-in a step in the get started panel ([#36018](https://github.com/okou-ai/okou/issues/36018)) ([7c100b5](https://github.com/okou-ai/okou/commit/7c100b5829686fadeb10597eca64088f80480e29))
+* **platform:** reveal the chat greeting one word at a time ([#35992](https://github.com/okou-ai/okou/issues/35992)) ([0ec6b40](https://github.com/okou-ai/okou/commit/0ec6b40bd66a507195156a28520cf459ee42ad2e))
+
+
+### Bug Fixes
+
+* **platform:** clarify email subscription controls ([#36017](https://github.com/okou-ai/okou/issues/36017)) ([5e7bbd1](https://github.com/okou-ai/okou/commit/5e7bbd1c34c72ae40f446196477ab7d0b25cffe6))
+* **platform:** restore native link form and file drop behavior ([#36005](https://github.com/okou-ai/okou/issues/36005)) ([9988495](https://github.com/okou-ai/okou/commit/9988495f370a44c2394fd6c5779bf4038311addf))
+* show disabled image tool notice when selecting image models ([#36011](https://github.com/okou-ai/okou/issues/36011)) ([4bc9aa0](https://github.com/okou-ai/okou/commit/4bc9aa01e9d174493c5f27e86964f0c7c9765d2e))
+* **ui:** restore visible focus on select triggers ([#36020](https://github.com/okou-ai/okou/issues/36020)) ([f558a82](https://github.com/okou-ai/okou/commit/f558a8242b31d31c6cc5037f6662150d18a4f698))
+* **ui:** use native autocomplete command interactions ([#36007](https://github.com/okou-ai/okou/issues/36007)) ([fffd27b](https://github.com/okou-ai/okou/commit/fffd27b6602d21c8f934623f6747c37539a1fa44))
+
+
+### Refactoring
+
+* finalize chat and export feature switches ([#35987](https://github.com/okou-ai/okou/issues/35987)) ([4ff8c3b](https://github.com/okou-ai/okou/commit/4ff8c3b5351dab21891e633ee7ed51aaf7abe32f))
+* **platform:** delete the orphaned queue waiting field ([#36030](https://github.com/okou-ai/okou/issues/36030)) ([4f2df74](https://github.com/okou-ai/okou/commit/4f2df7463d033c7badd77f157667c64e0fc9d82d)), closes [#34867](https://github.com/okou-ai/okou/issues/34867)
+* **platform:** move sentry noise filtering server-side ([#35993](https://github.com/okou-ai/okou/issues/35993)) ([37e919c](https://github.com/okou-ai/okou/commit/37e919cd7db519a8836911d1afca7143cd81337e))
+* **ui:** migrate overlay composition to native render ([#36013](https://github.com/okou-ai/okou/issues/36013)) ([0a59811](https://github.com/okou-ai/okou/commit/0a59811a9e1a79d5bd663593023287e84fee7dcc))
+* **ui:** migrate tooltip triggers to render composition ([#36012](https://github.com/okou-ai/okou/issues/36012)) ([da647d2](https://github.com/okou-ai/okou/commit/da647d2620b92c670992286a13d4d515411f6b71)), closes [#35925](https://github.com/okou-ai/okou/issues/35925)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.491.0
+    * @okouai/core bumped to 8.699.0
+    * @okouai/ui bumped to 1.11.5
+
 ## [0.941.2](https://github.com/okou-ai/okou/compare/app-v0.941.1...app-v0.941.2) (2026-09-22)
 
 

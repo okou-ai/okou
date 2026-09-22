@@ -847,8 +847,8 @@ describe("declared bounds", () => {
     expect(morningBriefStoragePhaseRemainingMs(expiresAt, 5010)).toBeNull();
   });
 
-  it("offers both Chinese scripts", () => {
-    expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toHaveLength(12);
+  it("offers 23 UI languages including both Chinese scripts", () => {
+    expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toHaveLength(23);
     expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toContain("zh-Hans");
     expect(MORNING_BRIEF_OUTPUT_LANGUAGES).toContain("zh-Hant");
   });

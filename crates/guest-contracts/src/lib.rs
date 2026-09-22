@@ -22,6 +22,7 @@ pub mod file_write;
 pub mod guest_binary;
 pub mod managed_command;
 pub mod model_transport;
+pub mod okou_cli;
 pub mod oom_evidence;
 pub mod process_containment;
 pub mod reuse_preparation;

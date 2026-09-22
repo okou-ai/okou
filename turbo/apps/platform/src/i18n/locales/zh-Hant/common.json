@@ -2374,7 +2374,6 @@
       },
       "ideasLabel": "上手靈感",
       "label": "上手任務",
-      "moreIdeas": "更多靈感",
       "moreTemplates": "更多模板",
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
@@ -2384,7 +2383,8 @@
         "image": "圖片風格",
         "nextPage": "下一頁",
         "previousPage": "上一頁",
-        "website": "網站模板"
+        "website": "網站模板",
+        "workflows": "工作流"
       },
       "tasks": {
         "image": "圖片",
@@ -2518,7 +2518,6 @@
         "browse": "瀏覽工作流",
         "close": "關閉",
         "contextPrefix": "我在意的是：{{context}}",
-        "heading": "你想把哪件事交出去？",
         "items": {
           "competitors": {
             "cadence": "每天或每週",

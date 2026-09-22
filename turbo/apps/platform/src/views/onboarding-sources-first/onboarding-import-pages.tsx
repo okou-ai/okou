@@ -3,7 +3,7 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, Copy, FileText, Loader2 } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -826,17 +826,22 @@ function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
   const { t } = useTranslation();
 
   return (
-    <Button asChild variant="outline" className={CHAT_CHANNEL_TILE_CLASS}>
-      <Link pathname={ROUTES.settingsTelegram} onClick={onOpen}>
-        <ChatChannelTileContent
-          label={t(($) => {
-            return $.onboarding.sourcesFirst.slack.otherTelegram;
-          })}
-          mark="telegram"
-          added={false}
-        />
-      </Link>
-    </Button>
+    <Link
+      pathname={ROUTES.settingsTelegram}
+      onClick={onOpen}
+      className={cn(
+        buttonVariants({ variant: "outline" }),
+        CHAT_CHANNEL_TILE_CLASS,
+      )}
+    >
+      <ChatChannelTileContent
+        label={t(($) => {
+          return $.onboarding.sourcesFirst.slack.otherTelegram;
+        })}
+        mark="telegram"
+        added={false}
+      />
+    </Link>
   );
 }
 

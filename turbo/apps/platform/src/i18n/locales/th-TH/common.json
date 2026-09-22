@@ -2336,17 +2336,17 @@
       },
       "ideasLabel": "แนวคิดในการเริ่มต้น",
       "label": "งานที่จะเริ่มต้น",
-      "moreIdeas": "แนวคิดเพิ่มเติม",
       "moreTemplates": "เทมเพลตเพิ่มเติม",
       "presentationTemplates": "เทมเพลตงานนำเสนอ",
       "removeTask": "ลบ {{task}}",
       "shelf": {
         "browseStyles": "เรียกดูสไตล์ทั้งหมด",
         "browseTemplates": "เรียกดูเทมเพลตทั้งหมด",
-        "image": "Image styles",
+        "image": "สไตล์ภาพ",
         "nextPage": "หน้าถัดไป",
         "previousPage": "หน้าก่อนหน้า",
-        "website": "เทมเพลตเว็บไซต์"
+        "website": "เทมเพลตเว็บไซต์",
+        "workflows": "เวิร์กโฟลว์"
       },
       "tasks": {
         "image": "Image",
@@ -2479,7 +2479,6 @@
         "browse": "เรียกดูเวิร์กโฟลว์",
         "close": "ปิด",
         "contextPrefix": "สิ่งที่สำคัญสำหรับฉัน: {{context}}",
-        "heading": "คุณต้องการให้ฉันทำอะไรให้เสร็จก่อน",
         "items": {
           "competitors": {
             "cadence": "รายวันหรือรายสัปดาห์",

@@ -2374,7 +2374,6 @@
       },
       "ideasLabel": "Ide untuk memulai",
       "label": "Mulai tugas",
-      "moreIdeas": "Ide lainnya",
       "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
@@ -2384,7 +2383,8 @@
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
         "previousPage": "Halaman sebelumnya",
-        "website": "Templat situs web"
+        "website": "Templat situs web",
+        "workflows": "Alur kerja"
       },
       "tasks": {
         "image": "Gambar",
@@ -2518,7 +2518,6 @@
         "browse": "Jelajahi workflow",
         "close": "Tutup",
         "contextPrefix": "Yang penting bagi saya: {{context}}",
-        "heading": "Pekerjaan apa yang ingin Anda delegasikan?",
         "items": {
           "competitors": {
             "cadence": "Harian atau mingguan",

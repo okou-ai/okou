@@ -2374,7 +2374,6 @@
       },
       "ideasLabel": "始めるためのアイデア",
       "label": "タスクを始める",
-      "moreIdeas": "他のアイデア",
       "moreTemplates": "他のテンプレート",
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
@@ -2384,7 +2383,8 @@
         "image": "画像スタイル",
         "nextPage": "次のページ",
         "previousPage": "前のページ",
-        "website": "ウェブサイトテンプレート"
+        "website": "ウェブサイトテンプレート",
+        "workflows": "ワークフロー"
       },
       "tasks": {
         "image": "画像",
@@ -2518,7 +2518,6 @@
         "browse": "ワークフローを見る",
         "close": "閉じる",
         "contextPrefix": "重視したいこと：{{context}}",
-        "heading": "どの仕事を任せたいですか？",
         "items": {
           "competitors": {
             "cadence": "毎日または毎週",

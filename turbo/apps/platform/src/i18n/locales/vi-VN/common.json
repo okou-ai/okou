@@ -2336,17 +2336,17 @@
       },
       "ideasLabel": "Ý tưởng để bắt đầu",
       "label": "Các nhiệm vụ để bắt đầu",
-      "moreIdeas": "Thêm ý tưởng",
       "moreTemplates": "Thêm mẫu",
       "presentationTemplates": "Mẫu trình bày",
       "removeTask": "Xóa {{task}}",
       "shelf": {
         "browseStyles": "Duyệt tất cả các kiểu",
         "browseTemplates": "Duyệt tất cả các mẫu",
-        "image": "Image styles",
+        "image": "Phong cách hình ảnh",
         "nextPage": "Trang tiếp theo",
         "previousPage": "Trang trước",
-        "website": "Mẫu trang web"
+        "website": "Mẫu trang web",
+        "workflows": "Các quy trình"
       },
       "tasks": {
         "image": "Image",
@@ -2479,7 +2479,6 @@
         "browse": "Duyệt quy trình làm việc",
         "close": "Đóng",
         "contextPrefix": "Điều quan trọng đối với tôi: {{context}}",
-        "heading": "Bạn muốn bỏ qua việc gì?",
         "items": {
           "competitors": {
             "cadence": "Hàng ngày hoặc hàng tuần",

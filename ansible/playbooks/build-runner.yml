@@ -30,6 +30,14 @@
 #       Shared template cache credentials. Required so the pre-fan-out
 #       warm step can fail visibly instead of allowing every host to rebuild
 #       the same template locally.
+#
+# Optional Variables:
+#   - okou_cli_package_url / okou_cli_manifest_url / okou_cli_package_sha256:
+#       Versioned Okou CLI artifact (okou-cli/v<version>/) published for the
+#       same release commit. When set, the artifact is staged under bin_dir and
+#       `runner build` installs it into the rootfs so Pi runs exec the CLI
+#       instead of installing it through npx (#35967). When unset, the rootfs
+#       carries no CLI and the guest keeps the commit-addressed npx launch.
 
 - name: Build Okou Runner
   hosts: all
@@ -61,6 +69,29 @@
         dest: "{{ bin_dir }}/"
         mode: "0755"
 
+    - name: Stage versioned Okou CLI artifact
+      when: okou_cli_package_url | default('') | length > 0
+      block:
+        - name: Ensure Okou CLI artifact directory exists
+          file:
+            path: "{{ bin_dir }}/okou-cli"
+            state: directory
+            mode: "0755"
+
+        - name: Download Okou CLI package
+          get_url:
+            url: "{{ okou_cli_package_url }}"
+            dest: "{{ bin_dir }}/okou-cli/package.tgz"
+            checksum: "sha256:{{ okou_cli_package_sha256 }}"
+            mode: "0644"
+
+        - name: Download Okou CLI manifest
+          get_url:
+            url: "{{ okou_cli_manifest_url }}"
+            dest: "{{ bin_dir }}/okou-cli/manifest.json"
+            mode: "0644"
+            force: true
+
     # ========================================
     # Phase 2: Setup + Build
     # ========================================
@@ -87,6 +118,8 @@
       command: >
         {{ bin_dir }}/runner build
         --profile vm0/default
+        {{ ('--okou-cli-artifact ' ~ bin_dir ~ '/okou-cli')
+           if (okou_cli_package_url | default('') | length > 0) else '' }}
       environment:
         # R2 credentials so `runner build` can pull the warmed template
         # above instead of rebuilding it from scratch. The rootfs and

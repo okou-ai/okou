@@ -19,6 +19,8 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  buttonVariants,
+  cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
@@ -279,17 +281,17 @@ function ActivityNotFound() {
             return $.activity.detail.notFound.description;
           })}
         </p>
-        <Button
-          asChild
-          variant="neutral"
-          className="mt-2 h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
+        <Link
+          pathname="/"
+          className={cn(
+            buttonVariants({ variant: "neutral" }),
+            "mt-2 h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface",
+          )}
         >
-          <Link pathname="/">
-            {t(($) => {
-              return $.activity.detail.notFound.back;
-            })}
-          </Link>
-        </Button>
+          {t(($) => {
+            return $.activity.detail.notFound.back;
+          })}
+        </Link>
       </div>
     </div>
   );

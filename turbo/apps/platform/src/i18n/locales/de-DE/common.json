@@ -2382,7 +2382,6 @@
       },
       "ideasLabel": "Ideen zum Einstieg",
       "label": "Aufgaben zum Einstieg",
-      "moreIdeas": "Weitere Ideen",
       "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
@@ -2392,7 +2391,8 @@
         "image": "Bildstile",
         "nextPage": "Nächste Seite",
         "previousPage": "Vorherige Seite",
-        "website": "Website-Vorlagen"
+        "website": "Website-Vorlagen",
+        "workflows": "Workflows"
       },
       "tasks": {
         "image": "Bild",
@@ -2526,7 +2526,6 @@
         "browse": "Workflows entdecken",
         "close": "Schließen",
         "contextPrefix": "Das ist mir wichtig: {{context}}",
-        "heading": "Welche Aufgabe möchten Sie abgeben?",
         "items": {
           "competitors": {
             "cadence": "Täglich oder wöchentlich",

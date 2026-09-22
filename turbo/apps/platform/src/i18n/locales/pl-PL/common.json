@@ -2474,17 +2474,17 @@
       },
       "ideasLabel": "Pomysły na początek",
       "label": "Zadania na początek",
-      "moreIdeas": "Więcej pomysłów",
       "moreTemplates": "Więcej szablonów",
       "presentationTemplates": "Szablony prezentacji",
       "removeTask": "Usuń {{task}}",
       "shelf": {
         "browseStyles": "Przeglądaj wszystkie style",
         "browseTemplates": "Przeglądaj wszystkie szablony",
-        "image": "Image styles",
+        "image": "Style obrazów",
         "nextPage": "Następna strona",
         "previousPage": "Poprzednia strona",
-        "website": "Szablony stron internetowych"
+        "website": "Szablony stron internetowych",
+        "workflows": "Procesy"
       },
       "tasks": {
         "image": "Image",
@@ -2620,7 +2620,6 @@
         "browse": "Przeglądaj przepływy pracy",
         "close": "Zamknij",
         "contextPrefix": "Co jest dla mnie ważne: {{context}}",
-        "heading": "Co chciałbyś, żebym zdjął z Twoich barków?",
         "items": {
           "competitors": {
             "cadence": "Codziennie lub co tydzień",

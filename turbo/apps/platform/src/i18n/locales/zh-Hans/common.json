@@ -2374,7 +2374,6 @@
       },
       "ideasLabel": "上手灵感",
       "label": "上手任务",
-      "moreIdeas": "更多灵感",
       "moreTemplates": "更多模板",
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
@@ -2384,7 +2383,8 @@
         "image": "图片风格",
         "nextPage": "下一页",
         "previousPage": "上一页",
-        "website": "网站模板"
+        "website": "网站模板",
+        "workflows": "工作流"
       },
       "tasks": {
         "image": "图片",
@@ -2518,7 +2518,6 @@
         "browse": "浏览工作流",
         "close": "关闭",
         "contextPrefix": "我在意的是：{{context}}",
-        "heading": "你想把哪件事交出去？",
         "items": {
           "competitors": {
             "cadence": "每天或每周",

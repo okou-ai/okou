@@ -100,6 +100,7 @@ import {
   LazySpinner,
   ThinkingMessages,
   useMediaQuery,
+  buttonVariants,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import type {
@@ -7971,24 +7972,24 @@ function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
-              asChild
-              variant="quiet"
-              size="icon-xs"
-              iconSize="sm"
-              className="text-muted-foreground/60"
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t(($) => {
+                return $.chat.run.viewLangfuseTrace;
+              })}
+              className={cn(
+                buttonVariants({
+                  variant: "quiet",
+                  size: "icon-xs",
+                  iconSize: "sm",
+                }),
+                "text-muted-foreground/60",
+              )}
             >
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={t(($) => {
-                  return $.chat.run.viewLangfuseTrace;
-                })}
-              >
-                <BrandLangfuse aria-hidden />
-              </a>
-            </Button>
+              <BrandLangfuse aria-hidden />
+            </a>
           }
         />
         <TooltipContent side="bottom">
@@ -8049,25 +8050,25 @@ function PagedGroupPrimaryActions({
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button
-                  asChild
-                  variant="quiet"
-                  size="icon-xs"
-                  iconSize="sm"
-                  className="text-muted-foreground/60"
+                <Link
+                  pathname="/activities/:activityRunId"
+                  options={{
+                    pathParams: { activityRunId: firstRunId },
+                  }}
+                  aria-label={t(($) => {
+                    return $.chat.run.viewLogs;
+                  })}
+                  className={cn(
+                    buttonVariants({
+                      variant: "quiet",
+                      size: "icon-xs",
+                      iconSize: "sm",
+                    }),
+                    "text-muted-foreground/60",
+                  )}
                 >
-                  <Link
-                    pathname="/activities/:activityRunId"
-                    options={{
-                      pathParams: { activityRunId: firstRunId },
-                    }}
-                    aria-label={t(($) => {
-                      return $.chat.run.viewLogs;
-                    })}
-                  >
-                    <ChartLine />
-                  </Link>
-                </Button>
+                  <ChartLine />
+                </Link>
               }
             />
             <TooltipContent side="bottom">

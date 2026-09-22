@@ -157,6 +157,20 @@
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
 
+  /* The new-chat greeting arrives one word at a time. Every number lives in
+     the keyframes below rather than on the element, and the fill is `both` so
+     the 0% frame is also what a word holds while it waits out its delay -
+     "not yet revealed" and "frame zero" are then one declaration and cannot
+     disagree. Nothing is clipped: each word is an inline-block that occupies
+     its final position from the first frame, so the line's width never changes
+     and the row it sits in never has to move. The greeting row sets each
+     word's delay inline, because `animate-*` compiles to the `animation`
+     shorthand and a shorthand resets a separate `animation-delay` rule back to
+     zero. Reduced motion drops the class and the sentence is simply present.
+     Keyframes stay below. */
+  --animate-chat-greeting-token: chat-greeting-token 720ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+
   /* The composer's second level. The panel settles once when a type is picked,
      then each row's items resolve left to right, which is the order they are
      read in. Opacity has exactly one owner - the items - so the two do not
@@ -533,6 +547,22 @@ body {
   }
   to {
     background-position: -100% center;
+  }
+}
+
+/* 14px is about half the greeting's line box. With no frame catching the word
+   at the end of its travel, a larger distance stops reading as settling and
+   starts reading as flying in; the blur is what carries the arrival instead. */
+@keyframes chat-greeting-token {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
   }
 }
 
