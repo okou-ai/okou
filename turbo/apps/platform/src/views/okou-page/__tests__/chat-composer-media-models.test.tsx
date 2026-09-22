@@ -430,6 +430,40 @@ test("Do not select an available image model for an unavailable pin", async () =
   }
 });
 
+test("An open media menu follows a live default after an unavailable selection", async () => {
+  let currentPreference = preference({
+    selectedImageModel: "fal-ai/flux-pro/v1.1",
+  });
+  installModelEnvironment(currentPreference);
+  setDesktopViewport();
+  context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
+    return respond(200, currentPreference);
+  });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await openCategory("Image");
+  for (const model of PUBLIC_IMAGE_MODELS) {
+    expect(mediaModelRow(IMAGE_MODEL_CONFIGS[model].label)).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  }
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("userPreferenceChanged"),
+    ).toBeTruthy();
+  });
+  currentPreference = preference({ selectedImageModel: "gpt-image-2" });
+  context.mocks.ably.trigger("userPreferenceChanged", {
+    kinds: ["defaultImageModel"],
+  });
+  await waitFor(() => {
+    expectSelected("GPT Image 2");
+  });
+  expect(
+    screen.getByRole("menu", { name: "Image models" }),
+  ).toBeInTheDocument();
+});
+
 test("Follow the live image model default in an untouched new chat", async () => {
   let currentPreference = preference();
   const creates: ({ readonly imageModel?: string } | undefined)[] = [];

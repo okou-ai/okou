@@ -245,7 +245,7 @@ function ChatModelList({
         })}
       />
       <DropdownMenuRadioGroup
-        value={value?.selectedModel}
+        value={value?.selectedModel ?? null}
         className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
       >
         {options.length === 0 && (
@@ -314,7 +314,7 @@ function MediaModelList({
         value={
           category?.options.find((option) => {
             return option.selected;
-          })?.key
+          })?.key ?? null
         }
         className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
       >
@@ -369,10 +369,10 @@ function ModelPickerFlyoutOptions({
     <DropdownMenuRadioGroup
       value={
         activeMedia
-          ? activeMedia.options.find((option) => {
+          ? (activeMedia.options.find((option) => {
               return option.selected;
-            })?.key
-          : value?.selectedModel
+            })?.key ?? null)
+          : (value?.selectedModel ?? null)
       }
       className="-my-1 flex max-h-[252px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
     >
