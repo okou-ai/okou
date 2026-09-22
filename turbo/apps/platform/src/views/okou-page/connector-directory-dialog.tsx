@@ -478,6 +478,35 @@ function DirectoryAttention({
   );
 }
 
+function DirectoryConnected({
+  connectors,
+  renderCard,
+}: {
+  readonly connectors: ConnectorDirectoryModel["matchedConnected"];
+  readonly renderCard: RenderConnectorCard;
+}) {
+  const { t } = useTranslation();
+  if (connectors.length === 0) {
+    return null;
+  }
+  return (
+    <DirectorySection
+      connectorGroupKey={connectors
+        .map((connector) => {
+          return connector.slug;
+        })
+        .join(",")}
+      title={t(($) => {
+        return $.chat.connectors.directory.connected;
+      })}
+    >
+      {connectors.map((item) => {
+        return renderCard(item, true);
+      })}
+    </DirectorySection>
+  );
+}
+
 function DirectoryRemoteStatuses({
   ssh,
   vnc,
@@ -543,21 +572,11 @@ function DirectoryDiscoverPanel({
   const attention = (
     <DirectoryAttention connectors={model.attention} renderCard={renderCard} />
   );
-  const connected = model.matchedConnected.length > 0 && (
-    <DirectorySection
-      connectorGroupKey={model.matchedConnected
-        .map((connector) => {
-          return connector.slug;
-        })
-        .join(",")}
-      title={t(($) => {
-        return $.chat.connectors.directory.connected;
-      })}
-    >
-      {model.matchedConnected.map((item) => {
-        return renderCard(item, true);
-      })}
-    </DirectorySection>
+  const connected = (
+    <DirectoryConnected
+      connectors={model.matchedConnected}
+      renderCard={renderCard}
+    />
   );
   if (
     model.discover.length === 0 &&
