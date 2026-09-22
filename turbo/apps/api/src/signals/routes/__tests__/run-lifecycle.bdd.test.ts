@@ -1136,42 +1136,28 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     }
   });
 
-  it.each([false, true])(
-    "advertises current Run usage only while its feature is enabled (%s)",
-    async (enabled) => {
-      const api = createRunsApi(context);
-      const connectors = createConnectorBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.RunUsage]: enabled,
-      });
+  it("advertises current Run usage and grants its Run capability", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const created = await api.createRun(actor, {
+      agentId,
+      prompt: "inspect this Run's provider-token usage",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(created.runId);
+    const prompt = claim.appendSystemPrompt ?? "";
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected a minted Run token");
+    }
 
-      const created = await api.createRun(actor, {
-        agentId,
-        prompt: "inspect this Run's provider-token usage",
-        modelProvider: "anthropic-api-key",
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(created.runId);
-      const prompt = claim.appendSystemPrompt ?? "";
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-
-      expect(
-        prompt
-          .split("\n")
-          .includes(
-            "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
-          ),
-      ).toBe(enabled);
-      expect(
-        verifyOkouToken(token)?.capabilities.includes("run-usage:read"),
-      ).toBe(enabled);
-      await api.requestCancelRun(actor, created.runId, [200]);
-    },
-  );
+    expect(prompt.split("\n")).toContain(
+      "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
+    );
+    expect(verifyOkouToken(token)?.capabilities).toContain("run-usage:read");
+    await api.requestCancelRun(actor, created.runId, [200]);
+  });
 
   it("advertises Lark messaging only while the organization rollout is enabled", async () => {
     const api = createRunsApi(context);

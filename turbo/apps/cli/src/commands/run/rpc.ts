@@ -51,7 +51,7 @@ function rpcKind(
     case "unknown_method":
       return "unsupported-runner";
     case "unavailable":
-      return "feature-unavailable";
+      return "assignment-unavailable";
     case "resource_exhausted":
       return "busy";
     case "timed_out":

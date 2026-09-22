@@ -2709,6 +2709,24 @@ is marked `no-inference`. A transfer made before a late provider result becomes
 known has no snapshot and stays explicitly unavailable in this initial
 handoff-only design. See [API-first run usage handoff](api-run-usage.md).
 
+## Current-run usage general availability
+
+Current-run usage is generally available without a rollout switch. Promote the
+Runner before the API: the updated Runner installs the `run.usage` consumer for
+every official API-backed assignment, while the older API can continue gating
+its prompt and `run-usage:read` capability during that promotion. After the API
+promotion, every newly created official Run receives both. Already-created Runs
+retain their minted capability and stable prompt snapshot; create a new Run to
+obtain the generally available command. Stored overrides for the retired switch
+are ignored by the registered-key filter and require no database migration.
+
+A newer API served by a Runner from the staged rollout can temporarily receive
+`unavailable` with `not_dispatched`; a Runner predating the method returns
+`unknown_method`. The CLI reports these as assignment-unavailable and
+unsupported Runner respectively, with no fallback or automatic retry. The
+source DTOs, guest RPC framing, handoff metadata and observational accounting
+semantics are unchanged.
+
 ## DeepSeek V4.1 Flash Pi coverage
 
 The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)

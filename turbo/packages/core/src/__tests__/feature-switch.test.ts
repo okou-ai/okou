@@ -26,7 +26,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
-    expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
     expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
@@ -135,34 +134,6 @@ describe("isFeatureEnabled", () => {
       description:
         "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
       rolloutStage: "alpha",
-    });
-  });
-
-  it("enables current-run usage for staff and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, context)).toBe(false);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.RunUsage, {
-          ...context,
-          overrides: { [FeatureSwitchKey.RunUsage]: true },
-        }),
-      ).toBe(true);
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, staffContext)).toBe(
-      true,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.RunUsage, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.RunUsage]: false },
-      }),
-    ).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.RunUsage]).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description:
-        "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
-      rolloutStage: "beta",
     });
   });
 
