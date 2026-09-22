@@ -219,7 +219,7 @@ function AgentDeleteReconcileView({
                   }}
                 >
                   <SelectTrigger
-                    className="w-full"
+                    className="w-full focus-visible:ring-inset focus-visible:-outline-offset-2"
                     aria-label={t(
                       ($) => {
                         return $.delete.workflows.handle;
