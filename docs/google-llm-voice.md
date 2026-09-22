@@ -205,11 +205,12 @@ conclusion. Count requests, client sessions, and Sentry users separately.
 
 For [#34193](https://github.com/vm0-ai/vm0/issues/34193), inspect a bounded
 metadata-only interval on the deployed commit. Correlate the new categories
-with exact segment POSTs and the existing provider owners. Count requests,
-client sessions, and Sentry events separately; OPTIONS 204 is not evidence of
-accepted no-speech. These diagnostics cannot reconstruct the historical
-provider output or prove that a saved recording survived or was recovered.
-Keep the incident open until production evidence supports its outcome.
+with exact segment POSTs, segment-owned Vertex failures, and the retained auth,
+OpenRouter, ASR, and exhausted-recovery owners. Count requests, client sessions,
+and Sentry events separately; OPTIONS 204 is not evidence of accepted no-speech.
+These diagnostics cannot reconstruct the historical provider output or prove
+that a saved recording survived or was recovered. Keep the incident open until
+production evidence supports its outcome.
 
 ## Runtime verification
 

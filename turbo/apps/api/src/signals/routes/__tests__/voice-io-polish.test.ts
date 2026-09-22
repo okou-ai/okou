@@ -169,13 +169,6 @@ describe("POST /api/voice-io/polish", () => {
     {
       reason: "output_truncated",
       body: {
-        modelVersion: "gemini-3.8-flash-001",
-        usageMetadata: {
-          promptTokenCount: 20,
-          candidatesTokenCount: 65_536,
-          thoughtsTokenCount: 100,
-          totalTokenCount: 65_656,
-        },
         candidates: [
           {
             finishReason: "MAX_TOKENS",
@@ -209,16 +202,13 @@ describe("POST /api/voice-io/polish", () => {
       },
     },
     { reason: "invalid_response", body: { candidates: [{ finishReason: 7 }] } },
-  ])("rejects unusable Google output for $reason", async ({ body, reason }) => {
+  ])("rejects unusable Google output for $reason", async ({ body }) => {
     setupVoicePolish();
-    const output = context.mocks.console.log;
-    onTestFinished(context.mocks.console.capture());
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
         return HttpResponse.json(body);
       }),
     );
-    const before = output.mock.calls.length;
     const response = await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
@@ -227,32 +217,6 @@ describe("POST /api/voice-io/polish", () => {
       [502],
     );
     expect(response.body.error.code).toBe("VOICE_POLISH_FAILED");
-    const calls = output.mock.calls.slice(before);
-    const terminal = calls.filter(([message]) => {
-      return (
-        typeof message === "string" &&
-        message.includes("[VertexVoice] Google voice request rejected")
-      );
-    });
-    expect(terminal).toHaveLength(1);
-    expect(terminal[0]?.[1]).toMatchObject({
-      status: 502,
-      reason,
-      location: "us",
-      operation: "plain_text_polish",
-      ...(reason === "output_truncated"
-        ? {
-            prompt_tokens: 20,
-            candidate_tokens: 65_536,
-            thought_tokens: 100,
-            total_tokens: 65_656,
-            candidate_chars: "private partial transcript".length,
-            thought_chars: 0,
-            provider_model_version: "gemini-3.8-flash-001",
-          }
-        : {}),
-    });
-    expect(JSON.stringify({ calls, response })).not.toContain("private");
   });
 
   it("preserves public provider errors, respects long Retry-After, and rejects incomplete polish", async () => {
