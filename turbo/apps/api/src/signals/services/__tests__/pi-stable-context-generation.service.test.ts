@@ -1306,10 +1306,10 @@ describe("Pi stable context generation fences", () => {
       artifactDigest: null,
       input: { storageMounts: [{ storageId, versionId: v2 }] },
     });
-    expect(pending?.input.semantic?.promptInputs).not.toHaveProperty(
+    expect(pending?.input?.semantic?.promptInputs).not.toHaveProperty(
       "runUsageEnabled",
     );
-    expect(pending?.input.prompt.tools).toContain(
+    expect(pending?.input?.prompt.tools).toContain(
       "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     );
 
