@@ -552,6 +552,11 @@ describe("GET /api/home-task-recommendations", () => {
       initialRun.runId,
       initialClaim.sandboxHeaders,
     );
+    // Run completion schedules title generation through waitUntil. Settle that
+    // owned work before this test gives the shared OpenRouter endpoint a
+    // phase-sensitive handler, so an unrelated title request cannot consume
+    // the extractor's first response.
+    await flushWaitUntilForTest();
 
     const base = now();
     mockNow(base);
