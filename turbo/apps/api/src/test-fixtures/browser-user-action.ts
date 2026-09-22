@@ -6,7 +6,7 @@ import {
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { asc, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
 
@@ -132,47 +132,4 @@ export async function stageBrowserUserActionClosureFixture(args: {
     }
     return request.providerSessionId;
   });
-}
-
-export interface BrowserUserActionFixtureRow {
-  readonly requestTokenHash: string;
-  readonly status: BrowserUserActionState;
-  readonly completedAt: Date | null;
-}
-
-/** Read only explicit test-owned request tokens for physical retention checks. */
-export async function readBrowserUserActionFixtures(
-  requestTokens: readonly string[],
-): Promise<readonly BrowserUserActionFixtureRow[]> {
-  if (requestTokens.length === 0) {
-    return [];
-  }
-  return await db()
-    .select({
-      requestTokenHash: browserUserActionRequests.requestTokenHash,
-      status: browserUserActionRequests.status,
-      completedAt: browserUserActionRequests.completedAt,
-    })
-    .from(browserUserActionRequests)
-    .where(
-      inArray(
-        browserUserActionRequests.requestTokenHash,
-        requestTokens.map(requestTokenHash),
-      ),
-    )
-    .orderBy(asc(browserUserActionRequests.requestTokenHash));
-}
-
-/** Inspect only the exact provider captured from a test-owned action row. */
-export async function browserUserActionProviderExistsFixture(
-  providerSessionId: string,
-): Promise<boolean> {
-  const [instance] = await db()
-    .select({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    })
-    .from(browserSessionInstances)
-    .where(eq(browserSessionInstances.providerSessionId, providerSessionId))
-    .limit(1);
-  return instance !== undefined;
 }

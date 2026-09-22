@@ -26,8 +26,6 @@ import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
 import {
-  browserUserActionProviderExistsFixture,
-  readBrowserUserActionFixtures,
   stageBrowserUserActionClosureFixture,
   stageBrowserUserActionStateFixture,
   stageStuckBrowserUserActionFixture,
@@ -1240,6 +1238,9 @@ describe("Browser user-action route", () => {
     expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
     expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
 
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
     const tokens = [
       pending.body.action.requestToken,
       applying.body.action.requestToken,
@@ -1249,45 +1250,49 @@ describe("Browser user-action route", () => {
       uncertain.body.action.requestToken,
       raced.body.action.requestToken,
     ];
-    const rows = await readBrowserUserActionFixtures(tokens);
-    const byHash = new Map(
-      rows.map((row) => {
-        return [row.requestTokenHash, row];
-      }),
+    const readAction = async (requestToken: string) => {
+      return await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+        }),
+        [200],
+      );
+    };
+    const convertedActions = await Promise.all(tokens.map(readAction));
+    expect(convertedActions[0]?.body).toMatchObject({
+      state: "stale",
+      completedAt: finishedAt.toISOString(),
+    });
+    expect(convertedActions[1]?.body).toMatchObject({
+      state: "uncertain",
+      completedAt: finishedAt.toISOString(),
+    });
+    expect(convertedActions[2]?.body.state).toBe("succeeded");
+    expect(convertedActions[3]?.body.state).toBe("cancelled");
+    expect(convertedActions[4]?.body).toMatchObject({
+      state: "stale",
+      completedAt: existingTerminalAt.toISOString(),
+    });
+    expect(convertedActions[5]?.body).toMatchObject({
+      state: "uncertain",
+      completedAt: existingTerminalAt.toISOString(),
+    });
+    expect(convertedActions[6]?.body.state).toMatch(
+      /^(succeeded|cancelled|stale)$/u,
     );
-    expect(
-      byHash.get(browserUserActionTokenHash(pending.body.action.requestToken)),
-    ).toMatchObject({ status: "stale", completedAt: finishedAt });
-    expect(
-      byHash.get(browserUserActionTokenHash(applying.body.action.requestToken)),
-    ).toMatchObject({ status: "uncertain", completedAt: finishedAt });
-    expect(
-      byHash.get(
-        browserUserActionTokenHash(succeeded.body.action.requestToken),
-      ),
-    ).toMatchObject({ status: "succeeded" });
-    expect(
-      byHash.get(
-        browserUserActionTokenHash(cancelled.body.action.requestToken),
-      ),
-    ).toMatchObject({ status: "cancelled" });
-    expect(
-      byHash.get(browserUserActionTokenHash(stale.body.action.requestToken)),
-    ).toMatchObject({ status: "stale", completedAt: existingTerminalAt });
-    expect(
-      byHash.get(
-        browserUserActionTokenHash(uncertain.body.action.requestToken),
-      ),
-    ).toMatchObject({ status: "uncertain", completedAt: existingTerminalAt });
-    expect(
-      byHash.get(browserUserActionTokenHash(raced.body.action.requestToken))
-        ?.status,
-    ).toMatch(/^(succeeded|cancelled|stale)$/u);
 
     const repeated = await reconcileBrowsers(current.threadId);
     expect(repeated.body).toMatchObject({ errors: 0 });
-    await expect(readBrowserUserActionFixtures(tokens)).resolves.toStrictEqual(
-      rows,
+    const repeatedActions = await Promise.all(tokens.map(readAction));
+    expect(
+      repeatedActions.map((response) => {
+        return response.body;
+      }),
+    ).toStrictEqual(
+      convertedActions.map((response) => {
+        return response.body;
+      }),
     );
 
     await Promise.all([
@@ -1295,9 +1300,14 @@ describe("Browser user-action route", () => {
       reconcileBrowsers(current.threadId),
     ]);
     await flushWaitUntilForTest();
-    await expect(readBrowserUserActionFixtures(tokens)).resolves.toStrictEqual(
-      [],
-    );
+    const erased = await userActionClient().get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: pending.body.action.requestToken },
+    });
+    expect(erased).toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
   }, 120_000);
 
   it("retains the Browser finish source through deterministic callback-recovery batches", async () => {
@@ -1396,108 +1406,94 @@ describe("Browser user-action route", () => {
         browserUserActionTokenHash(right),
       );
     });
+    const getAction = async (requestToken: string) => {
+      return await userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken },
+      });
+    };
     mockNow(finishedAt.getTime());
     await reconcileBrowsers(current.threadId);
-    const firstConversion = await readBrowserUserActionFixtures(tokens);
-    const firstConversionByHash = new Map(
-      firstConversion.map((row) => {
-        return [row.requestTokenHash, row.status];
-      }),
-    );
-    for (const token of sortedTokens.slice(0, 20)) {
-      expect(firstConversionByHash.get(browserUserActionTokenHash(token))).toBe(
-        "stale",
-      );
+    const firstConversion = await Promise.all(sortedTokens.map(getAction));
+    for (const response of firstConversion.slice(0, 20)) {
+      expect(response).toMatchObject({
+        status: 200,
+        body: {
+          state: "stale",
+          completedAt: finishedAt.toISOString(),
+        },
+      });
     }
-    expect(
-      firstConversionByHash.get(
-        browserUserActionTokenHash(sortedTokens[20] ?? ""),
-      ),
-    ).toBe("pending");
-    await expect(
-      browserUserActionProviderExistsFixture(capturedProviderId),
-    ).resolves.toBeTruthy();
+    expect(firstConversion[20]).toMatchObject({
+      status: 410,
+      body: { error: { code: "BROWSER_USER_ACTION_EXPIRED" } },
+    });
 
     await reconcileBrowsers(current.threadId);
-    const secondConversion = await readBrowserUserActionFixtures(tokens);
-    expect(
-      secondConversion.every((row) => {
-        return (
-          row.status === "stale" &&
-          row.completedAt?.getTime() === finishedAt.getTime()
-        );
-      }),
-    ).toBeTruthy();
+    await expect(getAction(sortedTokens[20] ?? "")).resolves.toMatchObject({
+      status: 200,
+      body: { state: "stale", completedAt: finishedAt.toISOString() },
+    });
 
     mockNow(finishedAt.getTime() + 7 * DAY_MS - 1);
     await reconcileBrowsers(current.threadId);
-    await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: sortedTokens[0] ?? "" },
-      }),
-      [200],
-    );
-    await expect(readBrowserUserActionFixtures(tokens)).resolves.toHaveLength(
-      21,
-    );
-    await expect(
-      browserUserActionProviderExistsFixture(capturedProviderId),
-    ).resolves.toBeTruthy();
+    await expect(getAction(sortedTokens[0] ?? "")).resolves.toMatchObject({
+      status: 200,
+      body: { state: "stale" },
+    });
     expect(deletedProfiles).toStrictEqual([]);
 
     mockNow(finishedAt.getTime() + 7 * DAY_MS);
     await reconcileBrowsers(current.threadId);
-    const afterFirstDeletion = await readBrowserUserActionFixtures(tokens);
-    expect(afterFirstDeletion).toHaveLength(1);
-    expect(afterFirstDeletion[0]?.requestTokenHash).toBe(
-      browserUserActionTokenHash(sortedTokens[20] ?? ""),
-    );
-    const deletedAction = await userActionClient().get({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: sortedTokens[0] ?? "" },
+    const afterFirstDeletion = await Promise.all(sortedTokens.map(getAction));
+    for (const response of afterFirstDeletion.slice(0, 20)) {
+      expect(response).toMatchObject({
+        status: 404,
+        body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+      });
+    }
+    expect(afterFirstDeletion[20]).toMatchObject({
+      status: 200,
+      body: { state: "stale" },
     });
-    expect(deletedAction).toMatchObject({
+    expect(deletedProfiles).toStrictEqual([]);
+
+    await reconcileBrowsers(current.threadId);
+    await expect(getAction(sortedTokens[20] ?? "")).resolves.toMatchObject({
       status: 404,
       body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
     });
     await expect(
-      browserUserActionProviderExistsFixture(capturedProviderId),
-    ).resolves.toBeTruthy();
+      getAction(laterTerminal.body.action.requestToken),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        state: "succeeded",
+        completedAt: laterCompletedAt.toISOString(),
+      },
+    });
     expect(deletedProfiles).toStrictEqual([]);
-
-    await reconcileBrowsers(current.threadId);
-    await expect(readBrowserUserActionFixtures(tokens)).resolves.toStrictEqual(
-      [],
-    );
-    await expect(
-      browserUserActionProviderExistsFixture(capturedProviderId),
-    ).resolves.toBeTruthy();
-    await expect(
-      readBrowserUserActionFixtures([laterTerminal.body.action.requestToken]),
-    ).resolves.toHaveLength(1);
 
     mockNow(laterCompletedAt.getTime() + 7 * DAY_MS - 1);
     await reconcileBrowsers(current.threadId);
-    await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: laterTerminal.body.action.requestToken },
-      }),
-      [200],
-    );
     await expect(
-      browserUserActionProviderExistsFixture(capturedProviderId),
-    ).resolves.toBeTruthy();
+      getAction(laterTerminal.body.action.requestToken),
+    ).resolves.toMatchObject({ status: 200, body: { state: "succeeded" } });
+    expect(deletedProfiles).toStrictEqual([]);
 
     mockNow(laterCompletedAt.getTime() + 7 * DAY_MS);
     await reconcileBrowsers(current.threadId);
     await expect(
-      readBrowserUserActionFixtures([laterTerminal.body.action.requestToken]),
-    ).resolves.toStrictEqual([]);
-    await expect(
-      browserUserActionProviderExistsFixture(capturedProviderId),
-    ).resolves.toBeFalsy();
+      getAction(laterTerminal.body.action.requestToken),
+    ).resolves.toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+    const retiredBrowser = await client().get({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { threadId: current.threadId },
+    });
+    expect(retiredBrowser.status).toBe(404);
     expect(deletedProfiles).toStrictEqual([providerProfileId]);
   }, 120_000);
 });
