@@ -152,8 +152,7 @@ export const setupGlobalKeyboardShortcuts$ = command(
         [GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding]: {
           allowInEditableTarget: true,
           shouldHandle: shouldHandleShortcutPress,
-          run: (event) => {
-            event.stopPropagation();
+          run: () => {
             set(openThreeColumnSearchDialog$);
           },
         },

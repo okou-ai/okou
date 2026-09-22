@@ -48,6 +48,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -1092,6 +1093,37 @@ test("Locate the current chat in a long sidebar history", async () => {
       within(desktopList).getByTestId("sidebar-scroll-area").scrollTop,
     ).toBeGreaterThan(0);
   });
+});
+
+test("Keep the chat-list menu closed when navigating with a shortcut", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Existing conversation"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  const menuTrigger = within(list).getByLabelText("Open chat list menu");
+  await user.click(menuTrigger);
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+  expect(within(list).getByText("Existing conversation")).toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(menuTrigger).toHaveFocus();
+  });
+
+  await user.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 });
 
 test("Mark all current-agent chats read from the chat-list menu", async () => {
