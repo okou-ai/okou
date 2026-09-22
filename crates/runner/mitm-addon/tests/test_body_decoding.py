@@ -656,6 +656,26 @@ class TestDecompressBody:
         result = decompress_body(compressed, hdrs, max_output=64 * 1024)
         assert result == plaintext
 
+    def test_zstd_concatenated_frames_share_max_output_cap(self, headers):
+        first = b"A" * 8
+        second = b"B" * 8
+        compressor = zstandard.ZstdCompressor()
+        compressed = compressor.compress(first) + compressor.compress(second)
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        result = decompress_body(compressed, hdrs, max_output=12)
+
+        assert result == first + second[:4]
+
+    def test_zstd_corrupt_later_frame_returns_original_data(self, headers):
+        first = zstandard.ZstdCompressor().compress(b"first")
+        compressed = first + b"not a zstd frame"
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        result = decompress_body(compressed, hdrs, max_output=64 * 1024)
+
+        assert result == compressed
+
     def test_brotli_large_input_caps_adaptive_chunk_size(self, headers, monkeypatch):
         plaintext = pseudo_random_ascii(DEFAULT_BODY_DECODE_LIMIT * 3)
         compressed = brotli.compress(plaintext)
