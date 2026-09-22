@@ -63,7 +63,6 @@ export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
  * whichever side still has travel: at either end that side has nothing to
  * dissolve, so it carries no fade. The 56px here is the rail's scroll padding;
  * changing one without the other puts the fade back over a complete item.
- * Focus lifts the mask so a keyboard user never lands on a control it dimmed.
  */
 const RAIL_FADE = {
   none: "",
@@ -80,8 +79,22 @@ const RAIL_FADE = {
     "[mask-image:linear-gradient(to_right,transparent,#000_56px,#000_calc(100%_-_56px),transparent)]",
   ),
 } as const;
-const RAIL_FADE_OFF =
-  "focus-within:[-webkit-mask-image:none] focus-within:[mask-image:none]";
+/**
+ * Focus lifts the mask so a keyboard user never lands on a control it dimmed.
+ *
+ * It reads `:focus-visible` rather than `:focus-within`, because a tile opens a
+ * dialog and a dialog hands focus back to whatever opened it. After a pointer
+ * user clicks a tile and closes that dialog, the tile holds focus with nothing
+ * on screen saying so, and `:focus-within` would leave the row's fade off until
+ * they happen to click elsewhere -- the row goes back to ending on a hard cut
+ * through a cover. `:focus-visible` is exactly the state the mask is being
+ * lifted for: the browser keeps it through a keyboard-driven open and close and
+ * withholds it from a pointer-driven one.
+ */
+const RAIL_FADE_OFF = cn(
+  "has-[:focus-visible]:[-webkit-mask-image:none]",
+  "has-[:focus-visible]:[mask-image:none]",
+);
 /**
  * One row of controls, rendered as a rail. Both pagers only exist while the
  * rail has somewhere to go in that direction, so the row never offers to move
