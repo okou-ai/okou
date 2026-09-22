@@ -185,7 +185,10 @@ test("A user can format and save agent instructions", async () => {
 test.each(["{Enter}", " "])(
   "Activate instruction formatting with %s after cancelling a pointer press",
   async (key) => {
-    await setupInstructionsPage("Selected instructions");
+    const updates: string[] = [];
+    await setupInstructionsPage("Selected instructions", (content) => {
+      updates.push(content);
+    });
     const user = userEvent.setup({ delay: null });
     const editor = await instructionsEditor();
     await user.click(editor);
@@ -208,10 +211,11 @@ test.each(["{Enter}", " "])(
       expect(editor).toHaveFocus();
     });
     expect(window.getSelection()?.toString()).toBe("Selected instructions");
-    // user-event keyboard insertion replaces a selected DOM range with a bare
-    // text node. Paste exercises ProseMirror's rich-text replacement instead.
-    await user.paste("Replacement");
-    expect(editor.querySelector("strong")).toHaveTextContent("Replacement");
-    expect(editor).not.toHaveTextContent("Selected instructions");
+    const unsavedBar = await screen.findByTestId("unsaved-bar");
+    await user.click(within(unsavedBar).getByTestId("save-button"));
+    await waitFor(() => {
+      expect(updates).toHaveLength(1);
+      expect(updates[0]).toContain("**Selected instructions**");
+    });
   },
 );

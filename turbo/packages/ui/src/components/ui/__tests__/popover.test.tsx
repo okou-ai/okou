@@ -40,7 +40,15 @@ describe("Popover", () => {
     async (insideDialog) => {
       const user = userEvent.setup({ delay: null });
       render(<TriggerlessPopover insideDialog={insideDialog} />);
+      if (insideDialog) {
+        await waitFor(() => {
+          expect(
+            screen.getByRole("button", { name: "Before suggestions" }),
+          ).toHaveFocus();
+        });
+      }
       await user.click(screen.getByRole("button", { name: "Suggestion" }));
+      expect(screen.getByRole("button", { name: "Suggestion" })).toHaveFocus();
 
       await user.tab();
 
@@ -60,7 +68,15 @@ describe("Popover", () => {
     async (insideDialog) => {
       const user = userEvent.setup({ delay: null });
       render(<TriggerlessPopover insideDialog={insideDialog} />);
+      if (insideDialog) {
+        await waitFor(() => {
+          expect(
+            screen.getByRole("button", { name: "Before suggestions" }),
+          ).toHaveFocus();
+        });
+      }
       await user.click(screen.getByRole("button", { name: "Suggestion" }));
+      expect(screen.getByRole("button", { name: "Suggestion" })).toHaveFocus();
 
       await user.tab({ shift: true });
 
