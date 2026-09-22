@@ -86,6 +86,19 @@ async function page(add = false) {
     },
   });
 }
+async function accessPage(add = false) {
+  await setupPage({
+    context,
+    path: `/connectors/cloudflare-access${add ? "?add=1" : ""}`,
+    auth: {
+      user: { id: "access-owner", fullName: "Access Owner" },
+      organization: {
+        activeOrg: { id: orgId, name: "Engineering" },
+        memberships: [{ id: orgId }],
+      },
+    },
+  });
+}
 async function selectConfig(dialog: HTMLElement, name = config.name) {
   await userEvent.click(
     await within(dialog).findByLabelText("Cloudflare Access"),
@@ -120,9 +133,12 @@ async function pasteTokenHeaders(
 test.each(["host", "configuration"])(
   "The new Access %s form shows input hints without prefilling tokens",
   async (kind) => {
-    await page(kind === "host");
+    if (kind === "host") {
+      await page(true);
+    } else {
+      await accessPage();
+    }
     if (kind === "configuration") {
-      click(getAction("radio", "Cloudflare Access"));
       const add = await waitFor(() => {
         return getAction("button", "Add Cloudflare Access");
       });
@@ -232,9 +248,25 @@ test.each([0, 1, 2])(
   },
 );
 
-test("Raw and invalid token paste stays in the focused Access field", async () => {
+test("SSH keeps Cloudflare Access in the host form without a management tab", async () => {
   await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await screen.findByText("0 hosts configured");
+  expect(getAction("radio", "Hosts")).toBeInTheDocument();
+  expect(getAction("radio", "Credentials")).toBeInTheDocument();
+  expect(queryAction("radio", "Cloudflare Access")).not.toBeInTheDocument();
+  expect(
+    queryAction("button", "Add Cloudflare Access"),
+  ).not.toBeInTheDocument();
+
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  click(getAction("radio", "Cloudflare Access", dialog));
+  await within(dialog).findByLabelText("Cloudflare Access");
+  expect(within(dialog).getByLabelText("Name")).toBeInTheDocument();
+});
+
+test("Raw and invalid token paste stays in the focused Access field", async () => {
+  await accessPage();
   click(
     await waitFor(() => {
       return getAction("button", "Add Cloudflare Access");
@@ -348,7 +380,7 @@ test("Deactivating inline Access fields clears tokens without discarding the SSH
   expect(within(dialog).getByLabelText("Private key")).toHaveValue("ssh-draft");
 });
 
-test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into configured SSH", async () => {
+test("Standalone Cloudflare Access CRUD uses the canonical API", async () => {
   let configs: CloudflareAccessConfig[] = [];
   const createRequests: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
@@ -365,9 +397,7 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
     configs = [];
     return respond(204);
   });
-  await page();
-  await screen.findByText("0 hosts configured");
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   await screen.findByText("0 Cloudflare Access configured");
   click(getAction("button", "Add Cloudflare Access"));
   let dialog = await screen.findByRole("dialog", {
@@ -400,9 +430,6 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
   ]);
   expect(secret).toHaveValue("");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  click(getAction("radio", "Hosts"));
-  await screen.findByText("0 hosts configured");
-  click(getAction("radio", "Cloudflare Access"));
   await screen.findByText(config.name);
   click(getAction("button", "Delete Cloudflare Access"));
   dialog = await screen.findByRole("dialog", {
@@ -691,8 +718,7 @@ test("Pending and failed Access Save keep secrets for retry; a background refres
         })
       : respond(201, config);
   });
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   click(
     await waitFor(() => {
       return getAction("button", "Add Cloudflare Access");
@@ -730,8 +756,7 @@ test("A committed Access creation completes on same-ID retry without another con
           error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
         });
   });
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   click(
     await waitFor(() => {
       return getAction("button", "Add Cloudflare Access");
@@ -776,8 +801,7 @@ test("A token replacement conflict preserves input and needs explicit latest-ver
     }
     return respond(200, { ...current, revision: 3, generation: 2 });
   });
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   await screen.findByText(config.name);
   click(getAction("button", "Edit Cloudflare Access"));
   const dialog = await screen.findByRole("dialog");
@@ -840,8 +864,7 @@ test("A referenced deletion race explains the new affected host without removing
       error: { code: "CLOUDFLARE_ACCESS_IN_USE", message: "not user copy" },
     });
   });
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   await screen.findByText(config.name);
   click(getAction("button", "Delete Cloudflare Access"));
   const dialog = await screen.findByRole("dialog");
@@ -1100,8 +1123,7 @@ test("A new host can be explicitly saved as Direct after Access becomes unavaila
 });
 
 test("Changing the owner clears Access secrets and hides the previous owner's configurations", async () => {
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   click(
     await waitFor(() => {
       return getAction("button", "Add Cloudflare Access");
@@ -1133,8 +1155,7 @@ test("Renaming changes metadata without requesting a new Service Token", async (
     current = { ...config, name: body.name ?? config.name, revision: 2 };
     return respond(200, current);
   });
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   await screen.findByText(config.name);
   click(getAction("button", "Edit Cloudflare Access"));
   const dialog = await screen.findByRole("dialog");
@@ -1347,8 +1368,7 @@ test("Access load failure offers retry while feature unavailability remains dist
           error: { code: "INTERNAL_ERROR", message: "private provider detail" },
         });
   });
-  await page();
-  click(getAction("radio", "Cloudflare Access"));
+  await accessPage();
   await screen.findByText("Could not load Cloudflare Access. Try again.");
   expect(
     queryAction("button", "Add Cloudflare Access"),

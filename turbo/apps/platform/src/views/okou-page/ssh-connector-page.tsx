@@ -59,10 +59,6 @@ import {
   chooseSshTransport$,
 } from "../../signals/ssh.ts";
 import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
-import {
-  CloudflareAccessDialog,
-  CloudflareAccessConfigs,
-} from "./cloudflare-access.tsx";
 import { AccessSelection } from "./ssh-cloudflare-access.tsx";
 import {
   SSH_PASSWORD_MAX_LENGTH,
@@ -1273,22 +1269,10 @@ export function SshConnectorPage() {
                 return $.ssh.credentialsTab;
               })}
             </SegmentControlItem>
-            <SegmentControlItem value="access">
-              {t(($) => {
-                return $.ssh.cloudflare.title;
-              })}
-            </SegmentControlItem>
           </SegmentControl>
         </div>
-        {view === "hosts" ? (
-          <SshHosts />
-        ) : view === "access" ? (
-          <CloudflareAccessConfigs />
-        ) : (
-          <Credentials />
-        )}
+        {view === "hosts" ? <SshHosts /> : <Credentials />}
         <SshDialog />
-        <CloudflareAccessDialog />
       </DetailPageMain>
     </DetailPageShell>
   );

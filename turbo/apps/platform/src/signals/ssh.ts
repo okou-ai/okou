@@ -27,7 +27,6 @@ import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
-  closeCloudflareAccessDialog$,
   cloudflareAccessConfigs$,
   invalidateCloudflareAccess$,
   retryCloudflareAccess$,
@@ -266,12 +265,12 @@ const finishSshSave$ = command(
   },
 );
 
-const view$ = state<"hosts" | "credentials" | "access">("hosts");
+const view$ = state<"hosts" | "credentials">("hosts");
 export const sshView$ = computed((get) => {
   return get(view$);
 });
 export const changeSshView$ = command(({ set }, value: string) => {
-  if (value === "hosts" || value === "credentials" || value === "access") {
+  if (value === "hosts" || value === "credentials") {
     set(view$, value);
   }
 });
@@ -436,7 +435,6 @@ export const refreshSsh$ = command(({ set }) => {
   set(cancelSshPrivateKeyFile$);
   set(dialog$, null);
   set(conflict$, null);
-  set(closeCloudflareAccessDialog$);
   set(closeSshAccessManagement$);
   set(invalidateSsh$);
   set(invalidateCloudflareAccess$);

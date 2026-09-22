@@ -234,17 +234,17 @@ Cloudflare Access also has its own Connector entry after SSH and VNC at
 `/connectors/cloudflare-access`; see [Cloudflare Access](cloudflare-access.md).
 It is owner configuration rather than a directly usable Agent service, so the
 standalone entry has no Agent grant, connector account, chat trigger or direct
-command. `/connectors/ssh` intentionally retains a **Cloudflare Access** view beside
-**Hosts** and **Credentials**. Both pages share the canonical state and neutral
-`cloudflare-access:changed` invalidation. The SSH view lists the configuration count and affected hosts,
-and supports adding, editing and deleting unused
-configurations. Referenced configurations cannot be deleted until their hosts are
-rebound or deleted. Client ID and Client Secret are never read back, including
-when replacing a token. Both resource editors show public metadata and an
-explicit replacement checkbox: **Replace authentication** for an SSH credential,
-**Replace Service Token** for Access. Unchecked replacement fields are absent,
-not masked readback. Only changed metadata and explicitly requested replacements
-are submitted; effective shared changes apply to the displayed referencing hosts.
+command. `/connectors/ssh` contains only **Hosts** and **Credentials**; the
+standalone entry is the sole management surface for adding, editing and deleting
+Cloudflare Access configurations. Referenced configurations cannot be deleted
+until their hosts are rebound or deleted. Client ID and Client Secret are never
+read back, including when replacing a token. Resource editors show public metadata
+and an explicit replacement checkbox: **Replace authentication** for an SSH
+credential, **Replace Service Token** for Access. Unchecked replacement fields are
+absent, not masked readback. Only changed metadata and explicitly requested
+replacements are submitted; effective shared changes apply to the displayed
+referencing hosts. Both surfaces share the canonical state and neutral
+`cloudflare-access:changed` invalidation.
 
 Host forms explicitly select **Direct** or **Cloudflare Access**. Direct uses a
 public hostname/IP and a configurable SSH port. Access uses the published hostname
@@ -259,8 +259,8 @@ deleted selection requires explicit reselection or creation.
 One host Save creates any inline resources and binds them in the same owner-locked
 database transaction. Validation, reference or version failure creates neither
 resource nor host. Cancelling before Save creates nothing. Independent **Add**
-actions in the resource views intentionally save reusable resources without a
-host. Selecting an existing resource never edits it; rebinding or deleting a host
+actions in resource management views intentionally save reusable resources without
+a host. Selecting an existing resource never edits it; rebinding or deleting a host
 does not delete the previously referenced resource. Saving does not test connectivity.
 
 Pending and failed saves retain input in the mounted form. Cancellation,

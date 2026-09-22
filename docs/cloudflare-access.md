@@ -26,10 +26,10 @@ SSH. Mutations and reconnect catch-up refresh Platform through
 `cloudflare-access:changed` with `{ orgId }` only. The event never includes a
 token, configuration ID, or host ID.
 
-The SSH settings page intentionally retains its Cloudflare Access selector,
-inline creation, and management UI during this rollout, but it reads and mutates
-the same canonical state as the standalone page. There is no feature switch,
-schema migration, data copy, separate enabled state, or second set of records.
-The temporary SSH-prefixed API is only a deployment bridge for older Apps; see
-[deployment compatibility](deployment-compatibility.md#cloudflare-access-for-ssh)
-for its removal gate.
+The SSH host form retains its Cloudflare Access selector and inline creation,
+but configuration management lives only on the standalone page. Both flows read
+and mutate the same canonical state. There is no feature switch, schema migration,
+data copy, separate enabled state, or second set of records. The temporary
+SSH-prefixed API is only a deployment bridge for older Apps; see [deployment
+compatibility](deployment-compatibility.md#cloudflare-access-for-ssh) for its
+removal gate.
