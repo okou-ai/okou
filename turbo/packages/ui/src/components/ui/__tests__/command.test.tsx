@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import postcss from "postcss";
 import { useState } from "react";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   Command,
@@ -17,26 +17,56 @@ import {
 } from "../command";
 import { DialogDescription, DialogTitle } from "../dialog";
 
-function BasicCommand({
-  onSelect,
-}: {
-  readonly onSelect: (value: string) => void;
-}) {
+function BasicCommand() {
+  const [selected, setSelected] = useState<string[]>([]);
+  const select = (value: string) => {
+    setSelected((previous) => {
+      return [...previous, value];
+    });
+  };
   const [query, setQuery] = useState("");
   return (
-    <Command shouldFilter={false} loop value={query} onValueChange={setQuery}>
+    <Command
+      mode="none"
+      autoHighlight
+      loopFocus
+      value={query}
+      onValueChange={(value, eventDetails) => {
+        if (eventDetails.reason === "item-press") {
+          eventDetails.cancel();
+          return;
+        }
+        setQuery(value);
+      }}
+    >
       <CommandInput aria-label="Search" />
       <CommandList>
-        <CommandItem value="alpha" onSelect={onSelect}>
+        <CommandItem
+          value="alpha"
+          onClick={() => {
+            return select("alpha");
+          }}
+        >
           Alpha
         </CommandItem>
-        <CommandItem value="bravo" onSelect={onSelect}>
+        <CommandItem
+          value="bravo"
+          onClick={() => {
+            return select("bravo");
+          }}
+        >
           Bravo
         </CommandItem>
-        <CommandItem value="charlie" onSelect={onSelect}>
+        <CommandItem
+          value="charlie"
+          onClick={() => {
+            return select("charlie");
+          }}
+        >
           Charlie
         </CommandItem>
       </CommandList>
+      <output aria-label="Selected commands">{selected.join(", ")}</output>
     </Command>
   );
 }
@@ -78,7 +108,7 @@ describe("Command", () => {
   });
 
   it("keeps the caret outside a rounded input clipping boundary", () => {
-    render(<BasicCommand onSelect={vi.fn()} />);
+    render(<BasicCommand />);
     const input = screen.getByRole("combobox", { name: "Search" });
     const wrapper = input.closest<HTMLElement>(
       '[data-slot="command-input-wrapper"]',
@@ -92,9 +122,8 @@ describe("Command", () => {
   });
 
   it("selects with Enter and navigates up, down, and around the item loop", async () => {
-    const user = userEvent.setup();
-    const onSelect = vi.fn();
-    render(<BasicCommand onSelect={onSelect} />);
+    const user = userEvent.setup({ delay: null });
+    render(<BasicCommand />);
     const input = screen.getByRole("combobox", { name: "Search" });
     const alpha = screen.getByRole("option", { name: "Alpha" });
     const bravo = screen.getByRole("option", { name: "Bravo" });
@@ -113,39 +142,56 @@ describe("Command", () => {
     await user.keyboard("{ArrowUp}");
     expect(charlie).toHaveAttribute("data-highlighted");
 
-    await user.keyboard("{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowDown}");
     expect(alpha).toHaveAttribute("data-highlighted");
-    expect(onSelect).toHaveBeenCalledOnce();
-    expect(onSelect).toHaveBeenCalledWith("alpha");
+    await user.keyboard("{Enter}");
+    expect(screen.getByLabelText("Selected commands")).toHaveTextContent(
+      /^alpha$/,
+    );
   });
 
   it("uses dynamically rendered business-filtered results for keyboard selection", async () => {
-    const user = userEvent.setup();
-    const onSelect = vi.fn();
-
+    const user = userEvent.setup({ delay: null });
     function DynamicCommand() {
+      const [selected, setSelected] = useState<string[]>([]);
       const [query, setQuery] = useState("");
       const items = ["Alpha", "Bravo", "Charlie"].filter((item) => {
         return item.toLowerCase().includes(query.toLowerCase());
       });
       return (
         <Command
-          shouldFilter={false}
-          loop
+          mode="none"
+          autoHighlight
+          loopFocus
           value={query}
-          onValueChange={setQuery}
+          onValueChange={(value, eventDetails) => {
+            if (eventDetails.reason === "item-press") {
+              eventDetails.cancel();
+              return;
+            }
+            setQuery(value);
+          }}
         >
           <CommandInput aria-label="Dynamic search" />
           <CommandList>
             {items.map((item) => {
               const value = item.toLowerCase();
               return (
-                <CommandItem key={value} value={value} onSelect={onSelect}>
+                <CommandItem
+                  key={value}
+                  value={value}
+                  onClick={() => {
+                    setSelected((previous) => {
+                      return [...previous, value];
+                    });
+                  }}
+                >
                   {item}
                 </CommandItem>
               );
             })}
           </CommandList>
+          <output aria-label="Selected commands">{selected.join(", ")}</output>
         </Command>
       );
     }
@@ -163,13 +209,14 @@ describe("Command", () => {
     expect(screen.getByRole("option", { name: "Bravo" })).toBeInTheDocument();
 
     await user.keyboard("{ArrowDown}{Enter}");
-    expect(onSelect).toHaveBeenCalledOnce();
-    expect(onSelect).toHaveBeenCalledWith("bravo");
+    expect(screen.getByLabelText("Selected commands")).toHaveTextContent(
+      /^bravo$/,
+    );
     expect(input).toHaveValue("br");
   });
 
   it("lets Escape close its parent command dialog", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     function DialogCommand() {
       const [open, setOpen] = useState(true);
@@ -179,7 +226,7 @@ describe("Command", () => {
           open={open}
           onOpenChange={setOpen}
           commandProps={{
-            shouldFilter: false,
+            mode: "none",
             value: query,
             onValueChange: setQuery,
           }}
@@ -204,39 +251,14 @@ describe("Command", () => {
     ).toBeNull();
   });
 
-  it("keeps an embedded action from selecting its item", async () => {
-    const user = userEvent.setup();
-    const onSelect = vi.fn();
-    const onPin = vi.fn();
-    render(
-      <Command shouldFilter={false}>
-        <CommandInput aria-label="Action search" />
-        <CommandList>
-          <CommandItem value="alpha" onSelect={onSelect}>
-            Alpha
-            <button
-              type="button"
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onMouseDown={(event) => {
-                event.stopPropagation();
-              }}
-              onClick={(event) => {
-                event.stopPropagation();
-                onPin();
-              }}
-            >
-              Pin
-            </button>
-          </CommandItem>
-        </CommandList>
-      </Command>,
+  it("activates a command once with a pointer click", async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<BasicCommand />);
+
+    await user.click(screen.getByRole("option", { name: "Bravo" }));
+
+    expect(screen.getByLabelText("Selected commands")).toHaveTextContent(
+      /^bravo$/,
     );
-
-    await user.click(screen.getByRole("button", { name: "Pin" }));
-
-    expect(onPin).toHaveBeenCalledOnce();
-    expect(onSelect).not.toHaveBeenCalled();
   });
 });

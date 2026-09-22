@@ -132,10 +132,17 @@ function SourceSearchDialog({
       contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
-        shouldFilter: false,
-        loop: true,
+        mode: "none",
+        autoHighlight: true,
+        loopFocus: true,
         value: query,
-        onValueChange: onQueryChange,
+        onValueChange: (value, eventDetails) => {
+          if (eventDetails.reason === "item-press") {
+            eventDetails.cancel();
+            return;
+          }
+          onQueryChange(value);
+        },
       }}
     >
       <DialogHeader className="px-5 pb-3 pt-5">
@@ -171,7 +178,7 @@ function SourceSearchDialog({
               key={connector.slug}
               value={connector.slug}
               className="gap-3 px-2 py-2"
-              onSelect={() => {
+              onClick={() => {
                 onOpenChange(false);
                 // What the search produced, never the words that produced it.
                 captureResultSelected(connector.slug, matches.length);

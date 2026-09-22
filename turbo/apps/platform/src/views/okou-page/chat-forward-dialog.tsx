@@ -105,10 +105,15 @@ function ForwardTargetPicker({
     threadResult.query === normalizedQuery ? threadResult.chatThreads : [];
   return (
     <Command
-      shouldFilter={false}
-      loop
+      mode="none"
+      autoHighlight
+      loopFocus
       value={query}
-      onValueChange={(value) => {
+      onValueChange={(value, eventDetails) => {
+        if (eventDetails.reason === "item-press") {
+          eventDetails.cancel();
+          return;
+        }
         detach(setQuery(value, signal), Reason.DomCallback);
       }}
       className="min-h-0"
@@ -138,7 +143,7 @@ function ForwardTargetPicker({
                 <CommandItem
                   key={`agent-${agent.agentId}`}
                   value={`agent-${agent.agentId}`}
-                  onSelect={() => {
+                  onClick={() => {
                     onSelect({ kind: "agent", id: agent.agentId, title });
                   }}
                   className="px-1 py-2"
@@ -173,7 +178,7 @@ function ForwardTargetPicker({
                 <CommandItem
                   key={`thread-${thread.id}`}
                   value={`thread-${thread.id}`}
-                  onSelect={() => {
+                  onClick={() => {
                     onSelect(target);
                   }}
                   className="px-1 py-2"
