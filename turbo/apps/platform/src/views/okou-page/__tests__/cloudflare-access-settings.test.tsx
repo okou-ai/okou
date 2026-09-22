@@ -108,3 +108,29 @@ test("The standalone page refreshes from the neutral realtime event", async () =
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText(config.name)).toBeNull();
 });
+
+test("The standalone editor reports Cloudflare Access revision exhaustion without SSH copy", async () => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [config] });
+  });
+  context.mocks.api(cloudflareAccessContract.update, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "CLOUDFLARE_ACCESS_REVISION_EXHAUSTED",
+        message: "not user copy",
+      },
+    });
+  });
+  await page();
+  click(getAction("button", "Edit Cloudflare Access"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Edit Cloudflare Access",
+  });
+  await fill(within(dialog).getByLabelText("Name"), "Renamed applications");
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByText(
+    "This configuration can no longer be updated. Create a new one.",
+  );
+  expect(dialog).not.toHaveTextContent("SSH configuration");
+  expect(document.body.textContent).not.toContain("not user copy");
+});

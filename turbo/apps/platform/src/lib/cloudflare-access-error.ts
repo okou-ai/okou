@@ -13,7 +13,7 @@ export function localizedCloudflareAccessError(
     }
     case CLOUDFLARE_ACCESS_ERROR_CODES.RESOURCE_ID_CONFLICT: {
       return i18n.t(($) => {
-        return $.ssh.saveRecovery.resourceIdConflict;
+        return $.cloudflareAccess.resourceIdConflict;
       });
     }
     case CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND: {
@@ -33,7 +33,7 @@ export function localizedCloudflareAccessError(
     }
     case CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_EXHAUSTED: {
       return i18n.t(($) => {
-        return $.ssh.errors.revisionExhausted;
+        return $.cloudflareAccess.revisionExhausted;
       });
     }
     default: {

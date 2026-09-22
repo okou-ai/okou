@@ -274,10 +274,11 @@ revision check. Load failures offer **Retry** and remain distinct from older-API
 unavailability and translated business errors. A protected host remains visibly
 protected when Access is unavailable; it is never silently converted to Direct.
 
-Configuration mutations reuse the owner's `ssh:changed` notification to refresh
-metadata without clearing open drafts. There is no independent connector card,
-Agent Authorization row or Chat service, and no persistent Refresh button. Access
-configuration counts do not replace SSH host-based visibility and summaries.
+Configuration mutations publish neutral `cloudflare-access:changed` and the
+temporary `ssh:changed` compatibility notification to refresh metadata without
+clearing open drafts. The independent connector card remains outside Agent
+Authorization and Chat, and has no persistent Refresh button. Access configuration
+counts do not replace SSH host-based visibility and summaries.
 
 SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.

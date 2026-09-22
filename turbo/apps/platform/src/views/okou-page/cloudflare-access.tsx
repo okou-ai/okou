@@ -54,7 +54,7 @@ export function CloudflareAccessConflictReview() {
       <p role="alert">
         {localizedCloudflareAccessError(conflict) ??
           t(($) => {
-            return $.ssh.errors.failed;
+            return $.cloudflareAccess.failed;
           })}
       </p>
       {review.state === "hasError" && <CloudflareAccessLoadError />}
@@ -126,7 +126,7 @@ export function CloudflareAccessLoadError() {
         }}
       >
         {t(($) => {
-          return $.ssh.retry;
+          return $.cloudflareAccess.retry;
         })}
       </Button>
     </div>
@@ -403,11 +403,11 @@ function CloudflareAccessSaveNotice({
     <p role="alert" className="text-sm text-muted-foreground">
       {uncertain
         ? t(($) => {
-            return $.ssh.saveRecovery.uncertain;
+            return $.cloudflareAccess.saveUncertain;
           })
         : (localizedCloudflareAccessError(message ?? "") ??
           t(($) => {
-            return $.ssh.errors.invalidInput;
+            return $.cloudflareAccess.invalidInput;
           }))}
     </p>
   );
@@ -436,7 +436,7 @@ function CloudflareAccessFormActions({
         onClick={close}
       >
         {t(($) => {
-          return $.ssh.cancel;
+          return $.cloudflareAccess.cancel;
         })}
       </Button>
       <Button
@@ -450,12 +450,12 @@ function CloudflareAccessFormActions({
             })
           : uncertain
             ? t(($) => {
-                return $.ssh.retry;
+                return $.cloudflareAccess.retry;
               })
             : destructive
               ? title
               : t(($) => {
-                  return $.ssh.save;
+                  return $.cloudflareAccess.save;
                 })}
       </Button>
     </div>

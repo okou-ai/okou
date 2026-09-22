@@ -111,3 +111,21 @@ test.each(["unshared", `agent:${agentId}`])(
     expect(queryAction("link", "Manage Cloudflare Access")).toBeNull();
   },
 );
+
+test("The connected directory names Cloudflare Access while its summary loads", async () => {
+  mockRemoteAccess(false);
+  const pending = context.mocks.deferred<void>();
+  context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
+    await pending.promise;
+    return respond(200, { configs: [] });
+  });
+  await page("/connectors?scope=connected");
+  await expect(
+    screen.findByText("Loading Cloudflare Access…"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Loading VNC hosts…")).toBeNull();
+  pending.resolve();
+  await waitFor(() => {
+    expect(screen.queryByText("Loading Cloudflare Access…")).toBeNull();
+  });
+});

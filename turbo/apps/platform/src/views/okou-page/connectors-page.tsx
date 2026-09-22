@@ -1742,7 +1742,9 @@ function RemoteAccessConnectedPanel(
       {!failed && loading && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
-            return $.vnc.loading;
+            return cloudflareAccess.state === "loading"
+              ? $.cloudflareAccess.loading
+              : $.vnc.loading;
           })}
         </p>
       )}
