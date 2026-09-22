@@ -252,15 +252,10 @@ function mockBrowserTimeZone(timeZone: string): void {
   });
 }
 
-test("Review personal subscriptions through account identity", async () => {
-  const user = userEvent.setup();
+async function setupPersonalSubscriptionIdentityReview() {
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "member",
-  });
+  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
   const accountA = {
     ...connectedPersonalCodexAccount({
       id: "00000000-0000-4000-a000-000000000311",
@@ -293,9 +288,16 @@ test("Review personal subscriptions through account identity", async () => {
   await openModelSettings("Models", {
     [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
   });
-  const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
-  const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
-  const rowC = await screen.findByTestId(`oauth-account-${accountC.id}`);
+  return {
+    accountA,
+    rowA: await screen.findByTestId(`oauth-account-${accountA.id}`),
+    rowB: await screen.findByTestId(`oauth-account-${accountB.id}`),
+    rowC: await screen.findByTestId(`oauth-account-${accountC.id}`),
+  };
+}
+
+test("Review personal subscription identity and usage", async () => {
+  const { rowA, rowB, rowC } = await setupPersonalSubscriptionIdentityReview();
   expect(within(rowA).getByText("account-a@example.com")).toBeInTheDocument();
   expect(within(rowB).getByText("account-b@example.com")).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
@@ -322,18 +324,16 @@ test("Review personal subscriptions through account identity", async () => {
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
   expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
-  const claudeTable = screen.getByRole("table", {
-    name: "Claude Code OAuth",
-  });
-  const codexTable = screen.getByRole("table", {
-    name: "ChatGPT (Codex)",
-  });
+});
+
+test("Organize personal subscriptions in accessible provider tables", async () => {
+  const { accountA, rowA } = await setupPersonalSubscriptionIdentityReview();
+  const claudeTable = screen.getByRole("table", { name: "Claude Code OAuth" });
+  const codexTable = screen.getByRole("table", { name: "ChatGPT (Codex)" });
   const claudeHeading = screen.getByRole("heading", {
     name: "Claude Code OAuth",
   });
-  const codexHeading = screen.getByRole("heading", {
-    name: "ChatGPT (Codex)",
-  });
+  const codexHeading = screen.getByRole("heading", { name: "ChatGPT (Codex)" });
   for (const [table, heading] of [
     [claudeTable, claudeHeading],
     [codexTable, codexHeading],
@@ -353,6 +353,10 @@ test("Review personal subscriptions through account identity", async () => {
   expect(
     within(claudeTable).queryByTestId(`oauth-account-${accountA.id}`),
   ).toBeNull();
+});
+
+test("Offer personal subscription providers from one add-account menu", async () => {
+  await setupPersonalSubscriptionIdentityReview();
   const addAccountButtons = queryAllByRoleFast("button").filter((button) => {
     return button.textContent?.trim() === "Add account";
   });
@@ -373,8 +377,12 @@ test("Review personal subscriptions through account identity", async () => {
   await waitFor(() => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
-  const accountIdentity = within(rowA).getByText("account-a@example.com");
-  await user.hover(accountIdentity);
+});
+
+test("Show personal subscription workspace and account actions", async () => {
+  const user = userEvent.setup();
+  const { rowA } = await setupPersonalSubscriptionIdentityReview();
+  await user.hover(within(rowA).getByText("account-a@example.com"));
   await expect(
     screen.findAllByText("Account A Organization"),
   ).resolves.not.toHaveLength(0);

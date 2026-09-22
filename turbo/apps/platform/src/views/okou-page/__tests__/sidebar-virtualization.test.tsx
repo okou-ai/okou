@@ -335,7 +335,7 @@ test("Include Show all chats in the archived virtual list", async () => {
   expect(within(sidebar).queryByText("Show all chats")).not.toBeInTheDocument();
 });
 
-test("Show every unread conversation beyond the current history window", async () => {
+async function setupUnreadHistoryBeyondCurrentWindow() {
   mockThreads(120);
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
@@ -359,7 +359,6 @@ test("Show every unread conversation beyond the current history window", async (
     });
   });
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
-
   const sidebar = screen.getByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
@@ -369,9 +368,14 @@ test("Show every unread conversation beyond the current history window", async (
   expect(
     within(sidebar).queryByText("No unread chats"),
   ).not.toBeInTheDocument();
-
   indicators.resolve();
   await within(sidebar).findByText("History 70");
+  return { sidebar, unreadIndexes };
+}
+
+test("Show every unread conversation beyond the current history window", async () => {
+  const { sidebar, unreadIndexes } =
+    await setupUnreadHistoryBeyondCurrentWindow();
   for (const index of unreadIndexes) {
     expect(
       within(sidebar).getByText(`History ${index + 1}`),
@@ -379,7 +383,10 @@ test("Show every unread conversation beyond the current history window", async (
   }
   expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
   expect(within(sidebar).queryByText("History 101")).not.toBeInTheDocument();
+});
 
+test("Navigate unread history after switching chat-list filters", async () => {
+  const { sidebar } = await setupUnreadHistoryBeyondCurrentWindow();
   selectChatListFilter(sidebar, "All chats");
   await within(sidebar).findByText("History 1");
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();

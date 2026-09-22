@@ -2684,7 +2684,7 @@ describe("Morning Brief preference", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
   });
 
-  it("leaves an installed brief in place when the org default Agent changes", async () => {
+  async function setupBriefWithChangedOrgDefaultAgent() {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
     const { actor } = await workflowBdd.setupWorkflowOrg({
@@ -2710,7 +2710,6 @@ describe("Morning Brief preference", () => {
     await setOfficialWorkflowsEnabled(actor, false);
     await setMorningBriefEnabled(actor, true);
     const headers = authHeaders(actor);
-
     await accept(
       morningBriefPreferenceClient().update({
         headers,
@@ -2724,11 +2723,15 @@ describe("Morning Brief preference", () => {
     }
     expect(installed.agentId).toBe(originalAgentId);
 
-    // Only the Clerk org-creation bootstrap writes `default_agent_id`, so no
-    // production endpoint can repoint an existing org at another Agent. This
-    // fixture is the narrow exception that makes the case reachable at all.
+    // Only the Clerk org-creation bootstrap writes `default_agent_id`, so this
+    // fixture is the narrow way to exercise an existing org changing defaults.
     await setOrgDefaultAgentFixture({ orgId, agentId: replacement.agentId });
+    return { actor, headers, installed, originalAgentId, replacement };
+  }
 
+  it("keeps an installed brief after the org default Agent changes", async () => {
+    const { actor, headers, installed, originalAgentId } =
+      await setupBriefWithChangedOrgDefaultAgent();
     const read = await accept(
       morningBriefPreferenceClient().get({ headers }),
       [200],
@@ -2740,15 +2743,15 @@ describe("Morning Brief preference", () => {
       unavailableReason: null,
       lastRun: null,
     });
-
-    // Logging in must not provision a second brief on the new default Agent.
     await initializeBriefMember(actor);
     await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
       { id: installed.id, agentId: originalAgentId },
     ]);
+  });
 
-    // Ownership stays on the Agent the brief was installed on, even once the
-    // new default Agent carries a brief of its own.
+  it("toggles only the installed brief after the default Agent changes", async () => {
+    const { actor, headers, installed, replacement } =
+      await setupBriefWithChangedOrgDefaultAgent();
     await setOfficialWorkflowsEnabled(actor, true);
     const onNewDefaultAgent = await installMorningBriefFromCatalog(
       actor,
@@ -3672,11 +3675,10 @@ describe("Morning Brief legacy writer fences", () => {
     });
   });
 
-  it("recreates only the current retained target after Settings changes", async () => {
+  async function setupDisabledRecreatedMorningBrief() {
     const brief = await prepareSelectedMorningBrief();
     await tickUntilPhase(brief.actor, brief.owner, "native");
 
-    // Remove the selected Blueprint through the real two-transaction lifecycle.
     await syncCatalog(morningBriefCatalog([]));
     await runReconciliationUntilRetryOrComplete();
     await expect(
@@ -3689,8 +3691,6 @@ describe("Morning Brief legacy writer fences", () => {
       legacyAutomationId: brief.automationId,
     });
 
-    // Re-add reserves the stable identity, then pauses before creation. The
-    // user's disable lands after that retained choice was captured.
     await pauseNextDormantMaterialization();
     await syncCatalog(
       morningBriefCatalog([morningBriefScheduleBlueprint("0 10 * * *")]),
@@ -3708,8 +3708,9 @@ describe("Morning Brief legacy writer fences", () => {
     await resumeDormantMaterialization();
     await recreation;
 
-    const replacement = await readLegacyAutomation(brief.automationId);
-    expect(replacement).toMatchObject({
+    await expect(
+      readLegacyAutomation(brief.automationId),
+    ).resolves.toMatchObject({
       id: brief.automationId,
       enabled: false,
       officialIntendedEnabled: false,
@@ -3725,9 +3726,16 @@ describe("Morning Brief legacy writer fences", () => {
       nextRunAt: null,
       scheduleOwner: null,
     });
+    return brief;
+  }
 
-    // Rollback binds that exact current replacement. The disabled choice owes
-    // no occurrence and is not resurrected by the transfer.
+  it("recreates only the disabled retained target after Settings changes", async () => {
+    expect.hasAssertions();
+    await setupDisabledRecreatedMorningBrief();
+  });
+
+  it("rolls a disabled recreated target back without resurrecting an occurrence", async () => {
+    const brief = await setupDisabledRecreatedMorningBrief();
     await setSimpleMorningBriefEnabled(brief.actor, false);
     await tickUntilPhase(brief.actor, brief.owner, "legacy");
     await expect(
@@ -13938,7 +13946,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     });
   });
 
-  it("revokes schedule occurrences when a member leaves, before and after a later tick", async () => {
+  async function setupRevokedDepartingBriefOccurrence() {
     const kept = await installJournaledBrief();
     await pollAt(kept.automationId, kept.anchor + 60_000);
     const departing = await installJournaledBrief();
@@ -13946,7 +13954,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(
       readMorningBriefScheduleClaimsFixture(departing.automationId),
     ).resolves.toHaveLength(1);
-
     const departingThread = await briefThreadId(
       departing.actor,
       departing.workflowId,
@@ -13957,9 +13964,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
     }
 
     await deliverClerkOrganizationMembershipDeleted(departing.actor);
-
-    // Owner identity is scrubbed, but the occurrence survives as a terminal
-    // recorded execution rather than disappearing into the untracked branch.
     const revoked = await readMorningBriefScheduleClaimsFixture(
       departing.automationId,
     );
@@ -13970,8 +13974,12 @@ describe("Morning Brief legacy schedule claim journal", () => {
       settlement: "revoked",
     });
     expect(revoked[0]?.settledAt).not.toBeNull();
+    return { kept, departing, departingRunId, revoked };
+  }
 
-    // A callback that was still in flight therefore settles nothing.
+  it("keeps a departed member's in-flight occurrence revoked after callback", async () => {
+    const { departing, departingRunId, revoked } =
+      await setupRevokedDepartingBriefOccurrence();
     const scheduleBefore = await readBriefPreference(departing.actor);
     const delivery = await deliverBriefCallback(departingRunId);
     expect(delivery.callbackResults).toBeGreaterThan(0);
@@ -13985,8 +13993,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(afterCallback[0]?.settledAt?.getTime()).toBe(
       revoked[0]?.settledAt?.getTime(),
     );
+  });
 
-    // The other owner keeps its occurrence and its schedule.
+  it("leaves another owner's occurrence untouched when a member leaves", async () => {
+    const { kept } = await setupRevokedDepartingBriefOccurrence();
     const untouched = await readMorningBriefScheduleClaimsFixture(
       kept.automationId,
     );
