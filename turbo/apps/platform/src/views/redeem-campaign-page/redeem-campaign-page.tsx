@@ -3,7 +3,7 @@ import { useGet, useLastLoadable } from "ccstate-react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Check, Gift, Loader2, Lock, X } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { buttonVariants, cn } from "@okouai/ui";
 import type { RedeemResponse } from "@okouai/api-contracts/contracts/billing";
 import {
   redeemResponse$,
@@ -172,34 +172,30 @@ function PrimaryAction({
   const brandName = useGet(brandName$);
 
   if (!stripeSuccess && response?.status === "ready") {
-    // Render as an <a> (via asChild) so the browser handles cmd/ctrl+click,
+    // Keep a semantic <a> so the browser handles cmd/ctrl+click,
     // middle-click, and right-click → "open in new tab" natively. A plain
     // onClick with `window.location.assign` swallows those modifier clicks.
     const checkoutUrl = response.checkoutUrl;
     return (
-      <Button className="w-full" asChild>
-        <a href={checkoutUrl}>
-          {t(($) => {
-            return $.lifecycle.redeemCampaign.actions.redeem;
-          })}
-        </a>
-      </Button>
+      <a href={checkoutUrl} className={cn(buttonVariants(), "w-full")}>
+        {t(($) => {
+          return $.lifecycle.redeemCampaign.actions.redeem;
+        })}
+      </a>
     );
   }
 
   // `granted` / `processing` / `stripeSuccess` send the user to the dashboard
   // where the new credit balance is visible. Error cards just send them home.
   return (
-    <Button className="w-full" asChild>
-      <Link pathname={ROUTES.home}>
-        {t(
-          ($) => {
-            return $.lifecycle.redeemCampaign.actions.back;
-          },
-          { brandName },
-        )}
-      </Link>
-    </Button>
+    <Link pathname={ROUTES.home} className={cn(buttonVariants(), "w-full")}>
+      {t(
+        ($) => {
+          return $.lifecycle.redeemCampaign.actions.back;
+        },
+        { brandName },
+      )}
+    </Link>
   );
 }
 

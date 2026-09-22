@@ -21,7 +21,7 @@ import {
   FEISHU_TENANT_SCOPES,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import {
   Dialog,
   DialogContent,
@@ -2303,26 +2303,22 @@ export function FeishuSettingsPage() {
       <header className="shrink-0 bg-transparent px-4 pb-3 pt-10 sm:px-6">
         <div className="mx-auto max-w-[900px]">
           <div className="mb-4">
-            <Button
-              asChild
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-2 px-2 text-muted-foreground hover:text-foreground"
+            <Link
+              pathname={ROUTES.works}
+              title={t(($) => {
+                return $.connectors.catalog.title;
+              })}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",
+              )}
             >
-              <Link
-                pathname={ROUTES.works}
-                title={t(($) => {
-                  return $.connectors.catalog.title;
-                })}
-              >
-                <ArrowLeft size={17} />
-                {t(($) => {
-                  return $.connectors.providerSettings[platform]
-                    .backToIntegrations;
-                })}
-              </Link>
-            </Button>
+              <ArrowLeft size={17} />
+              {t(($) => {
+                return $.connectors.providerSettings[platform]
+                  .backToIntegrations;
+              })}
+            </Link>
           </div>
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-muted/40">

@@ -1,7 +1,8 @@
+import { cn } from "@okouai/ui/lib/utils";
 import { useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ExternalLink } from "lucide-react";
-import { Button } from "@okouai/ui/components/ui/button";
+import { buttonVariants } from "@okouai/ui/components/ui/button";
 import { clerk$, currentUserInfo$ } from "../../../../../signals/auth.ts";
 import { UserAvatar } from "../../../../components/avatar.tsx";
 
@@ -37,14 +38,17 @@ export function AccountSection() {
         )}
       </div>
       {userProfileUrl && (
-        <Button asChild className="shrink-0">
-          <a href={userProfileUrl} target="_blank" rel="noreferrer">
-            <ExternalLink size={14} />
-            {t(($) => {
-              return $.settings.preferences.account.manage;
-            })}
-          </a>
-        </Button>
+        <a
+          href={userProfileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(buttonVariants(), "shrink-0")}
+        >
+          <ExternalLink size={14} />
+          {t(($) => {
+            return $.settings.preferences.account.manage;
+          })}
+        </a>
       )}
     </div>
   );

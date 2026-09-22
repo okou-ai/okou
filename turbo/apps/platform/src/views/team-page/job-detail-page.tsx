@@ -48,6 +48,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  buttonVariants,
 } from "@okouai/ui";
 import { InstructionsTab } from "../okou-page/instructions-tab.tsx";
 import { SettingsTab } from "../okou-page/settings-tab.tsx";
@@ -226,17 +227,17 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
                 )}
               </p>
             </div>
-            <Button
-              asChild
-              variant="neutral"
-              className="h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
+            <Link
+              pathname="/agents"
+              className={cn(
+                buttonVariants({ variant: "neutral" }),
+                "h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface",
+              )}
             >
-              <Link pathname="/agents">
-                {t(($) => {
-                  return $.detail.notFound.back;
-                })}
-              </Link>
-            </Button>
+              {t(($) => {
+                return $.detail.notFound.back;
+              })}
+            </Link>
           </div>
         </main>
       </DetailPageShell>
@@ -251,20 +252,18 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
           <Card className={surfaceVariants()}>
             <CardContent className="px-6 py-6 text-center space-y-3">
               <p className="text-sm text-destructive">{error}</p>
-              <Button
-                asChild
-                variant="neutral"
-                className="h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
+              <Link
+                pathname="/agents/:agentId"
+                options={{ pathParams: { agentId: agentId } }}
+                className={cn(
+                  buttonVariants({ variant: "neutral" }),
+                  "h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface",
+                )}
               >
-                <Link
-                  pathname="/agents/:agentId"
-                  options={{ pathParams: { agentId: agentId } }}
-                >
-                  {t(($) => {
-                    return $.actions.retry;
-                  })}
-                </Link>
-              </Button>
+                {t(($) => {
+                  return $.actions.retry;
+                })}
+              </Link>
             </CardContent>
           </Card>
         </div>

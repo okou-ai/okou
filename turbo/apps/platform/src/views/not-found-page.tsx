@@ -1,4 +1,4 @@
-import { Button } from "@okouai/ui";
+import { buttonVariants } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import { ROUTES } from "../signals/route-paths.ts";
@@ -53,20 +53,19 @@ export function NotFoundPage() {
       {/* Two destinations, not one apology. This surface replaces the whole
           app shell, so the buttons are the only navigation the page has. */}
       <div className="mt-6 flex flex-wrap justify-center gap-3 sm:mt-7">
-        <Button asChild size="lg">
-          <Link pathname={ROUTES.home}>
-            {t(($) => {
-              return $.shared.notFound.action;
-            })}
-          </Link>
-        </Button>
-        <Button asChild size="lg" variant="neutral">
-          <Link pathname={ROUTES.workflows}>
-            {t(($) => {
-              return $.shared.notFound.browse;
-            })}
-          </Link>
-        </Button>
+        <Link pathname={ROUTES.home} className={buttonVariants({ size: "lg" })}>
+          {t(($) => {
+            return $.shared.notFound.action;
+          })}
+        </Link>
+        <Link
+          pathname={ROUTES.workflows}
+          className={buttonVariants({ size: "lg", variant: "neutral" })}
+        >
+          {t(($) => {
+            return $.shared.notFound.browse;
+          })}
+        </Link>
       </div>
     </main>
   );

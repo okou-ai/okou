@@ -9,7 +9,7 @@ import { useGet, useSet } from "ccstate-react";
 import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { Check, Copy, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { Button, cn } from "@okouai/ui";
+import { Button, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   Dialog,
@@ -158,13 +158,11 @@ function AgentPhoneConnectActions({
         })}
       </Button>
       {messageHref ? (
-        <Button asChild>
-          <a href={messageHref}>
-            {t(($) => {
-              return $.connectors.providerSettings.agentphone.openMessages;
-            })}
-          </a>
-        </Button>
+        <a href={messageHref} className={buttonVariants()}>
+          {t(($) => {
+            return $.connectors.providerSettings.agentphone.openMessages;
+          })}
+        </a>
       ) : (
         <Button type="button" disabled>
           {t(($) => {

@@ -112,7 +112,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import { Input } from "@okouai/ui/components/ui/input";
 import {
@@ -8233,21 +8233,20 @@ function ComputerUseDownloadDialog({
               })}
             </Button>
           ) : (
-            <Button asChild size="lg" className="w-full">
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => {
-                  onOpenChange(false);
-                }}
-              >
-                <Download size={16} />
-                {t(($) => {
-                  return $.chat.computerUse.downloadMacos;
-                })}
-              </a>
-            </Button>
+            <a
+              href={downloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+              className={cn(buttonVariants({ size: "lg" }), "w-full")}
+            >
+              <Download size={16} />
+              {t(($) => {
+                return $.chat.computerUse.downloadMacos;
+              })}
+            </a>
           )}
         </div>
       </DialogContent>
