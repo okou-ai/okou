@@ -193,6 +193,84 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
+  it("filters only the Add Model projection with a personal switch", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const existing = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const model = "okou-1.0";
+    expect(existing.body.modelsAvailableToAdd).not.toContain(model);
+
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: true,
+    });
+    await seedBuiltInModelCandidateKeys(context, model);
+    const addable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(addable.body.modelsAvailableToAdd).toContain(model);
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: false,
+    });
+    const addedWithSwitchOff = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(addable.body), makeBuiltInPolicy(model)],
+        },
+      }),
+      [200],
+    );
+    expect(
+      addedWithSwitchOff.body.policies.find((policy) => {
+        return policy.model === model;
+      }),
+    ).toMatchObject({
+      runtimeProviderType: "openrouter-codex",
+      routeStatus: "valid",
+    });
+
+    const listedAfterDisable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listedAfterDisable.body.modelsAvailableToAdd).not.toContain(model);
+    expect(
+      listedAfterDisable.body.policies.some((policy) => {
+        return policy.model === model;
+      }),
+    ).toBeTruthy();
+    const preserved = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: toUpdate(listedAfterDisable.body) },
+      }),
+      [200],
+    );
+    expect(
+      preserved.body.policies.some((policy) => {
+        return policy.model === model;
+      }),
+    ).toBeTruthy();
+
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const preference = await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: model, serviceTier: null },
+      }),
+      [200],
+    );
+    expect(preference.body.selectedModel).toBe(model);
+  });
+
   it("offers only catalog-enabled models and rejects a staged model addition", async () => {
     const fixture = seedFixture();
     useSession(fixture);

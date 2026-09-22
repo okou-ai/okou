@@ -28,6 +28,7 @@ import {
   Input,
 } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -35,6 +36,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
   checkInGetStarted$,
+  isCheckinMilestone,
   getStartedQuests$,
   getStartedSummary$,
   setCheckinClaimedOpen$,
@@ -548,8 +550,10 @@ function ShareOnXDialog() {
  * confirm, so a quest has one destination whether or not it is introduced.
  */
 function useQuestHandoffs(
-  checkIn: (signal: AbortSignal) => Promise<void>,
+  checkIn: (signal: AbortSignal) => Promise<number>,
+  checkinReward: number,
 ): Record<GetStartedQuestKey, () => void> {
+  const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const navigate = useSet(detachedNavigateTo$);
@@ -575,10 +579,33 @@ function useQuestHandoffs(
     checkin: () => {
       detach(
         (async () => {
-          await checkIn(pageSignal);
-          if (introEnabled) {
-            setCheckinClaimedOpen(true);
+          const streak = await checkIn(pageSignal);
+          if (!introEnabled) {
+            return;
           }
+          // The first day and every full week earn the screen; the days in
+          // between earn a line. Both name the streak, which is the part that
+          // brings someone back tomorrow.
+          if (isCheckinMilestone(streak)) {
+            setCheckinClaimedOpen(true);
+            return;
+          }
+          toast.success(
+            t(
+              ($) => {
+                return $.chat.agentPage.getStarted.streak;
+              },
+              { amount: formatLocalizedNumber(streak) },
+            ),
+            {
+              description: t(
+                ($) => {
+                  return $.chat.agentPage.getStarted.intro.checkin.amount;
+                },
+                { amount: formatLocalizedNumber(checkinReward) },
+              ),
+            },
+          );
         })(),
         Reason.DomCallback,
       );
@@ -869,7 +896,16 @@ export function GetStartedEntry() {
   // The dialogs outlive the dropdown that opened them, so the handoffs they
   // run are built here rather than inside the panel's own tree.
   const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
-  const handoffs = useQuestHandoffs(checkIn);
+  // Read before the loading guard below, because the handoffs are hooks and
+  // cannot be built conditionally. Zero until the quests land, which is also
+  // when the entry renders nothing at all.
+  const checkinReward =
+    questsLoadable.state === "hasData"
+      ? (questsLoadable.data.find((quest) => {
+          return quest.key === "checkin";
+        })?.rewardAmount ?? 0)
+      : 0;
+  const handoffs = useQuestHandoffs(checkIn, checkinReward);
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -929,7 +965,10 @@ export function GetStartedEntry() {
       {/* The quest the dialog reports on is the one the panel just checked in,
           so the dialog exists exactly when that quest does. */}
       {checkinQuest && (
-        <GetStartedCheckinDialog reward={checkinQuest.rewardAmount} />
+        <GetStartedCheckinDialog
+          reward={checkinQuest.rewardAmount}
+          streak={summary.checkinStreak}
+        />
       )}
     </>
   );

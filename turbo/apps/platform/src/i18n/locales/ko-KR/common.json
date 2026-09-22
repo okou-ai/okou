@@ -1460,11 +1460,9 @@
           },
           "later": "나중에",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack에 추가",
             "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
             "note": "팀원들이 매번 나를 거치지 않아도 됩니다. 채널에서 부탁하면 결과가 그 스레드로 돌아오고, 모두가 함께 봅니다.",
-            "sampleChannel": "# growth",
             "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },
           "workflow": {
@@ -2122,6 +2120,7 @@
       "pinned": "고정됨",
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
+      "showAllChats": "모든 채팅 보기",
       "showArchived": "보관된 채팅 표시",
       "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
@@ -6498,6 +6497,8 @@
         "description": "{{brandName}} 인터페이스에 사용할 기본 언어를 선택하세요",
         "label": "언어",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

@@ -65,6 +65,7 @@ export enum FeatureSwitchKey {
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   DeepSeekAlternativeRouting = "deepSeekAlternativeRouting",
+  OkouModels = "okouModels",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
@@ -75,6 +76,7 @@ export enum FeatureSwitchKey {
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatThreadArchiving = "chatThreadArchiving",
+  ChatUnreadOnlyShortcut = "chatUnreadOnlyShortcut",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",
@@ -87,4 +89,5 @@ export enum FeatureSwitchKey {
   OnboardingSourcesFirst = "onboardingSourcesFirst",
   OptimisticMessageSpinner = "optimisticMessageSpinner",
   UserMessageLinks = "userMessageLinks",
+  BrowserNativeInput = "browserNativeInput",
 }

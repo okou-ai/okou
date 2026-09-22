@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorRuntimeTargetKey } from "@okouai/api-contracts/contracts/runners";
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
@@ -54,6 +52,7 @@ import {
   type MorningBriefNativeCollectionAuthority,
 } from "./morning-brief-native-generation-admission.service";
 import { readMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
+import { morningBriefScopeDigest } from "./morning-brief-source-authority";
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
@@ -407,11 +406,16 @@ export type MorningBriefFrozenSelection =
  * What one source's released material was actually authorized by.
  *
  * `permissions` and `endpoints` are the real effective permissions this read
- * was admitted under and one representative URL per permission — the same
- * inputs the release fence already re-evaluates. A digest of constant method
- * names names an API rather than an authority, so it cannot tell a later check
- * what to re-ask; these can, because they are exactly what the live check
+ * was admitted under and one representative URL per retained authorization —
+ * the same inputs the release fence already re-evaluates. A digest of constant
+ * method names names an API rather than an authority, so it cannot tell a later
+ * check what to re-ask; these can, because they are exactly what the live check
  * consumes.
+ *
+ * Only *named* permissions appear in `permissions`. An endpoint allowed without
+ * one still appears in `endpoints` and is still re-checked individually, which
+ * is the complete question for it: there is no grant behind it to narrow, so
+ * the per-URL decision is the whole answer.
  */
 export interface MorningBriefSourceAuthorityProof {
   readonly connectionId: string;
@@ -1379,12 +1383,27 @@ interface ReaderState {
   revoked: MorningBriefSourceUnavailable | null;
   truncatedTotalBytes: boolean;
   /**
-   * One representative URL per distinct permission whose result this source
-   * still holds. The release fence re-evaluates every one of them, so losing a
-   * permission used earlier withholds the payload that permission produced even
-   * when a different permission admitted the final request.
+   * The named permissions whose results this source still holds.
+   *
+   * This is the authorization surface the proof digests, so a later narrowing
+   * of the owner's grants is detectable. Only a named permission belongs here:
+   * an endpoint allowed without one names no grant that could be narrowed, and
+   * digesting its URL instead would make the proof track catalog routing rather
+   * than this owner's authority.
    */
-  readonly retainedByPermission: Map<string, string>;
+  readonly retainedPermissions: Set<string>;
+  /**
+   * One representative URL per distinct retained authorization.
+   *
+   * The release fence and the later re-proof re-evaluate every one of them, so
+   * losing a permission used earlier withholds the payload that permission
+   * produced even when a different permission admitted the final request. A
+   * second URL under the same named permission asks the same question, so it is
+   * represented once; a permissionless allow groups with nothing and stands for
+   * itself. Keyed separately from {@link ReaderState.retainedPermissions}
+   * because these two answer different questions and need different keys.
+   */
+  readonly retainedEndpoints: Map<string, string>;
   /** Resolved lazily, behind the first endpoint a live policy allowed. */
   credential: ResolvedCredential | null;
 }
@@ -1627,9 +1646,15 @@ function createConnectorReader(
         signal,
       );
       if (outcome.kind === "ok") {
-        // Remember which permission this retained result was read under, so the
-        // release fence can re-check every one of them.
-        state.retainedByPermission.set(decision.permission ?? url, url);
+        // Remember what this retained result was read under, so the release
+        // fence can re-check every one of them. The permission is recorded only
+        // when the decision actually named one; the endpoint is recorded either
+        // way, because a permissionless allow is still an endpoint whose result
+        // is held and still has to be re-asked one URL at a time.
+        if (decision.permission !== null) {
+          state.retainedPermissions.add(decision.permission);
+        }
+        state.retainedEndpoints.set(decision.permission ?? url, url);
       }
       return outcome;
     },
@@ -1663,7 +1688,7 @@ async function releaseIsAuthorized(
   if (identity.kind !== "allow") {
     return identity.reason;
   }
-  for (const url of state.retainedByPermission.values()) {
+  for (const url of state.retainedEndpoints.values()) {
     const decision = await authorizeUrl(
       fenced,
       pinned,
@@ -1734,7 +1759,8 @@ export async function withMorningBriefConnectorReader<T>(
     reservedBytes: 0,
     revoked: null,
     truncatedTotalBytes: false,
-    retainedByPermission: new Map(),
+    retainedPermissions: new Set(),
+    retainedEndpoints: new Map(),
     credential: null,
   };
   const context: ReaderContext = {
@@ -1822,8 +1848,8 @@ export async function withMorningBriefConnectorReader<T>(
       accountRef:
         state.credential.pinned.externalEmail ??
         state.credential.pinned.externalId,
-      permissions: [...state.retainedByPermission.keys()].sort(),
-      endpoints: [...state.retainedByPermission.values()],
+      permissions: [...state.retainedPermissions].sort(),
+      endpoints: [...state.retainedEndpoints.values()],
     };
   }
   return {
@@ -1912,9 +1938,9 @@ export async function revalidateMorningBriefRetainedRead(
       permissions.add(decision.permission);
     }
   }
-  const currentScopeDigest = createHash("sha256")
-    .update([...permissions].sort().join("\n"), "utf8")
-    .digest("hex");
+  // The same function the recorded digest came from, so the two cannot answer
+  // differently about ordering, duplicates, or what counts as a permission.
+  const currentScopeDigest = morningBriefScopeDigest([...permissions]);
   return currentScopeDigest === args.scopeDigest ? null : "source-revoked";
 }
 

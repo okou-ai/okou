@@ -7,6 +7,9 @@ Do not edit by hand; regenerate with
 from typing import Final
 
 MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS: Final[dict[str, int]] = {
+    "okou-1.0-max": 272_001,
+    "okou-1.0-pro": 272_001,
+    "okou-1.0": 272_001,
     "gpt-6-astra": 272_001,
     "gpt-6-sol": 272_001,
     "gpt-5.5": 272_001,

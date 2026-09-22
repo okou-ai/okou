@@ -1440,7 +1440,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "2fdb21cba7d0146b70a3baf574368720",
+    bodyHash: "56fbba07cf9d2a5877b03524c215c28b",
     functionName: "ensure_billing_run_attribution",
     identityArguments:
       "billing_id uuid, billed_org text, billed_user text, original_start timestamp without time zone, billing_source text",
@@ -1448,14 +1448,21 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "dcd72e07d81d076359c048ef76eaa48f",
+    bodyHash: "58e58b34a3eb3679ad3ba9d984bf2b8b",
     functionName: "capture_billing_run_attribution",
     identityArguments: "",
     kind: "f",
     schemaName: "public",
   },
   {
-    bodyHash: "a3491f2fc3ed69bebd63f083c88d4b7f",
+    bodyHash: "8699ee12596b337ac2df0a58e1ec6d59",
+    functionName: "ensure_billing_run_thread",
+    identityArguments: "billing_id uuid, original_thread uuid",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "a1cded319d3a0e285807a877e8d85b74",
     functionName: "reject_billing_attribution_update",
     identityArguments: "",
     kind: "f",

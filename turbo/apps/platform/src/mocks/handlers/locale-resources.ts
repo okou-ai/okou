@@ -36,6 +36,14 @@ import ptBRAgents from "../../i18n/locales/pt-BR/agents.json";
 import ptBRAgentsUrl from "../../i18n/locales/pt-BR/agents.json?url";
 import ptBRCommon from "../../i18n/locales/pt-BR/common.json";
 import ptBRCommonUrl from "../../i18n/locales/pt-BR/common.json?url";
+import zhHansAgents from "../../i18n/locales/zh-Hans/agents.json";
+import zhHansAgentsUrl from "../../i18n/locales/zh-Hans/agents.json?url";
+import zhHansCommon from "../../i18n/locales/zh-Hans/common.json";
+import zhHansCommonUrl from "../../i18n/locales/zh-Hans/common.json?url";
+import zhHantAgents from "../../i18n/locales/zh-Hant/agents.json";
+import zhHantAgentsUrl from "../../i18n/locales/zh-Hant/agents.json?url";
+import zhHantCommon from "../../i18n/locales/zh-Hant/common.json";
+import zhHantCommonUrl from "../../i18n/locales/zh-Hant/common.json?url";
 
 const localeResourceFixtures = [
   { resource: deDEAgents, url: deDEAgentsUrl },
@@ -56,6 +64,10 @@ const localeResourceFixtures = [
   { resource: koKRCommon, url: koKRCommonUrl },
   { resource: ptBRAgents, url: ptBRAgentsUrl },
   { resource: ptBRCommon, url: ptBRCommonUrl },
+  { resource: zhHansAgents, url: zhHansAgentsUrl },
+  { resource: zhHansCommon, url: zhHansCommonUrl },
+  { resource: zhHantAgents, url: zhHantAgentsUrl },
+  { resource: zhHantCommon, url: zhHantCommonUrl },
 ] as const;
 
 export const localeResourceHandlers = localeResourceFixtures.map(

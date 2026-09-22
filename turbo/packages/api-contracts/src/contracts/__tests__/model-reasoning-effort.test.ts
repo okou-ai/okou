@@ -45,6 +45,14 @@ describe("chat reasoning effort capabilities", () => {
     expect(defaultModelReasoningEffort("deepseek-v4-flash")).toBe("high");
   });
 
+  it.each(["okou-1.0", "okou-1.0-pro", "okou-1.0-max"])(
+    "leaves %s reasoning to its preset",
+    (model) => {
+      expect(getModelReasoningEfforts(model)).toStrictEqual([]);
+      expect(defaultModelReasoningEffort(model)).toBeUndefined();
+    },
+  );
+
   it("keeps each model's override independent", () => {
     const settings = withModelReasoningEffort(
       { "gpt-6-astra": { effort: "ultra" } },

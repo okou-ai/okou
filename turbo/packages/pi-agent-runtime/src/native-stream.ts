@@ -4,7 +4,7 @@ import { nativePublicFetch, nativePublicLookup } from "./native-http";
 import { streamSimple as streamMessages } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { streamSimple as streamBedrock } from "@earendil-works/pi-ai/api/bedrock-converse-stream";
 import { resolveHttpProxyUrlForTarget } from "@earendil-works/pi-ai/utils/node-http-proxy";
-import type { Api, Context, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, TranscriptContext } from "@earendil-works/pi-ai";
 import { observePiUsageFetch, PiBedrockHttpHandler } from "./usage-transport";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
@@ -49,7 +49,7 @@ function assertNativeOptions(options: PiAgentStreamOptions): void {
 export function streamPiNative(
   config: NativeStreamConfig,
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options: PiAgentStreamOptions,
 ) {
   if (!config.catalogModel || config.dialect !== model.api) {
@@ -60,7 +60,7 @@ export function streamPiNative(
   // A Messages upstream may echo the selected opaque deployment in its result.
   // Preserve same-route signatures while the adapter uses catalog capabilities;
   // persisted history and the final request retain their upstream identity.
-  const nativeContext: Context = {
+  const nativeContext: TranscriptContext = {
     ...context,
     messages: context.messages.map((message) => {
       return message.role === "assistant" &&

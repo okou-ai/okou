@@ -1460,11 +1460,9 @@
           },
           "later": "後で",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack に追加",
             "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
             "note": "チームが毎回あなたを経由しなくてよくなります。チャンネルで頼めば、結果はそのスレッドに返ってきて、全員が見られます。",
-            "sampleChannel": "# growth",
             "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },
           "workflow": {
@@ -2122,6 +2120,7 @@
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
+      "showAllChats": "すべてのチャットを表示",
       "showArchived": "アーカイブ済みを表示",
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
@@ -6498,6 +6497,8 @@
         "description": "{{brandName}}のインターフェースで使用する言語を選択します",
         "label": "言語",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

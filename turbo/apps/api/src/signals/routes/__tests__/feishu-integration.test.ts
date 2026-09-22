@@ -5612,9 +5612,9 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it("keeps Feishu group control cases out of runs and resumes queued tasks through the canonical session", async () => {
+  it("keeps Feishu group control cases out of runs", async () => {
     const fixture = await setupFeishuRunFixture();
-    const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } = fixture;
+    const { actor, appId, callbackUrl, defaultAgentId } = fixture;
     const secondOpenId = "ou_feishu_canonical_group_user";
     const secondActor = authOrgApi.user({
       userId: `user_${randomUUID()}`,
@@ -5624,12 +5624,9 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     await enableFeishuIntegration(platform, secondActor, {
       [FeatureSwitchKey.OkouDebug]: true,
     });
-
     await postEvent(
       callbackUrl,
-      groupMessage(appId, "unconnected group task", {
-        openId: secondOpenId,
-      }),
+      groupMessage(appId, "unconnected group task", { openId: secondOpenId }),
       { encrypted: true },
     );
     await flushWaitUntilForTest();
@@ -5666,9 +5663,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     await seedLegacyPrivateDefaultAgentFixture(defaultAgentId);
     await postEvent(
       callbackUrl,
-      groupMessage(appId, "unavailable group task", {
-        openId: secondOpenId,
-      }),
+      groupMessage(appId, "unavailable group task", { openId: secondOpenId }),
       { encrypted: true },
     );
     await flushWaitUntilForTest();
@@ -5687,7 +5682,21 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         ].includes(run.prompt);
       }),
     ).toBeFalsy();
+  });
 
+  it("resumes queued Feishu group tasks through the canonical session", async () => {
+    const fixture = await setupFeishuRunFixture();
+    const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } = fixture;
+    const secondOpenId = "ou_feishu_canonical_group_user";
+    const secondActor = authOrgApi.user({
+      userId: `user_${randomUUID()}`,
+      orgId: actor.orgId,
+      orgRole: "org:member",
+    });
+    await enableFeishuIntegration(platform, secondActor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
+    await connectFixtureUser(fixture, secondActor, secondOpenId);
     await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",
     });
@@ -5705,7 +5714,6 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
     await flushWaitUntilForTest();
     const firstRun = await findRun(secondActor, `@Nova ${firstPrompt}`);
-
     await postEvent(
       callbackUrl,
       groupMessage(appId, secondPrompt, {
@@ -5727,9 +5735,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       userId: secondActor.userId,
       prompt: `@Nova ${secondPrompt}`,
     });
-    expect(queuedFeishuParams).toMatchObject({
-      eventId: expect.any(String),
-    });
+    expect(queuedFeishuParams).toMatchObject({ eventId: expect.any(String) });
     if (!queuedFeishuParams) {
       throw new Error("Expected queued canonical Feishu event");
     }
@@ -5743,7 +5749,6 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       history: `bdd feishu canonical group history ${firstRun.id}`,
       assistantText: "First canonical group answer",
     });
-
     const secondRun = await findRun(secondActor, `@Nova ${secondPrompt}`);
     await expectRunSource(secondActor, secondRun.id);
     await runsApi.heartbeatRunner(runnerGroup);
@@ -5753,7 +5758,6 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     expect(secondClaim.resumeSession?.sessionId).toBe(firstCliSessionId);
     await runsApi.requestCancelRun(secondActor, secondRun.id, [200]);
     await flushWaitUntilForTest();
-
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
       connectContract,

@@ -80,6 +80,74 @@ const MORNING_BRIEF_RESPONSE_SCHEMA = {
 } as const;
 
 /**
+ * The same union, in the one form the provider can actually enforce.
+ *
+ * The schema above travels inside the message, where it is documentation: the
+ * model may honour it, wrap it in a code fence or introduce it with a sentence,
+ * and a policy line asking for "one JSON object only" can refuse none of that.
+ * This copy travels as `response_format`, so decoding is constrained to one
+ * bare object of one of the two shapes instead of merely being asked for it.
+ *
+ * It describes structure only. Lengths, counts, the citation vocabulary and the
+ * no-link rule stay with the result validator, which is strict, terminal and
+ * untouched by this contract: restating a content limit here would be a second
+ * place it has to stay true. `additionalProperties: false` is the one overlap,
+ * and only because it is the same refusal the validator already makes — an
+ * answer carrying fields nobody asked for is not the requested shape.
+ */
+const MORNING_BRIEF_RESPONSE_JSON_SCHEMA = {
+  // Both branches are objects and the union is over which one, so the type is
+  // stated beside `anyOf` for a reader — or a provider-side translator — that
+  // dispatches on it before looking at the branches.
+  type: "object",
+  anyOf: [
+    {
+      type: "object",
+      properties: {
+        decision: { type: "string", enum: ["deliver"] },
+        language: { type: "string" },
+        title: { type: "string" },
+        sections: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              heading: { type: "string" },
+              items: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    text: { type: "string" },
+                    citations: { type: "array", items: { type: "string" } },
+                  },
+                  required: ["text", "citations"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["heading", "items"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["decision", "language", "title", "sections"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        decision: { type: "string", enum: ["skip"] },
+        language: { type: "string" },
+        reason: { type: "string", enum: ["nothing_actionable"] },
+      },
+      required: ["decision", "language", "reason"],
+      additionalProperties: false,
+    },
+  ],
+} as const;
+
+/**
  * How much of each source survived, as the request reports it.
  *
  * The omissions are the composed account, not the last stage's: an item the
@@ -223,6 +291,18 @@ export function buildMorningBriefProviderRequest(
     reasoning: { effort: "low" },
     temperature: 0,
     stream: false,
+    // The contract, sent where the provider enforces it rather than only where
+    // the model reads it. Its bytes are budgeted for free: this is the exact
+    // object the 128 KiB ceiling is measured against, so the schema takes its
+    // room from the evidence allocator instead of from the transport limit.
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "morning_brief_result",
+        strict: true,
+        schema: MORNING_BRIEF_RESPONSE_JSON_SCHEMA,
+      },
+    },
   });
   return {
     body,

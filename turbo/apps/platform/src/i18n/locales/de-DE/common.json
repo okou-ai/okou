@@ -1461,11 +1461,9 @@
           },
           "later": "Später",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Zu Slack hinzufügen",
             "description": "Fügen Sie {{assistantName}} zum Slack-Workspace Ihres Teams hinzu.",
             "note": "Ihre Kolleginnen müssen nicht mehr zuerst zu Ihnen. Sie fragen im Channel, und die Arbeit kommt im Thread zurück, wo alle sie sehen.",
-            "sampleChannel": "# growth",
             "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },
           "workflow": {
@@ -2130,6 +2128,7 @@
       "pinned": "Angepinnt",
       "rename": "Chat umbenennen",
       "renameDescription": "Geben Sie einen neuen Namen für diesen Chat-Thread ein.",
+      "showAllChats": "Alle Chats anzeigen",
       "showArchived": "Archivierte anzeigen",
       "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
@@ -6511,6 +6510,8 @@
         "description": "Wählen Sie Ihre bevorzugte Sprache für die Benutzeroberfläche von {{brandName}}",
         "label": "Sprache",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

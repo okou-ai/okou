@@ -31,18 +31,14 @@ export const MORNING_BRIEF_DEFAULT_LANGUAGE = "en-US";
 /**
  * Output languages the brief can be written in.
  *
- * This is deliberately wider than the ten-value UI locale enumeration and is
- * kept separate from it. Chinese has no UI locale at all, yet an Agent whose
- * instructions are written in Simplified Chinese must be able to produce a
- * Simplified Chinese brief — and the Simplified/Traditional distinction has to
- * survive, because they are not interchangeable for a reader. Widening the
- * Settings locale enumeration would be a user-visible product change and is not
- * part of this contract.
+ * It tracks the UI locale enumeration but stays a separate declaration: this
+ * contract is about the language a brief is *written in*, and widening or
+ * narrowing Settings is a user-visible product change that must not silently
+ * redefine it. The Simplified/Traditional distinction has to survive here as
+ * well, because the two are not interchangeable for a reader.
  */
 export const MORNING_BRIEF_OUTPUT_LANGUAGES = [
   ...SUPPORTED_USER_LOCALES,
-  "zh-Hans",
-  "zh-Hant",
 ] as const;
 
 export type MorningBriefOutputLanguage =

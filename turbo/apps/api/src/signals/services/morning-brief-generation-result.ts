@@ -21,6 +21,12 @@ import type { MorningBriefDisplayLink } from "./morning-brief-source-item";
  * with a named reason, never a skip and never a partially accepted brief. The
  * model supplies structure and prose only — every link in the rendered output
  * is resolved by program code from the collected source map.
+ *
+ * Exactly one thing is tolerated, and it is not part of the contract at all: a
+ * Markdown code fence wrapping the entire content is removed before parsing.
+ * That is framing, not content. What is inside it still has to be one JSON
+ * object and still has to satisfy the same strict union, so nothing below
+ * accepts an answer it would have refused before.
  */
 
 /** The maximum size of the accepted rendered result. */
@@ -205,6 +211,74 @@ function renderMarkdown(
   return `${lines.join("\n")}\n`;
 }
 
+/** An opening fence: three or more backticks, then an info string at most. */
+const OPENING_FENCE = /^(`{3,})[^`]*$/;
+
+/** A closing fence: backticks and nothing else. */
+const CLOSING_FENCE = /^`{3,}$/;
+
+/**
+ * Whether the content opens with a Markdown code fence.
+ *
+ * Deliberately broader than what `unfenced` removes: a fence that opens the
+ * content but does not wrap it is exactly the case worth seeing on a rejection.
+ */
+function opensWithFence(content: string): boolean {
+  return /^`{3,}/.test(content.trimStart());
+}
+
+/**
+ * The structural facts a rejected answer may leave behind — never its bytes.
+ *
+ * A rejected answer is discarded, so the only account of what the model
+ * actually returned is what is derived here. A length and a boolean say
+ * whether the problem was a fence, a preamble or the shape itself, and
+ * reproduce none of the evidence the answer was written from.
+ */
+export function morningBriefRejectedContentFacts(content: string | null): {
+  readonly contentLength: number | null;
+  readonly contentFenced: boolean | null;
+} {
+  return content === null
+    ? { contentLength: null, contentFenced: null }
+    : {
+        contentLength: content.length,
+        contentFenced: opensWithFence(content),
+      };
+}
+
+/**
+ * Remove a Markdown code fence that wraps the whole content, and nothing else.
+ *
+ * The request now carries the response contract as `response_format`, so a
+ * provider that honours it returns a bare object and none of this runs. It
+ * exists because the two mistakes cost wildly different amounts: a fence costs
+ * the owner a whole morning, and removing one that opens the first line and
+ * closes the last cannot turn an invalid answer into a valid one.
+ *
+ * This tolerates framing, never content. A preamble before the fence, prose
+ * after it, or a fence around something that is not a single JSON object all
+ * leave the content exactly as it arrived, so the strict parse and the strict
+ * union below reject them the way they always have.
+ */
+function unfenced(content: string): string {
+  const lines = content.split("\n");
+  const opening = OPENING_FENCE.exec((lines[0] ?? "").trimEnd());
+  if (opening === null || lines.length < 2) {
+    return content;
+  }
+  const closing = (lines.at(-1) ?? "").trim();
+  // A closing fence is at least as long as the one it closes, which is what
+  // keeps ```` from being closed by a ``` that belongs to nested content.
+  if (
+    !CLOSING_FENCE.test(closing) ||
+    closing.length < (opening[1] ?? "").length
+  ) {
+    return content;
+  }
+  return lines.slice(1, -1).join("\n").trim();
+}
+
 /**
  * Turn raw model content into an accepted result, or into a named rejection.
  *
@@ -219,7 +293,7 @@ export function interpretGenerationOutput(args: {
   /** The language this generation was frozen to, for the coverage note. */
   readonly language: string;
 }): GenerationResultOutcome {
-  const parsed = safeJsonParse(args.content.trim());
+  const parsed = safeJsonParse(unfenced(args.content.trim()));
   if (parsed === undefined) {
     return { kind: "rejected", reason: "invalid_json" };
   }
@@ -392,9 +466,10 @@ function renderComposedMarkdown(
  * Turn raw composed model content into an accepted result or a named rejection.
  *
  * Validation is strict and terminal exactly as the Slack-only path is: there is
- * no repair request, no second model and no lenient parse. A citation the
- * request never issued is an unknown reference and fails the whole answer, so a
- * model cannot attach a claim to evidence it was not given.
+ * no repair request, no second model and no lenient parse, and the same
+ * whole-content fence is the only framing removed before the parse. A citation
+ * the request never issued is an unknown reference and fails the whole answer,
+ * so a model cannot attach a claim to evidence it was not given.
  */
 export function interpretComposedGenerationOutput(args: {
   readonly content: string;
@@ -403,7 +478,7 @@ export function interpretComposedGenerationOutput(args: {
   /** The language the request asked for, for the program-owned coverage note. */
   readonly language: string;
 }): ComposedResultOutcome {
-  const parsed = safeJsonParse(args.content.trim());
+  const parsed = safeJsonParse(unfenced(args.content.trim()));
   if (parsed === undefined) {
     return { kind: "rejected", reason: "invalid_json" };
   }

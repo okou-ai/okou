@@ -32,8 +32,9 @@ export interface PiRuntimeIdentity {
 }
 
 export const PI_RUNTIME_RESOLVABLE_MODELS = {
+  // `claude-fable-5-1` is absent because the Fable frontier line runs on the
+  // Claude Code vendor harness, so no admitted route asks Pi to resolve it.
   anthropic: [
-    "claude-fable-5-1",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-sonnet-5",
@@ -50,6 +51,9 @@ export const PI_RUNTIME_RESOLVABLE_MODELS = {
   openai: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
   "openai-codex": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
   openrouter: [
+    "okou-1.0",
+    "okou-1.0-pro",
+    "okou-1.0-max",
     "deepseek/deepseek-v4.1-flash",
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",

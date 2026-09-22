@@ -278,20 +278,17 @@ test("Open plans from a gated video template", async () => {
   expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
 });
 
-test("Preview and send a website template", async () => {
-  const capture = mockTemplateChat();
+test("Preview a website template and return to its picker", async () => {
   const template = WEBSITE_TEMPLATE_ITEMS[0];
   if (!template) {
     throw new Error("Website template fixture not found");
   }
   const user = userEvent.setup();
-
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     host: "app.okou.ai",
   });
-
   const picker = await openTemplatePicker(user, "Website");
   await user.click(
     within(picker).getByLabelText(`Preview website template ${template.title}`),
@@ -322,16 +319,28 @@ test("Preview and send a website template", async () => {
     return currentPicker;
   });
   expect(returnedPicker).not.toHaveAttribute("data-nested-dialog-open");
+});
 
+test("Select and send a website template", async () => {
+  const capture = mockTemplateChat();
+  const template = WEBSITE_TEMPLATE_ITEMS[0];
+  if (!template) {
+    throw new Error("Website template fixture not found");
+  }
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+  const picker = await openTemplatePicker(user, "Website");
   await user.click(
-    within(returnedPicker).getByLabelText(
-      `Select website template ${template.title}`,
-    ),
+    within(picker).getByLabelText(`Select website template ${template.title}`),
   );
   await expectInlineTemplate(template.title);
   await sendComposerMessage(user, "Build this launch site");
   await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
+    return expect(capture.sentMessages).toHaveLength(1);
   });
   expect(templatePart(capture.sentMessages[0]!).template).toStrictEqual({
     type: "website",

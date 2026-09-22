@@ -1485,11 +1485,9 @@
           },
           "later": "Plus tard",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Ajouter à Slack",
             "description": "Ajoutez {{assistantName}} à l'espace Slack de votre équipe.",
             "note": "Vos collègues n'ont plus à passer par vous. Ils demandent dans le canal, et le travail revient dans le fil, à la vue de tous.",
-            "sampleChannel": "# growth",
             "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
           },
           "workflow": {
@@ -2176,6 +2174,7 @@
       "pinned": "Épinglé",
       "rename": "Renommer la discussion",
       "renameDescription": "Entrez un nouveau nom pour ce fil de discussion.",
+      "showAllChats": "Afficher toutes les discussions",
       "showArchived": "Afficher les archives",
       "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
@@ -6572,6 +6571,8 @@
         "description": "Choisissez votre langue préférée pour l'interface {{brandName}}",
         "label": "Langue",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

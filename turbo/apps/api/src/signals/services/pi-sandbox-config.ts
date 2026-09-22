@@ -20,6 +20,7 @@ import {
   getProviderRuntimeModel,
   getSecretNameForType,
   isBuiltInModelProviderType,
+  isOkouRunModel,
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -118,7 +119,7 @@ function piRuntimeContract(args: {
   readonly selectedModel: string;
   readonly codexServiceTier: "fast" | undefined;
 }): PiRuntimeContract {
-  if (isPiGptModel(args.selectedModel)) {
+  if (isPiGptModel(args.selectedModel) && !isOkouRunModel(args.selectedModel)) {
     return {
       thinkingLevel: "max",
       ...((isBuiltInModelProviderType(args.providerType) ||
@@ -475,12 +476,16 @@ function resolveResponsesPiModelConfig(
     model,
     apiKeyEnv,
     credentialSecretName,
+    ...(isOkouRunModel(provider.selectedModel)
+      ? { catalogModel: provider.selectedModel }
+      : {}),
     ...runtimeContract,
   } as const;
   return isPiAgentModelSupported({
     provider: config.provider,
     baseUrl: config.baseUrl,
     model: config.model,
+    ...(config.catalogModel ? { catalogModel: config.catalogModel } : {}),
     apiKey: "sandbox-secret",
     dialect: "openai-responses",
     transport: "sse",
@@ -497,7 +502,12 @@ export function resolvePiSandboxModelConfig(
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
   const config = resolvePiRouteModelConfig(provider, codexServiceTier);
-  if (!config || reasoningEffort === null || reasoningEffort === undefined) {
+  if (
+    !config ||
+    isOkouRunModel(provider?.selectedModel) ||
+    reasoningEffort === null ||
+    reasoningEffort === undefined
+  ) {
     return config;
   }
   return {

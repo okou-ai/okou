@@ -1460,11 +1460,9 @@
           },
           "later": "Nanti saja",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
             "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
             "note": "Rekan-rekan tidak perlu lewat Anda dulu. Mereka minta di kanal, dan hasilnya kembali di thread itu, di depan semua orang.",
-            "sampleChannel": "# growth",
             "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },
           "workflow": {
@@ -2122,6 +2120,7 @@
       "pinned": "Disematkan",
       "rename": "Ganti nama chat",
       "renameDescription": "Masukkan nama baru untuk thread chat ini.",
+      "showAllChats": "Tampilkan semua chat",
       "showArchived": "Tampilkan yang diarsipkan",
       "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
@@ -6498,6 +6497,8 @@
         "description": "Pilih bahasa pilihan Anda untuk antarmuka {{brandName}}",
         "label": "Bahasa",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",

@@ -25,6 +25,8 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
+  deleteBillingAttribution$,
+  deleteRun$,
   materializeHourlyUsage$,
   readUsageStorageCounts$,
   seedRun$,
@@ -535,6 +537,151 @@ describe("GET /api/usage/record", () => {
       title: "Older thread",
       credits: 80,
     });
+  });
+
+  it("keeps thread grouping and amounts after the run row is deleted", async () => {
+    const fixture = await entitledRecordActor();
+    const connectorProvider = uniqueProvider("decoupled-connector");
+    await seedConnectorPricing(connectorProvider);
+
+    const runCreatedAt = createdAt(30);
+    const thread = await createChatThreadRun(fixture, {
+      title: "Surviving thread",
+      createdAt: runCreatedAt,
+    });
+    await recordConnectorUsage(
+      fixture.actor,
+      thread.runId,
+      connectorProvider,
+      8,
+    );
+    await billing.processOrgUsageEvents(fixture.actor);
+    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+
+    const before = await accept(
+      apiClient().get({ query: {}, headers: authHeaders() }),
+      [200],
+    );
+
+    await store.set(deleteRun$, thread.runId, context.signal);
+
+    const after = await accept(
+      apiClient().get({ query: {}, headers: authHeaders() }),
+      [200],
+    );
+
+    // The bill is identical: the ledger no longer needs the run row to know
+    // which thread its usage belongs to, or when the run started.
+    expect(after.body.rows).toStrictEqual(before.body.rows);
+    expect(after.body.totalCredits).toBe(before.body.totalCredits);
+    expect(after.body.pagination).toStrictEqual(before.body.pagination);
+    expect(after.body.rows).toStrictEqual([
+      expect.objectContaining({
+        threadId: thread.threadId,
+        title: "Surviving thread",
+        credits: 80,
+        lastActivityAt: runCreatedAt.toISOString(),
+      }),
+    ]);
+    expect(after.body.totalCredits).toBe(80);
+  });
+
+  it("collapses an erased thread into the threadless row without moving credits", async () => {
+    const fixture = await entitledRecordActor();
+    const connectorProvider = uniqueProvider("erased-connector");
+    await seedConnectorPricing(connectorProvider);
+
+    const kept = await createChatThreadRun(fixture, {
+      title: "Kept thread",
+      createdAt: createdAt(30),
+    });
+    await recordConnectorUsage(fixture.actor, kept.runId, connectorProvider, 2);
+    const erased = await createChatThreadRun(fixture, {
+      title: "Erased thread",
+      createdAt: createdAt(20),
+    });
+    await recordConnectorUsage(
+      fixture.actor,
+      erased.runId,
+      connectorProvider,
+      5,
+    );
+    await billing.processOrgUsageEvents(fixture.actor);
+    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+
+    const before = await accept(
+      apiClient().get({ query: {}, headers: authHeaders() }),
+      [200],
+    );
+    expect(before.body.totalCredits).toBe(70);
+
+    await chatApi.deleteThread(fixture.actor, erased.threadId);
+    await store.set(deleteRun$, erased.runId, context.signal);
+
+    const after = await accept(
+      apiClient().get({ query: {}, headers: authHeaders() }),
+      [200],
+    );
+
+    // Erasing the thread and its run removes every trace of the content while
+    // the ledger still reconciles to the same credits.
+    expect(after.body.totalCredits).toBe(before.body.totalCredits);
+    expect(after.body.rows).toStrictEqual([
+      expect.objectContaining({
+        threadId: null,
+        title: "Unavailable thread",
+        credits: 50,
+      }),
+      expect.objectContaining({
+        threadId: kept.threadId,
+        title: "Kept thread",
+        credits: 20,
+      }),
+    ]);
+  });
+
+  it("groups by the live run while its billing attribution is missing", async () => {
+    const fixture = await entitledRecordActor();
+    const connectorProvider = uniqueProvider("legacy-connector");
+    await seedConnectorPricing(connectorProvider);
+
+    const thread = await createChatThreadRun(fixture, {
+      title: "Legacy thread",
+      createdAt: createdAt(30),
+    });
+    await recordConnectorUsage(
+      fixture.actor,
+      thread.runId,
+      connectorProvider,
+      4,
+    );
+    await billing.processOrgUsageEvents(fixture.actor);
+    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+
+    const before = await accept(
+      apiClient().get({ query: {}, headers: authHeaders() }),
+      [200],
+    );
+
+    // Rows written before the attribution table existed have no captured
+    // grouping identity. The transitional agent_runs join keeps their bill
+    // unchanged until the operator backfill reports no remaining thread gap.
+    await store.set(deleteBillingAttribution$, thread.runId, context.signal);
+
+    const after = await accept(
+      apiClient().get({ query: {}, headers: authHeaders() }),
+      [200],
+    );
+
+    expect(after.body.rows).toStrictEqual(before.body.rows);
+    expect(after.body.totalCredits).toBe(before.body.totalCredits);
+    expect(after.body.rows).toStrictEqual([
+      expect.objectContaining({
+        threadId: thread.threadId,
+        title: "Legacy thread",
+        credits: 40,
+      }),
+    ]);
   });
 
   it("returns rows, totals, tokens, and breakdowns from hourly storage", async () => {

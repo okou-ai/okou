@@ -3,6 +3,7 @@ import {
   getProviderRuntimeModel,
   isActiveRunModel,
   isBuiltInModelProviderType,
+  isOkouRunModel,
   isModelSupportedByProvider,
   modelProviderTypeSchema,
   type ActiveRunModel,
@@ -23,8 +24,12 @@ import {
  *   Re-evaluated only when that principle changes.
  * - `subscription-terms`: the vendor's subscription terms do not permit Pi to
  *   use the credential. Never re-evaluated.
- * - `capability`: the pinned Pi runtime cannot resolve the model. It clears
- *   itself once the pinned SDK catalog carries the identity.
+ * - `capability`: the pinned Pi runtime cannot resolve the model. The dynamic
+ *   gate in `isPiRouteRuntimeCapable` does clear itself once the pinned SDK
+ *   catalog carries the identity, but a model also pinned `pi: false` here for
+ *   this reason — `gpt-6-sol` today — still needs a human to flip the table.
+ *   Keeping the static exclusion is deliberate: a model must not reach Pi
+ *   without a recorded decision and a billing check.
  */
 export type PiExclusionReason =
   | "frontier-vendor-harness"
@@ -52,7 +57,14 @@ export type PiModelPolicy =
  * reader vocabulary in `pi-native-models.ts` stays frozen.
  */
 export const PI_MODEL_POLICY = {
-  "claude-fable-5-1": { pi: true, route: "claude-native" },
+  "okou-1.0-max": { pi: true, route: "gpt-codex" },
+  "okou-1.0-pro": { pi: true, route: "gpt-codex" },
+  "okou-1.0": { pi: true, route: "gpt-codex" },
+  "claude-fable-5-1": {
+    pi: false,
+    exception: "frontier-vendor-harness",
+    reason: "The Fable frontier line runs on the Claude Code vendor harness.",
+  },
   "claude-opus-5": { pi: true, route: "claude-native" },
   "claude-opus-4-8": { pi: true, route: "claude-native" },
   "claude-sonnet-5": { pi: true, route: "claude-native" },
@@ -114,6 +126,7 @@ function piRouteClass(model: string | null | undefined): PiRouteClass | null {
   return policy.pi ? policy.route : null;
 }
 
+/** Admission and API-owned billing must expand together. */
 export function isPiGptModel(
   model: string | null | undefined,
 ): model is PiGptModel {
@@ -166,6 +179,20 @@ function isDeepSeekPiProviderType(
   return value === "deepseek" || value === "openrouter-codex";
 }
 
+function isOkouPiExecutionRoute(
+  model: ActiveRunModel,
+  builtIn: boolean,
+  runtimeProviderType: string | null | undefined,
+  codexServiceTier: "fast" | undefined,
+): boolean {
+  return (
+    isOkouRunModel(model) &&
+    builtIn &&
+    runtimeProviderType === "openrouter-codex" &&
+    codexServiceTier === undefined
+  );
+}
+
 /** Route rules, unchanged: model policy decides eligibility, this decides reach. */
 function isPiRouteAdmitted(args: {
   readonly model: ActiveRunModel;
@@ -185,6 +212,14 @@ function isPiRouteAdmitted(args: {
       custom ||
       (isDeepSeekPiProviderType(args.modelProviderType) &&
         isModelSupportedByProvider(args.model, args.modelProviderType))
+    );
+  }
+  if (isOkouRunModel(args.model)) {
+    return isOkouPiExecutionRoute(
+      args.model,
+      builtIn,
+      args.runtimeProviderType,
+      args.codexServiceTier,
     );
   }
   const direct =
@@ -241,7 +276,10 @@ function builtInRouteIdentities(
     if (provider === null) {
       return [];
     }
-    identities.push({ provider, model: target.upstreamModel });
+    identities.push({
+      provider,
+      model: isOkouRunModel(model) ? model : target.upstreamModel,
+    });
   }
   return identities;
 }

@@ -1848,6 +1848,49 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 
+  it.each([
+    ["okou-1.0", "@preset/okou-1-0"],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro"],
+    ["okou-1.0-max", "@preset/okou-1-0-max"],
+  ] as const)(
+    "routes built-in %s only through its OpenRouter Preset",
+    async (model, preset) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await seedBuiltInModelCandidateKeys(context, model);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouModels]: true,
+        [FeatureSwitchKey.PiLoop]: false,
+      });
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OkouModels]: false,
+      });
+
+      const run = await sendChatRun(actor, {
+        agentId,
+        model,
+        prompt: "capture the managed Okou Preset route",
+      });
+      const { claim } = await claimChatRun(runnerGroup, run.runId);
+      const environment = claimEnvironment(claim);
+      expect(claim.cliAgentType).toBe("codex");
+      expect(claim.modelUsageProvider).toBe(model);
+      expect(environment.OPENAI_BASE_URL).toBe("https://openrouter.ai/api/v1");
+      expect(environment.OPENAI_MODEL).toBe(preset);
+      expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();
+      expect(environment.OKOU_CODEX_SERVICE_TIER).toBeUndefined();
+      await cancelChatRun(actor, run.runId);
+    },
+  );
+
   it.each(
     (
       ["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"] as const

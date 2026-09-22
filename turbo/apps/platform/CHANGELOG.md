@@ -11,6 +11,47 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.938.0](https://github.com/okou-ai/okou/compare/app-v0.937.0...app-v0.938.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+
+### Bug Fixes
+
+* **platform:** honor chat filters for the current thread ([#35911](https://github.com/okou-ai/okou/issues/35911)) ([ae9cd83](https://github.com/okou-ai/okou/commit/ae9cd83d86e7924048d76f499e323cd8e045a1ab))
+
+
+### Refactoring
+
+* **platform:** simplify conversation locator rail ([#35918](https://github.com/okou-ai/okou/issues/35918)) ([1bfb6f4](https://github.com/okou-ai/okou/commit/1bfb6f46b5d6e884400ef7209315e7dd2243cc7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+    * @okouai/core bumped to 8.696.0
+
+## [0.937.0](https://github.com/okou-ai/okou/compare/app-v0.936.0...app-v0.937.0) (2026-09-21)
+
+
+### Features
+
+* **platform:** add simplified and traditional chinese ui locales ([#35832](https://github.com/okou-ai/okou/issues/35832)) ([2c227d7](https://github.com/okou-ai/okou/commit/2c227d748b9e82987d2e50ee4d8cbb621314f6a6))
+* **platform:** add unread-only chat shortcut ([#35898](https://github.com/okou-ai/okou/issues/35898)) ([1ee024b](https://github.com/okou-ai/okou/commit/1ee024b30118b50892db99d13fee1b9d0747d63c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.487.0
+    * @okouai/core bumped to 8.695.0
+
 ## [0.936.0](https://github.com/okou-ai/okou/compare/app-v0.935.0...app-v0.936.0) (2026-09-21)
 
 

@@ -1,7 +1,7 @@
 import { createServer, type RequestListener } from "node:http";
 import { EventEmitter, once } from "node:events";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, normalizeContext } from "@earendil-works/pi-ai";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { projectPiApiAssistantMessage } from "./api-turn";
 import terminatedMessage from "./test/fixtures/codex-stream-terminated.json";
@@ -41,10 +41,10 @@ async function provider(handler: RequestListener) {
   return (signal?: AbortSignal) => {
     return piAgentStreamForConfig(config)(
       model,
-      {
+      normalizeContext({
         messages: [{ role: "user", content: "hello", timestamp: 1 }],
         tools: [],
-      },
+      }),
       { apiKey: config.apiKey, signal },
     );
   };
@@ -190,11 +190,13 @@ describe("Pi causal transport evidence", () => {
           type: "okou_model_request",
           timestamp: 1,
           details: {
+            // 0.86 restricts diagnostic details to JsonObject, so the hostile
+            // payload is JSON-shaped; the projection must still drop it.
             transportFailure: {
               ...evidence,
               errorName: "private-name",
               errorCode: "private-code",
-              cause: error,
+              cause: { name: "private-name", message: "private" },
             },
           },
         },

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.94.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.93.1...guest-agent-v0.94.0) (2026-09-21)
+
+
+### Features
+
+* **guest-agent:** name the record type on oversized and large cli stdout events ([#35865](https://github.com/okou-ai/okou/issues/35865)) ([23d2532](https://github.com/okou-ai/okou/commit/23d253227788d6588ff28288443a3decc4ab03a4))
+
 ## [0.93.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.93.0...guest-agent-v0.93.1) (2026-09-21)
 
 

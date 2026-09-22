@@ -1,5 +1,39 @@
 # Changelog
 
+## [9.352.4](https://github.com/okou-ai/okou/compare/cli-v9.352.3...cli-v9.352.4) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.488.0
+    * @okouai/core bumped to 8.696.0
+    * @okouai/pi-agent-runtime bumped to 1.35.0
+
+## [9.352.3](https://github.com/okou-ai/okou/compare/cli-v9.352.2...cli-v9.352.3) (2026-09-21)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35915](https://github.com/okou-ai/okou/issues/35915)) ([e9a08cf](https://github.com/okou-ai/okou/commit/e9a08cfb7946ad10b779b86603d08cfb9d08f6f5))
+
+## [9.352.2](https://github.com/okou-ai/okou/compare/cli-v9.352.1...cli-v9.352.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **pi:** upgrade the pinned runtime to 0.86.1 ([#35840](https://github.com/okou-ai/okou/issues/35840)) ([5a0e66c](https://github.com/okou-ai/okou/commit/5a0e66cbde8dbe2b3ed69f9c03fa8738b97bd0e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.487.0
+    * @okouai/core bumped to 8.695.0
+    * @okouai/pi-agent-runtime bumped to 1.34.7
+
 ## [9.352.1](https://github.com/okou-ai/okou/compare/cli-v9.352.0...cli-v9.352.1) (2026-09-21)
 
 

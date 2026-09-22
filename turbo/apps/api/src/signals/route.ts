@@ -153,6 +153,7 @@ import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { browserRoutes } from "./routes/browser";
 import { browserAuthorizationRoutes } from "./routes/browser-authorization";
+import { browserUserActionRoutes } from "./routes/browser-user-actions";
 import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
@@ -360,6 +361,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnerSshRoutes,
   ...browserRoutes,
   ...browserAuthorizationRoutes,
+  ...browserUserActionRoutes,
   ...modelPoliciesRoutes,
   ...modelProviderGatewayRoutes,
   ...modelProvidersRoutes,

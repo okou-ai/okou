@@ -21,6 +21,7 @@ import {
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isBuiltInModelProviderType,
+  isOkouRunModel,
   isModelSupportedByProvider,
   isLimitedFree1RestrictedRunModel,
   getRunModelAccess,
@@ -861,6 +862,7 @@ async function validateUpdatePolicies(
     if (!model) {
       return bad(`Unknown model "${policy.model}"`);
     }
+    const existing = existingByModel.get(policy.model);
     if (!existingByModel.has(model) && !modelsAllowedForNewPolicy.has(model)) {
       return bad(`Model "${model}" is not available to add`);
     }
@@ -872,7 +874,7 @@ async function validateUpdatePolicies(
       planRestrictedWrite({
         policy,
         providerType,
-        existing: existingByModel.get(policy.model),
+        existing,
         capabilities,
       })
     ) {
@@ -1156,6 +1158,10 @@ async function listOrgModelPolicies(
     }),
   );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
+  const okouModelsEnabled = isFeatureEnabled(
+    FeatureSwitchKey.OkouModels,
+    featureSwitchContext,
+  );
 
   return {
     policies,
@@ -1164,7 +1170,9 @@ async function listOrgModelPolicies(
     modelsAvailableToAdd: modelsAvailableToAdd(
       persistedRows,
       modelsAllowedForNewPolicy,
-    ),
+    ).filter((model) => {
+      return okouModelsEnabled || !isOkouRunModel(model);
+    }),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };

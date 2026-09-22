@@ -17,6 +17,37 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
+  it("keeps the Okou Add Model switch personal within one organization", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const orgId = `org_${randomUUID()}`;
+    const enabledUserId = `user_${randomUUID()}`;
+    clerk.session(enabledUserId, orgId, "org:member");
+
+    const enabled = await accept(
+      client().update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.OkouModels]: true } },
+      }),
+      [200],
+    );
+    expect(
+      enabled.body.effectiveSwitches[FeatureSwitchKey.OkouModels],
+    ).toBeTruthy();
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const peer = await accept(client().get({ headers }), [200]);
+    expect(
+      peer.body.effectiveSwitches[FeatureSwitchKey.OkouModels],
+    ).toBeFalsy();
+
+    clerk.session(enabledUserId, orgId, "org:member");
+    const original = await accept(client().get({ headers }), [200]);
+    expect(
+      original.body.effectiveSwitches[FeatureSwitchKey.OkouModels],
+    ).toBeTruthy();
+  });
+
   it("defaults subscription priority on for staff and applies overrides consistently across an organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

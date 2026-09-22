@@ -1,5 +1,39 @@
 # Changelog
 
+## [8.696.0](https://github.com/okou-ai/okou/compare/core-v8.695.0...core-v8.696.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+
+## [8.695.0](https://github.com/okou-ai/okou/compare/core-v8.694.0...core-v8.695.0) (2026-09-21)
+
+
+### Features
+
+* **pi:** keep the fable frontier line on the vendor harness ([#35908](https://github.com/okou-ai/okou/issues/35908)) ([c357b8e](https://github.com/okou-ai/okou/commit/c357b8ee446cc1bf47f8552d3f959b967069bc2f))
+* **platform:** add unread-only chat shortcut ([#35898](https://github.com/okou-ai/okou/issues/35898)) ([1ee024b](https://github.com/okou-ai/okou/commit/1ee024b30118b50892db99d13fee1b9d0747d63c))
+
+
+### Refactoring
+
+* **pi:** decide admission from an exhaustive model policy table ([#35893](https://github.com/okou-ai/okou/issues/35893)) ([97bde50](https://github.com/okou-ai/okou/commit/97bde504c506b16e583fb6a241eecc3d5a5eb516))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.487.0
+
 ## [8.694.0](https://github.com/okou-ai/okou/compare/core-v8.693.0...core-v8.694.0) (2026-09-21)
 
 

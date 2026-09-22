@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 
 import {
@@ -12,6 +13,7 @@ import {
   safeJsonParse,
   safeSync,
   settle,
+  settleIncludingAbort,
 } from "../utils";
 
 const BROWSER_USE_API_BASE_URL = "https://api.browser-use.com/api/v3";
@@ -74,6 +76,21 @@ const browserUseCdpFocusSchema = z.object({
   result: z.object({
     value: z.boolean().optional(),
   }),
+});
+const browserUseCdpFrameTreeSchema = z.object({
+  frameTree: z.object({
+    frame: z.object({
+      id: z.string().min(1),
+      loaderId: z.string().min(1),
+      url: z.string(),
+    }),
+  }),
+});
+const browserUseCdpRemoteObjectSchema = z.object({
+  object: z.object({ objectId: z.string().min(1) }),
+});
+const browserUseCdpValueSchema = z.object({
+  result: z.object({ value: z.unknown().optional() }),
 });
 const browserUseCdpLayoutMetricsSchema = z.object({
   cssVisualViewport: z.object({
@@ -142,6 +159,50 @@ export class BrowserUseProviderError extends Error {
     this.name = "BrowserUseProviderError";
     this.status = status;
     this.code = code;
+  }
+}
+
+export interface BrowserUseUserActionFingerprint {
+  readonly tagName: "INPUT" | "TEXTAREA";
+  readonly inputType: string;
+}
+
+export interface BrowserUseUserActionTarget {
+  readonly backendNodeId: number;
+  readonly fingerprint: BrowserUseUserActionFingerprint;
+}
+
+export interface BrowserUseUserActionValidation {
+  readonly pageTargetId: string;
+  readonly documentLoaderId: string;
+  readonly pageUrl: string;
+  readonly siteOrigin: string;
+  readonly fields: readonly BrowserUseUserActionTarget[];
+}
+
+export type BrowserUseUserActionValidationFailureCode =
+  | "page_target_not_found"
+  | "unsupported_page"
+  | "backend_node_not_found"
+  | "unsupported_control";
+
+export class BrowserUseUserActionValidationError extends Error {
+  readonly code: BrowserUseUserActionValidationFailureCode;
+
+  constructor(code: BrowserUseUserActionValidationFailureCode) {
+    super(`Browser user-action validation failed: ${code}`);
+    this.name = "BrowserUseUserActionValidationError";
+    this.code = code;
+  }
+}
+
+export class BrowserUseUserActionMutationError extends Error {
+  readonly writeStarted: boolean;
+
+  constructor(writeStarted: boolean) {
+    super("Browser user-action mutation failed");
+    this.name = "BrowserUseUserActionMutationError";
+    this.writeStarted = writeStarted;
   }
 }
 
@@ -277,7 +338,8 @@ async function withBrowserUseCdpSocket<T>(
 ): Promise<T> {
   const websocketUrl = await browserUseCdpWebSocketUrl(cdpUrl, signal);
   const socket = new WebSocket(websocketUrl);
-  const result = await settle(
+  // Cancellation is rethrown only after the socket cleanup below has run.
+  const result = await settleIncludingAbort(
     (async () => {
       await waitForBrowserUseCdpSocket(socket, signal);
       return await operation(socket);
@@ -510,6 +572,639 @@ export async function captureBrowserUseScreenshot(
     );
     return Buffer.from(screenshot.data, "base64");
   });
+}
+
+interface AttachedBrowserUsePage {
+  readonly targetId: string;
+  readonly sessionId: string;
+  readonly url: string;
+}
+
+async function attachBrowserUsePage(
+  socket: WebSocket,
+  target: { readonly targetId: string; readonly url: string },
+  commandId: number,
+  signal: AbortSignal,
+): Promise<AttachedBrowserUsePage> {
+  const attached = browserUseCdpAttachedTargetSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: commandId,
+        method: "Target.attachToTarget",
+        params: { targetId: target.targetId, flatten: true },
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  return { ...target, sessionId: attached.sessionId };
+}
+
+function httpPageUrl(value: string): URL | null {
+  if (!URL.canParse(value)) {
+    return null;
+  }
+  const url = new URL(value);
+  return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+}
+
+function safeControlInspection(value: unknown):
+  | (BrowserUseUserActionFingerprint & {
+      readonly connected: boolean;
+      readonly mainDocument: boolean;
+      readonly writable: boolean;
+    })
+  | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    (candidate.tagName !== "INPUT" && candidate.tagName !== "TEXTAREA") ||
+    typeof candidate.inputType !== "string" ||
+    candidate.inputType.length > 64 ||
+    typeof candidate.connected !== "boolean" ||
+    typeof candidate.mainDocument !== "boolean" ||
+    typeof candidate.writable !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    tagName: candidate.tagName,
+    inputType: candidate.inputType,
+    connected: candidate.connected,
+    mainDocument: candidate.mainDocument,
+    writable: candidate.writable,
+  };
+}
+
+function browserUseControlInspectionFunction(): string {
+  return `function (...otherControls) {
+    const controls = [this, ...otherControls];
+    const supportedInputTypes = new Set([
+      "text", "password", "email", "tel", "url", "search", "number"
+    ]);
+    return controls.map((control) => {
+      const input = control instanceof HTMLInputElement;
+      const textarea = control instanceof HTMLTextAreaElement;
+      const supported =
+        textarea || (input && supportedInputTypes.has(control.type));
+      return {
+        tagName: control.tagName,
+        inputType: input ? control.type : textarea ? "textarea" : "",
+        connected: control.isConnected,
+        mainDocument: control.ownerDocument === document,
+        writable: supported && !control.readOnly && !control.disabled,
+      };
+    });
+  }`;
+}
+
+function safeControlInspections(
+  value: unknown,
+  expectedLength: number,
+): readonly NonNullable<ReturnType<typeof safeControlInspection>>[] | null {
+  if (!Array.isArray(value) || value.length !== expectedLength) {
+    return null;
+  }
+  const inspections: NonNullable<ReturnType<typeof safeControlInspection>>[] =
+    [];
+  for (const item of value) {
+    const inspection = safeControlInspection(item);
+    if (!inspection) {
+      return null;
+    }
+    inspections.push(inspection);
+  }
+  return inspections;
+}
+
+async function inspectBrowserUseControls(
+  socket: WebSocket,
+  sessionId: string,
+  objectIds: readonly string[],
+  commandId: number,
+  signal: AbortSignal,
+): Promise<
+  readonly NonNullable<ReturnType<typeof safeControlInspection>>[] | null
+> {
+  const [firstObjectId, ...otherObjectIds] = objectIds;
+  if (!firstObjectId) {
+    return [];
+  }
+  const inspected = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: commandId,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: firstObjectId,
+          functionDeclaration: browserUseControlInspectionFunction(),
+          arguments: otherObjectIds.map((objectId) => {
+            return { objectId };
+          }),
+          returnByValue: true,
+        },
+        sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  return safeControlInspections(inspected.result.value, objectIds.length);
+}
+
+async function openBrowserUseValidationPage(
+  socket: WebSocket,
+  pageTargetId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly page: AttachedBrowserUsePage;
+  readonly commandId: number;
+}> {
+  const targets = browserUseCdpTargetsSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      { id: 1, method: "Target.getTargets", params: {} },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  const pageTarget = targets.targetInfos.find((target) => {
+    return target.type === "page" && target.targetId === pageTargetId;
+  });
+  if (!pageTarget) {
+    throw new BrowserUseUserActionValidationError("page_target_not_found");
+  }
+  return {
+    page: await attachBrowserUsePage(socket, pageTarget, 2, signal),
+    commandId: 3,
+  };
+}
+
+async function resolveBrowserUseValidationControl(
+  socket: WebSocket,
+  args: {
+    readonly sessionId: string;
+    readonly backendNodeId: number;
+    readonly commandId: number;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly objectId: string;
+  readonly commandId: number;
+}> {
+  const resolved = await settle(
+    sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId,
+        method: "DOM.resolveNode",
+        params: { backendNodeId: args.backendNodeId },
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+  );
+  signal.throwIfAborted();
+  const remote = resolved.ok
+    ? browserUseCdpRemoteObjectSchema.safeParse(resolved.value)
+    : null;
+  if (!remote?.success) {
+    throw new BrowserUseUserActionValidationError("backend_node_not_found");
+  }
+  return {
+    objectId: remote.data.object.objectId,
+    commandId: args.commandId + 1,
+  };
+}
+
+async function validateBrowserUseUserActionOnSocket(
+  socket: WebSocket,
+  target: {
+    readonly pageTargetId: string;
+    readonly backendNodeIds: readonly number[];
+  },
+  signal: AbortSignal,
+): Promise<BrowserUseUserActionValidation> {
+  const opened = await openBrowserUseValidationPage(
+    socket,
+    target.pageTargetId,
+    signal,
+  );
+  let commandId = opened.commandId;
+  const frameTree = browserUseCdpFrameTreeSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: commandId,
+        method: "Page.getFrameTree",
+        params: {},
+        sessionId: opened.page.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  commandId += 1;
+  const pageUrl = httpPageUrl(frameTree.frameTree.frame.url);
+  if (!pageUrl) {
+    throw new BrowserUseUserActionValidationError("unsupported_page");
+  }
+  const capturedControls: {
+    readonly backendNodeId: number;
+    readonly objectId: string;
+  }[] = [];
+  for (const backendNodeId of target.backendNodeIds) {
+    const captured = await resolveBrowserUseValidationControl(
+      socket,
+      {
+        sessionId: opened.page.sessionId,
+        backendNodeId,
+        commandId,
+      },
+      signal,
+    );
+    commandId = captured.commandId;
+    capturedControls.push({ backendNodeId, objectId: captured.objectId });
+  }
+  const inspections = await inspectBrowserUseControls(
+    socket,
+    opened.page.sessionId,
+    capturedControls.map((control) => {
+      return control.objectId;
+    }),
+    commandId,
+    signal,
+  );
+  if (
+    !inspections ||
+    inspections.some((inspection) => {
+      return (
+        !inspection.connected ||
+        !inspection.mainDocument ||
+        !inspection.writable
+      );
+    })
+  ) {
+    throw new BrowserUseUserActionValidationError("unsupported_control");
+  }
+  const fields = capturedControls.map((control, index) => {
+    const inspection = inspections[index];
+    if (!inspection) {
+      throw new BrowserUseUserActionValidationError("unsupported_control");
+    }
+    return {
+      backendNodeId: control.backendNodeId,
+      fingerprint: {
+        tagName: inspection.tagName,
+        inputType: inspection.inputType,
+      },
+    } satisfies BrowserUseUserActionTarget;
+  });
+  return {
+    pageTargetId: opened.page.targetId,
+    documentLoaderId: frameTree.frameTree.frame.loaderId,
+    pageUrl: pageUrl.toString(),
+    siteOrigin: pageUrl.origin,
+    fields,
+  };
+}
+
+/**
+ * Validate CLI-resolved creation targets without querying or rediscovering
+ * controls. The returned fingerprints are derived from the current document.
+ */
+export async function validateBrowserUseUserAction(
+  cdpUrl: string,
+  target: {
+    readonly pageTargetId: string;
+    readonly backendNodeIds: readonly number[];
+  },
+  signal: AbortSignal,
+): Promise<BrowserUseUserActionValidation> {
+  const cdpSignal = browserUseCdpSignal(signal);
+  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+    return await validateBrowserUseUserActionOnSocket(
+      socket,
+      target,
+      cdpSignal,
+    );
+  });
+}
+
+export interface BrowserUseUserActionApplyField {
+  readonly backendNodeId: number;
+  readonly fingerprint: BrowserUseUserActionFingerprint;
+  readonly value?: string;
+}
+
+interface BrowserUseUserActionApplyTarget {
+  readonly pageTargetId: string;
+  readonly documentLoaderId: string;
+  readonly pageUrlHash: string;
+  readonly fields: readonly BrowserUseUserActionApplyField[];
+}
+
+interface ResolvedBrowserUseUserActionField {
+  readonly objectId: string;
+  readonly value?: string;
+}
+
+interface WritableBrowserUseUserActionField {
+  readonly objectId: string;
+  readonly value: string;
+}
+
+async function openBrowserUseApplyPage(
+  socket: WebSocket,
+  target: BrowserUseUserActionApplyTarget,
+  signal: AbortSignal,
+): Promise<AttachedBrowserUsePage | null> {
+  const targets = browserUseCdpTargetsSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      { id: 1, method: "Target.getTargets", params: {} },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  const targetInfo = targets.targetInfos.find((candidate) => {
+    return (
+      candidate.type === "page" && candidate.targetId === target.pageTargetId
+    );
+  });
+  if (!targetInfo) {
+    return null;
+  }
+  const attached = await attachBrowserUsePage(socket, targetInfo, 2, signal);
+  const frameTree = browserUseCdpFrameTreeSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: 3,
+        method: "Page.getFrameTree",
+        params: {},
+        sessionId: attached.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  const currentPageUrl = httpPageUrl(frameTree.frameTree.frame.url);
+  if (
+    frameTree.frameTree.frame.loaderId !== target.documentLoaderId ||
+    !currentPageUrl ||
+    createHash("sha256").update(currentPageUrl.toString()).digest("hex") !==
+      target.pageUrlHash
+  ) {
+    return null;
+  }
+  return attached;
+}
+
+async function resolveBrowserUseApplyFields(
+  socket: WebSocket,
+  sessionId: string,
+  fields: readonly BrowserUseUserActionApplyField[],
+  signal: AbortSignal,
+): Promise<{
+  readonly fields: readonly ResolvedBrowserUseUserActionField[];
+  readonly commandId: number;
+} | null> {
+  let commandId = 4;
+  const objectIds: string[] = [];
+  for (const field of fields) {
+    const remoteResult = await settle(
+      sendBrowserUseCdpCommand(
+        socket,
+        {
+          id: commandId,
+          method: "DOM.resolveNode",
+          params: { backendNodeId: field.backendNodeId },
+          sessionId,
+        },
+        signal,
+      ),
+    );
+    if (!remoteResult.ok) {
+      return null;
+    }
+    const remote = browserUseCdpRemoteObjectSchema.safeParse(
+      remoteResult.value,
+    );
+    if (!remote.success) {
+      return null;
+    }
+    objectIds.push(remote.data.object.objectId);
+    commandId += 1;
+  }
+  const inspections = await inspectBrowserUseControls(
+    socket,
+    sessionId,
+    objectIds,
+    commandId,
+    signal,
+  );
+  if (!inspections) {
+    return null;
+  }
+  commandId += objectIds.length === 0 ? 0 : 1;
+  const resolved: ResolvedBrowserUseUserActionField[] = [];
+  for (const [index, field] of fields.entries()) {
+    const inspection = inspections[index];
+    const objectId = objectIds[index];
+    if (
+      !inspection ||
+      !objectId ||
+      !inspection.connected ||
+      !inspection.mainDocument ||
+      !inspection.writable ||
+      inspection.tagName !== field.fingerprint.tagName ||
+      inspection.inputType !== field.fingerprint.inputType
+    ) {
+      return null;
+    }
+    resolved.push({
+      objectId,
+      ...(field.value === undefined ? {} : { value: field.value }),
+    });
+  }
+  return { fields: resolved, commandId };
+}
+
+function writableBrowserUseFields(
+  fields: readonly ResolvedBrowserUseUserActionField[],
+): readonly WritableBrowserUseUserActionField[] {
+  const writable: WritableBrowserUseUserActionField[] = [];
+  for (const field of fields) {
+    if (field.value !== undefined) {
+      writable.push({ objectId: field.objectId, value: field.value });
+    }
+  }
+  return writable;
+}
+
+function browserUseAggregateValueArguments(
+  fields: readonly WritableBrowserUseUserActionField[],
+): readonly Readonly<Record<string, unknown>>[] {
+  const [, ...otherFields] = fields;
+  return otherFields.flatMap((field) => {
+    return [{ objectId: field.objectId }, { value: field.value }];
+  });
+}
+
+async function writeBrowserUseApplyFields(
+  socket: WebSocket,
+  args: {
+    readonly sessionId: string;
+    readonly fields: readonly ResolvedBrowserUseUserActionField[];
+    readonly commandId: number;
+  },
+  mutation: { writeStarted: boolean },
+  signal: AbortSignal,
+): Promise<void> {
+  const fields = writableBrowserUseFields(args.fields);
+  const [firstField] = fields;
+  if (!firstField) {
+    return;
+  }
+  const remainingArguments = browserUseAggregateValueArguments(fields);
+  mutation.writeStarted = true;
+  const wrote = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: firstField.objectId,
+          functionDeclaration: `function (nextValue, ...otherControlValues) {
+            const controls = [this];
+            const values = [nextValue];
+            for (let index = 0; index < otherControlValues.length; index += 2) {
+              controls.push(otherControlValues[index]);
+              values.push(otherControlValues[index + 1]);
+            }
+            for (let index = 0; index < controls.length; index += 1) {
+              const control = controls[index];
+              const prototype = control instanceof HTMLTextAreaElement
+                ? HTMLTextAreaElement.prototype
+                : HTMLInputElement.prototype;
+              const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+              if (!setter) throw new Error("native setter unavailable");
+              setter.call(control, values[index]);
+              control.dispatchEvent(new Event("input", { bubbles: true }));
+              control.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            return true;
+          }`,
+          arguments: [{ value: firstField.value }, ...remainingArguments],
+          awaitPromise: false,
+          returnByValue: true,
+        },
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  if (wrote.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
+  }
+  const verified = browserUseCdpValueSchema.parse(
+    await sendBrowserUseCdpCommand(
+      socket,
+      {
+        id: args.commandId + 1,
+        method: "Runtime.callFunctionOn",
+        params: {
+          objectId: firstField.objectId,
+          functionDeclaration: `function (expected, ...otherControlValues) {
+            const controls = [this];
+            const expectedValues = [expected];
+            for (let index = 0; index < otherControlValues.length; index += 2) {
+              controls.push(otherControlValues[index]);
+              expectedValues.push(otherControlValues[index + 1]);
+            }
+            return controls.every((control, index) => {
+              return control.isConnected &&
+                control.ownerDocument === document &&
+                control.value === expectedValues[index];
+            });
+          }`,
+          arguments: [{ value: firstField.value }, ...remainingArguments],
+          returnByValue: true,
+        },
+        sessionId: args.sessionId,
+      },
+      signal,
+    ),
+    { reportInput: true },
+  );
+  if (verified.result.value !== true) {
+    throw new BrowserUseUserActionMutationError(true);
+  }
+}
+
+async function applyBrowserUseUserActionOnSocket(
+  socket: WebSocket,
+  target: BrowserUseUserActionApplyTarget,
+  mutation: { writeStarted: boolean },
+  signal: AbortSignal,
+): Promise<"succeeded" | "stale"> {
+  const attached = await openBrowserUseApplyPage(socket, target, signal);
+  if (!attached) {
+    return "stale";
+  }
+  const resolved = await resolveBrowserUseApplyFields(
+    socket,
+    attached.sessionId,
+    target.fields,
+    signal,
+  );
+  if (!resolved) {
+    return "stale";
+  }
+  await writeBrowserUseApplyFields(
+    socket,
+    {
+      sessionId: attached.sessionId,
+      fields: resolved.fields,
+      commandId: resolved.commandId,
+    },
+    mutation,
+    signal,
+  );
+  return "succeeded";
+}
+
+export async function applyBrowserUseUserAction(
+  cdpUrl: string,
+  target: BrowserUseUserActionApplyTarget,
+  signal: AbortSignal,
+): Promise<"succeeded" | "stale"> {
+  const mutation = { writeStarted: false };
+  const cdpSignal = browserUseCdpSignal(signal);
+  const operation = await settleIncludingAbort(
+    withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+      return await applyBrowserUseUserActionOnSocket(
+        socket,
+        target,
+        mutation,
+        cdpSignal,
+      );
+    }),
+  );
+  if (!operation.ok) {
+    if (operation.error instanceof BrowserUseUserActionMutationError) {
+      throw operation.error;
+    }
+    throw new BrowserUseUserActionMutationError(mutation.writeStarted);
+  }
+  return operation.value;
 }
 
 function disposableBrowserUseTabUrl(url: string): boolean {
