@@ -387,17 +387,13 @@ export function SlashTemplatePanel({
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const { t } = useTranslation();
-  // The pointer owns the index while it is inside the panel, so a row it has
-  // left drops back to its default fill even though the right pane still shows
-  // what that row previewed — the pointer is on its way into those covers, and
-  // a mark left behind would disagree with wherever it lands next. The keyboard
-  // mark comes back once the pointer leaves and the preview follows it again.
-  // Each row publishes the result as `data-active`, so which row is marked is
-  // readable without depending on the utility class that paints it.
-  const markedIndex = previewIndex === null ? selectedIndex : -1;
+  // Keep the mark on the previewed row while the pointer crosses into its
+  // flyout. Keyboard navigation or leaving both cards restores the keyboard
+  // selection and its preview together.
+  const markedIndex = previewIndex ?? selectedIndex;
   // A workflow row indexes past the categories, so it previews nothing and the
   // flyout closes.
-  const detailCategory = categories[previewIndex ?? selectedIndex] ?? null;
+  const detailCategory = categories[markedIndex] ?? null;
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
