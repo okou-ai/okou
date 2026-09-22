@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
-import { buildBuiltInModelKeys } from "../dev-seed";
+import { buildBuiltInModelKeys, USAGE_PRICING } from "../dev-seed";
 
 function readEnvFrom(
   values: Readonly<Record<string, string | undefined>>,
@@ -104,4 +104,32 @@ describe("buildBuiltInModelKeys", () => {
 
     expect(deepSeekKeys).toStrictEqual([]);
   });
+});
+
+describe("usage pricing", () => {
+  it.each([
+    ["okou-1.0", "gpt-5.6-luna"],
+    ["okou-1.0-pro", "gpt-5.6-sol"],
+    ["okou-1.0-max", "gpt-5.6-sol"],
+  ] as const)(
+    "seeds %s from the local %s schedule",
+    (okouModel, sourceModel) => {
+      const comparableRows = (provider: string) => {
+        return USAGE_PRICING.filter((row) => {
+          return row.kind === "model" && row.provider === provider;
+        }).map((row) => {
+          return {
+            category: row.category,
+            unitPrice: row.unitPrice,
+            unitSize: row.unitSize,
+          };
+        });
+      };
+
+      expect(comparableRows(okouModel)).toStrictEqual(
+        comparableRows(sourceModel),
+      );
+      expect(comparableRows(okouModel)).toHaveLength(16);
+    },
+  );
 });

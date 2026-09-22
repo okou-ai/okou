@@ -340,6 +340,71 @@ describe("Pi agent model adapter", () => {
     },
   );
 
+  it("leaves Okou reasoning entirely to the OpenRouter Preset", async () => {
+    const provider = await retryableCodexProvider();
+    try {
+      const config = {
+        provider: "openrouter",
+        baseUrl: provider.baseUrl,
+        apiKey: "okou-preset-key",
+        model: "@preset/okou-1-0",
+        catalogModel: "okou-1.0",
+        dialect: "openai-responses",
+        transport: "sse",
+      } as const;
+      const model = resolvePiAgentModel(config);
+      if (!model) throw new Error("Expected an Okou model");
+
+      await piAgentStreamForConfig(config)(
+        model,
+        normalizeContext({
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        }),
+        { apiKey: config.apiKey },
+      ).result();
+
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]?.body).toMatchObject({
+        model: "@preset/okou-1-0",
+        stream: true,
+        store: false,
+      });
+      expect(provider.requests[0]?.body).not.toHaveProperty("reasoning");
+    } finally {
+      await provider.close();
+    }
+  });
+
+  it.each([
+    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", 0.2, 1.2],
+    ["okou-1.0-pro", "@preset/okou-1-0-pro", "Okou 1.0 Pro", 5, 30],
+    ["okou-1.0-max", "@preset/okou-1-0-max", "Okou 1.0 Max", 5, 30],
+  ] as const)(
+    "resolves independent %s metadata for request preset %s",
+    (catalogModel, model, name, input, output) => {
+      expect(
+        resolvePiAgentModel({
+          provider: "openrouter",
+          baseUrl: "https://openrouter.ai/api/v1",
+          apiKey: "test-key",
+          model,
+          catalogModel,
+          dialect: "openai-responses",
+          transport: "sse",
+        }),
+      ).toMatchObject({
+        id: model,
+        name,
+        provider: "openrouter",
+        api: "openai-responses",
+        reasoning: false,
+        contextWindow: 1_050_000,
+        maxTokens: 128_000,
+        cost: { input, output },
+      });
+    },
+  );
+
   it.each([
     {
       name: "public Responses",

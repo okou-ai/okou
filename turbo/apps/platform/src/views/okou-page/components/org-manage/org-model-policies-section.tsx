@@ -123,6 +123,7 @@ function isAddableBuiltInModel(model: SupportedRunModel): boolean {
   const providerType = getModelIconType(model);
   return (
     providerType === "openai-api-key" ||
+    providerType === "built-in" ||
     providerType === "anthropic-api-key" ||
     providerType === "deepseek"
   );

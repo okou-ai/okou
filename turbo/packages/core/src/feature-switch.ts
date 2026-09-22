@@ -365,6 +365,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.OkouModels]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
+    enabled: false,
+  },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",
     description:

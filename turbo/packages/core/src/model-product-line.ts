@@ -15,6 +15,7 @@
  * one is the moment to decide whether it is a frontier line.
  */
 export const MODEL_PRODUCT_LINES = [
+  "okou",
   "fable",
   "opus",
   "sonnet",

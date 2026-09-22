@@ -27,6 +27,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
     expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
+    expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
   });
 });
@@ -199,6 +200,32 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.DeepSeekAlternativeRouting]: false },
       }),
     ).toBe(false);
+  });
+
+  it("keeps Okou models off for everyone until an explicit override enables them", () => {
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: staffOrgId },
+      { orgId: staffOrgId, userId: "staff-user", email: "staff@okou.ai" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, context)).toBe(
+        false,
+      );
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OkouModels, {
+          ...context,
+          overrides: { [FeatureSwitchKey.OkouModels]: true },
+        }),
+      ).toBe(true);
+    }
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description:
+        "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
+      rolloutStage: "alpha",
+    });
   });
 
   it("should return true for globally enabled switch", () => {
