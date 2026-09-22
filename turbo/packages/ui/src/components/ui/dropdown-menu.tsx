@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 
-import { asChildRender } from "../../lib/base-ui-compat";
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
@@ -17,28 +16,16 @@ function DropdownMenuPortal(props: MenuPrimitive.Portal.Props) {
   return <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />;
 }
 
-interface DropdownMenuTriggerProps extends Omit<
-  MenuPrimitive.Trigger.Props,
-  "render"
-> {
-  asChild?: boolean;
-  render?: MenuPrimitive.Trigger.Props["render"];
-}
-
 const DropdownMenuTrigger = React.forwardRef<
   HTMLButtonElement,
-  DropdownMenuTriggerProps
->(({ asChild = false, children, render, ...props }, ref) => {
-  const child = asChild ? asChildRender(children) : undefined;
+  MenuPrimitive.Trigger.Props
+>((props, ref) => {
   return (
     <MenuPrimitive.Trigger
       ref={ref}
       data-slot="dropdown-menu-trigger"
-      render={child ?? render}
       {...props}
-    >
-      {asChild ? undefined : children}
-    </MenuPrimitive.Trigger>
+    />
   );
 });
 DropdownMenuTrigger.displayName = "DropdownMenuTrigger";
@@ -62,11 +49,7 @@ type DropdownMenuPositionerProps = Pick<
 >;
 
 type DropdownMenuContentProps = MenuPrimitive.Popup.Props &
-  DropdownMenuPositionerProps & {
-    avoidCollisions?: boolean;
-    hideWhenDetached?: boolean;
-    updatePositionStrategy?: "always" | "optimized";
-  };
+  DropdownMenuPositionerProps;
 
 // Concentric corners: an inner radius must equal the outer radius minus the gap
 // between them, or the two arcs cross instead of nesting. This surface is 12px
@@ -80,48 +63,30 @@ const DropdownMenuContent = React.forwardRef<
     {
       align = "start",
       alignOffset = 0,
-      avoidCollisions,
       children,
       className,
       collisionAvoidance,
       collisionBoundary,
       collisionPadding,
       disableAnchorTracking,
-      hideWhenDetached = false,
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
       sticky,
-      updatePositionStrategy,
       ...props
     },
     ref,
   ) => {
-    const resolvedCollisionAvoidance =
-      collisionAvoidance ??
-      (avoidCollisions === false
-        ? {
-            align: "none" as const,
-            fallbackAxisSide: "none" as const,
-            side: "none" as const,
-          }
-        : undefined);
-
     return (
       <DropdownMenuPortal>
         <MenuPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
-          className={cn(
-            "outline-none",
-            hideWhenDetached && "data-anchor-hidden:invisible",
-          )}
-          collisionAvoidance={resolvedCollisionAvoidance}
+          className="outline-none"
+          collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
           collisionPadding={resolveCollisionPadding(collisionPadding)}
-          disableAnchorTracking={
-            disableAnchorTracking ?? updatePositionStrategy === "optimized"
-          }
+          disableAnchorTracking={disableAnchorTracking}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}
@@ -146,37 +111,23 @@ const DropdownMenuContent = React.forwardRef<
 );
 DropdownMenuContent.displayName = "DropdownMenuContent";
 
-interface DropdownMenuItemProps extends Omit<
-  MenuPrimitive.Item.Props,
-  "onClick" | "onSelect"
-> {
-  onClick?: MenuPrimitive.Item.Props["onClick"];
-  onSelect?: (event: Event) => void;
-}
-
-const DropdownMenuItem = React.forwardRef<HTMLElement, DropdownMenuItemProps>(
-  ({ className, onClick, onSelect, ...props }, ref) => {
-    return (
-      <MenuPrimitive.Item
-        ref={ref}
-        data-slot="dropdown-menu-item"
-        className={cn(
-          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-          MENU_ROW_HEIGHT_CLASS,
-          className,
-        )}
-        onClick={(event) => {
-          onSelect?.(event.nativeEvent);
-          if (event.nativeEvent.defaultPrevented) {
-            event.preventBaseUIHandler();
-          }
-          onClick?.(event);
-        }}
-        {...props}
-      />
-    );
-  },
-);
+const DropdownMenuItem = React.forwardRef<
+  HTMLElement,
+  MenuPrimitive.Item.Props
+>(({ className, ...props }, ref) => {
+  return (
+    <MenuPrimitive.Item
+      ref={ref}
+      data-slot="dropdown-menu-item"
+      className={cn(
+        "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        MENU_ROW_HEIGHT_CLASS,
+        className,
+      )}
+      {...props}
+    />
+  );
+});
 DropdownMenuItem.displayName = "DropdownMenuItem";
 
 const DropdownMenuSeparator = React.forwardRef<

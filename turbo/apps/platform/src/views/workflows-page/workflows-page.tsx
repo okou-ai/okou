@@ -1042,27 +1042,29 @@ function SortDropdown({
   });
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="h-9 shrink-0 gap-1.5 rounded-lg"
-        >
-          <ArrowUpDown size={15} className="" />
-          {current?.label ??
-            i18n.t(($) => {
-              return $.workflows.list.sort.label;
-            })}
-          <ChevronDown size={14} />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="h-9 shrink-0 gap-1.5 rounded-lg"
+          />
+        }
+      >
+        <ArrowUpDown size={15} className="" />
+        {current?.label ??
+          i18n.t(($) => {
+            return $.workflows.list.sort.label;
+          })}
+        <ChevronDown size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {options.map((option) => {
           return (
             <DropdownMenuItem
               key={option.value}
-              onSelect={() => {
+              onClick={() => {
                 onChange(option.value);
               }}
             >
@@ -1089,38 +1091,40 @@ function AgentFilterDropdown({
   });
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="h-9 shrink-0 gap-1.5 rounded-lg"
-        >
-          {selected ? (
-            <AgentAvatarImg
-              name={selected.agentId}
-              alt={selected.label}
-              className="h-4 w-4 shrink-0 rounded"
-              size={16}
-            />
-          ) : (
-            <User size={15} className="" />
-          )}
-          <span className="max-w-[8rem] truncate">
-            {selected?.label ??
-              i18n.t(($) => {
-                return $.workflows.list.allAgents;
-              })}
-          </span>
-          <ChevronDown size={14} />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="h-9 shrink-0 gap-1.5 rounded-lg"
+          />
+        }
+      >
+        {selected ? (
+          <AgentAvatarImg
+            name={selected.agentId}
+            alt={selected.label}
+            className="h-4 w-4 shrink-0 rounded"
+            size={16}
+          />
+        ) : (
+          <User size={15} className="" />
+        )}
+        <span className="max-w-[8rem] truncate">
+          {selected?.label ??
+            i18n.t(($) => {
+              return $.workflows.list.allAgents;
+            })}
+        </span>
+        <ChevronDown size={14} />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
         className="max-h-[min(20rem,var(--available-height))] overflow-y-auto"
       >
         <DropdownMenuItem
-          onSelect={() => {
+          onClick={() => {
             onChange(WORKFLOW_ALL_AGENTS);
           }}
         >
@@ -1133,7 +1137,7 @@ function AgentFilterDropdown({
           return (
             <DropdownMenuItem
               key={option.agentId}
-              onSelect={() => {
+              onClick={() => {
                 onChange(option.agentId);
               }}
             >

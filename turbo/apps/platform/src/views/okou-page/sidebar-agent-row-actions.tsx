@@ -158,30 +158,32 @@ export function AgentRowSideActions({
       {hasMenuActions ? (
         <TooltipProvider delayDuration={200}>
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={triggerClassName(variant, isPrimarySelected)}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                aria-label={menuCopy.openMenu}
-                disabled={triggerDisabled}
-              >
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="flex h-full w-full items-center justify-center">
-                      <Ellipsis size={16} />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side={variant === "sidebar" ? "bottom" : "right"}
-                  >
-                    <p className="text-xs">{menuCopy.more}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </button>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  className={triggerClassName(variant, isPrimarySelected)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  aria-label={menuCopy.openMenu}
+                  disabled={triggerDisabled}
+                />
+              }
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex h-full w-full items-center justify-center">
+                    <Ellipsis size={16} />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side={variant === "sidebar" ? "bottom" : "right"}
+                >
+                  <p className="text-xs">{menuCopy.more}</p>
+                </TooltipContent>
+              </Tooltip>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <AgentRowMenuItems menuActions={menuActions} />

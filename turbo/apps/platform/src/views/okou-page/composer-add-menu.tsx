@@ -54,17 +54,19 @@ export function ComposerAddMenu({
   });
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className="shrink-0"
-          aria-label={label}
-        >
-          <Plus size={18} aria-hidden="true" />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            iconSize="md"
+            className="shrink-0"
+            aria-label={label}
+          />
+        }
+      >
+        <Plus size={18} aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
