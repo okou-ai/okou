@@ -791,7 +791,7 @@ test.each([
   },
 );
 
-test("Fails closed when an older API omits the addability projection", async () => {
+test("Hide the Add model button when no model is available to add", async () => {
   mockAdminOrg();
   context.mocks.data.orgModelProviders([]);
   const defaultPolicy = builtInPolicy(
@@ -802,8 +802,9 @@ test("Fails closed when an older API omits the addability projection", async () 
   );
   context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
     return respond(200, {
-      revision: "pre-addability-api",
+      revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [defaultPolicy],
       workspaceDefaultModel: defaultPolicy.model,
       workspaceDefaultPolicyId: defaultPolicy.id,
