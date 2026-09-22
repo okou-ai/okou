@@ -20,7 +20,7 @@ import { onRef } from "../utils.ts";
 import { openChatThreadEmojiMenu$ } from "../okou-page/sidebar-state.ts";
 import {
   currentChatThreadId$,
-  currentChatThreadListIds$,
+  currentChatThreadNavigationList$,
 } from "../agent-chat.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import {
@@ -32,6 +32,45 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 import { scrollToThread$ } from "./sidebar-chat-thread-scroll.ts";
 
 type ChatThreadPane = "main" | "side";
+
+type ChatThreadNavigationDirection = "prev" | "next";
+
+function findAdjacentListedThreadId({
+  currentThreadId,
+  direction,
+  excludedThreadId,
+  listedThreadIds,
+  orderedThreadIds,
+}: {
+  currentThreadId: string;
+  direction: ChatThreadNavigationDirection;
+  excludedThreadId: string | null;
+  listedThreadIds: readonly string[];
+  orderedThreadIds: readonly string[];
+}): string | undefined {
+  const currentIndex = orderedThreadIds.indexOf(currentThreadId);
+  if (currentIndex === -1) {
+    return undefined;
+  }
+
+  const listed = new Set(listedThreadIds);
+  const step = direction === "prev" ? -1 : 1;
+  for (
+    let index = currentIndex + step;
+    index >= 0 && index < orderedThreadIds.length;
+    index += step
+  ) {
+    const candidate = orderedThreadIds[index];
+    if (
+      candidate !== undefined &&
+      candidate !== excludedThreadId &&
+      listed.has(candidate)
+    ) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
 
 function isPlainArrowScroll(event: KeyboardEvent): boolean {
   return matchShortcut("arrowup", event) || matchShortcut("arrowdown", event);
@@ -519,16 +558,14 @@ export const setChatKeyboardScrollRoot$ = onRef(
       }
       const otherPaneThreadId =
         pane === "main" ? rightThread?.threadId : leftThread?.threadId;
-      const ids = (await get(currentChatThreadListIds$)).filter((id) => {
-        return id !== otherPaneThreadId;
+      const navigation = await get(currentChatThreadNavigationList$);
+      const targetId = findAdjacentListedThreadId({
+        currentThreadId: currentId,
+        direction,
+        excludedThreadId: otherPaneThreadId ?? null,
+        listedThreadIds: navigation.listedThreadIds,
+        orderedThreadIds: navigation.orderedThreadIds,
       });
-      const currentIndex = ids.indexOf(currentId);
-      if (currentIndex === -1) {
-        return;
-      }
-      const targetIndex =
-        direction === "prev" ? currentIndex - 1 : currentIndex + 1;
-      const targetId = ids[targetIndex];
       if (!targetId) {
         return;
       }
