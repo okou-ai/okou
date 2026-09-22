@@ -17,8 +17,9 @@ use super::support::{
     write_current_cache_entry,
 };
 use crate::error::RunnerError;
-use crate::paths::{HomePaths, RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::StorageFingerprints;
+use crate::test_fixtures::workspace_image_cache_key;
+use runner_host::paths::{HomePaths, RunnerPaths};
 use runner_types::ids::RunId;
 use runner_types::types::MAX_HELD_WORKSPACE_STATES;
 
@@ -138,7 +139,7 @@ async fn routine_gc_cleans_stale_entries_when_capacity_lock_is_available() {
 #[tokio::test]
 async fn routine_gc_skips_without_scanning_when_capacity_lock_is_busy() {
     let (_dir, _paths, cache) = local_cache().await;
-    let _capacity_lock = crate::lock::acquire(cache.capacity_lock_path())
+    let _capacity_lock = runner_host::lock::acquire(cache.capacity_lock_path())
         .await
         .unwrap();
     cache.reset_gc_root_scan_count();
@@ -239,7 +240,7 @@ async fn routine_gc_runs_again_after_shared_completion_expires() {
 #[tokio::test]
 async fn failed_routine_gc_does_not_suppress_retry() {
     let (_dir, paths, cache) = local_cache().await;
-    let cache_root = paths.workspace_image_cache_dir();
+    let cache_root = crate::test_fixtures::runner_workspace_image_cache_dir(&paths);
     tokio::fs::write(&cache_root, b"not a directory")
         .await
         .unwrap();
@@ -714,7 +715,7 @@ async fn gc_counts_busy_entry_when_pruning_above_held_workspace_limit() {
         }
     }
 
-    let oldest_lock = crate::lock::acquire(cache.entry_lock_path(&oldest_key))
+    let oldest_lock = runner_host::lock::acquire(cache.entry_lock_path(&oldest_key))
         .await
         .unwrap();
     let freed = cache.gc(false).await.unwrap();
@@ -1056,7 +1057,7 @@ async fn gc_keeps_unusable_current_entry_when_entry_lock_is_held() {
     )
     .await
     .unwrap();
-    let _lock = crate::lock::acquire(cache.entry_lock_path(&key))
+    let _lock = runner_host::lock::acquire(cache.entry_lock_path(&key))
         .await
         .unwrap();
 
@@ -1085,7 +1086,7 @@ async fn gc_keeps_stale_entry_without_current_image_when_entry_lock_is_held() {
     tokio::fs::remove_file(cache.entry_paths(&key).current_image().to_path_buf())
         .await
         .unwrap();
-    let _lock = crate::lock::acquire(cache.entry_lock_path(&key))
+    let _lock = runner_host::lock::acquire(cache.entry_lock_path(&key))
         .await
         .unwrap();
 
@@ -1208,7 +1209,7 @@ async fn gc_keeps_temporary_workspace_cache_files_when_entry_lock_is_held() {
     tokio::fs::write(&metadata_tmp, b"partial metadata")
         .await
         .unwrap();
-    let _lock = crate::lock::acquire(cache.entry_lock_path(&cache_key))
+    let _lock = runner_host::lock::acquire(cache.entry_lock_path(&cache_key))
         .await
         .unwrap();
 

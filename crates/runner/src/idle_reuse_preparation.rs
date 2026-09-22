@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
-use guest_contracts::guest_binary::WORKSPACE_MOUNT_PATH;
+use guest_contracts::guest_binary::{AGENT_PATH, WORKSPACE_MOUNT_PATH};
 use guest_contracts::reuse_preparation::{
     REUSE_PREPARATION_EXIT_CLEANUP_FAILED, REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
     REUSE_PREPARATION_EXIT_INSPECTION_FAILED, REUSE_PREPARATION_EXIT_INVALID_REQUEST,
@@ -15,7 +15,6 @@ use tracing::{info, warn};
 use crate::helper_exec::{
     format_helper_exec_failure, helper_exec_succeeded, helper_exec_termination_label,
 };
-use crate::paths::guest;
 use crate::workspace_mount::WORKSPACE_MOUNT_TIMEOUT;
 use runner_types::ids::RunId;
 
@@ -112,7 +111,7 @@ impl IdleReusePreparation {
                 format!("serialize reuse-preparation request: {error}"),
             )
         })?;
-        let helper_command = format!("{} prepare-for-reuse", guest::RUN_AGENT);
+        let helper_command = format!("{AGENT_PATH} prepare-for-reuse");
         let command = compose_reuse_preparation_command(&helper_command, WORKSPACE_MOUNT_PATH);
         Ok(Self {
             operation_run_id,

@@ -8,7 +8,7 @@ async fn warm_cache_download_request_failure_is_fatal() {
     use aws_sdk_s3::Client;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let get = mock!(Client::get_object)
         .sequence()
         .http_status(
@@ -47,7 +47,7 @@ async fn warm_cache_existing_remote_uses_head_without_download_or_build() {
     use aws_sdk_s3::operation::head_object::HeadObjectOutput;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let head = mock!(Client::head_object)
         .match_requests(|req| {
             req.bucket() == Some("test-bucket")
@@ -79,7 +79,7 @@ async fn warm_cache_head_hit_cleans_stale_local_attempts() {
     use aws_sdk_s3::operation::head_object::HeadObjectOutput;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let warm_parent = template_warm_parent_dir(&home, "test-template-hash");
     let stale_attempt = template_attempt_dir(&warm_parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX);
     tokio::fs::create_dir_all(&stale_attempt).await.unwrap();
@@ -116,7 +116,7 @@ async fn warm_cache_head_request_failure_is_fatal() {
     use aws_sdk_s3::Client;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let head = mock!(Client::head_object)
         .sequence()
         .http_status(
@@ -150,7 +150,7 @@ async fn warm_cache_head_request_failure_is_fatal() {
 #[tokio::test]
 async fn warm_cache_miss_builds_and_uploads_after_head_miss() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let head = template_head_miss_rule();
     let get = template_get_miss_rule();
     let (create, upload_part, complete) = multipart_success_rules();
@@ -179,7 +179,7 @@ async fn warm_cache_miss_builds_and_uploads_after_head_miss() {
 #[tokio::test]
 async fn warm_cache_head_miss_uses_template_uploaded_by_another_runner() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let head = template_head_miss_rule();
     let get = template_get_rule(template_archive_bytes(b"concurrent-template").await);
     let cache = mock_r2_cache(&[&head, &get]);
@@ -207,7 +207,7 @@ async fn warm_cache_upload_failure_is_fatal() {
     use aws_sdk_s3::Client;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let get = template_get_miss_rule();
     let head = mock!(Client::head_object)
         .sequence()
@@ -248,7 +248,7 @@ async fn warm_cache_invalid_remote_object_force_overwrites_r2() {
     use aws_sdk_s3::operation::head_object::HeadObjectOutput;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let get = template_get_rule(empty_template_archive_bytes().await);
     let head = mock!(Client::head_object).then_output(|| HeadObjectOutput::builder().build());
     let (create, upload_part, complete) = multipart_success_rules();
@@ -280,7 +280,7 @@ async fn warm_cache_invalid_remote_object_force_overwrites_r2() {
 #[test]
 fn warm_template_attempt_dir_stays_on_runner_image_volume() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let images_dir = home.images_dir();
     let warm_parent = template_warm_parent_dir(&home, "abc123");
 
@@ -302,7 +302,7 @@ fn warm_template_attempt_dir_stays_on_runner_image_volume() {
 #[tokio::test]
 async fn template_warm_cleanup_removes_empty_parent() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let parent = template_warm_parent_dir(&home, "abc123");
     let attempt = template_attempt_dir(&parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX);
     tokio::fs::create_dir_all(&attempt).await.unwrap();
@@ -339,7 +339,7 @@ async fn template_warm_cleanup_preserves_original_error_when_parent_cleanup_fail
 #[tokio::test]
 async fn template_warm_parent_cleanup_removes_stale_file() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let parent = template_warm_parent_dir(&home, "abc123");
     tokio::fs::create_dir_all(home.images_dir()).await.unwrap();
     tokio::fs::write(&parent, b"not a directory").await.unwrap();

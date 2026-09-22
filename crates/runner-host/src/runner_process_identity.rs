@@ -6,14 +6,14 @@ const JAVASCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 /// Stable identity of one runner process generation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", try_from = "RunnerProcessIdentityInput")]
-pub(crate) struct RunnerProcessIdentity {
+pub struct RunnerProcessIdentity {
     runner_id: Uuid,
     heartbeat_generation: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("heartbeat generation must be a positive JavaScript safe integer")]
-pub(crate) struct RunnerProcessIdentityError;
+pub struct RunnerProcessIdentityError;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -23,7 +23,7 @@ struct RunnerProcessIdentityInput {
 }
 
 impl RunnerProcessIdentity {
-    pub(crate) fn new(
+    pub fn new(
         runner_id: Uuid,
         heartbeat_generation: u64,
     ) -> Result<Self, RunnerProcessIdentityError> {
@@ -36,11 +36,11 @@ impl RunnerProcessIdentity {
         })
     }
 
-    pub(crate) const fn runner_id(self) -> Uuid {
+    pub const fn runner_id(self) -> Uuid {
         self.runner_id
     }
 
-    pub(crate) const fn heartbeat_generation(self) -> u64 {
+    pub const fn heartbeat_generation(self) -> u64 {
         self.heartbeat_generation
     }
 }

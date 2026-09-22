@@ -251,7 +251,7 @@ async fn execute_job_proxy_register_failure_destroys_fresh_sandbox_before_agent_
 async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_agent_start() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
-    let registry_guard = crate::lock::acquire(dir.path().join("proxy-registry.json.lock"))
+    let registry_guard = runner_host::lock::acquire(dir.path().join("proxy-registry.json.lock"))
         .await
         .unwrap();
     tokio::fs::remove_file(dir.path().join("proxy-registry.json"))
@@ -347,10 +347,10 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
         None,
     );
     assert!(matches!(
-        crate::lock::try_acquire_or_busy(storage_lock_path)
+        runner_host::lock::try_acquire_or_busy(storage_lock_path)
             .await
             .unwrap(),
-        crate::lock::TryLock::Acquired(_)
+        runner_host::lock::TryLock::Acquired(_)
     ));
 }
 

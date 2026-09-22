@@ -5,8 +5,8 @@ use super::super::support::{
     seed_idle_pool_with_speculative_timezone, shutdown, test_profiles, test_runner_identity,
     wait_budget_count, wait_cancel_handle, wait_cancel_token_removed, wait_discover_entered,
 };
-use crate::paths::RunnerPaths;
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::RunnerPaths;
 
 #[tokio::test]
 async fn telemetry_flush_includes_start_loop_claim_phase_spans() {

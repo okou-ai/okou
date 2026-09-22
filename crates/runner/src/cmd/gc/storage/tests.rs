@@ -6,10 +6,10 @@ use super::*;
 use crate::cmd::gc::test_support::{
     assert_is_symlink, old_gc_time, set_soft_nofile_limit_for_child, test_home,
 };
-use crate::lock;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_host::lock;
 
 fn make_storage_entry_at(dir: PathBuf, archive_bytes: &[u8], mtime: SystemTime) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
@@ -97,8 +97,8 @@ async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned
     let cache = crate::storage_cache::decoded::DecodedCache::new(home.clone());
     cache.warm_from_archive("name", "v1").await.unwrap();
     let pinned = cache.get_ready("name", "v1").await.unwrap().unwrap();
-    let name = crate::paths::short_digest("name");
-    let version = format!("decoded-v1-{}", crate::paths::short_digest("v1"));
+    let name = runner_host::paths::short_digest("name");
+    let version = format!("decoded-v1-{}", runner_host::paths::short_digest("v1"));
     let entry = home.storages_dir().join(&name).join(&version);
     assert_eq!(
         std::fs::read(entry.join("files/nested/file")).unwrap(),
@@ -141,8 +141,8 @@ async fn gc_extracted_storage_uses_existing_lock_accounting_and_preserves_pinned
 async fn gc_extracted_staging_uses_the_final_version_lock() {
     let dir = tempfile::tempdir().unwrap();
     let home = test_home(dir.path());
-    let name = crate::paths::short_digest("name");
-    let version = format!("decoded-v1-{}", crate::paths::short_digest("v1"));
+    let name = runner_host::paths::short_digest("name");
+    let version = format!("decoded-v1-{}", runner_host::paths::short_digest("v1"));
     let staging = home
         .storages_dir()
         .join(&name)

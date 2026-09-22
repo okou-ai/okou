@@ -3,15 +3,15 @@ use std::path::Path;
 
 use crate::host_file::{self, DirMode};
 
-pub(crate) fn ensure_log_dir(path: &Path) -> io::Result<()> {
+pub fn ensure_log_dir(path: &Path) -> io::Result<()> {
     host_file::ensure_dir(path, DirMode::Private, "log directory")
 }
 
-pub(crate) fn open_append(path: &Path, read: bool) -> io::Result<std::fs::File> {
+pub fn open_append(path: &Path, read: bool) -> io::Result<std::fs::File> {
     host_file::open_private_append_file(path, read)
 }
 
-pub(crate) fn validate_copy_destination(path: &Path) -> io::Result<()> {
+pub fn validate_copy_destination(path: &Path) -> io::Result<()> {
     host_file::validate_private_file_destination(path, "guest log destination")
 }
 

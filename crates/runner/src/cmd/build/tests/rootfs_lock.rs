@@ -12,7 +12,7 @@ async fn assert_rootfs_lock_held(home: &HomePaths, hash: &str) {
 #[tokio::test]
 async fn existing_rootfs_best_effort_allows_missing_r2_cache() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "best-effort-local-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
     tokio::fs::write(rootfs.rootfs(), b"local-rootfs")
@@ -43,7 +43,7 @@ async fn existing_rootfs_releases_template_lock_callback() {
     };
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "release-local-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
     tokio::fs::write(rootfs.rootfs(), b"local-rootfs")
@@ -92,7 +92,7 @@ fn template_lock_release_runs_on_drop() {
 #[tokio::test]
 async fn is_rootfs_present_checks_rootfs_file() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "test-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
 
@@ -105,7 +105,7 @@ async fn is_rootfs_present_checks_rootfs_file() {
 #[tokio::test]
 async fn rootfs_image_lock_uses_shared_for_existing_rootfs_in_use() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs_hash = "existing-rootfs-hash";
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
@@ -129,7 +129,7 @@ async fn rootfs_image_lock_uses_shared_for_existing_rootfs_in_use() {
 #[tokio::test]
 async fn rootfs_image_lock_uses_exclusive_for_missing_rootfs() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs_hash = "missing-rootfs-hash";
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
 
@@ -144,7 +144,7 @@ async fn rootfs_image_lock_uses_exclusive_for_missing_rootfs() {
 #[tokio::test]
 async fn rootfs_image_lock_retries_exclusive_when_existing_rootfs_disappears() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs_hash = "disappearing-rootfs-hash";
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
@@ -167,7 +167,7 @@ async fn rootfs_image_lock_retries_exclusive_when_existing_rootfs_disappears() {
 #[tokio::test]
 async fn rootfs_image_lock_retries_shared_when_another_builder_commits_rootfs() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs_hash = "committed-by-other-builder-hash";
     let rootfs = RootfsPaths::new(&home, rootfs_hash);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
@@ -195,7 +195,7 @@ async fn rootfs_image_lock_retries_shared_when_another_builder_commits_rootfs() 
 #[tokio::test]
 async fn is_rootfs_present_nonexistent_dir() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "does-not-exist");
 
     assert!(!is_rootfs_present(&rootfs).await.unwrap());

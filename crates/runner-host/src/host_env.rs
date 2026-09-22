@@ -5,15 +5,14 @@
 
 use std::collections::BTreeMap;
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{HostError, HostResult};
 
-pub(crate) const RUNNER_HOST_ENV_FILE: &str = "/etc/vm0-runner/host.env";
-pub(crate) const RUNNER_CONCURRENCY_FACTOR_ENV: &str = "OKOU_RUNNER_CONCURRENCY_FACTOR";
-pub(crate) const RUNNER_DISK_BANDWIDTH_MIB_PER_SEC_ENV: &str =
-    "OKOU_RUNNER_DISK_BANDWIDTH_MIB_PER_SEC";
-pub(crate) const RUNNER_DISK_IOPS_ENV: &str = "OKOU_RUNNER_DISK_IOPS";
-pub(crate) const RUNNER_NET_RX_MIB_PER_SEC_ENV: &str = "OKOU_RUNNER_NET_RX_MIB_PER_SEC";
-pub(crate) const RUNNER_NET_TX_MIB_PER_SEC_ENV: &str = "OKOU_RUNNER_NET_TX_MIB_PER_SEC";
+pub const RUNNER_HOST_ENV_FILE: &str = "/etc/vm0-runner/host.env";
+pub const RUNNER_CONCURRENCY_FACTOR_ENV: &str = "OKOU_RUNNER_CONCURRENCY_FACTOR";
+pub const RUNNER_DISK_BANDWIDTH_MIB_PER_SEC_ENV: &str = "OKOU_RUNNER_DISK_BANDWIDTH_MIB_PER_SEC";
+pub const RUNNER_DISK_IOPS_ENV: &str = "OKOU_RUNNER_DISK_IOPS";
+pub const RUNNER_NET_RX_MIB_PER_SEC_ENV: &str = "OKOU_RUNNER_NET_RX_MIB_PER_SEC";
+pub const RUNNER_NET_TX_MIB_PER_SEC_ENV: &str = "OKOU_RUNNER_NET_TX_MIB_PER_SEC";
 const HOST_ENV_KEYS: [&str; 5] = [
     RUNNER_CONCURRENCY_FACTOR_ENV,
     RUNNER_DISK_BANDWIDTH_MIB_PER_SEC_ENV,
@@ -23,29 +22,29 @@ const HOST_ENV_KEYS: [&str; 5] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HostEnvValue {
-    pub(crate) value: String,
+pub struct HostEnvValue {
+    pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct RunnerIoEnvValues {
-    pub(crate) disk_bandwidth_mib_per_sec: Option<HostEnvValue>,
-    pub(crate) disk_iops: Option<HostEnvValue>,
-    pub(crate) net_rx_mib_per_sec: Option<HostEnvValue>,
-    pub(crate) net_tx_mib_per_sec: Option<HostEnvValue>,
+pub struct RunnerIoEnvValues {
+    pub disk_bandwidth_mib_per_sec: Option<HostEnvValue>,
+    pub disk_iops: Option<HostEnvValue>,
+    pub net_rx_mib_per_sec: Option<HostEnvValue>,
+    pub net_tx_mib_per_sec: Option<HostEnvValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct RunnerHostEnv {
+pub struct RunnerHostEnv {
     values: BTreeMap<&'static str, HostEnvValue>,
 }
 
 impl RunnerHostEnv {
-    pub(crate) fn concurrency_factor(&self) -> Option<&HostEnvValue> {
+    pub fn concurrency_factor(&self) -> Option<&HostEnvValue> {
         self.values.get(RUNNER_CONCURRENCY_FACTOR_ENV)
     }
 
-    pub(crate) fn io_values(&self) -> RunnerIoEnvValues {
+    pub fn io_values(&self) -> RunnerIoEnvValues {
         RunnerIoEnvValues {
             disk_bandwidth_mib_per_sec: self
                 .values
@@ -58,16 +57,16 @@ impl RunnerHostEnv {
     }
 }
 
-pub(crate) fn read_runner_host_env() -> RunnerResult<RunnerHostEnv> {
+pub fn read_runner_host_env() -> HostResult<RunnerHostEnv> {
     read_host_env_file()
 }
 
-fn read_host_env_file() -> RunnerResult<RunnerHostEnv> {
+fn read_host_env_file() -> HostResult<RunnerHostEnv> {
     let content = match std::fs::read_to_string(RUNNER_HOST_ENV_FILE) {
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(RunnerHostEnv::default()),
         Err(e) => {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "failed to read {RUNNER_HOST_ENV_FILE}: {e}"
             )));
         }
@@ -76,7 +75,7 @@ fn read_host_env_file() -> RunnerResult<RunnerHostEnv> {
     parse_host_env_file(&content)
 }
 
-fn parse_host_env_file(content: &str) -> RunnerResult<RunnerHostEnv> {
+fn parse_host_env_file(content: &str) -> HostResult<RunnerHostEnv> {
     let mut values = BTreeMap::new();
 
     for (line_number, line) in content.lines().enumerate() {
@@ -87,7 +86,7 @@ fn parse_host_env_file(content: &str) -> RunnerResult<RunnerHostEnv> {
         }
 
         let Some((key, raw_value)) = line.split_once('=') else {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "{RUNNER_HOST_ENV_FILE}:{line_number}: expected KEY=VALUE"
             )));
         };
@@ -97,13 +96,13 @@ fn parse_host_env_file(content: &str) -> RunnerResult<RunnerHostEnv> {
             .find(|&&allowed_key| allowed_key == key)
         else {
             let allowed_keys = HOST_ENV_KEYS.join(", ");
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "{RUNNER_HOST_ENV_FILE}:{line_number}: unsupported host env key {key:?}; allowed keys: {}",
                 allowed_keys
             )));
         };
         if values.contains_key(allowed_key) {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "{RUNNER_HOST_ENV_FILE}:{line_number}: duplicate host env key {allowed_key}"
             )));
         }
@@ -190,7 +189,7 @@ OKOU_RUNNER_NET_TX_MIB_PER_SEC=125
     }
 
     #[test]
-    fn partial_io_group_remains_all_or_none() {
+    fn partial_io_group_preserves_missing_key() {
         let host_env = parse_host_env_file(
             "\
 OKOU_RUNNER_DISK_BANDWIDTH_MIB_PER_SEC=1000
@@ -199,26 +198,12 @@ OKOU_RUNNER_NET_RX_MIB_PER_SEC=250
 ",
         )
         .unwrap();
-        let profiles = BTreeMap::from([(
-            "vm0/default".to_string(),
-            crate::config::ProfileConfig {
-                rootfs_hash: "rootfs".to_string(),
-                snapshot_hash: "snapshot".to_string(),
-                vcpu: 2,
-                memory_mb: 4096,
-                rootfs_disk_mb: 8192,
-                workspace_disk_mb: 16_384,
-            },
-        )]);
-        let budget = crate::resource_budget::ResourceBudget::new(2, 4096, 1.0, 1);
 
-        let resolution = crate::io_limits::resolve_io_limits(&profiles, &budget, &host_env);
-
-        let crate::io_limits::IoLimitResolution::Misconfigured { reason } = &resolution else {
-            panic!("expected misconfigured resolution");
-        };
-        assert!(reason.contains(RUNNER_NET_TX_MIB_PER_SEC_ENV));
-        assert_eq!(resolution.device_rate_limits(), None);
+        let values = host_env.io_values();
+        assert!(values.disk_bandwidth_mib_per_sec.is_some());
+        assert!(values.disk_iops.is_some());
+        assert!(values.net_rx_mib_per_sec.is_some());
+        assert!(values.net_tx_mib_per_sec.is_none());
     }
 
     #[test]

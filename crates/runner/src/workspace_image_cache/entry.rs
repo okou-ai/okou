@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::paths::{
+use runner_host::paths::{
     scoped_workspace_image_cache_key, workspace_image_cache_capacity_lock_path,
     workspace_image_cache_lock_path,
 };

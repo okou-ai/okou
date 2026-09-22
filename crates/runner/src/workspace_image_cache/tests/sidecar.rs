@@ -19,11 +19,11 @@ use super::super::{
     WorkspaceSessionHistorySidecarRepresentation,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::paths::RunnerPaths;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
 const PERMISSIVE_UMASK_CHILD_ENV: &str = "OKOU_RUN_SIDECAR_PERMISSIVE_UMASK_TEST";

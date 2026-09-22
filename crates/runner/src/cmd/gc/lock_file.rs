@@ -3,7 +3,7 @@ use std::path::Path;
 use nix::fcntl::Flock;
 use tracing::{info, warn};
 
-use crate::lock::{self, ExistingTryLock, TryLock};
+use runner_host::lock::{self, ExistingTryLock, TryLock};
 
 pub(super) enum LockProbe {
     /// Lock acquired — resource is not in use.

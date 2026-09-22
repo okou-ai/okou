@@ -8,9 +8,9 @@ use crate::http::HttpClientConfig;
 use crate::idle_pool::ReusableIdleSandbox;
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogManager;
-use crate::paths::{HomePaths, LogPaths};
 use crate::proxy;
 use crate::telemetry::JobTelemetry;
+use runner_host::paths::{HomePaths, LogPaths};
 use runner_types::types::ExecutionContext;
 
 /// Build a real `ExecutorConfig` backed by tempdir files.

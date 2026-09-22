@@ -169,10 +169,19 @@ fn memory_snapshot(role: &str) -> guest_contracts::oom_evidence::MemorySnapshot 
     }
 }
 
+/// Victim cgroup of a kill the kernel confined to a managed tool leaf.
+const TOOL_LEAF_VICTIM: &str = "/vm0-exec/exec-7-1-1/workload/tools/tool-1";
+/// Victim cgroup of a kill in the agent's own containment domain.
+const AGENT_DOMAIN_VICTIM: &str = "/vm0-exec/exec-7-1-1/workload/runtime";
+
 /// One bounded evidence envelope exactly as the guest transports it. `proof`
 /// selects between a proven OOM decision and an inspected-and-empty capture
 /// candidate, which is the distinction the terminal classifier must make.
 fn oom_evidence_diagnostic(proof: bool) -> String {
+    oom_evidence_diagnostic_for(proof, AGENT_DOMAIN_VICTIM)
+}
+
+fn oom_evidence_diagnostic_for(proof: bool, victim: &str) -> String {
     use guest_contracts::oom_evidence::{
         CaptureReason, EVIDENCE_PREFIX, EvidenceStatus, KernelOomEvent, OomEvidence, OomIncident,
     };
@@ -193,7 +202,7 @@ fn oom_evidence_diagnostic(proof: bool) -> String {
             oom_cgroup: Some("/vm0-exec/exec-7-1-1/workload".to_string()),
             victim_pid: 1234,
             victim_comm: "node".to_string(),
-            task_cgroup: "/vm0-exec/exec-7-1-1/workload/tools".to_string(),
+            task_cgroup: victim.to_string(),
         });
     }
     let evidence = OomEvidence {
@@ -201,7 +210,6 @@ fn oom_evidence_diagnostic(proof: bool) -> String {
         guest_boot_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
         started_boottime_us: 500_000,
         sampled_at: "2026-09-09T07:19:59.000Z".to_string(),
-        runtime_progress_at: None,
         kernel_cursor: proof.then_some(42),
         kernel_status: if proof {
             EvidenceStatus::Available
@@ -1075,7 +1083,7 @@ fn clean_terminal_log_context(
         stream_overflowed: false,
         actionable_diagnostic: false,
         evidence_has_proof: false,
-        contained_tool_oom: false,
+        agent_domain_oom_kill: false,
         evidence_malformed: false,
         host_cancel_requested: false,
     }
@@ -1518,8 +1526,33 @@ fn exec_terminal_log_severity_ignores_a_capture_candidate_on_an_ordinary_exit() 
 }
 
 #[test]
-fn exec_terminal_log_decision_reports_proven_oom_on_an_ordinary_exit() {
-    for exit_code in [0, 1] {
+fn exec_terminal_log_decision_warns_for_an_agent_domain_kill_on_any_exit() {
+    for exit_code in [0, 1, 124] {
+        let context = ExecTerminalLogContext {
+            evidence_has_proof: true,
+            agent_domain_oom_kill: true,
+            ..clean_terminal_log_context(
+                ExecTerminalLogLifecycle::Supervised,
+                false,
+                ExecTermination::Exited { exit_code },
+            )
+        };
+        let decision = exec_terminal_log_decision(context).unwrap();
+
+        assert_eq!(
+            decision.severity,
+            ExecTerminalLogSeverity::Warn,
+            "{exit_code}"
+        );
+        assert_eq!(decision.reason, ExecTerminalLogReason::OomEvidence);
+    }
+}
+
+#[test]
+fn exec_terminal_log_decision_informs_for_a_tool_only_kill_on_any_exit() {
+    // The process exit code says nothing about which cgroup the kernel killed,
+    // so it must not suppress this informational observation.
+    for exit_code in [0, 1, 124] {
         let context = ExecTerminalLogContext {
             evidence_has_proof: true,
             ..clean_terminal_log_context(
@@ -1530,8 +1563,12 @@ fn exec_terminal_log_decision_reports_proven_oom_on_an_ordinary_exit() {
         };
         let decision = exec_terminal_log_decision(context).unwrap();
 
-        assert_eq!(decision.severity, ExecTerminalLogSeverity::Warn);
-        assert_eq!(decision.reason, ExecTerminalLogReason::OomEvidence);
+        assert_eq!(
+            decision.severity,
+            ExecTerminalLogSeverity::Info,
+            "{exit_code}"
+        );
+        assert_eq!(decision.reason, ExecTerminalLogReason::ContainedToolOom);
     }
 }
 
@@ -1735,7 +1772,7 @@ fn exec_operation_close_snapshot_limits_logged_operations() {
 }
 
 #[test]
-fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
+fn contained_tool_oom_log_informs_on_every_exit_and_retains_independent_failures() {
     use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
     let evidence: OomEvidence = serde_json::from_str(include_str!(
         "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
@@ -1747,6 +1784,7 @@ fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
         "{EVIDENCE_PREFIX}{}",
         serde_json::to_string(&evidence).unwrap()
     );
+    // Production records that proved containment exited 1 and 124, never 0.
     for (termination, overflow, residual, expected) in [
         (
             ExecTermination::Exited { exit_code: 0 },
@@ -1758,13 +1796,13 @@ fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
             ExecTermination::Exited { exit_code: 1 },
             false,
             "",
-            Level::WARN,
+            Level::INFO,
         ),
         (
             ExecTermination::Exited { exit_code: 124 },
             false,
             "",
-            Level::WARN,
+            Level::INFO,
         ),
         (
             ExecTermination::Exited { exit_code: 0 },
@@ -1806,7 +1844,6 @@ fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
             "termination={termination:?}, overflow={overflow}, residual={residual}"
         );
         assert_terminal_log_field(&events[0], "oom_classification", "contained_tool_oom");
-        assert_terminal_log_field(&events[0], "oom_unproven_reason", "");
         assert_terminal_log_field(&events[0], "oom_incidents", "1");
         assert_terminal_log_field(&events[0], "oom_kernel_events", "1");
         assert!(events[0].fields["operation_id"].contains(&evidence.operation_id));
@@ -1815,117 +1852,81 @@ fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
             "logging must not consume retained evidence"
         );
     }
-    for (seq, role, evidence) in [
-        (8, ExecProcessRole::Agent, evidence.clone()),
-        (7, ExecProcessRole::Workload, evidence.clone()),
+}
+
+#[test]
+fn oom_classification_names_the_killed_cgroup_only_for_proven_evidence() {
+    // A plain string aggregates directly; `?` formatting would render the value
+    // as `Some(...)` and break equality matching in the log backend.
+    for (diagnostic, expected) in [
         (
-            7,
-            ExecProcessRole::Agent,
-            OomEvidence {
-                runtime_progress_at: None,
-                ..evidence
-            },
+            oom_evidence_diagnostic_for(true, AGENT_DOMAIN_VICTIM),
+            "agent_oom_kill",
+        ),
+        (
+            oom_evidence_diagnostic_for(true, TOOL_LEAF_VICTIM),
+            "contained_tool_oom",
+        ),
+        ("guest diagnostic".to_string(), ""),
+    ] {
+        let result = guest_control_proto::DecodedExecResult {
+            termination: ExecTermination::WaitFailed,
+            diagnostic: diagnostic.as_str(),
+            ..clean_terminal_result()
+        };
+        let events = capture_terminal_log_events_with_context(
+            ExecTerminalLogLifecycle::Supervised,
+            false,
+            &result,
+            false,
+            false,
+        );
+
+        assert_eq!(events.len(), 1, "classification={expected}");
+        assert_terminal_log_field(&events[0], "oom_classification", expected);
+        assert_eq!(events[0].field_kinds["oom_classification"], "str");
+    }
+}
+
+/// Guest Control Server mirrors this decision inside the guest image. Both
+/// emitters must reach the same verdict for the same evidence; the guest-side
+/// half is pinned by `contained_tool_oom_terminal_logging_keeps_failures_actionable`
+/// in `guest-control-server`, which reads these same two fixtures.
+#[test]
+fn terminal_severity_matches_the_guest_side_mirror_for_the_same_evidence() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+    for (fixture, expected) in [
+        (
+            include_str!("../../../guest-contracts/tests/fixtures/contained-tool-oom.json"),
+            Level::INFO,
+        ),
+        (
+            include_str!("../../../guest-contracts/tests/fixtures/oom-evidence-v1.json"),
+            Level::WARN,
         ),
     ] {
-        let diagnostic = ExecOperationDiagnostic::new(seq, "guest-agent", role, true, false);
+        let evidence: OomEvidence = serde_json::from_str(fixture).unwrap();
         let transported = format!(
             "{EVIDENCE_PREFIX}{}",
             serde_json::to_string(&evidence).unwrap()
         );
-        let captured = CapturedEvents::default();
-        let subscriber = tracing_subscriber::registry().with(captured.clone());
-        tracing::subscriber::with_default(subscriber, || {
-            diagnostic.log_terminal(
-                ExecTerminalLogLifecycle::Supervised,
-                &guest_control_proto::DecodedExecResult {
-                    diagnostic: &transported,
-                    ..clean_terminal_result()
-                },
-                false,
-                false,
-            );
-        });
-        assert_eq!(
-            captured.entries()[0].level,
-            Level::WARN,
-            "stale route, wrong role, or exit zero without progress"
-        );
-    }
-}
-
-#[test]
-fn unproven_containment_log_names_the_rejecting_guard() {
-    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
-    let evidence: OomEvidence = serde_json::from_str(include_str!(
-        "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
-    ))
-    .unwrap();
-    let evidence_line = |evidence: &OomEvidence| {
-        format!(
-            "{EVIDENCE_PREFIX}{}",
-            serde_json::to_string(evidence).unwrap()
-        )
-    };
-    let contained = evidence_line(&evidence);
-    let without_progress = evidence_line(&OomEvidence {
-        runtime_progress_at: None,
-        ..evidence
-    });
-    // The first four reasons are this caller's own conditions; the last one is
-    // carried up from the evidence predicate itself.
-    for (seq, role, lifecycle, transported, expected) in [
-        (
-            7,
-            ExecProcessRole::Workload,
-            ExecTerminalLogLifecycle::Supervised,
-            contained.as_str(),
-            "process_class_not_agent",
-        ),
-        (
-            7,
-            ExecProcessRole::Agent,
-            ExecTerminalLogLifecycle::OneShot,
-            contained.as_str(),
-            "lifecycle_not_supervised",
-        ),
-        (
-            7,
-            ExecProcessRole::Agent,
-            ExecTerminalLogLifecycle::Supervised,
-            "guest diagnostic",
-            "evidence_absent",
-        ),
-        (
-            8,
-            ExecProcessRole::Agent,
-            ExecTerminalLogLifecycle::Supervised,
-            contained.as_str(),
-            "operation_sequence_mismatch",
-        ),
-        (
-            7,
-            ExecProcessRole::Agent,
-            ExecTerminalLogLifecycle::Supervised,
-            without_progress.as_str(),
-            "runtime_progress_absent",
-        ),
-    ] {
-        let diagnostic = ExecOperationDiagnostic::new(seq, "guest-agent", role, true, false);
         let result = guest_control_proto::DecodedExecResult {
-            diagnostic: transported,
+            diagnostic: transported.as_str(),
             ..clean_terminal_result()
         };
-        let captured = CapturedEvents::default();
-        let subscriber = tracing_subscriber::registry().with(captured.clone());
-        tracing::subscriber::with_default(subscriber, || {
-            diagnostic.log_terminal(lifecycle, &result, false, false);
-        });
-        let events = captured.entries();
-        assert_eq!(events.len(), 1, "reason={expected}");
-        assert_terminal_log_field(&events[0], "oom_classification", "unproven_containment");
-        assert_terminal_log_field(&events[0], "oom_unproven_reason", expected);
-        // A plain string aggregates directly; `?` formatting would render the
-        // value as `Some(...)` and break equality matching.
-        assert_eq!(events[0].field_kinds["oom_unproven_reason"], "str");
+        let events = capture_terminal_log_events_with_context(
+            ExecTerminalLogLifecycle::Supervised,
+            false,
+            &result,
+            false,
+            false,
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].level, expected,
+            "operation_id={}",
+            evidence.operation_id
+        );
     }
 }

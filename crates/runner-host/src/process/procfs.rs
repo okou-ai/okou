@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 use super::types::{ProcessStat, process_stat_is_live};
 
 mod handle;
-pub(crate) use handle::ProcfsProcessHandle;
+pub use handle::ProcfsProcessHandle;
 
 #[derive(Debug, Eq, PartialEq)]
 enum CmdlineRead {
@@ -190,7 +190,7 @@ fn parse_process_stat(content: &[u8]) -> Option<ProcessStat> {
 }
 
 #[derive(Debug)]
-pub(crate) enum ProcessStatRead {
+pub enum ProcessStatRead {
     Found(ProcessStat),
     Missing,
     Unreadable(std::io::Error),
@@ -209,24 +209,24 @@ fn classify_process_stat_read(result: std::io::Result<Vec<u8>>) -> ProcessStatRe
 }
 
 /// Read `/proc/{pid}/stat` without conflating disappearance and read failures.
-pub(crate) async fn read_process_stat_checked(pid: u32) -> ProcessStatRead {
+pub async fn read_process_stat_checked(pid: u32) -> ProcessStatRead {
     read_process_stat_checked_from(Path::new("/proc"), pid).await
 }
 
-pub(crate) async fn read_process_stat_checked_from(proc_root: &Path, pid: u32) -> ProcessStatRead {
+pub async fn read_process_stat_checked_from(proc_root: &Path, pid: u32) -> ProcessStatRead {
     let path = proc_root.join(pid.to_string()).join("stat");
     classify_process_stat_read(tokio::fs::read(&path).await)
 }
 
 /// Blocking variant for callers that already run a complete procfs traversal
 /// on a blocking thread.
-pub(crate) fn read_process_stat_checked_blocking(pid: u32) -> ProcessStatRead {
+pub fn read_process_stat_checked_blocking(pid: u32) -> ProcessStatRead {
     let path = format!("/proc/{pid}/stat");
     classify_process_stat_read(std::fs::read(&path))
 }
 
 /// Read `/proc/{pid}/stat` and extract process facts.
-pub(crate) async fn read_process_stat(pid: u32) -> Option<ProcessStat> {
+pub async fn read_process_stat(pid: u32) -> Option<ProcessStat> {
     match read_process_stat_checked(pid).await {
         ProcessStatRead::Found(stat) => Some(stat),
         ProcessStatRead::Missing | ProcessStatRead::Unreadable(_) | ProcessStatRead::Invalid => {

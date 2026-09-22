@@ -70,11 +70,11 @@ use crate::archive_connection_attempt::{
     ArchiveConnectionAttempt, ConnectionAttemptLayer, ConnectionAttemptObserver,
 };
 use crate::error::{RunnerError, RunnerResult};
-use crate::lock;
 use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
-use crate::paths::{HomePaths, short_digest, touch_mtime};
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
 use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord, SandboxOpReporter};
+use runner_host::lock;
+use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 
 pub(crate) mod decoded;
 
@@ -4654,8 +4654,11 @@ mod tests {
                 cache.warm_from_archive("name", "v1").await.unwrap();
                 let entry = home
                     .storages_dir()
-                    .join(crate::paths::short_digest("name"))
-                    .join(format!("decoded-v1-{}", crate::paths::short_digest("v1")));
+                    .join(runner_host::paths::short_digest("name"))
+                    .join(format!(
+                        "decoded-v1-{}",
+                        runner_host::paths::short_digest("v1")
+                    ));
                 std::fs::write(entry.join("index.json"), b"{").unwrap();
             }
             let url = "https://storage.example/a";

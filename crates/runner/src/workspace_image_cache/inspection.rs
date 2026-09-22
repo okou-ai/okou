@@ -94,28 +94,29 @@ impl WorkspaceImageCache {
         cache_key: String,
         entry_dir: PathBuf,
     ) -> RunnerResult<Option<WorkspaceImageCacheInspectionEntry>> {
-        let lock = match crate::lock::try_acquire_or_busy(self.entry_lock_path(&cache_key)).await? {
-            crate::lock::TryLock::Acquired(lock) => lock,
-            crate::lock::TryLock::Busy => {
-                return Ok(Some(WorkspaceImageCacheInspectionEntry {
-                    cache_key,
-                    status: WorkspaceImageCacheInspectionStatus::Locked,
-                    reason: Some("entry lock is held".into()),
-                    cache_scope: None,
-                    profile_name: None,
-                    working_dir: None,
-                    last_completed_at: None,
-                    last_used_at: None,
-                    last_terminal_status: None,
-                    allocated_bytes: 0,
-                    logical_image_size_bytes: 0,
-                    temporary_path_count: 0,
-                    temporary_allocated_bytes: 0,
-                    storage_count: 0,
-                    artifact_count: 0,
-                }));
-            }
-        };
+        let lock =
+            match runner_host::lock::try_acquire_or_busy(self.entry_lock_path(&cache_key)).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => {
+                    return Ok(Some(WorkspaceImageCacheInspectionEntry {
+                        cache_key,
+                        status: WorkspaceImageCacheInspectionStatus::Locked,
+                        reason: Some("entry lock is held".into()),
+                        cache_scope: None,
+                        profile_name: None,
+                        working_dir: None,
+                        last_completed_at: None,
+                        last_used_at: None,
+                        last_terminal_status: None,
+                        allocated_bytes: 0,
+                        logical_image_size_bytes: 0,
+                        temporary_path_count: 0,
+                        temporary_allocated_bytes: 0,
+                        storage_count: 0,
+                        artifact_count: 0,
+                    }));
+                }
+            };
         let entry_paths = super::entry::CacheEntryPaths::from_entry_dir(entry_dir);
         if !cache_entry_dir_is_dir(entry_paths.entry_dir()).await? {
             drop(lock);

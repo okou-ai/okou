@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::process::{ExitStatus, Output};
 use std::time::Duration;
 
-use crate::bounded_command::{
+use crate::error::{RunnerError, RunnerResult};
+use runner_host::bounded_command::{
     BoundedCommandError, BoundedCommandOutcome, CommandOutputPolicy, run_bounded,
     run_output_bounded,
 };
-use crate::error::{RunnerError, RunnerResult};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use tracing::warn;

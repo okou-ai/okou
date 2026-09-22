@@ -3,12 +3,12 @@ use serde::Serialize;
 
 use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::{HomePaths, RunnerPaths};
 use crate::workspace_image_cache::{
     CacheBudget, FsStats, WorkspaceImageCache, WorkspaceImageCacheInspection,
     WorkspaceImageCacheInspectionEntry, WorkspaceImageCacheInspectionStatus,
     WorkspaceImageCacheInspectionSummary,
 };
+use runner_host::paths::{HomePaths, RunnerPaths};
 
 #[derive(Args)]
 pub struct WorkspaceImageCacheArgs {
@@ -310,7 +310,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    use crate::paths::workspace_image_cache_key;
+    use crate::test_fixtures::workspace_image_cache_key;
     use crate::workspace_image_cache::CacheEntryPaths;
     use runner_types::ids::RunId;
 

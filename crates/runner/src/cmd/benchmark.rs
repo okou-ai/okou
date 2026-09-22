@@ -14,10 +14,10 @@ use crate::config;
 use crate::deps::MITMPROXY_VERSION;
 use crate::error::{RunnerError, RunnerResult};
 use crate::executor;
-use crate::paths::{HomePaths, RunnerPaths};
 use crate::prefetch;
 use crate::proxy;
 use crate::workspace_mount::ensure_workspace_drive_mounted;
+use runner_host::paths::{HomePaths, RunnerPaths};
 
 #[derive(Default)]
 struct Timing {
@@ -157,7 +157,7 @@ pub async fn run_benchmark(
         ))
     })?;
     runner_config.sandbox.max_concurrent = 1;
-    crate::private_fs::ensure_private_dir(&runner_config.base_dir).await?;
+    runner_host::private_fs::ensure_private_dir(&runner_config.base_dir).await?;
     let base_dir_canonical = runner_config.base_dir.canonicalize().map_err(|e| {
         RunnerError::Config(format!(
             "canonicalize base_dir {} for live runner registry: {e}",

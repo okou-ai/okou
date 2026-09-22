@@ -4230,7 +4230,7 @@
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Paste this prompt into your own Codex or Claude Code session and it brings the skills on your machine into Okou.",
+        "copy": "Paste this prompt into your own {{provider}} session and it brings the skills on your machine into Okou.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
@@ -4239,7 +4239,7 @@
         "preparing": "Opening your import session…",
         "promptCopy": "It reads the skills on your machine and writes them into Okou.",
         "promptLabel": "Skill import prompt",
-        "promptTitle": "Run this in Codex or Claude Code",
+        "promptTitle": "Run this in {{provider}}",
         "startError": "The import session could not be opened.",
         "title": "Bring the skills you already wrote.",
         "tryAgain": "Try again",
@@ -4287,11 +4287,6 @@
       "sources": {
         "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
         "note": "You choose which accounts to connect.",
-        "searchAction": "Find a source for your work",
-        "searchCopy": "Search the full catalog by task or app name.",
-        "searchEmpty": "No matching sources",
-        "searchPlaceholder": "Search by task or app name",
-        "searchTitle": "Find a source for your work",
         "title": "Okou is for you, and shared across your whole team."
       },
       "startingPrompt": {

@@ -1885,6 +1885,13 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(claim.modelUsageProvider).toBe(model);
       expect(environment.OPENAI_BASE_URL).toBe("https://openrouter.ai/api/v1");
       expect(environment.OPENAI_MODEL).toBe(preset);
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: "openrouter-codex",
+        baseUrl: "https://openrouter.ai/api/v1",
+        wireApi: "responses",
+        supportsWebsockets: false,
+      });
+      expect(claim.codexRuntimeConfig?.modelCatalog).toBeUndefined();
       expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();
       expect(environment.OKOU_CODEX_SERVICE_TIER).toBeUndefined();
       await cancelChatRun(actor, run.runId);
@@ -1953,6 +1960,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(environment.OPENAI_MODEL).toBe(expectedModel);
       expect(claim.codexRuntimeConfig).toMatchObject({
         providerId: expectedProvider,
+        supportsWebsockets: false,
         modelCatalog: {
           models: expect.arrayContaining([
             expect.objectContaining({ slug: expectedModel }),
@@ -2125,8 +2133,13 @@ describe("CHAT-02: model-first provider policies", () => {
         environment[messages ? "ANTHROPIC_BASE_URL" : "OPENAI_BASE_URL"],
       ).toBe(baseUrl);
       expect(claim.cliAgentType).toBe(messages ? "claude-code" : "codex");
-      if (model.startsWith("deepseek")) {
-        expect(claim.codexRuntimeConfig?.baseUrl).toBe(baseUrl);
+      if (!messages) {
+        expect(claim.codexRuntimeConfig).toMatchObject({
+          providerId: "openrouter-codex",
+          baseUrl,
+          wireApi: "responses",
+          supportsWebsockets: false,
+        });
       }
       const name = `model-provider:${messages ? "openrouter-api-key" : "openrouter-codex"}`;
       expect(claim.billableFirewalls).toContain(name);

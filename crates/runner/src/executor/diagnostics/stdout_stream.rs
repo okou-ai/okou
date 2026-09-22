@@ -48,7 +48,7 @@ pub(in crate::executor) async fn drain_stdout_to_file(
     path: PathBuf,
     stop: CancellationToken,
 ) -> Result<StdoutDrainReport, StdoutDrainError> {
-    let file = crate::log_file::open_append(&path, false).map(tokio::fs::File::from_std);
+    let file = runner_host::log_file::open_append(&path, false).map(tokio::fs::File::from_std);
     let mut file = match file {
         Ok(f) => f,
         Err(e) => {
@@ -120,7 +120,7 @@ pub(in crate::executor) async fn append_stdout_stream_diagnostics(
         return Ok(());
     }
 
-    let mut file = tokio::fs::File::from_std(crate::log_file::open_append(path, true)?);
+    let mut file = tokio::fs::File::from_std(runner_host::log_file::open_append(path, true)?);
 
     if file.metadata().await?.len() > 0 {
         file.seek(SeekFrom::End(-1)).await?;

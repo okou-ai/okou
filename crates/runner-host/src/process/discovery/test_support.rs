@@ -3,15 +3,15 @@ use std::path::Path;
 use super::{ProcessDiscovery, ProcessStatRead, discover_all_with_status_from};
 use crate::process::read_process_stat_checked_from;
 
-pub(crate) const FIRECRACKER_PID: u32 = 42;
-pub(crate) const UNCERTAIN_STAT_FAULTS: [StatFault; 3] = [
+pub const FIRECRACKER_PID: u32 = 42;
+pub const UNCERTAIN_STAT_FAULTS: [StatFault; 3] = [
     StatFault::PermissionDenied,
     StatFault::Emfile,
     StatFault::Invalid,
 ];
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum StatFault {
+pub enum StatFault {
     PermissionDenied,
     Emfile,
     Invalid,
@@ -30,12 +30,12 @@ fn stat_bytes(state: char) -> Vec<u8> {
     format!("{FIRECRACKER_PID} (firecracker) {}", fields.join(" ")).into_bytes()
 }
 
-pub(crate) struct ProcfsFixture {
+pub struct ProcfsFixture {
     proc_root: tempfile::TempDir,
 }
 
 impl ProcfsFixture {
-    pub(crate) fn new(workspace: &Path) -> Self {
+    pub fn new(workspace: &Path) -> Self {
         let proc_root = tempfile::tempdir().unwrap();
         let pid_dir = proc_root.path().join(FIRECRACKER_PID.to_string());
         std::fs::create_dir(&pid_dir).unwrap();
@@ -45,11 +45,11 @@ impl ProcfsFixture {
         Self { proc_root }
     }
 
-    pub(crate) fn root(&self) -> &Path {
+    pub fn root(&self) -> &Path {
         self.proc_root.path()
     }
 
-    pub(crate) async fn discover(&self) -> ProcessDiscovery {
+    pub async fn discover(&self) -> ProcessDiscovery {
         discover_all_with_status_from(self.root(), |pid| {
             read_process_stat_checked_from(self.root(), pid)
         })
@@ -58,7 +58,7 @@ impl ProcfsFixture {
 
     /// Inject only stat-boundary outcomes after the requested successful reads.
     /// Scanning, cmdline parsing, cwd resolution, and discovery remain real.
-    pub(crate) async fn discover_with_stat_fault(
+    pub async fn discover_with_stat_fault(
         &self,
         successful_reads: usize,
         fault: StatFault,

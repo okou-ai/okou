@@ -10237,6 +10237,19 @@ function ComposerConnectorsSlot({
   ): ConnectorConnectHandlers => {
     const connectorSlug = connector.slug;
     const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
+    const completeDirectConnection: ConnectorConnectSuccess = (
+      connectionId,
+      signal,
+    ) => {
+      return actions.runConnectSuccess(
+        connectorSlug,
+        (_completedConnectionId, continuationSignal) => {
+          return completeConnectorAddition(connectorSlug, continuationSignal);
+        },
+        connectionId,
+        signal,
+      );
+    };
     return {
       openModal: () => {
         updateConnectorUi({
@@ -10258,9 +10271,7 @@ function ComposerConnectorsSlot({
               agentId: agentRecordId,
               ...accountOptions,
             },
-            onSuccess: (_connectionId, signal) => {
-              return completeConnectorAddition(connectorSlug, signal);
-            },
+            onSuccess: completeDirectConnection,
           },
           pageSignal,
         );
@@ -10273,9 +10284,7 @@ function ComposerConnectorsSlot({
           {
             connectorSlug,
             authMethod,
-            onSuccess: (_connectionId, signal) => {
-              return completeConnectorAddition(connectorSlug, signal);
-            },
+            onSuccess: completeDirectConnection,
             options: {
               connectorLabel: connector.label,
               agentId: agentRecordId,
@@ -10367,6 +10376,7 @@ function ComposerConnectorsSlot({
             connectedCustom={agentCustomConnectors}
             unconnectedCustom={unconnectedCustomConnectors}
             connecting={actions.connecting}
+            isConnectorConnecting={actions.isConnectorConnecting}
             connectHandlers={connectorConnectHandlers}
             onConnectCustom={(connector) => {
               updateConnectorUi({

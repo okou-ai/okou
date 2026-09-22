@@ -6,7 +6,7 @@ use super::support::{
     submit_queue_entry, wait_for_job_and_write_result, write_queue_job_file,
 };
 use crate::local_queue::{self, JobResponse};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 #[tokio::test]

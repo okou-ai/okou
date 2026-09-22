@@ -9,7 +9,7 @@ use crate::active_input::{
 };
 use crate::error::{RunnerError, RunnerResult};
 use crate::local_queue::{self, ActiveInputEntry};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 /// The job must have been submitted with --active-input to enable forwarding.

@@ -567,7 +567,7 @@ impl MitmProxy {
         self.child = Some(ManagedMitmdump::unmanaged(child));
     }
 
-    pub(crate) fn set_reap_gate_for_test(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(crate) fn set_reap_gate_for_test(&mut self, gate: crate::test_fixtures::ReapGate) {
         self.child
             .as_mut()
             .expect("test child installed")
@@ -718,7 +718,7 @@ async fn spawn_mitmdump(
 
     // This covers the direct PyInstaller bootloader; managed process-group
     // shutdown and marker reconciliation cover its forked application child.
-    crate::parent_death::configure_parent_death_signal(&mut cmd);
+    runner_host::parent_death::configure_parent_death_signal(&mut cmd);
 
     info!(port, bin = %config.mitmdump_bin.display(), "starting mitmdump");
 
@@ -913,8 +913,8 @@ fn find_available_port() -> RunnerResult<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::paths::HomePaths;
-    use crate::process::{ProcessStatRead, read_process_stat_checked};
+    use runner_host::paths::HomePaths;
+    use runner_host::process::{ProcessStatRead, read_process_stat_checked};
     use std::os::unix::fs::PermissionsExt;
     use tokio::io::AsyncWriteExt;
     use tracing::Level;
@@ -1439,8 +1439,8 @@ exit 42
     async fn wait_for_pid_absent(pid: u32) -> bool {
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
-                match crate::process::read_process_stat(pid).await {
-                    Some(stat) if crate::process::process_stat_is_live(&stat) => {
+                match runner_host::process::read_process_stat(pid).await {
+                    Some(stat) if runner_host::process::process_stat_is_live(&stat) => {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
                     Some(_) | None => return,
@@ -2141,7 +2141,7 @@ exit 42
         let environment = std::fs::read_to_string(fake_mitmdump.with_extension("env")).unwrap();
         let old_launch = PathBuf::from(environment.lines().next().unwrap());
 
-        let gate = crate::child_cleanup::ReapGate::new();
+        let gate = crate::test_fixtures::ReapGate::new();
         proxy.set_reap_gate_for_test(gate.clone());
         let restart = proxy.begin_restart();
         let restart_task = tokio::spawn(restart.spawn());

@@ -4292,7 +4292,7 @@
       },
       "skills": {
         "copied": "Copiado",
-        "copy": "Pega este prompt en tu propia sesión de Codex o Claude Code y traerá a Okou las skills de tu ordenador.",
+        "copy": "Pega este prompt en tu propia sesión de {{provider}} y traerá a Okou las skills de tu ordenador.",
         "copyError": "No se pudo copiar el prompt.",
         "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow de Okou.",
@@ -4301,7 +4301,7 @@
         "preparing": "Abriendo tu sesión de importación…",
         "promptCopy": "Lee las skills de tu ordenador y las escribe en Okou.",
         "promptLabel": "Prompt de importación de skills",
-        "promptTitle": "Ejecuta esto en Codex o Claude Code",
+        "promptTitle": "Ejecuta esto en {{provider}}",
         "startError": "No se pudo abrir la sesión de importación.",
         "title": "Trae las skills que ya escribiste.",
         "tryAgain": "Intentar de nuevo",
@@ -4349,11 +4349,6 @@
       "sources": {
         "copy": "Trabaja en la nube, desde las herramientas que tu equipo ya usa. 10 veces más resultados, menos fricción operativa, menor coste. Conecta una fuente para empezar.",
         "note": "Tú eliges qué cuentas conectar.",
-        "searchAction": "Encuentra una fuente para tu trabajo",
-        "searchCopy": "Busca en todo el catálogo por tarea o nombre de app.",
-        "searchEmpty": "No hay fuentes que coincidan",
-        "searchPlaceholder": "Busca por tarea o nombre de app",
-        "searchTitle": "Encuentra una fuente para tu trabajo",
         "title": "Okou es para ti, y se comparte con todo tu equipo."
       },
       "startingPrompt": {

@@ -6,8 +6,8 @@
 //! images, logs, locks, dependencies, CA material, and storage archives.
 //! [`RunnerPaths`] describes state scoped to one runner process. Rootfs builds
 //! are addressed through [`RootfsPaths`] under `HomePaths::images_dir()`, and
-//! snapshots are nested below a rootfs through [`SnapshotPaths`]. [`LogPaths`]
-//! formats per-run log files under `HomePaths::logs_dir()`.
+//! snapshot output directories are nested below a rootfs. [`LogPaths`] formats
+//! per-run log files under `HomePaths::logs_dir()`.
 //!
 //! Untrusted manifest-derived path components, currently storage name/version
 //! pairs, are hashed before being embedded in directory or lock names. This
@@ -19,10 +19,9 @@
 
 use std::path::{Path, PathBuf};
 
-pub use sandbox_firecracker::SnapshotOutputPaths as SnapshotPaths;
 use sha2::{Digest, Sha256};
 
-use crate::error::RunnerResult;
+use crate::error::HostResult;
 use runner_types::ids::RunId;
 
 const WORKSPACE_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"workspace-image-cache:v1\0";
@@ -41,17 +40,17 @@ fn storage_key_hashes(name: &str, version: &str) -> (String, String) {
 /// resistant enough for bounded runner-local bookkeeping and always a valid
 /// path segment.
 ///
-/// Exposed `pub(crate)` so the host-side cache dir (built here) and the
+/// Exposed `pub` so the host-side cache dir (built here) and the
 /// guest-side `file://` URL (built in `storage_cache`) share one source of
 /// truth. A drift between two copies would silently route host writes and
 /// guest reads to different logical blobs.
-pub(crate) fn short_digest(s: &str) -> String {
+pub fn short_digest(s: &str) -> String {
     let digest = Sha256::digest(s.as_bytes());
     let prefix = digest.get(..8).unwrap_or(&digest);
     hex::encode(prefix)
 }
 
-pub(crate) fn base_dir_lock_name(base_dir: &Path) -> String {
+pub fn base_dir_lock_name(base_dir: &Path) -> String {
     let hash = hex::encode(Sha256::digest(base_dir.as_os_str().as_encoded_bytes()));
     format!("base-dir-{hash}.lock")
 }
@@ -63,12 +62,7 @@ pub(crate) fn base_dir_lock_name(base_dir: &Path) -> String {
 /// image cache identity is based on canonical workspace semantics. The key
 /// includes the cache scope, profile, drive layout version, and logical image
 /// size so incompatible workspace images never share a host entry.
-#[cfg(test)]
-pub(crate) fn workspace_image_cache_key(reuse_key: &str, working_dir: &str) -> String {
-    scoped_workspace_image_cache_key("", "vm0/default", reuse_key, working_dir, 5)
-}
-
-pub(crate) fn scoped_workspace_image_cache_key(
+pub fn scoped_workspace_image_cache_key(
     cache_scope: &str,
     profile_name: &str,
     reuse_key: &str,
@@ -100,13 +94,6 @@ pub fn touch_mtime(dir: &Path) {
     }
 }
 
-/// Guest paths (must match rootfs layout).
-pub mod guest {
-    pub const STORAGE_MANIFEST: &str = guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
-    pub const STORAGE_APPLY_BIN: &str = guest_contracts::guest_binary::STORAGE_APPLY_PATH;
-    pub const RUN_AGENT: &str = guest_contracts::guest_binary::AGENT_PATH;
-}
-
 /// Runner-level paths derived from the base directory.
 #[derive(Clone)]
 pub struct RunnerPaths {
@@ -118,7 +105,6 @@ impl RunnerPaths {
         Self { base_dir }
     }
 
-    #[cfg(test)]
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
     }
@@ -160,17 +146,12 @@ impl RunnerPaths {
         self.base_dir.join("workspaces")
     }
 
-    pub fn workspace_dir(&self, sandbox_id: &sandbox::SandboxId) -> PathBuf {
+    pub fn workspace_dir(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
         self.workspaces_dir().join(sandbox_id.to_string())
     }
 
-    pub fn active_workspace_image(&self, sandbox_id: &sandbox::SandboxId) -> PathBuf {
+    pub fn active_workspace_image(&self, sandbox_id: &impl std::fmt::Display) -> PathBuf {
         self.workspace_dir(sandbox_id).join("workspace.ext4")
-    }
-
-    #[cfg(test)]
-    pub fn workspace_image_cache_dir(&self) -> PathBuf {
-        self.base_dir.join("workspace-image-cache")
     }
 }
 
@@ -181,13 +162,12 @@ pub struct HomePaths {
 }
 
 impl HomePaths {
-    pub fn new() -> RunnerResult<Self> {
+    pub fn new() -> HostResult<Self> {
         Ok(Self {
             root: PathBuf::from("/var/lib/vm0-runner"),
         })
     }
 
-    #[cfg(test)]
     pub fn with_root(root: PathBuf) -> Self {
         Self { root }
     }
@@ -229,7 +209,7 @@ impl HomePaths {
         self.root.join("live-runner-instances")
     }
 
-    pub(crate) fn runner_control_dir(&self) -> PathBuf {
+    pub fn runner_control_dir(&self) -> PathBuf {
         self.root.join("control")
     }
 
@@ -339,11 +319,11 @@ impl HomePaths {
     }
 }
 
-pub(crate) fn workspace_image_cache_lock_path(lock_dir: &Path, cache_key: &str) -> PathBuf {
+pub fn workspace_image_cache_lock_path(lock_dir: &Path, cache_key: &str) -> PathBuf {
     lock_dir.join(format!("workspace-image-cache-{cache_key}.lock"))
 }
 
-pub(crate) fn workspace_image_cache_capacity_lock_path(lock_dir: &Path) -> PathBuf {
+pub fn workspace_image_cache_capacity_lock_path(lock_dir: &Path) -> PathBuf {
     lock_dir.join("workspace-image-cache-capacity.lock")
 }
 
@@ -396,14 +376,14 @@ impl RootfsPaths {
         self.dir.join("okou-cli.json")
     }
 
-    /// Derive snapshot paths nested under this rootfs.
-    pub fn snapshot(&self, snapshot_hash: &str) -> SnapshotPaths {
-        SnapshotPaths::new(self.dir.join("snapshots").join(snapshot_hash))
+    /// Derive the snapshot output directory nested under this rootfs.
+    pub fn snapshot_dir(&self, snapshot_hash: &str) -> PathBuf {
+        self.dir.join("snapshots").join(snapshot_hash)
     }
 
     /// Parent directory for all snapshots under this rootfs.
     #[cfg(test)]
-    pub fn snapshots_dir(&self) -> PathBuf {
+    pub(crate) fn snapshots_dir(&self) -> PathBuf {
         self.dir.join("snapshots")
     }
 }
@@ -641,8 +621,8 @@ mod tests {
     #[test]
     fn snapshot_paths_layout() {
         let home = HomePaths::with_root(PathBuf::from("/test"));
-        let sp = RootfsPaths::new(&home, "aaa").snapshot("bbb");
-        assert_eq!(sp.dir(), Path::new("/test/images/aaa/snapshots/bbb"));
+        let snapshot_dir = RootfsPaths::new(&home, "aaa").snapshot_dir("bbb");
+        assert_eq!(snapshot_dir, Path::new("/test/images/aaa/snapshots/bbb"));
     }
 
     #[test]

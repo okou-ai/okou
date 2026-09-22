@@ -3,7 +3,7 @@
 use nix::unistd::Pid;
 
 /// Configure a command with the runner's parent-death contract.
-pub(crate) fn configure_parent_death_signal(command: &mut tokio::process::Command) {
+pub fn configure_parent_death_signal(command: &mut tokio::process::Command) {
     configure_parent_death_signal_for(command, nix::unistd::getpid());
 }
 

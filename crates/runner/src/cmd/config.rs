@@ -2,14 +2,16 @@ use std::collections::BTreeMap;
 
 use clap::Args;
 
+#[cfg(test)]
+use crate::config::RootfsSnapshotPathsExt;
 use crate::config::{
     self, DEFAULT_CONCURRENCY_FACTOR, DEFAULT_MAX_CONCURRENT, FirecrackerConfig, ProfileConfig,
     RunnerConfig, SandboxConfig, ServerConfig, validate_concurrency_factor,
 };
 use crate::deps::{FIRECRACKER_VERSION, KERNEL_VERSION};
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::{HomePaths, touch_mtime};
 use crate::profile;
+use runner_host::paths::{HomePaths, touch_mtime};
 
 #[derive(Args)]
 pub struct ConfigArgs {
@@ -71,7 +73,7 @@ async fn run_config_with_home(args: ConfigArgs, paths: HomePaths) -> RunnerResul
         config::validate_runner_hostname(hostname)?;
     }
     crate::group::validate_or_err(&args.group)?;
-    crate::runner_dirname::validate_or_err(&args.runner_dirname)?;
+    runner_host::runner_dirname::validate_or_err(&args.runner_dirname)?;
     validate_concurrency_factor(args.concurrency_factor)?;
     if args.profile.len() != args.rootfs_hash.len()
         || args.profile.len() != args.snapshot_hash.len()
@@ -189,15 +191,15 @@ mod tests {
         args
     }
 
-    async fn write_rootfs(home: &HomePaths, rootfs_hash: &str) -> crate::paths::RootfsPaths {
-        let rootfs = crate::paths::RootfsPaths::new(home, rootfs_hash);
+    async fn write_rootfs(home: &HomePaths, rootfs_hash: &str) -> runner_host::paths::RootfsPaths {
+        let rootfs = runner_host::paths::RootfsPaths::new(home, rootfs_hash);
         tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
         tokio::fs::write(rootfs.rootfs(), b"rootfs").await.unwrap();
         rootfs
     }
 
     async fn write_snapshot_without_complete_marker(
-        rootfs: &crate::paths::RootfsPaths,
+        rootfs: &runner_host::paths::RootfsPaths,
         snapshot_hash: &str,
     ) {
         let snapshot = rootfs.snapshot(snapshot_hash);
@@ -207,7 +209,10 @@ mod tests {
         }
     }
 
-    async fn write_complete_snapshot(rootfs: &crate::paths::RootfsPaths, snapshot_hash: &str) {
+    async fn write_complete_snapshot(
+        rootfs: &runner_host::paths::RootfsPaths,
+        snapshot_hash: &str,
+    ) {
         let snapshot = rootfs.snapshot(snapshot_hash);
         write_snapshot_without_complete_marker(rootfs, snapshot_hash).await;
         tokio::fs::write(
@@ -261,14 +266,14 @@ mod tests {
 
     #[tokio::test]
     async fn run_config_rejects_overlong_runner_dirname() {
-        let dirname = "a".repeat(crate::runner_dirname::MAX_NAME_BYTES + 1);
+        let dirname = "a".repeat(runner_host::runner_dirname::MAX_NAME_BYTES + 1);
         let err = run_config(args_with_dirname(&dirname)).await.unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("invalid runner-dirname"), "got: {msg}");
         assert!(
             msg.contains(&format!(
                 "at most {} bytes",
-                crate::runner_dirname::MAX_NAME_BYTES
+                runner_host::runner_dirname::MAX_NAME_BYTES
             )),
             "got: {msg}"
         );

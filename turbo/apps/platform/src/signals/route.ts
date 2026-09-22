@@ -97,6 +97,8 @@ interface Route {
   path: string;
   setup: Command<Promise<void> | void, [AbortSignal]>;
   analytics?: boolean;
+  /** Keep the current page mounted while navigating within this group. */
+  pageGroup?: string;
 }
 
 const internalRouteConfig$ = state<Route[] | undefined>(undefined);
@@ -129,7 +131,12 @@ const clearPageForRouteBoundary$ = command(
   ({ get, set }, nextPathname: string) => {
     const config = get(internalRouteConfig$);
     const nextRoute = config ? findRoute(config, nextPathname) : null;
-    if (get(currentRoute$) !== nextRoute) {
+    const currentRoute = get(currentRoute$);
+    if (
+      currentRoute !== nextRoute &&
+      (!currentRoute?.pageGroup ||
+        currentRoute.pageGroup !== nextRoute?.pageGroup)
+    ) {
       set(clearPage$);
     }
   },

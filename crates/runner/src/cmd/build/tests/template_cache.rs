@@ -7,7 +7,7 @@ use tokio::io::AsyncReadExt;
 #[tokio::test]
 async fn best_effort_upload_allows_missing_r2_cache() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let template = dir.path().join(TEMPLATE_FILE);
     tokio::fs::write(&template, b"template").await.unwrap();
     let input = TemplateInput {
@@ -25,7 +25,7 @@ async fn best_effort_upload_allows_missing_r2_cache() {
 #[tokio::test]
 async fn full_image_r2_hit_materializes_without_local_build() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "r2-hit-rootfs");
     let archive = template_archive_bytes(b"downloaded-template").await;
     let get = template_get_rule(archive);
@@ -64,7 +64,7 @@ async fn full_image_download_request_failure_falls_back_to_local_build() {
     use aws_sdk_s3::Client;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "r2-download-fallback-rootfs");
     let get = mock!(Client::get_object)
         .sequence()
@@ -106,7 +106,7 @@ async fn full_image_body_read_failure_uses_deduplicated_fallback() {
     use aws_sdk_s3::operation::head_object::HeadObjectOutput;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "r2-body-read-fallback-rootfs");
     let archive = template_archive_bytes(b"downloaded-template").await;
     let get = template_get_body_error_rule(archive[..archive.len() / 2].to_vec());
@@ -141,7 +141,7 @@ async fn full_image_upload_failure_is_nonfatal_after_cache_miss() {
     use aws_sdk_s3::Client;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "r2-upload-best-effort-rootfs");
     let get = template_get_miss_rule();
     let head = mock!(Client::head_object)
@@ -179,7 +179,7 @@ async fn full_image_invalid_remote_object_force_overwrites_r2() {
     use aws_sdk_s3::operation::head_object::HeadObjectOutput;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "r2-invalid-rootfs");
     let get = template_get_rule(empty_template_archive_bytes().await);
     let head = mock!(Client::head_object).then_output(|| HeadObjectOutput::builder().build());
@@ -216,7 +216,7 @@ async fn full_image_failed_downloaded_template_verification_does_not_publish_bad
     use aws_sdk_s3::operation::head_object::HeadObjectOutput;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "r2-verify-failed-rootfs");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
     tokio::fs::write(rootfs.rootfs_staging(), b"old-staging")
