@@ -25,6 +25,7 @@ test = [
 [tool.uv]
 package = false
 required-version = "==0.12.17"
+exclude-newer = "7 days"
 
 [tool.ruff]
 line-length = 100
