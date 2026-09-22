@@ -557,7 +557,9 @@ describe("Cloudflare Access owner configuration", () => {
       (await accept(configs().list({ headers }), [200])).body.configs,
     ).toStrictEqual([]);
     const ownerEvents = context.mocks.ably.publish.mock.calls.filter(
-      ([event]) => event === "cloudflare-access:changed",
+      ([event]) => {
+        return event === "cloudflare-access:changed";
+      },
     );
     expect(ownerEvents).toStrictEqual(
       ["create", "update", "delete"].map(() => {
