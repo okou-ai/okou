@@ -2,7 +2,6 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -375,64 +374,3 @@ test("Opening a text artifact shows its content on demand", async () => {
 
   await expect(screen.findByText("launch plan")).resolves.toBeInTheDocument();
 });
-
-test.each(["hosted-site", "presentation"] as const)(
-  "Opening a private %s uses an authorized isolated origin",
-  async (kind) => {
-    const canonical =
-      "http://localhost/api/host/private-deployments/00000000-0000-4000-8000-000000000009/view";
-    const preview = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
-    const renewedPreview = `https://pv-${"b".repeat(48)}.sites.vm7.io/`;
-    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-      return respond(200, {
-        artifacts: [artifact({ kind, title: "Private report" })],
-        nextCursor: null,
-      });
-    });
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...artifact({ kind, title: "Private report" }),
-        kind,
-        site: {
-          id: "00000000-0000-4000-8000-000000000008",
-          slug: "private-report",
-          publicSlug: "private-report",
-          url: canonical,
-          deploymentVersion: 1,
-          entrypoint: "/index.html",
-          spaFallback: false,
-        },
-      });
-    });
-    let resolveCount = 0;
-    context.mocks.api(hostContract.privatePreview, ({ respond }) => {
-      const url = resolveCount === 0 ? preview : renewedPreview;
-      resolveCount += 1;
-      return respond(200, {
-        url,
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-    });
-    await setupArtifactCatalogPage(context);
-    const artifactCard = await findArtifactAction("Private report");
-    click(artifactCard);
-    await waitFor(() => {
-      const view = screen.getByTestId("artifact-dialog-site-frame");
-      const frame =
-        view instanceof HTMLIFrameElement ? view : view.querySelector("iframe");
-      expect(frame).toHaveAttribute("src", preview);
-    });
-
-    click(getButtonByName("Close"));
-    await waitFor(() => {
-      expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-    });
-    click(artifactCard);
-    await waitFor(() => {
-      const view = screen.getByTestId("artifact-dialog-site-frame");
-      const frame =
-        view instanceof HTMLIFrameElement ? view : view.querySelector("iframe");
-      expect(frame).toHaveAttribute("src", preview);
-    });
-  },
-);

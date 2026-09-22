@@ -9,13 +9,11 @@ import {
   type ArtifactShareStatus,
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$, type ApiClientFactory } from "./api-client.ts";
-import { resolveApiBase } from "./api-base.ts";
 import {
   isAuthenticatedAttachmentUrl,
   type ArtifactShareIdentity,
@@ -30,11 +28,9 @@ import {
   withCleanup,
 } from "./utils.ts";
 
+// Hosted sites are public publications addressed by their own URL, so the
+// viewer offers their link instead of an artifact permission control.
 function artifactSharingTarget(url: string): ArtifactShareTarget | null {
-  const id = privateHostedDeploymentId(url, resolveApiBase());
-  if (id) {
-    return { kind: "html", id };
-  }
   if (!isAuthenticatedAttachmentUrl(url)) {
     return null;
   }

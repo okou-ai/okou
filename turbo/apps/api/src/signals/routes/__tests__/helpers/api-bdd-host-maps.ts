@@ -125,34 +125,6 @@ export function createHostMapsBddApi(context: TestContext) {
   }
 
   return {
-    async requestPrivateHostedPreview(
-      actor: HostActor | null,
-      deploymentId: string,
-      statuses: readonly (200 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        hostClient().privatePreview({
-          headers: authenticate(context, actor),
-          params: { deploymentId },
-        }),
-        statuses,
-      );
-    },
-
-    async requestPrivateHostedView(
-      actor: HostActor | null,
-      deploymentId: string,
-      statuses: readonly (302 | 401 | 403 | 404 | 500)[],
-    ) {
-      return await accept(
-        hostClient().privateView({
-          headers: authenticate(context, actor),
-          params: { deploymentId },
-        }),
-        statuses,
-      );
-    },
-
     /**
      * Install an explicit hosted-sites S3 boundary: presigned upload URLs
      * resolve, HeadObject reports every key uploaded except `missingKeys`,

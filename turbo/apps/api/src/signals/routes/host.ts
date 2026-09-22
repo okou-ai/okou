@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { hostPrivatePreviewRoutes } from "./host-private-preview";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
@@ -184,7 +183,6 @@ const deploymentsInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const hostRoutes: readonly RouteEntry[] = [
-  ...hostPrivatePreviewRoutes,
   {
     route: hostContract.preparePrivate,
     handler: authRoute(

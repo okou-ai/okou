@@ -3197,7 +3197,7 @@ describe("POST /api/image-io/generate", () => {
       spaFallback: false,
       files: [
         hostedTextFile("/index.html", "<main>Reference image</main>"),
-        hostedTextFile("/img4.jpeg", "reference", "image/jpeg"),
+        hostedTextFile("/img4-7c1e9b23.jpeg", "reference", "image/jpeg"),
       ],
     });
     await hostApi.completeHostedSite(hostActor, hosted.deploymentId);
@@ -3207,7 +3207,7 @@ describe("POST /api/image-io/generate", () => {
       },
     );
     mocks.clerk.session(fixture.userId, fixture.orgId);
-    const hostedImageUrl = `${hosted.url}/img4.jpeg`;
+    const hostedImageUrl = `${hosted.url}/img4-7c1e9b23.jpeg`;
     const sourceImageUrls = [
       hostedImageUrl,
       SECOND_MOCKUP_IMAGE_URL,
@@ -3283,7 +3283,7 @@ describe("POST /api/image-io/generate", () => {
     expect(signedHostedUrl.origin).toBe("https://r2.example.com");
     expect(signedHostedUrl.searchParams.get("sig")).toBe("bdd");
     expect(signedHostedUrl.searchParams.get("object")).toMatch(
-      /^test-hosted-sites\/sites\/.+\/img4\.jpeg$/u,
+      /^test-hosted-sites\/sites\/.+\/img4-7c1e9b23\.jpeg$/u,
     );
     await expect(orgCredits(fixture)).resolves.toBe(823);
   });

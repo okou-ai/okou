@@ -305,6 +305,38 @@ describe("hosted site worker", () => {
     expect(await response.text()).toBe("<!doctype html>ok");
   });
 
+  it("never caches documents while content-hashed assets stay immutable", async () => {
+    // Every stored object streams once, so each request needs its own store.
+    const site = () => {
+      return env({
+        files: {
+          "/assets/app-4f3a9c12.js": {
+            body: "window.loaded = true",
+            contentType: "application/javascript; charset=utf-8",
+          },
+          "/nested/page.html": {
+            body: "<!doctype html>nested",
+            contentType: "text/html; charset=utf-8",
+          },
+        },
+      });
+    };
+    for (const path of ["/", "/index.html", "/nested/page.html"]) {
+      const document = await fetchWorker(
+        new Request(`https://demo.sites.vm0.io${path}`),
+        site(),
+      );
+      expect(document.status).toBe(200);
+      expect(document.headers.get("Cache-Control")).toBe("no-store");
+    }
+    const asset = await fetchWorker(
+      new Request("https://demo.sites.vm0.io/assets/app-4f3a9c12.js"),
+      site(),
+    );
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("Cache-Control")).toBe("public, max-age=3600");
+  });
+
   it("serves default robots.txt when the active deployment omits it", async () => {
     const response = await fetchWorker(
       new Request("https://demo.sites.vm0.io/robots.txt"),
