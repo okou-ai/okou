@@ -22,15 +22,28 @@ export const HOME_TASK_RECOMMENDATION_REFRESH_MS = 15 * 60 * 1000;
  */
 export const HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY = 55;
 
+export const homeTaskRecommendationTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("new-thread") }),
+  z.object({
+    kind: z.literal("existing-thread"),
+    threadId: z.string().uuid(),
+  }),
+]);
+export type HomeTaskRecommendationTarget = z.infer<
+  typeof homeTaskRecommendationTargetSchema
+>;
+
 export const homeTaskRecommendationSchema = z.object({
   /** Stable within one generated set; the click target, never a task id. */
   id: z.string().min(1).max(64),
   title: z.string().min(1).max(120),
-  /** Sent verbatim as the first message of the thread the click creates. */
+  /** Prefilled into the target thread's composer; never sent by the click. */
   prompt: z.string().min(1).max(1000),
   rationale: z.string().max(200),
-  /** The ranking model's 0-100 judgement of how ready this task is to run. */
+  /** Jev's normalized 0-100 judgement of how ready this task is to start. */
   actionability: z.number().int().min(0).max(100),
+  /** Whether this task starts fresh or continues one visible Agent thread. */
+  target: homeTaskRecommendationTargetSchema,
   /** Connector slugs the task expects to use; display only. */
   connectors: z.array(z.string().min(1).max(64)).max(4),
 });
@@ -62,6 +75,7 @@ export const homeTaskRecommendationsContract = c.router({
     method: "GET",
     path: "/api/home-task-recommendations",
     headers: authHeadersSchema,
+    query: z.object({ agentId: z.string().uuid() }),
     responses: {
       200: homeTaskRecommendationsResponseSchema,
       401: apiErrorSchema,

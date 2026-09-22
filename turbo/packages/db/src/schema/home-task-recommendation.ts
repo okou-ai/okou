@@ -10,13 +10,15 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { HomeTaskRecommendationEntries } from "@okouai/db/jsonb-contracts/home-task-recommendation";
+import { agents } from "./agent";
 
 /**
- * The cached home page task recommendations for one member of one workspace.
+ * The cached home page task recommendations for one Agent shown to one member.
  *
- * One row per (user, org): the cards are derived from that member's own recent
- * chat activity and connector inventory, so a second workspace never reads the
- * first one's suggestions. The row is a cache, not a record — every refresh
+ * One row per (user, org, Agent): the cards are derived only from that Agent's
+ * visible threads and the Gmail content it is allowed to read. A second Agent
+ * or workspace therefore never reuses the first one's suggestions. The row is
+ * a cache, not a record — every refresh
  * replaces `entries` wholesale and nothing else references it, which is why the
  * table has no surrogate key and no history.
  *
@@ -29,6 +31,14 @@ export const homeTaskRecommendations = pgTable(
   {
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(
+        () => {
+          return agents.id;
+        },
+        { onDelete: "cascade" },
+      ),
     entries: jsonb("entries")
       .$type<HomeTaskRecommendationEntries>()
       .notNull()
@@ -51,7 +61,7 @@ export const homeTaskRecommendations = pgTable(
   },
   (table) => {
     return [
-      primaryKey({ columns: [table.userId, table.orgId] }),
+      primaryKey({ columns: [table.userId, table.orgId, table.agentId] }),
       index("home_task_recommendations_refresh_idx").on(table.nextRefreshAt),
       check(
         "home_task_recommendations_entries_bound",

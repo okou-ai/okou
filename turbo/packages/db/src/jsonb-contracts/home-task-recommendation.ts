@@ -10,8 +10,11 @@ export interface HomeTaskRecommendationEntry {
   readonly title: string;
   readonly prompt: string;
   readonly rationale: string;
-  /** The ranking model's 0-100 judgement of how ready this task is to run. */
+  /** Jev's normalized 0-100 judgement of how ready this task is to start. */
   readonly actionability: number;
+  readonly target:
+    | { readonly kind: "new-thread" }
+    | { readonly kind: "existing-thread"; readonly threadId: string };
   readonly connectors: readonly string[];
 }
 export type HomeTaskRecommendationEntries =

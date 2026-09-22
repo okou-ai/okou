@@ -1955,7 +1955,9 @@
       "title": "Inoltra a"
     },
     "homeTasks": {
-      "heading": "Ripreso dal tuo lavoro recente"
+      "existingThread": "Continua la chat",
+      "heading": "Ripreso dal tuo lavoro recente",
+      "newThread": "Nuova chat"
     },
     "mail": {
       "bcc": "bcc",

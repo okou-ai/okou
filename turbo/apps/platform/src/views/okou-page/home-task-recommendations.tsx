@@ -1,6 +1,11 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  MessageSquarePlus,
+  MessageSquareText,
+  Sparkles,
+} from "lucide-react";
 import type { HomeTaskRecommendation } from "@okouai/api-contracts/contracts/home-task-recommendations";
 import { surfaceVariants } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -42,6 +47,28 @@ function RecommendationConnectors({
   );
 }
 
+function RecommendationTarget({
+  target,
+}: {
+  readonly target: HomeTaskRecommendation["target"];
+}) {
+  const { t } = useTranslation();
+  const existing = target.kind === "existing-thread";
+  const Icon = existing ? MessageSquareText : MessageSquarePlus;
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+      <Icon className="size-3" aria-hidden />
+      {existing
+        ? t(($) => {
+            return $.chat.homeTasks.existingThread;
+          })
+        : t(($) => {
+            return $.chat.homeTasks.newThread;
+          })}
+    </span>
+  );
+}
+
 function RecommendationCard({
   recommendation,
   onStart,
@@ -68,7 +95,10 @@ function RecommendationCard({
         {recommendation.rationale}
       </span>
       <span className="mt-auto flex items-center justify-between gap-2 pt-2">
-        <RecommendationConnectors slugs={recommendation.connectors} />
+        <span className="flex min-w-0 items-center gap-2">
+          <RecommendationTarget target={recommendation.target} />
+          <RecommendationConnectors slugs={recommendation.connectors} />
+        </span>
         <ArrowRight
           className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
           aria-hidden
@@ -93,17 +123,19 @@ export function HomeTaskRecommendations({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const start = useSet(startHomeTaskRecommendation$);
-  const recommendations = useLastResolved(homeTaskRecommendations$);
+  const set = useLastResolved(homeTaskRecommendations$);
 
-  if (!recommendations || recommendations.length === 0 || !agentId) {
+  if (
+    !set ||
+    set.recommendations.length === 0 ||
+    !agentId ||
+    set.agentId !== agentId
+  ) {
     return null;
   }
 
   const handleStart = (recommendation: HomeTaskRecommendation) => {
-    detach(
-      start({ agentId, prompt: recommendation.prompt }, pageSignal),
-      Reason.DomCallback,
-    );
+    detach(start({ agentId, recommendation }, pageSignal), Reason.DomCallback);
   };
 
   return (
@@ -118,7 +150,7 @@ export function HomeTaskRecommendations({
         })}
       </h3>
       <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {recommendations.map((recommendation) => {
+        {set.recommendations.map((recommendation) => {
           return (
             <RecommendationCard
               key={recommendation.id}

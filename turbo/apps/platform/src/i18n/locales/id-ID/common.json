@@ -1911,7 +1911,9 @@
       "title": "Teruskan ke"
     },
     "homeTasks": {
-      "heading": "Diambil dari pekerjaan terbaru Anda"
+      "existingThread": "Lanjutkan chat",
+      "heading": "Diambil dari pekerjaan terbaru Anda",
+      "newThread": "Chat baru"
     },
     "mail": {
       "bcc": "bcc",

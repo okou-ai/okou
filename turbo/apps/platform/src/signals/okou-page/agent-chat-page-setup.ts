@@ -116,6 +116,7 @@ export const setupAgentChatPage$ = command(
       const targetDraft = agentDraft?.draft ?? get(talkDraft$);
       set(targetDraft.clear$);
       set(targetDraft.setInput$, prompt);
+      set(get(agentChatComposerSignals$).editor.focus$);
       const next = new URLSearchParams(params);
       next.delete("prompt");
       set(updateSearchParams$, next);

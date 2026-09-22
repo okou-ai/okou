@@ -1918,7 +1918,9 @@
       "title": "Weiterleiten an"
     },
     "homeTasks": {
-      "heading": "Aus Ihrer letzten Arbeit aufgegriffen"
+      "existingThread": "Chat fortsetzen",
+      "heading": "Aus Ihrer letzten Arbeit aufgegriffen",
+      "newThread": "Neuer Chat"
     },
     "mail": {
       "bcc": "BCC",

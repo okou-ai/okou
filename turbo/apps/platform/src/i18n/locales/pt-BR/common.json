@@ -1955,7 +1955,9 @@
       "title": "Encaminhar para"
     },
     "homeTasks": {
-      "heading": "Retomado do seu trabalho recente"
+      "existingThread": "Continuar chat",
+      "heading": "Retomado do seu trabalho recente",
+      "newThread": "Novo chat"
     },
     "mail": {
       "bcc": "cco",

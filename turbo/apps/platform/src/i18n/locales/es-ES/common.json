@@ -1955,7 +1955,9 @@
       "title": "Reenviar a"
     },
     "homeTasks": {
-      "heading": "Retomado de tu trabajo reciente"
+      "existingThread": "Continuar chat",
+      "heading": "Retomado de tu trabajo reciente",
+      "newThread": "Chat nuevo"
     },
     "mail": {
       "bcc": "BCC",

@@ -1,80 +1,94 @@
 # Home task recommendations
 
-Personalized task cards on the agent home page. The member sees up to three
-tasks derived from their own recent assistant activity and the connectors they
-have connected; clicking one starts a new chat thread whose first message is
-that task.
+Personalized task cards on one Agent's home page. The member sees up to three
+important next actions derived only from Gmail content that Agent may read and
+visible threads owned by that Agent. Each card states whether it starts a new
+chat or continues an existing thread.
+
+Clicking a card navigates to the corresponding composer and prefills the draft.
+It never sends the message.
 
 Gated by `FeatureSwitchKey.HomeTaskRecommendations`, off by default.
 
 ## Pipeline
 
-One generation is two provider calls with different jobs.
+One refresh has three deliberately separate decisions.
 
-1. **Rank.** `HOME_TASK_RANKING_MODEL` receives the collected evidence as one
-   JSON document and returns ranked intents, each with an `actionability` score
-   from 0 to 100 describing how ready the task is to start without a
-   clarifying question first.
-2. **Write.** `FAST_PATH_MODEL` receives only the intents that cleared
-   `HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY`, and turns each into one card —
-   title, click prompt, and rationale — in the member's own language.
+1. **Extract.** `FAST_PATH_MODEL` proposes evidence-linked candidate tasks. It
+   must cite exact opaque source refs and may propose an existing thread only by
+   its opaque ref. The model never receives a real thread ID.
+2. **Decide.** The fixed OpenRouter model `typesafe/jev-1.13` evaluates every
+   candidate with structured `Score` and `Noul` questions: actionability,
+   grounding, and whether the proposed new/existing-thread destination is
+   correct. Code derives confidence from the probability mass on accepted
+   actionability levels plus the two `Noul` probabilities. Candidates must pass
+   both `HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY` and the Jev confidence
+   gate.
+3. **Write.** `FAST_PATH_MODEL` receives only accepted intents and writes the
+   localized title, composer draft, and rationale.
 
-The split is the point. Ranking decides whether a task is worth interrupting
-the member with, which is a judgement about their evidence; writing only
-renders a decision that already exists. The writer never sets its own card's
-score or connector list: both stay owned by the ranking stage, so a card cannot
-promote itself or claim a connector the member has not connected.
+The split is the boundary. The extraction model cannot approve its own task;
+Jev cannot generate free text; the writer cannot change score, connector list,
+or destination. Existing thread refs are resolved to IDs locally before Jev and
+never authored by a provider.
 
-If nothing clears the threshold, the writer is never called and the member
-sees no cards. That is a correct outcome, not a failure.
+If nothing clears the gates, the writer is not called and the member sees no
+cards. That is a correct outcome, not a failure.
 
-## Evidence
+## Evidence and authorization
 
-Collected in `home-task-recommendation-evidence.service.ts`, from first-party
-data only:
+The source allowlist is intentionally narrow:
 
-- The member's most recent chat threads, with their titles and a bounded
-  excerpt of the member's own prompts. Assistant output does not travel: it
-  mostly restates the request at far greater length, and feeding generated text
-  back into a generation input adds no evidence.
-- The connector inventory for this member in this workspace — slug, and whether
-  the connection is currently usable.
+- Up to 40 recent threads for the requested Agent, restricted to the current
+  user and organization. Only recent visible `input.prompt` and
+  `output.message` excerpts are collected; hidden, revoked, thinking, control,
+  and other event types do not travel.
+- A bounded recent Gmail inbox window, including sender, subject, snippet,
+  timestamp, and unread/important labels.
 
-The inventory is capability, never content. A card may say the assistant can
-reach Gmail; it must not claim to know what is in the mailbox. Reading actual
-provider content would need the same per-source authorization a Morning Brief
-occurrence carries (see [Morning Brief composition](./morning-brief-composition.md)),
-which this feature does not have and must not fabricate.
+Gmail is read only when all of these are true for the exact user, organization,
+and Agent:
 
-Everything collected travels inside one JSON field the instructions name as
-untrusted. A recent chat message is data; it can never become an instruction,
-request a tool, or add a source.
+1. Gmail is enabled in that Agent's `user_connectors` scope.
+2. The selected default Gmail account belongs to the user and is usable.
+3. The accepted connector catalog and the Agent's live permission grants return
+   an unambiguous `allow` for the exact Gmail list/detail URLs.
+4. The Agent scope and selected account are unchanged when collected content is
+   released.
 
-## Refresh
+Only after the first URL authorization succeeds may the credential be loaded
+or refreshed. `deny`, `ask`, no route, ambiguous route, expired permission,
+reconnect state, provider failure, or source timeout all fail closed. Gmail is
+optional evidence: its failure removes Gmail from that refresh while the
+Agent's thread evidence can still be used.
 
-`home_task_recommendations` holds one row per (user, org). `next_refresh_at` is
-the only refresh authority and `HOME_TASK_RECOMMENDATION_REFRESH_MS` is the
-window both sides read — the client polls on it and the server refuses to
-regenerate inside it.
+Every provider input marks source material as untrusted data. A chat message or
+email snippet cannot become an instruction, request a tool, or add a source.
 
-- A request inside the window serves the cached cards and pays nothing.
-- A request outside it competes for the row's claim. The winner generates; the
-  loser serves the cached cards rather than waiting, so a refresh never makes
-  the home page slow or blank.
-- A generation whose evidence digest matches the stored one keeps the cached
-  cards and moves the window forward without calling a provider.
-- A failed attempt releases the claim onto a cooldown and the previous cards
-  stay. The API never reports the failure to the member: a home page with the
-  previous suggestions, or with none, is always a correct answer.
+## Refresh and isolation
+
+`home_task_recommendations` holds one row per `(user, org, agent)`. Switching
+Agents therefore changes evidence, cache identity, and cards. `next_refresh_at`
+is the only refresh authority and `HOME_TASK_RECOMMENDATION_REFRESH_MS` is the
+window both sides use.
+
+- A request inside the window serves cached cards and pays nothing. Gmail-derived cards are first revalidated against the current Agent scope, live list/detail URL permissions, default account, and connection state; any card citing Gmail is hidden immediately when that authority is absent.
+- A request outside it competes for that Agent row's claim. The winner
+  generates; the loser serves cached cards rather than waiting.
+- An unchanged evidence digest keeps the cached cards and advances the window
+  without another provider call.
+- A failed attempt enters a cooldown while previous cards remain available.
 
 ## Files
 
-| File                                                                         | Role                                            |
-| ---------------------------------------------------------------------------- | ----------------------------------------------- |
-| `packages/api-contracts/src/contracts/home-task-recommendations.ts`          | Response contract, limit, threshold, cadence    |
-| `apps/api/src/signals/services/home-task-recommendation-evidence.service.ts` | First-party evidence collection and its digest  |
-| `apps/api/src/signals/services/home-task-recommendation-shape.service.ts`    | Untrusted model output to contract values       |
-| `apps/api/src/signals/services/home-task-recommendations.service.ts`         | Claim, cache, and the two-stage generation      |
-| `apps/api/src/signals/routes/home-task-recommendations.ts`                   | `GET /api/home-task-recommendations`            |
-| `apps/platform/src/signals/okou-page/home-task-recommendations.ts`           | Poll, feature gate, and the click-to-thread act |
-| `apps/platform/src/views/okou-page/home-task-recommendations.tsx`            | The card row on the agent home page             |
+| File                                                                         | Role                                                |
+| ---------------------------------------------------------------------------- | --------------------------------------------------- |
+| `packages/api-contracts/src/contracts/home-task-recommendations.ts`          | Agent query, card target, limit, threshold, cadence |
+| `apps/api/src/signals/services/home-task-recommendation-evidence.service.ts` | Agent-thread evidence and digest                    |
+| `apps/api/src/signals/services/home-task-recommendation-gmail.service.ts`    | Authorized bounded Gmail collection                 |
+| `apps/api/src/signals/services/connector-url-permission.service.ts`          | Shared live Agent URL policy decision               |
+| `apps/api/src/signals/services/home-task-recommendation-shape.service.ts`    | Evidence-ref and provider-output validation         |
+| `apps/api/src/signals/services/home-task-recommendations.service.ts`         | Agent cache, Jev gates, and three-stage generation  |
+| `apps/api/src/signals/routes/home-task-recommendations.ts`                   | `GET /api/home-task-recommendations?agentId=...`    |
+| `apps/platform/src/signals/okou-page/home-task-recommendations.ts`           | Agent-scoped poll and composer handoff              |
+| `apps/platform/src/views/okou-page/home-task-recommendations.tsx`            | Cards with new/continue labels                      |

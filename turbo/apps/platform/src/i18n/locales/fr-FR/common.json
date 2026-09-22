@@ -1955,7 +1955,9 @@
       "title": "Transférer vers"
     },
     "homeTasks": {
-      "heading": "Repris de votre travail récent"
+      "existingThread": "Continuer le chat",
+      "heading": "Repris de votre travail récent",
+      "newThread": "Nouveau chat"
     },
     "mail": {
       "bcc": "bcc",

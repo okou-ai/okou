@@ -7,43 +7,41 @@ import {
 } from "@okouai/api-contracts/contracts/home-task-recommendations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
+import { currentChatAgentId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
-import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { detachedNavigateTo$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
 import { setLoop } from "../utils.ts";
+import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 
-/**
- * The floor on how often the page re-asks.
- *
- * The server owns the real cadence and reports what is left of it, so this is
- * only a guard against a zero or a stale clock turning the poll into a busy
- * loop. It is deliberately far below the refresh interval: a member who leaves
- * the page open across the window should see the new cards without a reload.
- */
 const MIN_POLL_INTERVAL_MS = 60_000;
-
 const reloadVersion$ = state(0);
 
 export const homeTaskRecommendationsEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.HomeTaskRecommendations] ?? false;
 });
 
-/**
- * The member's current home page task cards.
- *
- * `null` means there is nothing to show — the switch is off, the request was
- * refused, or the server had no usable set. The page renders nothing for all
- * three; none of them is a failure the member can act on, so none of them
- * surfaces an error.
- */
+export interface HomeTaskRecommendationSet {
+  readonly agentId: string;
+  readonly recommendations: readonly HomeTaskRecommendation[];
+}
+
+/** Cards are requested and identified by the Agent currently owning the page. */
 export const homeTaskRecommendations$ = computed(
-  async (get): Promise<readonly HomeTaskRecommendation[] | null> => {
+  async (get): Promise<HomeTaskRecommendationSet | null> => {
     get(reloadVersion$);
     if (!get(homeTaskRecommendationsEnabled$)) {
       return null;
     }
+    const agentId = await get(currentChatAgentId$);
+    if (!agentId) {
+      return null;
+    }
     const response = await accept(
-      get(apiClient$)(homeTaskRecommendationsContract).list({}),
+      get(apiClient$)(homeTaskRecommendationsContract).list({
+        query: { agentId },
+      }),
       [200, 401, 403],
       undefined,
       { showErrorToast: false },
@@ -52,17 +50,12 @@ export const homeTaskRecommendations$ = computed(
       return null;
     }
     const data = homeTaskRecommendationsResponseSchema.parse(response.body);
-    return data.recommendations.length > 0 ? data.recommendations : null;
+    return data.recommendations.length > 0
+      ? { agentId, recommendations: data.recommendations }
+      : null;
   },
 );
 
-/**
- * Keep the cards current for as long as the home page is mounted.
- *
- * The poll runs on the published refresh interval rather than on a cadence of
- * its own: the server refuses to regenerate before that window elapses, so a
- * faster client would only pay for requests that return the same cards.
- */
 export const subscribeHomeTaskRecommendations$ = command(
   ({ get, set }, signal: AbortSignal): void => {
     if (!get(homeTaskRecommendationsEnabled$)) {
@@ -83,26 +76,45 @@ export const subscribeHomeTaskRecommendations$ = command(
 );
 
 /**
- * Hand the recommended task to a thread of its own.
+ * Put the recommendation in the appropriate composer and stop there.
  *
- * The card's prompt is sent as that thread's first message, so the click
- * starts the work rather than filling the composer with it: the member chose a
- * described task, not a draft to edit.
+ * New-chat cards already live beside that Agent's new-chat composer. Existing
+ * cards navigate to their owned thread with a one-shot draft handoff. Neither
+ * branch invokes a send command.
  */
 export const startHomeTaskRecommendation$ = command(
   async (
-    { set },
-    args: { readonly agentId: string; readonly prompt: string },
+    { get, set },
+    args: {
+      readonly agentId: string;
+      readonly recommendation: HomeTaskRecommendation;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
-    await set(
-      sendNewThread$,
-      {
-        agentId: args.agentId,
-        prompt: args.prompt,
-        generationTemplate: undefined,
-      },
-      signal,
-    );
+    signal.throwIfAborted();
+    if (args.recommendation.target.kind === "existing-thread") {
+      set(detachedNavigateTo$, ROUTES.chat, {
+        pathParams: { threadId: args.recommendation.target.threadId },
+        searchParams: new URLSearchParams({
+          prompt: args.recommendation.prompt,
+        }),
+      });
+      return;
+    }
+
+    const currentAgentId = await get(currentChatAgentId$);
+    signal.throwIfAborted();
+    if (currentAgentId !== args.agentId) {
+      set(detachedNavigateTo$, ROUTES.agentChat, {
+        pathParams: { agentId: args.agentId },
+        searchParams: new URLSearchParams({
+          prompt: args.recommendation.prompt,
+        }),
+      });
+      return;
+    }
+    const composer = get(agentChatComposerSignals$);
+    set(composer.draft.setDraftInput$, args.recommendation.prompt);
+    set(composer.editor.focus$);
   },
 );
