@@ -1735,6 +1735,11 @@
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
+    "browserAction": {
+      "documentTitle": "Browseraktion",
+      "loading": "Browseranfrage wird geladen",
+      "unavailableDescription": "Diese Browseranfrage ist ungültig oder nicht mehr verfügbar."
+    },
     "browserInput": {
       "applyFailed": "Die Informationen konnten nicht hinzugefügt werden. Ihre Eingaben sind noch vorhanden. Versuchen Sie es erneut.",
       "applying": "Informationen werden hinzugefügt",
@@ -1752,12 +1757,10 @@
       "delivered": "Agent benachrichtigt",
       "deliveredDescription": "Der Agent kann jetzt fortfahren.",
       "description": "Geben Sie die für diese Website angeforderten Informationen ein.",
-      "documentTitle": "Browsereingabe",
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
       "loadFailed": "Diese Anfrage konnte nicht geladen werden",
       "loadFailedDescription": "Versuchen Sie es gleich noch einmal.",
-      "loading": "Browsereingabe wird geladen",
       "loadingDescription": "Anfrage wird geprüft…",
       "open": "Informationen eingeben",
       "optional": "(Optional)",
@@ -1770,7 +1773,6 @@
       "submitting": "Wird hinzugefügt…",
       "title": "Informationen im Browser eingeben",
       "unavailable": "Anfrage nicht verfügbar",
-      "unavailableDescription": "Diese Browsereingabe-Anfrage ist ungültig oder nicht mehr verfügbar.",
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
     },

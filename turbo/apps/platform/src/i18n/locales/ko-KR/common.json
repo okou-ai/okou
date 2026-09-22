@@ -1732,6 +1732,11 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "browserAction": {
+      "documentTitle": "브라우저 작업",
+      "loading": "브라우저 요청을 불러오는 중",
+      "unavailableDescription": "이 브라우저 요청은 유효하지 않거나 더 이상 사용할 수 없습니다."
+    },
     "browserInput": {
       "applyFailed": "정보를 추가하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도하세요.",
       "applying": "정보 추가 중",
@@ -1749,12 +1754,10 @@
       "delivered": "에이전트에게 알림",
       "deliveredDescription": "이제 에이전트가 계속할 수 있습니다.",
       "description": "이 사이트에서 요청한 정보를 입력하세요.",
-      "documentTitle": "브라우저 입력",
       "expired": "요청이 만료됨",
       "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
       "loadFailed": "이 요청을 불러오지 못했습니다",
       "loadFailedDescription": "잠시 후 다시 시도하세요.",
-      "loading": "브라우저 입력 불러오는 중",
       "loadingDescription": "요청을 확인하고 있습니다…",
       "open": "정보 입력",
       "optional": "(선택)",
@@ -1767,7 +1770,6 @@
       "submitting": "추가 중…",
       "title": "브라우저에 정보 입력",
       "unavailable": "요청을 사용할 수 없음",
-      "unavailableDescription": "이 브라우저 입력 요청은 유효하지 않거나 더 이상 사용할 수 없습니다.",
       "uncertain": "브라우저를 확인하세요",
       "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
     },

@@ -178,7 +178,7 @@ test("The standalone route reuses the native browser input form", async () => {
     expect(sentPrompt).toBe(CALLBACK_PROMPT);
   });
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(document.title).toContain("Browser input");
+  expect(document.title).toContain("Browser action");
 });
 
 test("A terminal standalone action retries only its stable callback", async () => {
@@ -238,6 +238,7 @@ test("A standalone direct interaction opens the existing Browser page and comple
   await expect(
     screen.findByText("Finish the visual challenge"),
   ).resolves.toBeVisible();
+  expect(document.title).toContain("Browser action");
   const browserLink = await waitFor(() => {
     return link("Open Research browser");
   });

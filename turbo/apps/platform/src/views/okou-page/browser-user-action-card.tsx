@@ -213,7 +213,7 @@ function StateFromRequest({
           return $.chat.browserInput.unavailable;
         })}
         description={t(($) => {
-          return $.chat.browserInput.unavailableDescription;
+          return $.chat.browserAction.unavailableDescription;
         })}
         variant={variant}
       />
@@ -913,7 +913,7 @@ export function BrowserUserActionCard({
       <ActionState
         icon={<Loader2 size={20} className="animate-spin" />}
         title={t(($) => {
-          return $.chat.browserInput.loading;
+          return $.chat.browserAction.loading;
         })}
         description={t(($) => {
           return $.chat.browserInput.loadingDescription;
@@ -1027,7 +1027,7 @@ export function BrowserUserActionUnavailableCard({
           return $.chat.browserInput.unavailable;
         })}
         description={t(($) => {
-          return $.chat.browserInput.unavailableDescription;
+          return $.chat.browserAction.unavailableDescription;
         })}
         variant={variant}
       />

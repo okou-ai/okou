@@ -1764,6 +1764,11 @@
       "upgradeToRun": "Passez à Pro pour exécuter {{assistantName}}",
       "upgradeWorkspace": "Mettez à niveau votre espace de travail"
     },
+    "browserAction": {
+      "documentTitle": "Action du navigateur",
+      "loading": "Chargement de la demande du navigateur",
+      "unavailableDescription": "Cette demande du navigateur n’est pas valide ou n’est plus disponible."
+    },
     "browserInput": {
       "applyFailed": "Impossible d’ajouter les informations. Vos saisies sont toujours présentes. Réessayez.",
       "applying": "Ajout des informations",
@@ -1781,12 +1786,10 @@
       "delivered": "Agent informé",
       "deliveredDescription": "L’agent peut maintenant continuer.",
       "description": "Saisissez les informations demandées pour ce site.",
-      "documentTitle": "Saisie dans le navigateur",
       "expired": "Demande expirée",
       "expiredDescription": "Le navigateur a été fermé ou cette demande n’est plus active.",
       "loadFailed": "Impossible de charger cette demande",
       "loadFailedDescription": "Réessayez dans un instant.",
-      "loading": "Chargement de la saisie navigateur",
       "loadingDescription": "Vérification de cette demande…",
       "open": "Saisir les informations",
       "optional": "(Facultatif)",
@@ -1799,7 +1802,6 @@
       "submitting": "Ajout…",
       "title": "Saisir des informations dans le navigateur",
       "unavailable": "Demande indisponible",
-      "unavailableDescription": "Cette demande de saisie navigateur est invalide ou n’est plus disponible.",
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."
     },

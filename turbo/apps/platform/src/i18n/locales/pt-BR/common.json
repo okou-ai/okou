@@ -1764,6 +1764,11 @@
       "upgradeToRun": "Faça upgrade para o Pro para executar o {{assistantName}}",
       "upgradeWorkspace": "Faça upgrade do seu workspace"
     },
+    "browserAction": {
+      "documentTitle": "Ação do navegador",
+      "loading": "Carregando solicitação do navegador",
+      "unavailableDescription": "Esta solicitação do navegador é inválida ou não está mais disponível."
+    },
     "browserInput": {
       "applyFailed": "Não foi possível adicionar as informações. Seus dados continuam aqui. Tente novamente.",
       "applying": "Adicionando informações",
@@ -1781,12 +1786,10 @@
       "delivered": "Agente notificado",
       "deliveredDescription": "O agente já pode continuar.",
       "description": "Digite as informações solicitadas para este site.",
-      "documentTitle": "Entrada do navegador",
       "expired": "Solicitação expirada",
       "expiredDescription": "O navegador foi fechado ou esta solicitação não está mais ativa.",
       "loadFailed": "Não foi possível carregar esta solicitação",
       "loadFailedDescription": "Tente novamente em instantes.",
-      "loading": "Carregando entrada do navegador",
       "loadingDescription": "Verificando esta solicitação…",
       "open": "Inserir informações",
       "optional": "(Opcional)",
@@ -1799,7 +1802,6 @@
       "submitting": "Adicionando…",
       "title": "Inserir informações no navegador",
       "unavailable": "Solicitação indisponível",
-      "unavailableDescription": "Esta solicitação de entrada do navegador é inválida ou não está mais disponível.",
       "uncertain": "Verifique o navegador",
       "uncertainDescription": "O navegador pode ter recebido as informações. Peça ao agente para verificar antes de tentar novamente."
     },
