@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 
-import type { BrowserUserActionState } from "@okouai/api-contracts/contracts/browser-user-actions";
 import {
   browserSessionInstances,
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "../lib/db";
 
@@ -45,26 +44,30 @@ export async function stageStuckBrowserUserActionFixture(args: {
 }
 
 /**
- * Infrastructure exception: retention tests need exact terminal clocks and
- * states that no public route can manufacture independently of the Browser
- * effect. The request token keeps this mutation confined to a test-owned row.
+ * Infrastructure exception: a completion that commits just after Browser
+ * closure is a real concurrent outcome, but public routes cannot schedule its
+ * timestamp deterministically. This fixture changes only that clock on one
+ * already-terminal, test-owned request.
  */
-export async function stageBrowserUserActionStateFixture(args: {
+export async function stageBrowserUserActionCompletedAtFixture(args: {
   readonly requestToken: string;
-  readonly status: Exclude<BrowserUserActionState, "pending" | "applying">;
   readonly completedAt: Date;
 }): Promise<void> {
   const updated = await db()
     .update(browserUserActionRequests)
-    .set({
-      status: args.status,
-      completedAt: args.completedAt,
-      applyStartedAt: null,
-    })
+    .set({ completedAt: args.completedAt })
     .where(
-      eq(
-        browserUserActionRequests.requestTokenHash,
-        requestTokenHash(args.requestToken),
+      and(
+        eq(
+          browserUserActionRequests.requestTokenHash,
+          requestTokenHash(args.requestToken),
+        ),
+        inArray(browserUserActionRequests.status, [
+          "succeeded",
+          "cancelled",
+          "stale",
+          "uncertain",
+        ]),
       ),
     )
     .returning({

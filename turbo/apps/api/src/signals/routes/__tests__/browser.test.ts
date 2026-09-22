@@ -27,7 +27,7 @@ import { server } from "../../../mocks/server";
 import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-deletion";
 import {
   stageBrowserUserActionClosureFixture,
-  stageBrowserUserActionStateFixture,
+  stageBrowserUserActionCompletedAtFixture,
   stageStuckBrowserUserActionFixture,
 } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
@@ -287,6 +287,11 @@ describe("Browser user-action route", () => {
           await barrier.release.promise;
         }
         return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(
+          providerBrowser(String(params.id), { status: "stopped" }),
+        );
       }),
     );
 
@@ -1079,6 +1084,23 @@ describe("Browser user-action route", () => {
       status: 409,
       body: { error: { code: "BROWSER_USER_ACTION_BROWSER_NOT_LIVE" } },
     });
+    await reconcileBrowsers(current.threadId);
+    const preservedStale = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: staleCandidate.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(preservedStale.body.state).toBe("stale");
+    const preservedUncertain = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: uncertainCandidate.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(preservedUncertain.body.state).toBe("uncertain");
     const terminalAfterExpiry = await accept(
       userActionClient().get({
         headers: { authorization: "Bearer clerk-session" },
@@ -1150,8 +1172,6 @@ describe("Browser user-action route", () => {
     const applying = await createDirectAction("applying conversion");
     const succeeded = await createDirectAction("successful completion");
     const cancelled = await createDirectAction("cancelled completion");
-    const stale = await createDirectAction("existing stale completion");
-    const uncertain = await createDirectAction("existing uncertain completion");
     const raced = await createDirectAction("concurrent completion or closure");
 
     await stageStuckBrowserUserActionFixture({
@@ -1174,18 +1194,6 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
-    const existingTerminalAt = new Date(STARTED_AT_MS + 30_000);
-    await stageBrowserUserActionStateFixture({
-      requestToken: stale.body.action.requestToken,
-      status: "stale",
-      completedAt: existingTerminalAt,
-    });
-    await stageBrowserUserActionStateFixture({
-      requestToken: uncertain.body.action.requestToken,
-      status: "uncertain",
-      completedAt: existingTerminalAt,
-    });
-
     const finishedAt = new Date(STARTED_AT_MS + MINUTE_MS);
     mockNow(finishedAt.getTime());
     const [capturedProviderId, completeRace, cancelRace] = await Promise.all([
@@ -1246,8 +1254,6 @@ describe("Browser user-action route", () => {
       applying.body.action.requestToken,
       succeeded.body.action.requestToken,
       cancelled.body.action.requestToken,
-      stale.body.action.requestToken,
-      uncertain.body.action.requestToken,
       raced.body.action.requestToken,
     ];
     const readAction = async (requestToken: string) => {
@@ -1270,15 +1276,7 @@ describe("Browser user-action route", () => {
     });
     expect(convertedActions[2]?.body.state).toBe("succeeded");
     expect(convertedActions[3]?.body.state).toBe("cancelled");
-    expect(convertedActions[4]?.body).toMatchObject({
-      state: "stale",
-      completedAt: existingTerminalAt.toISOString(),
-    });
-    expect(convertedActions[5]?.body).toMatchObject({
-      state: "uncertain",
-      completedAt: existingTerminalAt.toISOString(),
-    });
-    expect(convertedActions[6]?.body.state).toMatch(
+    expect(convertedActions[4]?.body.state).toMatch(
       /^(succeeded|cancelled|stale)$/u,
     );
 
@@ -1395,9 +1393,8 @@ describe("Browser user-action route", () => {
       finishedAt,
     });
     expect(capturedProviderId).toBe(providerId);
-    await stageBrowserUserActionStateFixture({
+    await stageBrowserUserActionCompletedAtFixture({
       requestToken: laterTerminal.body.action.requestToken,
-      status: "succeeded",
       completedAt: laterCompletedAt,
     });
 
