@@ -38,8 +38,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.settings,
   ROUTES.settingsFeishu,
   ROUTES.settingsLark,
-  ROUTES.settingsSlack,
-  ROUTES.settingsTeams,
   ROUTES.settingsTelegram,
   ROUTES.telegramConnect,
   ROUTES.workflowDetail,
@@ -64,23 +62,7 @@ const onboardingGuardedPathMatchers = ONBOARDING_GUARDED_PATHS.map((path) => {
   return match(path, { decode: decodeURIComponent });
 });
 
-function isIntegrationSuccessReturn(
-  pathname: string,
-  searchParams: URLSearchParams,
-): boolean {
-  if (searchParams.get("status") !== "connected") {
-    return false;
-  }
-  return pathname === ROUTES.settingsSlack || pathname === ROUTES.settingsTeams;
-}
-
-function isOnboardingGuardedLocation(
-  pathname: string,
-  searchParams: URLSearchParams,
-): boolean {
-  if (isIntegrationSuccessReturn(pathname, searchParams)) {
-    return false;
-  }
+function isOnboardingGuardedPath(pathname: string): boolean {
   return onboardingGuardedPathMatchers.some((matcher) => {
     return matcher(pathname);
   });
@@ -114,10 +96,10 @@ export const redirectToConfiguredOnboarding$ = command(
  */
 export const bootstrapOnboardingGuard$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const onboardingSearchParams = new URLSearchParams(get(searchParams$));
-    if (!isOnboardingGuardedLocation(get(pathname$), onboardingSearchParams)) {
+    if (!isOnboardingGuardedPath(get(pathname$))) {
       return;
     }
+    const onboardingSearchParams = new URLSearchParams(get(searchParams$));
 
     const clerk = await get(clerk$);
     signal.throwIfAborted();
@@ -136,7 +118,7 @@ export const bootstrapOnboardingGuard$ = command(
       clerk.session?.id !== session.id ||
       clerk.user?.id !== user.id ||
       clerk.organization?.id !== organization.id ||
-      !isOnboardingGuardedLocation(get(pathname$), get(searchParams$))
+      !isOnboardingGuardedPath(get(pathname$))
     ) {
       return;
     }

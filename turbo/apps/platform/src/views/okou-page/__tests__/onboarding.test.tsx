@@ -1,3 +1,5 @@
+import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -65,19 +67,69 @@ test.each([
 );
 
 test.each([
-  "/settings/slack?error=access_denied",
-  "/settings/teams?error=access_denied",
+  {
+    integration: "Slack",
+    path: "/settings/slack?w=T_WORKSPACE&u=U_MEMBER",
+    heading: "Connect to Slack",
+  },
+  {
+    integration: "Microsoft Teams",
+    path: "/settings/teams?tenantId=tenant-acme&teamsUserId=teams-user-42",
+    heading: "Connect Microsoft Teams",
+  },
 ])(
-  "An unsuccessful integration return at %s still requires onboarding",
-  async (path) => {
+  "A $integration connection page remains visible before onboarding",
+  async ({ integration, path, heading }) => {
+    mockOnboardingNeeded();
+    if (integration === "Slack") {
+      context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+        return respond(200, {
+          isConnected: false,
+          isAdmin: false,
+          linkStatus: { kind: "connect" },
+        });
+      });
+    } else {
+      context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+        return respond(200, {
+          isInstalled: true,
+          isConnected: false,
+          isAdmin: false,
+          installUrl: null,
+          connectUrl: "https://teams.example/connect",
+        });
+      });
+    }
+
+    await setupPage({ context, path });
+
+    await expect(
+      screen.findByRole("heading", { name: heading }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).not.toBe("/onboarding");
+  },
+);
+
+test.each([
+  {
+    path: "/settings/slack?error=access_denied",
+    pathname: "/settings/slack",
+  },
+  {
+    path: "/settings/teams?error=access_denied",
+    pathname: "/settings/teams",
+  },
+])(
+  "An unsuccessful integration return at $path remains visible before onboarding",
+  async ({ path, pathname: expectedPathname }) => {
     mockOnboardingNeeded();
 
     await setupPage({ context, path });
 
     await expect(
-      screen.findByRole("heading", { name: "What do you want to make first" }),
+      screen.findByRole("heading", { name: "Connection failed" }),
     ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/onboarding");
+    expect(pathname()).toBe(expectedPathname);
   },
 );
 
