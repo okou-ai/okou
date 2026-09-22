@@ -4,7 +4,6 @@ import * as React from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 
-import { asChildRender } from "../../lib/base-ui-compat";
 import { IconButton } from "./icon-button";
 import {
   dialogBackdropAnimationClassName,
@@ -16,55 +15,28 @@ function Dialog(props: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-interface DialogTriggerProps extends Omit<
-  DialogPrimitive.Trigger.Props,
-  "render"
-> {
-  asChild?: boolean;
-  render?: DialogPrimitive.Trigger.Props["render"];
-}
-
-const DialogTrigger = React.forwardRef<HTMLButtonElement, DialogTriggerProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <DialogPrimitive.Trigger
-        ref={ref}
-        data-slot="dialog-trigger"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </DialogPrimitive.Trigger>
-    );
-  },
-);
+const DialogTrigger = React.forwardRef<
+  HTMLButtonElement,
+  DialogPrimitive.Trigger.Props
+>((props, ref) => {
+  return (
+    <DialogPrimitive.Trigger ref={ref} data-slot="dialog-trigger" {...props} />
+  );
+});
 DialogTrigger.displayName = "DialogTrigger";
 
 function DialogPortal(props: DialogPrimitive.Portal.Props) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
-interface DialogCloseProps extends Omit<DialogPrimitive.Close.Props, "render"> {
-  asChild?: boolean;
-  render?: DialogPrimitive.Close.Props["render"];
-}
-
-const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <DialogPrimitive.Close
-        ref={ref}
-        data-slot="dialog-close"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </DialogPrimitive.Close>
-    );
-  },
-);
+const DialogClose = React.forwardRef<
+  HTMLButtonElement,
+  DialogPrimitive.Close.Props
+>((props, ref) => {
+  return (
+    <DialogPrimitive.Close ref={ref} data-slot="dialog-close" {...props} />
+  );
+});
 DialogClose.displayName = "DialogClose";
 
 const DialogOverlay = React.forwardRef<

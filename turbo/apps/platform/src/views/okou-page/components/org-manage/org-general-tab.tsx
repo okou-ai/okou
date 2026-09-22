@@ -367,17 +367,19 @@ function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
                 </p>
               </div>
               <Dialog>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="shrink-0 gap-1.5"
-                  >
-                    {t(($) => {
-                      return $.settings.workspace.danger.leave.title;
-                    })}
-                  </Button>
-                </DialogTrigger>
+                <DialogTrigger
+                  render={
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                    >
+                      {t(($) => {
+                        return $.settings.workspace.danger.leave.title;
+                      })}
+                    </Button>
+                  }
+                />
                 <DialogContent
                   closeLabel={t(($) => {
                     return $.settings.shared.close;
@@ -397,13 +399,15 @@ function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline" size="sm">
-                        {t(($) => {
-                          return $.settings.shared.cancel;
-                        })}
-                      </Button>
-                    </DialogClose>
+                    <DialogClose
+                      render={
+                        <Button variant="outline" size="sm">
+                          {t(($) => {
+                            return $.settings.shared.cancel;
+                          })}
+                        </Button>
+                      }
+                    />
                     <Button
                       variant="destructive"
                       size="sm"
@@ -449,17 +453,19 @@ function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
                   resetDeleteConfirm();
                 }}
               >
-                <DialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="shrink-0 gap-1.5"
-                  >
-                    {t(($) => {
-                      return $.settings.shared.delete;
-                    })}
-                  </Button>
-                </DialogTrigger>
+                <DialogTrigger
+                  render={
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                    >
+                      {t(($) => {
+                        return $.settings.shared.delete;
+                      })}
+                    </Button>
+                  }
+                />
                 <DialogContent
                   closeLabel={t(($) => {
                     return $.settings.shared.close;
@@ -492,13 +498,15 @@ function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
                     }}
                   />
                   <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline" size="sm">
-                        {t(($) => {
-                          return $.settings.shared.cancel;
-                        })}
-                      </Button>
-                    </DialogClose>
+                    <DialogClose
+                      render={
+                        <Button variant="outline" size="sm">
+                          {t(($) => {
+                            return $.settings.shared.cancel;
+                          })}
+                        </Button>
+                      }
+                    />
                     <Button
                       variant="destructive"
                       size="sm"

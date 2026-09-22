@@ -215,23 +215,25 @@ function DownloadReceiptsDialog({
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={downloading}
-        >
-          <Download size={14} />
-          {downloading
-            ? t(($) => {
-                return $.billing.invoices.preparingReceipts;
-              })
-            : t(($) => {
-                return $.billing.invoices.downloadReceipts;
-              })}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={downloading}
+          >
+            <Download size={14} />
+            {downloading
+              ? t(($) => {
+                  return $.billing.invoices.preparingReceipts;
+                })
+              : t(($) => {
+                  return $.billing.invoices.downloadReceipts;
+                })}
+          </Button>
+        }
+      />
       <DialogContent>
         <form onSubmit={submit}>
           <DialogHeader>
@@ -276,19 +278,17 @@ function DownloadReceiptsDialog({
             </p>
           )}
           <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="outline">
-                {t(($) => {
-                  return $.billing.common.cancel;
-                })}
-              </Button>
+            <DialogClose render={<Button type="button" variant="outline" />}>
+              {t(($) => {
+                return $.billing.common.cancel;
+              })}
             </DialogClose>
-            <DialogClose asChild>
-              <Button type="submit" disabled={!canSubmit}>
-                {t(($) => {
-                  return $.billing.invoices.downloadZip;
-                })}
-              </Button>
+            <DialogClose
+              render={<Button type="submit" disabled={!canSubmit} />}
+            >
+              {t(($) => {
+                return $.billing.invoices.downloadZip;
+              })}
             </DialogClose>
           </DialogFooter>
         </form>

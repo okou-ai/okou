@@ -88,55 +88,58 @@ export function MultiSelectCombobox({
         }
       }}
     >
-      <PopoverTrigger asChild nativeButton={false}>
-        <div
-          role="combobox"
-          aria-expanded={open}
-          tabIndex={0}
-          className={cn(
-            "flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-[3px] focus:ring-primary/10",
-            className,
-          )}
-        >
-          <div className="flex flex-1 flex-wrap items-center gap-1">
-            {selectedOptions.length > 0 ? (
-              selectedOptions.map((opt) => {
-                return (
-                  <span
-                    key={opt.value}
-                    className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium"
-                  >
-                    {opt.icon && (
-                      <OptionIcon src={opt.icon} alt={opt.label} size={14} />
-                    )}
-                    {opt.label}
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="ml-0.5 rounded-sm text-muted-foreground hover:text-foreground"
-                      onClick={(e) => {
-                        return remove(opt.value, e);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          remove(opt.value, e);
-                        }
-                      }}
-                      aria-label={`Remove ${opt.label}`}
-                    >
-                      <X size={12} />
-                    </span>
-                  </span>
-                );
-              })
-            ) : (
-              <span className="text-muted-foreground">{placeholder}</span>
+      <PopoverTrigger
+        nativeButton={false}
+        render={
+          <div
+            role="combobox"
+            aria-expanded={open}
+            tabIndex={0}
+            className={cn(
+              "flex min-h-9 w-full cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-input px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-[3px] focus:ring-primary/10",
+              className,
             )}
+          >
+            <div className="flex flex-1 flex-wrap items-center gap-1">
+              {selectedOptions.length > 0 ? (
+                selectedOptions.map((opt) => {
+                  return (
+                    <span
+                      key={opt.value}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-xs font-medium"
+                    >
+                      {opt.icon && (
+                        <OptionIcon src={opt.icon} alt={opt.label} size={14} />
+                      )}
+                      {opt.label}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="ml-0.5 rounded-sm text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          return remove(opt.value, e);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            remove(opt.value, e);
+                          }
+                        }}
+                        aria-label={`Remove ${opt.label}`}
+                      >
+                        <X size={12} />
+                      </span>
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="text-muted-foreground">{placeholder}</span>
+              )}
+            </div>
+            <ChevronDown size={16} className="shrink-0 text-muted-foreground" />
           </div>
-          <ChevronDown size={16} className="shrink-0 text-muted-foreground" />
-        </div>
-      </PopoverTrigger>
+        }
+      />
       <PopoverContent
         className="w-[var(--anchor-width)] p-0"
         align="start"

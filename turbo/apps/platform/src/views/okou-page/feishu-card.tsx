@@ -1573,24 +1573,26 @@ function FeishuBotMenu({
   }
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          disabled={disconnecting}
-          variant="quiet"
-          size="icon-sm"
-          className="shrink-0"
-          aria-label={t(
-            ($) => {
-              return $.connectors.providerSettings[platform].moreOptions;
-            },
-            { bot: title },
-          )}
-        >
-          <EllipsisVertical size={16} />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            disabled={disconnecting}
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0"
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings[platform].moreOptions;
+              },
+              { bot: title },
+            )}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
       <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
         {isAdmin ? (
           <button

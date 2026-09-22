@@ -116,11 +116,13 @@ describe("Button", () => {
     const user = userEvent.setup();
     render(
       <Popover>
-        <PopoverTrigger asChild>
-          <Button showTooltip aria-label="Open details">
-            Details icon
-          </Button>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <Button showTooltip aria-label="Open details">
+              Details icon
+            </Button>
+          }
+        />
         <PopoverContent>Details panel</PopoverContent>
       </Popover>,
     );
@@ -152,11 +154,13 @@ describe("Button", () => {
     const user = userEvent.setup();
     render(
       <Dialog>
-        <DialogTrigger asChild>
-          <Button type="button" variant="neutral">
-            Add automation
-          </Button>
-        </DialogTrigger>
+        <DialogTrigger
+          render={
+            <Button type="button" variant="neutral">
+              Add automation
+            </Button>
+          }
+        />
         <DialogContent>
           <DialogTitle>Choose automation</DialogTitle>
         </DialogContent>

@@ -1358,33 +1358,35 @@ function EnabledExplicitModelFirstModelPicker(
         onOpenChange={props.onOpenChange}
         modal={props.modal}
       >
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            aria-label={state.triggerAriaLabel}
-            className={cn(
-              "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
-              props.triggerClassName,
-            )}
-          >
-            <span data-slot="select-value" className="min-w-0">
-              <ModelFirstTriggerLabel
-                selection={state.selection}
-                placeholder={props.placeholder}
-                mobileIcon={props.mobileIconTrigger}
-                fastLabel={props.fastLabel}
-                fastShownByCaller={props.fastShownByCaller ?? false}
-              />
-            </span>
-            <span data-slot="select-icon">
-              <ChevronDown
-                size={16}
-                className="shrink-0 opacity-50"
-                aria-hidden="true"
-              />
-            </span>
-          </Button>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="ghost"
+              aria-label={state.triggerAriaLabel}
+              className={cn(
+                "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
+                props.triggerClassName,
+              )}
+            >
+              <span data-slot="select-value" className="min-w-0">
+                <ModelFirstTriggerLabel
+                  selection={state.selection}
+                  placeholder={props.placeholder}
+                  mobileIcon={props.mobileIconTrigger}
+                  fastLabel={props.fastLabel}
+                  fastShownByCaller={props.fastShownByCaller ?? false}
+                />
+              </span>
+              <span data-slot="select-icon">
+                <ChevronDown
+                  size={16}
+                  className="shrink-0 opacity-50"
+                  aria-hidden="true"
+                />
+              </span>
+            </Button>
+          }
+        />
         <PopoverContent
           side="top"
           align="end"

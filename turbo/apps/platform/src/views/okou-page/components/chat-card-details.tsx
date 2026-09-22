@@ -27,17 +27,19 @@ export function ChatCardDetails({
     });
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          aria-label={label}
-        >
-          {label}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            aria-label={label}
+          >
+            {label}
+          </Button>
+        }
+      />
       <DialogContent
         aria-describedby={undefined}
         closeLabel={t(($) => {

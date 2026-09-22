@@ -61,24 +61,26 @@ export function ChatEffortTrigger({
     <Popover>
       {/* A real composer control, not a bare trigger: the shared button owns
             the radius, height, hover and focus ring the rest of the row has. */}
-      <PopoverTrigger asChild>
-        <Button
-          variant="quiet"
-          size="sm"
-          aria-label={`${label}, ${displayValue}`}
-          className={triggerClassName}
-        >
-          {fast ? (
-            <Zap
-              size={15}
-              fill="currentColor"
-              className="text-amber-600 dark:text-amber-300"
-              aria-hidden="true"
-            />
-          ) : null}
-          {displayValue}
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="quiet"
+            size="sm"
+            aria-label={`${label}, ${displayValue}`}
+            className={triggerClassName}
+          >
+            {fast ? (
+              <Zap
+                size={15}
+                fill="currentColor"
+                className="text-amber-600 dark:text-amber-300"
+                aria-hidden="true"
+              />
+            ) : null}
+            {displayValue}
+          </Button>
+        }
+      />
       {/* Above the control and aligned to its trailing edge. The control sits
             in a right-aligned row, so its leading edge moves as the level's name
             changes width while its trailing edge does not -- anchoring there is

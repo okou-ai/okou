@@ -550,19 +550,21 @@ function ComposerStripRow({
       className="group flex items-center gap-2 rounded-md pl-2 pr-1 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-state-hover"
     >
       <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="shrink-0 rounded-md p-1 text-emerald-800 transition-colors hover:bg-state-selected-hover focus-visible:bg-state-selected-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={aboutAriaLabel}
-          >
-            {isAutomationEvent ? (
-              <Bolt size={16} aria-hidden="true" />
-            ) : (
-              <ComposerQueueGlyph />
-            )}
-          </button>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className="shrink-0 rounded-md p-1 text-emerald-800 transition-colors hover:bg-state-selected-hover focus-visible:bg-state-selected-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={aboutAriaLabel}
+            >
+              {isAutomationEvent ? (
+                <Bolt size={16} aria-hidden="true" />
+              ) : (
+                <ComposerQueueGlyph />
+              )}
+            </button>
+          }
+        />
         <PopoverContent
           side="top"
           align="start"
@@ -4607,49 +4609,52 @@ function ImportedPresentationTemplateVisibilityControl({
           {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
             const selected = value === visibility;
             return (
-              <PopoverClose asChild key={value}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={cn(
-                    "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                    selected && "bg-state-selected",
-                  )}
-                  onClick={() => {
-                    if (!selected) {
-                      onChange(value);
-                    }
-                  }}
-                >
-                  <Icon
-                    size={16}
-                    className="mt-0.5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-foreground">
-                      {optionLabel(value)}
+              <PopoverClose
+                key={value}
+                render={
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={cn(
+                      "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
+                      selected && "bg-state-selected",
+                    )}
+                    onClick={() => {
+                      if (!selected) {
+                        onChange(value);
+                      }
+                    }}
+                  >
+                    <Icon
+                      size={16}
+                      className="mt-0.5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm text-foreground">
+                        {optionLabel(value)}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {optionState(value)}
+                      </span>
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {optionState(value)}
-                    </span>
-                  </span>
-                  {/* The check column is reserved on both rows: letting it
+                    {/* The check column is reserved on both rows: letting it
                       appear only on the selected one narrows that row's text
                       box, so the description reflows every time the selection
                       moves. */}
-                  <span className="mt-0.5 w-4 shrink-0">
-                    {selected ? (
-                      <Check
-                        size={16}
-                        className="text-foreground"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                  </span>
-                </button>
-              </PopoverClose>
+                    <span className="mt-0.5 w-4 shrink-0">
+                      {selected ? (
+                        <Check
+                          size={16}
+                          className="text-foreground"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </span>
+                  </button>
+                }
+              />
             );
           })}
         </div>
@@ -6847,18 +6852,20 @@ function ComputerUseConnectorMenuSection({
           })}
         </div>
       )}
-      <PopoverClose asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-state-hover"
-          onClick={onOpenDownloadDialog}
-        >
-          <Plug size={16} className="shrink-0" />
-          {t(($) => {
-            return $.chat.computerUse.connectMyComputer;
-          })}
-        </button>
-      </PopoverClose>
+      <PopoverClose
+        render={
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-state-hover"
+            onClick={onOpenDownloadDialog}
+          >
+            <Plug size={16} className="shrink-0" />
+            {t(($) => {
+              return $.chat.computerUse.connectMyComputer;
+            })}
+          </button>
+        }
+      />
     </div>
   );
 }
@@ -7089,21 +7096,23 @@ function ComposerConnectorAccountMenu({
       }}
     >
       <Tooltip>
-        <PopoverTrigger asChild>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="quiet"
-                size="icon-2xs"
-                className="shrink-0"
-                aria-label={accessibleLabel}
-              >
-                {explicit ? <UserCheck size={14} /> : <User size={14} />}
-              </Button>
-            }
-          />
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="icon-2xs"
+                  className="shrink-0"
+                  aria-label={accessibleLabel}
+                >
+                  {explicit ? <UserCheck size={14} /> : <User size={14} />}
+                </Button>
+              }
+            />
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {accessibleLabel}
         </TooltipContent>
@@ -7804,32 +7813,34 @@ function ConnectorsPopoverButton({
     >
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <PopoverTrigger asChild>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  className={cn(
-                    "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
-                    COMPOSER_CONTROL_FOCUS_CLASS,
-                  )}
-                  aria-label={t(($) => {
-                    return $.chat.connectors.title;
-                  })}
-                >
-                  {!waitingForConnectors && (
-                    <ComposerConnectorTriggerIcons
-                      connectors={agentConnectors}
-                      customConnectors={agentCustomConnectors}
-                      computerUse={computerUse}
-                      sshAccess={sshAccess}
-                      vncAccess={vncAccess}
-                    />
-                  )}
-                </button>
-              }
-            />
-          </PopoverTrigger>
+          <PopoverTrigger
+            render={
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
+                      COMPOSER_CONTROL_FOCUS_CLASS,
+                    )}
+                    aria-label={t(($) => {
+                      return $.chat.connectors.title;
+                    })}
+                  >
+                    {!waitingForConnectors && (
+                      <ComposerConnectorTriggerIcons
+                        connectors={agentConnectors}
+                        customConnectors={agentCustomConnectors}
+                        computerUse={computerUse}
+                        sshAccess={sshAccess}
+                        vncAccess={vncAccess}
+                      />
+                    )}
+                  </button>
+                }
+              />
+            }
+          />
           <TooltipContent side="top" className="text-xs">
             {t(($) => {
               return $.chat.connectors.title;
@@ -8033,29 +8044,31 @@ function ConnectorsPopoverButton({
                           <>
                             {accountAction}
                             {showPermissionAction ? (
-                              <PopoverClose asChild>
-                                <Button
-                                  showTooltip
-                                  type="button"
-                                  onClick={() => {
-                                    updateConnectorUi({
-                                      permissionConnectorSlug: connector.slug,
-                                    });
-                                  }}
-                                  aria-label={t(
-                                    ($) => {
-                                      return $.chat.connectors
-                                        .configurePermissions;
-                                    },
-                                    { connectorName: connector.label },
-                                  )}
-                                  variant="quiet"
-                                  size="icon-2xs"
-                                  className="shrink-0"
-                                >
-                                  <SlidersHorizontal size={15} />
-                                </Button>
-                              </PopoverClose>
+                              <PopoverClose
+                                render={
+                                  <Button
+                                    showTooltip
+                                    type="button"
+                                    onClick={() => {
+                                      updateConnectorUi({
+                                        permissionConnectorSlug: connector.slug,
+                                      });
+                                    }}
+                                    aria-label={t(
+                                      ($) => {
+                                        return $.chat.connectors
+                                          .configurePermissions;
+                                      },
+                                      { connectorName: connector.label },
+                                    )}
+                                    variant="quiet"
+                                    size="icon-2xs"
+                                    className="shrink-0"
+                                  >
+                                    <SlidersHorizontal size={15} />
+                                  </Button>
+                                }
+                              />
                             ) : null}
                           </>
                         ) : null
@@ -8105,22 +8118,24 @@ function ConnectorsPopoverButton({
           {(connectorItems.length > 0 || connectorsLoading) && (
             <div className="mx-2 mb-1 border-t border-border/50" />
           )}
-          <PopoverClose asChild>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
-              onClick={() => {
-                return onOpenAddDialog();
-              }}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
-                <Plus size={13} />
-              </span>
-              {t(($) => {
-                return $.chat.connectors.addConnectors;
-              })}
-            </button>
-          </PopoverClose>
+          <PopoverClose
+            render={
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
+                onClick={() => {
+                  return onOpenAddDialog();
+                }}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
+                  <Plus size={13} />
+                </span>
+                {t(($) => {
+                  return $.chat.connectors.addConnectors;
+                })}
+              </button>
+            }
+          />
         </div>
         {computerUse && (
           <ComputerUseConnectorMenuSection
