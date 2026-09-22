@@ -285,7 +285,7 @@ function PinPill() {
     );
   };
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -364,7 +364,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   return (
     <div className="relative shrink-0">
       {agentId ? (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={

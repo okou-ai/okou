@@ -219,7 +219,7 @@ function AvatarPreviewWithShuffle() {
         <AvatarSvgPreview config={config} size={96} />
         {previewRevision > 0 && <Sparkles />}
       </div>
-      <TooltipProvider delayDuration={800} skipDelayDuration={0}>
+      <TooltipProvider delay={800} timeout={0}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -476,7 +476,7 @@ export function AvatarMaker({
       {trigger ? (
         trigger(openMaker)
       ) : (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={

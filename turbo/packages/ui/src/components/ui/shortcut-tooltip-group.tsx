@@ -25,7 +25,7 @@ export function ShortcutTooltipGroup({
   readonly side?: ComponentProps<typeof TooltipContent>["side"];
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <span className="inline-flex shrink-0 items-center gap-1">
         {items.map((item) => {
           return (

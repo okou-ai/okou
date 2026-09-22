@@ -2931,7 +2931,7 @@ function PptCard({
         </button>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
-        <TooltipProvider delayDuration={300}>
+        <TooltipProvider delay={300}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -4300,7 +4300,7 @@ function ImportedPptCardCaption({
 }) {
   return (
     <div className={TEMPLATE_TILE_CAPTION}>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4512,7 +4512,7 @@ function ImportedPresentationTemplateRenameControl({
           }}
         />
       </div>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -6170,7 +6170,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
 function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   const { label, prewarm, open } = useTemplatePickerTrigger(signals);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -6272,7 +6272,7 @@ function CreateWorkflowPromptButton({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -7811,7 +7811,7 @@ function ConnectorsPopoverButton({
         handleOpenChange(open);
       }}
     >
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <PopoverTrigger
             render={
@@ -8327,7 +8327,7 @@ function MicButton({
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -8555,7 +8555,7 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9075,7 +9075,7 @@ function ComposerSendButton({
     </Button>
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9137,7 +9137,7 @@ function ModelConfigurationWarning({
   blocker: ComposerSubmitBlocker;
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={

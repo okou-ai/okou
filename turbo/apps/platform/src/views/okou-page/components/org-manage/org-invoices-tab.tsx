@@ -381,7 +381,7 @@ export function OrgInvoicesTab() {
                 </div>
                 <div className="flex justify-end">
                   {inv.hostedInvoiceUrl ? (
-                    <TooltipProvider delayDuration={200}>
+                    <TooltipProvider delay={200}>
                       <Tooltip>
                         <TooltipTrigger
                           render={

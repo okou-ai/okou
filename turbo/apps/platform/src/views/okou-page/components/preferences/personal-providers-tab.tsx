@@ -199,7 +199,7 @@ function OAuthAccountGroupsSection() {
   return (
     <section className="flex flex-col gap-4">
       <PersonalModelsHeading accountTable action={addAccountAction} />
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         <PersonalProviderAccountsTable
           accountGroups={accountGroups}
           actionPending={actionPending}

@@ -1523,7 +1523,7 @@ function AnnotationSurface({
   }
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Dialog
         open
         // A press outside must not throw the session away: the marks live

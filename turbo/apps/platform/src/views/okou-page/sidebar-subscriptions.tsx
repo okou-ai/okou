@@ -59,7 +59,7 @@ export function AccountMenuSubscriptionsPanel({
       {loading && rows.length === 0 ? (
         <AccountMenuSubscriptionsSkeleton />
       ) : (
-        <TooltipProvider delayDuration={100}>
+        <TooltipProvider delay={100}>
           <div className="flex flex-col gap-2.5">
             {rows.map((row, index) => {
               const label =

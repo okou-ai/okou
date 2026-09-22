@@ -408,7 +408,7 @@ function getPolicyDetail(policy: OrgModelPolicy): string | null {
 
 function PriceTierBadge({ tier }: { tier: ModelPriceTier }) {
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
