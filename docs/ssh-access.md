@@ -210,8 +210,8 @@ when connection setup fails. An Access rejection can mean policy or token scope,
 not necessarily an expired token; gateway TLS/protocol failures remain distinct
 from SSH authentication and host-key failures.
 
-The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
-replace credentials and delete configurations. Client ID and
+The canonical `/api/cloudflare-access/configs` endpoints create, list, rename,
+replace Service Tokens and delete configurations. Client ID and
 Client Secret are write-only. Reads return metadata and referencing host IDs/names;
 updates/deletion require the expected edit revision, and referenced deletion is
 rejected. Names may change without invalidating Runs. Token replacement advances
@@ -230,8 +230,13 @@ remains unchanged, and later Agents can use bound configurations once authorized
 for SSH. SSH username/key/password and server host-key trust remain independent
 of the Service Token.
 
-When SSH is available, `/connectors/ssh` includes a **Cloudflare Access** view beside
-**Hosts** and **Credentials**. It lists the configuration count and affected hosts,
+Cloudflare Access also has its own Connector entry after SSH and VNC at
+`/connectors/cloudflare-access`; see [Cloudflare Access](cloudflare-access.md).
+It is owner configuration rather than a directly usable Agent service, so the
+standalone entry has no Agent grant, connector account, chat trigger or direct
+command. `/connectors/ssh` intentionally retains a **Cloudflare Access** view beside
+**Hosts** and **Credentials**. Both pages share the canonical state and neutral
+`cloudflare-access:changed` invalidation. The SSH view lists the configuration count and affected hosts,
 and supports adding, editing and deleting unused
 configurations. Referenced configurations cannot be deleted until their hosts are
 rebound or deleted. Client ID and Client Secret are never read back, including
@@ -269,10 +274,11 @@ revision check. Load failures offer **Retry** and remain distinct from older-API
 unavailability and translated business errors. A protected host remains visibly
 protected when Access is unavailable; it is never silently converted to Direct.
 
-Configuration mutations reuse the owner's `ssh:changed` notification to refresh
-metadata without clearing open drafts. There is no independent connector card,
-Agent Authorization row or Chat service, and no persistent Refresh button. Access
-configuration counts do not replace SSH host-based visibility and summaries.
+Configuration mutations publish neutral `cloudflare-access:changed` and the
+temporary `ssh:changed` compatibility notification to refresh metadata without
+clearing open drafts. The independent connector card remains outside Agent
+Authorization and Chat, and has no persistent Refresh button. Access configuration
+counts do not replace SSH host-based visibility and summaries.
 
 SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.

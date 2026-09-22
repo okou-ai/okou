@@ -2200,8 +2200,8 @@ environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
 #34081 owns Access management UI; #34370 records integrated real-Run acceptance
 and the owner-approved evidence boundaries at closure.
-The existing management UI stays inside `/connectors/ssh` while #36038 adds a
-second standalone entry. Access is reusable owner configuration, not a separately
+The retained management UI stays inside `/connectors/ssh`, and #36038 adds the
+standalone `/connectors/cloudflare-access` entry after SSH and VNC. Access is reusable owner configuration, not a separately
 authorized Agent service. SSH remains its first consumer under the existing SSH
 Agent grant; general availability does not replace that permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not

@@ -371,7 +371,7 @@ test.each([0, 1, 2])(
       screen.getByTestId("connector-category-remote-access"),
     ).toContainElement(entry);
     expect(
-      screen.getByText("Connect 1 services for your agents to use."),
+      screen.getByText("Connect 2 services for your agents to use."),
     ).toBeInTheDocument();
     click(entry);
     await screen.findByRole("heading", { name: "SSH remote access" });

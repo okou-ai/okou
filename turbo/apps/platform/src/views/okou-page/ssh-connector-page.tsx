@@ -29,6 +29,7 @@ import {
   SSH_PASSPHRASE_MAX_LENGTH,
   type SshConnectionResponse,
 } from "@okouai/api-contracts/contracts/ssh-connections";
+import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshView$,
   type SshDialogState,
@@ -41,6 +42,8 @@ import {
   openSshCredentialDialog$,
   sshConnections$,
   sshConflict$,
+  sshConflictReview$,
+  acceptSshConflictReview$,
   sshDialog$,
   openSshDialog$,
   closeSshDialog$,
@@ -52,19 +55,15 @@ import {
   mountSshPrivateKey$,
   mountSshForm$,
   sshPrivateKeyFileResult$,
-  sshCloudflareConfigs$,
   sshTransportEditor$,
   chooseSshTransport$,
-  saveSshCloudflare$,
-  mountSshAccessForm$,
 } from "../../signals/ssh.ts";
+import { cloudflareAccessConfigs$ } from "../../signals/cloudflare-access.ts";
 import {
-  AccessFields,
-  AccessImpact,
-  AccessSelection,
+  CloudflareAccessDialog,
   CloudflareAccessConfigs,
-  SshConflictReview,
-} from "./ssh-cloudflare-access.tsx";
+} from "./cloudflare-access.tsx";
+import { AccessSelection } from "./ssh-cloudflare-access.tsx";
 import {
   SSH_PASSWORD_MAX_LENGTH,
   type SshCredentialResponse,
@@ -534,6 +533,93 @@ function CredentialImpact({
   );
 }
 
+function SshConflictReview() {
+  const { t } = useTranslation();
+  const conflict = useGet(sshConflict$);
+  const review = useLoadable(sshConflictReview$);
+  const acceptReview = useSet(acceptSshConflictReview$);
+  const signal = useGet(pageSignal$);
+  if (!conflict) {
+    return null;
+  }
+  const current = review.state === "hasData" ? review.data : null;
+  const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
+  return (
+    <div className="grid gap-3 rounded-lg border p-4 text-sm">
+      <p role="alert">
+        {localizedSshError(conflict) ??
+          t(($) => {
+            return $.ssh.errors.failed;
+          })}
+      </p>
+      {review.state === "hasError" && <SshLoadError />}
+      {review.state === "loading" && (
+        <p role="status">
+          {t(($) => {
+            return hostConflict ? $.ssh.loading : $.ssh.credential.loading;
+          })}
+        </p>
+      )}
+      {current && (
+        <>
+          <h3 className="font-semibold">
+            {t(($) => {
+              return $.ssh.cloudflare.latest;
+            })}
+          </h3>
+          {current.credential && (
+            <>
+              <p>
+                {current.credential.name} · {current.credential.username}
+              </p>
+              <CredentialImpact credential={current.credential} />
+            </>
+          )}
+          {current.connection && (
+            <div className="grid gap-1">
+              <p>{current.connection.displayName}</p>
+              <p className="break-all">
+                {current.connection.username}@{current.connection.host}:
+                {current.connection.port}
+              </p>
+              <p>{current.connection.credentialName}</p>
+              <p>
+                {"transport" in current.connection
+                  ? t(($) => {
+                      return $.ssh.cloudflare.title;
+                    })
+                  : t(($) => {
+                      return $.ssh.cloudflare.direct;
+                    })}
+              </p>
+            </div>
+          )}
+          <p>
+            {t(($) => {
+              return $.ssh.cloudflare.reviewHelp;
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={
+              current.kind === "delete-credential" &&
+              (current.credential?.hosts.length ?? 0) > 0
+            }
+            onClick={() => {
+              return detach(acceptReview(current, signal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.ssh.cloudflare.keepChanges;
+            })}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
   const { t } = useTranslation();
   switch (kind) {
@@ -598,32 +684,6 @@ function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
         }),
         description: t(($) => {
           return $.ssh.credential.deleteHelp;
-        }),
-      };
-    }
-    case "create-access": {
-      return {
-        title: t(($) => {
-          return $.ssh.cloudflare.add;
-        }),
-        description: null,
-      };
-    }
-    case "edit-access": {
-      return {
-        title: t(($) => {
-          return $.ssh.cloudflare.edit;
-        }),
-        description: null,
-      };
-    }
-    case "delete-access": {
-      return {
-        title: t(($) => {
-          return $.ssh.cloudflare.delete;
-        }),
-        description: t(($) => {
-          return $.ssh.cloudflare.deleteHelp;
         }),
       };
     }
@@ -723,7 +783,7 @@ function hasResourceSelection(
 }
 
 function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
-  const configs = useLoadable(sshCloudflareConfigs$);
+  const configs = useLoadable(cloudflareAccessConfigs$);
   const transport = useGet(sshTransportEditor$);
   const conflict = useGet(sshConflict$);
   const fileResult = useLoadable(sshPrivateKeyFileResult$);
@@ -822,62 +882,16 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
   );
 }
 
-function SshAccessForm({ dialog, isSaving, save }: SshFormProps) {
-  const uncertain = useGet(sshSaveUncertain$);
-  const mountForm = useSet(mountSshAccessForm$);
-  const signal = useGet(pageSignal$);
-  const conflict = useGet(sshConflict$);
-  const { title } = useDialogCopy(dialog.kind);
-  const destructive = dialog.kind === "delete-access";
-  return (
-    <form
-      ref={mountForm}
-      className="flex min-h-0 min-w-0 flex-col gap-4"
-      autoComplete="off"
-      aria-busy={isSaving}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!isSaving && (uncertain || !conflict)) {
-          detach(save(event.currentTarget, signal), Reason.DomCallback);
-        }
-      }}
-    >
-      <DialogBody className="grid gap-4">
-        {!destructive && (
-          <fieldset
-            disabled={isSaving || uncertain}
-            className="grid min-w-0 gap-4"
-          >
-            <AccessFields config={dialog.config} />
-          </fieldset>
-        )}
-        {dialog.config && <AccessImpact config={dialog.config} />}
-        <SshConflictReview />
-        <SshSaveNotice isSaving={isSaving} />
-      </DialogBody>
-      <SshFormActions
-        isSaving={isSaving}
-        blocked={isSaving || !!conflict}
-        destructive={destructive}
-        title={title}
-      />
-    </form>
-  );
-}
-
 function SshDialog() {
   const data = useLoadable(sshDialog$);
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveSsh$);
-  const [accessSaving, saveAccess] = useLoadableSet(saveSshCloudflare$);
   const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useDialogCopy(dialog?.kind);
-  const isSaving =
-    saving.state === "loading" || accessSaving.state === "loading";
+  const isSaving = saving.state === "loading";
   if (!dialog) {
     return null;
   }
-  const accessEditor = dialog.kind.endsWith("-access");
   return (
     <Dialog
       open
@@ -889,22 +903,13 @@ function SshDialog() {
     >
       <DialogContent
         contentClassName="flex flex-col"
-        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? dialog.config?.id ?? "new"}`}
+        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
       >
         <DialogHeader className="shrink-0">
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        {!accessEditor && (
-          <SshHostForm dialog={dialog} isSaving={isSaving} save={save} />
-        )}
-        {accessEditor && (
-          <SshAccessForm
-            dialog={dialog}
-            isSaving={isSaving}
-            save={saveAccess}
-          />
-        )}
+        <SshHostForm dialog={dialog} isSaving={isSaving} save={save} />
       </DialogContent>
     </Dialog>
   );
@@ -918,7 +923,7 @@ function HostCard({
   const { t } = useTranslation();
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
-  const configs = useLoadable(sshCloudflareConfigs$);
+  const configs = useLoadable(cloudflareAccessConfigs$);
   const configId =
     "transport" in connection ? connection.transport.configId : null;
   const unavailable =
@@ -1283,6 +1288,7 @@ export function SshConnectorPage() {
           <Credentials />
         )}
         <SshDialog />
+        <CloudflareAccessDialog />
       </DetailPageMain>
     </DetailPageShell>
   );

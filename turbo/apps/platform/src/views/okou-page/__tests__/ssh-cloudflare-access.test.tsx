@@ -1,7 +1,7 @@
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
-  sshCloudflareAccessContract,
-  type SshCloudflareAccessConfig,
+  cloudflareAccessContract,
+  type CloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   sshConnectionsContract,
@@ -24,12 +24,12 @@ import {
 const context = testContext();
 const orgId = "org_access_ui";
 const timestamp = "2026-09-15T00:00:00.000Z";
-const config: SshCloudflareAccessConfig = Object.freeze({
+const config: CloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   name: "Engineering gateway",
   revision: 1,
   generation: 1,
-  hosts: [],
+  sshHosts: [],
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -68,7 +68,7 @@ beforeEach(() => {
   context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
     return respond(200, { credentials: [credential] });
   });
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
   });
 });
@@ -178,7 +178,7 @@ test.each([0, 1, 2])(
     context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
       return respond(200, { credentials: savedCredentials });
     });
-    context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
       return respond(200, { configs: savedConfigs });
     });
     await page(true);
@@ -283,7 +283,7 @@ test("Unknown lists are not empty, Direct does not wait for Access, and Retry in
         })
       : respond(200, { credentials: [credential] });
   });
-  context.mocks.api(sshCloudflareAccessContract.list, async ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
     await pendingAccess.promise;
     return respond(200, { configs: [] });
   });
@@ -308,7 +308,7 @@ test("Unknown lists are not empty, Direct does not wait for Access, and Retry in
 });
 
 test("Deactivating inline Access fields clears tokens without discarding the SSH draft", async () => {
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
   context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
@@ -349,18 +349,18 @@ test("Deactivating inline Access fields clears tokens without discarding the SSH
 });
 
 test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into configured SSH", async () => {
-  let configs: SshCloudflareAccessConfig[] = [];
+  let configs: CloudflareAccessConfig[] = [];
   const createRequests: unknown[] = [];
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
   });
-  context.mocks.api(sshCloudflareAccessContract.create, ({ body, respond }) => {
+  context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
     createRequests.push(body);
     const created = { ...config, name: body.name };
     configs = [created];
     return respond(201, created);
   });
-  context.mocks.api(sshCloudflareAccessContract.delete, ({ body, respond }) => {
+  context.mocks.api(cloudflareAccessContract.delete, ({ body, respond }) => {
     expect(body).toStrictEqual({ expectedRevision: 1 });
     configs = [];
     return respond(204);
@@ -413,7 +413,7 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
 });
 
 test("Direct and protected mode retain their port and configuration drafts but submit only active fields", async () => {
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
   const requests: unknown[] = [];
@@ -473,7 +473,7 @@ test.each(
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: mode === "edit" ? [host] : [] });
     });
-    context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
       return respond(200, { configs: [config] });
     });
     const requests: unknown[] = [];
@@ -683,7 +683,7 @@ test("A failed host save retains inline Access input for manual retry without a 
 test("Pending and failed Access Save keep secrets for retry; a background refresh cannot reset them", async () => {
   const pending = context.mocks.deferred<void>();
   let failing = true;
-  context.mocks.api(sshCloudflareAccessContract.create, async ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.create, async ({ respond }) => {
     await pending.promise;
     return failing
       ? respond(500, {
@@ -722,7 +722,7 @@ test("Pending and failed Access Save keep secrets for retry; a background refres
 
 test("A committed Access creation completes on same-ID retry without another configuration", async () => {
   const submitted: unknown[] = [];
-  context.mocks.api(sshCloudflareAccessContract.create, ({ body, respond }) => {
+  context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
     submitted.push(body);
     return submitted.length > 1
       ? respond(204)
@@ -760,10 +760,10 @@ test("A committed Access creation completes on same-ID retry without another con
 test("A token replacement conflict preserves input and needs explicit latest-version review", async () => {
   let current = config;
   const requests: unknown[] = [];
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [current] });
   });
-  context.mocks.api(sshCloudflareAccessContract.update, ({ body, respond }) => {
+  context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
     requests.push(body);
     if (body.expectedRevision === 1) {
       current = { ...config, name: "Renamed elsewhere", revision: 2 };
@@ -828,13 +828,13 @@ test("A token replacement conflict preserves input and needs explicit latest-ver
 
 test("A referenced deletion race explains the new affected host without removing the config", async () => {
   let current = config;
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [current] });
   });
-  context.mocks.api(sshCloudflareAccessContract.delete, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.delete, ({ respond }) => {
     current = {
       ...config,
-      hosts: [{ id: host.id, displayName: host.displayName }],
+      sshHosts: [{ id: host.id, displayName: host.displayName }],
     };
     return respond(409, {
       error: { code: "CLOUDFLARE_ACCESS_IN_USE", message: "not user copy" },
@@ -875,7 +875,7 @@ test("Access API unavailability blocks protected mutations without silently chan
       ],
     });
   });
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(404, {
       error: {
         code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
@@ -926,7 +926,7 @@ test("Access API unavailability blocks protected mutations without silently chan
 
 test("An eligible protected host can explicitly change to Direct", async () => {
   let current = host;
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -964,7 +964,7 @@ test("A Direct draft survives a failed conflict refresh and concurrent Access bi
   let current = directHost;
   let refreshFails = false;
   const requests: unknown[] = [];
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config] });
   });
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -1041,7 +1041,7 @@ test("A new host can be explicitly saved as Direct after Access becomes unavaila
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: hosts });
   });
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return unavailable
       ? respond(404, {
           error: {
@@ -1125,10 +1125,10 @@ test("Changing the owner clears Access secrets and hides the previous owner's co
 test("Renaming changes metadata without requesting a new Service Token", async () => {
   let current = config;
   const requests: unknown[] = [];
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [current] });
   });
-  context.mocks.api(sshCloudflareAccessContract.update, ({ body, respond }) => {
+  context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
     requests.push(body);
     current = { ...config, name: body.name ?? config.name, revision: 2 };
     return respond(200, current);
@@ -1157,7 +1157,7 @@ test("Rebinding a host after a concurrent update requires review and preserves i
   };
   let current = host;
   const requests: unknown[] = [];
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [config, alternate] });
   });
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
@@ -1220,7 +1220,7 @@ test("A configuration deleted before host Save can be replaced without losing th
     name: "Alternate gateway",
   };
   let configs = [config, alternate];
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
   });
   context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
@@ -1335,7 +1335,7 @@ test.each(["navigation", "owner"])(
 
 test("Access load failure offers retry while feature unavailability remains distinct", async () => {
   let unavailable = false;
-  context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return unavailable
       ? respond(404, {
           error: {

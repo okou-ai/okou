@@ -24,6 +24,7 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.connectors,
   ROUTES.connectorSsh,
   ROUTES.connectorVnc,
+  ROUTES.connectorCloudflareAccess,
   ROUTES.directedAuthorize,
   ROUTES.directedConnect,
   ROUTES.directedReconnect,
