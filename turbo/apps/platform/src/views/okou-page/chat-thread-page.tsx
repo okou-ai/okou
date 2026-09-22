@@ -654,6 +654,7 @@ export function ChatThreadHeaderTitle({
   const threadTitle = useGet(thread.threadTitle$)?.trim() ?? "";
   const threadTitleEmoji = useGet(thread.threadTitleEmoji$);
   const threadTitleText = useGet(thread.threadTitleText$);
+  const optimisticCreateUnsettled = useGet(thread.optimisticCreateUnsettled$);
   const openRenameChatThreadDialog = useSet(
     openRenameChatThreadDialogForThreadId$,
   );
@@ -669,16 +670,20 @@ export function ChatThreadHeaderTitle({
 
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <ChatThreadEmojiMenuButton
-        threadId={thread.threadId}
-        title={threadTitle}
-        emoji={threadTitleEmoji}
-      />
+      {!optimisticCreateUnsettled && (
+        <ChatThreadEmojiMenuButton
+          threadId={thread.threadId}
+          title={threadTitle}
+          emoji={threadTitleEmoji}
+        />
+      )}
       {threadTitleText && (
         <span
           className="min-w-0 truncate text-sm font-medium text-foreground"
           data-testid="chat-thread-header-title"
-          onDoubleClick={openRenameDialog}
+          onDoubleClick={
+            optimisticCreateUnsettled ? undefined : openRenameDialog
+          }
         >
           {threadTitleText}
         </span>
@@ -694,6 +699,16 @@ function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Only mount one emoji picker for the thread's shared menu state.
   return isDesktop ? <DesktopChatThreadHeader thread={thread} /> : null;
+}
+
+export function SettledChatThreadActions({
+  thread,
+  children,
+}: {
+  thread: ChatPanelSignals;
+  children: ReactNode;
+}) {
+  return useGet(thread.optimisticCreateUnsettled$) ? null : children;
 }
 
 function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
@@ -740,48 +755,52 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       {headerActionsEnabled ? (
         <div className="flex min-w-0 items-center gap-2 pr-3">
           <ChatThreadHeaderTitle thread={thread} />
-          <ChatThreadPinButton thread={thread} />
+          <SettledChatThreadActions thread={thread}>
+            <ChatThreadPinButton thread={thread} />
+          </SettledChatThreadActions>
         </div>
       ) : (
         <ChatThreadHeaderTitle thread={thread} />
       )}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  onClick={() => {
-                    detach(
-                      startSharing(pageSignal),
-                      Reason.DomCallback,
-                      "start shared thread selection",
-                    );
-                  }}
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className="shrink-0 duration-150"
-                  aria-label={t(($) => {
-                    return $.chat.sharing.start;
-                  })}
-                >
-                  <Share2 size={18} />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.sharing.start;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <AutomationMenuButton thread={thread} />
-        <BrowserMenuButton thread={thread} />
-        <ArtifactsButton thread={thread} />
-      </div>
+      <SettledChatThreadActions thread={thread}>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      detach(
+                        startSharing(pageSignal),
+                        Reason.DomCallback,
+                        "start shared thread selection",
+                      );
+                    }}
+                    variant="quiet"
+                    size="icon-sm"
+                    iconSize="md"
+                    className="shrink-0 duration-150"
+                    aria-label={t(($) => {
+                      return $.chat.sharing.start;
+                    })}
+                  >
+                    <Share2 size={18} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.sharing.start;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <AutomationMenuButton thread={thread} />
+          <BrowserMenuButton thread={thread} />
+          <ArtifactsButton thread={thread} />
+        </div>
+      </SettledChatThreadActions>
     </header>
   );
 }
