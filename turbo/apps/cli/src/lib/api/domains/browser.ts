@@ -5,9 +5,19 @@ import {
   type BrowserCreateRequest,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
+import {
+  browserUserActionsContract,
+  type BrowserUserActionCreateRequest,
+  type BrowserUserActionResponse,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
 import { getClientConfig, handleError } from "../core/client-factory";
+
+export interface BrowserUserActionCreateResponse {
+  readonly actionUrl: string;
+  readonly action: BrowserUserActionResponse;
+}
 
 async function client() {
   return initClient(browserContract, await getClientConfig());
@@ -18,6 +28,10 @@ async function authorizationClient() {
     browserAuthorizationRequestsContract,
     await getClientConfig(),
   );
+}
+
+async function userActionClient() {
+  return initClient(browserUserActionsContract, await getClientConfig());
 }
 
 export async function createBrowserAuthorizationRequest(): Promise<BrowserAuthorizationRequestCreateResponse> {
@@ -75,4 +89,14 @@ export async function getCurrentBrowser(): Promise<BrowserSession> {
     return result.body.browser;
   }
   handleError(result, "Failed to get the current managed browser");
+}
+
+export async function createBrowserUserAction(
+  body: BrowserUserActionCreateRequest,
+): Promise<BrowserUserActionCreateResponse> {
+  const result = await (await userActionClient()).create({ headers: {}, body });
+  if (result.status === 201) {
+    return result.body;
+  }
+  handleError(result, "Failed to create a Browser user-action request");
 }
