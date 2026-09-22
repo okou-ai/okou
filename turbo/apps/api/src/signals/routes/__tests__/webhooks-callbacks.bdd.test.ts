@@ -1599,6 +1599,100 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
 
     const response = await pendingResponse;
     expect(response.status).toBe(500);
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 without API error capture when telemetry transport fails", async () => {
+    const { runId, headers } = await createEventWebhookRun(
+      "required Axiom telemetry transport failure",
+    );
+    mockOptionalEnv(
+      "AXIOM_TOKEN_TELEMETRY",
+      `xaat-telemetry-transport-${randomUUID()}`,
+    );
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+        () => {
+          return HttpResponse.error();
+        },
+      ),
+    );
+
+    const response = await api.requestAgentTelemetry(
+      {
+        runId,
+        networkLogs: [
+          {
+            timestamp: nowDate().toISOString(),
+            host: `${randomUUID()}.transport.example.test`,
+          },
+        ],
+      },
+      headers,
+      [500],
+    );
+
+    expect(response.status).toBe(500);
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("captures a deterministic telemetry failure alongside a transport failure", async () => {
+    const { runId, headers } = await createEventWebhookRun(
+      "mixed required Axiom telemetry failures",
+    );
+    mockOptionalEnv(
+      "AXIOM_TOKEN_TELEMETRY",
+      `xaat-telemetry-mixed-${randomUUID()}`,
+    );
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+        () => {
+          return HttpResponse.error();
+        },
+      ),
+      http.post(
+        "https://api.axiom.co/v1/datasets/sandbox-telemetry-network/ingest",
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+    );
+
+    const response = await api.requestAgentTelemetry(
+      {
+        runId,
+        metrics: [
+          {
+            ts: nowDate().toISOString(),
+            cpu: 0.5,
+            mem_used: 1,
+            mem_total: 2,
+            disk_used: 3,
+            disk_total: 4,
+          },
+        ],
+        networkLogs: [
+          {
+            timestamp: nowDate().toISOString(),
+            host: `${randomUUID()}.deterministic.example.test`,
+          },
+        ],
+      },
+      headers,
+      [500],
+    );
+
+    expect(response.status).toBe(500);
+    expect(context.mocks.sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "DirectAxiomIngestError",
+        reason: "http_status",
+        status: 503,
+      }),
+    );
   });
 
   it("preserves parent cancellation at the telemetry request boundary", async () => {
