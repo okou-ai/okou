@@ -330,6 +330,7 @@ jq -e '
   ($cli.if | contains("current-runner-image-needed == '\''true'\''")) and
   $cli["timeout-minutes"] == 15 and
   $cli.outputs.found == "${{ steps.okou-cli.outputs.found }}" and
+  $cli.steps[0].uses == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" and
   ([.jobs | to_entries[] |
     .key as $job |
     .value.steps[]? |

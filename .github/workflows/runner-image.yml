@@ -394,7 +394,7 @@ jobs:
     outputs:
       found: ${{ steps.okou-cli.outputs.found }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # deploy-cli (turbo.yml) publishes okou-cli/<source head sha>/ in a
       # separate workflow. Resolve it once so every architecture consumes the
