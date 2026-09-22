@@ -7,24 +7,20 @@ use tracing::{Instrument, warn};
 
 const WARNING_INTERVAL: Duration = Duration::from_secs(30);
 
-pub(crate) enum CleanupIdentity {
+pub enum CleanupIdentity {
     Runner,
     Process(Option<u32>),
     Run(runner_types::ids::RunId),
 }
 
 /// Dropping this observer stops diagnostics, never the cleanup it describes.
-pub(crate) struct CleanupProgress {
+pub struct CleanupProgress {
     started: Instant,
     _observer: AbortOnDropHandle<()>,
 }
 
 impl CleanupProgress {
-    pub(crate) fn start(
-        component: &'static str,
-        phase: &'static str,
-        identity: CleanupIdentity,
-    ) -> Self {
+    pub fn start(component: &'static str, phase: &'static str, identity: CleanupIdentity) -> Self {
         let started = Instant::now();
         // Axiom serializes event fields, not inherited span fields. Keep the
         // authoritative safe identity on the warning itself.
@@ -47,7 +43,8 @@ impl CleanupProgress {
                         phase,
                         pid,
                         run_id = run_id.as_deref(),
-                        elapsed_ms = crate::duration::duration_ms(started.elapsed()),
+                        elapsed_ms =
+                            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
                         "required cleanup still pending"
                     );
                 }
@@ -60,7 +57,7 @@ impl CleanupProgress {
         }
     }
 
-    pub(crate) fn elapsed(&self) -> Duration {
+    pub fn elapsed(&self) -> Duration {
         self.started.elapsed()
     }
 }

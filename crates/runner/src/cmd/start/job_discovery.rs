@@ -133,7 +133,6 @@ use crate::idle_pool::{
     SpeculativeReparkResult,
 };
 use crate::lifecycle::RunnerMode;
-use crate::paths::short_digest;
 use crate::provider::{
     ClaimedJob, JobCandidate, JobProvider, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
 };
@@ -141,9 +140,10 @@ use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::run_cancellation::{
     RunCancellationHandle, RunCancellationRegistration, RunCancellationRegistry,
 };
-use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
+use runner_host::paths::short_digest;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
     CompleteRequest, ExecutionContext, HeldWorkspaceState, SandboxReuseResult,

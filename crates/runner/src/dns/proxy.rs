@@ -32,7 +32,7 @@ impl DnsProxy {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(crate) fn set_reap_gate(&mut self, gate: crate::test_fixtures::ReapGate) {
         self.process.set_reap_gate(gate);
     }
 
@@ -141,7 +141,7 @@ async fn try_start(
 
     // Prevent dnsmasq from creating an unowned wildcard listener if the runner
     // exits during spawn.
-    crate::parent_death::configure_parent_death_signal(&mut command);
+    runner_host::parent_death::configure_parent_death_signal(&mut command);
 
     // Give dnsmasq a moment to bind, then verify it's still running.
     // Catches port-already-in-use, missing binary (spawn itself errors),
@@ -321,7 +321,7 @@ mod tests {
                 async move {
                     tokio::time::timeout(std::time::Duration::from_secs(2), async {
                         loop {
-                            if crate::process::read_process_stat(pid)
+                            if runner_host::process::read_process_stat(pid)
                                 .await
                                 .is_some_and(|stat| stat.state == 'Z')
                             {
@@ -344,7 +344,7 @@ mod tests {
         assert!(error.to_string().contains("Address already in use"));
         let pid = observed_pid.load(Ordering::SeqCst);
         assert!(
-            crate::process::read_process_stat(pid).await.is_none(),
+            runner_host::process::read_process_stat(pid).await.is_none(),
             "failed startup child should be reaped before returning"
         );
     }
@@ -375,7 +375,7 @@ mod tests {
         .await
         .expect("running child should produce a DNS proxy");
         let pid = observed_pid.load(Ordering::SeqCst);
-        let starttime = crate::process::read_process_stat(pid)
+        let starttime = runner_host::process::read_process_stat(pid)
             .await
             .expect("running child should remain owned by the DNS proxy")
             .starttime;
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(proxy.port(), 5353);
         proxy.stop().await.unwrap();
         assert_ne!(
-            crate::process::read_process_stat(pid)
+            runner_host::process::read_process_stat(pid)
                 .await
                 .map(|stat| stat.starttime),
             Some(starttime),

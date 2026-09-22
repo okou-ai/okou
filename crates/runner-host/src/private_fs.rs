@@ -28,7 +28,7 @@ use std::ffi::OsStr;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::path::{Component, Path, PathBuf};
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{HostError, HostResult};
 
 const PRIVATE_DIR_MODE: u32 = 0o700;
 const GROUP_OR_OTHER_WRITE_BITS: u32 = 0o022;
@@ -36,7 +36,7 @@ const ROOT_UID: u32 = 0;
 const STICKY_BIT: u32 = 0o1000;
 const PRIVATE_FILE_READ_MAX_BYTES: u64 = 64 * 1024;
 /// Maximum number of bytes accepted for a private runner status snapshot.
-pub(crate) const PRIVATE_STATUS_FILE_READ_MAX_BYTES: u64 = 1024 * 1024;
+pub const PRIVATE_STATUS_FILE_READ_MAX_BYTES: u64 = 1024 * 1024;
 const RESERVED_PRIVATE_DIR_PATHS: &[&str] = &[
     "/",
     "/bin",
@@ -89,7 +89,7 @@ const RESERVED_PRIVATE_DIR_SUBTREES: &[&str] = &[
 /// directory must be owned by the effective uid. The runner normally runs as
 /// root; state is intentionally not chowned back to `SUDO_USER`.
 #[cfg(unix)]
-pub async fn ensure_private_dir(path: &Path) -> RunnerResult<()> {
+pub async fn ensure_private_dir(path: &Path) -> HostResult<()> {
     reject_reserved_private_dir_path(path)?;
     reject_parent_dir_components(path)?;
     reject_existing_symlink_components(path).await?;
@@ -103,19 +103,19 @@ pub async fn ensure_private_dir(path: &Path) -> RunnerResult<()> {
 /// This fallback does not apply the Unix reserved-path, parent-component,
 /// symlink, ownership, replaceability, or `0700` mode guarantees.
 #[cfg(not(unix))]
-pub async fn ensure_private_dir(path: &Path) -> RunnerResult<()> {
+pub async fn ensure_private_dir(path: &Path) -> HostResult<()> {
     tokio::fs::create_dir_all(path)
         .await
-        .map_err(|e| RunnerError::Config(format!("create private dir {}: {e}", path.display())))
+        .map_err(|e| HostError::Config(format!("create private dir {}: {e}", path.display())))
 }
 
 #[cfg(unix)]
-fn reject_parent_dir_components(path: &Path) -> RunnerResult<()> {
+fn reject_parent_dir_components(path: &Path) -> HostResult<()> {
     if path
         .components()
         .any(|component| matches!(component, Component::ParentDir))
     {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} contains a parent directory segment; refusing to use it as private runner state",
             path.display()
         )));
@@ -124,7 +124,7 @@ fn reject_parent_dir_components(path: &Path) -> RunnerResult<()> {
 }
 
 #[cfg(unix)]
-async fn reject_existing_symlink_components(path: &Path) -> RunnerResult<()> {
+async fn reject_existing_symlink_components(path: &Path) -> HostResult<()> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
@@ -133,20 +133,20 @@ async fn reject_existing_symlink_components(path: &Path) -> RunnerResult<()> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotADirectory => {
-                return Err(RunnerError::Config(format!(
+                return Err(HostError::Config(format!(
                     "{} is not a directory; refusing to use it as private runner state",
                     path.display()
                 )));
             }
             Err(e) => {
-                return Err(RunnerError::Config(format!(
+                return Err(HostError::Config(format!(
                     "stat private dir component {}: {e}",
                     current.display()
                 )));
             }
         };
         if metadata.file_type().is_symlink() {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "{} contains symlink component {}; refusing to use it as private runner state",
                 path.display(),
                 current.display()
@@ -162,7 +162,7 @@ async fn reject_existing_symlink_components(path: &Path) -> RunnerResult<()> {
 /// and trusted-parent requirements are described by
 /// [`read_private_file_to_string_with_max`].
 #[cfg(unix)]
-pub async fn read_private_file_to_string(path: &Path) -> RunnerResult<Option<String>> {
+pub async fn read_private_file_to_string(path: &Path) -> HostResult<Option<String>> {
     read_private_file_to_string_with_max(path, PRIVATE_FILE_READ_MAX_BYTES).await
 }
 
@@ -181,7 +181,7 @@ pub async fn read_private_file_to_string(path: &Path) -> RunnerResult<Option<Str
 pub async fn read_private_file_to_string_with_max(
     path: &Path,
     max_bytes: u64,
-) -> RunnerResult<Option<String>> {
+) -> HostResult<Option<String>> {
     let mut options = tokio::fs::OpenOptions::new();
     options
         .read(true)
@@ -190,14 +190,14 @@ pub async fn read_private_file_to_string_with_max(
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "open private file {}: {e}",
                 path.display()
             )));
         }
     };
     crate::host_file::secure_regular_private_file(&file, path, "private file")
-        .map_err(|e| RunnerError::Config(e.to_string()))?;
+        .map_err(|e| HostError::Config(e.to_string()))?;
     read_private_file_contents(file, path, max_bytes)
         .await
         .map(Some)
@@ -207,11 +207,11 @@ async fn read_private_file_contents(
     file: tokio::fs::File,
     path: &Path,
     max_bytes: u64,
-) -> RunnerResult<String> {
+) -> HostResult<String> {
     use tokio::io::AsyncReadExt;
 
     let read_limit = max_bytes.checked_add(1).ok_or_else(|| {
-        RunnerError::Config(format!(
+        HostError::Config(format!(
             "private file {} read limit is too large",
             path.display()
         ))
@@ -221,16 +221,16 @@ async fn read_private_file_contents(
     limited
         .read_to_end(&mut contents)
         .await
-        .map_err(|e| RunnerError::Config(format!("read private file {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Config(format!("read private file {}: {e}", path.display())))?;
     if contents.len() as u64 > max_bytes {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "private file {} exceeds {} bytes",
             path.display(),
             max_bytes
         )));
     }
     String::from_utf8(contents).map_err(|e| {
-        RunnerError::Config(format!(
+        HostError::Config(format!(
             "read private file {} as UTF-8: {e}",
             path.display()
         ))
@@ -242,7 +242,7 @@ async fn read_private_file_contents(
 /// Missing paths return `Ok(None)`. This fallback does not apply the Unix
 /// no-follow, nonblocking, file-type, ownership, or permission checks.
 #[cfg(not(unix))]
-pub async fn read_private_file_to_string(path: &Path) -> RunnerResult<Option<String>> {
+pub async fn read_private_file_to_string(path: &Path) -> HostResult<Option<String>> {
     read_private_file_to_string_with_max(path, PRIVATE_FILE_READ_MAX_BYTES).await
 }
 
@@ -256,12 +256,12 @@ pub async fn read_private_file_to_string(path: &Path) -> RunnerResult<Option<Str
 pub async fn read_private_file_to_string_with_max(
     path: &Path,
     max_bytes: u64,
-) -> RunnerResult<Option<String>> {
+) -> HostResult<Option<String>> {
     let file = match tokio::fs::File::open(path).await {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "open private file {}: {e}",
                 path.display()
             )));
@@ -285,22 +285,22 @@ pub async fn read_private_file_to_string_with_max(
 /// a crash-durability guarantee. The function also provides no locking or
 /// concurrent-writer ordering guarantee. After an error, staging-file removal
 /// is attempted as best-effort cleanup.
-pub async fn write_private_file(path: &Path, content: &[u8]) -> RunnerResult<()> {
+pub async fn write_private_file(path: &Path, content: &[u8]) -> HostResult<()> {
     crate::host_file::write_private_atomic(path, content, "private file")
         .await
-        .map_err(|e| RunnerError::Config(e.to_string()))
+        .map_err(|e| HostError::Config(e.to_string()))
 }
 
 #[cfg(unix)]
 fn ensure_private_dir_exists_without_symlinks(
     path: &Path,
     expected_uid: u32,
-) -> RunnerResult<OwnedFd> {
+) -> HostResult<OwnedFd> {
     use nix::fcntl::open;
     use nix::sys::stat::Mode;
 
     if path.as_os_str().is_empty() {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} does not name a directory; refusing to use it as private runner state",
             path.display()
         )));
@@ -312,7 +312,7 @@ fn ensure_private_dir_exists_without_symlinks(
         Path::new(".")
     };
     let mut current = open(start, private_dir_open_flags(), Mode::empty()).map_err(|e| {
-        RunnerError::Config(format!("open private dir root for {}: {e}", path.display()))
+        HostError::Config(format!("open private dir root for {}: {e}", path.display()))
     })?;
     let mut current_path = start.to_path_buf();
     let mut components = path.components().peekable();
@@ -320,7 +320,7 @@ fn ensure_private_dir_exists_without_symlinks(
         match component {
             Component::RootDir | Component::CurDir => {}
             Component::ParentDir => {
-                return Err(RunnerError::Config(format!(
+                return Err(HostError::Config(format!(
                     "{} contains a parent directory segment; refusing to use it as private runner state",
                     path.display()
                 )));
@@ -338,7 +338,7 @@ fn ensure_private_dir_exists_without_symlinks(
                 current_path = private_dir_component_path(&current_path, name);
             }
             Component::Prefix(prefix) => {
-                return Err(RunnerError::Config(format!(
+                return Err(HostError::Config(format!(
                     "{} contains unsupported path prefix {}; refusing to use it as private runner state",
                     path.display(),
                     prefix.as_os_str().to_string_lossy()
@@ -358,7 +358,7 @@ fn open_or_create_private_dir_component(
     full_path: &Path,
     expected_uid: u32,
     is_final: bool,
-) -> RunnerResult<OwnedFd> {
+) -> HostResult<OwnedFd> {
     use nix::errno::Errno;
     use nix::fcntl::openat;
     use nix::sys::stat::Mode;
@@ -394,11 +394,11 @@ fn ensure_private_dir_parent_not_replaceable(
     parent_path: &Path,
     full_path: &Path,
     expected_uid: u32,
-) -> RunnerResult<()> {
+) -> HostResult<()> {
     use nix::sys::stat::fstat;
 
     let stat = fstat(parent).map_err(|e| {
-        RunnerError::Config(format!(
+        HostError::Config(format!(
             "stat private dir parent {} for {}: {e}",
             parent_path.display(),
             full_path.display()
@@ -406,14 +406,14 @@ fn ensure_private_dir_parent_not_replaceable(
     })?;
     let mode = (stat.st_mode as u32) & 0o7777;
     if stat.st_uid != ROOT_UID && stat.st_uid != expected_uid {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "private dir parent {} is owned by untrusted uid {}; fix parent ownership before starting the runner",
             parent_path.display(),
             stat.st_uid
         )));
     }
     if mode & GROUP_OR_OTHER_WRITE_BITS != 0 && mode & STICKY_BIT == 0 {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "private dir parent {} is group/other writable without the sticky bit; fix parent permissions before starting the runner",
             parent_path.display()
         )));
@@ -428,7 +428,7 @@ fn create_and_open_private_dir_component(
     full_path: &Path,
     expected_uid: u32,
     is_final: bool,
-) -> RunnerResult<OwnedFd> {
+) -> HostResult<OwnedFd> {
     use nix::errno::Errno;
     use nix::fcntl::openat;
     use nix::sys::stat::{Mode, mkdirat};
@@ -436,7 +436,7 @@ fn create_and_open_private_dir_component(
     let component_path = private_dir_component_path(parent_path, name);
     let normalized_component = normalize_private_dir_policy_path(&component_path)?;
     if is_reserved_normalized_private_dir_path(&normalized_component) {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} requires creating reserved system path {}; create runner home directories before starting the runner",
             full_path.display(),
             component_path.display()
@@ -447,7 +447,7 @@ fn create_and_open_private_dir_component(
         Ok(()) => true,
         Err(Errno::EEXIST) => false,
         Err(e) => {
-            return Err(RunnerError::Config(format!(
+            return Err(HostError::Config(format!(
                 "create private dir component {} for {}: {e}",
                 name.to_string_lossy(),
                 full_path.display()
@@ -480,11 +480,11 @@ fn secure_existing_private_dir_component(
     full_path: &Path,
     expected_uid: u32,
     enforce_private_mode: bool,
-) -> RunnerResult<()> {
+) -> HostResult<()> {
     use nix::sys::stat::{SFlag, fstat};
 
     let stat = fstat(fd).map_err(|e| {
-        RunnerError::Config(format!(
+        HostError::Config(format!(
             "stat private dir component {} for {}: {e}",
             component_path.display(),
             full_path.display()
@@ -492,7 +492,7 @@ fn secure_existing_private_dir_component(
     })?;
     let fd_file_type = SFlag::from_bits_truncate(stat.st_mode & SFlag::S_IFMT.bits());
     if fd_file_type != SFlag::S_IFDIR {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} is not a directory; refusing to use it as private runner state",
             full_path.display()
         )));
@@ -505,7 +505,7 @@ fn secure_existing_private_dir_component(
 
     let actual_uid = stat.st_uid;
     if actual_uid != expected_uid {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "private dir component {} for {} is owned by uid {actual_uid}, but runner euid is {expected_uid}; fix ownership before starting the runner",
             component_path.display(),
             full_path.display()
@@ -515,7 +515,7 @@ fn secure_existing_private_dir_component(
     let mode = (stat.st_mode as u32) & 0o7777;
     let group_or_other_writable = mode & GROUP_OR_OTHER_WRITE_BITS != 0;
     if group_or_other_writable && (enforce_private_mode || mode & STICKY_BIT == 0) {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "private dir component {} for {} is group/other writable; fix permissions before starting the runner",
             component_path.display(),
             full_path.display()
@@ -533,18 +533,18 @@ fn private_dir_component_error(
     name: &OsStr,
     full_path: &Path,
     error: nix::errno::Errno,
-) -> RunnerError {
+) -> HostError {
     match error {
-        nix::errno::Errno::ELOOP => RunnerError::Config(format!(
+        nix::errno::Errno::ELOOP => HostError::Config(format!(
             "{} contains symlink component {}; refusing to use it as private runner state",
             full_path.display(),
             name.to_string_lossy()
         )),
-        nix::errno::Errno::ENOTDIR => RunnerError::Config(format!(
+        nix::errno::Errno::ENOTDIR => HostError::Config(format!(
             "{} is not a directory; refusing to use it as private runner state",
             full_path.display()
         )),
-        _ => RunnerError::Config(format!(
+        _ => HostError::Config(format!(
             "{operation} private dir component {} for {}: {error}",
             name.to_string_lossy(),
             full_path.display()
@@ -553,18 +553,14 @@ fn private_dir_component_error(
 }
 
 #[cfg(unix)]
-fn ensure_private_dir_fd_owned_by(
-    path: &Path,
-    fd: &OwnedFd,
-    expected_uid: u32,
-) -> RunnerResult<()> {
+fn ensure_private_dir_fd_owned_by(path: &Path, fd: &OwnedFd, expected_uid: u32) -> HostResult<()> {
     use nix::sys::stat::{SFlag, fstat};
 
     let stat = fstat(fd)
-        .map_err(|e| RunnerError::Config(format!("stat private dir fd {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Config(format!("stat private dir fd {}: {e}", path.display())))?;
     let fd_file_type = SFlag::from_bits_truncate(stat.st_mode & SFlag::S_IFMT.bits());
     if fd_file_type != SFlag::S_IFDIR {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} is not a directory; refusing to use it as private runner state",
             path.display()
         )));
@@ -572,7 +568,7 @@ fn ensure_private_dir_fd_owned_by(
 
     let actual_uid = stat.st_uid;
     if actual_uid != expected_uid {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} is owned by uid {actual_uid}, but runner euid is {expected_uid}; fix ownership before starting the runner",
             path.display()
         )));
@@ -583,21 +579,21 @@ fn ensure_private_dir_fd_owned_by(
 }
 
 #[cfg(all(unix, target_os = "linux"))]
-fn chmod_open_private_dir<Fd: std::os::fd::AsRawFd>(fd: &Fd, path: &Path) -> RunnerResult<()> {
+fn chmod_open_private_dir<Fd: std::os::fd::AsRawFd>(fd: &Fd, path: &Path) -> HostResult<()> {
     use std::os::unix::fs::PermissionsExt;
 
     let fd_path = PathBuf::from(format!("/proc/self/fd/{}", fd.as_raw_fd()));
     std::fs::set_permissions(&fd_path, std::fs::Permissions::from_mode(PRIVATE_DIR_MODE))
-        .map_err(|e| RunnerError::Config(format!("chmod private dir {}: {e}", path.display())))
+        .map_err(|e| HostError::Config(format!("chmod private dir {}: {e}", path.display())))
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
-fn chmod_open_private_dir<Fd: std::os::fd::AsFd>(fd: &Fd, path: &Path) -> RunnerResult<()> {
+fn chmod_open_private_dir<Fd: std::os::fd::AsFd>(fd: &Fd, path: &Path) -> HostResult<()> {
     nix::sys::stat::fchmod(
         fd,
         nix::sys::stat::Mode::from_bits_truncate(PRIVATE_DIR_MODE),
     )
-    .map_err(|e| RunnerError::Config(format!("chmod private dir {}: {e}", path.display())))
+    .map_err(|e| HostError::Config(format!("chmod private dir {}: {e}", path.display())))
 }
 
 #[cfg(all(unix, target_os = "linux"))]
@@ -617,18 +613,16 @@ fn private_dir_open_flags() -> nix::fcntl::OFlag {
 }
 
 #[cfg(unix)]
-fn reject_reserved_private_dir_path(path: &Path) -> RunnerResult<()> {
+fn reject_reserved_private_dir_path(path: &Path) -> HostResult<()> {
     let normalized = normalize_private_dir_policy_path(path)?;
     reject_reserved_normalized_private_dir_path(path, &normalized)
 }
 
 #[cfg(unix)]
-fn normalize_private_dir_policy_path(path: &Path) -> RunnerResult<PathBuf> {
+fn normalize_private_dir_policy_path(path: &Path) -> HostResult<PathBuf> {
     let path = if path.is_relative() {
         std::env::current_dir()
-            .map_err(|e| {
-                RunnerError::Config(format!("resolve private dir {}: {e}", path.display()))
-            })?
+            .map_err(|e| HostError::Config(format!("resolve private dir {}: {e}", path.display())))?
             .join(path)
     } else {
         path.to_path_buf()
@@ -638,7 +632,7 @@ fn normalize_private_dir_policy_path(path: &Path) -> RunnerResult<PathBuf> {
 
 #[cfg(test)]
 #[cfg(unix)]
-fn reject_reserved_private_dir_path_with_cwd(path: &Path, cwd: &Path) -> RunnerResult<()> {
+fn reject_reserved_private_dir_path_with_cwd(path: &Path, cwd: &Path) -> HostResult<()> {
     let normalized = normalize_path_lexically(&if path.is_relative() {
         cwd.join(path)
     } else {
@@ -651,9 +645,9 @@ fn reject_reserved_private_dir_path_with_cwd(path: &Path, cwd: &Path) -> RunnerR
 fn reject_reserved_normalized_private_dir_path(
     original: &Path,
     normalized: &Path,
-) -> RunnerResult<()> {
+) -> HostResult<()> {
     if is_reserved_normalized_private_dir_path(normalized) {
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "{} is a reserved system path; refusing to use it as private runner state",
             original.display()
         )));
@@ -698,9 +692,7 @@ fn normalize_path_lexically(path: &Path) -> PathBuf {
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::ignored_child::{
-        ignored_child_test_env_guard_enabled, run_ignored_child_test,
-    };
+    use crate::test_support::{ignored_child_test_env_guard_enabled, run_ignored_child_test};
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};

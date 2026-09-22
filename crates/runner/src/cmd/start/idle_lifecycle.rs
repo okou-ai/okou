@@ -17,9 +17,9 @@ use crate::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload,
     IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
 };
-use crate::paths::short_digest;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::status::{StatusResult, StatusTracker};
+use runner_host::paths::short_digest;
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 

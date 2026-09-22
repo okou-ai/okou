@@ -3,7 +3,7 @@
 //! Both `rootfs_hash` and `snapshot_hash` are produced as
 //! `hex::encode(Sha256::digest(...))`, so the canonical format is
 //! exactly 64 lowercase hex characters. The values are joined
-//! against [`crate::paths::HomePaths::images_dir`] to form on-disk
+//! against [`runner_host::paths::HomePaths::images_dir`] to form on-disk
 //! paths, so any input containing `..`, `/`, or other path
 //! metacharacters could escape the intended directory. This module is
 //! the single source of truth for what counts as a safe hash value.

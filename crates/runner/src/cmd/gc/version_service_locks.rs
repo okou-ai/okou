@@ -2,7 +2,7 @@ use tracing::warn;
 
 use crate::cmd::service::RunnerServiceUnit;
 use crate::error::RunnerResult;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::filesystem::{next_entry_warn_or_stop, read_dir_or_missing};
 use super::lock_file::{ExistingLockProbe, probe_existing_lock, remove_unused_lock_after_probe};
@@ -112,7 +112,8 @@ mod tests {
 
     use super::*;
     use crate::cmd::gc::test_support::test_home;
-    use crate::{cmd::service, lock};
+    use crate::cmd::service;
+    use runner_host::lock;
 
     fn test_version_service_lock(home: &HomePaths, version: &str) -> PathBuf {
         let unit = service::RunnerServiceUnit::from_suffix(version).unwrap();

@@ -203,9 +203,12 @@ async fn real_python_registry_owner_accepts_rust_writer_source_bound_inline_buil
         .tempdir()
         .unwrap();
     let registry_path = directory.path().join("registry.json");
-    crate::state_file::write_private_atomic(&registry_path, br#"{"sandboxes":{},"updatedAt":1}"#)
-        .await
-        .unwrap();
+    runner_host::state_file::write_private_atomic(
+        &registry_path,
+        br#"{"sandboxes":{},"updatedAt":1}"#,
+    )
+    .await
+    .unwrap();
     let child = start_real_python_registry_owner(directory.path()).await;
     let registry =
         ProxyRegistryHandle::new(registry_path, directory.path().join("proxy-registry.lock"));
@@ -288,7 +291,7 @@ async fn real_python_registry_owner_reports_publication_and_catalog_evidence() {
         .unwrap();
     let path = directory.path().join("registry.json");
     let content = br#"{"sandboxes":{},"updatedAt":1}"#;
-    crate::state_file::write_private_atomic(&path, content)
+    runner_host::state_file::write_private_atomic(&path, content)
         .await
         .unwrap();
     let child = start_real_python_registry_owner(directory.path()).await;
@@ -309,7 +312,7 @@ async fn real_python_registry_owner_reports_publication_and_catalog_evidence() {
             ..
         }
     ));
-    crate::state_file::write_private_atomic(&path, br#"{"sandboxes":{},"updatedAt":2}"#)
+    runner_host::state_file::write_private_atomic(&path, br#"{"sandboxes":{},"updatedAt":2}"#)
         .await
         .unwrap();
     let observed: RegistrySnapshot = control::exchange(
@@ -340,9 +343,12 @@ async fn real_python_registry_owner_reports_publication_and_catalog_evidence() {
             "permissions": [{"name": "read", "rules": ["GET /items"]}]
         }]}}
     });
-    crate::state_file::write_private_atomic(&catalog_path, &serde_json::to_vec(&catalog).unwrap())
-        .await
-        .unwrap();
+    runner_host::state_file::write_private_atomic(
+        &catalog_path,
+        &serde_json::to_vec(&catalog).unwrap(),
+    )
+    .await
+    .unwrap();
     let builtin_registry = serde_json::to_vec(&json!({
         "sandboxes": {"10.200.0.1": {
             "runId": "run-1", "billableFirewalls": [], "cliAgentType": "claude-code",
@@ -350,7 +356,7 @@ async fn real_python_registry_owner_reports_publication_and_catalog_evidence() {
         }}, "updatedAt": 2
     }))
     .unwrap();
-    crate::state_file::write_private_atomic(&path, &builtin_registry)
+    runner_host::state_file::write_private_atomic(&path, &builtin_registry)
         .await
         .unwrap();
     let publication = RegistryPublication {
@@ -384,7 +390,7 @@ async fn real_python_registry_owner_reports_publication_and_catalog_evidence() {
         ),
         "{missing_catalog:?}"
     );
-    crate::state_file::write_private_atomic(&path, b"{invalid")
+    runner_host::state_file::write_private_atomic(&path, b"{invalid")
         .await
         .unwrap();
     let rejected = publication.apply().await.unwrap();

@@ -5,7 +5,7 @@ use tracing::{info, warn};
 
 use crate::byte_size::human_bytes;
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::GC_MIN_AGE;
 use super::filesystem::{next_entry_warn_or_stop, read_dir_or_missing};
@@ -158,7 +158,7 @@ mod tests {
 
     use super::*;
     use crate::cmd::gc::test_support::{old_gc_time, set_mtime, test_home};
-    use crate::lock;
+    use runner_host::lock;
 
     #[tokio::test]
     async fn gc_debootstrap_missing_cache_dir_does_not_create_lock() {

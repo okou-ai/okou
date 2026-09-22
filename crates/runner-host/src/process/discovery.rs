@@ -14,7 +14,7 @@ use super::types::{
 /// Looks at the binary name (`argv[0]`) — the run ID and base directory
 /// are resolved from `/proc/{pid}/cwd` instead of argument parsing,
 /// since our sandbox always sets `current_dir` to the workspace.
-pub(crate) fn is_firecracker_cmdline(argv: &[String]) -> bool {
+pub fn is_firecracker_cmdline(argv: &[String]) -> bool {
     let Some(binary) = argv.first() else {
         return false;
     };
@@ -39,7 +39,7 @@ fn parse_mitmdump_cmdline(argv: &[String]) -> Option<u16> {
 /// Parse a dnsmasq argv for the listen port.
 ///
 /// Identifies dnsmasq by binary name and extracts the `--port` value.
-pub(crate) fn parse_dnsmasq_cmdline(argv: &[String]) -> Option<u16> {
+pub fn parse_dnsmasq_cmdline(argv: &[String]) -> Option<u16> {
     let binary = argv.first()?;
     if Path::new(binary).file_name().and_then(|name| name.to_str()) != Some("dnsmasq") {
         return None;
@@ -53,7 +53,7 @@ pub(crate) fn parse_dnsmasq_cmdline(argv: &[String]) -> Option<u16> {
 /// CWD is `{base_dir}/workspaces/{sandbox_id}/`, so:
 /// - `sandbox_id` is the last component
 /// - `base_dir` is the grandparent of `workspaces`
-pub(crate) fn parse_workspace_cwd(cwd: &Path) -> Option<(String, PathBuf)> {
+pub fn parse_workspace_cwd(cwd: &Path) -> Option<(String, PathBuf)> {
     let sandbox_id = cwd.file_name()?.to_string_lossy().into_owned();
     let workspaces_dir = cwd.parent()?;
     if workspaces_dir.file_name().and_then(|n| n.to_str()) == Some("workspaces") {
@@ -326,7 +326,7 @@ pub async fn discover_all() -> DiscoveredProcesses {
 /// Candidates whose identity cannot be verified after the cmdline scan remain
 /// in the result with an unknown workspace and generation. Cleanup must also
 /// account for these retained candidates when `proc_scan_complete` is true.
-pub(crate) async fn discover_all_with_status() -> ProcessDiscovery {
+pub async fn discover_all_with_status() -> ProcessDiscovery {
     let proc_root = Path::new("/proc");
     discover_all_with_status_from(proc_root, |pid| {
         read_process_stat_checked_from(proc_root, pid)

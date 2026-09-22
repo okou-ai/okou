@@ -38,12 +38,9 @@ use std::path::{Component, Path, PathBuf};
 use nix::fcntl::{OFlag, open, openat};
 use nix::sys::stat::{Mode, SFlag, fstat, mkdirat};
 
-#[cfg(test)]
-pub(crate) mod atomic_write_test;
-
-pub(crate) const PRIVATE_DIR_MODE: u32 = 0o700;
-pub(crate) const PRIVATE_FILE_MODE: u32 = 0o600;
-pub(crate) const SHARED_TRUSTED_DIR_MODE: u32 = 0o755;
+pub const PRIVATE_DIR_MODE: u32 = 0o700;
+pub const PRIVATE_FILE_MODE: u32 = 0o600;
+pub const SHARED_TRUSTED_DIR_MODE: u32 = 0o755;
 
 const GROUP_OR_OTHER_WRITE_BITS: u32 = 0o022;
 const ROOT_UID: u32 = 0;
@@ -59,7 +56,7 @@ const STICKY_BIT: u32 = 0o1000;
 /// other modes accept root or runner ownership but reject group/other writes.
 /// The mode also determines the permissions used for missing components and
 /// whether a runner-owned final directory is normalized.
-pub(crate) enum DirMode {
+pub enum DirMode {
     /// Protect runner-exclusive state with a private final directory.
     ///
     /// The final directory must be owned by the runner effective uid. Missing
@@ -106,7 +103,7 @@ struct DirWalk<'a> {
 /// same ownership and permission checks used by [`validate_dir`] are applied
 /// to every component. Depending on the mode, an existing runner-owned final
 /// directory may also be normalized to `0700` or `0755`.
-pub(crate) fn ensure_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<()> {
+pub fn ensure_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<()> {
     open_dir_components(path, mode, context, true).map(|_| ())
 }
 
@@ -117,7 +114,7 @@ pub(crate) fn ensure_dir(path: &Path, mode: DirMode, context: &str) -> io::Resul
 /// [`DirMode::SharedTrusted`] can normalize an existing runner-owned final
 /// directory to their required mode. No component is created when a path is
 /// missing.
-pub(crate) fn validate_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<()> {
+pub fn validate_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<()> {
     open_dir_components(path, mode, context, false).map(|_| ())
 }
 
@@ -125,7 +122,7 @@ pub(crate) fn validate_dir(path: &Path, mode: DirMode, context: &str) -> io::Res
 ///
 /// Keeping the descriptor preserves the directory identity for callers that
 /// coordinate filesystem operations with a lock on that inode.
-pub(crate) fn open_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<File> {
+pub fn open_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<File> {
     let dir = open_dir_components(path, mode, context, false)?;
     // The Linux walk uses O_PATH, which cannot be flocked. Reopen "."
     // relative to that descriptor, preserving the validated directory inode.
@@ -156,7 +153,7 @@ pub(crate) fn open_private_append_file(path: &Path, read: bool) -> io::Result<Fi
     Ok(file)
 }
 
-pub(crate) fn validate_private_file_destination(path: &Path, context: &str) -> io::Result<()> {
+pub fn validate_private_file_destination(path: &Path, context: &str) -> io::Result<()> {
     validate_file_parent(path, context)?;
 
     let mut options = File::options();
@@ -181,11 +178,7 @@ pub(crate) fn validate_private_file_destination(path: &Path, context: &str) -> i
 /// returning. The caller owns parent-directory trust, failed-file cleanup, and
 /// publication. This operation does not fsync the file.
 #[cfg(unix)]
-pub(crate) async fn write_private_new(
-    path: &Path,
-    content: &[u8],
-    context: &str,
-) -> io::Result<()> {
+pub async fn write_private_new(path: &Path, content: &[u8], context: &str) -> io::Result<()> {
     use tokio::io::AsyncWriteExt;
 
     let mut options = tokio::fs::OpenOptions::new();
@@ -235,9 +228,6 @@ pub(crate) async fn write_private_atomic(
     let result = async {
         write_private_new(&tmp, content, context).await?;
 
-        #[cfg(test)]
-        let renamed = atomic_write_test::rename(&tmp, path).await;
-        #[cfg(not(test))]
         let renamed = tokio::fs::rename(&tmp, path).await;
         renamed.map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
         Ok(())
@@ -261,7 +251,7 @@ pub(crate) async fn write_private_atomic(
         .map_err(|e| wrap_io(e, format!("write {context} {}", path.display())))
 }
 
-pub(crate) fn secure_regular_private_file<Fd: AsRawFd>(
+pub fn secure_regular_private_file<Fd: AsRawFd>(
     file: &Fd,
     path: &Path,
     context: &str,
@@ -297,7 +287,7 @@ pub(crate) fn secure_regular_private_file<Fd: AsRawFd>(
     Ok(())
 }
 
-pub(crate) fn private_file_open_flags() -> i32 {
+pub fn private_file_open_flags() -> i32 {
     nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC | nix::libc::O_NONBLOCK
 }
 
@@ -306,7 +296,7 @@ pub(crate) fn validate_file_parent(path: &Path, context: &str) -> io::Result<()>
     validate_dir(parent, DirMode::TrustedParent, context)
 }
 
-pub(crate) fn file_parent(path: &Path) -> &Path {
+pub fn file_parent(path: &Path) -> &Path {
     path.parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
@@ -782,9 +772,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::test_fixtures::ignored_child::{
-        ignored_child_test_env_guard_enabled, run_ignored_child_test,
-    };
+    use crate::test_support::{ignored_child_test_env_guard_enabled, run_ignored_child_test};
 
     const RESTRICTIVE_UMASK_CHILD_ENV: &str = "OKOU_RUN_RESTRICTIVE_UMASK_TEST";
 

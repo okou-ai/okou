@@ -22,14 +22,14 @@
 
 use std::path::Path;
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{HostError, HostResult};
 
-pub(crate) const PROXY_REGISTRY_MAX_BYTES: u64 = 16 * 1024 * 1024;
-pub(crate) const WORKSPACE_METADATA_MAX_BYTES: u64 = 1024 * 1024;
+pub const PROXY_REGISTRY_MAX_BYTES: u64 = 16 * 1024 * 1024;
+pub const WORKSPACE_METADATA_MAX_BYTES: u64 = 1024 * 1024;
 
 /// Ownership and write-trust policy for reading a runner state file.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum OwnerCheck {
+pub enum OwnerCheck {
     /// Skip owner validation.
     ///
     /// Use this for files that may legitimately be produced by another
@@ -54,16 +54,16 @@ pub(crate) enum OwnerCheck {
 /// Missing files return `Ok(None)`. Existing files must be valid UTF-8 after
 /// the configured byte limit and any platform-specific state-file validation
 /// are applied.
-pub(crate) async fn read_to_string(
+pub async fn read_to_string(
     path: &Path,
     max_bytes: u64,
     owner_check: OwnerCheck,
-) -> RunnerResult<Option<String>> {
+) -> HostResult<Option<String>> {
     let Some(bytes) = read_to_bytes(path, max_bytes, owner_check).await? else {
         return Ok(None);
     };
     String::from_utf8(bytes).map(Some).map_err(|e| {
-        RunnerError::Internal(format!("read state file {} as UTF-8: {e}", path.display()))
+        HostError::Internal(format!("read state file {} as UTF-8: {e}", path.display()))
     })
 }
 
@@ -71,11 +71,11 @@ pub(crate) async fn read_to_string(
 ///
 /// Missing files are returned as `NotFound` errors. Existing files use the
 /// same bounded, platform-specific read path as [`read_to_string`].
-pub(crate) async fn read_to_bytes_required(
+pub async fn read_to_bytes_required(
     path: &Path,
     max_bytes: u64,
     owner_check: OwnerCheck,
-) -> RunnerResult<Vec<u8>> {
+) -> HostResult<Vec<u8>> {
     match read_to_bytes(path, max_bytes, owner_check).await? {
         Some(bytes) => Ok(bytes),
         None => Err(std::io::Error::new(
@@ -90,7 +90,7 @@ async fn read_to_bytes(
     path: &Path,
     max_bytes: u64,
     owner_check: OwnerCheck,
-) -> RunnerResult<Option<Vec<u8>>> {
+) -> HostResult<Option<Vec<u8>>> {
     #[cfg(unix)]
     {
         read_to_bytes_unix(path, max_bytes, owner_check).await
@@ -108,7 +108,7 @@ async fn read_to_bytes_unix(
     path: &Path,
     max_bytes: u64,
     owner_check: OwnerCheck,
-) -> RunnerResult<Option<Vec<u8>>> {
+) -> HostResult<Option<Vec<u8>>> {
     let mut options = tokio::fs::OpenOptions::new();
     options
         .read(true)
@@ -117,7 +117,7 @@ async fn read_to_bytes_unix(
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "open state file {}: {e}",
                 path.display()
             )));
@@ -128,12 +128,12 @@ async fn read_to_bytes_unix(
 }
 
 #[cfg(not(unix))]
-async fn read_to_bytes_fallback(path: &Path, max_bytes: u64) -> RunnerResult<Option<Vec<u8>>> {
+async fn read_to_bytes_fallback(path: &Path, max_bytes: u64) -> HostResult<Option<Vec<u8>>> {
     let file = match tokio::fs::File::open(path).await {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "open state file {}: {e}",
                 path.display()
             )));
@@ -146,11 +146,11 @@ async fn read_open_file_bytes(
     file: tokio::fs::File,
     path: &Path,
     max_bytes: u64,
-) -> RunnerResult<Vec<u8>> {
+) -> HostResult<Vec<u8>> {
     use tokio::io::AsyncReadExt;
 
     let read_limit = max_bytes.checked_add(1).ok_or_else(|| {
-        RunnerError::Internal(format!(
+        HostError::Internal(format!(
             "state file {} read limit is too large",
             path.display()
         ))
@@ -160,9 +160,9 @@ async fn read_open_file_bytes(
     limited
         .read_to_end(&mut contents)
         .await
-        .map_err(|e| RunnerError::Internal(format!("read state file {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Internal(format!("read state file {}: {e}", path.display())))?;
     if contents.len() as u64 > max_bytes {
-        return Err(RunnerError::Internal(format!(
+        return Err(HostError::Internal(format!(
             "state file {} exceeds {} bytes",
             path.display(),
             max_bytes
@@ -176,12 +176,12 @@ fn validate_open_state_file<Fd: std::os::fd::AsRawFd>(
     file: &Fd,
     path: &Path,
     owner_check: OwnerCheck,
-) -> RunnerResult<()> {
+) -> HostResult<()> {
     let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
     // SAFETY: `stat` points to valid writable memory and `file` owns a live fd.
     let result = unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
     if result != 0 {
-        return Err(RunnerError::Internal(format!(
+        return Err(HostError::Internal(format!(
             "stat state file {}: {}",
             path.display(),
             std::io::Error::last_os_error()
@@ -191,7 +191,7 @@ fn validate_open_state_file<Fd: std::os::fd::AsRawFd>(
     let stat = unsafe { stat.assume_init() };
     let file_type = stat.st_mode & libc::S_IFMT;
     if file_type != libc::S_IFREG {
-        return Err(RunnerError::Internal(format!(
+        return Err(HostError::Internal(format!(
             "{} is not a regular state file",
             path.display()
         )));
@@ -205,7 +205,7 @@ fn validate_open_state_file<Fd: std::os::fd::AsRawFd>(
     if matches!(owner_check, OwnerCheck::CurrentEuidNoUntrustedWrites)
         && stat.st_mode & (libc::S_IWGRP | libc::S_IWOTH) != 0
     {
-        return Err(RunnerError::Internal(format!(
+        return Err(HostError::Internal(format!(
             "{} is writable by group or other users",
             path.display()
         )));
@@ -219,13 +219,13 @@ fn validate_owner_uid(
     expected_uid: libc::uid_t,
     owner_check: OwnerCheck,
     path: &Path,
-) -> RunnerResult<()> {
+) -> HostResult<()> {
     if matches!(
         owner_check,
         OwnerCheck::CurrentEuid | OwnerCheck::CurrentEuidNoUntrustedWrites
     ) && stat_uid != expected_uid
     {
-        return Err(RunnerError::Internal(format!(
+        return Err(HostError::Internal(format!(
             "{} is owned by uid {}, but runner euid is {expected_uid}",
             path.display(),
             stat_uid
@@ -242,19 +242,17 @@ fn validate_owner_uid(
 /// exposing partial contents through the target path. The file and parent
 /// directory are not fsynced, so this does not provide a crash-durability
 /// guarantee. Non-Unix builds use `tokio::fs::write` as a weaker fallback.
-pub(crate) async fn write_private_atomic(path: &Path, content: &[u8]) -> RunnerResult<()> {
+pub async fn write_private_atomic(path: &Path, content: &[u8]) -> HostResult<()> {
     crate::host_file::write_private_atomic(path, content, "state file")
         .await
-        .map_err(|e| RunnerError::Internal(e.to_string()))
+        .map_err(|e| HostError::Internal(e.to_string()))
 }
 
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::ignored_child::{
-        ignored_child_test_env_guard_enabled, run_ignored_child_test,
-    };
+    use crate::test_support::{ignored_child_test_env_guard_enabled, run_ignored_child_test};
     use std::ffi::CString;
     use std::os::unix::fs::symlink;
     use std::path::PathBuf;

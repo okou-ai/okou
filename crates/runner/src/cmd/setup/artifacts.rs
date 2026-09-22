@@ -12,7 +12,7 @@ use crate::deps::{
     firecracker_tar_entry, firecracker_url, kernel_url, mitmdump_url,
 };
 use crate::error::RunnerResult;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::{
     SETUP_EXECUTABLE_ARTIFACT_MODE, SETUP_KERNEL_ARTIFACT_MODE, SetupArtifactIdentity,

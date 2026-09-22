@@ -12,10 +12,10 @@ use crate::idle_pool::IdlePool;
 use crate::lifecycle::RunnerMode;
 use crate::provider::JobProvider;
 use crate::resource_budget::ResourceBudget;
-use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceImageCache, cap_held_workspace_states,
 };
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::types::{
     HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
     MAX_WORKSPACE_CACHES_PER_REUSE_KEY,
@@ -810,12 +810,12 @@ mod tests {
     use crate::idle_pool::{
         IdlePoolConfig, ParkResult, ParkedIdleCandidate, test_support::ParkedIdleCandidateBuilder,
     };
-    use crate::paths::RunnerPaths;
     use crate::provider::mock::MockJobProvider;
     use crate::workspace_image_cache::{
         WorkspaceCacheTerminalStatus, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
     };
     use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+    use runner_host::paths::RunnerPaths;
     use runner_types::types::{
         MAX_HELD_WORKSPACE_STATES, ReusableSandboxState, WorkspaceCacheCapability,
     };
@@ -1208,15 +1208,14 @@ mod tests {
                 &["vm0/default"],
             )],
         );
-        let cache_key = crate::paths::scoped_workspace_image_cache_key(
+        let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
             "",
             "vm0/default",
             reuse_key,
             CANONICAL_WORKING_DIR,
             1024 * 1024,
         );
-        let metadata = paths
-            .workspace_image_cache_dir()
+        let metadata = crate::test_fixtures::runner_workspace_image_cache_dir(&paths)
             .join(cache_key)
             .join("metadata.json");
         tokio::fs::remove_file(metadata).await.unwrap();

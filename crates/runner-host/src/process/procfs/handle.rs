@@ -13,12 +13,12 @@ use super::{ProcessStatRead, classify_process_stat_read, parse_cmdline_bytes};
 ///
 /// Relative procfs reads and `pidfd_send_signal` use the same process object,
 /// even if the process exits and its numeric PID is reused.
-pub(crate) struct ProcfsProcessHandle {
+pub struct ProcfsProcessHandle {
     directory: OwnedFd,
 }
 
 impl ProcfsProcessHandle {
-    pub(crate) fn open(pid: u32) -> io::Result<Self> {
+    pub fn open(pid: u32) -> io::Result<Self> {
         let directory = rustix::fs::open(
             format!("/proc/{pid}"),
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
@@ -40,24 +40,24 @@ impl ProcfsProcessHandle {
         Ok(bytes)
     }
 
-    pub(crate) async fn read_stat(&self) -> ProcessStatRead {
+    pub async fn read_stat(&self) -> ProcessStatRead {
         match self.read_file(c"stat").await {
             Err(error) if error.raw_os_error() == Some(libc::ESRCH) => ProcessStatRead::Missing,
             result => classify_process_stat_read(result),
         }
     }
 
-    pub(crate) async fn read_cmdline(&self) -> Option<Vec<String>> {
+    pub async fn read_cmdline(&self) -> Option<Vec<String>> {
         parse_cmdline_bytes(&self.read_file(c"cmdline").await.ok()?)
     }
 
-    pub(crate) fn read_cwd(&self) -> Option<PathBuf> {
+    pub fn read_cwd(&self) -> Option<PathBuf> {
         let cwd = rustix::fs::readlinkat(&self.directory, c"cwd", Vec::new()).ok()?;
         Some(PathBuf::from(OsString::from_vec(cwd.into_bytes())))
     }
 
     /// Kill the group of a verified process-group leader without a PID lookup.
-    pub(crate) fn kill_process_group(&self) -> nix::Result<()> {
+    pub fn kill_process_group(&self) -> nix::Result<()> {
         #[cfg(target_os = "linux")]
         {
             use std::os::fd::AsRawFd;

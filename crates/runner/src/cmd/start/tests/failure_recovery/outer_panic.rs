@@ -92,7 +92,7 @@ async fn outer_job_panic_after_handoff_keeps_successor_owned_sandbox() {
                 .with_history_generation_run_id(Some(predecessor_run_id))
                 .with_runner_preference_for_test(
                     crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        crate::runner_process_identity::RunnerProcessIdentity::new(
+                        runner_host::runner_process_identity::RunnerProcessIdentity::new(
                             TEST_RUNNER_ID.parse().unwrap(),
                             TEST_HEARTBEAT_GENERATION,
                         )

@@ -2004,7 +2004,7 @@ mod tests {
         assert_eq!(preference.tier(), RunnerPreferenceTier::ReusableSandbox);
         assert!(
             preference.targets(
-                crate::runner_process_identity::RunnerProcessIdentity::new(
+                runner_host::runner_process_identity::RunnerProcessIdentity::new(
                     "00000000-0000-0000-0000-000000000005".parse().unwrap(),
                     7,
                 )

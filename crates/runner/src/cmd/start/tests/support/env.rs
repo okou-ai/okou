@@ -8,7 +8,7 @@ use crate::executor;
 use crate::lifecycle::LifecycleController;
 use crate::provider::mock::{MockJobProvider, MockProviderHandle};
 use crate::run_cancellation::RunCancellationRegistry;
-use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use sandbox_mock::MockSandboxRuntime;
 
 pub(in super::super) const TEST_RUNNER_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
@@ -265,7 +265,7 @@ fn build_mock_run_config_with_runtime(
                 client_session_id: "runner-session-test".to_string(),
             })
             .unwrap(),
-            log_paths: crate::paths::LogPaths::new(log_dir),
+            log_paths: runner_host::paths::LogPaths::new(log_dir),
             network_log_manager: NetworkLogManager::new(),
             network_log_drain: NetworkLogDrainCoordinator::noop(),
             network_log_upload_health: crate::network_logs::NetworkLogUploadHealthTracker::new(),

@@ -1,18 +1,18 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{HostError, HostResult};
 
 const CPU_SYSFS_ROOT: &str = "/sys/devices/system/cpu";
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum PreSpawnCpuCapacity {
+pub enum PreSpawnCpuCapacity {
     ExactPhysical(u32),
     ConservativeLogical(u32),
 }
 
 impl PreSpawnCpuCapacity {
-    pub(crate) fn tokens(&self) -> u32 {
+    pub fn tokens(&self) -> u32 {
         match self {
             Self::ExactPhysical(tokens) | Self::ConservativeLogical(tokens) => *tokens,
         }
@@ -20,17 +20,15 @@ impl PreSpawnCpuCapacity {
 }
 
 /// Return the number of logical CPUs available to this process.
-pub fn cpu_count() -> RunnerResult<usize> {
+pub fn cpu_count() -> HostResult<usize> {
     std::thread::available_parallelism()
         .map(|n| n.get())
-        .map_err(|e| RunnerError::Internal(format!("detect CPU count: {e}")))
+        .map_err(|e| HostError::Internal(format!("detect CPU count: {e}")))
 }
 
-pub(crate) fn pre_spawn_cpu_capacity(
-    logical_cpu_count: usize,
-) -> RunnerResult<PreSpawnCpuCapacity> {
+pub fn pre_spawn_cpu_capacity(logical_cpu_count: usize) -> HostResult<PreSpawnCpuCapacity> {
     pre_spawn_cpu_capacity_at(Path::new(CPU_SYSFS_ROOT), logical_cpu_count)
-        .map_err(|error| RunnerError::Internal(format!("detect physical CPU topology: {error}")))
+        .map_err(|error| HostError::Internal(format!("detect physical CPU topology: {error}")))
 }
 
 fn pre_spawn_cpu_capacity_at(
@@ -143,9 +141,9 @@ fn parse_cpu_number(value: &str, entry: &str) -> Result<usize, String> {
 }
 
 /// Read total physical memory in MiB from `/proc/meminfo`.
-pub fn memory_mb() -> RunnerResult<usize> {
+pub fn memory_mb() -> HostResult<usize> {
     let content = std::fs::read_to_string("/proc/meminfo")
-        .map_err(|e| RunnerError::Internal(format!("read /proc/meminfo: {e}")))?;
+        .map_err(|e| HostError::Internal(format!("read /proc/meminfo: {e}")))?;
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("MemTotal:") {
             let kb: usize = rest
@@ -153,11 +151,11 @@ pub fn memory_mb() -> RunnerResult<usize> {
                 .trim_end_matches("kB")
                 .trim()
                 .parse()
-                .map_err(|e| RunnerError::Internal(format!("parse MemTotal: {e}")))?;
+                .map_err(|e| HostError::Internal(format!("parse MemTotal: {e}")))?;
             return Ok(kb / 1024);
         }
     }
-    Err(RunnerError::Internal(
+    Err(HostError::Internal(
         "MemTotal not found in /proc/meminfo".into(),
     ))
 }

@@ -23,7 +23,7 @@ use sandbox::{RemoteKillResult, SandboxControl, SandboxControlError};
 use tracing::info;
 
 use crate::error::RunnerResult;
-use crate::process;
+use runner_host::process;
 
 mod orphan;
 mod target;

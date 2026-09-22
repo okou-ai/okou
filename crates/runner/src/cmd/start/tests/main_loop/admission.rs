@@ -11,12 +11,12 @@ use super::super::support::{
 };
 use std::sync::Arc;
 
-use crate::paths::RunnerPaths;
 use crate::provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
-use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::workspace_image_cache::{WorkspaceImageCache, WorkspaceImagePrepareLockTestGate};
+use runner_host::paths::RunnerPaths;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::types::SandboxReuseResult;
 use runner_types::types::WorkspaceReuseResult;
 
@@ -2082,19 +2082,20 @@ async fn pending_finalizing_fallback_skips_workspace_cache_lock_retry() {
     let workspace_cache =
         WorkspaceImageCache::shared(runner_paths, &config.paths.home, &config.runner.group)
             .with_prepare_lock_test_gate(prepare_lock_gate);
-    let cache_key = crate::paths::scoped_workspace_image_cache_key(
+    let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
         &config.runner.group,
         "vm0/default",
         reuse_key,
         api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
         image_size_bytes,
     );
-    let held_lock = crate::lock::acquire(crate::paths::workspace_image_cache_lock_path(
-        &config.paths.home.locks_dir(),
-        &cache_key,
-    ))
-    .await
-    .unwrap();
+    let held_lock =
+        runner_host::lock::acquire(runner_host::paths::workspace_image_cache_lock_path(
+            &config.paths.home.locks_dir(),
+            &cache_key,
+        ))
+        .await
+        .unwrap();
     Arc::get_mut(&mut config.exec_config)
         .unwrap()
         .workspace_cache = Some(workspace_cache);

@@ -25,7 +25,7 @@ use crate::error::{
 };
 use crate::http::{HttpClient, api_transport_cause};
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationMode as Mode};
-use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
 const INTERVAL: Duration = Duration::from_secs(30);

@@ -70,7 +70,6 @@ use super::{
 };
 use crate::active_input::ActiveInputSource;
 use crate::helper_exec::helper_exec_succeeded;
-use crate::paths::guest;
 use crate::restored_session_identity::{
     FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionFinalMetadataVerification,
     RestoredSessionIdentity, RestoredSessionIdentityMismatchReason,
@@ -80,6 +79,7 @@ use crate::telemetry::{
     HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
     WorkspaceSessionHistoryTelemetry, session_history_prefix_extension_action_type,
 };
+use guest_contracts::guest_binary::AGENT_PATH;
 use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
@@ -435,8 +435,7 @@ async fn materialize_inline_resume_session(
 fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> RunnerResult<()> {
     let mut values = Vec::with_capacity(env_pairs.len() + 1);
     values.push(guest_contracts::exec_limits::ExecBoundaryValue::arg(
-        "argv[0]",
-        guest::RUN_AGENT,
+        "argv[0]", AGENT_PATH,
     ));
     for (key, value) in env_pairs {
         values.push(guest_contracts::exec_limits::ExecBoundaryValue::env(
@@ -4012,7 +4011,7 @@ mod tests {
 
     #[test]
     fn bootstrap_exec_boundary_counts_fixed_agent_executable_arg() {
-        let executable_arg_bytes = exec_arg_aggregate_bytes(guest::RUN_AGENT);
+        let executable_arg_bytes = exec_arg_aggregate_bytes(AGENT_PATH);
         let env_pairs = env_pairs_for_aggregate_bytes(
             guest_contracts::exec_limits::EXECVE_ARG_ENV_MAX_BYTES + 1 - executable_arg_bytes,
         );

@@ -15,10 +15,10 @@ use tokio::net::UnixListener;
 
 use super::run_input_with_home;
 use crate::local_queue::{self, ActiveInputEntry, JobRequest, LocalQueue};
-use crate::paths::HomePaths;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 const CHILD_TEST: &str = "cmd::local::input::race_tests::external_publisher_child";

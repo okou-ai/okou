@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::ca;
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::scripts::{CUSTOMIZE_SCRIPT, TEMPLATE_BUILD_SCRIPT};
 

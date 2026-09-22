@@ -370,7 +370,7 @@ mod tests {
 
     use super::super::{RunnerNoPreferenceReason, RunnerPreference, RunnerPreferenceTier};
     use super::*;
-    use crate::runner_process_identity::RunnerProcessIdentity;
+    use runner_host::runner_process_identity::RunnerProcessIdentity;
 
     fn run_id(value: u128) -> RunId {
         RunId::from(uuid::Uuid::from_u128(value))

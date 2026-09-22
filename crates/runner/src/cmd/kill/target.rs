@@ -3,9 +3,11 @@ use std::path::PathBuf;
 use sandbox::SandboxControlTarget;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
-use crate::process::{self, DiscoveredProcesses, FirecrackerProcessInfo, ProcfsProcessGeneration};
 use crate::run_resolution;
+use runner_host::paths::HomePaths;
+use runner_host::process::{
+    self, DiscoveredProcesses, FirecrackerProcessInfo, ProcfsProcessGeneration,
+};
 
 use super::KillArgs;
 

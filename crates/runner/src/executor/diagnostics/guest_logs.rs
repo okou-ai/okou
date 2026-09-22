@@ -3,7 +3,7 @@ use sandbox::{CopyFileOptions, Sandbox};
 use tracing::{info, warn};
 
 use super::super::{DEFAULT_EXEC_TIMEOUT, GUEST_LOG_COPY_MAX_BYTES, guest_runtime_path};
-use crate::paths::LogPaths;
+use runner_host::paths::LogPaths;
 use runner_types::types::ExecutionContext;
 
 /// Copy guest log files to host (best-effort, post-job).
@@ -53,7 +53,7 @@ pub(in crate::executor) async fn copy_guest_logs(
     let files = files
         .into_iter()
         .filter(|(guest_path, host_path)| {
-            if let Err(e) = crate::log_file::validate_copy_destination(host_path) {
+            if let Err(e) = runner_host::log_file::validate_copy_destination(host_path) {
                 warn!(
                     run_id = %run_id,
                     error = %e,
