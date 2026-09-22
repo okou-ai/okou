@@ -7,7 +7,11 @@ import {
   type VisualizationChart,
   type VisualizationOutput,
 } from "../../signals/okou-page/composer-visualization.ts";
-import { ComposerRail, RAIL_TILE_CAPTION } from "./composer-rail.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 
@@ -36,8 +40,11 @@ function VisualizationOutputButton({
       // the picker stopped being a grid. `inline` is the layout that shrinks.
       layout="inline"
       aria-label={label}
+      // The metrics of the task-chip row this panel hangs from: `h-9`, `px-3`
+      // and the button base's own radius and text size. A pill at `text-xs` was
+      // the one control on the surface drawn to its own scale.
       className={cn(
-        "h-8 shrink-0 rounded-full px-3.5 py-0 text-xs font-medium",
+        "h-9 shrink-0 px-3 py-0",
         !selected && "border-control-border bg-transparent",
       )}
       onClick={() => {
@@ -62,13 +69,18 @@ function VisualizationOutputPicker({
     { returnObjects: true },
   );
   return (
-    <section className="flex min-w-0 flex-col gap-2.5">
-      <h4 className="text-xs font-medium">{copy.outputFormat}</h4>
-      <div
-        className="flex min-w-0 flex-wrap items-center gap-1.5"
-        role="group"
-        aria-label={copy.outputFormat}
-      >
+    // The header line, the `gap-3` under it and the group that owns the label
+    // are every other type's shelf, so this panel stops being the one laid out
+    // to its own metrics.
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      role="group"
+      aria-label={copy.outputFormat}
+    >
+      <p className="min-w-0 truncate text-base font-medium">
+        {copy.outputFormat}
+      </p>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {VISUALIZATION_OUTPUTS.map((output) => {
           return (
             <VisualizationOutputButton
@@ -79,7 +91,7 @@ function VisualizationOutputPicker({
           );
         })}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -107,9 +119,8 @@ function VisualizationChartButton({
       focus ring and the disabled appearance. Its own selected treatment is for
       a control that is itself the surface; here the art box is, and the caption
       sits outside it the way every other type's shelf tile does. So the outer
-      control is neutralised and the box below carries the state - and only the
-      resting branch is overridden, because overriding both is what erased the
-      selected state the first time.
+      control is neutralised down to the frame the other shelves' tiles use, and
+      the cover below carries the state.
     */
     <ToggleButton
       selected={selected}
@@ -118,7 +129,10 @@ function VisualizationChartButton({
       // The button base clamps any nested icon to `size-4`; this tile's child is
       // a drawing that has to fill its box, not an icon.
       className={cn(
-        "group/tile w-[140px] border-0 p-0 text-left font-normal",
+        RAIL_TILE,
+        // The cover width every other type's shelf carries; the caption and the
+        // 16:9 box below follow from it.
+        "w-[200px] border-0 text-left font-normal",
         // `bg-transparent` alone leaves the toggle's dark selected fill: a
         // theme-prefixed utility is a different merge key, so it survives an
         // unprefixed one and would wash the tile in dark.
@@ -131,14 +145,18 @@ function VisualizationChartButton({
     >
       <span
         className={cn(
-          "flex h-[84px] items-center justify-center rounded-lg border-(length:--border-width-emphasis) p-2.5 transition-colors",
-          // The tile's content is a drawing, so neither a fill nor the caption
-          // can carry selection: the edge has to. That is what the emphasis
-          // weight is for, and both branches take it so selecting a tile never
-          // moves its siblings.
+          // A cover, at the metrics of the covers on the other shelves: 16:9,
+          // `rounded-xl`, one hairline and the same `bg-muted` behind it. Only
+          // the padding is this shelf's own -- a drawing sits on the tile
+          // rather than bleeding to its edge the way a screenshot does.
+          "flex aspect-video items-center justify-center overflow-hidden rounded-xl border bg-muted p-3 transition-colors",
+          // Selection recolours that hairline and tints the box behind the
+          // line art -- the drawing is strokes on a fill, not a screenshot, so
+          // the fill is still readable underneath. The width is the same
+          // hairline in both branches, so selecting never moves a sibling.
           selected
             ? "border-primary bg-primary/10 text-foreground"
-            : "border-transparent bg-muted/60 text-foreground/45 group-hover/tile:bg-muted group-hover/tile:text-foreground/70",
+            : "border-border text-foreground/45 group-hover/tile:text-foreground/70",
         )}
       >
         <VisualizationChartPreview chart={chart} />
@@ -168,13 +186,20 @@ function VisualizationChartPicker({
     { returnObjects: true },
   );
   return (
-    <section className="flex min-w-0 flex-col gap-2.5">
-      <h4 className="text-xs font-medium">{copy.preferredCharts}</h4>
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      role="group"
+      aria-label={copy.preferredCharts}
+    >
+      <p className="min-w-0 truncate text-base font-medium">
+        {copy.preferredCharts}
+      </p>
       <ComposerRail
         signals={signals}
         rail="charts"
-        label={copy.preferredCharts}
-        gap="gap-2"
+        // The shelf labels its own wrapper, so the rail inside stays unnamed:
+        // two groups of the same name would be two things to address.
+        gap="gap-3"
         items={CURATED_VISUALIZATION_CHARTS.map((chart) => {
           return (
             <VisualizationChartButton
@@ -185,7 +210,7 @@ function VisualizationChartPicker({
           );
         })}
       />
-    </section>
+    </div>
   );
 }
 
@@ -203,7 +228,10 @@ export function ComposerVisualizationOptions({
   );
   return (
     <section
-      className="flex min-w-0 flex-col gap-4"
+      // Two groups, so they take the air the other panels put between their own
+      // two: a shelf's `gap-3` is what a title keeps from its row, not what one
+      // group keeps from the next.
+      className="flex min-w-0 flex-col gap-12"
       role="region"
       aria-label={copy.panelLabel}
     >
