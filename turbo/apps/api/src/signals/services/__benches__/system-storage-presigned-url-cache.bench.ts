@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { createStore } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { test } from "vitest";
 import { z } from "zod";
 
@@ -294,6 +294,30 @@ async function resolveFixture(
   }
 }
 
+async function resolveFixtureWithExpiredRows(
+  fixture: BenchFixture,
+  useMixedLookup: boolean,
+): Promise<void> {
+  const db = store.set(writeDb$);
+  const expiredCacheKeys = fixture.pairs
+    .filter((_, index) => {
+      return index % 10 === 0;
+    })
+    .map((pair) => {
+      return pair.cacheKey;
+    });
+  const expiredAt = new Date(nowDate().getTime() - 60_000);
+  await db
+    .update(systemStoragePresignedUrlCache)
+    .set({
+      expiresAt: expiredAt,
+      refreshAfter: expiredAt,
+      updatedAt: expiredAt,
+    })
+    .where(inArray(systemStoragePresignedUrlCache.cacheKey, expiredCacheKeys));
+  await resolveFixture(fixture, useMixedLookup);
+}
+
 const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
   let cached: Promise<ReadonlyMap<number, BenchFixture>> | undefined;
   return () => {
@@ -350,6 +374,13 @@ test(
     }
 
     const concurrentFixture = fixtureAt(fixtures, 17);
+    await bench("current per-scope lookup 17 with expired rows", async () => {
+      await resolveFixtureWithExpiredRows(concurrentFixture, false);
+    }).run(benchOptions);
+    await bench("bounded mixed lookup 17 with expired rows", async () => {
+      await resolveFixtureWithExpiredRows(concurrentFixture, true);
+    }).run(benchOptions);
+
     await bench("current per-scope lookup 17 x32", async () => {
       await Promise.all(
         Array.from({ length: 32 }, async () => {
