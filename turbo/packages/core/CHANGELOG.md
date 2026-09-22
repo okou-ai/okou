@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.700.2](https://github.com/okou-ai/okou/compare/core-v8.700.1...core-v8.700.2) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
 ## [8.700.1](https://github.com/okou-ai/okou/compare/core-v8.700.0...core-v8.700.1) (2026-09-22)
 
 

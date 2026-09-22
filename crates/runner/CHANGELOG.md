@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.211.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.0...runner-rs-v0.211.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
 ## [0.211.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.1...runner-rs-v0.211.0) (2026-09-22)
 
 

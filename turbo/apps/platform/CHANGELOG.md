@@ -11,6 +11,25 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.945.0](https://github.com/okou-ai/okou/compare/app-v0.944.0...app-v0.945.0) (2026-09-22)
+
+
+### Features
+
+* **platform:** add browser handoff controls ([#36143](https://github.com/okou-ai/okou/issues/36143)) ([47da746](https://github.com/okou-ai/okou/commit/47da7469a70c0bffe1103640a5380f6051682cd4))
+
+
+### Refactoring
+
+* **platform:** remove duplicate cloudflare access tab ([#36152](https://github.com/okou-ai/okou/issues/36152)) ([416e0ab](https://github.com/okou-ai/okou/commit/416e0ab0ebc66d0746313e9ae6710af0279eb472))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.700.2
+
 ## [0.944.0](https://github.com/okou-ai/okou/compare/app-v0.943.0...app-v0.944.0) (2026-09-22)
 
 
