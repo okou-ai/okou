@@ -263,7 +263,7 @@ async function openQuestPanel(): Promise<HTMLElement> {
   return await screen.findByRole("menu");
 }
 
-test("Get started is the only control in the corner", async () => {
+test("Get more credits is the only control in the corner", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
@@ -275,7 +275,7 @@ test("Get started is the only control in the corner", async () => {
     screen.findByTestId("get-started-entry"),
   ).resolves.toBeInTheDocument();
 
-  // Get started already carries inviting and Slack as its own rows, so the
+  // Get more credits already carries inviting and Slack as its own rows, so the
   // split control that used to sit beside it is gone.
   expect(screen.queryByTestId("growth-entry")).toBeNull();
   expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
@@ -297,7 +297,7 @@ test("An admin sees every step and what each one pays", async () => {
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get started3/6");
+  expect(normalizedText(entry)).toBe("Get more credits3/6");
 
   const panel = await openQuestPanel();
   expect(within(panel).getByText("How rewards work")).toBeInTheDocument();
@@ -337,7 +337,7 @@ test("A member is only offered the steps they can finish themselves", async () =
   const entry = await waitFor(() => {
     return screen.getByTestId("get-started-entry");
   });
-  expect(normalizedText(entry)).toBe("Get started2/4");
+  expect(normalizedText(entry)).toBe("Get more credits2/4");
 
   const panel = await openQuestPanel();
   expect(screen.getByTestId("get-started-quest-workflow")).toBeInTheDocument();

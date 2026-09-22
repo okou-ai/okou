@@ -1528,7 +1528,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} दिन लगातार",
-        "title": "शुरू करें",
+        "title": "और क्रेडिट पाएँ",
         "toGo": "{{amount}} बाकी",
         "workflow": {
           "action": "बनाएँ",

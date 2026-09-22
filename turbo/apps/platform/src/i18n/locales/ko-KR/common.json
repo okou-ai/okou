@@ -1527,7 +1527,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}}일 연속",
-        "title": "시작하기",
+        "title": "크레딧 더 받기",
         "toGo": "{{amount}} 남음",
         "workflow": {
           "action": "만들기",

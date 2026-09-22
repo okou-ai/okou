@@ -1552,7 +1552,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} jours d’affilée",
-        "title": "Démarrer",
+        "title": "Obtenir plus de crédits",
         "toGo": "Encore {{amount}}",
         "workflow": {
           "action": "Créer",

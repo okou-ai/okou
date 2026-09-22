@@ -1527,7 +1527,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Beruntun {{amount}} hari",
-        "title": "Mulai",
+        "title": "Dapatkan lebih banyak kredit",
         "toGo": "Kurang {{amount}}",
         "workflow": {
           "action": "Buat",
