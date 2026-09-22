@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{ActiveJobsError, RunnerError, RunnerResult};
-use crate::paths::HomePaths;
 use crate::status_file::{self, StatusFileReadError, StatusForGate};
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 use tracing::info;
 

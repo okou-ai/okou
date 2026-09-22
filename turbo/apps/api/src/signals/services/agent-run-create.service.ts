@@ -86,6 +86,7 @@ import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contra
 import {
   getDefaultModel,
   getModelProviderCodexCatalogForModel,
+  getModelProviderCodexRuntimeCapabilities,
   getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getModelImageInputSupport,
@@ -2264,17 +2265,22 @@ function resolveModelProviderCodexRuntimeConfig(args: {
   readonly environment: Readonly<Record<string, string>>;
 }): ModelProviderCodexRuntimeConfig | undefined {
   const providerConfig = getModelProviderCodexRuntimeConfig(args.type);
-  if (providerConfig || !args.logicalModel || !args.runtimeModel) {
+  if (providerConfig) {
     return providerConfig;
   }
-  const modelCatalog = getModelProviderCodexCatalogForModel(
-    args.logicalModel,
-    args.runtimeModel,
+  const providerCapabilities = getModelProviderCodexRuntimeCapabilities(
     args.type,
   );
-  if (!modelCatalog) {
+  if (!providerCapabilities) {
     return undefined;
   }
+  const modelCatalog = args.logicalModel
+    ? getModelProviderCodexCatalogForModel(
+        args.logicalModel,
+        args.runtimeModel,
+        args.type,
+      )
+    : undefined;
   const baseUrl = args.environment.OPENAI_BASE_URL;
   if (!baseUrl) {
     throw new Error(`Missing OPENAI_BASE_URL for Codex provider ${args.type}`);
@@ -2286,8 +2292,8 @@ function resolveModelProviderCodexRuntimeConfig(args: {
     envKey: "OPENAI_API_KEY",
     requiresOpenaiAuth: false,
     wireApi: "responses",
-    supportsWebsockets: false,
-    modelCatalog,
+    supportsWebsockets: providerCapabilities.supportsWebsockets,
+    ...(modelCatalog ? { modelCatalog } : {}),
   };
 }
 

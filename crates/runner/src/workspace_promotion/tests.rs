@@ -1227,7 +1227,7 @@ async fn assert_sidecar_rejection_publishes_without_sidecar(
 #[tokio::test]
 async fn active_workspace_permission_failure_skips_cache_publication() {
     let fixture = WorkspacePromotionFixture::new("sess-active-permission-failure").await;
-    let paths = crate::paths::RunnerPaths::new(fixture._dir.path().join("runner"));
+    let paths = runner_host::paths::RunnerPaths::new(fixture._dir.path().join("runner"));
     let active_image = paths.active_workspace_image(&fixture.sandbox_id);
     tokio::fs::set_permissions(&active_image, std::fs::Permissions::from_mode(0o660))
         .await
@@ -1621,7 +1621,7 @@ async fn parked_workspace_promotion_warning_hashes_and_classifies_reuse_key() {
                 .fields
                 .get("reuse_key_fingerprint")
                 .map(String::as_str),
-            Some(crate::paths::short_digest(reuse_key).as_str())
+            Some(runner_host::paths::short_digest(reuse_key).as_str())
         );
         assert_eq!(
             event.fields.get("reuse_key_kind").map(String::as_str),

@@ -23,7 +23,7 @@ pub(crate) struct ManagedMitmdump {
     launch: Option<tempfile::TempDir>,
     runtime: Option<Arc<MitmdumpRuntime>>,
     #[cfg(test)]
-    reap_gate: Option<crate::child_cleanup::ReapGate>,
+    reap_gate: Option<crate::test_fixtures::ReapGate>,
 }
 
 impl ManagedMitmdump {
@@ -85,10 +85,10 @@ impl ManagedMitmdump {
     }
 
     pub(super) async fn force_stop(mut self) -> RunnerResult<()> {
-        let _progress = crate::cleanup_progress::CleanupProgress::start(
+        let _progress = runner_host::cleanup_progress::CleanupProgress::start(
             "mitmdump",
             "force_stop",
-            crate::cleanup_progress::CleanupIdentity::Process(self.id()),
+            runner_host::cleanup_progress::CleanupIdentity::Process(self.id()),
         );
         let is_running = self
             .try_wait()
@@ -168,7 +168,7 @@ impl ManagedMitmdump {
     }
 
     #[cfg(test)]
-    pub(super) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(super) fn set_reap_gate(&mut self, gate: crate::test_fixtures::ReapGate) {
         self.reap_gate = Some(gate);
     }
 
@@ -205,17 +205,17 @@ impl Drop for ManagedMitmdump {
             warn!(error = %error, "failed to kill direct mitmdump child during drop cleanup");
         }
         let Some(launch) = self.launch.take() else {
-            crate::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
+            runner_host::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
             return;
         };
         let Some(runtime) = self.runtime.take() else {
             preserve_launch(launch, &"missing mitmdump runtime owner during drop");
-            crate::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
+            runner_host::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
             return;
         };
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             preserve_launch(launch, &"no active tokio runtime during mitmdump drop");
-            crate::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
+            runner_host::child_cleanup::kill_and_reap_child_on_drop("mitmdump", &mut child);
             return;
         };
         // Persist before handing ownership to the task. If runtime shutdown

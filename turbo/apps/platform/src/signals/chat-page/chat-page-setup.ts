@@ -3,9 +3,10 @@ import { createElement } from "react";
 import { ChatThreadPage } from "../../views/okou-page/chat-thread-page.tsx";
 import { updatePage$ } from "../react-router.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
-import { hash$, searchParams$ } from "../route.ts";
+import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
   SIDEBAR_PARAM,
+  currentLeftThread$,
   setupLeftThread$,
   setupLeftThreadNotFound$,
   setupRightThread$,
@@ -104,6 +105,19 @@ const internalSetupChatPage$ = command(
         : set(unloadRightThread$),
     ]);
     signal.throwIfAborted();
+
+    const params = get(searchParams$);
+    const prompt = params.get("prompt")?.trim();
+    if (prompt) {
+      const thread = get(currentLeftThread$);
+      if (thread) {
+        set(thread.composer.draft.setDraftInput$, prompt);
+        set(thread.composer.editor.focus$);
+      }
+      const next = new URLSearchParams(params);
+      next.delete("prompt");
+      set(updateSearchParams$, next);
+    }
   },
 );
 

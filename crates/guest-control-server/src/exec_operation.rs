@@ -2415,13 +2415,14 @@ fn exec_terminal_log_message_for_diagnostic(
         || split.is_actionable()
         || split.malformed_lines > 0;
 
-    let contained_tool_oom = request.role == ExecProcessRole::Agent
-        && request.lifecycle == ExecOperationLifecycle::Supervised
-        && matches!(termination, ExecTermination::Exited { exit_code: 0 })
-        && split.evidence.as_ref().is_some_and(|evidence| {
-            evidence.operation_sequence() == Some(request.seq)
-                && evidence.proves_contained_tool_oom()
-        });
+    // Mirror of the Guest Control Client rule: proven OOM evidence whose kernel
+    // records name only a separately contained tool leaf, rather than the
+    // agent's own containment domain, is informational.
+    let contained_tool_oom = split.has_proof()
+        && !split
+            .evidence
+            .as_ref()
+            .is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill);
     let clean_storage_download = slow
         && request.label == "storage-download"
         && request.lifecycle == ExecOperationLifecycle::OneShot
@@ -3138,11 +3139,21 @@ mod tests {
         );
     }
 
+    /// Guest Control Client mirrors this decision on the Runner host. Both
+    /// emitters must reach the same verdict for the same evidence; the host-side
+    /// half is pinned by
+    /// `terminal_severity_matches_the_guest_side_mirror_for_the_same_evidence`
+    /// in `guest-control-client`, which reads these same two fixtures.
     #[test]
     fn contained_tool_oom_terminal_logging_keeps_failures_actionable() {
         let mut request = request(7, "private command must not be logged");
         request.role = ExecProcessRole::Agent;
         request.lifecycle = ExecOperationLifecycle::Supervised;
+        // Production records that proved containment exited 1 and 124. Those
+        // codes reach this branch only when the request declares them expected;
+        // an undeclared nonzero exit stays notable, which this change leaves
+        // alone.
+        request.expected_exit_codes = vec![1, 124];
         let evidence: guest_contracts::oom_evidence::OomEvidence = serde_json::from_str(
             include_str!("../../guest-contracts/tests/fixtures/contained-tool-oom.json"),
         )
@@ -3154,6 +3165,13 @@ mod tests {
         );
         for (termination, truncated, residual, expected) in [
             (ExecTermination::Exited { exit_code: 0 }, false, "", "INFO"),
+            (ExecTermination::Exited { exit_code: 1 }, false, "", "INFO"),
+            (
+                ExecTermination::Exited { exit_code: 124 },
+                false,
+                "",
+                "INFO",
+            ),
             (
                 ExecTermination::Exited { exit_code: 137 },
                 false,
@@ -3196,20 +3214,27 @@ mod tests {
                 assert!(message.contains("terminal_reason=contained_tool_oom"));
             }
         }
-        request.seq = 8;
-        assert_eq!(
-            exec_terminal_log_message_for_diagnostic(
-                &request,
-                Duration::ZERO,
-                ExecTermination::Exited { exit_code: 0 },
-                &BoundedDrainResult::default(),
-                &BoundedDrainResult::default(),
-                &metadata
-            )
-            .unwrap()
-            .0,
-            "WARN"
-        );
+
+        // The same evidence carrying an agent-domain victim is a warning.
+        let agent_domain: guest_contracts::oom_evidence::OomEvidence = serde_json::from_str(
+            include_str!("../../guest-contracts/tests/fixtures/oom-evidence-v1.json"),
+        )
+        .unwrap();
+        let (level, message) = exec_terminal_log_message_for_diagnostic(
+            &request,
+            Duration::ZERO,
+            ExecTermination::Exited { exit_code: 0 },
+            &BoundedDrainResult::default(),
+            &BoundedDrainResult::default(),
+            &format!(
+                "{}{}",
+                guest_contracts::oom_evidence::EVIDENCE_PREFIX,
+                serde_json::to_string(&agent_domain).unwrap()
+            ),
+        )
+        .unwrap();
+        assert_eq!(level, "WARN");
+        assert!(message.contains("terminal_reason=oom_evidence"));
     }
 
     #[test]

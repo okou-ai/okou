@@ -1,4 +1,5 @@
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { i18n } from "../i18n/index.ts";
 
 export function localizedSshError(code: string): string | undefined {
@@ -8,22 +9,22 @@ export function localizedSshError(code: string): string | undefined {
         return $.ssh.saveRecovery.resourceIdConflict;
       });
     }
-    case SSH_ERROR_CODES.ACCESS_UNAVAILABLE: {
+    case CLOUDFLARE_ACCESS_ERROR_CODES.UNAVAILABLE: {
       return i18n.t(($) => {
         return $.ssh.cloudflare.unavailable;
       });
     }
-    case SSH_ERROR_CODES.ACCESS_NOT_FOUND: {
+    case CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND: {
       return i18n.t(($) => {
         return $.ssh.cloudflare.missing;
       });
     }
-    case SSH_ERROR_CODES.ACCESS_IN_USE: {
+    case CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE: {
       return i18n.t(($) => {
         return $.ssh.cloudflare.inUse;
       });
     }
-    case SSH_ERROR_CODES.ACCESS_REVISION_CONFLICT: {
+    case CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT: {
       return i18n.t(($) => {
         return $.ssh.cloudflare.changed;
       });

@@ -4,7 +4,7 @@ use std::time::Duration;
 use super::super::{SubmitArgs, SubmitPlan};
 use super::support::{mode, submit_queue_entry};
 use crate::local_queue;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 #[test]
@@ -32,7 +32,7 @@ fn write_job_file_creates_private_job_file() {
         .permissions()
         .mode()
         & 0o777;
-    assert_eq!(mode, crate::host_file::PRIVATE_FILE_MODE);
+    assert_eq!(mode, runner_host::host_file::PRIVATE_FILE_MODE);
 }
 
 #[test]

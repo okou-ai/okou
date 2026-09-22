@@ -581,6 +581,7 @@ describe("getAllFeatureStates", () => {
       orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
     });
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.SocialDataJobs]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
@@ -607,6 +608,7 @@ describe("getAllFeatureStates", () => {
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.SocialDataJobs]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);

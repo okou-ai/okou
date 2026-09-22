@@ -1,12 +1,12 @@
 //! Immutable extracted files in the existing storage-cache GC/lock domain.
 
 use super::*;
-use crate::host_file::{self, DirMode};
-use crate::lock::{self, ExistingTryLock, TryLock};
-use crate::paths::{HomePaths, short_digest, touch_mtime};
 use nix::fcntl::{OFlag, openat};
 use nix::sys::stat::Mode;
 use nix::unistd::{UnlinkatFlags, unlinkat};
+use runner_host::host_file::{self, DirMode};
+use runner_host::lock::{self, ExistingTryLock, TryLock};
+use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};

@@ -298,11 +298,11 @@ async fn continue_in_flight_status_write(
             continue;
         }
         if let Err(source) =
-            crate::private_fs::write_private_file(&path, pending.json.as_bytes()).await
+            runner_host::private_fs::write_private_file(&path, pending.json.as_bytes()).await
         {
             let error = StatusPersistenceError::Write {
                 path: path.clone(),
-                source,
+                source: source.into(),
             };
             warn!(
                 generation = pending_generation,
@@ -789,11 +789,11 @@ impl StatusTracker {
                     .expect("atomic status write gate closed");
                 permit.forget();
             }
-            crate::private_fs::write_private_file(&write_path, serialized.json.as_bytes())
+            runner_host::private_fs::write_private_file(&write_path, serialized.json.as_bytes())
                 .await
                 .map_err(|source| StatusPersistenceError::Write {
                     path: write_path,
-                    source,
+                    source: source.into(),
                 })
         });
 

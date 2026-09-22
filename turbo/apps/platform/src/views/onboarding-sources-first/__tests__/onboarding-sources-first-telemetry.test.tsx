@@ -2,9 +2,10 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -16,6 +17,7 @@ import {
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
+import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 
 vi.hoisted(() => {
   // Product analytics resolves the deployment environment at module load.
@@ -35,9 +37,6 @@ const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
 const READY_TITLE = "Okou is ready for you";
 const MARKETING_FIELD = "Marketing & content";
 const TEAMMATE_EMAIL = "teammate@example.test";
-/** A word the catalog only matches through a description, never a slug. */
-const SEARCH_WORDS = "shared notes";
-const API_TOKEN_PLACEHOLDER = "token-xxxx";
 
 function mockOnboardingNeeded(): void {
   context.mocks.data.onboardingStatus({
@@ -51,8 +50,6 @@ function catalogItem(item: {
   readonly label: string;
   readonly description: string;
   readonly connected: boolean;
-  /** A token this test can type, so a connect completes without a provider. */
-  readonly manual?: boolean;
 }): PublicConnectorCatalogStatusItem {
   return {
     slug: item.slug,
@@ -66,31 +63,14 @@ function catalogItem(item: {
     generation: [],
     tags: [],
     authMethods: [
-      item.manual
-        ? {
-            id: "api-token",
-            label: "API Token",
-            description: null,
-            grantKind: "manual",
-            manualFields: [
-              {
-                id: "apiToken",
-                label: "API Token",
-                required: true,
-                placeholder: API_TOKEN_PLACEHOLDER,
-                inputType: "password",
-              },
-            ],
-            startOptions: [],
-          }
-        : {
-            id: "oauth",
-            label: "OAuth",
-            description: null,
-            grantKind: "auth-code",
-            manualFields: [],
-            startOptions: [],
-          },
+      {
+        id: "oauth",
+        label: "OAuth",
+        description: null,
+        grantKind: "auth-code",
+        manualFields: [],
+        startOptions: [],
+      },
     ],
     permissionSummary: {
       hasPermissions: false,
@@ -104,7 +84,7 @@ function catalogItem(item: {
     scopeMismatch: false,
     authMethodSupportsRefresh: false,
     tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: item.manual ? null : "oauth",
+    singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
 }
@@ -128,7 +108,6 @@ function mockCatalog(): void {
           label: "Notion",
           description: "Shared notes for a team",
           connected: false,
-          manual: true,
         }),
       ],
     });
@@ -340,55 +319,51 @@ test("Leaving a step through Back reports it against the step that was left", as
   );
 });
 
-test("The catalog search reports what it produced, never the words that produced it", async () => {
+test("A source card starts OAuth directly and reports a successful connect", async () => {
   const posthog = context.mocks.posthog();
   mockOnboardingNeeded();
   mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingSources,
-    host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
+  const completedAttempts = mockOAuthCompletions(context);
+  const authWindow = context.mocks.browser.authWindow();
+  authWindow.closed = true;
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "" },
+    configurable: true,
   });
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Find a source for your work"));
-
-  const search = await screen.findByPlaceholderText(
-    "Search by task or app name",
+  context.mocks.browser.open(authWindow);
+  const oauthAttemptId = crypto.randomUUID();
+  const connectionId = "11111111-1111-4111-8111-111111111112";
+  let started = false;
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, params, respond }) => {
+      started = true;
+      expect(params.connectorSlug).toBe("notion");
+      expect(body.authMethod).toBe("oauth");
+      expect(body.account).toStrictEqual({ intent: "add" });
+      completedAttempts.set(oauthAttemptId, connectionId);
+      context.mocks.data.connectors([
+        {
+          id: connectionId,
+          slug: "notion",
+          authMethod: "oauth",
+          externalId: "notion-user-1",
+          externalUsername: null,
+          externalEmail: null,
+          oauthScopes: [],
+          connectionStatus: "connected",
+          reconnectReason: null,
+          tokenExpiresAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]);
+      return respond(200, {
+        authorizationUrl: "https://oauth.test/notion/authorize",
+        oauthAttemptId,
+      });
+    },
   );
-  await fill(search, SEARCH_WORDS);
-
-  const result = await screen.findByRole("option");
-  click(result);
-
-  await expect(
-    screen.findByRole("dialog", { name: "Notion" }),
-  ).resolves.toBeInTheDocument();
-  expect(posthog.events).toStrictEqual(
-    expect.arrayContaining([
-      onboardingEvent("CatalogSearchOpened", { step_key: "sources" }),
-      onboardingEvent("CatalogSearchResultSelected", {
-        connector_slug: "notion",
-        result_count: 1,
-      }),
-      onboardingEvent("SourceConnectStarted", {
-        connector_slug: "notion",
-        source_origin: "search",
-      }),
-    ]),
-  );
-  expect(JSON.stringify(posthog.events)).not.toContain(SEARCH_WORDS);
-});
-
-test("A source connected from the grid reports the connect it came from", async () => {
-  const posthog = context.mocks.posthog();
-  mockOnboardingNeeded();
-  mockCatalog();
 
   await setupPage({
     context,
@@ -403,7 +378,15 @@ test("A source connected from the grid reports the connect it came from", async 
 
   click(getButtonByName("Connect Notion"));
 
-  const dialog = await screen.findByRole("dialog", { name: "Notion" });
+  await waitFor(() => {
+    expect(started).toBeTruthy();
+    expect(authWindow.location.href).toBe(
+      "https://oauth.test/notion/authorize",
+    );
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Notion" }),
+  ).not.toBeInTheDocument();
   expect(posthog.events).toStrictEqual(
     expect.arrayContaining([
       onboardingEvent("SourceConnectStarted", {
@@ -413,21 +396,17 @@ test("A source connected from the grid reports the connect it came from", async 
     ]),
   );
 
-  await fill(within(dialog).getByPlaceholderText(API_TOKEN_PLACEHOLDER), "abc");
-  click(getButtonByName("Save"));
-
-  await expect(
-    screen.findByText("Notion connected successfully"),
-  ).resolves.toBeInTheDocument();
-  expect(posthog.events).toStrictEqual(
-    expect.arrayContaining([
-      onboardingEvent("SourceConnected", {
-        step_key: "sources",
-        connector_slug: "notion",
-        source_origin: "grid",
-      }),
-    ]),
-  );
+  await waitFor(() => {
+    expect(posthog.events).toStrictEqual(
+      expect.arrayContaining([
+        onboardingEvent("SourceConnected", {
+          step_key: "sources",
+          connector_slug: "notion",
+          source_origin: "grid",
+        }),
+      ]),
+    );
+  });
 });
 
 test("The starting prompt reports its length, never the request itself", async () => {

@@ -1,18 +1,20 @@
 import { command, computed, state } from "ccstate";
 import type { OnboardingRecommendation } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
+import {
+  onboardingIndustrySchema,
+  onboardingSubscriptionProviderSchema,
+  type OnboardingSubscriptionProvider,
+} from "@okouai/api-contracts/contracts/onboarding";
+import { z } from "zod";
+import { localStorageSignals } from "../external/local-storage.ts";
+import { jsonParseOr } from "../utils.ts";
 
 /**
- * Source-first onboarding draft. The direction step shapes the curated live
- * connector catalog, the invite step records what the invitation API answered,
- * and the chat-channel step reads the org's own Slack and Teams installations;
- * the remaining answers are held here until their endpoints land.
- *
- * One application start owns this draft, because a Store lives exactly that
- * long: switching Clerk session or organization replaces the document, so the
- * draft cannot reach another user or workspace. Re-entering the flow within
- * one start continues the same run and keeps its answers, which is also what
- * the back button relies on.
+ * Source-first onboarding draft. Unsaved answers survive a browser refresh in
+ * local storage, scoped to the current user and organization. Connections and
+ * invitations keep their own server-backed state; their transient UI status
+ * belongs to this application start.
  */
 
 export type SourcesFirstFlow = "owner" | "member";
@@ -26,7 +28,7 @@ export type SourcesFirstStep =
   | "slack"
   | "ready";
 
-export type SubscriptionProvider = "codex" | "claudeCode";
+export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams";
@@ -89,7 +91,75 @@ function emptyDraft(): SourcesFirstDraft {
   };
 }
 
+interface SourcesFirstDraftIdentity {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+const persistedDraftSchema = z.object({
+  version: z.literal(1),
+  orgId: z.string().min(1),
+  userId: z.string().min(1),
+  industry: onboardingIndustrySchema.nullable(),
+  experienced: z.boolean().nullable(),
+  provider: onboardingSubscriptionProviderSchema.nullable(),
+  startingPromptDraft: z.string().max(1000),
+  startingPromptKey: z.string(),
+});
+
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
 const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
+
+/** Restore before a page checks whether the selected plan adds the skills step. */
+export const restoreSourcesFirstDraft$ = command(
+  ({ get, set }, identity: SourcesFirstDraftIdentity): void => {
+    const active = get(internalDraftIdentity$);
+    if (active?.orgId === identity.orgId && active.userId === identity.userId) {
+      return;
+    }
+
+    const raw = get(draftStorage.get$);
+    const parsed = persistedDraftSchema.safeParse(
+      raw === null ? null : jsonParseOr<unknown>(raw, null),
+    );
+    const saved =
+      parsed.success &&
+      parsed.data.orgId === identity.orgId &&
+      parsed.data.userId === identity.userId
+        ? parsed.data
+        : null;
+    set(internalDraftIdentity$, identity);
+    set(internalDraft$, {
+      ...emptyDraft(),
+      industry: saved?.industry ?? null,
+      experienced: saved?.experienced ?? null,
+      provider: saved?.provider ?? null,
+      startingPromptDraft: saved?.startingPromptDraft ?? "",
+      startingPromptKey: saved?.startingPromptKey ?? "",
+    });
+  },
+);
+
+export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
+  const identity = get(internalDraftIdentity$);
+  if (identity === null) {
+    set(internalDraft$, emptyDraft());
+    return;
+  }
+  const raw = get(draftStorage.get$);
+  const parsed = persistedDraftSchema.safeParse(
+    raw === null ? null : jsonParseOr<unknown>(raw, null),
+  );
+  if (
+    parsed.success &&
+    parsed.data.orgId === identity.orgId &&
+    parsed.data.userId === identity.userId
+  ) {
+    set(draftStorage.clear$);
+  }
+  set(internalDraft$, emptyDraft());
+});
 
 /**
  * Owner runs the full flow; a member invited into an existing org skips the
@@ -116,15 +186,10 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
-  readonly searchOpen: boolean;
-  /** What the catalog search is filtered by, kept while its dialog is open. */
-  readonly searchQuery: string;
   readonly inviteEmail: string;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
-  searchOpen: false,
-  searchQuery: "",
   inviteEmail: "",
 });
 
@@ -156,14 +221,29 @@ export const sourcesFirstDraft$ = computed((get) => {
 
 export const updateSourcesFirstDraft$ = command(
   (
-    { set },
+    { get, set },
     patch: Partial<{
       -readonly [Key in keyof SourcesFirstDraft]: SourcesFirstDraft[Key];
     }>,
   ) => {
-    set(internalDraft$, (current) => {
-      return { ...current, ...patch };
-    });
+    const next = { ...get(internalDraft$), ...patch };
+    set(internalDraft$, next);
+    const identity = get(internalDraftIdentity$);
+    if (identity === null) {
+      return;
+    }
+    set(
+      draftStorage.set$,
+      JSON.stringify({
+        version: 1,
+        ...identity,
+        industry: next.industry,
+        experienced: next.experienced,
+        provider: next.provider,
+        startingPromptDraft: next.startingPromptDraft,
+        startingPromptKey: next.startingPromptKey,
+      }),
+    );
   },
 );
 
@@ -182,27 +262,27 @@ const MEMBER_BASE_STEPS = [
 
 /**
  * Step order for one run. Members skip invite and Slack; answering the AI
- * experience question with a plan adds the skills step before Slack.
+ * experience question with a selected plan adds the skills step before Slack.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): readonly SourcesFirstStep[] {
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
-  const experiencedSteps: readonly SourcesFirstStep[] =
-    experienced === true ? ["skills"] : [];
+  const skillSteps: readonly SourcesFirstStep[] =
+    provider === null ? [] : ["skills"];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
-  return [...base, ...experiencedSteps, ...slackStep, "ready"];
+  return [...base, ...skillSteps, ...slackStep, "ready"];
 }
 
 /** Progress markers: one per step of this run. */
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): { readonly current: number; readonly total: number } {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
@@ -211,9 +291,9 @@ export function sourcesFirstProgress(
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return index > 0 ? (steps[index - 1] ?? null) : null;
 }
@@ -222,9 +302,9 @@ export function previousSourcesFirstStep(
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return index === -1 ? null : (steps[index + 1] ?? null);
 }

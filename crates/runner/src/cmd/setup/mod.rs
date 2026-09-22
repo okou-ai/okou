@@ -20,7 +20,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::deps::{FIRECRACKER_VERSION, MITMPROXY_VERSION, SYSTEM_CA_BUNDLE};
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 const SETUP_TEMP_ARTIFACT_MODE: u32 = 0o600;
 const SETUP_EXECUTABLE_ARTIFACT_MODE: u32 = 0o755;
@@ -148,9 +148,9 @@ async fn create_directories(paths: &HomePaths) -> RunnerResult<()> {
 }
 
 fn ensure_setup_shared_dir(path: &Path) -> RunnerResult<()> {
-    crate::host_file::ensure_dir(
+    runner_host::host_file::ensure_dir(
         path,
-        crate::host_file::DirMode::SharedTrusted,
+        runner_host::host_file::DirMode::SharedTrusted,
         "setup directory",
     )
     .map_err(|e| RunnerError::Internal(format!("ensure setup directory {}: {e}", path.display())))
@@ -1077,7 +1077,7 @@ mod tests {
 
         ensure_setup_shared_dir(&path).unwrap();
 
-        assert_eq!(mode(&path), crate::host_file::SHARED_TRUSTED_DIR_MODE);
+        assert_eq!(mode(&path), runner_host::host_file::SHARED_TRUSTED_DIR_MODE);
         assert!(path.is_dir());
     }
 
@@ -1090,7 +1090,7 @@ mod tests {
 
         ensure_setup_shared_dir(&path).unwrap();
 
-        assert_eq!(mode(&path), crate::host_file::SHARED_TRUSTED_DIR_MODE);
+        assert_eq!(mode(&path), runner_host::host_file::SHARED_TRUSTED_DIR_MODE);
     }
 
     #[test]

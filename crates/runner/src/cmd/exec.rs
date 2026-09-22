@@ -11,8 +11,8 @@ use sandbox::{
 use shell_quote::quote_shell_arg;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
 use crate::run_resolution;
+use runner_host::paths::HomePaths;
 
 // ---------------------------------------------------------------------------
 // CLI args

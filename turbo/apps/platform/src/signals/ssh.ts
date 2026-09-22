@@ -10,9 +10,10 @@ import {
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import {
-  cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  sshCloudflareAccessContract,
+  type SshCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   agentSshAccessContract,
@@ -184,7 +185,7 @@ const sshClients$ = computed(async (get) => {
     connections: createClient(sshConnectionsContract, options),
     access: createClient(agentSshAccessContract, options),
     credentials: createClient(sshCredentialsContract, options),
-    cloudflare: createClient(cloudflareAccessContract, options),
+    cloudflare: createClient(sshCloudflareAccessContract, options),
   };
 });
 export interface SshDialogState {
@@ -202,7 +203,7 @@ export interface SshDialogState {
     | "delete-access";
   readonly credential: SshCredentialResponse | null;
   readonly connection: SshConnectionResponse | null;
-  readonly config: CloudflareAccessConfig | null;
+  readonly config: SshCloudflareAccessConfig | null;
 }
 const dialog$ = state<SshDialogState | null>(null);
 // Only a non-secret resource ID survives a failed create. Secrets remain in
@@ -307,8 +308,9 @@ export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
     });
     const conflict = get(conflict$);
     if (
-      conflict === SSH_ERROR_CODES.ACCESS_NOT_FOUND ||
-      (mode === "direct" && conflict === SSH_ERROR_CODES.ACCESS_UNAVAILABLE)
+      conflict === CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND ||
+      (mode === "direct" &&
+        conflict === CLOUDFLARE_ACCESS_ERROR_CODES.UNAVAILABLE)
     ) {
       set(conflict$, null);
     }
@@ -320,7 +322,7 @@ export const chooseSshAccessConfig$ = command(
       set(transportEditor$, (current) => {
         return { ...current, configId };
       });
-      if (get(conflict$) === SSH_ERROR_CODES.ACCESS_NOT_FOUND) {
+      if (get(conflict$) === CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND) {
         set(conflict$, null);
       }
     }
@@ -659,7 +661,7 @@ export const openSshCloudflareDialog$ = command(
   async (
     { get, set },
     kind: "create-access" | "edit-access" | "delete-access",
-    config: CloudflareAccessConfig | null,
+    config: SshCloudflareAccessConfig | null,
     signal: AbortSignal,
   ) => {
     const identity = await get(sshIdentity$);
@@ -688,7 +690,7 @@ function accessCredentialsFromForm(form: HTMLFormElement) {
 }
 
 async function updateAccessConfig(
-  client: InitClientReturn<typeof cloudflareAccessContract, InitClientArgs>,
+  client: InitClientReturn<typeof sshCloudflareAccessContract, InitClientArgs>,
   dialog: SshDialogState,
   form: HTMLFormElement,
   editor: {
@@ -754,7 +756,7 @@ export const saveSshCloudflare$ = command(
     let conflict: string | null = null;
     if (dialog.kind === "create-access") {
       const id = set(getSshCreationId$);
-      const body = cloudflareAccessContract.create.body.parse({
+      const body = sshCloudflareAccessContract.create.body.parse({
         id,
         name: textField(form, "accessName"),
         credentials: accessCredentialsFromForm(form),
@@ -806,8 +808,8 @@ export const sshConflictReview$ = computed(async (get) => {
   if (
     !dialog ||
     (conflict !== SSH_ERROR_CODES.GENERATION_CONFLICT &&
-      conflict !== SSH_ERROR_CODES.ACCESS_REVISION_CONFLICT &&
-      conflict !== SSH_ERROR_CODES.ACCESS_IN_USE &&
+      conflict !== CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT &&
+      conflict !== CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE &&
       conflict !== SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT &&
       conflict !== SSH_ERROR_CODES.CREDENTIAL_IN_USE)
   ) {

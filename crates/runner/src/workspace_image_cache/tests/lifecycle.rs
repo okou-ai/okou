@@ -16,8 +16,9 @@ use super::super::{
     WorkspaceImagePrepareRequest, WorkspaceImagePromotionRequest,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::paths::{HomePaths, RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::StorageFingerprints;
+use crate::test_fixtures::workspace_image_cache_key;
+use runner_host::paths::{HomePaths, RunnerPaths};
 use runner_types::ids::RunId;
 
 #[tokio::test]
@@ -843,7 +844,7 @@ async fn lock_busy_checkout_does_not_attribute_an_owner_acquired_after_the_first
     let (_dir, _paths, cache) = local_cache().await;
     let reuse_key = "thread:changed-lock-owner";
     let cache_key = workspace_image_cache_key(reuse_key, "/workspace");
-    let external_lock = crate::lock::acquire(cache.entry_lock_path(&cache_key))
+    let external_lock = runner_host::lock::acquire(cache.entry_lock_path(&cache_key))
         .await
         .unwrap();
     let prepare_lock_gate = WorkspaceImagePrepareLockTestGate::default();

@@ -75,7 +75,15 @@ describe("okou browser command", () => {
       browserCommand.commands.map((command) => {
         return command.name();
       }),
-    ).toStrictEqual(["use", "lease", "new", "status", "view"]);
+    ).toStrictEqual([
+      "use",
+      "lease",
+      "new",
+      "status",
+      "view",
+      "input-request",
+      "interaction-request",
+    ]);
   });
 
   it("creates a fresh browser and passes its CDP URL directly to agent-browser", async () => {

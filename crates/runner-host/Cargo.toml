@@ -1,0 +1,29 @@
+[package]
+name = "runner-host"
+version = "0.1.1"
+edition.workspace = true
+description = "Runner host filesystem, process, lock, path, and logging primitives"
+
+[dependencies]
+runner-types.workspace = true
+
+hex = { workspace = true, features = ["std"] }
+libc = { workspace = true, features = ["std"] }
+nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
+rustix = { workspace = true, features = ["fs", "process", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io", "rt"] }
+tracing = { workspace = true, features = ["attributes", "std"] }
+uuid = { workspace = true, features = ["serde", "std", "v4"] }
+
+[dev-dependencies]
+futures-util = { workspace = true, features = ["async-await"] }
+serde_json = { workspace = true, features = ["std"] }
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.700.0](https://github.com/okou-ai/okou/compare/core-v8.699.0...core-v8.700.0) (2026-09-22)
+
+
+### Features
+
+* **app:** recommend personalized tasks on the agent home page ([#35881](https://github.com/okou-ai/okou/issues/35881)) ([26dfde0](https://github.com/okou-ai/okou/commit/26dfde0a42e1a45d191508ffcde7348f00925303))
+* **core:** enable social data jobs for staff org ([#36084](https://github.com/okou-ai/okou/issues/36084)) ([0e5b454](https://github.com/okou-ai/okou/commit/0e5b454a3b5261a5dc7ae6edf1cd3435032ee159))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.492.0
+
 ## [8.699.0](https://github.com/okou-ai/okou/compare/core-v8.698.0...core-v8.699.0) (2026-09-22)
 
 

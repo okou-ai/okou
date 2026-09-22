@@ -1960,6 +1960,11 @@
       "threads": "チャット",
       "title": "転送先"
     },
+    "homeTasks": {
+      "existingThread": "チャットを続ける",
+      "heading": "最近の作業から選んだタスク",
+      "newThread": "新しいチャット"
+    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",
@@ -4226,7 +4231,7 @@
       },
       "skills": {
         "copied": "コピーしました",
-        "copy": "このプロンプトを自分の Codex または Claude Code のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
+        "copy": "このプロンプトを自分の {{provider}} のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
         "copyError": "プロンプトをコピーできませんでした。",
         "copyPrompt": "プロンプトをコピー",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
@@ -4235,7 +4240,7 @@
         "preparing": "インポートセッションを開いています…",
         "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
         "promptLabel": "スキルインポート用プロンプト",
-        "promptTitle": "Codex または Claude Code で実行してください",
+        "promptTitle": "{{provider}} で実行してください",
         "startError": "インポートセッションを開けませんでした。",
         "title": "すでに書いたスキルを持ち込む。",
         "tryAgain": "もう一度試す",
@@ -4283,11 +4288,6 @@
       "sources": {
         "copy": "クラウドで、チームがすでに使っているツールから動きます。成果は 10 倍、運用の手間は少なく、コストは低く。まずはソースを 1 つつないでください。",
         "note": "どのアカウントをつなぐかはあなたが選びます。",
-        "searchAction": "仕事に使うソースを探す",
-        "searchCopy": "タスク名やアプリ名でカタログ全体を検索できます。",
-        "searchEmpty": "一致するソースがありません",
-        "searchPlaceholder": "タスク名やアプリ名で検索",
-        "searchTitle": "仕事に使うソースを探す",
         "title": "Okou はあなたのため、そしてチーム全員で使うためのものです。"
       },
       "startingPrompt": {
@@ -6142,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "アカウント {{number}}",
+        "accountsDescription": "新しい実行で各プロバイダーが使用するアカウントを選択します。",
+        "accountsSectionTitle": "個人アカウント",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "使用中",
         "addAccount": "アカウントを追加",

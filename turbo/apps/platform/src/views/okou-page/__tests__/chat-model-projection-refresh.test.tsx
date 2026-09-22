@@ -1,3 +1,7 @@
+import {
+  modelMenuOption,
+  findModelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type {
   ModelProviderResponse,
@@ -95,7 +99,7 @@ async function openChat(
 
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
-    const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
+    const option = modelMenuOption(/GPT 5\.6 Sol/u);
     expect(within(option).getByText("BYOK")).toBeInTheDocument();
     return option;
   });
@@ -172,9 +176,7 @@ test.each([
     // page transport intentionally forwards named events only.
     await openChat("message-port");
     click(await findButton("GPT 5.6 Sol"));
-    const initial = await screen.findByRole("option", {
-      name: /GPT 5\.6 Sol/u,
-    });
+    const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
     expect(within(initial).queryByText("BYOK") !== null).toBe(initialPersonal);
     expect(within(initial).queryByText("Pro") !== null).toBe(initialRestricted);
 
@@ -199,7 +201,7 @@ test.each([
     }
 
     await waitFor(() => {
-      const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
+      const option = modelMenuOption(/GPT 5\.6 Sol/u);
       expect(within(option).queryByText("BYOK") !== null).toBe(nextPersonal);
       expect(within(option).queryByText("Pro") !== null).toBe(nextRestricted);
     });
@@ -346,7 +348,7 @@ test("A local active-account change refreshes the member projection", async () =
   );
   await openChat();
   click(await findButton("GPT 5.6 Sol"));
-  const initial = await screen.findByRole("option", { name: /GPT 5\.6 Sol/u });
+  const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
   expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");

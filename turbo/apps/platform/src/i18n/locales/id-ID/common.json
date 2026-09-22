@@ -1960,6 +1960,11 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
+    "homeTasks": {
+      "existingThread": "Lanjutkan chat",
+      "heading": "Diambil dari pekerjaan terbaru Anda",
+      "newThread": "Chat baru"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -4226,7 +4231,7 @@
       },
       "skills": {
         "copied": "Tersalin",
-        "copy": "Tempel prompt ini di sesi Codex atau Claude Code Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copy": "Tempel prompt ini di sesi {{provider}} Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
@@ -4235,7 +4240,7 @@
         "preparing": "Membuka sesi impor Anda…",
         "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
         "promptLabel": "Prompt impor skill",
-        "promptTitle": "Jalankan ini di Codex atau Claude Code",
+        "promptTitle": "Jalankan ini di {{provider}}",
         "startError": "Sesi impor tidak dapat dibuka.",
         "title": "Bawa skill yang sudah Anda tulis.",
         "tryAgain": "Coba lagi",
@@ -4283,11 +4288,6 @@
       "sources": {
         "copy": "Ia bekerja di cloud, dari alat yang sudah dipakai tim Anda. Hasil 10x lipat, hambatan operasional lebih sedikit, biaya lebih rendah. Hubungkan satu sumber untuk memulai.",
         "note": "Anda yang memilih akun mana yang dihubungkan.",
-        "searchAction": "Cari sumber untuk pekerjaan Anda",
-        "searchCopy": "Telusuri seluruh katalog berdasarkan tugas atau nama aplikasi.",
-        "searchEmpty": "Tidak ada sumber yang cocok",
-        "searchPlaceholder": "Cari berdasarkan tugas atau nama aplikasi",
-        "searchTitle": "Cari sumber untuk pekerjaan Anda",
         "title": "Okou untuk Anda, dan dipakai bersama seluruh tim."
       },
       "startingPrompt": {
@@ -6142,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "Akun {{number}}",
+        "accountsDescription": "Pilih akun yang digunakan setiap penyedia untuk eksekusi baru.",
+        "accountsSectionTitle": "Akun pribadi",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
         "addAccount": "Tambah akun",

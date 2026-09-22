@@ -7,8 +7,8 @@ use super::super::support::{
 };
 use super::blank_session_history::history_context;
 
-use crate::paths::RunnerPaths;
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::RunnerPaths;
 use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
 
 #[tokio::test(start_paused = true)]

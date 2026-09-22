@@ -49,6 +49,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description: "Enable bounded public Social data jobs and saved results",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
@@ -80,6 +81,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Generate short public activity summaries for active thread subscriptions.",
     enabled: true,
+  },
+  [FeatureSwitchKey.HomeTaskRecommendations]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Recommend personalized tasks from Agent-visible threads and authorized Gmail evidence.",
+    enabled: false,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",

@@ -7,8 +7,8 @@ use super::super::support::{
 use super::support::assert_successful_completion_for_run;
 
 use crate::idle_pool::ParkingState;
-use crate::paths::RunnerPaths;
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::RunnerPaths;
 use sandbox_mock::MockLifecycleGate;
 
 fn severe_memory_retention() -> sandbox::SandboxParkOutcome {

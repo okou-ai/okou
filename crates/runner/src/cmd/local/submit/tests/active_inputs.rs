@@ -7,7 +7,7 @@ use crate::active_input::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
 use crate::local_queue::{self, JobRequest, JobResponse};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 const TEST_QUEUE_WATCH_TIMEOUT: Duration = Duration::from_secs(5);

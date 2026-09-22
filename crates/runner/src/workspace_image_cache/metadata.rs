@@ -154,10 +154,10 @@ impl WorkspaceImageCache {
         &self,
         metadata_path: &Path,
     ) -> RunnerResult<WorkspaceCacheMetadata> {
-        let bytes = crate::state_file::read_to_bytes_required(
+        let bytes = runner_host::state_file::read_to_bytes_required(
             metadata_path,
-            crate::state_file::WORKSPACE_METADATA_MAX_BYTES,
-            crate::state_file::OwnerCheck::None,
+            runner_host::state_file::WORKSPACE_METADATA_MAX_BYTES,
+            runner_host::state_file::OwnerCheck::None,
         )
         .await?;
         serde_json::from_slice(&bytes)
@@ -177,9 +177,12 @@ impl WorkspaceImageCache {
         let bytes = serde_json::to_vec_pretty(&metadata)
             .map_err(|e| RunnerError::Internal(format!("serialize workspace metadata: {e}")))?;
         let _ = remove_workspace_cache_path_if_exists(&tmp).await;
-        if let Err(e) =
-            crate::host_file::write_private_new(&tmp, &bytes, "workspace metadata staging file")
-                .await
+        if let Err(e) = runner_host::host_file::write_private_new(
+            &tmp,
+            &bytes,
+            "workspace metadata staging file",
+        )
+        .await
         {
             let _ = remove_workspace_cache_path_if_exists(&tmp).await;
             return Err(e.into());

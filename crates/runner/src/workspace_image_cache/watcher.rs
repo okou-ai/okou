@@ -8,7 +8,7 @@ use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify, WatchDescriptor};
 use tokio::io::unix::AsyncFd;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::host_file::{self, DirMode};
+use runner_host::host_file::{self, DirMode};
 use runner_types::types::MAX_HELD_WORKSPACE_STATES;
 
 use super::WorkspaceImageCache;
@@ -526,8 +526,8 @@ mod tests {
         CACHE_FORMAT_VERSION, WORKSPACE_DRIVE_LAYOUT, WorkspaceCacheTerminalStatus,
     };
     use super::*;
-    use crate::paths::{HomePaths, RunnerPaths};
     use crate::storage_fingerprints::StorageFingerprints;
+    use runner_host::paths::{HomePaths, RunnerPaths};
     use runner_types::ids::RunId;
 
     const TEST_PROFILE_NAME: &str = "vm0/default";
