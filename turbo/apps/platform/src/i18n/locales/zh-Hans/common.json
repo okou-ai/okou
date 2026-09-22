@@ -1732,21 +1732,12 @@
       "create": {
         "addStyle": "添加风格",
         "addTemplate": "添加模板",
-        "chooseType": "选择类型",
-        "exit": "退出创作模式",
-        "image": "生成图片",
-        "imageDescription": "把想法变成画面",
         "imagePlaceholder": "描述你想生成的图片…",
-        "presentation": "生成演示文稿",
-        "presentationDescription": "把你要讲的内容做成幻灯片",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
         "settingsAdjusted": "部分视频设置已针对这个模型做了调整",
         "slideCount": "幻灯片数量",
         "slideCountAuto": "自动",
-        "slideCountRange": "{{range}} 页",
-        "video": "生成视频",
-        "videoDescription": "让你的想法动起来",
-        "videoPlaceholder": "描述你想生成的视频…"
+        "slideCountRange": "{{range}} 页"
       },
       "createWorkflow": "创建工作流",
       "imageModelForThisChat": "本次对话使用的图片模型",
@@ -2272,40 +2263,6 @@
             "prompt": "围绕我选的主题搭建一份培训演示文稿。向我了解培训对象，以及他们学完后应该会做什么。"
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "把照片变成视频",
-            "prompt": "让我提供的照片自然地动起来。保持主体可辨认，并问我哪些部分要动。"
-          },
-          "brandIntro": {
-            "label": "做一支品牌片头",
-            "prompt": "为我的品牌创建一支短片头。使用我提供的logo和品牌信息，并帮我确定整体调性。"
-          },
-          "eventPromo": {
-            "label": "为我的活动做宣传",
-            "prompt": "为我的活动创建一支宣传短片。向我了解活动、受众和需要包含的信息。"
-          },
-          "loopingBackground": {
-            "label": "做一段循环播放的背景",
-            "prompt": "创建一段可无缝循环、动态柔和的视频背景。问我想要什么场景和氛围。"
-          },
-          "productDemo": {
-            "label": "让我的产品动起来",
-            "prompt": "根据我的产品照片创建一支产品展示短片。保持产品外观一致，并突出我选定的卖点。"
-          },
-          "socialClip": {
-            "label": "做一条社交媒体短片",
-            "prompt": "创建一支用于社交媒体的短视频。帮我确定清晰的信息点和契合受众的视觉风格。"
-          },
-          "videoGreeting": {
-            "label": "做一支祝福视频",
-            "prompt": "创建一支用于生日、节日或庆祝场合的祝福短片。问我场合、对象和想说的话。"
-          },
-          "visualExplainer": {
-            "label": "用画面讲清一个概念",
-            "prompt": "创建一支短片，把一个概念讲得一看就懂。问我要解释什么，以及讲给谁听。"
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "给别人一个预约我的入口",
@@ -2387,13 +2344,11 @@
         "image": "图片风格",
         "nextPage": "下一页",
         "previousPage": "上一页",
-        "video": "视频模板",
         "website": "网站模板"
       },
       "tasks": {
         "image": "图片",
         "presentation": "演示文稿",
-        "video": "视频",
         "visualization": "可视化",
         "website": "网站",
         "workflow": "工作流"
