@@ -143,8 +143,9 @@ surface; the index does not replace their detailed rules.
   unread Chat collection that consumes it, and the old-writer activation gate.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
-- [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
-  identities, API configuration, Oregon-first model routing, and rollout gates.
+- [Google Cloud LLM voice and Maps Grounding routing](./google-llm-voice.md):
+  shared Vercel workload identities, native provider contracts, billing,
+  compliance boundaries, and rollout gates.
 - [Retired App browser attribution](./google-ads-browser-routing.md): the
   Marketing-owned boundary, App cleanup, rollout compatibility, and historical
   field inventory.

@@ -892,7 +892,7 @@ describe("registerCommands", () => {
     });
 
     expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Get directions?",
+      "Search maps?",
     );
   });
 
@@ -903,7 +903,7 @@ describe("registerCommands", () => {
     });
 
     expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
-      "Get directions?",
+      "Search maps?",
     );
   });
 

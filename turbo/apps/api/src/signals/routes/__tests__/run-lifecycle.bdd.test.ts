@@ -13883,7 +13883,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "A matching completion starts a new run in the workflow's automation thread rather than resuming the current run",
       "the automation remains enabled for future matching completions until disabled or removed",
       "run `okou intro` first",
-      "okou maps --help",
+      'okou maps search "<query>"',
       "Public-web search, current public facts, and source discovery",
       "okou web-search <query>",
       "framework-native web search tool is exposed",

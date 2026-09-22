@@ -1246,95 +1246,44 @@ describe("BILL-02: maps and banking visible boundaries", () => {
     const { api, admin } = testActors();
     await completeVisibleOnboarding(admin);
 
-    const missingMapsProvider = await api.requestMapsGeocode(
+    const missingMapsProvider = await api.requestMapsSearch(
       admin,
-      { address: "1 Market Street, San Francisco" },
+      { query: "coffee near 1 Market Street, San Francisco" },
       [503],
     );
     expectApiError(missingMapsProvider.body);
     expect(missingMapsProvider.body.error.code).toBe("NOT_CONFIGURED");
 
-    const unauthenticatedDirections = await api.requestMapsDirections(
+    const unauthenticatedSearch = await api.requestMapsSearch(
       null,
-      {
-        origin: "San Francisco",
-        destination: "Oakland",
-      },
+      { query: "How do I get from San Francisco to Oakland?" },
       [401],
     );
-    expectApiError(unauthenticatedDirections.body);
-    expect(unauthenticatedDirections.body.error.code).toBe("UNAUTHORIZED");
+    expect(unauthenticatedSearch.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
+    expectApiError(unauthenticatedSearch.body);
+    expect(unauthenticatedSearch.body.error.code).toBe("UNAUTHORIZED");
 
-    const invalidReverseGeocode = await api.requestMapsReverseGeocode(
+    const invalidLocation = await api.requestMapsSearch(
       admin,
-      { lat: 91, lng: -122.4194 },
+      {
+        query: "coffee near me",
+        location: { latitude: 91, longitude: -122.4194 },
+      },
       [400],
     );
-    expectApiError(invalidReverseGeocode.body);
-    expect(invalidReverseGeocode.body.error.code).toBe("BAD_REQUEST");
+    expectApiError(invalidLocation.body);
+    expect(invalidLocation.body.error.code).toBe("BAD_REQUEST");
 
     api.configureMapsProvider();
-    const invalidPlacesSearch = await api.requestMapsPlacesSearch(
+    const insufficientMapsCredits = await api.requestMapsSearch(
       admin,
-      { query: "coffee", radius: 1000 },
-      [400],
-    );
-    expectApiError(invalidPlacesSearch.body);
-    expect(invalidPlacesSearch.body.error.message).toBe(
-      "location is required when radius is provided",
-    );
-
-    const invalidPlacesLocation = await api.requestMapsPlacesSearch(
-      admin,
-      { query: "coffee", location: "San Francisco", radius: 1000 },
-      [400],
-    );
-    expectApiError(invalidPlacesLocation.body);
-    expect(invalidPlacesLocation.body.error.message).toBe(
-      "location must be formatted as lat,lng",
-    );
-
-    const insufficientMapsCredits = await api.requestMapsGeocode(
-      admin,
-      { address: "1 Market Street, San Francisco" },
+      { query: "coffee near 1 Market Street, San Francisco" },
       [402],
     );
     expectApiError(insufficientMapsCredits.body);
     expect(insufficientMapsCredits.body.error.code).toBe(
-      "INSUFFICIENT_CREDITS",
-    );
-
-    const insufficientReverseCredits = await api.requestMapsReverseGeocode(
-      admin,
-      { lat: 37.7749, lng: -122.4194 },
-      [402],
-    );
-    expectApiError(insufficientReverseCredits.body);
-    expect(insufficientReverseCredits.body.error.code).toBe(
-      "INSUFFICIENT_CREDITS",
-    );
-
-    const insufficientDirectionsCredits = await api.requestMapsDirections(
-      admin,
-      {
-        origin: "San Francisco",
-        destination: "Oakland",
-        departureTime: "now",
-      },
-      [402],
-    );
-    expectApiError(insufficientDirectionsCredits.body);
-    expect(insufficientDirectionsCredits.body.error.code).toBe(
-      "INSUFFICIENT_CREDITS",
-    );
-
-    const insufficientPlaceDetailsCredits = await api.requestMapsPlacesDetails(
-      admin,
-      { placeId: "places/bdd-place", fields: "pro" },
-      [402],
-    );
-    expectApiError(insufficientPlaceDetailsCredits.body);
-    expect(insufficientPlaceDetailsCredits.body.error.code).toBe(
       "INSUFFICIENT_CREDITS",
     );
 
