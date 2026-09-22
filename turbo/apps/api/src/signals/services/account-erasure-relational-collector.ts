@@ -1,8 +1,17 @@
 import { sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
-import type { ErasureSubject } from "@okouai/db/operations/account-erasure";
+import {
+  assertErasureSourceCaptured,
+  setErasureFenceDeadlines,
+  type ErasureHandler,
+  type ErasureLease,
+  type ErasureProof,
+  type ErasureSubject,
+  type ErasureUnresolved,
+} from "@okouai/db/operations/account-erasure";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
@@ -10,6 +19,10 @@ import {
   ACCOUNT_OWNERSHIP_INVENTORY,
   userOwnedErasureRoots,
 } from "./account-erasure-ownership-inventory";
+import {
+  decryptErasureSelector,
+  encryptErasureSelector,
+} from "./account-erasure-selector";
 
 type Db = NodePgDatabase<Record<string, never>>;
 type Executor = Db | Tx;
@@ -31,6 +44,7 @@ const foreignKeySchema = z
     parent: z.string().min(1),
     child_columns: z.array(z.string().min(1)).min(1),
     parent_columns: z.array(z.string().min(1)).min(1),
+    on_delete: z.enum(["a", "r", "c", "n", "d"]),
   })
   .refine(
     (row) => {
@@ -69,6 +83,21 @@ export interface RelationalForeignKey {
   readonly parent: string;
   readonly childColumns: readonly string[];
   readonly parentColumns: readonly string[];
+  /** `pg_constraint.confdeltype`: `a` no action, `r` restrict, `c` cascade,
+   * `n` set null, `d` set default.
+   */
+  readonly onDelete: "a" | "r" | "c" | "n" | "d";
+}
+
+/** Only a key the server will refuse to violate constrains deletion order.
+ *
+ * A cascading key deletes the child for us and a nulling key rewrites it, so
+ * neither requires the child to go first. Treating every key as an ordering
+ * constraint is what made `chat_threads`, `agents`, `agent_runs` and
+ * `agent_sessions` look mutually blocked when the catalogue never said so.
+ */
+function ordersDeletion(key: RelationalForeignKey): boolean {
+  return key.onDelete === "a" || key.onDelete === "r";
 }
 
 /** How one root reaches the account.
@@ -108,7 +137,17 @@ export interface RelationalErasurePlan {
    * are reported rather than swept on a predicate that never matches.
    */
   readonly unreachableRoots: readonly string[];
-  /** Root pairs that reference each other, so no single order satisfies both. */
+  /** Root-to-root keys that rewrite a surviving row instead of deleting it.
+   * Deleting this account's rows nulls or defaults a column on rows that may
+   * belong to another account, which is the schema's declared behaviour rather
+   * than a choice the sweep makes, but it is a cross-account effect and is
+   * reported rather than left for somebody to discover.
+   */
+  readonly rewritingEdges: readonly RelationalForeignKey[];
+  /** Root pairs that reference each other through keys the server will refuse
+   * to violate, so no single order satisfies both. A cascading or nulling key
+   * is not one of these.
+   */
   readonly cycles: readonly (readonly [string, string])[];
 }
 
@@ -172,7 +211,8 @@ export async function catalogueForeignKeys(
                   FROM unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
                   JOIN pg_attribute a
                     ON a.attrelid = con.confrelid AND a.attnum = k.attnum)
-                 AS parent_columns
+                 AS parent_columns,
+               con.confdeltype::text AS on_delete
         FROM pg_constraint con
         JOIN pg_class child ON child.oid = con.conrelid
         JOIN pg_class parent ON parent.oid = con.confrelid
@@ -189,6 +229,7 @@ export async function catalogueForeignKeys(
       parent: row.parent,
       childColumns: row.child_columns,
       parentColumns: row.parent_columns,
+      onDelete: row.on_delete,
     };
   });
 }
@@ -256,6 +297,9 @@ function topologicalRootOrder(
     dependents.set(table, new Set());
   }
   for (const key of keys) {
+    if (!ordersDeletion(key)) {
+      continue;
+    }
     const waiting = pending.get(key.parent);
     const onwards = dependents.get(key.child);
     if (!waiting || !onwards) {
@@ -407,6 +451,14 @@ export async function planRelationalErasure(
       return root.table;
     });
   const { order, cycles } = topologicalRootOrder(reachable, keys);
+  const planned = new Set(reachable);
+  const rewritingEdges = keys.filter((key) => {
+    return (
+      (key.onDelete === "n" || key.onDelete === "d") &&
+      planned.has(key.child) &&
+      planned.has(key.parent)
+    );
+  });
   return {
     order: order.map((table) => {
       return { table, owners: ownership.get(table) ?? [] };
@@ -414,6 +466,7 @@ export async function planRelationalErasure(
     descendants,
     unreachableDescendants: unreachableDescendants.sort(),
     unreachableRoots: unreachableRoots.sort(),
+    rewritingEdges,
     cycles,
   };
 }
@@ -499,4 +552,340 @@ export async function relationalErasureResidual(
     }
   }
   return residual;
+}
+
+// Immutable v1 namespace. Names are JSON tuples, never concatenation, so two
+// different reference inputs cannot collide on one string.
+const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
+
+/** The sink's collector version. `executeErasureWork` refuses to run a handler
+ * whose version does not equal the registered sink's `collectorVersion`, so
+ * this changes whenever the sweep's observable behaviour changes.
+ */
+export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
+  "b1c7e4d2-3f80-4a19-8d5e-2c9f6a0b4517";
+
+// The fence's own deadlines. A sweep waits for admission behind the exclusive
+// subject lock, so its lock timeout is the fence's, not a route's.
+const FENCE_DEADLINES = {
+  lockTimeout: "5s",
+  statementTimeout: "120s",
+} as const;
+
+function reference(parts: readonly unknown[]): string {
+  return uuidv5(JSON.stringify(parts), RELATIONAL_NAMESPACE);
+}
+
+// `clock_timestamp()` arrives as text on this path, so the observation time is
+// rendered as an explicit UTC ISO-8601 string and parsed, rather than relying
+// on a driver type parser that does not apply to a raw execute.
+const observedAtSchema = z.object({
+  observed_at: z
+    .string()
+    .transform((value) => {
+      return new Date(value);
+    })
+    .pipe(z.date()),
+});
+const readerSchema = z.object({ reader: z.string().min(1) });
+
+/** What the sweep needs from its lease to prove it is still the current,
+ * sealed capture of this job before it touches a business row.
+ */
+export interface RelationalSweepBinding {
+  readonly jobId: string;
+  readonly generation: number;
+  readonly captureRevision: number;
+  readonly inventoryRevision: number;
+  readonly producerBoundaryRef: string;
+  readonly required: readonly {
+    readonly sinkId: string;
+    readonly itemKey: string;
+  }[];
+}
+
+/** Deletes the account's relational graph in one transaction.
+ *
+ * `assertErasureSourceCaptured` runs first and owns the fence: it takes the
+ * exclusive subject advisory lock, then the job row, and verifies the job is
+ * the current generation, sealed at this capture revision, bound to this
+ * producer boundary, with every required selector captured. Only then does a
+ * business row get touched, which keeps D1's lock order — advisory keys, then
+ * job, then business rows — and holds all of it through COMMIT.
+ *
+ * One transaction, not one per table. Deleting a root while a sibling root
+ * still references it has to be atomic, and the closed subject means no writer
+ * is admitted to race it. The sweep is also idempotent, so a statement timeout
+ * on an unusually large account re-runs and finds less work rather than
+ * needing a resume cursor.
+ */
+export async function sweepRelationalErasure(
+  db: Db,
+  subject: ErasureSubject,
+  binding: RelationalSweepBinding,
+  plan: RelationalErasurePlan,
+): Promise<number> {
+  return await db.transaction(async (tx) => {
+    await setErasureFenceDeadlines(tx, FENCE_DEADLINES);
+    await assertErasureSourceCaptured(
+      tx,
+      subject,
+      binding.jobId,
+      {
+        generation: binding.generation,
+        captureRevision: binding.captureRevision,
+        inventoryRevision: binding.inventoryRevision,
+        producerBoundaryRef: binding.producerBoundaryRef,
+      },
+      binding.required,
+    );
+    let deleted = 0;
+    for (const root of plan.order) {
+      const owned = subjectPredicate(root, subject.subjectId);
+      for (const edge of plan.descendants) {
+        if (edge.parent !== root.table) {
+          continue;
+        }
+        const childKey = sql.join(
+          edge.childColumns.map((column) => {
+            return sql.identifier(column);
+          }),
+          sql`, `,
+        );
+        const parentKey = sql.join(
+          edge.parentColumns.map((column) => {
+            return sql.identifier(column);
+          }),
+          sql`, `,
+        );
+        // Swept through the key explicitly, not left to a cascade: a declared
+        // descendant whose key is `NO ACTION` would otherwise stay behind.
+        deleted +=
+          (
+            await tx.execute(
+              sql`DELETE FROM ${sql.identifier(edge.child)}
+                  WHERE (${childKey}) IN (
+                    SELECT ${parentKey} FROM ${sql.identifier(root.table)}
+                    WHERE ${owned}
+                  )`,
+            )
+          ).rowCount ?? 0;
+      }
+      deleted +=
+        (
+          await tx.execute(
+            sql`DELETE FROM ${sql.identifier(root.table)} WHERE ${owned}`,
+          )
+        ).rowCount ?? 0;
+    }
+    return deleted;
+  });
+}
+
+function enumerationReference(plan: RelationalErasurePlan): string {
+  return reference([
+    "relational-enumeration",
+    RELATIONAL_ERASURE_COLLECTOR_VERSION,
+    plan.order.map((root) => {
+      return [root.table, root.owners];
+    }),
+    plan.descendants.map((edge) => {
+      return [edge.child, edge.parent, edge.childColumns, edge.parentColumns];
+    }),
+  ]);
+}
+
+function requestReference(
+  lease: ErasureLease,
+  outcome: "erased" | "empty",
+): string {
+  return reference([
+    "relational-erase",
+    lease.jobId,
+    lease.item.sinkId,
+    lease.item.itemKey,
+    lease.captureRevision,
+    outcome,
+  ]);
+}
+
+async function leaseSubject(
+  db: Db,
+  lease: ErasureLease,
+): Promise<ErasureSubject | undefined> {
+  if (!lease.item.selectorCiphertext || !lease.item.selectorDigest) {
+    return undefined;
+  }
+  const selector = await decryptErasureSelector({
+    ciphertext: lease.item.selectorCiphertext,
+    digest: lease.item.selectorDigest,
+  });
+  // A relational sink is keyed by the subject itself. The fence revalidates it
+  // against the job, so a selector naming another account cannot be swept.
+  return selector.kind === "subject"
+    ? { subjectKind: selector.subjectKind, subjectId: selector.subjectId }
+    : undefined;
+}
+
+const unresolved = (
+  errorCode: NonNullable<ErasureUnresolved["errorCode"]>,
+  outcome: ErasureUnresolved["outcome"] = "capability_unresolved",
+): ErasureUnresolved => {
+  return { outcome, errorCode, requestRef: null };
+};
+
+/** Residual verification for the relational sink.
+ *
+ * Extracted from the handler so the completeness gate, the residual read
+ * and the proof it constructs are one reviewable unit.
+ */
+async function verifyRelationalErasure(
+  db: Db,
+  plan: RelationalErasurePlan,
+  lease: ErasureLease,
+  producerBoundary: string,
+): Promise<ErasureProof | ErasureUnresolved> {
+  // Rows this sink cannot reach are not rows it may report clean. The gate
+  // is here rather than inside a `catch`, so the outcome is a typed
+  // disposition rather than an exception the engine has to interpret.
+  if (
+    plan.unreachableRoots.length > 0 ||
+    plan.unreachableDescendants.length > 0
+  ) {
+    return unresolved("ownership_unknown");
+  }
+  const subject = await leaseSubject(db, lease);
+  if (!subject) {
+    return unresolved("selector_missing");
+  }
+  const residual = await relationalErasureResidual(db, subject, plan);
+  if (residual.length > 0) {
+    return unresolved("verification_failed", "retryable_failure");
+  }
+  const [reader] = await executeRawRows(
+    db,
+    sql`SELECT current_user AS reader`,
+    readerSchema,
+  );
+  const [observed] = await executeRawRows(
+    db,
+    sql`SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC',
+                         'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS observed_at`,
+    observedAtSchema,
+  );
+  if (!reader || !observed) {
+    return unresolved("verification_failed", "retryable_failure");
+  }
+  return {
+    workId: lease.workId,
+    sinkId: lease.item.sinkId,
+    generation: lease.generation,
+    captureRevision: lease.captureRevision,
+    inventoryRevision: lease.inventoryRevision,
+    producerBoundaryRef: producerBoundary,
+    outcome:
+      lease.item.requestRef === requestReference(lease, "erased")
+        ? "verified_erased"
+        : "verified_no_applicable_data",
+    evidenceRef: reference([
+      "relational-residual",
+      lease.jobId,
+      lease.item.itemKey,
+      lease.captureRevision,
+      plan.order.map((root) => {
+        return root.table;
+      }),
+    ]),
+    authenticatedReaderRef: reference([
+      "relational-reader",
+      RELATIONAL_ERASURE_COLLECTOR_VERSION,
+      reader.reader,
+    ]),
+    enumerationRef: enumerationReference(plan),
+    observedAt: observed.observed_at,
+  };
+}
+
+/** The relational sink's handler.
+ *
+ * The plan is supplied rather than derived per call: it is one catalogue read
+ * per job, and a caller that recomputed it between `erase` and `verify` could
+ * verify a different set of roots than it deleted.
+ */
+export function createRelationalErasureCollector(
+  db: Db,
+  plan: RelationalErasurePlan,
+): ErasureHandler {
+  return {
+    version: RELATIONAL_ERASURE_COLLECTOR_VERSION,
+    inventory: async (lease, cursor) => {
+      const subject = await leaseSubject(db, lease);
+      if (!subject) {
+        return unresolved("selector_missing");
+      }
+      if (cursor !== null) {
+        // The relational graph is one bounded enumeration derived from the
+        // catalogue, so there is no page to resume from.
+        return unresolved("verification_failed", "retryable_failure");
+      }
+      const item = {
+        sinkId: lease.item.sinkId,
+        itemKey: reference([
+          "relational-item",
+          subject.subjectKind,
+          subject.subjectId,
+        ]),
+        kind: "erase" as const,
+        selector: await encryptErasureSelector({
+          version: 1,
+          kind: "subject",
+          subjectKind: subject.subjectKind,
+          subjectId: subject.subjectId,
+        }),
+        dependencies: [],
+      };
+      return {
+        pageKey: reference([
+          "relational-page",
+          lease.jobId,
+          lease.captureRevision,
+        ]),
+        inputCursorDigest: lease.item.cursorDigest,
+        nextCursor: null,
+        enumerationRef: enumerationReference(plan),
+        items: [item],
+      };
+    },
+    erase: async (lease) => {
+      const subject = await leaseSubject(db, lease);
+      if (!subject) {
+        return unresolved("selector_missing");
+      }
+      const boundary = lease.producerBoundaryRef;
+      if (boundary === null) {
+        return unresolved("boundary_unproven");
+      }
+      const deleted = await sweepRelationalErasure(
+        db,
+        subject,
+        {
+          jobId: lease.jobId,
+          generation: lease.generation,
+          captureRevision: lease.captureRevision,
+          inventoryRevision: lease.inventoryRevision,
+          producerBoundaryRef: boundary,
+          required: [
+            { sinkId: lease.item.sinkId, itemKey: lease.item.itemKey },
+          ],
+        },
+        plan,
+      );
+      return {
+        requestRef: requestReference(lease, deleted > 0 ? "erased" : "empty"),
+      };
+    },
+    verify: async (lease, producerBoundary) => {
+      return await verifyRelationalErasure(db, plan, lease, producerBoundary);
+    },
+  };
 }
