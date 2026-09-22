@@ -157,10 +157,14 @@ import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import { SshAccessManagementDialog } from "./components/settings/ssh-access-management-dialog.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { sshSummary$, sshAgentAccessRows$ } from "../../signals/ssh.ts";
+import { cloudflareAccessSummary$ } from "../../signals/cloudflare-access.ts";
 import {
   filteredSshSummary$,
   REMOTE_ACCESS_CATEGORY,
 } from "../../signals/okou-page/settings/ssh-connector.ts";
+import { filteredCloudflareAccessSummary$ } from "../../signals/okou-page/settings/cloudflare-access-connector.ts";
+import { CloudflareAccessConnectorCard } from "./components/settings/cloudflare-access-connector-card.tsx";
+import { CloudflareAccessLoadError } from "./cloudflare-access.tsx";
 
 function withRemoteAccessCategory(
   metadata: PublicConnectorCatalogCategoryMetadata | undefined,
@@ -193,6 +197,13 @@ type ConnectorPresentation =
     }
   | {
       readonly kind: "vnc";
+      readonly category: string;
+      readonly label: string;
+      readonly connected: boolean;
+      readonly configuredCount: number;
+    }
+  | {
+      readonly kind: "cloudflare-access";
       readonly category: string;
       readonly label: string;
       readonly connected: boolean;
@@ -1714,15 +1725,20 @@ function RemoteAccessConnectedPanel(
   const summary = useLoadable(vncSummary$);
   const filtered = useLoadable(filteredVncSummary$);
   const rows = useLoadable(vncAgentAccessRows$);
+  const cloudflareAccess = useLoadable(filteredCloudflareAccessSummary$);
   const failed =
-    vncEnabled &&
-    [summary.state, filtered.state, rows.state].includes("hasError");
+    cloudflareAccess.state === "hasError" ||
+    (vncEnabled &&
+      [summary.state, filtered.state, rows.state].includes("hasError"));
   const loading =
-    vncEnabled && (summary.state === "loading" || filtered.state === "loading");
+    cloudflareAccess.state === "loading" ||
+    (vncEnabled &&
+      (summary.state === "loading" || filtered.state === "loading"));
   return (
     <>
       <SshDirectoryLoadError />
       {vncEnabled && <VncDirectoryLoadError />}
+      {cloudflareAccess.state === "hasError" && <CloudflareAccessLoadError />}
       {!failed && loading && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -1735,12 +1751,37 @@ function RemoteAccessConnectedPanel(
   );
 }
 
+function RemoteAccessConnectedCards({
+  ssh,
+  vnc,
+  cloudflareAccess,
+}: {
+  readonly ssh: number;
+  readonly vnc: number;
+  readonly cloudflareAccess: number;
+}) {
+  return (
+    <>
+      {ssh > 0 && <SshConnectorCard configuredCount={ssh} />}
+      {vnc > 0 && <VncConnectorCard configuredCount={vnc} />}
+      {cloudflareAccess > 0 && (
+        <CloudflareAccessConnectorCard configuredCount={cloudflareAccess} />
+      )}
+    </>
+  );
+}
+
 function remoteAccessLoadState(
   vncEnabled: boolean,
   ssh: Loadable<{ configuredCount: number } | null>,
   vnc: Loadable<{ configuredCount: number } | null>,
+  cloudflareAccess: Loadable<{ configuredCount: number } | null>,
 ): "loading" | "hasError" | "hasData" {
-  const states = new Set(vncEnabled ? [ssh.state, vnc.state] : [ssh.state]);
+  const states = new Set(
+    vncEnabled
+      ? [ssh.state, vnc.state, cloudflareAccess.state]
+      : [ssh.state, cloudflareAccess.state],
+  );
   if (states.has("hasError")) {
     return "hasError";
   }
@@ -1751,8 +1792,13 @@ function suppressBuiltinEmptyState(
   shelfEnabled: boolean,
   vncEnabled: boolean,
   vnc: Loadable<{ configuredCount: number } | null>,
+  cloudflareAccess: Loadable<{ configuredCount: number } | null>,
 ): boolean {
-  return shelfEnabled || (vncEnabled && vnc.state !== "hasData");
+  return (
+    shelfEnabled ||
+    (vncEnabled && vnc.state !== "hasData") ||
+    cloudflareAccess.state !== "hasData"
+  );
 }
 
 function connectorLabelForSlug(
@@ -1773,6 +1819,9 @@ function effectiveConnectorCatalogCount(
   catalogStatusLoadable: Loadable<PublicConnectorCatalogDiscoveryResponse>,
   sshSummary: Loadable<{ readonly configuredCount: number } | null>,
   vncSummary: Loadable<{ readonly configuredCount: number } | null>,
+  cloudflareAccessSummary: Loadable<{
+    readonly configuredCount: number;
+  } | null>,
 ): number | null {
   if (catalogStatusLoadable.state !== "hasData") {
     return null;
@@ -1780,7 +1829,10 @@ function effectiveConnectorCatalogCount(
   return (
     catalogStatusLoadable.data.totalConnectorCount +
     (sshSummary.state === "hasData" && sshSummary.data ? 1 : 0) +
-    (vncSummary.state === "hasData" && vncSummary.data ? 1 : 0)
+    (vncSummary.state === "hasData" && vncSummary.data ? 1 : 0) +
+    (cloudflareAccessSummary.state === "hasData" && cloudflareAccessSummary.data
+      ? 1
+      : 0)
   );
 }
 
@@ -1919,19 +1971,47 @@ function VncDirectoryLoading() {
   ) : null;
 }
 
+function CloudflareAccessDirectoryState() {
+  const { t } = useTranslation();
+  const summary = useLoadable(filteredCloudflareAccessSummary$);
+  if (summary.state === "hasError") {
+    return <CloudflareAccessLoadError />;
+  }
+  return summary.state === "loading" ? (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.cloudflareAccess.loading;
+      })}
+    </p>
+  ) : null;
+}
+
 function remoteAccessSummaryData(
   summary: Loadable<{ configuredCount: number } | null>,
 ) {
   return summary.state === "hasData" ? summary.data : null;
 }
 
-function buildConnectorPresentation(
-  connectors: readonly PlatformConnectorCatalogStatusItem[],
-  sshSummary: Loadable<{ configuredCount: number } | null>,
-  sshLabel: string,
-  vncSummary: Loadable<{ configuredCount: number } | null>,
-  vncLabel: string,
-) {
+function buildConnectorPresentation({
+  connectors,
+  ssh,
+  vnc,
+  cloudflareAccess,
+}: {
+  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
+  readonly ssh: {
+    readonly summary: Loadable<{ configuredCount: number } | null>;
+    readonly label: string;
+  };
+  readonly vnc: {
+    readonly summary: Loadable<{ configuredCount: number } | null>;
+    readonly label: string;
+  };
+  readonly cloudflareAccess: {
+    readonly summary: Loadable<{ configuredCount: number } | null>;
+    readonly label: string;
+  };
+}) {
   const items: ConnectorPresentation[] = connectors.map((connector) => {
     return {
       kind: "catalog",
@@ -1942,24 +2022,36 @@ function buildConnectorPresentation(
       connected: connector.connected,
     };
   });
-  const ssh = remoteAccessSummaryData(sshSummary);
-  if (ssh) {
+  const sshData = remoteAccessSummaryData(ssh.summary);
+  if (sshData) {
     items.push({
       kind: "ssh",
       category: REMOTE_ACCESS_CATEGORY,
-      label: sshLabel,
-      connected: ssh.configuredCount > 0,
-      configuredCount: ssh.configuredCount,
+      label: ssh.label,
+      connected: sshData.configuredCount > 0,
+      configuredCount: sshData.configuredCount,
     });
   }
-  const vnc = remoteAccessSummaryData(vncSummary);
-  if (vnc) {
+  const vncData = remoteAccessSummaryData(vnc.summary);
+  if (vncData) {
     items.push({
       kind: "vnc",
       category: REMOTE_ACCESS_CATEGORY,
-      label: vncLabel,
-      connected: vnc.configuredCount > 0,
-      configuredCount: vnc.configuredCount,
+      label: vnc.label,
+      connected: vncData.configuredCount > 0,
+      configuredCount: vncData.configuredCount,
+    });
+  }
+  const cloudflareAccessData = remoteAccessSummaryData(
+    cloudflareAccess.summary,
+  );
+  if (cloudflareAccessData) {
+    items.push({
+      kind: "cloudflare-access",
+      category: REMOTE_ACCESS_CATEGORY,
+      label: cloudflareAccess.label,
+      connected: cloudflareAccessData.configuredCount > 0,
+      configuredCount: cloudflareAccessData.configuredCount,
     });
   }
   return {
@@ -1967,9 +2059,73 @@ function buildConnectorPresentation(
     // A pending remote access read must not display the empty-catalog message.
     filteredCount:
       items.length +
-      Number(sshSummary.state === "loading") +
-      Number(vncSummary.state === "loading"),
+      Number(ssh.summary.state === "loading") +
+      Number(vnc.summary.state === "loading") +
+      Number(cloudflareAccess.summary.state === "loading"),
   };
+}
+
+const REMOTE_ACCESS_KIND_ORDER: Readonly<
+  Record<"ssh" | "vnc" | "cloudflare-access", number>
+> = { ssh: 0, vnc: 1, "cloudflare-access": 2 };
+
+function orderRemoteAccessPresentations(
+  groups: ConnectorCategoryGroup<ConnectorPresentation>[],
+): ConnectorCategoryGroup<ConnectorPresentation>[] {
+  return groups.map((group) => {
+    if (group.id !== REMOTE_ACCESS_CATEGORY) {
+      return group;
+    }
+    return {
+      ...group,
+      sections: group.sections.map((section) => {
+        if (section.category !== REMOTE_ACCESS_CATEGORY) {
+          return section;
+        }
+        return {
+          ...section,
+          connectors: [...section.connectors].sort((left, right) => {
+            const leftOrder =
+              left.kind === "catalog"
+                ? Number.MAX_SAFE_INTEGER
+                : REMOTE_ACCESS_KIND_ORDER[left.kind];
+            const rightOrder =
+              right.kind === "catalog"
+                ? Number.MAX_SAFE_INTEGER
+                : REMOTE_ACCESS_KIND_ORDER[right.kind];
+            return leftOrder - rightOrder;
+          }),
+        };
+      }) as ConnectorCategoryGroup<ConnectorPresentation>["sections"],
+    };
+  });
+}
+
+function renderConnectorPresentation(
+  item: ConnectorPresentation,
+  renderCatalogCard: (
+    connector: PlatformConnectorCatalogStatusItem,
+  ) => ReactNode,
+): ReactNode {
+  if (item.kind === "ssh") {
+    return (
+      <SshConnectorCard key="ssh" configuredCount={item.configuredCount} />
+    );
+  }
+  if (item.kind === "vnc") {
+    return (
+      <VncConnectorCard key="vnc" configuredCount={item.configuredCount} />
+    );
+  }
+  if (item.kind === "cloudflare-access") {
+    return (
+      <CloudflareAccessConnectorCard
+        key="cloudflare-access"
+        configuredCount={item.configuredCount}
+      />
+    );
+  }
+  return renderCatalogCard(item.connector);
 }
 
 function RemoteAccessShelfCategory({
@@ -2040,8 +2196,12 @@ export function ConnectorsPage() {
   const filteredCatalogItemsLoadable = useFilteredCatalogItems(shelfEnabled);
   const sshSummary = useLoadable(sshSummary$);
   const vncSummary = useLoadable(vncSummary$);
+  const cloudflareAccessSummary = useLoadable(cloudflareAccessSummary$);
   const filteredVncSummary = useLoadable(filteredVncSummary$);
   const filteredSshSummary = useLoadable(filteredSshSummary$);
+  const filteredCloudflareAccessSummary = useLoadable(
+    filteredCloudflareAccessSummary$,
+  );
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
   const accountSummariesLoadable = useLoadable(
     connectorAccountSummaryByTarget$,
@@ -2101,12 +2261,16 @@ export function ConnectorsPage() {
     connectedBadge,
     custom.all.length,
     Number(configuredRemoteAccessHosts(sshSummary) > 0) +
-      Number(configuredRemoteAccessHosts(vncSummary) > 0),
+      Number(configuredRemoteAccessHosts(vncSummary) > 0) +
+      Number(configuredRemoteAccessHosts(cloudflareAccessSummary) > 0),
   );
   // Remote access belongs to the connected scope once hosts exist; until then it is only
   // a thing to discover, and the catalog already carries it.
   const connectedSshCount = configuredRemoteAccessHosts(filteredSshSummary);
   const connectedVncCount = configuredRemoteAccessHosts(filteredVncSummary);
+  const connectedCloudflareAccessCount = configuredRemoteAccessHosts(
+    filteredCloudflareAccessSummary,
+  );
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
 
@@ -2118,6 +2282,7 @@ export function ConnectorsPage() {
     catalogStatusLoadable,
     sshSummary,
     vncSummary,
+    cloudflareAccessSummary,
   );
   const categoryMetadata = localizeConnectorCategoryMetadata(
     catalogStatusLoadable.state === "hasData"
@@ -2235,24 +2400,36 @@ export function ConnectorsPage() {
   const otherCategoryLabel = t(($) => {
     return $.connectors.catalog.otherCategory;
   });
-  const presentation = buildConnectorPresentation(
-    filteredConnectors,
-    filteredSshSummary,
-    t(($) => {
-      return $.ssh.label;
-    }),
-    filteredVncSummary,
-    t(($) => {
-      return $.vnc.label;
-    }),
-  );
+  const presentation = buildConnectorPresentation({
+    connectors: filteredConnectors,
+    ssh: {
+      summary: filteredSshSummary,
+      label: t(($) => {
+        return $.ssh.label;
+      }),
+    },
+    vnc: {
+      summary: filteredVncSummary,
+      label: t(($) => {
+        return $.vnc.label;
+      }),
+    },
+    cloudflareAccess: {
+      summary: filteredCloudflareAccessSummary,
+      label: t(($) => {
+        return $.cloudflareAccess.title;
+      }),
+    },
+  });
   const remoteAccessLabel = t(($) => {
     return $.connectors.catalog.remoteAccess;
   });
-  const grouped = groupConnectorsByCategory(
-    presentation.items,
-    withRemoteAccessCategory(categoryMetadata, remoteAccessLabel),
-    otherCategoryLabel,
+  const grouped = orderRemoteAccessPresentations(
+    groupConnectorsByCategory(
+      presentation.items,
+      withRemoteAccessCategory(categoryMetadata, remoteAccessLabel),
+      otherCategoryLabel,
+    ),
   );
   const browse = buildConnectorsBrowseModel({
     catalogItems: filteredConnectors,
@@ -2268,18 +2445,13 @@ export function ConnectorsPage() {
     ready: shelfEnabled && filteredCatalogItemsLoadable.state === "hasData",
     remoteAccessCount:
       Number(Boolean(remoteAccessSummaryData(sshSummary))) +
-      Number(Boolean(remoteAccessSummaryData(vncSummary))),
+      Number(Boolean(remoteAccessSummaryData(vncSummary))) +
+      Number(Boolean(remoteAccessSummaryData(cloudflareAccessSummary))),
     remoteAccessLabel,
   });
 
   const renderPresentationCard = (item: ConnectorPresentation) => {
-    return item.kind === "ssh" ? (
-      <SshConnectorCard key="ssh" configuredCount={item.configuredCount} />
-    ) : item.kind === "vnc" ? (
-      <VncConnectorCard key="vnc" configuredCount={item.configuredCount} />
-    ) : (
-      renderCard(item.connector)
-    );
+    return renderConnectorPresentation(item, renderCard);
   };
   const builtinList = renderBuiltinList({
     loadingState: filteredCatalogItemsLoadable.state,
@@ -2297,6 +2469,7 @@ export function ConnectorsPage() {
       shelfEnabled,
       vncEnabled,
       filteredVncSummary,
+      filteredCloudflareAccessSummary,
     ),
   });
   const builtinPanel = (
@@ -2310,6 +2483,7 @@ export function ConnectorsPage() {
           <SshDirectoryLoadError />
           <VncDirectoryLoadError />
           <VncDirectoryLoading />
+          <CloudflareAccessDirectoryState />
           <RemoteAccessShelfCategory
             enabled={browse.showShelves}
             groups={grouped}
@@ -2407,7 +2581,8 @@ export function ConnectorsPage() {
                   extraCount={
                     custom.connected.length +
                     Number(connectedSshCount > 0) +
-                    Number(connectedVncCount > 0)
+                    Number(connectedVncCount > 0) +
+                    Number(connectedCloudflareAccessCount > 0)
                   }
                   extras={
                     <>
@@ -2418,12 +2593,11 @@ export function ConnectorsPage() {
                           className="contents"
                         />
                       )}
-                      {connectedVncCount > 0 && (
-                        <VncConnectorCard configuredCount={connectedVncCount} />
-                      )}
-                      {connectedSshCount > 0 && (
-                        <SshConnectorCard configuredCount={connectedSshCount} />
-                      )}
+                      <RemoteAccessConnectedCards
+                        ssh={connectedSshCount}
+                        vnc={connectedVncCount}
+                        cloudflareAccess={connectedCloudflareAccessCount}
+                      />
                     </>
                   }
                 />
@@ -2438,6 +2612,7 @@ export function ConnectorsPage() {
                       <SshDirectoryLoadError />
                       <VncDirectoryLoadError />
                       <VncDirectoryLoading />
+                      <CloudflareAccessDirectoryState />
                       <RemoteAccessShelfCategory
                         enabled
                         groups={grouped}
@@ -2449,12 +2624,22 @@ export function ConnectorsPage() {
                     vncEnabled,
                     filteredSshSummary,
                     filteredVncSummary,
+                    filteredCloudflareAccessSummary,
                   )}
                   remoteCount={
                     Number(
                       Boolean(remoteAccessSummaryData(filteredSshSummary)),
                     ) +
-                    Number(Boolean(remoteAccessSummaryData(filteredVncSummary)))
+                    Number(
+                      Boolean(remoteAccessSummaryData(filteredVncSummary)),
+                    ) +
+                    Number(
+                      Boolean(
+                        remoteAccessSummaryData(
+                          filteredCloudflareAccessSummary,
+                        ),
+                      ),
+                    )
                   }
                 />
               }
