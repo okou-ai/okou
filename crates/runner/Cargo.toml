@@ -7,7 +7,6 @@ edition.workspace = true
 ably-subscriber = { workspace = true }
 api-contracts.workspace = true
 guest-contracts.workspace = true
-process-control-ipc.workspace = true
 sandbox = { workspace = true }
 nbd-cow = { workspace = true }
 sandbox-firecracker = { workspace = true }
@@ -22,7 +21,6 @@ clap = { workspace = true, features = ["color", "derive", "env", "error-context"
 nix = { workspace = true, features = ["fs", "inotify", "process", "signal", "user"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
-serde_path_to_error = { workspace = true }
 serde_yaml_ng = { workspace = true }
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
