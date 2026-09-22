@@ -6217,7 +6217,6 @@
         "accountTable": {
           "account": "Compte",
           "plan": "Forfait",
-          "provider": "Fournisseur",
           "usage": "Utilisation"
         },
         "actionForProvider": "{{action}} {{provider}}",

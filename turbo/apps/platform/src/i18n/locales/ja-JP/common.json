@@ -6147,7 +6147,6 @@
         "accountTable": {
           "account": "アカウント",
           "plan": "プラン",
-          "provider": "プロバイダー",
           "usage": "使用量"
         },
         "actionForProvider": "{{action}} {{provider}}",

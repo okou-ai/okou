@@ -6217,7 +6217,6 @@
         "accountTable": {
           "account": "Account",
           "plan": "Piano",
-          "provider": "Provider",
           "usage": "Utilizzo"
         },
         "actionForProvider": "{{action}} {{provider}}",

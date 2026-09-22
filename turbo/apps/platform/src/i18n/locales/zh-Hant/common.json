@@ -6147,7 +6147,6 @@
         "accountTable": {
           "account": "帳號",
           "plan": "方案",
-          "provider": "供應商",
           "usage": "用量"
         },
         "actionForProvider": "{{action}}{{provider}}",

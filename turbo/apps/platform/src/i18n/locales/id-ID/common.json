@@ -6147,7 +6147,6 @@
         "accountTable": {
           "account": "Akun",
           "plan": "Paket",
-          "provider": "Penyedia",
           "usage": "Penggunaan"
         },
         "actionForProvider": "{{action}} {{provider}}",

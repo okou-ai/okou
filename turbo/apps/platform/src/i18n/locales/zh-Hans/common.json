@@ -6147,7 +6147,6 @@
         "accountTable": {
           "account": "账号",
           "plan": "套餐",
-          "provider": "提供商",
           "usage": "用量"
         },
         "actionForProvider": "{{action}}{{provider}}",

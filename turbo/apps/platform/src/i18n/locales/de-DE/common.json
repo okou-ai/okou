@@ -6159,7 +6159,6 @@
         "accountTable": {
           "account": "Konto",
           "plan": "Tarif",
-          "provider": "Anbieter",
           "usage": "Nutzung"
         },
         "actionForProvider": "{{action}} {{provider}}",

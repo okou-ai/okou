@@ -6159,7 +6159,6 @@
         "accountTable": {
           "account": "खाता",
           "plan": "प्लान",
-          "provider": "प्रदाता",
           "usage": "उपयोग"
         },
         "actionForProvider": "{{action}} {{provider}}",

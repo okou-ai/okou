@@ -6217,7 +6217,6 @@
         "accountTable": {
           "account": "Cuenta",
           "plan": "Plan",
-          "provider": "Proveedor",
           "usage": "Uso"
         },
         "actionForProvider": "{{action}} {{provider}}",

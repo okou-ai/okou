@@ -6147,7 +6147,6 @@
         "accountTable": {
           "account": "계정",
           "plan": "요금제",
-          "provider": "공급자",
           "usage": "사용량"
         },
         "actionForProvider": "{{provider}} {{action}}",
