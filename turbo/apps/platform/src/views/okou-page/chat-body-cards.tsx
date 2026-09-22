@@ -71,7 +71,6 @@ import {
 } from "../../signals/okou-page/attachment-chips.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
-import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
@@ -1268,6 +1267,18 @@ function PermissionActionCardContent({
 }) {
   const { t } = useTranslation();
   const expiryText = permissionActionExpiryText(expiresAt, expirationAvailable);
+  const connectorTitle = t(
+    ($) => {
+      return $.chat.permissions.connectorTitle;
+    },
+    { connectorName: connectorLabel },
+  );
+  const actionDescription = t(
+    ($) => {
+      return $.chat.permissions.actionDescription;
+    },
+    { action: actionLabel, permissionName },
+  );
   const showDurationSelect =
     expirationAvailable &&
     (status.kind === "ready" ||
@@ -1289,43 +1300,23 @@ function PermissionActionCardContent({
           <ConnectorIcon icon={icon} size={22} />
         </div>
         <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1">
-            <div className="truncate text-[0.9375rem] font-medium text-foreground">
-              {t(
-                ($) => {
-                  return $.chat.permissions.connectorTitle;
-                },
-                {
-                  connectorName: connectorLabel,
-                },
-              )}
-            </div>
-            <ChatCardDetails compact title={connectorLabel}>
-              <p>
-                {t(
-                  ($) => {
-                    return $.chat.permissions.actionDescription;
-                  },
-                  {
-                    action: actionLabel,
-                    permissionName,
-                  },
-                )}
-              </p>
-              <PermissionActionInlineStatus status={status} />
-              {expiryText && <p>{expiryText}</p>}
-            </ChatCardDetails>
+          <div
+            className="truncate text-[0.9375rem] font-medium text-foreground"
+            title={connectorTitle}
+          >
+            {connectorTitle}
           </div>
-          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
-            {t(
-              ($) => {
-                return $.chat.permissions.actionDescription;
-              },
-              {
-                action: actionLabel,
-                permissionName,
-              },
-            )}
+          {/*
+            The scope line is the card's only copy of the requested permission
+            and it clips at narrow widths, so it carries its own text as a
+            native tooltip the way `ConnectorAccountActionNotice` does. A
+            details dialog here would only repeat this same string.
+          */}
+          <div
+            className="mt-0.5 truncate text-sm leading-5 text-muted-foreground"
+            title={actionDescription}
+          >
+            {actionDescription}
           </div>
           {showInlineStatus ? (
             <PermissionActionInlineStatus status={status} compact />

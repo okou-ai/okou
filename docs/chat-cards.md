@@ -101,7 +101,10 @@ contract by themselves.
   when the chat container is at least 640px wide, and 136px otherwise. Keep
   permission scope and controls in that frame, with one compact line for an
   error or expiry when present. Do not reserve extra blank status rows or grow
-  the frame; full explanations and expiry details remain in the details dialog.
+  the frame. The scope line is the only copy of the requested permission, so it
+  carries its own text as a native tooltip for the widths where it clips; a
+  details dialog that repeats the visible rows is redundant chrome beside the
+  card's real allow/deny action.
 - Keep long text and translated copy within their allocated rows. Do not let
   overflowing descendants enlarge the transcript's scrollable area. Full
   descriptions and diagnostics belong in an accessible dialog, popover, or
@@ -122,11 +125,13 @@ the artwork or preview area and place changing content inside it. Reading the
 full document or interacting with a page happens in the existing viewer.
 
 `ChatCardDetails` provides the shared dialog for recovery diagnostics, banking
-account selection and confirmation, permission explanations, and credit
-checkout options. Recovery keeps the original account and current-settings
-notice beside the reset/retry controls in that dialog. Banking keeps its
-connection polling owned by the card even when the dialog is closed. Preserve
-those action and lifecycle owners when adding another state.
+account selection and confirmation, and credit checkout options. Recovery keeps
+the original account and current-settings notice beside the reset/retry controls
+in that dialog. Banking keeps its connection polling owned by the card even when
+the dialog is closed. Preserve those action and lifecycle owners when adding
+another state. Open the dialog only for content the card cannot already show:
+its trigger competes with the card's own action, so a dialog whose body repeats
+the visible rows should not exist.
 
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,
