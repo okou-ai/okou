@@ -209,7 +209,7 @@ pub struct StorageEntry {
 }
 
 /// Artifact entry in the guest storage manifest.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactEntry {
     /// Guest filesystem path where the artifact is mounted.

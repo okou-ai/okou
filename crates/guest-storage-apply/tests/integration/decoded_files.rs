@@ -35,6 +35,32 @@ fn input(target: &Path, cleanup: bool, files: &[StorageFile]) -> std::io::Result
     )
 }
 
+fn artifact_input(
+    target: &Path,
+    cleanup: bool,
+    archive_url: &str,
+    files: &[StorageFile],
+) -> std::io::Result<Vec<u8>> {
+    let manifest = json!({"storageMounts": [{
+        "mountPath": target,
+        "archiveUrl": archive_url,
+        "name": "artifact",
+        "storageId": "artifact-id",
+        "versionId": "v1",
+        "writeback": true,
+        "missingRootPolicy": "preserveParentVersion"
+    }], "cleanupPaths": if cleanup { vec![target] } else { vec![] }});
+    storage_files::encode_input(
+        &serde_json::to_vec(&manifest)?,
+        &[(
+            target
+                .to_str()
+                .ok_or_else(|| std::io::Error::other("non-UTF-8 target"))?,
+            files,
+        )],
+    )
+}
+
 #[test]
 fn writes_final_files_after_cleanup_with_archive_metadata() {
     let root = tempfile::tempdir().unwrap();
@@ -55,6 +81,31 @@ fn writes_final_files_after_cleanup_with_archive_metadata() {
     );
     assert_eq!(fs::metadata(target.join("empty")).unwrap().mtime(), 1);
     assert_eq!(fs::read_dir(&target).unwrap().count(), 2);
+}
+
+#[test]
+fn writes_fresh_artifact_files_without_opening_its_archive() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("artifact");
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("stale"), b"obsolete").unwrap();
+    assert!(guest_storage_apply::run_storage_files_bytes(
+        &artifact_input(
+            &target,
+            true,
+            "file:///archive-must-not-be-opened.tar.gz",
+            &files(),
+        )
+        .unwrap()
+    ));
+    assert!(!target.join("stale").exists());
+    assert_eq!(
+        fs::read(target.join("nested/tool")).unwrap(),
+        b"final-content"
+    );
+    let metadata = fs::metadata(target.join("nested/tool")).unwrap();
+    assert_eq!(metadata.permissions().mode() & 0o7777, 0o751);
+    assert_eq!(metadata.mtime(), 1234567890);
 }
 
 #[test]
@@ -343,4 +394,31 @@ fn failed_final_write_is_failure_without_rollback_or_archive_retry() {
         b"final-content"
     );
     assert!(target.join("empty/child").is_dir());
+}
+
+#[test]
+fn failed_artifact_write_does_not_retry_its_archive() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("artifact");
+    fs::create_dir_all(target.join("empty/child")).unwrap();
+    let archive = root.path().join("artifact.tar.gz");
+    fs::write(
+        &archive,
+        super::support::create_tar_gz(&[("archive-only", b"must-not-appear")]).unwrap(),
+    )
+    .unwrap();
+    assert!(!guest_storage_apply::run_storage_files_bytes(
+        &artifact_input(
+            &target,
+            false,
+            &format!("file://{}", archive.display()),
+            &files(),
+        )
+        .unwrap()
+    ));
+    assert_eq!(
+        fs::read(target.join("nested/tool")).unwrap(),
+        b"final-content"
+    );
+    assert!(!target.join("archive-only").exists());
 }
