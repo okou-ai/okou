@@ -16,6 +16,7 @@ import {
   VNC_HOST_MAX_LENGTH,
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
+import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import {
   VNC_DISPLAY_NAME_MAX_LENGTH,
   VNC_USERNAME_MAX_BYTES,
@@ -25,6 +26,8 @@ import {
 import {
   chooseVncCredential$,
   chooseVncProfile$,
+  chooseVncSshConnection$,
+  chooseVncTransport$,
   chooseVncTrust$,
   replaceVncAuthentication$,
   vncEditor$,
@@ -34,6 +37,7 @@ import {
   vncAuthMethodForProfile,
   vncCredentialMatchesProfile,
 } from "../../signals/vnc.ts";
+import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
 
 export function VncEndpointFields({
   connection,
@@ -73,6 +77,7 @@ export function VncEndpointFields({
           placeholder={t(($) => {
             return $.vnc.hostHint;
           })}
+          aria-describedby="vnc-destination-help"
         />
       </label>
       <label className="grid gap-2 text-sm">
@@ -88,8 +93,14 @@ export function VncEndpointFields({
           min={1}
           max={65_535}
           defaultValue={connection?.port ?? 5900}
+          aria-describedby="vnc-destination-help"
         />
       </label>
+      <p id="vnc-destination-help" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.transport.destinationHelp;
+        })}
+      </p>
     </div>
   );
 }
@@ -162,6 +173,199 @@ function VncSecurityProfileField({
   );
 }
 
+function SshConnectionLabel({
+  connection,
+}: {
+  readonly connection: SshConnectionResponse;
+}) {
+  return (
+    <span className="break-all">
+      {connection.displayName} · {connection.host}:{connection.port}
+    </span>
+  );
+}
+
+function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const connections = useLoadable(sshConnections$);
+  const chooseConnection = useSet(chooseVncSshConnection$);
+  const retry = useSet(invalidateSsh$);
+  const connectionItems =
+    connections.state === "hasData" && connections.data !== null
+      ? connections.data.map((connection) => {
+          return {
+            value: connection.id,
+            label: `${connection.displayName} · ${connection.host}:${connection.port}`,
+          };
+        })
+      : [];
+  const selectedUnavailable =
+    editor.transport === "ssh" &&
+    editor.sshConnectionId !== "" &&
+    connections.state === "hasData" &&
+    connections.data !== null &&
+    !connections.data.some((connection) => {
+      return connection.id === editor.sshConnectionId;
+    });
+  return (
+    <div className="grid gap-3 rounded-lg border bg-muted/30 p-4">
+      <label htmlFor="vnc-ssh-connection" className="text-sm">
+        {t(($) => {
+          return $.vnc.transport.sshConnection;
+        })}
+      </label>
+      {connections.state === "hasError" ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 text-sm"
+        >
+          <p>
+            {t(($) => {
+              return $.vnc.transport.loadFailed;
+            })}
+          </p>
+          <Button type="button" variant="outline" onClick={retry}>
+            {t(($) => {
+              return $.vnc.retry;
+            })}
+          </Button>
+        </div>
+      ) : connections.state === "loading" ? (
+        <p role="status" className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.loading;
+          })}
+        </p>
+      ) : connections.data === null ? (
+        <p role="alert" className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.unavailable;
+          })}
+        </p>
+      ) : connections.data.length === 0 ? (
+        <p role="alert" className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.empty;
+          })}
+        </p>
+      ) : (
+        <Select
+          items={connectionItems}
+          value={editor.sshConnectionId}
+          onValueChange={(value, details) => {
+            if (
+              !connectionItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            chooseConnection(value);
+          }}
+          disabled={disabled}
+        >
+          <SelectTrigger id="vnc-ssh-connection" className="min-w-0">
+            <SelectValue
+              placeholder={t(($) => {
+                return $.vnc.transport.select;
+              })}
+            />
+          </SelectTrigger>
+          <SelectContent className="w-(--anchor-width)">
+            {connections.data.map((connection) => {
+              return (
+                <SelectItem key={connection.id} value={connection.id}>
+                  <SshConnectionLabel connection={connection} />
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
+      {selectedUnavailable && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.transport.selectionUnavailable;
+          })}
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.transport.sshHelp;
+        })}
+      </p>
+    </div>
+  );
+}
+
+export function VncTransportFields({
+  disabled,
+}: {
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const chooseTransport = useSet(chooseVncTransport$);
+  const transportItems = [
+    {
+      value: "direct",
+      label: t(($) => {
+        return $.vnc.transport.direct;
+      }),
+    },
+    {
+      value: "ssh",
+      label: t(($) => {
+        return $.vnc.transport.ssh;
+      }),
+    },
+  ];
+  return (
+    <fieldset className="grid min-w-0 gap-3">
+      <legend className="mb-1 text-sm font-semibold">
+        {t(($) => {
+          return $.vnc.transport.title;
+        })}
+      </legend>
+      <Select
+        items={transportItems}
+        value={editor.transport}
+        onValueChange={(value, details) => {
+          if (value !== "direct" && value !== "ssh") {
+            details.cancel();
+            return;
+          }
+          chooseTransport(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          id="vnc-transport"
+          aria-label={t(($) => {
+            return $.vnc.transport.title;
+          })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {transportItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      {editor.transport === "ssh" && (
+        <VncSshConnectionFields disabled={disabled} />
+      )}
+    </fieldset>
+  );
+}
+
 export function VncSecurityFields({
   connection,
   disabled,
@@ -190,6 +394,26 @@ export function VncSecurityFields({
   return (
     <div className="grid gap-3">
       <VncSecurityProfileField profile={editor.profile} disabled={disabled} />
+      <label htmlFor="vnc-server-name" className="text-sm">
+        {t(($) => {
+          return $.vnc.security.serverName;
+        })}
+      </label>
+      <Input
+        id="vnc-server-name"
+        name="serverName"
+        maxLength={VNC_HOST_MAX_LENGTH}
+        defaultValue={connection?.security.serverName ?? ""}
+        placeholder={t(($) => {
+          return $.vnc.security.serverNameHint;
+        })}
+        aria-describedby="vnc-server-name-help"
+      />
+      <p id="vnc-server-name-help" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.security.serverNameHelp;
+        })}
+      </p>
       <label htmlFor="vnc-trust" className="text-sm">
         {t(($) => {
           return $.vnc.security.title;

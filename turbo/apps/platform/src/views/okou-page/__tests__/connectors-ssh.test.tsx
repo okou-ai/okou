@@ -663,3 +663,45 @@ test("Returning from host management refreshes the SSH card after deleting the l
   await screen.findByText("Let your agents run commands on remote machines.");
   expect(getConnectorAction("link", "Manage SSH hosts")).toBeInTheDocument();
 });
+
+test("Deleting an SSH host referenced by VNC explains how to resolve the dependency", async () => {
+  mockCatalog();
+  const host = {
+    id: "b0000000-0000-4000-8000-000000000001",
+    displayName: "VNC gateway",
+    host: "gateway.example.com",
+    port: 22,
+    username: "deploy",
+    credentialId: "d0000000-0000-4000-8000-000000000001",
+    credentialName: "Gateway login",
+    generation: 1,
+    learnedHostKey: null,
+    createdAt: "2026-09-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+  };
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [host] });
+  });
+  context.mocks.api(sshConnectionsContract.delete, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "SSH_CONNECTION_IN_USE",
+        message: "private dependency detail",
+      },
+    });
+  });
+  await page("/connectors/ssh");
+  await screen.findByText(host.displayName);
+  click(getConnectorAction("button", "Delete host"));
+  const dialog = await screen.findByRole("dialog", { name: "Delete host" });
+  click(getConnectorAction("button", "Delete host", dialog));
+  await within(dialog).findByText(/This SSH host is used by a VNC route/u);
+  expect(
+    within(dialog).getByText(/switch them explicitly to Direct/u),
+  ).toBeInTheDocument();
+  expect(document.body.textContent).not.toContain("private dependency detail");
+  expect(dialog).toBeInTheDocument();
+});
