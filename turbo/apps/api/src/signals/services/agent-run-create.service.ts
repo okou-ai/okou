@@ -2269,6 +2269,9 @@ function resolveModelProviderCodexRuntimeConfig(args: {
   const providerCapabilities = getModelProviderCodexRuntimeCapabilities(
     args.type,
   );
+  if (!providerCapabilities) {
+    return undefined;
+  }
   const modelCatalog = args.logicalModel
     ? getModelProviderCodexCatalogForModel(
         args.logicalModel,
@@ -2276,9 +2279,6 @@ function resolveModelProviderCodexRuntimeConfig(args: {
         args.type,
       )
     : undefined;
-  if (!providerCapabilities && !modelCatalog) {
-    return undefined;
-  }
   const baseUrl = args.environment.OPENAI_BASE_URL;
   if (!baseUrl) {
     throw new Error(`Missing OPENAI_BASE_URL for Codex provider ${args.type}`);
@@ -2290,7 +2290,7 @@ function resolveModelProviderCodexRuntimeConfig(args: {
     envKey: "OPENAI_API_KEY",
     requiresOpenaiAuth: false,
     wireApi: "responses",
-    supportsWebsockets: providerCapabilities?.supportsWebsockets ?? false,
+    supportsWebsockets: providerCapabilities.supportsWebsockets,
     ...(modelCatalog ? { modelCatalog } : {}),
   };
 }
