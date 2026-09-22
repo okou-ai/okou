@@ -9,6 +9,7 @@ import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
@@ -17,7 +18,7 @@ const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 
-function mountedAgent(agentIds: string[]): void {
+function mountedAgent(agentIds: string[], detailGate?: Promise<void>): void {
   const agents = agentIds.map((agentId): AgentResponse => {
     return {
       agentId,
@@ -34,15 +35,21 @@ function mountedAgent(agentIds: string[]): void {
     };
   });
   context.mocks.data.agents(agents);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const agent = agents.find((candidate) => {
-      return candidate.agentId === params.id;
-    });
-    if (!agent) {
-      throw new Error(`Unexpected agent requested: ${params.id}`);
-    }
-    return respond(200, agent);
-  });
+  context.mocks.api(
+    agentsByIdContract.get,
+    async ({ params, respond, withSignal }) => {
+      if (detailGate) {
+        await withSignal(detailGate);
+      }
+      const agent = agents.find((candidate) => {
+        return candidate.agentId === params.id;
+      });
+      if (!agent) {
+        throw new Error(`Unexpected agent requested: ${params.id}`);
+      }
+      return respond(200, agent);
+    },
+  );
 }
 
 async function greeting() {
@@ -61,6 +68,22 @@ function tokens(text: Element): HTMLElement[] {
     text.querySelectorAll<HTMLElement>('[data-slot="chat-tagline-word"]'),
   );
 }
+
+test("The greeting does not wait for agent details", async () => {
+  const detailGate = context.mocks.deferred<void>();
+  mountedAgent([AGENT_ID], detailGate.promise);
+  context.mocks.browser.matchMedia(false);
+
+  const page = await startPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+  await page.content;
+
+  const { tagline, fullLine, text } = await greeting();
+  expect(text.textContent).toBe(fullLine);
+  expect(tagline).toHaveAccessibleName(fullLine);
+});
 
 test("The greeting shows its complete sentence, one box per word", async () => {
   mountedAgent([AGENT_ID]);

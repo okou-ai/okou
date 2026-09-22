@@ -1558,7 +1558,6 @@
         "enteredChat": "{{userName}}님이 채팅에 입장했습니다.",
         "goodToSeeYou": "만나서 반갑습니다, {{userName}}.",
         "knewYouWouldCome": "다시 오실 줄 알았어요, {{userName}}.",
-        "letsRoll": "{{agentName}}가 준비되었습니다, {{userName}}. 시작합시다.",
         "makeTodayCount": "오늘을 의미 있게 만듭시다, {{userName}}.",
         "newIdeas": "오늘 새로운 아이디어가 있나요, {{userName}}?",
         "readyToBuild": "준비되셨나요, {{userName}}?",
