@@ -477,7 +477,7 @@ function PersonalProviderAccountTable({
 }
 
 const PERSONAL_ACCOUNT_ROW_CLASS =
-  "relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-12 after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_96px_236px_36px]";
+  "relative grid grid-cols-[minmax(0,1fr)_auto_36px] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-12 after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_96px_236px_36px]";
 
 function OAuthAccountTableRow({
   account,
@@ -524,7 +524,7 @@ function OAuthAccountTableRow({
     >
       <div
         role="cell"
-        className="col-start-1 row-start-1 flex min-w-0 items-center gap-3"
+        className="col-start-1 col-end-3 row-start-1 flex min-w-0 items-center gap-3 lg:col-end-2"
       >
         <Radio
           value={account.id}
@@ -559,7 +559,7 @@ function OAuthAccountTableRow({
       </div>
       <div
         role="cell"
-        className="col-start-2 row-start-2 flex min-w-0 items-center justify-end gap-3 lg:col-start-3 lg:row-start-1 lg:justify-start"
+        className="col-start-2 col-end-4 row-start-2 flex min-w-0 items-center justify-end gap-3 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
       >
         {!account.needsReconnect && usageWindows(usage).length > 0 ? (
           <SubscriptionUsageRings
@@ -584,7 +584,7 @@ function OAuthAccountTableRow({
       </div>
       <div
         role="cell"
-        className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4"
+        className="col-start-3 row-start-1 flex items-center justify-end lg:col-start-4"
       >
         <OAuthAccountMenu
           actionPending={actionPending}
@@ -646,7 +646,7 @@ function OAuthAccountTableRowSkeleton() {
     >
       <div
         role="cell"
-        className="col-start-1 row-start-1 flex animate-pulse items-center gap-3"
+        className="col-start-1 col-end-3 row-start-1 flex animate-pulse items-center gap-3 lg:col-end-2"
       >
         <span className="h-4 w-4 shrink-0 rounded-full bg-muted/50" />
         <div>
@@ -662,14 +662,14 @@ function OAuthAccountTableRowSkeleton() {
       </div>
       <div
         role="cell"
-        className="col-start-2 row-start-2 flex animate-pulse items-center justify-end gap-1.5 lg:col-start-3 lg:row-start-1 lg:justify-start"
+        className="col-start-2 col-end-4 row-start-2 flex animate-pulse items-center justify-end gap-1.5 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
       >
         <span className="h-7 w-7 rounded-full bg-muted/30" />
         <span className="h-7 w-7 rounded-full bg-muted/30" />
       </div>
       <div
         role="cell"
-        className="col-start-2 row-start-1 flex items-center justify-end lg:col-start-4"
+        className="col-start-3 row-start-1 flex items-center justify-end lg:col-start-4"
       >
         <span className="block h-8 w-8 animate-pulse rounded-lg bg-muted/30" />
       </div>
