@@ -119,24 +119,28 @@ Use `httpmock` for mocking external HTTP services:
 
 ```rust
 use httpmock::prelude::*;
-
-static MOCK_SERVER: LazyLock<MockServer> = LazyLock::new(|| {
-    let server = MockServer::start();
-    unsafe {
-        std::env::set_var("OKOU_API_BACKEND_URL", server.base_url());
-    }
-    server
-});
+use serde_json::json;
+use std::time::Duration;
 
 #[tokio::test]
 async fn post_json_success() {
-    let server = &*MOCK_SERVER;
+    let server = MockServer::start();
+    let http = guest_agent::http::HttpClient::with_api_config(
+        server.base_url(),
+        "test-token",
+        "test-vercel-bypass",
+        "test-client-session",
+        Duration::ZERO,
+    )
+    .expect("build explicit API client");
+
     let mock = server.mock(|when, then| {
         when.method(POST).path("/test");
         then.status(200).json_body(json!({"status": "ok"}));
     });
 
-    let result = http::post_json(&format!("{}/test", server.base_url()), &json!({}), 1).await;
+    let url = format!("{}/test", server.base_url());
+    let result = http.post_json(&url, &json!({}), 1).await;
 
     mock.assert_calls_async(1).await;
     assert_eq!(result.unwrap().unwrap()["status"], "ok");
