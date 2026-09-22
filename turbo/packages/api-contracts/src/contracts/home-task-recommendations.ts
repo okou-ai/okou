@@ -8,9 +8,8 @@ export const HOME_TASK_RECOMMENDATION_LIMIT = 3;
 /**
  * How long one generated set stays authoritative.
  *
- * The client polls on this cadence and the server refuses to regenerate before
- * it elapses, so the refresh rate is one number both sides read rather than two
- * timers that can disagree.
+ * The server cron will not regenerate one cache scope before this interval
+ * elapses. Clients receive completed refreshes over Ably and never poll.
  */
 export const HOME_TASK_RECOMMENDATION_REFRESH_MS = 15 * 60 * 1000;
 
@@ -59,7 +58,7 @@ export const homeTaskRecommendationsResponseSchema = z.object({
    */
   status: z.enum(["available", "unavailable"]),
   generatedAt: z.string().datetime().nullable(),
-  /** Milliseconds until the next generation may be attempted. */
+  /** Milliseconds until the cron may attempt the next generation. */
   refreshAfterMs: z.number().int().nonnegative(),
   recommendations: z
     .array(homeTaskRecommendationSchema)

@@ -68,16 +68,29 @@ email snippet cannot become an instruction, request a tool, or add a source.
 ## Refresh and isolation
 
 `home_task_recommendations` holds one row per `(user, org, agent)`. Switching
-Agents therefore changes evidence, cache identity, and cards. `next_refresh_at`
-is the only refresh authority and `HOME_TASK_RECOMMENDATION_REFRESH_MS` is the
-window both sides use.
+Agents therefore changes evidence, cache identity, and cards. Generation never
+runs in a browser request and there is no browser timer or polling loop.
 
-- A request inside the window serves cached cards and pays nothing. Gmail-derived cards are first revalidated against the current Agent scope, live list/detail URL permissions, default account, and connection state; any card citing Gmail is hidden immediately when that authority is absent.
-- A request outside it competes for that Agent row's claim. The winner
-  generates; the loser serves cached cards rather than waiting.
-- An unchanged evidence digest keeps the cached cards and advances the window
-  without another provider call.
-- A failed attempt enters a cooldown while previous cards remain available.
+- `GET /api/home-task-recommendations` records `last_requested_at` and returns
+  the current cache only. This bounded demand lease prevents one historical
+  visit from creating permanent background work.
+- The authenticated Vercel cron runs every minute and claims at most eight due
+  scopes that were requested within the previous hour. Each scope remains
+  limited by `HOME_TASK_RECOMMENDATION_REFRESH_MS` (15 minutes).
+- Concurrent cron invocations compete for the row's expiring claim. Only the
+  winner collects evidence or contacts providers.
+- An unchanged evidence digest advances `next_refresh_at` without another model
+  call. A failed attempt enters a cooldown while previous cards remain cached.
+- After each successful due refresh, including an unchanged digest, the API
+  publishes `homeTaskRecommendationsChanged` on that member's user-org Ably
+  channel. An open page passively re-reads the cache and renews its demand
+  lease; a closed page has no subscriber and ages out. The browser never polls.
+- Gmail account, URL-permission, and Agent connector-scope mutations also emit
+  existing or dedicated Ably invalidations, so revocation does not wait for the
+  next cron tick.
+- Every cache read revalidates Gmail-derived cards against the current Agent
+  scope, live list/detail URL permissions, default account, and connection
+  state. Cards citing Gmail are omitted whenever that authority is absent.
 
 ## Files
 
@@ -89,6 +102,7 @@ window both sides use.
 | `apps/api/src/signals/services/connector-url-permission.service.ts`          | Shared live Agent URL policy decision               |
 | `apps/api/src/signals/services/home-task-recommendation-shape.service.ts`    | Evidence-ref and provider-output validation         |
 | `apps/api/src/signals/services/home-task-recommendations.service.ts`         | Agent cache, Jev gates, and three-stage generation  |
-| `apps/api/src/signals/routes/home-task-recommendations.ts`                   | `GET /api/home-task-recommendations?agentId=...`    |
-| `apps/platform/src/signals/okou-page/home-task-recommendations.ts`           | Agent-scoped poll and composer handoff              |
+| `apps/api/src/signals/routes/home-task-recommendations.ts`                   | Cache read and bounded refresh-demand registration  |
+| `apps/api/src/signals/routes/cron-refresh-home-task-recommendations.ts`      | Authenticated cron refresh boundary                 |
+| `apps/platform/src/signals/okou-page/home-task-recommendations.ts`           | Ably invalidation and composer handoff              |
 | `apps/platform/src/views/okou-page/home-task-recommendations.tsx`            | Cards with new/continue labels                      |

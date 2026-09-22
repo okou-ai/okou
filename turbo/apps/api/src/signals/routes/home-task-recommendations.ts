@@ -19,9 +19,8 @@ import {
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const { agentId } = get(queryOf(homeTaskRecommendationsContract.list));
-  // The cards are per member and Agent and change on their own cadence, so a cached copy
-  // in front of this route would serve one member's suggestions to the next
-  // request and hide the refresh the client is polling for.
+  // The cards are per member and Agent. Shared HTTP caching would cross those
+  // ownership boundaries and could also hide a cron result delivered via Ably.
   set(setResHeader$, "Cache-Control", "no-store");
   const overrides = await get(
     userFeatureSwitchOverrides(auth.orgId, auth.userId),

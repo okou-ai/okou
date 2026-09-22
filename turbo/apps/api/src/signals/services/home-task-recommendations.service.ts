@@ -9,12 +9,16 @@ import {
   type HomeTaskRecommendation,
   type HomeTaskRecommendationsResponse,
 } from "@okouai/api-contracts/contracts/home-task-recommendations";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { agents } from "@okouai/db/schema/agent";
 import { homeTaskRecommendations } from "@okouai/db/schema/home-task-recommendation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { and, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { publishHomeTaskRecommendationsChangedSafely } from "../external/realtime";
 import {
   AUXILIARY_TEXT_MAX_TOKENS,
   FAST_PATH_MODEL,
@@ -33,6 +37,7 @@ import {
   isHomeTaskEvidenceEmpty,
   type HomeTaskEvidence,
 } from "./home-task-recommendation-evidence.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { homeTaskGmailCacheAuthorized } from "./home-task-recommendation-gmail.service";
 import {
   normalizeHomeTaskCandidateDrafts,
@@ -44,8 +49,10 @@ import {
 /** Fixed in production so a silent alias upgrade cannot move calibrated gates. */
 const HOME_TASK_DECISION_MODEL = "typesafe/jev-1.13";
 const DECISION_DEADLINE_MS = 20_000;
-const CLAIM_MS = 60_000;
+const CLAIM_MS = 5 * 60 * 1000;
 const FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+const ACTIVE_REQUEST_WINDOW_MS = 60 * 60 * 1000;
+const CRON_BATCH_LIMIT = 8;
 const CANDIDATE_LIMIT = 8;
 const EXTRACTION_MAX_TOKENS = 4096;
 const MIN_JEV_CONFIDENCE = 0.65;
@@ -98,7 +105,7 @@ function writerSystemPrompt(language: string): string {
   ].join("\n");
 }
 
-interface HomeTaskScope {
+export interface HomeTaskScope {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
@@ -161,6 +168,33 @@ async function readCachedRow(
   return row === undefined
     ? undefined
     : { ...row, entries: normalizeHomeTaskRecommendations(row.entries) };
+}
+
+/** Register bounded cron demand without generating inside the user request. */
+async function registerHomeTaskRecommendationDemand(
+  db: Db,
+  scope: HomeTaskScope,
+  at: Date,
+): Promise<void> {
+  await db
+    .insert(homeTaskRecommendations)
+    .values({
+      userId: scope.userId,
+      orgId: scope.orgId,
+      agentId: scope.agentId,
+      entries: [],
+      nextRefreshAt: at,
+      lastRequestedAt: at,
+      updatedAt: at,
+    })
+    .onConflictDoUpdate({
+      target: [
+        homeTaskRecommendations.userId,
+        homeTaskRecommendations.orgId,
+        homeTaskRecommendations.agentId,
+      ],
+      set: { lastRequestedAt: at },
+    });
 }
 
 async function visibleCachedRow(
@@ -271,8 +305,8 @@ async function commitEntries(
     readonly inputDigest: string;
     readonly generatedAt: Date;
   },
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const committed = await db
     .update(homeTaskRecommendations)
     .set({
       entries: args.entries,
@@ -292,7 +326,9 @@ async function commitEntries(
         eq(homeTaskRecommendations.agentId, scope.agentId),
         eq(homeTaskRecommendations.claimId, claimId),
       ),
-    );
+    )
+    .returning({ agentId: homeTaskRecommendations.agentId });
+  return committed.length === 1;
 }
 
 async function memberLanguage(
@@ -657,37 +693,74 @@ async function generateEntries(
   );
 }
 
-/**
- * Read this member's home page task cards, refreshing them when their own
- * cadence says the cached set has expired.
- *
- * The request never waits on a refresh another request is already running, and
- * it never fails because a refresh did: the previously generated cards, or no
- * cards, are always a correct answer for a home page.
- */
-export async function readHomeTaskRecommendations(
+type HomeTaskRefreshOutcome =
+  | "refreshed"
+  | "unchanged"
+  | "removed"
+  | "skipped"
+  | "failed";
+
+async function homeTaskScopeAvailable(
+  db: Db,
+  scope: HomeTaskScope,
+): Promise<boolean> {
+  const featureContext = await loadUserFeatureSwitchContext(
+    db,
+    scope.orgId,
+    scope.userId,
+  );
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.HomeTaskRecommendations, featureContext)
+  ) {
+    return false;
+  }
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.orgId, scope.orgId),
+        eq(agents.id, scope.agentId),
+        or(eq(agents.visibility, "public"), eq(agents.owner, scope.userId)),
+      ),
+    )
+    .limit(1);
+  return agent !== undefined;
+}
+
+async function removeHomeTaskScope(
+  db: Db,
+  scope: HomeTaskScope,
+): Promise<boolean> {
+  const deleted = await db
+    .delete(homeTaskRecommendations)
+    .where(
+      and(
+        eq(homeTaskRecommendations.userId, scope.userId),
+        eq(homeTaskRecommendations.orgId, scope.orgId),
+        eq(homeTaskRecommendations.agentId, scope.agentId),
+      ),
+    )
+    .returning({ agentId: homeTaskRecommendations.agentId });
+  return deleted.length > 0;
+}
+
+/** Refresh one claimed cache scope. Only the cron calls this function. */
+async function refreshHomeTaskRecommendationScope(
   db: Db,
   scope: HomeTaskScope,
   signal: AbortSignal,
-): Promise<HomeTaskRecommendationsResponse> {
+): Promise<HomeTaskRefreshOutcome> {
   const at = nowDate();
   const cached = await readCachedRow(db, scope);
   signal.throwIfAborted();
-  const visibleCached = await visibleCachedRow(db, scope, cached, signal);
-  signal.throwIfAborted();
-  if (!isLlmConfigured()) {
-    return cachedResponse(visibleCached, at);
+  if (!cached || cached.nextRefreshAt.getTime() > at.getTime()) {
+    return "skipped";
   }
-  if (cached && cached.nextRefreshAt.getTime() > at.getTime()) {
-    return cachedResponse(visibleCached, at);
-  }
-
   const claimId = await claimRefresh(db, scope, at);
   signal.throwIfAborted();
   if (claimId === null) {
-    // Another instance is generating. Serving what is already cached keeps this
-    // request cheap and keeps the page from flickering to empty mid-refresh.
-    return cachedResponse(visibleCached, at);
+    return "skipped";
   }
 
   const attempt = await settleIncludingAbort(
@@ -696,9 +769,7 @@ export async function readHomeTaskRecommendations(
       if (isHomeTaskEvidenceEmpty(evidence)) {
         return { kind: "no-evidence" as const, evidence };
       }
-      if (cached?.inputDigest === evidence.digest) {
-        // Nothing the cards were built from has moved, so the same cards are
-        // still the right answer and the provider is not paid to confirm it.
+      if (cached.inputDigest === evidence.digest) {
         return { kind: "unchanged" as const, evidence };
       }
       const language = await memberLanguage(db, scope);
@@ -717,23 +788,11 @@ export async function readHomeTaskRecommendations(
     if (signal.aborted && attempt.error === signal.reason) {
       throw attempt.error;
     }
-    return cachedResponse(visibleCached, at);
+    return "failed";
   }
 
   const result = attempt.value;
   const generatedAt = nowDate();
-  if (result.kind === "generated" && result.entries !== undefined) {
-    await commitEntries(db, scope, claimId, {
-      entries: result.entries,
-      inputDigest: result.evidence.digest,
-      generatedAt,
-    });
-    return response(
-      result.entries,
-      generatedAt,
-      HOME_TASK_RECOMMENDATION_REFRESH_MS,
-    );
-  }
   if (result.kind === "unchanged") {
     await releaseClaim(
       db,
@@ -741,20 +800,154 @@ export async function readHomeTaskRecommendations(
       claimId,
       new Date(generatedAt.getTime() + HOME_TASK_RECOMMENDATION_REFRESH_MS),
     );
-    return response(
-      cached?.entries ?? [],
-      cached?.generatedAt ?? null,
-      HOME_TASK_RECOMMENDATION_REFRESH_MS,
-    );
+    return "unchanged";
   }
-  // No evidence, or a generation that produced nothing usable. Either way the
-  // member has no cards until their own activity moves.
-  await commitEntries(db, scope, claimId, {
-    entries: [],
+  const committed = await commitEntries(db, scope, claimId, {
+    entries:
+      result.kind === "generated" && result.entries !== undefined
+        ? result.entries
+        : [],
     inputDigest: result.evidence.digest,
     generatedAt,
   });
-  return response([], generatedAt, HOME_TASK_RECOMMENDATION_REFRESH_MS);
+  return committed ? "refreshed" : "skipped";
+}
+
+export interface HomeTaskRecommendationCronResult {
+  readonly success: true;
+  readonly scanned: number;
+  readonly refreshed: number;
+  readonly unchanged: number;
+  readonly removed: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+/**
+ * Refresh due caches recently requested by a home page and notify that member.
+ * The optional scope exists only so route-bound integration tests can isolate
+ * one owner while exercising the production cron implementation.
+ */
+export async function refreshDueHomeTaskRecommendations(
+  db: Db,
+  signal: AbortSignal,
+  onlyScope?: HomeTaskScope,
+): Promise<HomeTaskRecommendationCronResult> {
+  if (!isLlmConfigured()) {
+    return {
+      success: true,
+      scanned: 0,
+      refreshed: 0,
+      unchanged: 0,
+      removed: 0,
+      skipped: 0,
+      failed: 0,
+    };
+  }
+  const at = nowDate();
+  const activeAfter = new Date(at.getTime() - ACTIVE_REQUEST_WINDOW_MS);
+  const scopes = await db
+    .select({
+      userId: homeTaskRecommendations.userId,
+      orgId: homeTaskRecommendations.orgId,
+      agentId: homeTaskRecommendations.agentId,
+    })
+    .from(homeTaskRecommendations)
+    .where(
+      and(
+        lte(homeTaskRecommendations.nextRefreshAt, at),
+        gte(homeTaskRecommendations.lastRequestedAt, activeAfter),
+        or(
+          isNull(homeTaskRecommendations.claimExpiresAt),
+          lte(homeTaskRecommendations.claimExpiresAt, at),
+        ),
+        onlyScope === undefined
+          ? undefined
+          : and(
+              eq(homeTaskRecommendations.userId, onlyScope.userId),
+              eq(homeTaskRecommendations.orgId, onlyScope.orgId),
+              eq(homeTaskRecommendations.agentId, onlyScope.agentId),
+            ),
+      ),
+    )
+    .orderBy(asc(homeTaskRecommendations.nextRefreshAt))
+    .limit(CRON_BATCH_LIMIT);
+  signal.throwIfAborted();
+
+  const outcomes = await Promise.all(
+    scopes.map(async (scope): Promise<HomeTaskRefreshOutcome> => {
+      const attempt = await settleIncludingAbort(
+        (async (): Promise<HomeTaskRefreshOutcome> => {
+          if (!(await homeTaskScopeAvailable(db, scope))) {
+            const removed = await removeHomeTaskScope(db, scope);
+            if (removed) {
+              await publishHomeTaskRecommendationsChangedSafely(scope, {
+                agentId: scope.agentId,
+              });
+            }
+            return removed ? "removed" : "skipped";
+          }
+          const outcome = await refreshHomeTaskRecommendationScope(
+            db,
+            scope,
+            signal,
+          );
+          if (outcome === "refreshed" || outcome === "unchanged") {
+            // An unchanged refresh still advances the server cadence. The push
+            // lets an open page re-read and renew its demand lease without a
+            // browser timer; a closed page has no subscriber and naturally
+            // ages out of cron work.
+            await publishHomeTaskRecommendationsChangedSafely(scope, {
+              agentId: scope.agentId,
+            });
+          }
+          return outcome;
+        })(),
+      );
+      if (!attempt.ok) {
+        if (signal.aborted && attempt.error === signal.reason) {
+          throw attempt.error;
+        }
+        return "failed";
+      }
+      return attempt.value;
+    }),
+  );
+  signal.throwIfAborted();
+
+  const count = (outcome: HomeTaskRefreshOutcome): number => {
+    return outcomes.filter((value) => {
+      return value === outcome;
+    }).length;
+  };
+  return {
+    success: true,
+    scanned: scopes.length,
+    refreshed: count("refreshed"),
+    unchanged: count("unchanged"),
+    removed: count("removed"),
+    skipped: count("skipped"),
+    failed: count("failed"),
+  };
+}
+
+/**
+ * Read cached cards and register a bounded refresh lease. No model or connector
+ * call is made from the user request; the authenticated cron owns generation.
+ */
+export async function readHomeTaskRecommendations(
+  db: Db,
+  scope: HomeTaskScope,
+  signal: AbortSignal,
+): Promise<HomeTaskRecommendationsResponse> {
+  const at = nowDate();
+  await registerHomeTaskRecommendationDemand(db, scope, at);
+  signal.throwIfAborted();
+  const cached = await readCachedRow(db, scope);
+  signal.throwIfAborted();
+  const visibleCached = await visibleCachedRow(db, scope, cached, signal);
+  signal.throwIfAborted();
+  return cachedResponse(visibleCached, at);
 }
 
 /** The answer for a caller the feature is not enabled for. */

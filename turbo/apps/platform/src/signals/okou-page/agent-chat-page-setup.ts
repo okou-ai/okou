@@ -96,9 +96,9 @@ export const setupAgentChatPage$ = command(
         }),
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
-    // The recommendation refresh belongs to the page, not to the card that
-    // renders it: the loop must stop when the route does, and a component that
-    // unmounts while the set is empty would otherwise never restart it.
+    // The server refreshes recommendations by cron and announces changes over
+    // Ably. Keep the passive subscription page-owned so it stops with the route
+    // even when the card section currently renders nothing.
     set(subscribeHomeTaskRecommendations$, signal);
 
     await set(checkUnifiedSettingsParam$, signal);

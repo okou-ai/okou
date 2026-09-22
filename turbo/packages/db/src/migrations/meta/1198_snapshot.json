@@ -1,5 +1,5 @@
 {
-  "id": "9a677769-bc73-4e44-86cc-c60d23f61110",
+  "id": "ce4c514e-6c20-4caa-8212-09187df5d0b3",
   "prevId": "d2b1a6cb-caed-4735-a6f8-fa0cce9c4ac1",
   "version": "7",
   "dialect": "postgresql",
@@ -16991,6 +16991,13 @@
           "notNull": true,
           "default": "now()"
         },
+        "last_requested_at": {
+          "name": "last_requested_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
         "claim_id": {
           "name": "claim_id",
           "type": "uuid",
@@ -17017,6 +17024,12 @@
           "columns": [
             {
               "expression": "next_refresh_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_requested_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

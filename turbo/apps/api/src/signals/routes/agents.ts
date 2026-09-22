@@ -19,6 +19,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
+import { publishHomeTaskRecommendationsChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
@@ -892,6 +893,11 @@ const updateAgentUserConnectorsInner$ = command(
     }
 
     const enabledConnectorSlugs = [...updated.enabledConnectorSlugs];
+    await publishHomeTaskRecommendationsChangedSafely(
+      { userId: auth.userId, orgId: auth.orgId },
+      { agentId: params.id },
+    );
+    signal.throwIfAborted();
     return {
       status: 200 as const,
       body: {

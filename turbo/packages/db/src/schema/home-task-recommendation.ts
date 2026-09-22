@@ -22,9 +22,9 @@ import { agents } from "./agent";
  * replaces `entries` wholesale and nothing else references it, which is why the
  * table has no surrogate key and no history.
  *
- * `nextRefreshAt` is the only refresh authority. Two API instances serving the
- * same member both read it, and the claim columns decide which one is allowed
- * to spend a provider call; the loser serves the cached entries unchanged.
+ * `nextRefreshAt` and `lastRequestedAt` are the refresh authorities. Overlapping
+ * cron invocations may select the same active row, but the claim columns decide
+ * which one may spend a provider call; every user request only reads the cache.
  */
 export const homeTaskRecommendations = pgTable(
   "home_task_recommendations",
@@ -55,6 +55,12 @@ export const homeTaskRecommendations = pgTable(
      */
     inputDigest: text("input_digest"),
     nextRefreshAt: timestamp("next_refresh_at").notNull().defaultNow(),
+    /**
+     * Last time a home page asked to display this Agent's cards. The cron only
+     * refreshes recently requested scopes, so one visit cannot create an
+     * unbounded background workload.
+     */
+    lastRequestedAt: timestamp("last_requested_at").notNull().defaultNow(),
     claimId: uuid("claim_id"),
     claimExpiresAt: timestamp("claim_expires_at"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -62,7 +68,10 @@ export const homeTaskRecommendations = pgTable(
   (table) => {
     return [
       primaryKey({ columns: [table.userId, table.orgId, table.agentId] }),
-      index("home_task_recommendations_refresh_idx").on(table.nextRefreshAt),
+      index("home_task_recommendations_refresh_idx").on(
+        table.nextRefreshAt,
+        table.lastRequestedAt,
+      ),
       check(
         "home_task_recommendations_entries_bound",
         sql`jsonb_typeof(${table.entries}) = 'array' AND jsonb_array_length(${table.entries}) <= 3 AND octet_length(${table.entries}::text) <= 8192`,

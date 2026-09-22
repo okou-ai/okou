@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/cron";
 import { homeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/home-task-recommendations";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -8,7 +9,9 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { server } from "../../../mocks/server";
+import { createScopedHomeTaskRecommendationCronRoutesForTest } from "../cron-refresh-home-task-recommendations";
 import { homeTaskRecommendationRoutes } from "../home-task-recommendations";
 import {
   createConnectorBddApi,
@@ -37,7 +40,31 @@ function recommendationsClient() {
   );
 }
 
-async function connectGmailWithoutAgentGrant(
+function cronClient(scope: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+}) {
+  return setupApp({
+    context,
+    routes: createScopedHomeTaskRecommendationCronRoutesForTest(scope),
+  })(cronRefreshHomeTaskRecommendationsContract);
+}
+
+async function refresh(scope: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+}) {
+  return await accept(
+    cronClient(scope).refresh({
+      headers: { authorization: "Bearer home-task-cron-secret" },
+    }),
+    [200],
+  );
+}
+
+async function connectGmailAccount(
   actor: Parameters<typeof connectorsApi.startOauth>[0],
   agentId: string,
 ): Promise<void> {
@@ -85,9 +112,11 @@ describe("GET /api/home-task-recommendations", () => {
     ]);
     await fixture.completeChatRunOk(run.runId, claim.sandboxHeaders);
 
-    // The user has a Gmail account, but this Agent is intentionally never
-    // granted Gmail. The recommendation request must not touch Gmail.
-    await connectGmailWithoutAgentGrant(actor, agentId);
+    // OAuth associates the new account with the initiating Agent, so remove
+    // that bootstrap scope explicitly: the account stays connected while this
+    // Agent is intentionally unauthorized to read it.
+    await connectGmailAccount(actor, agentId);
+    await fixture.api.enableAgentConnectors(actor, agentId, []);
     let gmailListCalls = 0;
     let gmailDetailCalls = 0;
     server.use(
@@ -116,6 +145,7 @@ describe("GET /api/home-task-recommendations", () => {
     let textCalls = 0;
     let decisionCalls = 0;
     mockOptionalEnv("OPENROUTER_API_KEY", "home-task-openrouter-key");
+    mockOptionalEnv("CRON_SECRET", "home-task-cron-secret");
     server.use(
       http.post(OPENROUTER_CHAT_URL, async ({ request }) => {
         const body: unknown = await request.json();
@@ -195,6 +225,37 @@ describe("GET /api/home-task-recommendations", () => {
       [FeatureSwitchKey.HomeTaskRecommendations]: true,
     });
 
+    const initial = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId },
+      }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({
+      status: "unavailable",
+      recommendations: [],
+    });
+    expect(textCalls).toBe(0);
+    expect(decisionCalls).toBe(0);
+
+    context.mocks.ably.publish.mockClear();
+    const cronResult = await refresh({
+      userId: actor.userId,
+      orgId: actor.orgId,
+      agentId,
+    });
+    expect(cronResult.body).toMatchObject({
+      success: true,
+      scanned: 1,
+      refreshed: 1,
+    });
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "homeTaskRecommendationsChanged",
+      { agentId },
+    );
+
     const generated = await accept(
       recommendationsClient().list({
         headers: fixture.sessionHeaders(actor),
@@ -230,6 +291,23 @@ describe("GET /api/home-task-recommendations", () => {
       displayName: "Empty Agent",
       visibility: "private",
     });
+    const isolatedInitial = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId: emptyAgent.agentId },
+      }),
+      [200],
+    );
+    expect(isolatedInitial.body).toMatchObject({
+      status: "unavailable",
+      recommendations: [],
+    });
+    const isolatedCron = await refresh({
+      userId: actor.userId,
+      orgId: actor.orgId,
+      agentId: emptyAgent.agentId,
+    });
+    expect(isolatedCron.body).toMatchObject({ refreshed: 1 });
     const isolated = await accept(
       recommendationsClient().list({
         headers: fixture.sessionHeaders(actor),
@@ -257,6 +335,23 @@ describe("GET /api/home-task-recommendations", () => {
       permission: "messages.detail",
       action: "allow",
     });
+    const gmailInitial = await accept(
+      recommendationsClient().list({
+        headers: fixture.sessionHeaders(actor),
+        query: { agentId: gmailAgent.agentId },
+      }),
+      [200],
+    );
+    expect(gmailInitial.body).toMatchObject({
+      status: "unavailable",
+      recommendations: [],
+    });
+    const gmailCron = await refresh({
+      userId: actor.userId,
+      orgId: actor.orgId,
+      agentId: gmailAgent.agentId,
+    });
+    expect(gmailCron.body).toMatchObject({ refreshed: 1 });
     const gmailGenerated = await accept(
       recommendationsClient().list({
         headers: fixture.sessionHeaders(actor),
@@ -282,8 +377,15 @@ describe("GET /api/home-task-recommendations", () => {
     expect(decisionCalls).toBe(2);
 
     // The cached card is still inside its refresh window. Revoking this Agent's
-    // Gmail scope must hide it immediately without another provider/Gmail read.
+    // Gmail scope publishes a passive invalidation and the next cache read must
+    // hide it without another provider/Gmail read.
+    context.mocks.ably.publish.mockClear();
     await fixture.api.enableAgentConnectors(actor, gmailAgent.agentId, []);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "homeTaskRecommendationsChanged",
+      { agentId: gmailAgent.agentId },
+    );
     const revoked = await accept(
       recommendationsClient().list({
         headers: fixture.sessionHeaders(actor),

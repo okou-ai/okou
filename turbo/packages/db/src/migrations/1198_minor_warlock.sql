@@ -6,6 +6,7 @@ CREATE TABLE "home_task_recommendations" (
 	"generated_at" timestamp,
 	"input_digest" text,
 	"next_refresh_at" timestamp DEFAULT now() NOT NULL,
+	"last_requested_at" timestamp DEFAULT now() NOT NULL,
 	"claim_id" uuid,
 	"claim_expires_at" timestamp,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
@@ -14,4 +15,4 @@ CREATE TABLE "home_task_recommendations" (
 );
 --> statement-breakpoint
 ALTER TABLE "home_task_recommendations" ADD CONSTRAINT "home_task_recommendations_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "home_task_recommendations_refresh_idx" ON "home_task_recommendations" USING btree ("next_refresh_at");
+CREATE INDEX "home_task_recommendations_refresh_idx" ON "home_task_recommendations" USING btree ("next_refresh_at","last_requested_at");

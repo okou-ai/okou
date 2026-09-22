@@ -1,21 +1,23 @@
 import { command, computed, state } from "ccstate";
 import {
-  HOME_TASK_RECOMMENDATION_REFRESH_MS,
   homeTaskRecommendationsContract,
   homeTaskRecommendationsResponseSchema,
   type HomeTaskRecommendation,
 } from "@okouai/api-contracts/contracts/home-task-recommendations";
+import {
+  connectorChangedPayloadSchema,
+  homeTaskRecommendationsChangedPayloadSchema,
+} from "@okouai/api-contracts/contracts/realtime";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { currentChatAgentId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { setAblyInvalidationLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { setLoop } from "../utils.ts";
 import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 
-const MIN_POLL_INTERVAL_MS = 60_000;
 const reloadVersion$ = state(0);
 
 export const homeTaskRecommendationsEnabled$ = computed((get): boolean => {
@@ -56,21 +58,78 @@ export const homeTaskRecommendations$ = computed(
   },
 );
 
-export const subscribeHomeTaskRecommendations$ = command(
-  ({ get, set }, signal: AbortSignal): void => {
-    if (!get(homeTaskRecommendationsEnabled$)) {
-      return;
+const invalidateHomeTaskRecommendations$ = command(({ set }): void => {
+  set(reloadVersion$, (version) => {
+    return version + 1;
+  });
+});
+
+const reloadHomeTaskRecommendations$ = command(({ set }): boolean => {
+  set(invalidateHomeTaskRecommendations$);
+  return false;
+});
+
+const reloadHomeTaskRecommendationsFromPush$ = command(
+  async (
+    { get, set },
+    payload: unknown,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const parsed =
+      homeTaskRecommendationsChangedPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return false;
     }
-    setLoop(
-      () => {
-        set(reloadVersion$, (version) => {
-          return version + 1;
-        });
-        return false;
+    const currentAgentId = await get(currentChatAgentId$);
+    signal.throwIfAborted();
+    if (currentAgentId === parsed.data.agentId) {
+      set(invalidateHomeTaskRecommendations$);
+    }
+    return false;
+  },
+);
+
+const reloadHomeTaskRecommendationsAfterConnectorChange$ = command(
+  ({ set }, payload: unknown): boolean => {
+    const parsed = connectorChangedPayloadSchema.safeParse(payload);
+    if (parsed.success && parsed.data.connectorSlug === "gmail") {
+      set(invalidateHomeTaskRecommendations$);
+    }
+    return false;
+  },
+);
+
+/**
+ * Follow server-owned cron refreshes. The subscription's initial reload closes
+ * the read/attach race; there is deliberately no browser timer or polling.
+ */
+export const subscribeHomeTaskRecommendations$ = command(
+  ({ set }, signal: AbortSignal): void => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        scope: "credential",
+        topic: "homeTaskRecommendationsChanged",
+        loopCommand$: reloadHomeTaskRecommendationsFromPush$,
+        initializeCommand$: reloadHomeTaskRecommendations$,
       },
-      Math.max(MIN_POLL_INTERVAL_MS, HOME_TASK_RECOMMENDATION_REFRESH_MS),
       signal,
-      { testIntervalMs: 100 },
+    );
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "connector:changed",
+        loopCommand$: reloadHomeTaskRecommendationsAfterConnectorChange$,
+      },
+      signal,
+    );
+    set(
+      setAblyInvalidationLoop$,
+      {
+        topic: "connectorPermissionUpdated",
+        invalidations: [invalidateHomeTaskRecommendations$],
+      },
+      signal,
     );
   },
 );

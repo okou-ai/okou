@@ -74,7 +74,33 @@ test("A new-chat recommendation prefills without sending", async () => {
     featureSwitches: { [FeatureSwitchKey.HomeTaskRecommendations]: true },
   });
 
-  await user.click(await screen.findByText("Prepare the launch follow-up"));
+  await screen.findByText("Prepare the launch follow-up");
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("homeTaskRecommendationsChanged"),
+    ).toBeTruthy();
+  });
+  const requestsBeforePush = requestedAgentIds.length;
+  context.mocks.ably.trigger("homeTaskRecommendationsChanged", {
+    agentId: AGENT_ID,
+  });
+  await waitFor(() => {
+    expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforePush);
+  });
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("connectorPermissionUpdated"),
+    ).toBeTruthy();
+  });
+  const requestsBeforePermissionPush = requestedAgentIds.length;
+  context.mocks.ably.trigger("connectorPermissionUpdated");
+  await waitFor(() => {
+    expect(requestedAgentIds.length).toBeGreaterThan(
+      requestsBeforePermissionPush,
+    );
+  });
+
+  await user.click(screen.getByText("Prepare the launch follow-up"));
 
   await waitFor(() => {
     expect(composer()).toHaveTextContent(
