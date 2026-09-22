@@ -1105,34 +1105,26 @@ function WebsiteTemplateCard({
   };
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.previewWebsite;
-        },
-        {
-          title: item.title,
-        },
-      )}
-      onClick={preview}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          preview();
-        }
-      }}
-      className={cn(
-        TEMPLATE_TILE_WRAPPER,
-        "cursor-zoom-in focus-visible:outline-none",
-      )}
-    >
+    // Keep the full-card preview below the independent Use action locally.
+    <div className={cn(TEMPLATE_TILE_WRAPPER, "isolate cursor-zoom-in")}>
+      <button
+        type="button"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.previewWebsite;
+          },
+          {
+            title: item.title,
+          },
+        )}
+        onClick={preview}
+        className="absolute inset-0 z-10 cursor-zoom-in rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      />
       <div
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "aspect-[16/9] group-focus-visible/tile:ring-1 group-focus-visible/tile:ring-ring",
+          "aspect-[16/9]",
           selected && TEMPLATE_TILE_RING_SELECTED,
         )}
       >
@@ -1160,7 +1152,12 @@ function WebsiteTemplateCard({
           draggable={false}
           className="pointer-events-none h-full w-full bg-background object-cover"
         />
-        <div className={TEMPLATE_TILE_SCRIM} />
+        <div
+          className={cn(
+            TEMPLATE_TILE_SCRIM,
+            "group-has-[:focus-visible]/tile:opacity-100",
+          )}
+        />
         {selected ? (
           <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Check size={14} />
@@ -1177,11 +1174,13 @@ function WebsiteTemplateCard({
             },
           )}
           aria-pressed={selected}
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             onSelect(item);
           }}
-          className={cn(TEMPLATE_TILE_USE, "cursor-pointer")}
+          className={cn(
+            TEMPLATE_TILE_USE,
+            "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+          )}
         >
           {t(($) => {
             return $.artifacts.templates.use;
