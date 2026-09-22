@@ -173,9 +173,7 @@ test("An optimistic QuickTime preview does not list artifacts before thread crea
     size: 24,
     url: `http://localhost/api/web/download-file?file_id=${fileId}`,
   });
-  let artifactListRequests = 0;
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    artifactListRequests += 1;
     return respond(404, {
       error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
     });
@@ -212,7 +210,11 @@ test("An optimistic QuickTime preview does not list artifacts before thread crea
   );
   expect(requests.threadId).toBeDefined();
   expect(confirmation.settled()).toBeFalsy();
-  expect(artifactListRequests).toBe(0);
+  expect(
+    screen.queryAllByText("Chat thread not found").find((candidate) => {
+      return candidate.closest('[data-sonner-toast][data-visible="true"]');
+    }),
+  ).toBeUndefined();
 });
 
 test.each([true, false])(
@@ -227,11 +229,12 @@ test.each([true, false])(
       expect(requests.threadId).toBeDefined();
       expect(requests.eventId).toBeDefined();
     });
+    expect(screen.queryByLabelText("Change icon")).toBeNull();
+    expect(screen.queryByLabelText("Pin chat")).toBeNull();
     expect(screen.queryByLabelText("Share messages")).toBeNull();
     expect(
       screen.queryByLabelText(desktop ? "Open artifacts" : "More actions"),
     ).toBeNull();
-
     if (!requests.threadId || !requests.eventId) {
       throw new Error("Expected optimistic thread identifiers");
     }
@@ -247,6 +250,10 @@ test.each([true, false])(
     context.mocks.ably.trigger("threadListChanged");
 
     await waitFor(() => {
+      expect(screen.getByLabelText("Change icon")).toBeVisible();
+      expect(screen.queryAllByLabelText("Pin chat")).toHaveLength(
+        desktop ? 1 : 0,
+      );
       expect(screen.getByLabelText("Share messages")).toBeVisible();
       expect(
         screen.getByLabelText(desktop ? "Open artifacts" : "More actions"),

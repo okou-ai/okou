@@ -654,6 +654,7 @@ export function ChatThreadHeaderTitle({
   const threadTitle = useGet(thread.threadTitle$)?.trim() ?? "";
   const threadTitleEmoji = useGet(thread.threadTitleEmoji$);
   const threadTitleText = useGet(thread.threadTitleText$);
+  const optimisticCreateUnsettled = useGet(thread.optimisticCreateUnsettled$);
   const openRenameChatThreadDialog = useSet(
     openRenameChatThreadDialogForThreadId$,
   );
@@ -669,16 +670,20 @@ export function ChatThreadHeaderTitle({
 
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <ChatThreadEmojiMenuButton
-        threadId={thread.threadId}
-        title={threadTitle}
-        emoji={threadTitleEmoji}
-      />
+      {!optimisticCreateUnsettled && (
+        <ChatThreadEmojiMenuButton
+          threadId={thread.threadId}
+          title={threadTitle}
+          emoji={threadTitleEmoji}
+        />
+      )}
       {threadTitleText && (
         <span
           className="min-w-0 truncate text-sm font-medium text-foreground"
           data-testid="chat-thread-header-title"
-          onDoubleClick={openRenameDialog}
+          onDoubleClick={
+            optimisticCreateUnsettled ? undefined : openRenameDialog
+          }
         >
           {threadTitleText}
         </span>
@@ -750,7 +755,9 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       {headerActionsEnabled ? (
         <div className="flex min-w-0 items-center gap-2 pr-3">
           <ChatThreadHeaderTitle thread={thread} />
-          <ChatThreadPinButton thread={thread} />
+          <SettledChatThreadActions thread={thread}>
+            <ChatThreadPinButton thread={thread} />
+          </SettledChatThreadActions>
         </div>
       ) : (
         <ChatThreadHeaderTitle thread={thread} />

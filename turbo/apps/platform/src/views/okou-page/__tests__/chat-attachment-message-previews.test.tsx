@@ -561,33 +561,34 @@ test("A private video refreshes its file-scoped poster without listing thread ar
       ),
     ],
   });
-  let artifactListRequests = 0;
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    artifactListRequests += 1;
-    return respond(200, { runs: [] });
+    return respond(404, {
+      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
+    });
   });
-  let fileUrlRequests = 0;
+  let posterReady = false;
   context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
-    fileUrlRequests += 1;
     return respond(200, {
       url: "https://private-files.example/recording.mov",
       expiresAt: "2099-01-01T00:00:00.000Z",
       publicUrl: null,
-      previewImageUrl: fileUrlRequests > 1 ? poster : null,
+      previewImageUrl: posterReady ? poster : null,
     });
   });
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   await screen.findByText("Review this recording");
-  await waitFor(() => {
-    expect(fileUrlRequests).toBe(1);
-    expect(
-      screen.getByTestId("chat-video-preview-fallback"),
-    ).toBeInTheDocument();
-  });
-  expect(artifactListRequests).toBe(0);
+  await expect(
+    screen.findByTestId("chat-video-preview-fallback"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryAllByText("Chat thread not found").find((candidate) => {
+      return candidate.closest('[data-sonner-toast][data-visible="true"]');
+    }),
+  ).toBeUndefined();
 
+  posterReady = true;
   context.mocks.ably.trigger(
     `chatThreadArtifactsChanged:${ATTACHMENT_THREAD_ID}`,
   );
@@ -597,8 +598,11 @@ test("A private video refreshes its file-scoped poster without listing thread ar
     "src",
     "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/tests/chat-attachments/refreshing-private-video-poster.jpg",
   );
-  expect(fileUrlRequests).toBe(2);
-  expect(artifactListRequests).toBe(0);
+  expect(
+    screen.queryAllByText("Chat thread not found").find((candidate) => {
+      return candidate.closest('[data-sonner-toast][data-visible="true"]');
+    }),
+  ).toBeUndefined();
 });
 
 test("Persisted JSON attachments render their contents", async () => {

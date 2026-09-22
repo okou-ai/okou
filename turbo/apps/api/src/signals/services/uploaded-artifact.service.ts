@@ -1,10 +1,13 @@
 import { command, computed } from "ccstate";
-import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import {
+  RUN_UPLOADED_FILE_SOURCES,
+  runUploadedFiles,
+} from "@okouai/db/schema/run-uploaded-file";
 
 import { env } from "../../lib/env";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -82,7 +85,12 @@ export function uploadedArtifactPreviewImageUrl(
   args: Pick<UploadedArtifactIdentity, "id" | "userId" | "orgId">,
 ) {
   return computed(async (get): Promise<string | null> => {
-    const externalIdMatches = eq(runUploadedFiles.externalId, args.id);
+    // Keep the external-ID lookup on the existing (source, external_id)
+    // index; source is a closed writer-owned set.
+    const externalIdMatches = and(
+      inArray(runUploadedFiles.source, [...RUN_UPLOADED_FILE_SOURCES]),
+      eq(runUploadedFiles.externalId, args.id),
+    );
     const identityMatches = z.uuid().safeParse(args.id).success
       ? or(eq(runUploadedFiles.id, args.id), externalIdMatches)
       : externalIdMatches;
