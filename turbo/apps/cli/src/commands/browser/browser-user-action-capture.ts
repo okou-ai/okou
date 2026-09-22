@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 import { z } from "zod";
@@ -11,6 +10,30 @@ const CDP_COMMAND_TIMEOUT_MS = 5_000;
 const CDP_CLEANUP_TIMEOUT_MS = 1_000;
 const CDP_MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_PAGE_TARGETS = 50;
+const PAGE_MARKER_KEY = "__okou_browser_user_action_page_marker";
+const FIELD_MARKER_KEY = "__okou_browser_user_action_field_marker";
+const VERIFY_MARKER_KEY = "__okou_browser_user_action_verify_marker";
+
+const SET_PAGE_MARKER_SCRIPT =
+  '(()=>{const value=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");Object.defineProperty(globalThis,"__okou_browser_user_action_page_marker",{value,configurable:true,enumerable:false});return value})()';
+const SET_FIELD_MARKER_SCRIPT =
+  '(()=>{const element=document.activeElement;if(!element||element===document.body||element===document.documentElement)return null;const value=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");Object.defineProperty(element,"__okou_browser_user_action_field_marker",{value,configurable:true,enumerable:false});return value})()';
+const SET_VERIFY_MARKER_SCRIPT =
+  '(()=>{const value=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");Object.defineProperty(globalThis,"__okou_browser_user_action_verify_marker",{value,configurable:true,enumerable:false});return value})()';
+const DELETE_PAGE_MARKER_SCRIPT =
+  'delete globalThis["__okou_browser_user_action_page_marker"]';
+
+const GLOBAL_OBJECT_EXPRESSION = "globalThis";
+const HAS_MARKER_FUNCTION = "function(key,value){return this[key]===value}";
+const MARKED_ACTIVE_ELEMENT_FUNCTION =
+  "function(key,value){const element=document.activeElement;return element&&element[key]===value?element:null}";
+const QUERY_SELECTOR_FUNCTION =
+  "function(selector){const result=document.querySelectorAll(selector);return result.length===1?result[0]:result.length}";
+const QUERY_XPATH_FUNCTION =
+  "function(xpath){const result=document.evaluate(xpath,document,null,XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,null);return result.snapshotLength===1?result.snapshotItem(0):result.snapshotLength}";
+const DELETE_MARKER_FUNCTION =
+  "function(key){delete this[key];const element=document.activeElement;if(element)delete element[key]}";
+const DELETE_OBJECT_MARKER_FUNCTION = "function(key){return delete this[key]}";
 
 const agentBrowserResponseSchema = z
   .object({
@@ -23,6 +46,13 @@ const agentBrowserCdpResponseSchema = z
   .object({
     success: z.literal(true),
     data: z.object({ cdpUrl: z.string().min(1) }).passthrough(),
+  })
+  .passthrough();
+
+const agentBrowserEvalStringResponseSchema = z
+  .object({
+    success: z.literal(true),
+    data: z.object({ result: z.string().min(1) }).passthrough(),
   })
   .passthrough();
 
@@ -82,12 +112,18 @@ interface PendingCommand {
 interface AttachedPage {
   readonly targetId: string;
   readonly sessionId: string;
+  readonly globalObjectId: string;
 }
 
 interface Marker {
-  readonly key: string;
+  readonly key:
+    | typeof PAGE_MARKER_KEY
+    | typeof FIELD_MARKER_KEY
+    | typeof VERIFY_MARKER_KEY;
   readonly value: string;
 }
+
+type MarkerKind = "page" | "field" | "verify";
 
 function browserCaptureError(message: string): Error {
   return new Error(message);
@@ -181,44 +217,35 @@ function agentBrowserCdpUrl(sessionName: string, deadline: number): string {
   return url.toString();
 }
 
-function definePropertyExpression(
-  owner: "globalThis" | "document.activeElement",
-  marker: Marker,
-): string {
-  const key = JSON.stringify(marker.key);
-  const value = JSON.stringify(marker.value);
-  if (owner === "document.activeElement") {
-    return `(()=>{const element=document.activeElement;if(!element||element===document.body||element===document.documentElement)return false;return Object.defineProperty(element,${key},{value:${value},configurable:true,enumerable:false}),true})()`;
+function createAgentBrowserMarker(
+  sessionName: string,
+  kind: MarkerKind,
+  deadline: number,
+): Marker {
+  const definition = markerDefinition(kind);
+  const response = agentBrowserEvalStringResponseSchema.safeParse(
+    runAgentBrowser(sessionName, ["eval", definition.script], deadline),
+  );
+  if (!response.success) {
+    throw browserCaptureError(
+      "agent-browser could not mark the requested Browser target",
+    );
   }
-  return `(()=>{Object.defineProperty(globalThis,${key},{value:${value},configurable:true,enumerable:false});return true})()`;
+  return { key: definition.key, value: response.data.data.result };
 }
 
-function deleteGlobalPropertyExpression(marker: Marker): string {
-  return `delete globalThis[${JSON.stringify(marker.key)}]`;
-}
-
-function markerExpression(marker: Marker): string {
-  return `globalThis[${JSON.stringify(marker.key)}]===${JSON.stringify(marker.value)}`;
-}
-
-function markedActiveElementExpression(marker: Marker): string {
-  return `(()=>{const element=document.activeElement;return element&&element[${JSON.stringify(marker.key)}]===${JSON.stringify(marker.value)}?element:null})()`;
-}
-
-function selectorExpression(target: string): string {
-  if (target.startsWith("xpath=")) {
-    const xpath = JSON.stringify(target.slice("xpath=".length));
-    return `(()=>{const result=document.evaluate(${xpath},document,null,XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,null);return result.snapshotLength===1?result.snapshotItem(0):result.snapshotLength})()`;
+function markerDefinition(kind: MarkerKind): {
+  readonly key: Marker["key"];
+  readonly script: string;
+} {
+  switch (kind) {
+    case "page":
+      return { key: PAGE_MARKER_KEY, script: SET_PAGE_MARKER_SCRIPT };
+    case "field":
+      return { key: FIELD_MARKER_KEY, script: SET_FIELD_MARKER_SCRIPT };
+    case "verify":
+      return { key: VERIFY_MARKER_KEY, script: SET_VERIFY_MARKER_SCRIPT };
   }
-  const selector = JSON.stringify(target);
-  return `(()=>{const result=document.querySelectorAll(${selector});return result.length===1?result[0]:result.length})()`;
-}
-
-function newMarker(prefix: string): Marker {
-  return {
-    key: `__okou_${prefix}_${randomUUID().replaceAll("-", "")}`,
-    value: randomUUID(),
-  };
 }
 
 function isHttpPage(url: string): boolean {
@@ -395,6 +422,29 @@ class CdpClient {
   }
 }
 
+async function callPageFunction(
+  client: CdpClient,
+  page: AttachedPage,
+  functionDeclaration: string,
+  args: readonly unknown[],
+  returnByValue: boolean,
+  timeoutMs = CDP_COMMAND_TIMEOUT_MS,
+): Promise<unknown> {
+  return await client.send(
+    "Runtime.callFunctionOn",
+    {
+      objectId: page.globalObjectId,
+      functionDeclaration,
+      arguments: args.map((value) => {
+        return { value };
+      }),
+      returnByValue,
+    },
+    page.sessionId,
+    timeoutMs,
+  );
+}
+
 async function attachPages(
   client: CdpClient,
 ): Promise<readonly AttachedPage[]> {
@@ -425,7 +475,39 @@ async function attachPages(
       if (!parsed.success) {
         throw browserCaptureError("Could not attach to a Browser page");
       }
-      return { targetId: target.targetId, sessionId: parsed.data.sessionId };
+      const sessionId = parsed.data.sessionId;
+      try {
+        const globalObject = cdpEvaluationSchema.parse(
+          await client.send(
+            "Runtime.evaluate",
+            { expression: GLOBAL_OBJECT_EXPRESSION, returnByValue: false },
+            sessionId,
+          ),
+        );
+        if (
+          globalObject.exceptionDetails !== undefined ||
+          !globalObject.result.objectId
+        ) {
+          throw browserCaptureError("Could not inspect a Browser page");
+        }
+        return {
+          targetId: target.targetId,
+          sessionId,
+          globalObjectId: globalObject.result.objectId,
+        };
+      } catch (error) {
+        try {
+          await client.send(
+            "Target.detachFromTarget",
+            { sessionId },
+            undefined,
+            CDP_CLEANUP_TIMEOUT_MS,
+          );
+        } catch {
+          // Preserve the page-inspection failure; this detach is best-effort.
+        }
+        throw error;
+      }
     }),
   );
   return attached.flatMap((result) => {
@@ -440,10 +522,12 @@ async function pageHasMarker(
 ): Promise<boolean> {
   try {
     const evaluation = cdpEvaluationSchema.parse(
-      await client.send(
-        "Runtime.evaluate",
-        { expression: markerExpression(marker), returnByValue: true },
-        page.sessionId,
+      await callPageFunction(
+        client,
+        page,
+        HAS_MARKER_FUNCTION,
+        [marker.key, marker.value],
+        true,
       ),
     );
     return (
@@ -480,16 +564,13 @@ async function findMarkedPage(
 async function evaluatedObjectId(
   client: CdpClient,
   page: AttachedPage,
-  expression: string,
+  functionDeclaration: string,
+  args: readonly unknown[],
 ): Promise<string> {
   let evaluation: z.infer<typeof cdpEvaluationSchema>;
   try {
     evaluation = cdpEvaluationSchema.parse(
-      await client.send(
-        "Runtime.evaluate",
-        { expression, returnByValue: false },
-        page.sessionId,
-      ),
+      await callPageFunction(client, page, functionDeclaration, args, false),
     );
   } catch {
     throw browserCaptureError(
@@ -541,13 +622,12 @@ async function cleanupMarker(
 ): Promise<void> {
   await Promise.allSettled(
     pages.map(async (page) => {
-      await client.send(
-        "Runtime.evaluate",
-        {
-          expression: `(()=>{delete globalThis[${JSON.stringify(marker.key)}];const element=document.activeElement;if(element)delete element[${JSON.stringify(marker.key)}]})()`,
-          returnByValue: true,
-        },
-        page.sessionId,
+      await callPageFunction(
+        client,
+        page,
+        DELETE_MARKER_FUNCTION,
+        [marker.key],
+        true,
         CDP_CLEANUP_TIMEOUT_MS,
       );
     }),
@@ -565,7 +645,7 @@ async function cleanupObjectMarker(
       "Runtime.callFunctionOn",
       {
         objectId,
-        functionDeclaration: "function(key){return delete this[key]}",
+        functionDeclaration: DELETE_OBJECT_MARKER_FUNCTION,
         arguments: [{ value: marker.key }],
         returnByValue: true,
       },
@@ -615,26 +695,25 @@ async function captureRef(
   target: string,
   deadline: number,
 ): Promise<number> {
-  const marker = newMarker("field");
+  let marker: Marker | null = null;
   let objectId: string | null = null;
   try {
     runAgentBrowser(sessionName, ["focus", normalizeRef(target)], deadline);
-    runAgentBrowser(
-      sessionName,
-      ["eval", definePropertyExpression("document.activeElement", marker)],
-      deadline,
-    );
+    marker = createAgentBrowserMarker(sessionName, "field", deadline);
     objectId = await evaluatedObjectId(
       client,
       page,
-      markedActiveElementExpression(marker),
+      MARKED_ACTIVE_ELEMENT_FUNCTION,
+      [marker.key, marker.value],
     );
     return await describeInputNode(client, page, objectId);
   } finally {
-    if (objectId) {
+    if (objectId && marker) {
       await cleanupObjectMarker(client, page, objectId, marker);
     }
-    await cleanupMarker(client, pages, marker);
+    if (marker) {
+      await cleanupMarker(client, pages, marker);
+    }
   }
 }
 
@@ -643,10 +722,12 @@ async function captureSelector(
   page: AttachedPage,
   target: string,
 ): Promise<number> {
+  const isXpath = target.startsWith("xpath=");
   const objectId = await evaluatedObjectId(
     client,
     page,
-    selectorExpression(target),
+    isXpath ? QUERY_XPATH_FUNCTION : QUERY_SELECTOR_FUNCTION,
+    [isXpath ? target.slice("xpath=".length) : target],
   );
   return await describeInputNode(client, page, objectId);
 }
@@ -661,15 +742,11 @@ export async function captureBrowserInputTargets(
   targets: readonly string[],
 ): Promise<BrowserInputCapture> {
   const deadline = Date.now() + BROWSER_CAPTURE_TIMEOUT_MS;
-  const pageMarker = newMarker("page");
+  let pageMarker: Marker | null = null;
   let client: CdpClient | null = null;
   let pages: readonly AttachedPage[] = [];
   try {
-    runAgentBrowser(
-      sessionName,
-      ["eval", definePropertyExpression("globalThis", pageMarker)],
-      deadline,
-    );
+    pageMarker = createAgentBrowserMarker(sessionName, "page", deadline);
     client = await CdpClient.connect(
       agentBrowserCdpUrl(sessionName, deadline),
       deadline,
@@ -684,13 +761,12 @@ export async function captureBrowserInputTargets(
           : await captureSelector(client, page, target),
       );
     }
-    const finalMarker = newMarker("verify");
+    const finalMarker = createAgentBrowserMarker(
+      sessionName,
+      "verify",
+      deadline,
+    );
     try {
-      runAgentBrowser(
-        sessionName,
-        ["eval", definePropertyExpression("globalThis", finalMarker)],
-        deadline,
-      );
       if (
         !(await pageHasMarker(client, page, finalMarker)) ||
         !(await pageHasMarker(client, page, pageMarker))
@@ -710,13 +786,14 @@ export async function captureBrowserInputTargets(
     return { pageTargetId: page.targetId, backendNodeIds };
   } finally {
     if (client) {
-      await cleanupMarker(client, pages, pageMarker);
+      if (pageMarker) {
+        await cleanupMarker(client, pages, pageMarker);
+      }
       await detachPages(client, pages);
       client.close();
     }
-    tryAgentBrowser(sessionName, [
-      "eval",
-      deleteGlobalPropertyExpression(pageMarker),
-    ]);
+    if (pageMarker) {
+      tryAgentBrowser(sessionName, ["eval", DELETE_PAGE_MARKER_SCRIPT]);
+    }
   }
 }

@@ -47,15 +47,15 @@ interface CdpState {
   refIndex: number;
 }
 
-function runtimeEvaluationResult(
+function runtimeCallFunctionResult(
   command: CdpCommand,
   options: CdpOptions,
   state: CdpState,
 ): unknown {
-  const expression = String(command.params.expression ?? "");
+  const functionDeclaration = String(command.params.functionDeclaration ?? "");
   if (
-    expression.includes("querySelectorAll") ||
-    expression.includes("document.evaluate")
+    functionDeclaration.includes("querySelectorAll") ||
+    functionDeclaration.includes("document.evaluate")
   ) {
     return options.selectorCount !== undefined && options.selectorCount !== 1
       ? { result: { type: "number", value: options.selectorCount } }
@@ -67,14 +67,14 @@ function runtimeEvaluationResult(
           },
         };
   }
-  if (expression.includes("?element:null")) {
+  if (functionDeclaration.includes("element&&element[key]===value")) {
     const objectId =
       options.refObjectIds?.[state.refIndex] ??
       `ref-object-${state.refIndex + 1}`;
     state.refIndex += 1;
     return { result: { type: "object", subtype: "node", objectId } };
   }
-  if (expression.includes("globalThis[") && expression.includes("===")) {
+  if (functionDeclaration.includes("this[key]===value")) {
     const value =
       options.pageMarkerResponses?.[state.pageMarkerIndex] ??
       options.pageMarkerMatches ??
@@ -105,7 +105,15 @@ function cdpCommandResult(
     return { sessionId: "page-session" };
   }
   if (command.method === "Runtime.evaluate") {
-    return runtimeEvaluationResult(command, options, state);
+    return {
+      result: {
+        type: "object",
+        objectId: "global-object",
+      },
+    };
+  }
+  if (command.method === "Runtime.callFunctionOn") {
+    return runtimeCallFunctionResult(command, options, state);
   }
   if (command.method === "DOM.describeNode") {
     const objectId = String(command.params.objectId ?? "");
@@ -130,9 +138,17 @@ function okAgentBrowser(data: Readonly<Record<string, unknown>> = {}) {
 function installAgentBrowser(): void {
   spawnSyncMock.mockImplementation(
     (_command: string, args: readonly string[]) => {
-      return args.at(-2) === "get" && args.at(-1) === "cdp-url"
-        ? okAgentBrowser({ cdpUrl: CDP_URL })
-        : okAgentBrowser();
+      if (args.at(-2) === "get" && args.at(-1) === "cdp-url") {
+        return okAgentBrowser({ cdpUrl: CDP_URL });
+      }
+      if (args.at(-2) === "eval") {
+        return okAgentBrowser({
+          result: String(args.at(-1)).includes("Object.defineProperty")
+            ? "marker-value"
+            : true,
+        });
+      }
+      return okAgentBrowser();
     },
   );
 }
@@ -290,6 +306,16 @@ describe("okou browser user-action commands", () => {
         return command.method === "DOM.describeNode";
       }),
     ).toBe(true);
+    const selectorCall = cdpCommands.find((command) => {
+      return (
+        command.method === "Runtime.callFunctionOn" &&
+        String(command.params.functionDeclaration).includes("querySelectorAll")
+      );
+    });
+    expect(selectorCall?.params.arguments).toStrictEqual([{ value: "#email" }]);
+    expect(String(selectorCall?.params.functionDeclaration)).not.toContain(
+      "#email",
+    );
     const output = consoleLog.mock.calls.flat().join("\n");
     expect(output).toContain(ACTION_URL);
     expect(output).toContain("stop using the Browser in this turn");
@@ -330,8 +356,10 @@ describe("okou browser user-action commands", () => {
     expect(
       cdpCommands.some((command) => {
         return (
-          command.method === "Runtime.evaluate" &&
-          String(command.params.expression).includes("document.evaluate")
+          command.method === "Runtime.callFunctionOn" &&
+          String(command.params.functionDeclaration).includes(
+            "document.evaluate",
+          )
         );
       }),
     ).toBe(true);
@@ -389,7 +417,10 @@ describe("okou browser user-action commands", () => {
     );
     expect(
       cdpCommands.filter((command) => {
-        return command.method === "Runtime.callFunctionOn";
+        return (
+          command.method === "Runtime.callFunctionOn" &&
+          String(command.params.objectId).startsWith("ref-object")
+        );
       }),
     ).toHaveLength(2);
   });
