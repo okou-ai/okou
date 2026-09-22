@@ -55,7 +55,6 @@ type PopoverContentProps = PopoverPrimitive.Popup.Props &
     avoidCollisions?: boolean;
     hideWhenDetached?: boolean;
     positionerClassName?: string;
-    updatePositionStrategy?: "always" | "optimized";
   };
 
 const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
@@ -78,7 +77,6 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       sideOffset = 4,
       sticky,
       style,
-      updatePositionStrategy,
       ...props
     },
     ref,
@@ -106,9 +104,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
           collisionAvoidance={resolvedCollisionAvoidance}
           collisionBoundary={collisionBoundary}
           collisionPadding={resolveCollisionPadding(collisionPadding)}
-          disableAnchorTracking={
-            disableAnchorTracking ?? updatePositionStrategy === "optimized"
-          }
+          disableAnchorTracking={disableAnchorTracking}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}
