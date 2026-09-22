@@ -243,13 +243,15 @@ test("Bare actions recognize typographic delimiters without losing their labels"
       `Status—${CONNECTOR_URL}`,
       `Next→${PERMISSION_URL}`,
       `🔐${CONNECTOR_URL}`,
+      `❤️${CONNECTOR_URL}`,
+      `👍🏽${CONNECTOR_URL}`,
       `Relative：${relativePermissionUrl}`,
     ].join("\n\n"),
   );
 
   await waitFor(() => {
     expect(screen.getAllByTestId("permission-action-card")).toHaveLength(5);
-    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(3);
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(5);
   });
   for (const label of [
     "Dev：",
@@ -259,6 +261,8 @@ test("Bare actions recognize typographic delimiters without losing their labels"
     "Status—",
     "Next→",
     "🔐",
+    "❤️",
+    "👍🏽",
     "Relative：",
   ]) {
     expect(screen.getByText(label)).toBeInTheDocument();
@@ -279,6 +283,8 @@ test("Bare actions recognize typographic delimiters without losing their labels"
     "permission-action-card",
     "connector-action-card",
     "permission-action-card",
+    "connector-action-card",
+    "connector-action-card",
     "connector-action-card",
     "permission-action-card",
   ]);
@@ -303,6 +309,7 @@ test("Action-looking URLs embedded in structural text remain content", async () 
       `Assignment: next=${PERMISSION_URL}`,
       `Query: ?next=${PERMISSION_URL}`,
       `Address: user@${PERMISSION_URL}`,
+      `Combining identifier: cafe\u0301${PERMISSION_URL}`,
       `Relative path: docs/${relativePermissionUrl}`,
       `[Outer URL](${externalUrl})`,
     ].join("\n\n"),
@@ -315,6 +322,7 @@ test("Action-looking URLs embedded in structural text remain content", async () 
   expect(screen.getByText(/Assignment: next=/u)).toBeInTheDocument();
   expect(screen.getByText(/Query: \?next=/u)).toBeInTheDocument();
   expect(screen.getByText(/Address: user@/u)).toBeInTheDocument();
+  expect(screen.getByText(/Combining identifier: cafe/u)).toBeInTheDocument();
   expect(screen.getByText(/Relative path: docs\//u)).toBeInTheDocument();
   const outerLink = queryAllByRoleFast("link").find((link) => {
     return link.textContent === "Outer URL";

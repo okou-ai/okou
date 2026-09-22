@@ -156,6 +156,7 @@ const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|brow
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[/\\_=&%+@#?]$/u;
+const URL_TOKEN_PRECEDING_GRAPHEME_BASE_PATTERN = /([\s\S])[\p{M}\p{Sk}]*$/u;
 const MARKDOWN_LINK_TOKEN_PREFIX_PATTERN = /\[[^\]\n]+\]\($/u;
 
 // URL.canParse is unavailable on iOS Safari < 17. Instead of relying on it (or
@@ -637,7 +638,11 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
     return true;
   }
 
-  const previousCodePoint = /[\s\S]$/u.exec(prefix)?.[0] ?? "";
+  // Presentation selectors, combining marks, and skin-tone modifiers belong
+  // to the preceding grapheme. Classifying its base keeps composite emoji as
+  // delimiters without treating a decomposed letter as punctuation.
+  const previousCodePoint =
+    URL_TOKEN_PRECEDING_GRAPHEME_BASE_PATTERN.exec(prefix)?.[1] ?? "";
   if (!previousCodePoint || /\s/u.test(previousCodePoint)) {
     return true;
   }
