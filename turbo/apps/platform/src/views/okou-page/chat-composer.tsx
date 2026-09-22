@@ -10454,6 +10454,15 @@ function ComposerFooter({
   );
 }
 
+function containsFiles(dataTransfer: DataTransfer): boolean {
+  return (
+    dataTransfer.types.includes("Files") ||
+    Array.from(dataTransfer.items).some((item) => {
+      return item.kind === "file";
+    })
+  );
+}
+
 function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
@@ -10477,6 +10486,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {
+        if (!containsFiles(event.dataTransfer)) {
+          return;
+        }
         event.preventDefault();
         setDragOver(false);
         let uploaded = false;
@@ -10488,6 +10500,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
         }
       }}
       onDragOver={(event) => {
+        if (!containsFiles(event.dataTransfer)) {
+          return;
+        }
         event.preventDefault();
         setDragOver(true);
       }}
