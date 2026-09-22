@@ -635,6 +635,11 @@ export default [
       // so no endpoint, and no database, can construct the states that prove
       // the guard fails closed.
       "src/signals/services/__tests__/account-erasure-ownership-inventory.test.ts",
+      // The relational sweep plan is derived from `pg_class`, `pg_constraint`
+      // and `pg_attribute`. No production endpoint exposes the catalogue, and
+      // a schema fixture would defeat the point of a layer that exists because
+      // TypeScript exports are not the database.
+      "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
