@@ -313,11 +313,31 @@ test("Review personal subscriptions through account identity", async () => {
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
   expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
+  const table = screen.getByRole("table");
+  expect(within(table).getByText("Provider")).toBeInTheDocument();
+  expect(within(table).getByText("Account")).toBeInTheDocument();
+  expect(within(table).getByText("Plan")).toBeInTheDocument();
+  expect(within(table).getByText("Usage")).toBeInTheDocument();
+  const addAccountButtons = queryAllByRoleFast("button").filter((button) => {
+    return button.textContent?.trim() === "Add account";
+  });
+  expect(addAccountButtons).toHaveLength(1);
+  const addAccountButton = addAccountButtons[0];
+  if (!addAccountButton) {
+    throw new Error("Add account button not found");
+  }
+  click(addAccountButton);
+  const addAccountMenu = await screen.findByRole("menu");
   expect(
-    queryAllByRoleFast("button").filter((button) => {
-      return button.textContent?.trim() === "Add account";
-    }),
-  ).toHaveLength(2);
+    within(addAccountMenu).getByText("Claude Code OAuth"),
+  ).toBeInTheDocument();
+  expect(
+    within(addAccountMenu).getByText("ChatGPT (Codex)"),
+  ).toBeInTheDocument();
+  click(addAccountButton);
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
   const accountIdentity = within(rowA).getByText("account-a@example.com");
   await user.hover(accountIdentity);
   await expect(
@@ -493,7 +513,7 @@ test("Review personal subscriptions through usage details", async () => {
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add account";
     }),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   await user.hover(within(rowA).getByLabelText("2 resets left"));
   await expect(
     screen.findAllByText("2 resets left · expires in 3d"),
@@ -584,7 +604,7 @@ test("Review personal subscriptions through account switching", async () => {
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add account";
     }),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   click(radioByName("Use", rowB));
   await waitFor(() => {
     expect(radioByName("Active", rowB)).toHaveAttribute("aria-checked", "true");

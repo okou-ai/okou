@@ -6212,6 +6212,14 @@
       },
       "personal": {
         "accountFallback": "Conta {{number}}",
+        "accountsDescription": "Escolha a conta que cada provedor usa para novas execuções.",
+        "accountsSectionTitle": "Contas pessoais",
+        "accountTable": {
+          "account": "Conta",
+          "plan": "Plano",
+          "provider": "Provedor",
+          "usage": "Uso"
+        },
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Ativa",
         "addAccount": "Adicionar conta",

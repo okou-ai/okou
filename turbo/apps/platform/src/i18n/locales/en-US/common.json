@@ -6146,6 +6146,14 @@
       },
       "personal": {
         "accountFallback": "Account {{number}}",
+        "accountsDescription": "Choose the account each provider uses for new runs.",
+        "accountsSectionTitle": "Personal accounts",
+        "accountTable": {
+          "account": "Account",
+          "plan": "Plan",
+          "provider": "Provider",
+          "usage": "Usage"
+        },
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Active",
         "addAccount": "Add account",

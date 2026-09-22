@@ -6212,6 +6212,14 @@
       },
       "personal": {
         "accountFallback": "Account {{number}}",
+        "accountsDescription": "Scegli l'account che ogni provider usa per le nuove esecuzioni.",
+        "accountsSectionTitle": "Account personali",
+        "accountTable": {
+          "account": "Account",
+          "plan": "Piano",
+          "provider": "Provider",
+          "usage": "Utilizzo"
+        },
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Attivo",
         "addAccount": "Aggiungi account",

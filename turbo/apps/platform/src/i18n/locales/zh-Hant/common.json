@@ -6142,6 +6142,14 @@
       },
       "personal": {
         "accountFallback": "帳號{{number}}",
+        "accountsDescription": "選擇每個供應商在新工作中使用的帳號。",
+        "accountsSectionTitle": "個人帳號",
+        "accountTable": {
+          "account": "帳號",
+          "plan": "方案",
+          "provider": "供應商",
+          "usage": "用量"
+        },
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "新增帳號",
