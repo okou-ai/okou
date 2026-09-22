@@ -17,6 +17,7 @@ import {
   sidebarChatThreadItemSignalsRegistry$,
   type SidebarChatThreadItemSignals,
 } from "./sidebar-chat-thread-item.ts";
+import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 
 const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
@@ -39,10 +40,12 @@ export const unreadSidebarChatThreadList$ = computed(async (get) => {
 export interface SidebarChatThreadWindow {
   readonly startIndex: number;
   readonly items: readonly SidebarChatThreadItemSignals[];
+  readonly showAllChatsRow: boolean;
 }
 
 export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
+  readonly rowCount$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
@@ -233,14 +236,19 @@ function getFixedVirtualRange({
 function createSidebarChatThreadViewportSignals(
   domSignals: SidebarChatThreadDomSignals,
   list: ChatThreadListSignals,
+  showAllChatsRow: boolean,
 ): SidebarChatThreadListSignals {
   const itemSignals$ = computed((get) => {
     return get(sidebarChatThreadItemSignalsRegistry$).reconcile(
       get(list.threadIds$),
     );
   });
+  const rowCount$ = computed((get) => {
+    return get(itemSignals$).length + (showAllChatsRow ? 1 : 0);
+  });
   const window$ = computed((get): SidebarChatThreadWindow => {
     const itemSignals = get(itemSignals$);
+    const rowCount = get(rowCount$);
     const scrollViewport = get(domSignals.scrollViewport$);
     const scrollMetrics = get(domSignals.scrollMetrics$);
     const measuredViewportHeight =
@@ -249,28 +257,37 @@ function createSidebarChatThreadViewportSignals(
       measuredViewportHeight || CHAT_THREAD_VIRTUAL_FALLBACK_VIEWPORT_HEIGHT;
     const scrollTop = scrollViewport?.scrollTop ?? scrollMetrics.scrollTop;
     const { startIndex, endIndex } = getFixedVirtualRange({
-      itemCount: itemSignals.length,
+      itemCount: rowCount,
       scrollTop,
       viewportHeight,
     });
     const resolvedEndIndex = measuredViewportHeight
       ? endIndex
       : Math.min(
-          itemSignals.length,
+          rowCount,
           Math.max(
             endIndex,
             startIndex + CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE,
           ),
         );
+    const threadCount = itemSignals.length;
 
     return {
       startIndex,
-      items: itemSignals.slice(startIndex, resolvedEndIndex),
+      items: itemSignals.slice(
+        startIndex,
+        Math.min(resolvedEndIndex, threadCount),
+      ),
+      showAllChatsRow:
+        showAllChatsRow &&
+        startIndex <= threadCount &&
+        resolvedEndIndex > threadCount,
     };
   });
 
   return {
     count$: list.count$,
+    rowCount$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     window$,
@@ -329,8 +346,13 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
   // The async boundary selects the shared list context. Each viewport only
   // adds its own synchronous virtual window over that list.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
+    const showAllChatsRow = get(chatThreadOnlyArchived$);
     const list = await get(currentChatThreadListSignals$);
-    return createSidebarChatThreadViewportSignals(domSignals, list);
+    return createSidebarChatThreadViewportSignals(
+      domSignals,
+      list,
+      showAllChatsRow,
+    );
   });
   const scrollListToIndex$ = createScrollListToIndexCommand(domSignals);
   const scrollToThread$ = command(
