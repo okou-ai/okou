@@ -1,7 +1,7 @@
 import { desktopUpdatesContract } from "@okouai/api-contracts/contracts/desktop-updates";
 import { testDesktopUpdateManifestStateContract } from "@okouai/api-contracts/contracts/test-desktop-update-manifest-state";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -429,6 +429,43 @@ describe("desktop update routes", () => {
     expect(response.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
     expect(upstream.attempts()).toBe(3);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("records an exhausted manifest read at info, keeping its diagnostics", async () => {
+    const output = context.mocks.console.log;
+    onTestFinished(context.mocks.console.capture());
+    countingManifestHandler(() => {
+      return new HttpResponse(null, { status: 500 });
+    });
+
+    await accept(feedRequest(), [503]);
+
+    const records = output.mock.calls.filter(([message]) => {
+      return (
+        typeof message === "string" &&
+        message.endsWith("Desktop update manifest upstream unavailable")
+      );
+    });
+    // `warn` put every single occurrence into the production error review, but
+    // one needs no intervention. `info` still reaches Axiom, so the rate stays
+    // queryable and the fields a real outage needs stay on the record.
+    expect(records).toStrictEqual([
+      [
+        "[INFO][DesktopUpdates] Desktop update manifest upstream unavailable",
+        {
+          type: "desktop_update_manifest_upstream",
+          outcome: "unavailable",
+          provider: "github_release_asset",
+          provider_status: 500,
+          failure_class: "transient_read_exhausted",
+          attempts: 3,
+          line: "ai-okou-desktop",
+          method: "GET",
+          route:
+            "/api/desktop/updates/:product/:channel/:platform/:arch/RELEASES.json",
+        },
+      ],
+    ]);
   });
 
   it("keeps an unavailable feed uncacheable and tells the caller to retry", async () => {
