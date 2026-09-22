@@ -91,19 +91,15 @@ test("keep microphone guidance and retry after permission denial", async () => {
   if (!beforeSend || report?.type !== "exception") {
     throw new Error("Expected the microphone capture and Sentry delivery hook");
   }
+  // The denied permission stays a user-visible recovery, but suppressing its
+  // capture is now a Sentry-side decision rather than a client rule.
+  const event = {
+    type: undefined,
+    exception: { values: [{ type: denied.name, value: denied.message }] },
+  };
   await expect(
-    Promise.resolve(
-      beforeSend(
-        {
-          type: undefined,
-          exception: {
-            values: [{ type: denied.name, value: denied.message }],
-          },
-        },
-        { originalException: report.error },
-      ),
-    ),
-  ).resolves.toBeNull();
+    Promise.resolve(beforeSend(event, { originalException: report.error })),
+  ).resolves.toBe(event);
   click(retry);
   await expect(findEnabledButton("Stop recording")).resolves.toBeVisible();
 });
