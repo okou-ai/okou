@@ -1726,6 +1726,7 @@
       "applyFailed": "无法添加信息。你填写的内容仍然保留，请重试。",
       "applying": "正在添加信息",
       "applyingDescription": "浏览器正在完成这个请求。",
+      "callbackFailed": "未能通知 Agent，请再次点击“继续”。",
       "cancel": "取消",
       "cancelFailed": "无法取消这个请求，请重试。",
       "cancelled": "请求已取消",

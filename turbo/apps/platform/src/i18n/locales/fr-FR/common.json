@@ -1758,6 +1758,7 @@
       "applyFailed": "Impossible d’ajouter les informations. Vos saisies sont toujours présentes. Réessayez.",
       "applying": "Ajout des informations",
       "applyingDescription": "Le navigateur termine cette demande.",
+      "callbackFailed": "L’agent n’a pas été prévenu. Réessayez avec Continuer.",
       "cancel": "Annuler",
       "cancelFailed": "Impossible d’annuler la demande. Réessayez.",
       "cancelled": "Demande annulée",

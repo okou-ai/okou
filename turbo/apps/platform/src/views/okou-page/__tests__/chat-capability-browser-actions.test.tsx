@@ -592,6 +592,46 @@ test("Apply native browser input before continuing with stable callback IDs", as
   expect(screen.queryByDisplayValue("local-only-secret")).toBeNull();
 });
 
+test("Closing the browser input dialog clears unsubmitted values", async () => {
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(await findButton("Enter information"));
+  const firstDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await fill(
+    within(firstDialog).getByLabelText(/Account email/u),
+    "user@example.test",
+  );
+  click(within(firstDialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Enter information in browser" }),
+    ).toBeNull();
+  });
+
+  click(await findButton("Enter information"));
+  const reopenedDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  expect(within(reopenedDialog).getByLabelText(/Account email/u)).toHaveValue(
+    "",
+  );
+});
+
 test("Cancel browser input before sending the fixed cancellation callback", async () => {
   const ordering: string[] = [];
   let state: BrowserUserActionResponse["state"] = "pending";

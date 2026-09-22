@@ -1758,6 +1758,7 @@
       "applyFailed": "Impossibile aggiungere le informazioni. I dati inseriti sono ancora presenti. Riprova.",
       "applying": "Aggiunta delle informazioni",
       "applyingDescription": "Il browser sta completando questa richiesta.",
+      "callbackFailed": "L’agente non è stato avvisato. Riprova con Continua.",
       "cancel": "Annulla",
       "cancelFailed": "Impossibile annullare la richiesta. Riprova.",
       "cancelled": "Richiesta annullata",

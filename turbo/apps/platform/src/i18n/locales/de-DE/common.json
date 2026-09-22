@@ -1729,6 +1729,7 @@
       "applyFailed": "Die Informationen konnten nicht hinzugefügt werden. Ihre Eingaben sind noch vorhanden. Versuchen Sie es erneut.",
       "applying": "Informationen werden hinzugefügt",
       "applyingDescription": "Der Browser schließt diese Anfrage ab.",
+      "callbackFailed": "Der Agent wurde nicht benachrichtigt. Versuchen Sie „Weiter“ erneut.",
       "cancel": "Abbrechen",
       "cancelFailed": "Die Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
       "cancelled": "Anfrage abgebrochen",

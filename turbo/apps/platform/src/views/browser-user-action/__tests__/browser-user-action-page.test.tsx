@@ -173,6 +173,41 @@ test("A terminal standalone action retries only its stable callback", async () =
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
+test("A failed Continue announces the error and remains retryable", async () => {
+  let rejectCallback = true;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("succeeded"));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(CALLBACK_PROMPT);
+    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
+    expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
+    if (rejectCallback) {
+      rejectCallback = false;
+      return respond(503, {
+        error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
+      });
+    }
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await expect(screen.findByText("Information added")).resolves.toBeVisible();
+  click(button("Continue"));
+  await expect(
+    screen.findByText("The agent wasn't notified. Try Continue again."),
+  ).resolves.toBeVisible();
+  click(button("Continue"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
 test("A failed callback retries without repeating the Browser mutation", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   let rejectCallback = true;

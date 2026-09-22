@@ -1729,6 +1729,7 @@
       "applyFailed": "Couldn't add the information. Your entries are still here. Try again.",
       "applying": "Adding information",
       "applyingDescription": "The browser is finishing this request.",
+      "callbackFailed": "The agent wasn't notified. Try Continue again.",
       "cancel": "Cancel",
       "cancelFailed": "Couldn't cancel this request. Try again.",
       "cancelled": "Request cancelled",

@@ -1726,6 +1726,7 @@
       "applyFailed": "Informasi tidak dapat ditambahkan. Isian Anda masih tersedia. Coba lagi.",
       "applying": "Menambahkan informasi",
       "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
+      "callbackFailed": "Agen belum diberi tahu. Coba Lanjutkan lagi.",
       "cancel": "Batal",
       "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
       "cancelled": "Permintaan dibatalkan",

@@ -1726,6 +1726,7 @@
       "applyFailed": "無法新增資訊。你填寫的內容仍然保留，請重試。",
       "applying": "正在新增資訊",
       "applyingDescription": "瀏覽器正在完成這個請求。",
+      "callbackFailed": "未能通知 Agent，請再次點擊「繼續」。",
       "cancel": "取消",
       "cancelFailed": "無法取消這個請求，請重試。",
       "cancelled": "請求已取消",

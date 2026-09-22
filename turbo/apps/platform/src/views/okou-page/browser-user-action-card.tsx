@@ -99,18 +99,23 @@ function ActionState({
 
 function TerminalActionState({
   callbackDelivered,
+  callbackFailed,
   cancelled,
   continuing,
   onContinue,
   variant,
 }: {
   readonly callbackDelivered: boolean;
+  readonly callbackFailed: boolean;
   readonly cancelled: boolean;
   readonly continuing: boolean;
   readonly onContinue: () => void;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
+  const callbackFailureDescription = t(($) => {
+    return $.chat.browserInput.callbackFailed;
+  });
   if (callbackDelivered) {
     return (
       <ActionState
@@ -133,11 +138,15 @@ function TerminalActionState({
           ? $.chat.browserInput.cancelled
           : $.chat.browserInput.completed;
       })}
-      description={t(($) => {
-        return cancelled
-          ? $.chat.browserInput.cancelledDescription
-          : $.chat.browserInput.completedDescription;
-      })}
+      description={
+        callbackFailed
+          ? callbackFailureDescription
+          : t(($) => {
+              return cancelled
+                ? $.chat.browserInput.cancelledDescription
+                : $.chat.browserInput.completedDescription;
+            })
+      }
       variant={variant}
       action={
         <Button
@@ -163,12 +172,14 @@ function TerminalActionState({
 function StateFromRequest({
   request,
   callbackDelivered,
+  callbackFailed,
   continuing,
   onContinue,
   variant,
 }: {
   readonly request: BrowserUserActionRequestState;
   readonly callbackDelivered: boolean;
+  readonly callbackFailed: boolean;
   readonly continuing: boolean;
   readonly onContinue: () => void;
   readonly variant: BrowserUserActionCardVariant;
@@ -250,6 +261,7 @@ function StateFromRequest({
     return (
       <TerminalActionState
         callbackDelivered={callbackDelivered}
+        callbackFailed={callbackFailed}
         cancelled={action.state === "cancelled"}
         continuing={continuing}
         onContinue={onContinue}
@@ -291,9 +303,11 @@ type PendingBrowserInputAction = Extract<
 function PendingFormHeader({
   siteOrigin,
   compact = false,
+  showTitle = true,
 }: {
   readonly siteOrigin: string;
   readonly compact?: boolean;
+  readonly showTitle?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -302,11 +316,13 @@ function PendingFormHeader({
         <Globe size={20} />
       </div>
       <div className="min-w-0">
-        <h2 className="text-[0.9375rem] font-medium text-foreground">
-          {t(($) => {
-            return $.chat.browserInput.title;
-          })}
-        </h2>
+        {showTitle && (
+          <h2 className="text-[0.9375rem] font-medium text-foreground">
+            {t(($) => {
+              return $.chat.browserInput.title;
+            })}
+          </h2>
+        )}
         {!compact && (
           <p className="mt-1 text-sm leading-5 text-muted-foreground">
             {t(($) => {
@@ -433,12 +449,14 @@ function PendingFormActions({
 function PendingForm({
   signals,
   request,
+  showTitle = true,
 }: {
   readonly signals: BrowserUserActionSignals;
   readonly request: Extract<
     BrowserUserActionRequestState,
     { readonly kind: "action" }
   >;
+  readonly showTitle?: boolean;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -470,7 +488,10 @@ function PendingForm({
       })}
       onSubmit={submitForm}
     >
-      <PendingFormHeader siteOrigin={request.action.siteOrigin} />
+      <PendingFormHeader
+        siteOrigin={request.action.siteOrigin}
+        showTitle={showTitle}
+      />
       <BrowserInputFields
         action={request.action}
         draft={draft}
@@ -521,7 +542,7 @@ function PendingInlineAction({
           return $.chat.browserInput.open;
         })}
       >
-        <PendingForm signals={signals} request={request} />
+        <PendingForm signals={signals} request={request} showTitle={false} />
       </ChatCardDetails>
     </div>
   );
@@ -590,6 +611,7 @@ export function BrowserUserActionCard({
       <StateFromRequest
         request={requestLoadable.data}
         callbackDelivered={callbackDelivered}
+        callbackFailed={continueLoadable.state === "hasError"}
         continuing={continueLoadable.state === "loading"}
         onContinue={() => {
           detach(continueAction(pageSignal), Reason.DomCallback);

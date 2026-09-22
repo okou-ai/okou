@@ -1758,6 +1758,7 @@
       "applyFailed": "Não foi possível adicionar as informações. Seus dados continuam aqui. Tente novamente.",
       "applying": "Adicionando informações",
       "applyingDescription": "O navegador está concluindo esta solicitação.",
+      "callbackFailed": "O agente não foi avisado. Tente Continuar novamente.",
       "cancel": "Cancelar",
       "cancelFailed": "Não foi possível cancelar a solicitação. Tente novamente.",
       "cancelled": "Solicitação cancelada",
