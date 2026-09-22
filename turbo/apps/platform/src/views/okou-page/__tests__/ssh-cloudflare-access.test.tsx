@@ -248,8 +248,14 @@ test("Raw and invalid token paste stays in the focused Access field", async () =
   expect(clientId).toHaveValue("raw-client-id");
   expect(clientSecret).toHaveValue("");
 
+  const incomplete = "CF-Access-Client-Id: incomplete-id";
+  await fill(clientId, "");
+  await fill(clientSecret, "kept-secret");
+  await pasteTokenHeaders(dialog, "Service Token Client ID", incomplete);
+  expect(clientId).toHaveValue(incomplete);
+  expect(clientSecret).toHaveValue("kept-secret");
+
   const invalidPairs = [
-    "CF-Access-Client-Id: incomplete-id",
     "CF-Access-Client-Id: first-id\nCF-Access-Client-Id: duplicate-id",
     "CF-Access-Client-Id: candidate-id\nX-Access-Client-Secret: unknown-secret",
     "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: candidate-secret\nextra",
