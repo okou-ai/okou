@@ -315,6 +315,12 @@ function SettingsDialog({
     ...(billingGroup.items.length > 0 ? [billingGroup] : []),
   ];
 
+  const sectionItems = sidebarGroups.flatMap((group) => {
+    return group.items.map((item) => {
+      return { value: item.id, label: item.label };
+    });
+  });
+
   // If the user lost admin while the dialog is open, fall back to a safe section
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
@@ -359,23 +365,31 @@ function SettingsDialog({
           {/* Mobile: dropdown nav */}
           <div className="sm:hidden shrink-0 px-4 pr-14 pt-4 pb-4 border-b border-border/50 bg-[hsl(var(--gray-0))]">
             <Select
+              items={sectionItems}
               value={resolvedSection}
-              onValueChange={(v) => {
-                handleSectionChange(v as SettingsSection);
+              onValueChange={(value, details) => {
+                const section = sectionItems.find((item) => {
+                  return item.value === value;
+                });
+                if (!section) {
+                  details.cancel();
+                  return;
+                }
+                if (section.value !== resolvedSection) {
+                  handleSectionChange(section.value);
+                }
               }}
             >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {sidebarGroups.flatMap((group) => {
-                  return group.items.map((item) => {
-                    return (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.label}
-                      </SelectItem>
-                    );
-                  });
+                {sectionItems.map((item) => {
+                  return (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  );
                 })}
               </SelectContent>
             </Select>

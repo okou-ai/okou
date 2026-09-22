@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "../dialog";
@@ -13,9 +13,13 @@ import {
 } from "../select";
 
 function ControlledSelect() {
-  const [value, setValue] = useState("all");
+  const [value, setValue] = useState<string | null>("all");
   return (
     <Select
+      items={[
+        { value: "all", label: "All" },
+        { value: "professional", label: "Professional" },
+      ]}
       value={value}
       onValueChange={(nextValue) => {
         setValue(nextValue);
@@ -33,31 +37,175 @@ function ControlledSelect() {
 }
 
 describe("SelectItem", () => {
-  it("does not report controlled value synchronization as user input", async () => {
+  it("renders explicit labels before custom option components mount and follows dynamic values", async () => {
     const user = userEvent.setup();
-    const onValueChange = vi.fn();
+    function Options({ includePeople }: { includePeople: boolean }) {
+      return (
+        <SelectContent>
+          {includePeople && <SelectItem value="people">People</SelectItem>}
+          <SelectItem value="preference">Preference</SelectItem>
+        </SelectContent>
+      );
+    }
     const renderSelect = (value: string, includePeople = true) => {
       return (
-        <Select value={value} onValueChange={onValueChange}>
+        <Select
+          value={value}
+          items={[
+            ...(includePeople ? [{ value: "people", label: "People" }] : []),
+            { value: "preference", label: "Preference" },
+          ]}
+        >
           <SelectTrigger aria-label="Settings section">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            {includePeople && <SelectItem value="people">People</SelectItem>}
-            <SelectItem value="preference">Preference</SelectItem>
-          </SelectContent>
+          <Options includePeople={includePeople} />
         </Select>
       );
     };
-    const view = render(renderSelect("preference"));
+    const view = render(renderSelect("people"));
+    expect(screen.getByLabelText("Settings section")).toHaveTextContent(
+      "People",
+    );
     await user.click(screen.getByLabelText("Settings section"));
     await screen.findByRole("option", { name: "People" });
-    view.rerender(renderSelect("people"));
-    onValueChange.mockClear();
 
     view.rerender(renderSelect("preference", false));
+    expect(screen.getByLabelText("Settings section")).toHaveTextContent(
+      "Preference",
+    );
+    expect(
+      screen.queryByRole("option", { name: "People" }),
+    ).not.toBeInTheDocument();
+  });
 
-    expect(onValueChange).not.toHaveBeenCalled();
+  it.each([false, true])(
+    "lets the caller accept or cancel nullable selection (cancel=%s)",
+    async (cancelNull) => {
+      const user = userEvent.setup();
+      render(
+        <form aria-label="Selection">
+          <Select
+            name="choice"
+            defaultValue="a"
+            items={[
+              { value: "a", label: "Alpha" },
+              { value: null, label: "Clear" },
+            ]}
+            onValueChange={(value, details) => {
+              if (value === null && cancelNull) {
+                details.cancel();
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Choice">
+              <SelectValue placeholder="Choose" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="a">Alpha</SelectItem>
+              <SelectItem value={null}>Clear</SelectItem>
+            </SelectContent>
+          </Select>
+        </form>,
+      );
+      await user.click(screen.getByLabelText("Choice"));
+      await user.click(await screen.findByRole("option", { name: "Clear" }));
+      const form = screen.getByRole<HTMLFormElement>("form", {
+        name: "Selection",
+      });
+      expect(new FormData(form).get("choice")).toBe(cancelNull ? "a" : "");
+      expect(screen.getByLabelText("Choice")).toHaveTextContent(
+        cancelNull ? "Alpha" : "Clear",
+      );
+    },
+  );
+
+  it("submits the selected value after closed-trigger typeahead", async () => {
+    const user = userEvent.setup();
+    render(
+      <form aria-label="Interval">
+        <Select
+          name="interval"
+          defaultValue="60"
+          items={{ "60": "Every minute", "3600": "Hourly" }}
+        >
+          <SelectTrigger aria-label="Repeat">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="60">Every minute</SelectItem>
+            <SelectItem value="3600">Hourly</SelectItem>
+          </SelectContent>
+        </Select>
+      </form>,
+    );
+    expect(screen.getByLabelText("Repeat")).toHaveTextContent("Every minute");
+    await user.tab();
+    await user.keyboard("h");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Repeat")).toHaveTextContent("Hourly");
+    });
+    expect(screen.getByLabelText("Repeat")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(
+      new FormData(
+        screen.getByRole<HTMLFormElement>("form", { name: "Interval" }),
+      ).get("interval"),
+    ).toBe("3600");
+  });
+
+  it("preserves object equality and multi-select form serialization", async () => {
+    const user = userEvent.setup();
+    const items = [
+      { id: "a", name: "Alpha" },
+      { id: "b", name: "Beta" },
+    ];
+    render(
+      <form aria-label="Objects">
+        <Select<{ id: string; name: string }, true>
+          multiple
+          name="objects"
+          defaultValue={[{ id: "a", name: "Alpha" }]}
+          isItemEqualToValue={(item, value) => {
+            return item.id === value.id;
+          }}
+          itemToStringLabel={(item) => {
+            return item.name;
+          }}
+          itemToStringValue={(item) => {
+            return item.id;
+          }}
+        >
+          <SelectTrigger aria-label="Objects">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => {
+              return (
+                <SelectItem key={item.id} value={item}>
+                  {item.name}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </form>,
+    );
+    expect(screen.getByRole("combobox", { name: "Objects" })).toHaveTextContent(
+      "Alpha",
+    );
+    await user.click(screen.getByRole("combobox", { name: "Objects" }));
+    expect(
+      await screen.findByRole("option", { name: "Alpha" }),
+    ).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    expect(
+      new FormData(
+        screen.getByRole<HTMLFormElement>("form", { name: "Objects" }),
+      ).getAll("objects"),
+    ).toEqual(["a", "b"]);
   });
 
   it("renders items with non-empty values", () => {

@@ -152,6 +152,20 @@ function BaseFields({
   readonly setKind: (kind: CustomConnectorResponse["kind"]) => void;
 }) {
   const { t } = useTranslation();
+  const kindItems = [
+    {
+      value: "http",
+      label: t(($) => {
+        return $.connectors.custom.create.httpType;
+      }),
+    },
+    {
+      value: "mcp",
+      label: t(($) => {
+        return $.connectors.custom.mcpStreamableHttp;
+      }),
+    },
+  ];
   return (
     <>
       {!editing && (
@@ -162,9 +176,14 @@ function BaseFields({
             })}
           </label>
           <Select
+            items={kindItems}
             value={form.kind}
-            onValueChange={(value) => {
-              if (value === "http" || value === "mcp") {
+            onValueChange={(value, details) => {
+              if (value !== "http" && value !== "mcp") {
+                details.cancel();
+                return;
+              }
+              if (value !== form.kind) {
                 setKind(value);
               }
             }}
@@ -177,16 +196,13 @@ function BaseFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="http">
-                {t(($) => {
-                  return $.connectors.custom.create.httpType;
-                })}
-              </SelectItem>
-              <SelectItem value="mcp">
-                {t(($) => {
-                  return $.connectors.custom.mcpStreamableHttp;
-                })}
-              </SelectItem>
+              {kindItems.map((item) => {
+                return (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -428,6 +444,15 @@ function OAuth2RedirectUrlField() {
 
 function OAuth2AdvancedFields({ form, setField }: CreateFormFieldProps) {
   const { t } = useTranslation();
+  const pkceItems = [
+    {
+      value: "none",
+      label: t(($) => {
+        return $.connectors.custom.create.none;
+      }),
+    },
+    { value: "S256", label: "S256" },
+  ];
   return (
     <details className="group rounded-lg border border-border">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-foreground">
@@ -445,8 +470,13 @@ function OAuth2AdvancedFields({ form, setField }: CreateFormFieldProps) {
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-foreground">PKCE</label>
           <Select
+            items={pkceItems}
             value={form.oauthPkceMethod}
-            onValueChange={(value) => {
+            onValueChange={(value, details) => {
+              if (value !== "none" && value !== "S256") {
+                details.cancel();
+                return;
+              }
               setField("oauthPkceMethod", value);
             }}
           >
@@ -454,12 +484,13 @@ function OAuth2AdvancedFields({ form, setField }: CreateFormFieldProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">
-                {t(($) => {
-                  return $.connectors.custom.create.none;
-                })}
-              </SelectItem>
-              <SelectItem value="S256">S256</SelectItem>
+              {pkceItems.map((item) => {
+                return (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -548,6 +579,67 @@ function OAuth2EndpointFields({ form, setField }: CreateFormFieldProps) {
   );
 }
 
+function OAuth2ClientAuthenticationField({
+  form,
+  setField,
+}: CreateFormFieldProps) {
+  const { t } = useTranslation();
+  const authenticationItems = [
+    {
+      value: "client_secret_post",
+      label: t(($) => {
+        return $.connectors.custom.create.secretInRequestBody;
+      }),
+    },
+    {
+      value: "client_secret_basic",
+      label: t(($) => {
+        return $.connectors.custom.create.httpBasicAuthentication;
+      }),
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.connectors.custom.create.tokenEndpointAuthentication;
+        })}
+      </label>
+      <Select
+        items={authenticationItems}
+        value={form.oauthClientAuthentication}
+        onValueChange={(value, details) => {
+          if (
+            value !== "client_secret_post" &&
+            value !== "client_secret_basic"
+          ) {
+            details.cancel();
+            return;
+          }
+          setField("oauthClientAuthentication", value);
+        }}
+      >
+        <SelectTrigger
+          aria-label={t(($) => {
+            return $.connectors.custom.create.tokenEndpointAuthentication;
+          })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {authenticationItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function OAuth2AuthenticationFields({
   form,
   setField,
@@ -558,6 +650,7 @@ function OAuth2AuthenticationFields({
   readonly onRemove: () => void;
 }) {
   const { t } = useTranslation();
+
   return (
     <div className="rounded-xl border border-border p-4 flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -613,39 +706,7 @@ function OAuth2AuthenticationFields({
           className="min-h-[72px] resize-y font-mono"
         />
       </div>
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-foreground">
-          {t(($) => {
-            return $.connectors.custom.create.tokenEndpointAuthentication;
-          })}
-        </label>
-        <Select
-          value={form.oauthClientAuthentication}
-          onValueChange={(value) => {
-            setField("oauthClientAuthentication", value);
-          }}
-        >
-          <SelectTrigger
-            aria-label={t(($) => {
-              return $.connectors.custom.create.tokenEndpointAuthentication;
-            })}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="client_secret_post">
-              {t(($) => {
-                return $.connectors.custom.create.secretInRequestBody;
-              })}
-            </SelectItem>
-            <SelectItem value="client_secret_basic">
-              {t(($) => {
-                return $.connectors.custom.create.httpBasicAuthentication;
-              })}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <OAuth2ClientAuthenticationField form={form} setField={setField} />
       <OAuth2RedirectUrlField />
       <OAuth2AdvancedFields form={form} setField={setField} />
       {editing && (

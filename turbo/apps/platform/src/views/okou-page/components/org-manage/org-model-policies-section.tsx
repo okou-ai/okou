@@ -307,9 +307,25 @@ function DefaultModelRow({
   onUpgrade: () => void;
 }) {
   const { t } = useTranslation();
-  const selectItems = policies.filter((policy) => {
-    return policy.routeStatus === "valid";
-  });
+  const selectItems = policies
+    .filter((policy) => {
+      return policy.routeStatus === "valid";
+    })
+    .map((policy) => {
+      const iconType = getModelIconType(policy.model);
+      const restricted = !modelPolicyAllowedForPlan(policy, modelCapabilities);
+      return {
+        ...policy,
+        value: policy.model,
+        label: (
+          <div className="flex w-full min-w-0 items-center gap-2">
+            {iconType && <ProviderIcon type={iconType} size={16} />}
+            <span className="min-w-0 flex-1 truncate">{policy.modelLabel}</span>
+            {restricted && <ProBadge />}
+          </div>
+        ),
+      };
+    });
   const currentDefault = selectItems.some((policy) => {
     return policy.model === workspaceDefaultModel;
   })
@@ -344,20 +360,25 @@ function DefaultModelRow({
         </span>
       ) : (
         <Select
+          items={selectItems}
           value={currentDefault}
-          onValueChange={(value) => {
-            const model = value as SupportedRunModel;
+          onValueChange={(value, details) => {
             const policy = selectItems.find((item) => {
-              return item.model === model;
+              return item.model === value;
             });
-            if (
-              policy !== undefined &&
-              !modelPolicyAllowedForPlan(policy, modelCapabilities)
-            ) {
+            if (!policy) {
+              details.cancel();
+              return;
+            }
+            if (policy.model === workspaceDefaultModel) {
+              return;
+            }
+            if (!modelPolicyAllowedForPlan(policy, modelCapabilities)) {
+              details.cancel();
               onUpgrade();
               return;
             }
-            onChange(model);
+            onChange(policy.model);
           }}
           disabled={disabled}
         >
@@ -374,21 +395,10 @@ function DefaultModelRow({
             />
           </SelectTrigger>
           <SelectContent>
-            {selectItems.map((policy) => {
-              const iconType = getModelIconType(policy.model);
-              const restricted = !modelPolicyAllowedForPlan(
-                policy,
-                modelCapabilities,
-              );
+            {selectItems.map((item) => {
               return (
-                <SelectItem key={policy.id} value={policy.model}>
-                  <div className="flex w-full min-w-0 items-center gap-2">
-                    {iconType && <ProviderIcon type={iconType} size={16} />}
-                    <span className="min-w-0 flex-1 truncate">
-                      {policy.modelLabel}
-                    </span>
-                    {restricted && <ProBadge />}
-                  </div>
+                <SelectItem key={item.id} value={item.value}>
+                  {item.label}
                 </SelectItem>
               );
             })}
@@ -777,8 +787,16 @@ function ProviderTypeSelect({
   return (
     <Select
       value={value}
-      onValueChange={(next) => {
-        onChange(next as ModelProviderType);
+      onValueChange={(next, details) => {
+        if (
+          next === null ||
+          !types.includes(next) ||
+          !getSelectableProviderTypes().includes(next)
+        ) {
+          details.cancel();
+          return;
+        }
+        onChange(next);
       }}
     >
       <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
@@ -937,16 +955,18 @@ function GatewayProviderSection({
       </label>
       <Select
         value={surfaceId}
-        onValueChange={(next) => {
+        onValueChange={(next, details) => {
           const selected = options.find((option) => {
             return option.surface.id === next;
           });
-          if (selected) {
-            onChange(
-              selected.surface.id,
-              gatewayProviderType(selected.surface.protocol),
-            );
+          if (!selected) {
+            details.cancel();
+            return;
           }
+          onChange(
+            selected.surface.id,
+            gatewayProviderType(selected.surface.protocol),
+          );
         }}
       >
         <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
@@ -1182,8 +1202,12 @@ function ModelSelectionField({
       </label>
       <Select
         value={selectedModel}
-        onValueChange={(next) => {
-          onChange(next as SupportedRunModel);
+        onValueChange={(next, details) => {
+          if (next === null || !addableModels.includes(next)) {
+            details.cancel();
+            return;
+          }
+          onChange(next);
         }}
         disabled={disabled}
       >

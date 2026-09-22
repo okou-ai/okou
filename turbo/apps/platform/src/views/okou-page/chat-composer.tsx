@@ -3657,6 +3657,18 @@ function TemplatePickerCategoryNav({
     },
   ];
 
+  const categoryItems = categoryOptions.map(({ value, label, Icon }) => {
+    return {
+      value,
+      label: (
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4" />
+          {label}
+        </span>
+      ),
+    };
+  });
+
   return (
     <>
       <div
@@ -3667,7 +3679,22 @@ function TemplatePickerCategoryNav({
             : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
         )}
       >
-        <Select value={selectedCategory} onValueChange={onChange}>
+        <Select
+          items={categoryItems}
+          value={selectedCategory}
+          onValueChange={(value, details) => {
+            if (
+              value === null ||
+              !categoryItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            onChange(value);
+          }}
+        >
           <SelectTrigger
             aria-label={t(($) => {
               return $.artifacts.templates.category;
@@ -3681,13 +3708,10 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.flatMap(({ value, label, Icon }) => {
+            {categoryItems.flatMap(({ value, label }) => {
               return [
                 <SelectItem key={value} value={value}>
-                  <span className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </span>
+                  {label}
                 </SelectItem>,
                 ...(value === "custom"
                   ? [<SelectSeparator key={`${value}-rule`} />]

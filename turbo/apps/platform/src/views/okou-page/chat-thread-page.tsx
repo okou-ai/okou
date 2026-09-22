@@ -2480,12 +2480,21 @@ function HeaderIntervalField({
   readonly defaultIntervalSeconds: number;
 }) {
   const { t } = useTranslation();
+  const intervalItems = getWorkflowIntervalSecondOptions(
+    defaultIntervalSeconds,
+  ).map((seconds) => {
+    return {
+      value: String(seconds),
+      label: formatWorkflowIntervalSeconds(seconds),
+    };
+  });
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {t(($) => {
         return $.chat.automations.every;
       })}
       <Select
+        items={intervalItems}
         name="intervalSeconds"
         defaultValue={String(defaultIntervalSeconds)}
         disabled={disabled}
@@ -2499,15 +2508,13 @@ function HeaderIntervalField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {getWorkflowIntervalSecondOptions(defaultIntervalSeconds).map(
-            (seconds) => {
-              return (
-                <SelectItem key={seconds} value={String(seconds)}>
-                  {formatWorkflowIntervalSeconds(seconds)}
-                </SelectItem>
-              );
-            },
-          )}
+          {intervalItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </label>

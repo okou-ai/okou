@@ -434,6 +434,89 @@ function CreateAgentAvatarPreview() {
   );
 }
 
+function AgentVisibilitySelect({
+  visibility,
+  onVisibilityChange,
+  disabled,
+}: {
+  visibility: Visibility;
+  onVisibilityChange: (visibility: Visibility) => void;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation("agents");
+  const visibilityItems = [
+    {
+      value: "private",
+      label: (
+        <>
+          {t(($) => {
+            return $.list.create.visibility.private.label;
+          })}{" "}
+          <span className="text-muted-foreground">
+            {t(($) => {
+              return $.list.create.visibility.private.description;
+            })}
+          </span>
+        </>
+      ),
+    },
+    {
+      value: "public",
+      label: (
+        <>
+          {t(($) => {
+            return $.list.create.visibility.public.label;
+          })}{" "}
+          <span className="text-muted-foreground">
+            {t(($) => {
+              return $.list.create.visibility.public.description;
+            })}
+          </span>
+        </>
+      ),
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.list.create.visibilityLabel;
+        })}
+      </span>
+      <Select
+        items={visibilityItems}
+        value={visibility}
+        onValueChange={(value, details) => {
+          if (value !== "public" && value !== "private") {
+            details.cancel();
+            return;
+          }
+          onVisibilityChange(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          className="h-9 w-full"
+          aria-label={t(($) => {
+            return $.list.create.visibilityLabel;
+          })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {visibilityItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function CreateAgentFields({
   newName,
   onNameChange,
@@ -493,53 +576,11 @@ function CreateAgentFields({
           disabled={creating}
         />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.list.create.visibilityLabel;
-          })}
-        </span>
-        <Select
-          value={visibility}
-          onValueChange={(value) => {
-            if (value === "public" || value === "private") {
-              onVisibilityChange(value);
-            }
-          }}
-          disabled={creating}
-        >
-          <SelectTrigger
-            className="h-9 w-full"
-            aria-label={t(($) => {
-              return $.list.create.visibilityLabel;
-            })}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="private">
-              {t(($) => {
-                return $.list.create.visibility.private.label;
-              })}{" "}
-              <span className="text-muted-foreground">
-                {t(($) => {
-                  return $.list.create.visibility.private.description;
-                })}
-              </span>
-            </SelectItem>
-            <SelectItem value="public">
-              {t(($) => {
-                return $.list.create.visibility.public.label;
-              })}{" "}
-              <span className="text-muted-foreground">
-                {t(($) => {
-                  return $.list.create.visibility.public.description;
-                })}
-              </span>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <AgentVisibilitySelect
+        visibility={visibility}
+        onVisibilityChange={onVisibilityChange}
+        disabled={creating}
+      />
     </div>
   );
 }
