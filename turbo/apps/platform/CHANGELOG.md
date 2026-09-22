@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.941.0](https://github.com/okou-ai/okou/compare/app-v0.940.0...app-v0.941.0) (2026-09-22)
+
+
+### Features
+
+* **platform:** give the quest steps two panels and one width ([#35954](https://github.com/okou-ai/okou/issues/35954)) ([f7eb439](https://github.com/okou-ai/okou/commit/f7eb439d3a5df1ba4cd3d3297b62bf9738b5ea3a))
+
+
+### Bug Fixes
+
+* **app:** retain slash category highlight in template flyout ([#35963](https://github.com/okou-ai/okou/issues/35963)) ([95d25a5](https://github.com/okou-ai/okou/commit/95d25a5596e5d4fed4fac1a61aeda61498055ebd))
+* **app:** state the composer's task with one chip for both rollouts ([#35897](https://github.com/okou-ai/okou/issues/35897)) ([d7f7df7](https://github.com/okou-ai/okou/commit/d7f7df79ddddccc6d463febeeeebd02e8fe8a31c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.697.2
+
 ## [0.940.0](https://github.com/okou-ai/okou/compare/app-v0.939.0...app-v0.940.0) (2026-09-22)
 
 
