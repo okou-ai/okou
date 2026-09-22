@@ -228,6 +228,13 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   browser_sessions: { coverage: "user_root", ownership: ["user_id"] },
   browser_thread_profiles: { coverage: "user_root", ownership: ["user_id"] },
+  // Added by #35845 while this change was in review. It cascades from
+  // `chat_threads`, but it names its own owner, so it is a root: the account
+  // can hold a request under a thread that survives it.
+  browser_user_action_requests: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
   built_in_generation_jobs: { coverage: "user_root", ownership: ["user_id"] },
   built_in_model_candidate_cooldown: { coverage: "not_account_scoped" },
   built_in_model_keys: { coverage: "not_account_scoped" },
