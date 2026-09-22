@@ -574,11 +574,12 @@ function createPaidToolHints(
   create: ComposerCreateSignals,
   draft: DraftSignals,
   composer: WorkflowComposerSignals,
+  ui: ComposerUiSignalGroups,
 ) {
   return computed((get) => {
     const mode = get(create.mode$);
     const tools = new Set<PaidToolId>();
-    if (mode === "image") {
+    if (mode === "image" || get(ui.model.mediaModelCategory$) === "image") {
       tools.add("image-generation");
     }
     const selectedTemplate = get(draft.generationTemplate$);
@@ -679,7 +680,7 @@ export function createComposerSignals(
 
   return {
     agentId: options.agentId,
-    paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
+    paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
     create,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options),
