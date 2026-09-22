@@ -577,8 +577,8 @@ function prepareStoragePresignedUrlRequests<TRequest>(args: {
   const requestsByCacheKey = new Map<string, StoragePresignedUrlRequest>();
   for (const request of args.requests) {
     requestsByCacheKey.set(args.cacheKey(request), args.normalize(request));
+    args.stats.uniqueKeyCount = requestsByCacheKey.size;
   }
-  args.stats.uniqueKeyCount = requestsByCacheKey.size;
   return requestsByCacheKey;
 }
 

@@ -445,4 +445,45 @@ describe("storage manifest presigned URL cache telemetry", () => {
       },
     ]);
   });
+
+  it("retains partial unique-key progress when request preparation fails", async () => {
+    const request = systemRequest("prepare-failure");
+    const invalidRequest = {
+      get bucket(): string {
+        throw new Error("cache key failed");
+      },
+      objectKey: "unreachable",
+      storageVersionId: "0".repeat(64),
+      publicEndpoint: true,
+    } satisfies SystemStoragePresignedUrlRequest;
+    const timing = new RecordingTimingCollector();
+
+    await expect(
+      createStore().get(
+        resolveSystemStoragePresignedUrls({
+          db: fakeCacheDb([]).db,
+          requests: [request, invalidRequest],
+          observation: observation(timing, "requested", "compose"),
+        }),
+      ),
+    ).rejects.toThrow("cache key failed");
+
+    expect(timing.recorded).toStrictEqual([
+      {
+        actionType:
+          "api_dispatch_prepare_storage_manifest_cache_prepare_requests",
+        dimensions: {
+          storage_manifest_branch: "requested",
+          storage_manifest_entry_kind: "compose",
+          storage_manifest_cache_scope: "system_storage",
+          storage_manifest_cache_requested_count_bucket: "2_4",
+          storage_manifest_cache_unique_key_count_bucket: "1",
+          storage_manifest_cache_hit_count_bucket: "0",
+          storage_manifest_cache_hard_expired_count_bucket: "0",
+          storage_manifest_cache_missing_count_bucket: "0",
+          storage_manifest_cache_fresh_count_bucket: "0",
+        },
+      },
+    ]);
+  });
 });
