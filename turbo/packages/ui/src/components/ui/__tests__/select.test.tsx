@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -276,7 +276,14 @@ describe("Select option descriptions", () => {
     render(
       <>
         <p id="usage-pricing">Prices vary with usage</p>
-        <Select defaultValue="alpha" onValueChange={onValueChange}>
+        <Select
+          defaultValue="alpha"
+          items={[
+            { value: "alpha", label: "Alpha" },
+            { value: "beta", label: "Beta" },
+          ]}
+          onValueChange={onValueChange}
+        >
           <SelectTrigger aria-label="Model">
             <SelectValue />
           </SelectTrigger>
