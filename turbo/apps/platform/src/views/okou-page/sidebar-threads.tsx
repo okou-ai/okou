@@ -1043,9 +1043,6 @@ function ChatThreadsListMenu({
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
             variant="quiet"
             size="icon-sm"
             iconSize="md"
@@ -1060,9 +1057,6 @@ function ChatThreadsListMenu({
         <DropdownMenuContent
           align="end"
           className={unreadShortcutEnabled ? "w-56" : "w-44"}
-          onClick={(e) => {
-            e.stopPropagation();
-          }}
         >
           {markAllReadAction.visible ? (
             <>
@@ -1092,7 +1086,17 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
   return (
     <div
       className="group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 hover:bg-state-hover transition-colors"
-      onClick={() => {
+      onClick={(event) => {
+        const target = event.target;
+        if (
+          !(target instanceof Element) ||
+          !event.currentTarget.contains(target) ||
+          target.closest(
+            "a, button, input, select, textarea, [role='button'], [role='link'], [role^='menuitem'], [contenteditable='true']",
+          )
+        ) {
+          return;
+        }
         return setCollapsed(!collapsed);
       }}
     >
@@ -1111,8 +1115,7 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
+                onClick={() => {
                   newChatAction.onSelect("main");
                 }}
                 disabled={newChatAction.disabled}
