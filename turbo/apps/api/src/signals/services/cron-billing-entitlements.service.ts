@@ -176,17 +176,6 @@ function logUsagePackMigrationReconciliation(
   }
 }
 
-function logUsagePackSubscriptionReconciliation(
-  reconciliation: UsagePackMigrationReconciliation,
-): void {
-  if (reconciliation.reconciled > 0) {
-    L.warn("usage pack subscriptions reconciled from Stripe", {
-      count: reconciliation.reconciled,
-      orgIds: reconciliation.orgIds.slice(0, 10),
-    });
-  }
-}
-
 interface ReconcileCandidateRows {
   readonly candidates: readonly BillingCandidate[];
   readonly atomGrantCandidates: readonly AtomGrantCandidate[];
@@ -1723,11 +1712,7 @@ const reconcileBillingEntitlementsForScope$ = command(
     const usagePackMigrationReconciliation =
       await reconcileUsagePackSubscriptionMigrations(db, scope, signal);
     signal.throwIfAborted();
-    const usagePackReconciliation = await reconcileUsagePackSubscriptions(
-      db,
-      scope,
-      signal,
-    );
+    await reconcileUsagePackSubscriptions(db, scope, signal);
     signal.throwIfAborted();
     await reconcileUsagePackCreditRefunds(db, scope, signal);
     signal.throwIfAborted();
@@ -1790,7 +1775,6 @@ const reconcileBillingEntitlementsForScope$ = command(
         }),
       });
     }
-    logUsagePackSubscriptionReconciliation(usagePackReconciliation);
     logUsagePackMigrationReconciliation(usagePackMigrationReconciliation);
     if (invitationPurchasesReconciled > 0) {
       L.warn("usage pack invitation purchases reconciled", {
