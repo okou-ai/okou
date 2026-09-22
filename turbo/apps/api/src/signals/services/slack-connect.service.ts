@@ -105,7 +105,7 @@ async function connectSlackUser(
       ),
     );
   const staleConnections = currentConnections.filter((connection) => {
-    return connection.id !== targetConnection?.id;
+    return connection.slackUserId !== args.slackUserId;
   });
 
   if (staleConnections.length > 0 && args.connectionIntent !== "switch") {
@@ -526,7 +526,7 @@ export const connectSlackWorkspace$ = command(
       readonly channelId?: string;
       readonly threadTs?: string;
       readonly pendingPrompt?: string;
-      readonly connectionIntent?: "connect" | "switch";
+      readonly connectionIntent: "connect" | "switch";
     },
     signal: AbortSignal,
   ): Promise<ConnectResult> => {
@@ -556,7 +556,7 @@ export const connectSlackWorkspace$ = command(
           slackUserId: args.slackUserId,
           slackWorkspaceId: args.workspaceId,
           userId: args.userId,
-          connectionIntent: args.connectionIntent ?? "connect",
+          connectionIntent: args.connectionIntent,
         });
         if (connection.kind !== "ok") {
           return connection;
