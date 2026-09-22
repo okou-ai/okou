@@ -1732,6 +1732,11 @@
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
       "upgradeWorkspace": "ワークスペースをアップグレードする"
     },
+    "browserAction": {
+      "documentTitle": "ブラウザ操作",
+      "loading": "ブラウザリクエストを読み込んでいます",
+      "unavailableDescription": "このブラウザリクエストは無効か、利用できなくなっています。"
+    },
     "browserInput": {
       "applyFailed": "情報を追加できませんでした。入力内容は保持されています。もう一度お試しください。",
       "applying": "情報を追加しています",
@@ -1749,12 +1754,10 @@
       "delivered": "エージェントに通知しました",
       "deliveredDescription": "エージェントは作業を続行できます。",
       "description": "このサイトで求められている情報を入力してください。",
-      "documentTitle": "ブラウザ入力",
       "expired": "リクエストの有効期限が切れました",
       "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
       "loadFailed": "このリクエストを読み込めませんでした",
       "loadFailedDescription": "しばらくしてからもう一度お試しください。",
-      "loading": "ブラウザ入力を読み込んでいます",
       "loadingDescription": "リクエストを確認しています…",
       "open": "情報を入力",
       "optional": "（任意）",
@@ -1767,9 +1770,33 @@
       "submitting": "追加しています…",
       "title": "ブラウザに情報を入力",
       "unavailable": "リクエストを利用できません",
-      "unavailableDescription": "このブラウザ入力リクエストは無効か、利用できなくなっています。",
       "uncertain": "ブラウザを確認してください",
       "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
+    },
+    "browserInteraction": {
+      "applying": "ブラウザ操作を完了しています",
+      "applyingDescription": "ブラウザでこのリクエストを完了しています。",
+      "callbackFailed": "エージェントに通知できませんでした。もう一度［続行］を選択してください。",
+      "cancel": "キャンセル",
+      "cancelFailed": "このリクエストをキャンセルできませんでした。もう一度お試しください。",
+      "cancelled": "リクエストをキャンセルしました",
+      "cancelledDescription": "ブラウザの引き継ぎをキャンセルしました。エージェントに通知するには続行してください。",
+      "cancelling": "キャンセルしています…",
+      "completed": "ブラウザ操作が完了しました",
+      "completedDescription": "ブラウザ操作を記録しました。エージェントに通知するには続行してください。",
+      "completeFailed": "このリクエストを完了できませんでした。もう一度お試しください。",
+      "completing": "完了しています…",
+      "continue": "続行",
+      "continuing": "続行しています…",
+      "delivered": "エージェントに通知しました",
+      "deliveredDescription": "エージェントは処理を続行できます。",
+      "description": "ブラウザを開いてこの手順を完了し、［完了］を選択してください。",
+      "done": "完了",
+      "stale": "ブラウザは利用できません",
+      "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
+      "title": "ブラウザを引き継ぐ",
+      "uncertain": "ブラウザを確認してください",
+      "uncertainDescription": "操作が完了している可能性があります。再試行する前にエージェントに確認を依頼してください。"
     },
     "cards": {
       "viewDetails": "詳細を表示"

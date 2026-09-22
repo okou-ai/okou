@@ -1735,6 +1735,11 @@
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
+    "browserAction": {
+      "documentTitle": "Browseraktion",
+      "loading": "Browseranfrage wird geladen",
+      "unavailableDescription": "Diese Browseranfrage ist ungültig oder nicht mehr verfügbar."
+    },
     "browserInput": {
       "applyFailed": "Die Informationen konnten nicht hinzugefügt werden. Ihre Eingaben sind noch vorhanden. Versuchen Sie es erneut.",
       "applying": "Informationen werden hinzugefügt",
@@ -1752,12 +1757,10 @@
       "delivered": "Agent benachrichtigt",
       "deliveredDescription": "Der Agent kann jetzt fortfahren.",
       "description": "Geben Sie die für diese Website angeforderten Informationen ein.",
-      "documentTitle": "Browsereingabe",
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
       "loadFailed": "Diese Anfrage konnte nicht geladen werden",
       "loadFailedDescription": "Versuchen Sie es gleich noch einmal.",
-      "loading": "Browsereingabe wird geladen",
       "loadingDescription": "Anfrage wird geprüft…",
       "open": "Informationen eingeben",
       "optional": "(Optional)",
@@ -1770,9 +1773,33 @@
       "submitting": "Wird hinzugefügt…",
       "title": "Informationen im Browser eingeben",
       "unavailable": "Anfrage nicht verfügbar",
-      "unavailableDescription": "Diese Browsereingabe-Anfrage ist ungültig oder nicht mehr verfügbar.",
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
+    },
+    "browserInteraction": {
+      "applying": "Browserinteraktion wird abgeschlossen",
+      "applyingDescription": "Der Browser schließt diese Anfrage ab.",
+      "callbackFailed": "Der Agent wurde nicht benachrichtigt. Versuchen Sie „Weiter“ erneut.",
+      "cancel": "Abbrechen",
+      "cancelFailed": "Diese Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
+      "cancelled": "Anfrage abgebrochen",
+      "cancelledDescription": "Die Browserübergabe wurde abgebrochen. Fahren Sie fort, um den Agenten zu benachrichtigen.",
+      "cancelling": "Wird abgebrochen…",
+      "completed": "Browserinteraktion abgeschlossen",
+      "completedDescription": "Ihre Browserinteraktion wurde erfasst. Fahren Sie fort, um den Agenten zu benachrichtigen.",
+      "completeFailed": "Diese Anfrage konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
+      "completing": "Wird abgeschlossen…",
+      "continue": "Weiter",
+      "continuing": "Wird fortgesetzt…",
+      "delivered": "Agent benachrichtigt",
+      "deliveredDescription": "Der Agent kann jetzt fortfahren.",
+      "description": "Öffnen Sie den Browser, schließen Sie diesen Schritt ab und wählen Sie dann „Fertig“.",
+      "done": "Fertig",
+      "stale": "Browser nicht mehr verfügbar",
+      "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
+      "title": "Browser übernehmen",
+      "uncertain": "Browser prüfen",
+      "uncertainDescription": "Die Interaktion wurde möglicherweise abgeschlossen. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
     },
     "cards": {
       "viewDetails": "Details ansehen"

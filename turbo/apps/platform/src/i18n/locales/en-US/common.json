@@ -1735,6 +1735,11 @@
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
       "upgradeWorkspace": "Upgrade your workspace"
     },
+    "browserAction": {
+      "documentTitle": "Browser action",
+      "loading": "Loading browser request",
+      "unavailableDescription": "This browser request is invalid or no longer available."
+    },
     "browserInput": {
       "applyFailed": "Couldn't add the information. Your entries are still here. Try again.",
       "applying": "Adding information",
@@ -1752,12 +1757,10 @@
       "delivered": "Agent notified",
       "deliveredDescription": "The agent can continue now.",
       "description": "Enter the information requested for this site.",
-      "documentTitle": "Browser input",
       "expired": "Request expired",
       "expiredDescription": "The browser closed or this request is no longer active.",
       "loadFailed": "Couldn't load this request",
       "loadFailedDescription": "Try again in a moment.",
-      "loading": "Loading browser input",
       "loadingDescription": "Checking this request…",
       "open": "Enter information",
       "optional": "(Optional)",
@@ -1770,9 +1773,33 @@
       "submitting": "Adding…",
       "title": "Enter information in browser",
       "unavailable": "Request unavailable",
-      "unavailableDescription": "This browser input request is invalid or no longer available.",
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
+    },
+    "browserInteraction": {
+      "applying": "Completing browser interaction",
+      "applyingDescription": "The browser is finishing this request.",
+      "callbackFailed": "The agent wasn't notified. Try Continue again.",
+      "cancel": "Cancel",
+      "cancelFailed": "Couldn't cancel this request. Try again.",
+      "cancelled": "Request cancelled",
+      "cancelledDescription": "The browser handoff was cancelled. Continue to notify the agent.",
+      "cancelling": "Cancelling…",
+      "completed": "Browser interaction complete",
+      "completedDescription": "Your browser interaction is recorded. Continue to notify the agent.",
+      "completeFailed": "Couldn't complete this request. Try again.",
+      "completing": "Completing…",
+      "continue": "Continue",
+      "continuing": "Continuing…",
+      "delivered": "Agent notified",
+      "deliveredDescription": "The agent can continue now.",
+      "description": "Open the browser, complete this step, then choose Done.",
+      "done": "Done",
+      "stale": "Browser no longer available",
+      "staleDescription": "Ask the agent to create a new request.",
+      "title": "Take over the browser",
+      "uncertain": "Check the browser",
+      "uncertainDescription": "The interaction may have completed. Ask the agent to check before trying again."
     },
     "cards": {
       "viewDetails": "View details"

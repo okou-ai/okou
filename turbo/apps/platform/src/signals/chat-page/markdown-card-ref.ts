@@ -44,6 +44,7 @@ export type MarkdownCardRef =
   | {
       readonly kind: "browser-user-action";
       readonly signals: BrowserUserActionSignals;
+      readonly browserSessionSignals: BrowserSessionSignals;
     };
 
 declare module "hast" {

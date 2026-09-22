@@ -1764,6 +1764,11 @@
       "upgradeToRun": "Passa a Pro per eseguire {{assistantName}}",
       "upgradeWorkspace": "Aggiorna l'area di lavoro"
     },
+    "browserAction": {
+      "documentTitle": "Azione del browser",
+      "loading": "Caricamento della richiesta del browser",
+      "unavailableDescription": "Questa richiesta del browser non è valida o non è più disponibile."
+    },
     "browserInput": {
       "applyFailed": "Impossibile aggiungere le informazioni. I dati inseriti sono ancora presenti. Riprova.",
       "applying": "Aggiunta delle informazioni",
@@ -1781,12 +1786,10 @@
       "delivered": "Agente avvisato",
       "deliveredDescription": "L’agente ora può continuare.",
       "description": "Inserisci le informazioni richieste per questo sito.",
-      "documentTitle": "Input del browser",
       "expired": "Richiesta scaduta",
       "expiredDescription": "Il browser è stato chiuso o questa richiesta non è più attiva.",
       "loadFailed": "Impossibile caricare questa richiesta",
       "loadFailedDescription": "Riprova tra poco.",
-      "loading": "Caricamento dell’input del browser",
       "loadingDescription": "Verifica della richiesta…",
       "open": "Inserisci le informazioni",
       "optional": "(Facoltativo)",
@@ -1799,9 +1802,33 @@
       "submitting": "Aggiunta…",
       "title": "Inserisci informazioni nel browser",
       "unavailable": "Richiesta non disponibile",
-      "unavailableDescription": "Questa richiesta di input del browser non è valida o non è più disponibile.",
       "uncertain": "Controlla il browser",
       "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di controllare prima di riprovare."
+    },
+    "browserInteraction": {
+      "applying": "Completamento dell’interazione nel browser",
+      "applyingDescription": "Il browser sta completando questa richiesta.",
+      "callbackFailed": "L’agente non è stato avvisato. Prova di nuovo Continua.",
+      "cancel": "Annulla",
+      "cancelFailed": "Impossibile annullare questa richiesta. Riprova.",
+      "cancelled": "Richiesta annullata",
+      "cancelledDescription": "Il passaggio al browser è stato annullato. Continua per avvisare l’agente.",
+      "cancelling": "Annullamento…",
+      "completed": "Interazione nel browser completata",
+      "completedDescription": "L’interazione nel browser è stata registrata. Continua per avvisare l’agente.",
+      "completeFailed": "Impossibile completare questa richiesta. Riprova.",
+      "completing": "Completamento…",
+      "continue": "Continua",
+      "continuing": "Continuazione…",
+      "delivered": "Agente avvisato",
+      "deliveredDescription": "Ora l’agente può continuare.",
+      "description": "Apri il browser, completa questo passaggio, quindi seleziona Fine.",
+      "done": "Fine",
+      "stale": "Browser non più disponibile",
+      "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
+      "title": "Prendi il controllo del browser",
+      "uncertain": "Controlla il browser",
+      "uncertainDescription": "L’interazione potrebbe essere stata completata. Chiedi all’agente di controllare prima di riprovare."
     },
     "cards": {
       "viewDetails": "Visualizza dettagli"

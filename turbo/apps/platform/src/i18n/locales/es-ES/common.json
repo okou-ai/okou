@@ -1764,6 +1764,11 @@
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",
       "upgradeWorkspace": "Actualizar el espacio de trabajo"
     },
+    "browserAction": {
+      "documentTitle": "Acción del navegador",
+      "loading": "Cargando solicitud del navegador",
+      "unavailableDescription": "Esta solicitud del navegador no es válida o ya no está disponible."
+    },
     "browserInput": {
       "applyFailed": "No se pudo añadir la información. Tus datos siguen aquí. Inténtalo de nuevo.",
       "applying": "Añadiendo información",
@@ -1781,12 +1786,10 @@
       "delivered": "Agente notificado",
       "deliveredDescription": "El agente ya puede continuar.",
       "description": "Introduce la información solicitada para este sitio.",
-      "documentTitle": "Entrada del navegador",
       "expired": "Solicitud caducada",
       "expiredDescription": "El navegador se cerró o esta solicitud ya no está activa.",
       "loadFailed": "No se pudo cargar esta solicitud",
       "loadFailedDescription": "Inténtalo de nuevo en un momento.",
-      "loading": "Cargando entrada del navegador",
       "loadingDescription": "Comprobando esta solicitud…",
       "open": "Introducir información",
       "optional": "(Opcional)",
@@ -1799,9 +1802,33 @@
       "submitting": "Añadiendo…",
       "title": "Introducir información en el navegador",
       "unavailable": "Solicitud no disponible",
-      "unavailableDescription": "Esta solicitud de entrada del navegador no es válida o ya no está disponible.",
       "uncertain": "Comprueba el navegador",
       "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
+    },
+    "browserInteraction": {
+      "applying": "Completando la interacción con el navegador",
+      "applyingDescription": "El navegador está finalizando esta solicitud.",
+      "callbackFailed": "No se notificó al agente. Vuelve a pulsar Continuar.",
+      "cancel": "Cancelar",
+      "cancelFailed": "No se pudo cancelar esta solicitud. Inténtalo de nuevo.",
+      "cancelled": "Solicitud cancelada",
+      "cancelledDescription": "La entrega del navegador se canceló. Continúa para notificar al agente.",
+      "cancelling": "Cancelando…",
+      "completed": "Interacción con el navegador completada",
+      "completedDescription": "Tu interacción con el navegador quedó registrada. Continúa para notificar al agente.",
+      "completeFailed": "No se pudo completar esta solicitud. Inténtalo de nuevo.",
+      "completing": "Completando…",
+      "continue": "Continuar",
+      "continuing": "Continuando…",
+      "delivered": "Agente notificado",
+      "deliveredDescription": "El agente ya puede continuar.",
+      "description": "Abre el navegador, completa este paso y selecciona Hecho.",
+      "done": "Hecho",
+      "stale": "El navegador ya no está disponible",
+      "staleDescription": "Pide al agente que cree una nueva solicitud.",
+      "title": "Toma el control del navegador",
+      "uncertain": "Comprueba el navegador",
+      "uncertainDescription": "Es posible que la interacción se haya completado. Pide al agente que lo compruebe antes de volver a intentarlo."
     },
     "cards": {
       "viewDetails": "Ver detalles"

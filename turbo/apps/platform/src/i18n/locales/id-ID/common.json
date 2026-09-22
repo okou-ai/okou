@@ -1732,6 +1732,11 @@
       "upgradeToRun": "Upgrade ke Pro untuk menjalankan {{assistantName}}",
       "upgradeWorkspace": "Upgrade workspace Anda"
     },
+    "browserAction": {
+      "documentTitle": "Tindakan browser",
+      "loading": "Memuat permintaan browser",
+      "unavailableDescription": "Permintaan browser ini tidak valid atau sudah tidak tersedia."
+    },
     "browserInput": {
       "applyFailed": "Informasi tidak dapat ditambahkan. Isian Anda masih tersedia. Coba lagi.",
       "applying": "Menambahkan informasi",
@@ -1749,12 +1754,10 @@
       "delivered": "Agen diberi tahu",
       "deliveredDescription": "Agen sekarang dapat melanjutkan.",
       "description": "Masukkan informasi yang diminta untuk situs ini.",
-      "documentTitle": "Input browser",
       "expired": "Permintaan kedaluwarsa",
       "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
       "loadFailed": "Permintaan ini tidak dapat dimuat",
       "loadFailedDescription": "Coba lagi sebentar lagi.",
-      "loading": "Memuat input browser",
       "loadingDescription": "Memeriksa permintaan ini…",
       "open": "Masukkan informasi",
       "optional": "(Opsional)",
@@ -1767,9 +1770,33 @@
       "submitting": "Menambahkan…",
       "title": "Masukkan informasi di browser",
       "unavailable": "Permintaan tidak tersedia",
-      "unavailableDescription": "Permintaan input browser ini tidak valid atau sudah tidak tersedia.",
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
+    },
+    "browserInteraction": {
+      "applying": "Menyelesaikan interaksi browser",
+      "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
+      "callbackFailed": "Agen tidak menerima pemberitahuan. Coba Lanjutkan lagi.",
+      "cancel": "Batal",
+      "cancelFailed": "Permintaan ini tidak dapat dibatalkan. Coba lagi.",
+      "cancelled": "Permintaan dibatalkan",
+      "cancelledDescription": "Penyerahan browser dibatalkan. Lanjutkan untuk memberi tahu agen.",
+      "cancelling": "Membatalkan…",
+      "completed": "Interaksi browser selesai",
+      "completedDescription": "Interaksi browser Anda telah dicatat. Lanjutkan untuk memberi tahu agen.",
+      "completeFailed": "Permintaan ini tidak dapat diselesaikan. Coba lagi.",
+      "completing": "Menyelesaikan…",
+      "continue": "Lanjutkan",
+      "continuing": "Melanjutkan…",
+      "delivered": "Agen diberi tahu",
+      "deliveredDescription": "Agen dapat melanjutkan sekarang.",
+      "description": "Buka browser, selesaikan langkah ini, lalu pilih Selesai.",
+      "done": "Selesai",
+      "stale": "Browser tidak lagi tersedia",
+      "staleDescription": "Minta agen membuat permintaan baru.",
+      "title": "Ambil alih browser",
+      "uncertain": "Periksa browser",
+      "uncertainDescription": "Interaksi mungkin telah selesai. Minta agen memeriksanya sebelum mencoba lagi."
     },
     "cards": {
       "viewDetails": "Lihat detail"
