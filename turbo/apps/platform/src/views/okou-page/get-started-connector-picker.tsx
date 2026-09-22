@@ -179,6 +179,45 @@ function ConnectorGroup({
 }
 
 /**
+ * The catalog's own search field.
+ *
+ * Deliberately the same control the connectors page draws -- same icon, same
+ * inset, same placeholder key -- because this is the same catalog seen through
+ * a smaller window, and a reader who has met one of them should not have to
+ * learn the other.
+ */
+function ConnectorSearchField({
+  value,
+  onChange,
+}: {
+  readonly value: string;
+  readonly onChange: (next: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="relative">
+      <Search
+        size={15}
+        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
+        aria-hidden="true"
+      />
+      <Input
+        type="text"
+        data-testid="quest-connector-search"
+        placeholder={t(($) => {
+          return $.connectors.catalog.search;
+        })}
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        className="pl-9 pr-3"
+      />
+    </div>
+  );
+}
+
+/**
  * Every one-click connector, inside the dialog that explains why to connect
  * one.
  *
@@ -271,28 +310,7 @@ export function QuestConnectorPicker({
 
   return (
     <div className="flex flex-col gap-3" data-testid="quest-connector-picker">
-      {/* The same field the connectors page uses, because this is the same
-          catalog seen through a smaller window -- and a reader who has met one
-          of them should not have to learn the other. */}
-      <div className="relative">
-        <Search
-          size={15}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
-          aria-hidden="true"
-        />
-        <Input
-          type="text"
-          data-testid="quest-connector-search"
-          placeholder={t(($) => {
-            return $.connectors.catalog.search;
-          })}
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-          }}
-          className="pl-9 pr-3"
-        />
-      </div>
+      <ConnectorSearchField value={search} onChange={setSearch} />
       {connectors.length === 0 ? (
         <p
           data-testid="quest-connector-empty"
