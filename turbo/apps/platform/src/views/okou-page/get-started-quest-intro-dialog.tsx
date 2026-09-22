@@ -209,9 +209,15 @@ function IntroLayout({
       {/* The price is its own row rather than trailing the description: in a
           column this narrow a chip sharing that line pushes the sentence into
           an extra wrap. The title is the argument and the price is a fact
-          about it, so it sits directly under both. */}
+          about it, so it sits directly under both.
+
+          The width has to be the chip's own, because this row lands in two
+          different formatting contexts: the flex column below, and the shell's
+          `grid gap-4 p-6` for a step that keeps the plain padded body. A grid
+          item is blockified and stretched by the initial `justify-self`, so an
+          alignment utility alone left the chip spanning the whole column. */}
       {reward !== undefined && (
-        <Badge className="self-start text-xs font-semibold tabular-nums text-brand-text">
+        <Badge className="w-fit text-xs font-semibold tabular-nums text-brand-text">
           <Coins />+{formatLocalizedNumber(reward)}
         </Badge>
       )}
@@ -699,16 +705,19 @@ export function GetStartedCheckinDialog({
                 })}
               </DialogTitle>
               {/* The streak, not the amount, is what brings someone back
-                  tomorrow, and the screen never said it. */}
+                  tomorrow, and the screen never said it. It reads as the
+                  subtitle but it is not the dialog's description: a milestone
+                  at streak 0 is reachable, and the slot that names the screen
+                  has to be the line that is always there. */}
               {streak > 0 && (
-                <DialogDescription>
+                <p className="text-sm text-muted-foreground">
                   {t(
                     ($) => {
                       return $.chat.agentPage.getStarted.streak;
                     },
                     { amount: formatLocalizedNumber(streak) },
                   )}
-                </DialogDescription>
+                </p>
               )}
             </DialogHeader>
             <p className="text-2xl font-semibold tabular-nums tracking-tight text-brand-text">
@@ -719,11 +728,14 @@ export function GetStartedCheckinDialog({
                 { amount: formatLocalizedNumber(reward) },
               )}
             </p>
-            <p className="text-sm leading-relaxed text-muted-foreground">
+            {/* The component rather than a hand-written paragraph, so this
+                screen's body prose takes the same leading as the other six
+                instead of its own. */}
+            <DialogDescription>
               {t(($) => {
                 return $.chat.agentPage.getStarted.intro.checkin.description;
               })}
-            </p>
+            </DialogDescription>
             <DialogFooter className="mt-auto">
               <Button
                 type="button"
