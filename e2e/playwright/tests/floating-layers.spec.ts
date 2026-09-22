@@ -19,13 +19,18 @@ async function centerOf(locator: Locator) {
 
 async function expectHitWithin(
   surface: Locator,
-  point: { x: number; y: number },
+  point?: { x: number; y: number },
 ) {
   // Visibility and z-index alone do not tell us which surface receives input.
   await expect
     .poll(async () => {
       return surface.evaluate((element, position) => {
-        const hit = document.elementFromPoint(position.x, position.y);
+        const rect = element.getBoundingClientRect();
+        const target = position ?? {
+          x: rect.x + rect.width / 2,
+          y: rect.y + rect.height / 2,
+        };
+        const hit = document.elementFromPoint(target.x, target.y);
         return hit !== null && element.contains(hit);
       }, point);
     })
@@ -107,6 +112,11 @@ test("a nested avatar dialog receives input above its parent and dismisses indep
   await customize.click();
 
   const nested = page.getByRole("dialog", { name: "Give your agent a face" });
+  await nested.getByRole("button", { name: "Randomize avatar" }).hover();
+  const tooltip = page.locator('[data-slot="tooltip-content"]');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText("Shuffle — try a random look!");
+  await expectHitWithin(tooltip);
   const next = nested.getByRole("button", { name: "Next step" });
   await expectHitWithin(next, await centerOf(next));
   await next.click();
@@ -125,7 +135,7 @@ test("a nested avatar dialog receives input above its parent and dismisses indep
   await expect(parent).toBeHidden();
 });
 
-test("a select receives input above its settings dialog and Escape closes only the select", async ({
+test("a select above settings dismisses independently on Escape and outside press", async ({
   page,
 }) => {
   await page.goto(`${appUrl}/agents?settings=preference`);
@@ -145,6 +155,80 @@ test("a select receives input above its settings dialog and Escape closes only t
   await expect(settings).toBeVisible();
   await expect(timezone).toBeFocused();
   await expectHitWithin(timezone, await centerOf(timezone));
+
+  // A modal Select owns a transparent backdrop as well as its visible popup.
+  // The first click over the parent's Close button must only dismiss Select.
+  const close = settings.getByRole("button", { name: "Close", exact: true });
+  const closePoint = await centerOf(close);
+  await timezone.click();
+  await expect(listbox).toBeVisible();
+  await page.mouse.click(closePoint.x, closePoint.y);
+  await expect(listbox).toBeHidden();
+  await timezone.click();
+  await expect(listbox).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(listbox).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(settings).toBeHidden();
+});
+
+test("the effort popover receives input above the composer and restores focus on dismissal", async ({
+  page,
+}) => {
+  await page.goto(appUrl);
+  await page.waitForURL(/agents\/.*\/chat/, { timeout: 30_000 });
+  const effort = page.getByRole("button", { name: /^Effort,/ });
+  await effort.click();
+  const slider = page.getByRole("slider", { name: "Effort", exact: true });
+  const control = page.locator('[data-slot="chat-effort-slider"]').filter({
+    has: slider,
+  });
+  // The native range input has a painted thumb sibling; either receives input
+  // through the slider control, so test its actual pointer-owning surface.
+  await expectHitWithin(control);
+
+  await page.keyboard.press("Escape");
+  await expect(slider).toBeHidden();
+  await expect(effort).toBeFocused();
+  await expectHitWithin(effort, await centerOf(effort));
+});
+
+test("mobile sidebar menus and the queue sheet stay interactive above their backdrops", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appUrl);
+  await page.waitForURL(/agents\/.*\/chat/, { timeout: 30_000 });
+  const openMenu = page.getByRole("button", { name: "Open menu", exact: true });
+  await openMenu.click();
+  const sidebar = page.locator('[data-slot="sidebar-expanded"]');
+  const menuTrigger = sidebar.getByRole("button", {
+    name: "Open chat list menu",
+  });
+  await expectHitWithin(menuTrigger, await centerOf(menuTrigger));
+  await menuTrigger.click();
+  const menu = page.getByRole("menu");
+  const item = menu.getByRole("menuitem").first();
+  await expectHitWithin(item, await centerOf(item));
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(sidebar).toBeVisible();
+  await expect(menuTrigger).toBeFocused();
+  await sidebar.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toBeHidden();
+  await expectHitWithin(openMenu, await centerOf(openMenu));
+
+  // The queue deep link is a public entry point and needs no active agent run.
+  const queueUrl = new URL(page.url());
+  queueUrl.searchParams.set("queue", "1");
+  await page.goto(queueUrl.href);
+  const sheet = page.getByRole("dialog", {
+    name: "Your agent is waiting in line",
+    exact: true,
+  });
+  const close = sheet.getByRole("button", { name: "Close", exact: true });
+  await expectHitWithin(close);
+  await close.click();
+  await expect(sheet).toBeHidden();
+  await expectHitWithin(openMenu, await centerOf(openMenu));
 });
