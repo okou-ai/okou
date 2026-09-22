@@ -141,10 +141,12 @@ function createBasicComposerUiSignals() {
     createDesktopModelPickerLayoutSignals();
   const internalModelPickerOpen$ = state(false);
   const menu = createModelPickerMenuSignals();
-  // Every viewport drives this from the same category strip. Null means the
-  // chat models. It survives close the way the old composer track kept its
-  // expanded category -- the video options chip and the temporary-model notice
-  // both read it to tell which model the composer is pointed at.
+  // Which model the composer is pointed at; null means the chat models. The
+  // video options chip and the temporary-model notice both read it, and it
+  // survives close the way the old composer track kept its expanded category.
+  // The flyout moves it when a model is chosen, so browsing a type and leaving
+  // keeps the current one; the menu's pages move it on entry instead, because
+  // navigating into a type is the only thing that layout can report.
   const internalMediaModelCategory$ = state<MediaModelCategory | null>(null);
   const modelPickerOpen$ = computed((get) => {
     return get(internalModelPickerOpen$);
