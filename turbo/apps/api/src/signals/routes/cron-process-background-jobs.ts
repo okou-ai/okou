@@ -3,6 +3,10 @@ import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contrac
 import type { RouteEntry } from "../route-entry";
 import { executeDurableUserExportWork$ } from "../services/user-export-durable.service";
 import { cleanupDurableUserExports$ } from "../services/user-export-cleanup.service";
+import {
+  cleanupOnboardingRecommendationJobs$,
+  executeOnboardingRecommendationWork$,
+} from "../services/onboarding-recommendation.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const process$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -10,13 +14,24 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
     return cronUnauthorized();
   }
   const workSignal = AbortSignal.any([signal, AbortSignal.timeout(50_000)]);
-  const cleaned = await set(cleanupDurableUserExports$, {}, workSignal);
+  const [cleanedExports, cleanedRecommendations] = await Promise.all([
+    set(cleanupDurableUserExports$, {}, workSignal),
+    set(cleanupOnboardingRecommendationJobs$, {}, workSignal),
+  ]);
   signal.throwIfAborted();
-  const result = await set(executeDurableUserExportWork$, {}, workSignal);
+  // Each kind owns a disjoint queue, so a long export cannot keep a fresh
+  // onboarding result from using the same durable wakeup.
+  const [exports, recommendations] = await Promise.all([
+    set(executeDurableUserExportWork$, {}, workSignal),
+    set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
+  ]);
   signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: { ...result, cleaned: cleaned.processed },
+    body: {
+      processed: exports.processed + recommendations.processed,
+      cleaned: cleanedExports.processed + cleanedRecommendations.processed,
+    },
   };
 });
 

@@ -24,10 +24,13 @@ import {
   justConnectedBuiltinSlugs$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
 import {
   sourcesFirstUi$,
   updateSourcesFirstUi$,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorEntryCard } from "../okou-page/components/settings/connector-entry-card.tsx";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
@@ -40,8 +43,9 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 /**
  * The field answered on the step before decides the grid: it shows that
- * field's own sources rather than the whole featured list. The catalog search
- * beside them still reaches everything else.
+ * field's own sources rather than the whole curated onboarding list. Search
+ * can reveal the other onboarding sources, but never opens the full catalog:
+ * every source offered here has an explicit context collector.
  */
 function featuredSlugsFor(
   industry: OnboardingIndustry | null,
@@ -59,6 +63,12 @@ function featuredSlugsFor(
  */
 const SEARCH_RESULT_LIMIT = 40;
 
+function isOnboardingSourceSlug(slug: string): boolean {
+  return FEATURED_SOURCE_SLUGS.some((featuredSlug) => {
+    return featuredSlug === slug;
+  });
+}
+
 /**
  * A name match beats a mention in a description, so "calendar" leads with
  * Google Calendar rather than with everything whose blurb says "calendars".
@@ -68,6 +78,18 @@ function searchRank(label: string, query: string): number {
     return 0;
   }
   return label.includes(query) ? 1 : 2;
+}
+
+function connectedOnboardingSlugs(
+  connectors: readonly PlatformConnectorCatalogStatusItem[],
+  justConnected: ReadonlySet<ConnectorSlug>,
+): readonly ConnectorSlug[] {
+  return connectors.flatMap((connector) => {
+    return isOnboardingSourceSlug(connector.slug) &&
+      (connector.connected || justConnected.has(connector.slug))
+      ? [connector.slug]
+      : [];
+  });
 }
 
 function matchingConnectors(
@@ -96,7 +118,7 @@ function matchingConnectors(
   });
 }
 
-/** Search offers the rest of the catalog; the grid already carries the field's. */
+/** Search offers the rest of the curated sources; the grid carries the field's. */
 function SourceSearchDialog({
   open,
   query,
@@ -118,7 +140,10 @@ function SourceSearchDialog({
   const connectors =
     catalogLoadable.state === "hasData"
       ? catalogLoadable.data.connectors.filter((connector) => {
-          return connector.authMethods.length > 0;
+          return (
+            connector.authMethods.length > 0 &&
+            isOnboardingSourceSlug(connector.slug)
+          );
         })
       : [];
   const trimmedQuery = query.trim().toLowerCase();
@@ -204,7 +229,7 @@ function SourceSearchDialog({
 }
 
 export function OnboardingSourcesPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
   const captureSearchOpened = useSet(
@@ -213,17 +238,13 @@ export function OnboardingSourcesPage() {
   const captureConnectStarted = useSet(captureSourceOnboardingConnectStarted$);
   const captureConnected = useSet(captureSourceOnboardingConnected$);
   const flow = useSourcesFirstFlow("sources");
+  const rootSignal = useGet(rootSignal$);
+  const startRecommendation = useSet(startOnboardingRecommendation$);
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
-  const connectedSlugs: readonly ConnectorSlug[] =
+  const connectedSlugs =
     catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors
-          .filter((connector) => {
-            return connector.connected || justConnected.has(connector.slug);
-          })
-          .map((connector) => {
-            return connector.slug;
-          })
+      ? connectedOnboardingSlugs(catalogLoadable.data.connectors, justConnected)
       : [];
   // A source connected through search belongs in the grid too, so an enabled
   // Continue always has something visibly connected behind it.
@@ -247,7 +268,24 @@ export function OnboardingSourcesPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
-      onPrimary={flow.goNext}
+      onPrimary={() => {
+        const industry = flow.draft.industry;
+        if (industry) {
+          const generation = startRecommendation(
+            {
+              industry,
+              locale: i18n.resolvedLanguage || i18n.language || "en-US",
+            },
+            rootSignal,
+          );
+          detach(
+            generation,
+            Reason.DomCallback,
+            "onboarding context recommendation",
+          );
+        }
+        flow.goNext();
+      }}
       // At least one connected source is the one hard requirement.
       primaryDisabled={connectedSlugs.length === 0}
       onBack={flow.goBack}

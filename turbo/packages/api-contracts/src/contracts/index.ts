@@ -891,11 +891,21 @@ export {
   type OrgMessageResponse,
 } from "./org-members";
 export {
-  onboardingStatusContract,
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   onboardingCompleteContract,
+  onboardingRecommendationConnectorSlugSchema,
+  onboardingRecommendationContract,
+  onboardingRecommendationLocaleSchema,
+  onboardingRecommendationSchema,
+  onboardingRecommendationStatusSchema,
+  onboardingStatusContract,
   onboardingStatusResponseSchema,
-  type OnboardingStatusContract,
   type OnboardingCompleteContract,
+  type OnboardingRecommendation,
+  type OnboardingRecommendationConnectorSlug,
+  type OnboardingRecommendationContract,
+  type OnboardingRecommendationStatus,
+  type OnboardingStatusContract,
   type OnboardingStatusResponse,
 } from "./onboarding";
 export { skillFrontmatterSchema } from "./skills";

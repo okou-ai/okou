@@ -120,6 +120,7 @@ import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
 import { modelProvidersRoutes } from "./routes/model-providers";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
+import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgDeleteRoutes } from "./routes/org-delete";
@@ -385,6 +386,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runsRoutes,
   ...runsCancelRoutes,
   ...onboardingCompleteRoutes,
+  ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,

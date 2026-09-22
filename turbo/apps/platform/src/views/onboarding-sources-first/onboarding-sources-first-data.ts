@@ -1,4 +1,5 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
@@ -7,21 +8,8 @@ import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
  * The fields themselves come from `@okouai/core/onboarding-industry`, which the
  * completion contract validates against.
  */
-export const FEATURED_SOURCE_SLUGS = [
-  "gmail",
-  "google-docs",
-  "google-drive",
-  "google-sheets",
-  "github",
-  "quickbooks",
-  "hubspot",
-  "linear",
-  "notion",
-  "google-calendar",
-  "outlook-mail",
-  "google-ads",
-  "meta-ads",
-] as const satisfies readonly ConnectorSlug[];
+export const FEATURED_SOURCE_SLUGS =
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS satisfies readonly ConnectorSlug[];
 
 export const SOURCE_FAMILIES = {
   documents: [

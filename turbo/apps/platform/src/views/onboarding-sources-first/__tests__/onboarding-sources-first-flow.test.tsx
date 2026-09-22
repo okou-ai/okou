@@ -2,7 +2,10 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  onboardingCompleteContract,
+  onboardingRecommendationContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -182,6 +185,74 @@ test("A later step returns to the entry until a source is connected", async () =
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboarding);
+});
+
+test("Connected account context replaces the static starting prompt", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7493e";
+  const generatedPrompt =
+    "Review my recent Gmail workload, group the messages that need a reply, and draft the three most important responses for my approval.";
+  let startBody: unknown;
+  context.mocks.api(
+    onboardingRecommendationContract.start,
+    ({ body, respond }) => {
+      startBody = body;
+      return respond(202, { jobId, status: "pending" });
+    },
+  );
+  let pollCount = 0;
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    pollCount += 1;
+    return pollCount === 1
+      ? respond(200, { jobId, status: "running" })
+      : respond(200, {
+          jobId,
+          status: "completed",
+          recommendation: {
+            kind: "task",
+            title: "Clear the replies that matter",
+            outcome: "Three priority responses ready for review",
+            prompt: generatedPrompt,
+          },
+        });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByRole("heading", {
+      name: "Have you used Codex or Claude Code?",
+    }),
+  ).resolves.toBeInTheDocument();
+  click(fieldRadio("No, I’m new to this"));
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByText("Clear the replies that matter"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
+  expect(startBody).toStrictEqual({
+    industry: "marketing",
+    locale: "en-US",
+  });
+  expect(pollCount).toBe(2);
 });
 
 test("The ready step completes onboarding once, before it runs the first request", async () => {

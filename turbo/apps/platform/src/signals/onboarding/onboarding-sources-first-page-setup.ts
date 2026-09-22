@@ -35,6 +35,7 @@ import {
   setupOnboardingMakePage$,
 } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
+import { allowOnboardingRecommendationFallback$ } from "./onboarding-recommendation.ts";
 import {
   claimSourcesFirstStartEvent$,
   setSourcesFirstFlow$,
@@ -275,4 +276,5 @@ export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingReadyPage,
+  enter: allowOnboardingRecommendationFallback$,
 });

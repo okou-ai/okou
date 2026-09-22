@@ -1,11 +1,12 @@
 import { command, computed, state } from "ccstate";
+import type { OnboardingRecommendation } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
- * Source-first onboarding draft. The connector step drives the live connector
- * catalog, the invite step records what the invitation API answered, and the
- * chat-channel step reads the org's own Slack and Teams installations; the
- * remaining answers are held here until their endpoints land.
+ * Source-first onboarding draft. The direction step shapes the curated live
+ * connector catalog, the invite step records what the invitation API answered,
+ * and the chat-channel step reads the org's own Slack and Teams installations;
+ * the remaining answers are held here until their endpoints land.
  *
  * One application start owns this draft, because a Store lives exactly that
  * long: switching Clerk session or organization replaces the document, so the
@@ -43,6 +44,15 @@ export interface SourcesFirstInvite {
   readonly failure: string | null;
 }
 
+export type SourcesFirstRecommendationStatus =
+  | "idle"
+  | "starting"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "timed-out";
+
 export interface SourcesFirstDraft {
   readonly industry: OnboardingIndustry | null;
   /** One entry per address this run tried, with what the API answered. */
@@ -56,8 +66,13 @@ export interface SourcesFirstDraft {
   readonly provider: SubscriptionProvider | null;
   /** Edited copy of the matched starting prompt, kept across step changes. */
   readonly startingPromptDraft: string;
-  /** `industry:source` the draft was generated from, so a later change re-seeds it. */
+  /** The displayed seed the edit belongs to; any non-empty key owns later text. */
   readonly startingPromptKey: string;
+  /** The durable context-generation job started when the source step continues. */
+  readonly recommendationJobId: string | null;
+  readonly recommendationStatus: SourcesFirstRecommendationStatus;
+  /** Only the final, schema-validated recommendation; raw source data never enters the browser. */
+  readonly recommendation: OnboardingRecommendation | null;
 }
 
 function emptyDraft(): SourcesFirstDraft {
@@ -68,6 +83,9 @@ function emptyDraft(): SourcesFirstDraft {
     provider: null,
     startingPromptDraft: "",
     startingPromptKey: "",
+    recommendationJobId: null,
+    recommendationStatus: "idle",
+    recommendation: null,
   };
 }
 
