@@ -650,7 +650,7 @@ function protocolHeaders(
   };
 }
 
-async function fixture() {
+function fixture() {
   mockEnv("MCP_RESOURCE_URL", resource);
   mockEnv("MCP_OAUTH_ISSUER", issuer);
   const userId = `user_${randomUUID()}`;
