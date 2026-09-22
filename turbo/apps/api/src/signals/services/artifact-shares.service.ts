@@ -39,7 +39,6 @@ import {
   privateArtifactRecord,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
-import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
@@ -634,25 +633,10 @@ export const resolveArtifactShare$ = command(
       return null;
     }
     const { row, policy } = authorized;
+    // Hosted sites are public publications served from their own URL; only
+    // private files resolve to a temporary credential here.
     if (policy.target.kind === "html") {
-      const preview = await set(
-        createPrivateHostedPreview$,
-        {
-          deploymentId: policy.target.id,
-          userId: row.userId,
-          orgId: row.orgId,
-          snapshotId: policy.target.snapshotId,
-        },
-        signal,
-      );
-      return preview
-        ? {
-            ...preview,
-            filename: "index.html",
-            contentType: "text/html",
-            target: { kind: "html" as const, id: policy.target.id },
-          }
-        : null;
+      return null;
     }
     const file = await get(privateArtifactRecord(policy.target.id));
     signal.throwIfAborted();

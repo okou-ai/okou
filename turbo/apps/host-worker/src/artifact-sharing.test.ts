@@ -613,7 +613,11 @@ test("organization snapshots cache bytes but reject expired network credentials"
   };
   const page = await fetchWorker(request("/"), f.env);
   expect(page.status).toBe(200);
-  expect(page.headers.get("Cache-Control")).toBe(
+  // The document is always fetched; only its assets are cached by the browser.
+  expect(page.headers.get("Cache-Control")).toBe("private, no-store");
+  const style = await fetchWorker(request("/style.css"), f.env);
+  expect(style.status).toBe(200);
+  expect(style.headers.get("Cache-Control")).toBe(
     "private, max-age=31536000, must-revalidate",
   );
   const rewritten = new Request(`https://pv-${token}.okou.app/`);

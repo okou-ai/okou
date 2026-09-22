@@ -1133,8 +1133,8 @@ function AdjustUsagePackMenuItem() {
     <DropdownMenuItem
       className="whitespace-nowrap"
       disabled={loadable.state === "loading"}
-      onSelect={(event) => {
-        event.preventDefault();
+      closeOnClick={false}
+      onClick={() => {
         detach(openConfiguration(pageSignal), Reason.DomCallback);
       }}
     >
@@ -1175,22 +1175,24 @@ function SelfDemoteAction({
       }}
     >
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            showTooltip
-            aria-label={t(
-              ($) => {
-                return $.settings.workspace.members.actionsFor;
-              },
-              {
-                email,
-              },
-            )}
-            variant="quiet"
-            size="icon-xs"
-          >
-            <Ellipsis size={15} />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              showTooltip
+              aria-label={t(
+                ($) => {
+                  return $.settings.workspace.members.actionsFor;
+                },
+                {
+                  email,
+                },
+              )}
+              variant="quiet"
+              size="icon-xs"
+            />
+          }
+        >
+          <Ellipsis size={15} />
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
@@ -1200,7 +1202,7 @@ function SelfDemoteAction({
           {showUsagePack && <AdjustUsagePackMenuItem />}
           {canSelfDemote && (
             <DropdownMenuItem
-              onSelect={() => {
+              onClick={() => {
                 setOpen(true);
               }}
             >
@@ -1300,24 +1302,26 @@ function MemberActions({
       }}
     >
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            showTooltip
-            aria-label={t(
-              ($) => {
-                return $.settings.workspace.members.actionsFor;
-              },
-              {
-                email: member.email,
-              },
-            )}
-            disabled={changingRole}
-            variant="quiet"
-            size="icon-xs"
-            className="disabled:opacity-50"
-          >
-            <Ellipsis size={15} />
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              showTooltip
+              aria-label={t(
+                ($) => {
+                  return $.settings.workspace.members.actionsFor;
+                },
+                {
+                  email: member.email,
+                },
+              )}
+              disabled={changingRole}
+              variant="quiet"
+              size="icon-xs"
+              className="disabled:opacity-50"
+            />
+          }
+        >
+          <Ellipsis size={15} />
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"
@@ -1343,7 +1347,7 @@ function MemberActions({
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive focus:text-destructive"
-            onSelect={() => {
+            onClick={() => {
               setRemoveTarget(member.email);
             }}
           >
@@ -1503,20 +1507,22 @@ function PendingInvitationRow({
             }}
           >
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  showTooltip
-                  aria-label={t(
-                    ($) => {
-                      return $.settings.workspace.members.actionsFor;
-                    },
-                    { email: invitation.email },
-                  )}
-                  variant="quiet"
-                  size="icon-xs"
-                >
-                  <Ellipsis size={15} />
-                </Button>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    showTooltip
+                    aria-label={t(
+                      ($) => {
+                        return $.settings.workspace.members.actionsFor;
+                      },
+                      { email: invitation.email },
+                    )}
+                    variant="quiet"
+                    size="icon-xs"
+                  />
+                }
+              >
+                <Ellipsis size={15} />
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
@@ -1525,7 +1531,7 @@ function PendingInvitationRow({
               >
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onSelect={() => {
+                  onClick={() => {
                     setRevokeTarget(invitation.id);
                   }}
                 >

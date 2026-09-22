@@ -272,27 +272,29 @@ function TypeFilter({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={t(($) => {
-            return $.activity.network.filter.type;
-          })}
-          className="flex h-8 min-w-[140px] items-center justify-between gap-1.5 rounded-md border border-border bg-input px-3 text-xs text-foreground outline-none transition-colors hover:bg-input-hover focus:border-primary focus:ring-[3px] focus:ring-primary/10"
-        >
-          <span className="flex items-center gap-1.5">
-            <Filter size={14} className="shrink-0" />
-            {typeFilterLabel(typeFilter)}
-          </span>
-          <ChevronDown size={14} className="shrink-0" />
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label={t(($) => {
+              return $.activity.network.filter.type;
+            })}
+            className="flex h-8 min-w-[140px] items-center justify-between gap-1.5 rounded-md border border-border bg-input px-3 text-xs text-foreground outline-none transition-colors hover:bg-input-hover focus:border-primary focus:ring-[3px] focus:ring-primary/10"
+          />
+        }
+      >
+        <span className="flex items-center gap-1.5">
+          <Filter size={14} className="shrink-0" />
+          {typeFilterLabel(typeFilter)}
+        </span>
+        <ChevronDown size={14} className="shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem
           role="menuitemcheckbox"
           aria-checked={typeFilter.mode === "all"}
-          onSelect={(event) => {
-            event.preventDefault();
+          closeOnClick={false}
+          onClick={() => {
             onChange({ mode: "all" });
           }}
         >
@@ -310,8 +312,8 @@ function TypeFilter({
               key={type}
               role="menuitemcheckbox"
               aria-checked={selected}
-              onSelect={(event) => {
-                event.preventDefault();
+              closeOnClick={false}
+              onClick={() => {
                 onChange(toggleSelectedType(typeFilter, typeOptions, type));
               }}
             >

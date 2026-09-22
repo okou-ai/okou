@@ -188,18 +188,20 @@ function AccountActions({
   const signal = useGet(pageSignal$);
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon"
-          aria-label={t(($) => {
-            return $.connectors.accounts.actions;
-          })}
-        >
-          <EllipsisVertical size={16} />
-        </Button>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon"
+            aria-label={t(($) => {
+              return $.connectors.accounts.actions;
+            })}
+          />
+        }
+      >
+        <EllipsisVertical size={16} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {account.scopeMismatch === true && onReviewScopes ? (

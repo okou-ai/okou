@@ -49,11 +49,16 @@ export function createComposerTaskChipsSignals(
     "workflow" | "website" | "visualization" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
+  /**
+   * What the composer is on, as the footer chip states it. A create mode is
+   * named by the slash panel as well as by this row, and the chip is how both
+   * rollouts state it, so it carries the create mode's own switch. A general
+   * task has only this row's panels to open into, so it waits for the chips.
+   */
   const task$ = computed((get): ComposerTask | null => {
-    if (!get(enabled$)) {
-      return null;
-    }
-    return get(create.mode$) ?? get(internalGeneralTask$);
+    return (
+      get(create.mode$) ?? (get(enabled$) ? get(internalGeneralTask$) : null)
+    );
   });
   const workflowVisible$ = computed((get) => {
     return get(task$) === "workflow";
@@ -72,9 +77,14 @@ export function createComposerTaskChipsSignals(
     set(internalGeneralTask$, null);
     set(create.selectCommand$, task);
   });
-  /** The chip row toggles: choosing the task already showing clears it. */
+  /**
+   * The chip row toggles: choosing the task already showing clears it. The
+   * footer chip and the composer's Backspace clear the same way, and they
+   * stand wherever a task does, so this reads the create mode's switch rather
+   * than the row's own.
+   */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
-    if (!get(enabled$)) {
+    if (!get(create.enabled$)) {
       return;
     }
     set(applyTask$, get(task$) === task ? null : task);
@@ -100,7 +110,6 @@ export function createComposerTaskChipsSignals(
   const internalIdeaPages$ = state({
     image: 0,
     workflow: 0,
-    video: 0,
     website: 0,
     presentation: 0,
   });

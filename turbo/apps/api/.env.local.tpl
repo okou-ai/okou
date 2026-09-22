@@ -6,7 +6,7 @@ CLERK_SECRET_KEY=op://Development/clerk/CLERK_SECRET_KEY
 CLERK_PUBLISHABLE_KEY=op://Development/clerk/CLERK_PUBLISHABLE_KEY
 CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
 
-# Optional: external MCP resource server (also requires the McpServer feature switch).
+# Optional: external MCP resource server.
 # See docs/mcp-server.md; use the exact resource and issuer configured in Clerk.
 # MCP_RESOURCE_URL=https://api.example.test/mcp
 # MCP_OAUTH_ISSUER=https://your-instance.clerk.accounts.dev

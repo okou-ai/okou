@@ -25,7 +25,8 @@ function hasOpenDialog(doc: Document): boolean {
  *
  * Callbacks are wrapped with `onDomEventFn` so they can be async (fire-and-forget
  * with proper abort-error handling). Text-entry targets are ignored by default;
- * individual bindings can opt in with `allowInEditableTarget`.
+ * individual bindings can opt in with `allowInEditableTarget`. Once matched, a
+ * shortcut owns the keydown so the focused control cannot handle it again.
  */
 export function setupGlobalShortcut(
   bindings: GlobalShortcutBindings,
@@ -52,6 +53,7 @@ export function setupGlobalShortcut(
             return;
           }
           e.preventDefault();
+          e.stopPropagation();
           return binding.run(e);
         }
       }

@@ -98,7 +98,6 @@ import {
   BrandStripe,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { agents$ } from "../../signals/agent.ts";
@@ -2638,17 +2637,19 @@ function WorkflowFilePicker({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={i18n.t(($) => {
-            return $.workflows.detail.files.aria;
-          })}
-          className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm px-0.5 py-0.5 text-sm font-medium text-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span className="min-w-0 truncate">{selectedLabel}</span>
-          <ChevronDown size={14} className="shrink-0" />
-        </button>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label={i18n.t(($) => {
+              return $.workflows.detail.files.aria;
+            })}
+            className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-sm px-0.5 py-0.5 text-sm font-medium text-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        }
+      >
+        <span className="min-w-0 truncate">{selectedLabel}</span>
+        <ChevronDown size={14} className="shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <WorkflowFileNavigationItems
@@ -2682,7 +2683,7 @@ function WorkflowFileNavigationItems({
     <>
       <DropdownMenuItem
         className={cn(!selectedFilePath ? "bg-muted" : "")}
-        onSelect={() => {
+        onClick={() => {
           onSelectFile(null);
         }}
       >
@@ -2695,7 +2696,7 @@ function WorkflowFileNavigationItems({
           <DropdownMenuItem
             key={file.path}
             className={cn(selectedFilePath === file.path ? "bg-muted" : "")}
-            onSelect={() => {
+            onClick={() => {
               onSelectFile(file.path);
             }}
           >
@@ -9120,19 +9121,21 @@ function AutomationMoreActionsMenu({
     <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={disabled || deleting}
-              aria-label={i18n.t(($) => {
-                return $.workflows.automations.common.moreActions;
-              })}
-              className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground data-popup-open:bg-state-selected-hover data-popup-open:text-foreground"
-            >
-              <EllipsisVertical size={14} />
-            </Button>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={disabled || deleting}
+                aria-label={i18n.t(($) => {
+                  return $.workflows.automations.common.moreActions;
+                })}
+                className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground data-popup-open:bg-state-selected-hover data-popup-open:text-foreground"
+              />
+            }
+          >
+            <EllipsisVertical size={14} />
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent>
@@ -9145,16 +9148,16 @@ function AutomationMoreActionsMenu({
       </Tooltip>
       <DropdownMenuContent align="end" className="w-44">
         {onRevealWebhookSecret ? (
-          <DropdownMenuModalItem
+          <DropdownMenuItem
             disabled={deleting}
             className="gap-2"
-            onModalSelect={onRevealWebhookSecret}
+            onClick={onRevealWebhookSecret}
           >
             <Eye size={14} />
             {i18n.t(($) => {
               return $.workflows.automations.webhook.revealTitle;
             })}
-          </DropdownMenuModalItem>
+          </DropdownMenuItem>
         ) : null}
         {canDelete ? (
           <DropdownMenuItem

@@ -92,10 +92,12 @@ describe("Button", () => {
     const user = userEvent.setup();
     render(
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="neutral" showTooltip aria-label="More actions">
-            More icon
-          </Button>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="neutral" showTooltip aria-label="More actions" />
+          }
+        >
+          More icon
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuItem>Rename</DropdownMenuItem>

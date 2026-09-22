@@ -26,7 +26,7 @@ export function ThreadPinMoveMenuItems({
   return (
     <>
       <DropdownMenuItem
-        onSelect={() => {
+        onClick={() => {
           return detach(move(signals.threadId, -1, signal), Reason.DomCallback);
         }}
       >
@@ -36,7 +36,7 @@ export function ThreadPinMoveMenuItems({
         })}
       </DropdownMenuItem>
       <DropdownMenuItem
-        onSelect={() => {
+        onClick={() => {
           return detach(move(signals.threadId, 1, signal), Reason.DomCallback);
         }}
       >

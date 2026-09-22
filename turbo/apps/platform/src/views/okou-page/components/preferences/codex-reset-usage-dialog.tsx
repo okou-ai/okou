@@ -154,12 +154,11 @@ export function CodexResetCreditsMenuItem({
             resetDisabled &&
               "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
           )}
-          onSelect={(event) => {
-            if (resetDisabled) {
-              event.preventDefault();
-              return;
+          closeOnClick={!resetDisabled}
+          onClick={() => {
+            if (!resetDisabled) {
+              onReset?.();
             }
-            onReset?.();
           }}
         >
           <RotateCcw size={14} className="shrink-0" aria-hidden />

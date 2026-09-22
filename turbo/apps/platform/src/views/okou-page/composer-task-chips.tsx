@@ -115,24 +115,6 @@ const IMAGE_IDEAS = [
   "greetingCard",
   "brandCharacter",
 ] as const;
-/**
- * Video has no chip and no slash Make row, and the type picker that could still
- * switch a create mode over to it renders only while the task chips are off --
- * which is when this whole surface is absent. So nothing reaches the video
- * ideas row or the video shelf below today; both stay only because
- * `ComposerTemplateTask` still derives from the surviving `video` create mode.
- * Retiring that mode removes them and their `chat.taskChips` copy together.
- */
-const VIDEO_IDEAS = [
-  "animatePhoto",
-  "productDemo",
-  "socialClip",
-  "eventPromo",
-  "visualExplainer",
-  "loopingBackground",
-  "brandIntro",
-  "videoGreeting",
-] as const;
 const PRESENTATION_IDEAS = [
   "pitchDeck",
   "teamUpdate",
@@ -166,8 +148,6 @@ const TASK_TEMPLATE_SHELF = {
     width: "w-[118px]",
     ratio: "aspect-[4/5]",
   },
-  // Unreachable alongside the ideas row; see the note on VIDEO_IDEAS.
-  video: { category: "video", width: "w-[200px]", ratio: "aspect-video" },
   website: { category: "website", width: "w-[200px]", ratio: "aspect-video" },
 } as const satisfies Record<
   ComposerTemplateTask,
@@ -252,9 +232,6 @@ function ComposerTemplateShelf({
     image: t(($) => {
       return $.chat.taskChips.shelf.image;
     }),
-    video: t(($) => {
-      return $.chat.taskChips.shelf.video;
-    }),
     website: t(($) => {
       return $.chat.taskChips.shelf.website;
     }),
@@ -326,9 +303,6 @@ function ComposerTaskIdeas({
     image: IMAGE_IDEAS.map((key) => {
       return copy.image[key];
     }),
-    video: VIDEO_IDEAS.map((key) => {
-      return copy.video[key];
-    }),
     website: WEBSITE_IDEAS.map((key) => {
       return copy.website[key];
     }),
@@ -386,7 +360,6 @@ export function ComposerTaskChips({
     },
     { returnObjects: true },
   );
-  /** Video is not offered here; see the note on VIDEO_IDEAS for the rest. */
   const tasks = [
     "workflow",
     "presentation",

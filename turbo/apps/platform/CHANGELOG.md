@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.940.0](https://github.com/okou-ai/okou/compare/app-v0.939.0...app-v0.940.0) (2026-09-22)
+
+
+### Features
+
+* **platform:** toggle unread chats from pinned agents ([#35923](https://github.com/okou-ai/okou/issues/35923)) ([1d63e4e](https://github.com/okou-ai/okou/commit/1d63e4e0a4a1e1461e29fdfc860bb9786f680e58))
+
+
+### Bug Fixes
+
+* **platform:** center the compact composer model icon ([#35846](https://github.com/okou-ai/okou/issues/35846)) ([fe0a66a](https://github.com/okou-ai/okou/commit/fe0a66a87248caff0404d53c2a3711b76c8f7c54))
+* **platform:** drop the redundant permission card details dialog ([#35862](https://github.com/okou-ai/okou/issues/35862)) ([89fedb2](https://github.com/okou-ai/okou/commit/89fedb22212b6888348f00f62a10c8501d4f53a5))
+* **platform:** prevent dropdown menu shortcut conflicts ([#35945](https://github.com/okou-ai/okou/issues/35945)) ([a8fc533](https://github.com/okou-ai/okou/commit/a8fc533bf24118381f053b5a8718c6ce49206e7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.0
+    * @okouai/core bumped to 8.697.1
+    * @okouai/ui bumped to 1.11.4
+
 ## [0.939.0](https://github.com/okou-ai/okou/compare/app-v0.938.0...app-v0.939.0) (2026-09-22)
 
 

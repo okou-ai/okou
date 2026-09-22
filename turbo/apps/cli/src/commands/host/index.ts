@@ -7,13 +7,8 @@ import {
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { publishStaticSite } from "../../lib/host/publish-static-site";
 import { createArtifactPresentation } from "../shared/artifact-return";
-import {
-  applyArtifactVisibility,
-  createArtifactVisibilityOption,
-  prepareArtifactVisibility,
-  type ArtifactVisibility,
-} from "../shared/artifact-visibility";
 import { cloneHostedSiteCommand } from "./clone";
+import { versionsHostedSiteCommand } from "./versions";
 
 interface HostOptions {
   readonly site?: string;
@@ -21,7 +16,6 @@ interface HostOptions {
   readonly artifactKind?: HostedArtifactKind;
   readonly spa?: boolean;
   readonly json?: boolean;
-  readonly visibility?: ArtifactVisibility;
 }
 
 function parseArtifactKind(value: string): HostedArtifactKind {
@@ -36,7 +30,7 @@ function formatBytes(bytes: number): string {
 
 export const hostCommand = new Command()
   .name("host")
-  .description("Publish and clone static hosted sites")
+  .description("Publish, redeploy, inspect, and clone static hosted sites")
   .argument("<dir>", "Static build directory, for example ./dist")
   .option(
     "--site <slug>",
@@ -50,17 +44,17 @@ export const hostCommand = new Command()
   )
   .option("--spa", "Serve unknown HTML navigation paths from index.html")
   .option("--json", "Output the result and Markdown return forms as JSON")
-  .addOption(createArtifactVisibilityOption())
   .addCommand(cloneHostedSiteCommand)
+  .addCommand(versionsHostedSiteCommand)
   .addHelpText(
     "after",
     `
 Examples:
   Publish a Vite build:  okou host ./dist --site my-product-demo --spa
-  Publish another copy:  okou host ./dist --site my-product-demo --spa
+  Redeploy the same URL: okou host ./dist --site my-product-demo --spa
+  List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
-  Machine readable:     okou host ./dist --site my-product-demo --spa --json
-  Share publicly:       okou host ./dist --site my-product-demo --visibility public
+  Machine readable:      okou host ./dist --site my-product-demo --spa --json
 
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
@@ -68,12 +62,12 @@ Notes:
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
-  - With private artifacts enabled, the result is an authenticated preview URL
-  - Every publication creates a new site; reusing --site automatically adds a suffix when the name is taken
-  - Return the new URL after each publication; previous URLs keep their original content and cannot be redeployed
-  - Use the returned Site slug or artifact URL with host clone to download that publication
-  - With privateArtifacts enabled, new sites default to only-me; --visibility org or public explicitly shares the new site
-  - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
+  - Hosted sites are public: anyone with the returned URL can open them, so do not publish confidential content
+  - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
+  - A name owned by another chat or another user is rejected; choose a different --site value
+  - HTML files may change on every redeploy; every other file must carry a content hash in its name, such as /assets/app-4f3a9c12.js
+  - A published non-HTML path keeps its bytes forever. Rename a changed asset with its new content hash instead of republishing the same name
+  - Use the returned Site slug with versions or clone to inspect a publication
   - The directory must include index.html
   - Local HTML/CSS asset references must point at files inside the directory`,
   )
@@ -82,16 +76,12 @@ Notes:
       if (!options.site) {
         throw new Error("--site is required when publishing a hosted site");
       }
-      const requirePrivateArtifact = await prepareArtifactVisibility(
-        options.visibility,
-      );
-      const deployed = await publishStaticSite({
+      const result = await publishStaticSite({
         dir,
         site: options.site,
         slugSuffix: options.slugSuffix,
         artifactKind: options.artifactKind,
         spaFallback: Boolean(options.spa),
-        requirePrivateArtifact,
         onProgress: options.json
           ? undefined
           : (progress) => {
@@ -105,12 +95,6 @@ Notes:
             },
       });
 
-      const result = await applyArtifactVisibility(
-        deployed,
-        { kind: "html", id: deployed.deploymentId },
-        options.visibility,
-      );
-
       const presentation = createArtifactPresentation(
         options.site,
         result.aliasUrl ?? result.url,
@@ -122,11 +106,19 @@ Notes:
 
       console.log(chalk.green("✓ Hosted site deployed"));
       console.log(chalk.dim(`  Site: ${result.publicSlug}`));
+      if (result.deploymentVersion !== undefined) {
+        console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
+      }
       if (result.artifactUrl) {
         console.log(`  Artifact: ${result.artifactUrl}`);
       }
       if (result.aliasUrl) {
-        console.log(`  Alias: ${result.aliasUrl}`);
+        const target =
+          result.isActive === false &&
+          result.activeDeploymentVersion !== undefined
+            ? `remains on v${result.activeDeploymentVersion}`
+            : `v${result.deploymentVersion ?? "?"}`;
+        console.log(`  Alias: ${result.aliasUrl} → ${target}`);
       }
       console.log(chalk.dim(`  Deployment: ${result.deploymentId}`));
       console.log(chalk.dim(`  Files: ${result.fileCount.toLocaleString()}`));
