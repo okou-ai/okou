@@ -209,6 +209,7 @@ function configureQuestPage(
       rewardAmount: 2000,
       rewardTarget: "user" as const,
       reason: null,
+      postUrl: "https://x.com/molly/status/1873",
       submittedAt: data.serverNow,
       grantedAt: null,
       expiresAt: null,
@@ -239,6 +240,7 @@ function configureQuestPage(
       rewardAmount: 100,
       rewardTarget: "user",
       reason: null,
+      postUrl: "https://x.com/molly/status/1873",
       submittedAt: data.serverNow,
       grantedAt: data.serverNow,
       expiresAt: new Date(
@@ -419,12 +421,35 @@ test("Sharing on X restores pending state and an Ably review notification update
   const panel = await openQuestPanel();
   expect(within(panel).getByText("In review")).toBeInTheDocument();
   expect(within(panel).queryByText("Share on X")).toBeInTheDocument();
-  // The row no longer offers the reward, and it is no longer a menu item.
+  // The row no longer offers the reward, but it stays pressable: the step is
+  // the one waiting quest that still has something to show.
+  const waitingRow = queryAllByRoleFast("menuitem", panel).find((candidate) => {
+    return normalizedText(candidate).includes("Share on X");
+  });
+  if (!waitingRow) {
+    throw new Error("Missing waiting X row");
+  }
+  expect(normalizedText(waitingRow)).not.toContain("Share on XShare");
+  click(waitingRow);
+  const waitingDialog = await screen.findByRole("dialog", {
+    name: "Your post is with the reviewer",
+  });
+  // The post itself is the thing the reader cannot reconstruct from the row.
   expect(
-    queryAllByRoleFast("menuitem", panel).find((candidate) => {
-      return normalizedText(candidate).includes("Share on X");
+    within(waitingDialog).getByText("https://x.com/molly/status/1873"),
+  ).toBeInTheDocument();
+  // Nothing to submit, because there is nothing left to submit.
+  expect(
+    queryAllByRoleFast("button", waitingDialog).find((candidate) => {
+      return normalizedText(candidate) === "Submit";
     }),
   ).toBeUndefined();
+  click(buttonNamed("Done", waitingDialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  // Pressing the row closed the panel, as every quest row does.
+  const afterReview = await openQuestPanel();
 
   if (!data.shareClaim) {
     throw new Error("Missing submitted X claim");
@@ -445,9 +470,9 @@ test("Sharing on X restores pending state and an Ably review notification update
   });
   context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
   await expect(
-    within(panel).findByText("2,400 earned"),
+    within(afterReview).findByText("2,400 earned"),
   ).resolves.toBeInTheDocument();
-  expect(within(panel).queryByText("In review")).not.toBeInTheDocument();
+  expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
 });
 
 test("Reward notifications refresh quests without disconnecting shared chat history", async () => {
@@ -487,6 +512,7 @@ test("Reward notifications refresh quests without disconnecting shared chat hist
     rewardAmount: 2000,
     rewardTarget: "user",
     reason: null,
+    postUrl: "https://x.com/molly/status/1873",
     submittedAt: data.serverNow,
     grantedAt: null,
     expiresAt: null,
@@ -583,7 +609,7 @@ test("Cancelling a share draft clears the link without consuming a reward", asyn
     target: { value: "https://x.com/molly/status/1873" },
   });
   expect(buttonNamed("Submit", dialog)).toBeEnabled();
-  click(buttonNamed("Cancel", dialog));
+  click(buttonNamed("Later", dialog));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -635,6 +661,7 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
     rewardAmount: 2000,
     rewardTarget: "user",
     reason: "post_must_mention_okou",
+    postUrl: "https://x.com/molly/status/1873",
     submittedAt: data.serverNow,
     grantedAt: null,
     expiresAt: null,
@@ -1094,17 +1121,108 @@ test("The workflow step ends by handing over the prompt itself", async () => {
     name: "Ask the way you would ask a colleague",
   });
   // The prompt is readable before it is sent, not hidden behind the button.
-  expect(
-    within(handover).getByText(
-      "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
-    ),
-  ).toBeInTheDocument();
+  const prompt = within(handover).getByTestId("quest-workflow-prompt");
+  expect(prompt).toHaveValue(
+    "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
+  );
 
   // The way out of the handover is still the template list.
   click(buttonNamed("Browse templates", handover));
   await waitFor(() => {
     expect(pathname()).toBe("/workflows");
   });
+});
+
+test("The handed-over prompt is the one the reader edited", async () => {
+  configureQuestPage(context, "member");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-workflow"));
+  click(
+    buttonNamed(
+      "Give me one to try",
+      await screen.findByRole("dialog", {
+        name: "One good run becomes something the team keeps",
+      }),
+    ),
+  );
+  const handover = await screen.findByRole("dialog", {
+    name: "Ask the way you would ask a colleague",
+  });
+
+  // The screen offers to change the wording first, so it has to be changeable.
+  await fill(
+    within(handover).getByTestId("quest-workflow-prompt"),
+    "Every Friday, summarise what shipped this week.",
+  );
+  click(buttonNamed("Send it to Okou", handover));
+
+  // The composer is handed the edited sentence, not the suggestion. The URL
+  // param is not the assertion, because the composer consumes and clears it on
+  // arrival; what matters is the sentence the reader lands in front of.
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await waitFor(() => {
+    const composer = document.querySelector(
+      '[data-slot="chat-composer-card"] [contenteditable="true"]',
+    );
+    expect(composer).toHaveTextContent(
+      "Every Friday, summarise what shipped this week.",
+    );
+  });
+});
+
+test("Reopening the workflow step restores the suggested prompt", async () => {
+  configureQuestPage(context, "member");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  const openHandover = async (): Promise<HTMLElement> => {
+    await openQuestPanel();
+    click(screen.getByTestId("get-started-quest-workflow"));
+    click(
+      buttonNamed(
+        "Give me one to try",
+        await screen.findByRole("dialog", {
+          name: "One good run becomes something the team keeps",
+        }),
+      ),
+    );
+    return await screen.findByRole("dialog", {
+      name: "Ask the way you would ask a colleague",
+    });
+  };
+
+  await fill(
+    within(await openHandover()).getByTestId("quest-workflow-prompt"),
+    "Something else entirely.",
+  );
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  // A sentence abandoned in a session the reader has left is not their prompt.
+  expect(
+    within(await openHandover()).getByTestId("quest-workflow-prompt"),
+  ).toHaveValue(
+    "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
+  );
 });
 
 test("An ordinary day's check-in reports the streak without taking the screen", async () => {
@@ -1144,7 +1262,7 @@ test("Checking in confirms the reward instead of closing silently", async () => 
   click(screen.getByTestId("get-started-quest-checkin"));
 
   const dialog = await screen.findByRole("dialog", {
-    name: "That is today done",
+    name: "Checked in for today",
   });
   // The reward, what it buys, and where the checklist now stands.
   expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();

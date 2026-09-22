@@ -71,6 +71,7 @@ export function getStartedClaimResponse(
     rewardAmount: row.rewardAmount,
     rewardTarget: row.rewardTarget,
     reason: row.reason,
+    postUrl: row.postUrl,
     submittedAt: row.createdAt.toISOString(),
     grantedAt: row.grantedAt?.toISOString() ?? null,
     expiresAt: row.expiresAt?.toISOString() ?? null,

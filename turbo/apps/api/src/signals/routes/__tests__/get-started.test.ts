@@ -208,6 +208,9 @@ test("x submission returns persisted pending state without calling SocialKit; re
     status: "pending",
     grantedAt: null,
     expiresAt: null,
+    // The post travels back with the claim: a user waiting on review has no
+    // other way to see which link is in the queue.
+    postUrl: `https://twitter.com/example/status/${id}?s=20`,
   });
   expect((await status()).shareClaim).toStrictEqual(submitted.body);
   expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
