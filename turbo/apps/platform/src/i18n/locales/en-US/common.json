@@ -6440,16 +6440,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Optional emails, including briefs and reminders, across your workspaces.",
+        "description": "Receive briefs, reminders, and other workspace updates by email.",
+        "descriptionWithEmail": "Receive briefs, reminders, and other workspace updates at {{email}}.",
         "loading": "Checking email subscription…",
         "retryMessage": "Could not save or load your email subscription. Try again.",
         "saving": "Saving…",
         "sectionTitle": "Email subscriptions",
-        "subscribed": "Subscribed",
-        "title": "Receive emails from Okou",
+        "title": "Email updates",
         "unavailable": "Email unavailable",
-        "unavailableDescription": "Check your email in Account & security, or contact support if delivery is blocked.",
-        "unsubscribed": "Unsubscribed"
+        "unavailableDescription": "Check your email in Account & security, or contact support if delivery is blocked."
       },
       "language": {
         "description": "Choose your preferred language for the {{brandName}} interface",
@@ -6475,13 +6474,11 @@
         "chatOnly": "Chat only",
         "checkEmailSubscription": "Check your email subscription above for delivery status.",
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent. Retry when reconciliation finishes.",
-        "description": "Get your daily priorities at 7:00 AM in your time zone for this workspace.",
-        "emailOff": "Email is off. Your brief will still appear in Chat.",
-        "emailWhenReady": "You’ll receive an email when your brief is ready.",
+        "description": "Daily priorities at 7:00 AM in your time zone.",
         "loading": "Loading Morning Brief settings...",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
-        "nextBrief": "Next brief {{date}} ({{timezone}})",
+        "nextBrief": "Next {{date}}",
         "paused": "Paused",
         "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",

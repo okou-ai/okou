@@ -6509,16 +6509,15 @@
         }
       },
       "emailSubscription": {
-        "description": "E-mails facultatifs, dont les synthèses et rappels, dans tous vos espaces de travail.",
+        "description": "Recevez les synthèses, rappels et autres actualités de l’espace de travail par e-mail.",
+        "descriptionWithEmail": "Recevez les synthèses, rappels et autres actualités de l’espace de travail à l’adresse {{email}}.",
         "loading": "Vérification de l’abonnement aux e-mails…",
         "retryMessage": "Impossible d’enregistrer ou de charger votre abonnement aux e-mails. Réessayez.",
         "saving": "Enregistrement…",
         "sectionTitle": "Abonnements aux e-mails",
-        "subscribed": "Abonné",
-        "title": "Recevoir les e-mails d’Okou",
+        "title": "Mises à jour par e-mail",
         "unavailable": "E-mail indisponible",
-        "unavailableDescription": "Vérifiez votre e-mail dans Compte et sécurité ou contactez l’assistance si la livraison est bloquée.",
-        "unsubscribed": "Désabonné"
+        "unavailableDescription": "Vérifiez votre e-mail dans Compte et sécurité ou contactez l’assistance si la livraison est bloquée."
       },
       "language": {
         "description": "Choisissez votre langue préférée pour l'interface {{brandName}}",
@@ -6544,13 +6543,11 @@
         "chatOnly": "Chat uniquement",
         "checkEmailSubscription": "Consultez l’abonnement aux e-mails ci-dessus pour connaître l’état de la livraison.",
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
-        "description": "Recevez les priorités quotidiennes de cet espace de travail à 7 h dans votre fuseau horaire.",
-        "emailOff": "Les e-mails sont désactivés. Votre synthèse apparaîtra toujours dans Chat.",
-        "emailWhenReady": "Vous recevrez un e-mail lorsque votre synthèse sera prête.",
+        "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
         "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "nextBrief": "Prochaine synthèse {{date}} ({{timezone}})",
+        "nextBrief": "Prochaine synthèse {{date}}",
         "paused": "En pause",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",

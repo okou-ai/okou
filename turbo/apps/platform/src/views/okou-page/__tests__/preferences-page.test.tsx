@@ -213,8 +213,13 @@ test("Timezone saves refresh Morning Brief when Clerk token refresh is unavailab
   });
 
   const card = await screen.findByTestId("morning-brief-preference");
+  const initialFormatted = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Etc/UTC",
+  }).format(new Date(nextRunAt));
   await expect(
-    within(card).findByText(/Next brief .*\(Etc\/UTC\)/u),
+    within(card).findByText(`Next ${initialFormatted}`),
   ).resolves.toBeInTheDocument();
   const timezone = getFastRole("combobox", /UTC/u);
   click(timezone);
@@ -226,7 +231,7 @@ test("Timezone saves refresh Morning Brief when Clerk token refresh is unavailab
     timeZone: "America/New_York",
   }).format(new Date(nextRunAt));
   await expect(
-    within(card).findByText(`Next brief ${formatted} (America/New_York)`),
+    within(card).findByText(`Next ${formatted}`),
   ).resolves.toBeInTheDocument();
   expect(timezone).toHaveTextContent("Eastern Time (ET)");
   expect(timezone).toBeEnabled();

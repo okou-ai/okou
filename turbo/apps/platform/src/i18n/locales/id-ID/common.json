@@ -6435,16 +6435,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Email opsional, termasuk ringkasan dan pengingat, di seluruh ruang kerja Anda.",
+        "description": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya melalui email.",
+        "descriptionWithEmail": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya di {{email}}.",
         "loading": "Memeriksa langganan email…",
         "retryMessage": "Tidak dapat menyimpan atau memuat langganan email. Coba lagi.",
         "saving": "Menyimpan…",
         "sectionTitle": "Langganan email",
-        "subscribed": "Berlangganan",
-        "title": "Terima email dari Okou",
+        "title": "Pembaruan email",
         "unavailable": "Email tidak tersedia",
-        "unavailableDescription": "Periksa email di Akun & keamanan, atau hubungi dukungan jika pengiriman diblokir.",
-        "unsubscribed": "Berhenti berlangganan"
+        "unavailableDescription": "Periksa email di Akun & keamanan, atau hubungi dukungan jika pengiriman diblokir."
       },
       "language": {
         "description": "Pilih bahasa pilihan Anda untuk antarmuka {{brandName}}",
@@ -6470,13 +6469,11 @@
         "chatOnly": "Hanya Chat",
         "checkEmailSubscription": "Periksa langganan email di atas untuk status pengiriman.",
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
-        "description": "Dapatkan prioritas harian pukul 07.00 sesuai zona waktu Anda untuk ruang kerja ini.",
-        "emailOff": "Email nonaktif. Ringkasan tetap muncul di Chat.",
-        "emailWhenReady": "Anda akan menerima email saat ringkasan siap.",
+        "description": "Prioritas harian pukul 07.00 sesuai zona waktu Anda.",
         "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "nextBrief": "Ringkasan berikutnya {{date}} ({{timezone}})",
+        "nextBrief": "Ringkasan berikutnya {{date}}",
         "paused": "Dijeda",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",

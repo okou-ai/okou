@@ -1,4 +1,5 @@
 import type { MorningBriefPreferenceResponse } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { Badge } from "@okouai/ui/components/ui/badge";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -79,7 +80,7 @@ function MorningBriefStatus({
           ($) => {
             return $.settings.preferences.morningBrief.nextBrief;
           },
-          { date: formatted, timezone },
+          { date: formatted },
         );
       })
     : null;
@@ -112,6 +113,17 @@ function MorningBriefStatus({
   }
   const showAlert =
     loadFailed || mutationFailed || conflicted || unavailable !== null;
+  if (nextBrief !== null && status === nextBrief) {
+    return (
+      <Badge className="border-primary/20 bg-primary/10 text-xs font-medium text-brand-text">
+        <span
+          aria-hidden="true"
+          className="size-1.5 rounded-full bg-primary-400"
+        />
+        {status}
+      </Badge>
+    );
+  }
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
       {showAlert && <AlertCircle className="size-3.5 shrink-0" />}
@@ -138,11 +150,11 @@ function MorningBriefDeliveryStatus({
   }
   if (!preference.enabled) {
     return (
-      <span>
+      <Badge className="text-xs font-medium text-muted-foreground">
         {t(($) => {
           return $.settings.preferences.morningBrief.paused;
         })}
-      </span>
+      </Badge>
     );
   }
   if (subscription.state !== "hasData") {
@@ -158,26 +170,15 @@ function MorningBriefDeliveryStatus({
     subscription.data.subscribed &&
     subscription.data.deliveryStatus === "available";
   return (
-    <div className="flex flex-col gap-1">
-      <span className="font-medium">
-        {receivesEmail
-          ? t(($) => {
-              return $.settings.preferences.morningBrief.chatAndEmail;
-            })
-          : t(($) => {
-              return $.settings.preferences.morningBrief.chatOnly;
-            })}
-      </span>
-      <span>
-        {receivesEmail
-          ? t(($) => {
-              return $.settings.preferences.morningBrief.emailWhenReady;
-            })
-          : t(($) => {
-              return $.settings.preferences.morningBrief.emailOff;
-            })}
-      </span>
-    </div>
+    <Badge className="text-xs font-medium text-muted-foreground">
+      {receivesEmail
+        ? t(($) => {
+            return $.settings.preferences.morningBrief.chatAndEmail;
+          })
+        : t(($) => {
+            return $.settings.preferences.morningBrief.chatOnly;
+          })}
+    </Badge>
   );
 }
 
@@ -245,10 +246,12 @@ export function MorningBriefSettings() {
       ref={cardRef}
       tabIndex={-1}
       data-testid="morning-brief-preference"
-      className="flex flex-col gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     >
       <PreferenceCardRow
         icon={Sunrise}
+        grouped
+        iconContainerClassName="h-10 w-10 rounded-xl bg-primary/10 text-brand-text"
         title={t(($) => {
           return $.settings.preferences.morningBrief.title;
         })}
@@ -257,7 +260,7 @@ export function MorningBriefSettings() {
         })}
         status={
           <div
-            className="flex flex-col gap-1 text-xs text-muted-foreground"
+            className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
             aria-live="polite"
           >
             <MorningBriefStatus

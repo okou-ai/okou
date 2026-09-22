@@ -6448,16 +6448,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Optionale E-Mails mit Briefings und Erinnerungen für alle deine Workspaces.",
+        "description": "Erhalte Briefings, Erinnerungen und andere Workspace-Updates per E-Mail.",
+        "descriptionWithEmail": "Erhalte Briefings, Erinnerungen und andere Workspace-Updates an {{email}}.",
         "loading": "E-Mail-Abonnement wird geprüft…",
         "retryMessage": "Dein E-Mail-Abonnement konnte nicht gespeichert oder geladen werden. Versuche es erneut.",
         "saving": "Wird gespeichert…",
         "sectionTitle": "E-Mail-Abonnements",
-        "subscribed": "Abonniert",
-        "title": "E-Mails von Okou erhalten",
+        "title": "E-Mail-Updates",
         "unavailable": "E-Mail nicht verfügbar",
-        "unavailableDescription": "Prüfe deine E-Mail unter Konto & Sicherheit oder kontaktiere den Support, wenn die Zustellung blockiert ist.",
-        "unsubscribed": "Abgemeldet"
+        "unavailableDescription": "Prüfe deine E-Mail unter Konto & Sicherheit oder kontaktiere den Support, wenn die Zustellung blockiert ist."
       },
       "language": {
         "description": "Wählen Sie Ihre bevorzugte Sprache für die Benutzeroberfläche von {{brandName}}",
@@ -6483,13 +6482,11 @@
         "chatOnly": "Nur Chat",
         "checkEmailSubscription": "Prüfe oben dein E-Mail-Abonnement für den Zustellstatus.",
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
-        "description": "Erhalte die täglichen Prioritäten für diesen Workspace um 7 Uhr in deiner Zeitzone.",
-        "emailOff": "E-Mail ist deaktiviert. Dein Briefing erscheint weiterhin im Chat.",
-        "emailWhenReady": "Du erhältst eine E-Mail, sobald dein Briefing bereit ist.",
+        "description": "Tägliche Prioritäten um 7 Uhr in deiner Zeitzone.",
         "loading": "Morning-Brief-Einstellungen werden geladen...",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
-        "nextBrief": "Nächstes Briefing {{date}} ({{timezone}})",
+        "nextBrief": "Nächstes Briefing {{date}}",
         "paused": "Pausiert",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",

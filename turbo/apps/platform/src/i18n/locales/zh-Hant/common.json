@@ -6435,16 +6435,15 @@
         }
       },
       "emailSubscription": {
-        "description": "各個工作區的可選郵件，包括簡報和提醒。",
+        "description": "透過郵件接收簡報、提醒和其他工作區更新。",
+        "descriptionWithEmail": "接收傳送至 {{email}} 的簡報、提醒和其他工作區更新。",
         "loading": "正在檢查郵件訂閱…",
         "retryMessage": "無法儲存或載入你的郵件訂閱，請重試。",
         "saving": "儲存中…",
         "sectionTitle": "郵件訂閱",
-        "subscribed": "已訂閱",
-        "title": "接收來自Okou的郵件",
+        "title": "郵件更新",
         "unavailable": "郵件不可用",
-        "unavailableDescription": "請在「帳號與安全」中檢查你的郵箱；如果郵件被攔截，請聯絡客服。",
-        "unsubscribed": "已取消訂閱"
+        "unavailableDescription": "請在「帳號與安全」中檢查你的郵箱；如果郵件被攔截，請聯絡客服。"
       },
       "language": {
         "description": "選擇{{brandName}}介面的顯示語言",
@@ -6470,13 +6469,11 @@
         "chatOnly": "僅聊天",
         "checkEmailSubscription": "投遞狀態請檢視上方的郵件訂閱。",
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
-        "description": "每天早上7:00（按你所在時區）獲取該工作區的當日重點。",
-        "emailOff": "郵件已關閉，晨報仍會出現在聊天中。",
-        "emailWhenReady": "晨報準備好後，你會收到郵件。",
+        "description": "每天早上 7:00（按你的時區）接收當日重點。",
         "loading": "正在載入晨報設定…",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
-        "nextBrief": "下一份晨報 {{date}}（{{timezone}}）",
+        "nextBrief": "下一份晨報 {{date}}",
         "paused": "已暫停",
         "preparationFailed": "晨報設定會自動重試，你也可以現在就重試。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
