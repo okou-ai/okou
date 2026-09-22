@@ -1,4 +1,7 @@
-import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
+import type {
+  GetStartedClaim,
+  GetStartedQuestKey,
+} from "@okouai/api-contracts/contracts/get-started";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -7,6 +10,7 @@ import {
   CalendarCheck,
   Check,
   ChevronRight,
+  Clock,
   Coins,
   Link2,
   Route,
@@ -45,6 +49,7 @@ import {
   setRewardsNoteOpen$,
   setShareDialogOpen$,
   setSharePostDraft$,
+  shareClaim$,
   shareDialogOpen$,
   sharePostDraft$,
   submitSharePost$,
@@ -492,83 +497,303 @@ function QuestRow({
   );
 }
 
-function ShareOnXDialog() {
+/**
+ * One numbered step of the share flow.
+ *
+ * The same chip the workflow intro uses for its three steps, because this is
+ * the same idea -- a thing to do, in an order -- and the two screens sit in one
+ * checklist.
+ */
+function ShareStep({
+  index,
+  title,
+  children,
+}: {
+  readonly index: number;
+  readonly title: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-subtle text-xs font-semibold tabular-nums text-brand-text">
+          {formatLocalizedNumber(index)}
+        </span>
+        <span className="text-sm font-medium">{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** X's own compose screen, opened with the suggestion already in it. */
+function composeUrl(text: string): string {
+  return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
+}
+
+/**
+ * The step, as two things to do in the order they happen.
+ *
+ * It used to be a single URL field: the product asked for a link and left the
+ * four steps before it -- think of something to say, post it, copy the link,
+ * come back -- entirely to the reader. The first step now carries a sentence
+ * they can send as it is and a button that opens X with it already typed, so
+ * the only work left is the part the product genuinely cannot do.
+ */
+function ShareComposeBody({
+  reward,
+  onClose,
+}: {
+  readonly reward: number | null;
+  readonly onClose: () => void;
+}) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const open = useGet(shareDialogOpen$);
   const postUrl = useGet(sharePostDraft$);
-  const setOpen = useSet(setShareDialogOpen$);
   const setDraft = useSet(setSharePostDraft$);
   const submitShare = useSet(submitSharePost$);
   const pageSignal = useGet(pageSignal$);
   const submission = useLoadable(shareSubmission$);
   const submitting = submission.state === "loading";
+  const suggestion = t(
+    ($) => {
+      return $.chat.agentPage.getStarted.shareDialog.draft;
+    },
+    { assistantName },
+  );
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth="sm" maxWidth={420}>
-        <DialogHeader>
-          <DialogTitle>
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.shareDialog.title;
-              },
-              { assistantName },
-            )}
-          </DialogTitle>
-          <DialogDescription>
-            {t(($) => {
-              return $.chat.agentPage.getStarted.shareDialog.description;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <div>
-          <Input
-            type="url"
-            value={postUrl}
-            aria-label={t(($) => {
-              return $.chat.agentPage.getStarted.shareDialog.inputLabel;
-            })}
-            placeholder={t(($) => {
-              return $.chat.agentPage.getStarted.shareDialog.placeholder;
-            })}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.shareDialog.helper;
-              },
-              { assistantName },
-            )}
+    <>
+      <DialogHeader>
+        <DialogTitle className="pr-7">
+          {t(
+            ($) => {
+              return $.chat.agentPage.getStarted.shareDialog.title;
+            },
+            { assistantName },
+          )}
+        </DialogTitle>
+        <DialogDescription>
+          {t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.description;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      {reward !== null && <ShareReward amount={reward} />}
+      <ShareStep
+        index={1}
+        title={t(($) => {
+          return $.chat.agentPage.getStarted.shareDialog.stepWrite;
+        })}
+      >
+        <div className="flex flex-col items-start gap-3 rounded-xl border border-surface-border bg-card px-4 py-3.5">
+          <p className="text-[15px] leading-relaxed text-foreground">
+            {suggestion}
           </p>
-        </div>
-        <DialogFooter>
           <Button
             type="button"
             variant="outline"
+            data-testid="share-open-x"
             onClick={() => {
-              setOpen(false);
+              // A named target rather than `_blank`, so pressing it twice
+              // reuses the compose tab instead of stacking drafts.
+              window.open(composeUrl(suggestion), "okou-share-post");
             }}
           >
+            <XMark />
             {t(($) => {
-              return $.chat.actions.cancel;
+              return $.chat.agentPage.getStarted.shareDialog.openX;
             })}
           </Button>
+        </div>
+      </ShareStep>
+      <ShareStep
+        index={2}
+        title={t(($) => {
+          return $.chat.agentPage.getStarted.shareDialog.stepPaste;
+        })}
+      >
+        <Input
+          type="url"
+          value={postUrl}
+          aria-label={t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.inputLabel;
+          })}
+          placeholder={t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.placeholder;
+          })}
+          onChange={(event) => {
+            setDraft(event.target.value);
+          }}
+        />
+      </ShareStep>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          ($) => {
+            return $.chat.agentPage.getStarted.shareDialog.helper;
+          },
+          { assistantName },
+        )}{" "}
+        {t(($) => {
+          return $.chat.agentPage.getStarted.shareDialog.reviewTime;
+        })}
+      </p>
+      <DialogFooter>
+        {/* `Later` rather than `Cancel`, which is what every other step's
+            escape hatch says: nothing is being cancelled, the step is being
+            put off. */}
+        <Button type="button" variant="outline" onClick={onClose}>
+          {t(($) => {
+            return $.chat.agentPage.getStarted.intro.later;
+          })}
+        </Button>
+        <Button
+          type="button"
+          disabled={postUrl.trim() === "" || submitting}
+          onClick={() => {
+            detach(submitShare(pageSignal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.submit;
+          })}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+/**
+ * The state that had no screen at all.
+ *
+ * Submitting closed the dialog and the row went quiet with an `In review`
+ * label, so the only way to check on a post was to remember what was sent.
+ * Reopening the step now says which post is in the queue and that nothing else
+ * is expected of the reader.
+ */
+function ShareReviewBody({
+  claim,
+  reward,
+  onClose,
+}: {
+  readonly claim: GetStartedClaim;
+  readonly reward: number | null;
+  readonly onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const assistantName = useGet(assistantName$);
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="pr-7">
+          {t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.reviewTitle;
+          })}
+        </DialogTitle>
+        <DialogDescription>
+          {t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.reviewDescription;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      {reward !== null && <ShareReward amount={reward} />}
+      <div className="flex items-center gap-3 rounded-xl border border-surface-border bg-card px-4 py-3.5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+          <Clock className="size-4 text-muted-foreground" />
+        </span>
+        <span className="min-w-0 flex-1">
+          {/* The URL is the one thing the reader cannot reconstruct, so it
+              leads; a claim from an API that predates the field falls back to
+              the label the row already used. */}
+          <span className="block truncate text-sm font-medium">
+            {claim.postUrl ??
+              t(($) => {
+                return $.chat.agentPage.getStarted.inReview;
+              })}
+          </span>
+          <span className="block text-xs text-muted-foreground">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.shareDialog.reviewPending;
+            })}
+          </span>
+        </span>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {t(
+          ($) => {
+            return $.chat.agentPage.getStarted.shareDialog.reviewExplain;
+          },
+          { assistantName },
+        )}
+      </p>
+      <DialogFooter className="sm:items-center">
+        {claim.postUrl !== null && (
           <Button
             type="button"
-            disabled={postUrl.trim() === "" || submitting}
+            variant="link"
+            className="px-0 text-muted-foreground hover:text-foreground sm:mr-auto"
             onClick={() => {
-              detach(submitShare(pageSignal), Reason.DomCallback);
+              window.open(claim.postUrl ?? "", "okou-share-post");
             }}
           >
             {t(($) => {
-              return $.chat.agentPage.getStarted.shareDialog.submit;
+              return $.chat.agentPage.getStarted.shareDialog.reviewOpenPost;
             })}
           </Button>
-        </DialogFooter>
+        )}
+        <Button type="button" onClick={onClose}>
+          {t(($) => {
+            return $.chat.agentPage.getStarted.shareDialog.reviewDone;
+          })}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+/** What the step pays, on its own row for the reason the intro dialogs give. */
+function ShareReward({ amount }: { readonly amount: number }) {
+  return (
+    <span className="flex w-fit items-center gap-1 rounded-md border border-surface-border bg-gray-0 px-2 py-0.5 text-xs font-semibold leading-snug tabular-nums text-brand-text">
+      <Coins className="size-3 shrink-0" />+{formatLocalizedNumber(amount)}
+    </span>
+  );
+}
+
+/**
+ * The share step, in whichever of its two states the claim puts it.
+ *
+ * One dialog rather than two, because the reader presses the same row either
+ * way and the step is the same step; what changes is whether there is still
+ * something for them to do.
+ */
+function ShareOnXDialog() {
+  const open = useGet(shareDialogOpen$);
+  const setOpen = useSet(setShareDialogOpen$);
+  const claimLoadable = useLastLoadable(shareClaim$);
+  const questsLoadable = useLastLoadable(getStartedQuests$);
+  const claim = claimLoadable.state === "hasData" ? claimLoadable.data : null;
+  const reward =
+    questsLoadable.state === "hasData"
+      ? (questsLoadable.data.find((quest) => {
+          return quest.key === "share";
+        })?.rewardAmount ?? null)
+      : null;
+  const waiting =
+    claim !== null &&
+    (claim.status === "pending" || claim.status === "reviewing");
+  const close = () => {
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent smMaxWidth={680}>
+        {waiting ? (
+          <ShareReviewBody claim={claim} reward={reward} onClose={close} />
+        ) : (
+          <ShareComposeBody reward={reward} onClose={close} />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -739,6 +964,12 @@ function GetStartedPanel({
     return rank(left) - rank(right);
   });
   const selectHandler = (quest: GetStartedQuest): (() => void) | null => {
+    // The share step in review still has something to show -- which post is in
+    // the queue, and that nothing else is expected. Every other waiting quest
+    // has nothing to say that its row is not already saying.
+    if (quest.key === "share" && quest.status === "inReview") {
+      return actions.share;
+    }
     return quest.canEarnMore && quest.status !== "inReview"
       ? actions[quest.key]
       : null;
