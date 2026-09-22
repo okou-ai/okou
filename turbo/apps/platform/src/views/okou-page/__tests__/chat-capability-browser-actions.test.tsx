@@ -437,10 +437,12 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   const userText = [
     `[User plan action](${trustedPlan})`,
     `[User computer action](${trustedComputer})`,
+    `[User browser input](${browserInputUrl()})`,
   ].join("\n\n");
   const assistantText = [
     `[Assistant plan action](${trustedPlan})`,
     `[Assistant computer action](${trustedComputer})`,
+    `[Malformed browser input](${browserInputUrl()}&extra=unexpected)`,
     `[Forged action](${computerAuthorizationUrl("https://app.okou.ai.evil.test", "forged")})`,
     "Wrong agent:",
     connectorAuthorizationUrl({
@@ -492,6 +494,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   }
   expect(userMessage).toHaveTextContent("User plan action");
   expect(userMessage).toHaveTextContent("User computer action");
+  expect(userMessage).toHaveTextContent("User browser input");
   expect(within(userMessage).queryByText("Upgrade your workspace")).toBeNull();
   expect(
     within(userMessage).queryByText("Computer Use authorization"),
@@ -499,7 +502,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(linkByName("Forged action")).toBeVisible();
 
   await waitFor(() => {
-    expect(screen.getAllByText("Action unavailable")).toHaveLength(4);
+    expect(screen.getAllByText("Action unavailable")).toHaveLength(5);
   });
   const unavailableCards = screen
     .getAllByText("Action unavailable")
@@ -560,7 +563,11 @@ test("Apply native browser input before continuing with stable callback IDs", as
   });
   await readyChat();
 
-  const form = await screen.findByRole("form", {
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  const form = within(dialog).getByRole("form", {
     name: "Enter information in browser",
   });
   expect(within(form).getByText("https://accounts.example.test")).toBeVisible();
@@ -588,7 +595,6 @@ test("Apply native browser input before continuing with stable callback IDs", as
 test("Cancel browser input before sending the fixed cancellation callback", async () => {
   const ordering: string[] = [];
   let state: BrowserUserActionResponse["state"] = "pending";
-  let applyCalls = 0;
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
     onSend(send) {
@@ -600,10 +606,6 @@ test("Cancel browser input before sending the fixed cancellation callback", asyn
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, browserInputAction(state));
-  });
-  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
-    applyCalls += 1;
-    return respond(200, browserInputAction("succeeded"));
   });
   context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
     ordering.push("cancel");
@@ -618,16 +620,15 @@ test("Cancel browser input before sending the fixed cancellation callback", asyn
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
+  click(await findButton("Enter information"));
   await screen.findByRole("form", { name: "Enter information in browser" });
   click(await findButton("Cancel"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(ordering).toStrictEqual(["cancel", "callback"]);
-  expect(applyCalls).toBe(0);
 });
 
 test("Keep feature-disabled and foreign browser input actions inert", async () => {
-  let getCalls = 0;
   installCapabilityChat({
     events: completedConversation(
       [
@@ -636,11 +637,6 @@ test("Keep feature-disabled and foreign browser input actions inert", async () =
       ].join("\n\n"),
     ),
   });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    getCalls += 1;
-    return respond(200, browserInputAction("pending"));
-  });
-
   await setupPage({
     context,
     path: RUN_PATH,
@@ -652,5 +648,4 @@ test("Keep feature-disabled and foreign browser input actions inert", async () =
     expect(screen.getAllByText("Request unavailable")).toHaveLength(1);
     expect(screen.getAllByText("Action unavailable")).toHaveLength(1);
   });
-  expect(getCalls).toBe(0);
 });

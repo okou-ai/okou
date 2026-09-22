@@ -1,4 +1,5 @@
 import { BROWSER_USER_ACTION_MAX_VALUE_LENGTH } from "@okouai/api-contracts/contracts/browser-user-actions";
+import { cn } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -20,6 +21,7 @@ import type {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
+import { ChatCardDetails } from "./components/chat-card-details.tsx";
 
 export type BrowserUserActionCardVariant = "inline" | "standalone";
 
@@ -32,8 +34,11 @@ function BrowserActionSurface({
 }) {
   return (
     <ChatCard
+      data-testid="browser-user-action-card"
       className={
-        variant === "standalone" ? "w-full p-5 sm:p-6" : "w-full p-4 sm:p-5"
+        variant === "standalone"
+          ? "w-full p-5 sm:p-6"
+          : "h-[136px] w-full p-3 sm:h-[88px]"
       }
     >
       {children}
@@ -46,27 +51,112 @@ function ActionState({
   icon,
   title,
   action,
+  variant,
 }: {
   readonly description: string;
   readonly icon: ReactNode;
   readonly title: string;
   readonly action?: ReactNode;
+  readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
-    <div className="flex min-h-24 items-start gap-3" role="status">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[0.9375rem] font-medium text-foreground">
-          {title}
+    <div
+      className={cn(
+        "flex w-full gap-3",
+        variant === "inline"
+          ? "h-full flex-col justify-between sm:flex-row sm:items-center"
+          : "min-h-24 flex-col",
+      )}
+      role="status"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+          {icon}
         </div>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">
-          {description}
-        </p>
-        {action && <div className="mt-4">{action}</div>}
+        <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              "text-[0.9375rem] font-medium text-foreground",
+              variant === "inline" && "truncate",
+            )}
+          >
+            {title}
+          </div>
+          <p
+            className={cn(
+              "mt-1 text-sm leading-5 text-muted-foreground",
+              variant === "inline" && "line-clamp-2 sm:line-clamp-1",
+            )}
+          >
+            {description}
+          </p>
+        </div>
       </div>
+      {action && <div className="shrink-0 self-end">{action}</div>}
     </div>
+  );
+}
+
+function TerminalActionState({
+  callbackDelivered,
+  cancelled,
+  continuing,
+  onContinue,
+  variant,
+}: {
+  readonly callbackDelivered: boolean;
+  readonly cancelled: boolean;
+  readonly continuing: boolean;
+  readonly onContinue: () => void;
+  readonly variant: BrowserUserActionCardVariant;
+}) {
+  const { t } = useTranslation();
+  if (callbackDelivered) {
+    return (
+      <ActionState
+        icon={<CheckCircle2 size={20} className="text-emerald-600" />}
+        title={t(($) => {
+          return $.chat.browserInput.delivered;
+        })}
+        description={t(($) => {
+          return $.chat.browserInput.deliveredDescription;
+        })}
+        variant={variant}
+      />
+    );
+  }
+  return (
+    <ActionState
+      icon={cancelled ? <XCircle size={20} /> : <CheckCircle2 size={20} />}
+      title={t(($) => {
+        return cancelled
+          ? $.chat.browserInput.cancelled
+          : $.chat.browserInput.completed;
+      })}
+      description={t(($) => {
+        return cancelled
+          ? $.chat.browserInput.cancelledDescription
+          : $.chat.browserInput.completedDescription;
+      })}
+      variant={variant}
+      action={
+        <Button
+          type="button"
+          size="sm"
+          disabled={continuing}
+          onClick={onContinue}
+        >
+          {continuing && <Loader2 size={15} className="animate-spin" />}
+          {continuing
+            ? t(($) => {
+                return $.chat.browserInput.continuing;
+              })
+            : t(($) => {
+                return $.chat.browserInput.continue;
+              })}
+        </Button>
+      }
+    />
   );
 }
 
@@ -75,11 +165,13 @@ function StateFromRequest({
   callbackDelivered,
   continuing,
   onContinue,
+  variant,
 }: {
   readonly request: BrowserUserActionRequestState;
   readonly callbackDelivered: boolean;
   readonly continuing: boolean;
   readonly onContinue: () => void;
+  readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
   if (request.kind === "expired") {
@@ -92,6 +184,7 @@ function StateFromRequest({
         description={t(($) => {
           return $.chat.browserInput.expiredDescription;
         })}
+        variant={variant}
       />
     );
   }
@@ -105,6 +198,7 @@ function StateFromRequest({
         description={t(($) => {
           return $.chat.browserInput.unavailableDescription;
         })}
+        variant={variant}
       />
     );
   }
@@ -120,6 +214,7 @@ function StateFromRequest({
         description={t(($) => {
           return $.chat.browserInput.applyingDescription;
         })}
+        variant={variant}
       />
     );
   }
@@ -133,6 +228,7 @@ function StateFromRequest({
         description={t(($) => {
           return $.chat.browserInput.staleDescription;
         })}
+        variant={variant}
       />
     );
   }
@@ -146,54 +242,18 @@ function StateFromRequest({
         description={t(($) => {
           return $.chat.browserInput.uncertainDescription;
         })}
+        variant={variant}
       />
     );
   }
   if (action.state === "succeeded" || action.state === "cancelled") {
-    const cancelled = action.state === "cancelled";
-    if (callbackDelivered) {
-      return (
-        <ActionState
-          icon={<CheckCircle2 size={20} className="text-emerald-600" />}
-          title={t(($) => {
-            return $.chat.browserInput.delivered;
-          })}
-          description={t(($) => {
-            return $.chat.browserInput.deliveredDescription;
-          })}
-        />
-      );
-    }
     return (
-      <ActionState
-        icon={cancelled ? <XCircle size={20} /> : <CheckCircle2 size={20} />}
-        title={t(($) => {
-          return cancelled
-            ? $.chat.browserInput.cancelled
-            : $.chat.browserInput.completed;
-        })}
-        description={t(($) => {
-          return cancelled
-            ? $.chat.browserInput.cancelledDescription
-            : $.chat.browserInput.completedDescription;
-        })}
-        action={
-          <Button
-            type="button"
-            size="sm"
-            disabled={continuing}
-            onClick={onContinue}
-          >
-            {continuing && <Loader2 size={15} className="animate-spin" />}
-            {continuing
-              ? t(($) => {
-                  return $.chat.browserInput.continuing;
-                })
-              : t(($) => {
-                  return $.chat.browserInput.continue;
-                })}
-          </Button>
-        }
+      <TerminalActionState
+        callbackDelivered={callbackDelivered}
+        cancelled={action.state === "cancelled"}
+        continuing={continuing}
+        onContinue={onContinue}
+        variant={variant}
       />
     );
   }
@@ -228,7 +288,13 @@ type PendingBrowserInputAction = Extract<
   { readonly kind: "action" }
 >["action"];
 
-function PendingFormHeader({ siteOrigin }: { readonly siteOrigin: string }) {
+function PendingFormHeader({
+  siteOrigin,
+  compact = false,
+}: {
+  readonly siteOrigin: string;
+  readonly compact?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex items-start gap-3">
@@ -241,18 +307,25 @@ function PendingFormHeader({ siteOrigin }: { readonly siteOrigin: string }) {
             return $.chat.browserInput.title;
           })}
         </h2>
-        <p className="mt-1 text-sm leading-5 text-muted-foreground">
-          {t(($) => {
-            return $.chat.browserInput.description;
-          })}
-        </p>
+        {!compact && (
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.chat.browserInput.description;
+            })}
+          </p>
+        )}
         <div className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
           <span className="shrink-0 font-medium text-foreground">
             {t(($) => {
               return $.chat.browserInput.site;
             })}
           </span>
-          <span className="min-w-0 break-all">{siteOrigin}</span>
+          <span
+            className={cn("min-w-0", compact ? "truncate" : "break-all")}
+            title={compact ? siteOrigin : undefined}
+          >
+            {siteOrigin}
+          </span>
         </div>
       </div>
     </div>
@@ -379,6 +452,7 @@ function PendingForm({
   const busy = submitting || cancelling;
   const failed =
     submitLoadable.state === "hasError" || cancelLoadable.state === "hasError";
+  const cancelFailed = cancelLoadable.state === "hasError";
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!event.currentTarget.reportValidity()) {
@@ -407,7 +481,9 @@ function PendingForm({
       {failed && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
-            return $.chat.browserInput.applyFailed;
+            return cancelFailed
+              ? $.chat.browserInput.cancelFailed
+              : $.chat.browserInput.applyFailed;
           })}
         </p>
       )}
@@ -423,6 +499,34 @@ function PendingForm({
   );
 }
 
+function PendingInlineAction({
+  signals,
+  request,
+}: {
+  readonly signals: BrowserUserActionSignals;
+  readonly request: Extract<
+    BrowserUserActionRequestState,
+    { readonly kind: "action" }
+  >;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex h-full w-full flex-col justify-between gap-3 sm:flex-row sm:items-center">
+      <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
+      <ChatCardDetails
+        title={t(($) => {
+          return $.chat.browserInput.title;
+        })}
+        triggerLabel={t(($) => {
+          return $.chat.browserInput.open;
+        })}
+      >
+        <PendingForm signals={signals} request={request} />
+      </ChatCardDetails>
+    </div>
+  );
+}
+
 export function BrowserUserActionCard({
   signals,
   variant = "inline",
@@ -433,6 +537,7 @@ export function BrowserUserActionCard({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const requestLoadable = useLoadable(signals.request$);
+  const refresh = useSet(signals.refresh$);
   const callbackDelivered = useGet(signals.callbackDelivered$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
 
@@ -447,6 +552,7 @@ export function BrowserUserActionCard({
         description={t(($) => {
           return $.chat.browserInput.loadingDescription;
         })}
+        variant={variant}
       />
     );
   } else if (requestLoadable.state === "hasError") {
@@ -459,13 +565,26 @@ export function BrowserUserActionCard({
         description={t(($) => {
           return $.chat.browserInput.loadFailedDescription;
         })}
+        action={
+          <Button type="button" size="sm" variant="outline" onClick={refresh}>
+            {t(($) => {
+              return $.chat.browserInput.retry;
+            })}
+          </Button>
+        }
+        variant={variant}
       />
     );
   } else if (
     requestLoadable.data.kind === "action" &&
     requestLoadable.data.action.state === "pending"
   ) {
-    content = <PendingForm signals={signals} request={requestLoadable.data} />;
+    content =
+      variant === "inline" ? (
+        <PendingInlineAction signals={signals} request={requestLoadable.data} />
+      ) : (
+        <PendingForm signals={signals} request={requestLoadable.data} />
+      );
   } else {
     content = (
       <StateFromRequest
@@ -475,6 +594,7 @@ export function BrowserUserActionCard({
         onContinue={() => {
           detach(continueAction(pageSignal), Reason.DomCallback);
         }}
+        variant={variant}
       />
     );
   }
@@ -500,6 +620,7 @@ export function BrowserUserActionUnavailableCard({
         description={t(($) => {
           return $.chat.browserInput.unavailableDescription;
         })}
+        variant={variant}
       />
     </BrowserActionSurface>
   );

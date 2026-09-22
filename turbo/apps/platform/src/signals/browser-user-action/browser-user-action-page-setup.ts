@@ -19,7 +19,13 @@ export const setupBrowserUserActionPage$ = command(
       setBrowserUserActionPageSignals$,
       descriptor ? createBrowserUserActionSignals(descriptor) : null,
     );
-    set(updatePage$, createElement(BrowserUserActionPage), "standalone");
+    set(
+      updatePage$,
+      createElement(BrowserUserActionPage, {
+        key: descriptor?.originalUrl ?? "invalid-browser-user-action",
+      }),
+      "standalone",
+    );
     set(
       updateDocumentTitle$,
       i18n.t(($) => {

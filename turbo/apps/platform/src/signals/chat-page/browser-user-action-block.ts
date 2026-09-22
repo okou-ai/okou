@@ -312,6 +312,9 @@ function createSubmitSignal({
     }
     const request = await get(request$);
     signal.throwIfAborted();
+    if (get(activeMutation$)) {
+      return;
+    }
     if (request.kind !== "action" || request.action.state !== "pending") {
       return;
     }
@@ -387,6 +390,9 @@ function createCancelSignal({
     }
     const request = await get(request$);
     signal.throwIfAborted();
+    if (get(activeMutation$)) {
+      return;
+    }
     if (request.kind !== "action" || request.action.state !== "pending") {
       return;
     }
@@ -439,6 +445,9 @@ function createContinueSignal({
     }
     const request = await get(request$);
     signal.throwIfAborted();
+    if (get(activeMutation$)) {
+      return;
+    }
     if (request.kind !== "action") {
       return;
     }
