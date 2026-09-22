@@ -1,5 +1,20 @@
 # Changelog
 
+## [9.355.1](https://github.com/okou-ai/okou/compare/cli-v9.355.0...cli-v9.355.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.700.2
+    * @okouai/pi-agent-runtime bumped to 1.37.1
+
 ## [9.355.0](https://github.com/okou-ai/okou/compare/cli-v9.354.0...cli-v9.355.0) (2026-09-22)
 
 

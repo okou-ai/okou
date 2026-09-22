@@ -8,6 +8,27 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.659.1](https://github.com/okou-ai/okou/compare/api-v1.659.0...api-v1.659.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+
+### Performance Improvements
+
+* **api:** batch storage manifest cache lookups ([#36140](https://github.com/okou-ai/okou/issues/36140)) ([1f8ee78](https://github.com/okou-ai/okou/commit/1f8ee78ce8927e72a330e238aa0ddcb6a43f2c8c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.700.2
+    * @okouai/db bumped to 1.287.2
+    * @okouai/pi-agent-runtime bumped to 1.37.1
+
 ## [1.659.0](https://github.com/okou-ai/okou/compare/api-v1.658.0...api-v1.659.0) (2026-09-22)
 
 
