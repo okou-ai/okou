@@ -1,8 +1,16 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
   startPage,
@@ -80,40 +88,73 @@ test("The Okou error page uses Okou support", async () => {
   });
 });
 
-test("Modified clicks open internal destinations in a new tab", async () => {
-  mockAPIs();
-  const openedTargets = context.mocks.browser.open();
+test.each(["pointer", "Enter"])(
+  "A %s link activation creates one reversible navigation",
+  async (activation) => {
+    mockAPIs();
+    const user = userEvent.setup({ delay: null });
+    await setupPage({ context, path: "/missing-platform-route" });
+    const link = await waitFor(() => {
+      const candidate = queryAllByRoleFast("link").find((element) => {
+        return element.textContent?.trim() === "Back to home";
+      });
+      if (!candidate) {
+        throw new Error("Expected the home link");
+      }
+      return candidate;
+    });
 
-  await setupPage({ context, path: "/" });
+    if (activation === "Enter") {
+      link.focus();
+      await user.keyboard("{Enter}");
+    } else {
+      click(link);
+    }
+    await waitFor(() => {
+      expect(pathname()).toBe("/");
+      expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
+    });
 
-  const link = await waitFor(() => {
+    act(() => {
+      window.history.back();
+    });
+    await expect(
+      screen.findByRole("heading", { name: "That page isn't here." }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe("/missing-platform-route");
+  },
+);
+
+test.each(["Meta", "Control", "Shift", "Alt"])(
+  "%s-click leaves the internal destination to the browser",
+  async (modifier) => {
+    mockAPIs();
+    const openedTargets = context.mocks.browser.open();
+    const user = userEvent.setup({ delay: null });
+    await setupPage({ context, path: "/" });
     const rail = screen.getByTestId("labeled-nav-rail");
-    return within(rail).getByText("Agents").closest("a");
-  });
-  if (!link) {
-    throw new Error("Agents link not found");
-  }
+    const link = within(rail).getByText("Agents").closest("a");
+    if (!link) {
+      throw new Error("Expected the Agents link");
+    }
+    expect(link).toHaveAttribute("href", "/agents");
 
-  fireEvent.click(link);
+    await user.keyboard(`{${modifier}>}`);
+    await user.click(link);
+    await user.keyboard(`{/${modifier}}`);
 
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { level: 1, name: /agents/i }),
-    ).toBeInTheDocument();
-  });
-  expect(openedTargets.calls).toStrictEqual([]);
-
-  fireEvent.click(link, { metaKey: true });
-
-  await waitFor(() => {
+    expect(pathname()).toBe("/");
+    // Happy DOM delegates every uncancelled anchor click to window.open with
+    // the HTML target. Real modifier/auxiliary browsing-context choices need
+    // browser verification; asserting _blank here would require app emulation.
     expect(openedTargets.calls).toStrictEqual([
       expect.objectContaining({
-        target: "_blank",
-        url: expect.stringContaining("/agents"),
+        target: "_self",
+        url: "http://localhost/agents",
       }),
     ]);
-  });
-});
+  },
+);
 
 test("A valid sign-in ticket returns the user home", async () => {
   mockAPIs();
