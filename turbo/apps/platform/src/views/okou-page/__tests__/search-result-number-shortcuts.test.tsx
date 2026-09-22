@@ -366,7 +366,7 @@ test("Empty search follows the current agent and unread filter", async () => {
   });
   click(fastButton("Open chat list menu"));
   const unreadOnly = queryAllByRoleFast("menuitem").find((item) => {
-    return item.textContent?.trim() === "Unread";
+    return item.textContent?.trim().startsWith("Unread");
   });
   if (!unreadOnly) {
     throw new Error("Expected unread filter");

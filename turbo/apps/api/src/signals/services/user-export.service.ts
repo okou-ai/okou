@@ -1,9 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { enqueueBackgroundJob } from "./background-job.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type {
   UserExportJob,
@@ -14,29 +11,17 @@ import { exportJobs } from "@okouai/db/schema/export-job";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db } from "../external/db";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
-import { deleteS3Objects, generatePresignedGetUrl } from "../external/s3";
+import { generatePresignedGetUrl } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import { onRejection } from "../utils";
-import {
-  UserExportArchive,
-  uploadUserExportArchive$,
-} from "./user-export-archive.service";
-import { collectUserExportData$ } from "./user-export-data.service";
 import { buildFromAddress, EMAIL_PUBLIC_BRAND } from "./email-common.service";
-import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
-const EXPORT_DOWNLOAD_EXPIRY_SECONDS = PRESIGNED_URL_TTL_SECONDS;
-const EXPORT_DOWNLOAD_EXPIRY_MS = EXPORT_DOWNLOAD_EXPIRY_SECONDS * 1000;
 const USER_CACHE_TTL_MS = 15 * 60 * 1000;
 const DATA_EXPORT_READY_SUBJECT = "Your data export is ready";
 const DATA_EXPORT_FILENAME = "okou-data-export.zip";
-const EXPORT_CLEANUP_TIMEOUT_MS = 10_000;
-const log = logger("service:user-export");
 
 type ExportJobStatus = UserExportJob["status"];
 type ActiveExportJobStatus = Extract<ExportJobStatus, "pending" | "running">;
@@ -52,15 +37,8 @@ type StartUserExportResult =
       readonly jobId: string;
       readonly status: ActiveExportJobStatus;
       readonly shouldExecute: boolean;
-      readonly executionMode: "durable-v1" | null;
     }
   | { readonly kind: "rate_limited" };
-
-interface ExecuteUserExportJobArgs {
-  readonly jobId: string;
-  readonly userId: string;
-  readonly orgId: string;
-}
 
 interface ExportRuntime {
   readonly db: Db;
@@ -140,7 +118,6 @@ export function userExportStatus(userId: string) {
       .select({
         id: exportJobs.id,
         status: exportJobs.status,
-        executionMode: exportJobs.executionMode,
         createdAt: exportJobs.createdAt,
         completedAt: exportJobs.completedAt,
         expiresAt: exportJobs.expiresAt,
@@ -229,12 +206,6 @@ export const startUserExport$ = command(
     signal: AbortSignal,
   ): Promise<StartUserExportResult> => {
     const db = set(writeDb$);
-    const executionMode = isFeatureEnabled(
-      FeatureSwitchKey.DurableUserExport,
-      await loadUserFeatureSwitchContext(db, args.orgId, args.userId),
-    )
-      ? ("durable-v1" as const)
-      : null;
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
       // Serialize admission and cooldown for this owner, not execution. This also
@@ -247,7 +218,6 @@ export const startUserExport$ = command(
         .select({
           id: exportJobs.id,
           status: exportJobs.status,
-          executionMode: exportJobs.executionMode,
         })
         .from(exportJobs)
         .where(
@@ -263,7 +233,6 @@ export const startUserExport$ = command(
           kind: "accepted",
           jobId: active.id,
           status: activeExportJobStatus(active.status),
-          executionMode: active.executionMode,
           shouldExecute: false,
         };
       }
@@ -292,7 +261,7 @@ export const startUserExport$ = command(
           orgId: args.orgId,
           status: "pending",
           publicBrand: PUBLIC_BRAND,
-          executionMode,
+          executionMode: "durable-v1",
           createdAt: nowDate(),
         })
         .returning({ id: exportJobs.id });
@@ -300,26 +269,23 @@ export const startUserExport$ = command(
       if (!created) {
         throw new Error("Failed to create export job");
       }
-      if (executionMode) {
-        await enqueueBackgroundJob(
-          tx,
-          {
-            id: created.id,
-            kind: "user-export",
-            handlerVersion: 1,
-            userId: args.userId,
-            orgId: args.orgId,
-            input: {},
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-      }
+      await enqueueBackgroundJob(
+        tx,
+        {
+          id: created.id,
+          kind: "user-export",
+          handlerVersion: 1,
+          userId: args.userId,
+          orgId: args.orgId,
+          input: {},
+        },
+        signal,
+      );
+      signal.throwIfAborted();
       return {
         kind: "accepted",
         jobId: created.id,
         status: "pending",
-        executionMode,
         shouldExecute: true,
       };
     });
@@ -424,24 +390,6 @@ export function userExportReadyEmail(
   });
 }
 
-function enqueueExportReadyEmail(
-  runtime: ExportRuntime,
-  args: {
-    readonly userId: string;
-    readonly downloadUrl: string;
-    readonly expiresAt: Date;
-    readonly artifactCount: number;
-  },
-  signal: AbortSignal,
-): Computed<Promise<void>> {
-  return computed(async (get) => {
-    const email = await get(userExportReadyEmail(runtime, args, signal));
-    signal.throwIfAborted();
-    await runtime.db.insert(emailOutbox).values(email);
-    signal.throwIfAborted();
-  });
-}
-
 function exportStartResponse(
   result: Extract<StartUserExportResult, { readonly kind: "accepted" }>,
 ): UserExportStartResponse {
@@ -453,138 +401,3 @@ export function toUserExportStartResponse(
 ): UserExportStartResponse {
   return exportStartResponse(result);
 }
-
-const runExportJob$ = command(async function runExportJob(
-  { get, set },
-  runtime: ExportRuntime,
-  args: ExecuteUserExportJobArgs,
-  signal: AbortSignal,
-): Promise<void> {
-  const [claimed] = await runtime.db
-    .update(exportJobs)
-    .set({ status: "running" })
-    .where(
-      and(
-        eq(exportJobs.id, args.jobId),
-        eq(exportJobs.userId, args.userId),
-        eq(exportJobs.orgId, args.orgId),
-        eq(exportJobs.status, "pending"),
-      ),
-    )
-    .returning({ id: exportJobs.id });
-  signal.throwIfAborted();
-  if (!claimed) {
-    return;
-  }
-
-  const s3Key = `exports/${args.userId}/${args.jobId}.zip`;
-  const archive = new UserExportArchive();
-  await set(
-    uploadUserExportArchive$,
-    {
-      bucket: runtime.bucket,
-      key: s3Key,
-      archive,
-      writing: set(
-        collectUserExportData$,
-        runtime,
-        { userId: args.userId, requestOrgId: args.orgId },
-        archive,
-        signal,
-      ),
-    },
-    signal,
-  );
-  const expiresAt = new Date(nowDate().getTime() + EXPORT_DOWNLOAD_EXPIRY_MS);
-
-  const downloadUrl = await get(
-    generatePresignedGetUrl(runtime.bucket, s3Key, DATA_EXPORT_FILENAME, true),
-  );
-  signal.throwIfAborted();
-
-  const [completed] = await runtime.db
-    .update(exportJobs)
-    .set({
-      status: "completed",
-      s3Key,
-      artifactUrls: null,
-      completedAt: nowDate(),
-      expiresAt,
-    })
-    .where(
-      and(
-        eq(exportJobs.id, args.jobId),
-        eq(exportJobs.userId, args.userId),
-        eq(exportJobs.orgId, args.orgId),
-        eq(exportJobs.status, "running"),
-      ),
-    )
-    .returning({ id: exportJobs.id });
-  signal.throwIfAborted();
-  if (!completed) {
-    await get(
-      deleteS3Objects(
-        runtime.bucket,
-        [s3Key],
-        AbortSignal.timeout(EXPORT_CLEANUP_TIMEOUT_MS),
-      ),
-    );
-    signal.throwIfAborted();
-    return;
-  }
-  signal.throwIfAborted();
-
-  await get(
-    enqueueExportReadyEmail(
-      runtime,
-      {
-        userId: args.userId,
-        downloadUrl,
-        expiresAt,
-        artifactCount: 0,
-      },
-      signal,
-    ),
-  );
-  signal.throwIfAborted();
-
-  log.debug("export job completed", { jobId: args.jobId });
-});
-
-export const executeUserExportJob$ = command(
-  async (
-    { set },
-    args: ExecuteUserExportJobArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    const runtime: ExportRuntime = {
-      db,
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-    };
-
-    await onRejection(
-      set(runExportJob$, runtime, args, signal),
-      async (error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        log.error("export job failed", { jobId: args.jobId, error });
-
-        await db
-          .update(exportJobs)
-          .set({
-            status: "failed",
-            error: errorMessage,
-            completedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(exportJobs.id, args.jobId),
-              inArray(exportJobs.status, ["pending", "running"]),
-            ),
-          );
-      },
-    );
-    signal.throwIfAborted();
-  },
-);

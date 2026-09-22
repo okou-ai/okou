@@ -36,16 +36,12 @@ import { readExportText } from "./helpers/user-export-storage";
 const context = testContext();
 const readySubject = "Your data export is ready";
 
-async function actor() {
+function actor() {
   const user = createBddApi(context).user();
   if (!user.orgId) {
     throw new Error("Durable export tests require an organization");
   }
-  const current = { ...user, orgId: user.orgId };
-  await updateFeatureSwitchesForUser(context, current, {
-    [FeatureSwitchKey.DurableUserExport]: true,
-  });
-  return current;
+  return { ...user, orgId: user.orgId };
 }
 
 async function work(
@@ -135,7 +131,7 @@ async function completedZip(
 }
 
 test("continues the same export across bounded requests after a staged write loses its response", async () => {
-  const user = await actor();
+  const user = actor();
   const bdd = createBddApi(context);
   const misc = createMiscRoutesApi(context);
   const agent = await bdd.createAgent(user, {
@@ -214,10 +210,6 @@ test("continues the same export across bounded requests after a staged write los
   expect(repeated.body.jobId).toBe(started.body.jobId);
   await flushWaitUntilForTest();
 
-  // Disabling admission does not abandon work already durably accepted.
-  await updateFeatureSwitchesForUser(context, user, {
-    [FeatureSwitchKey.DurableUserExport]: false,
-  });
   await work(user, started.body.jobId, "make-due");
   await work(user, started.body.jobId, "run", 1);
   expect(
@@ -257,9 +249,8 @@ test("continues the same export across bounded requests after a staged write los
 });
 
 test("recovers the completion email without repeating the export or requiring an optional-email subscription", async () => {
-  const user = await actor();
+  const user = actor();
   await updateFeatureSwitchesForUser(context, user, {
-    [FeatureSwitchKey.DurableUserExport]: true,
     [FeatureSwitchKey.MorningBrief]: true,
   });
   const subscriptions = setupApp({ context, routes: emailSubscriptionRoutes })(
@@ -342,7 +333,7 @@ test("recovers the completion email without repeating the export or requiring an
 test.each(["part", "completion"] as const)(
   "recovers a persisted multipart %s whose response was lost",
   async (boundary) => {
-    const user = await actor();
+    const user = actor();
     let loseResponse = true;
     const storage = installDurableUserExportStorage(context, {
       afterWrite: (command) => {
@@ -378,7 +369,7 @@ test.each(["part", "completion"] as const)(
 );
 
 test("an expired worker cannot publish after a replacement finished the export", async () => {
-  const user = await actor();
+  const user = actor();
   const entered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
   onTestFinished(() => {
@@ -416,7 +407,7 @@ test("an expired worker cannot publish after a replacement finished the export",
 test.each([false, true])(
   "retains current binary memory and rejects a truncated source (truncated=%s)",
   async (truncated) => {
-    const user = await actor();
+    const user = actor();
     const binary = Buffer.from([0, 255, 254, 128, 13, 10, 0, 1, 2]);
     const path = "notes/profile.bin";
     const archive = gzipSync(
@@ -481,7 +472,7 @@ test.each([false, true])(
 );
 
 test("excludes agents owned by other members from a subject data export", async () => {
-  const user = await actor();
+  const user = actor();
   const bdd = createBddApi(context);
   createMiscRoutesApi(context);
   const owner = bdd.user({ orgId: user.orgId });
@@ -507,7 +498,7 @@ test("excludes agents owned by other members from a subject data export", async 
 });
 
 test("does not publish an export after one of its agents stops being reachable", async () => {
-  const user = await actor();
+  const user = actor();
   const bdd = createBddApi(context);
   createMiscRoutesApi(context);
   const agent = await bdd.createAgent(user, {

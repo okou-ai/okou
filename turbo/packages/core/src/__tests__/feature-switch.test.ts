@@ -406,23 +406,20 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
-  it("should admit durable exports for every owner and accept an opt-out", () => {
-    expect(FeatureSwitchKey.DurableUserExport).toBe("durableUserExport");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+  it("should release chat unread shortcuts and optimistic message spinners", () => {
+    for (const key of [
+      FeatureSwitchKey.ChatUnreadOnlyShortcut,
+      FeatureSwitchKey.OptimisticMessageSpinner,
+    ]) {
+      expect(isFeatureEnabled(key, {})).toBe(true);
+      expect(isFeatureEnabled(key, { orgId: "org_nonexistent" })).toBe(true);
       expect(
-        isFeatureEnabled(FeatureSwitchKey.DurableUserExport, context),
-      ).toBe(true);
+        isFeatureEnabled(key, {
+          overrides: { [key]: false },
+        }),
+      ).toBe(false);
+      expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
     }
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.DurableUserExport, {
-        orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.DurableUserExport]: false },
-      }),
-    ).toBe(false);
-    expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.DurableUserExport]
-        .rolloutStage,
-    ).toBe("released");
   });
 
   it("should link user message urls for every reader and accept an opt-out", () => {
@@ -627,9 +624,9 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
-      false,
+      true,
     );
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });

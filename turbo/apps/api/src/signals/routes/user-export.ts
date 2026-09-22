@@ -7,7 +7,6 @@ import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import { logger } from "../../lib/log";
 import {
-  executeUserExportJob$,
   startUserExport$,
   toUserExportStartResponse,
   userExportStatus,
@@ -50,29 +49,20 @@ const postUserExportInner$ = command(
 
     if (result.shouldExecute) {
       const backgroundSignal = new AbortController().signal;
-      const work: Promise<unknown> =
-        result.executionMode === "durable-v1"
-          ? set(
-              executeDurableUserExportWork$,
-              { jobId: result.jobId, maxSteps: 10 },
-              backgroundSignal,
-            )
-          : set(
-              executeUserExportJob$,
-              {
-                jobId: result.jobId,
-                userId: auth.userId,
-                orgId: auth.orgId,
-              },
-              backgroundSignal,
-            );
       waitUntil(
-        tapError(work, (error) => {
-          log.error("executeUserExportJob failed", {
-            jobId: result.jobId,
-            error,
-          });
-        }),
+        tapError(
+          set(
+            executeDurableUserExportWork$,
+            { jobId: result.jobId, maxSteps: 10 },
+            backgroundSignal,
+          ),
+          (error) => {
+            log.error("executeDurableUserExportWork failed", {
+              jobId: result.jobId,
+              error,
+            });
+          },
+        ),
       );
     }
 
