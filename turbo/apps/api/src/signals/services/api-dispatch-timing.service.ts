@@ -251,6 +251,13 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_build_artifact_entries"
   | "api_dispatch_prepare_storage_manifest_resolve_artifact_versions"
   | "api_dispatch_prepare_storage_manifest_generate_artifact_urls"
+  | "api_dispatch_prepare_storage_manifest_cache_prepare_requests"
+  | "api_dispatch_prepare_storage_manifest_cache_lookup"
+  | "api_dispatch_prepare_storage_manifest_cache_classify"
+  | "api_dispatch_prepare_storage_manifest_cache_sign_misses"
+  | "api_dispatch_prepare_storage_manifest_cache_upsert_misses"
+  | "api_dispatch_prepare_storage_manifest_cache_join_results"
+  | "api_dispatch_prepare_storage_manifest_construct_entries"
   | "api_dispatch_prepare_storage_manifest_assemble"
   | "api_dispatch_build_stored_execution_context"
   | "api_dispatch_connector_catalog_load_runtime_snapshot"
@@ -472,6 +479,19 @@ export async function measureApiDispatchTiming<T>(
     return await operation();
   }
   return await collector.measure(actionType, spanKind, operation, dimensions);
+}
+
+export function measureApiDispatchTimingSync<T>(
+  collector: ApiDispatchTimingCollector | undefined,
+  actionType: ApiDispatchTimingActionType,
+  spanKind: ApiDispatchTimingSpanKind,
+  operation: () => T,
+  dimensions?: ApiDispatchTimingDimensionsInput,
+): T {
+  if (!collector) {
+    return operation();
+  }
+  return collector.measureSync(actionType, spanKind, operation, dimensions);
 }
 
 function resolveApiDispatchTimingDimensions(
