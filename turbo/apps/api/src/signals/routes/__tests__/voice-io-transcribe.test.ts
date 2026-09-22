@@ -1153,7 +1153,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         url: VERTEX_VOICE_URL,
         response: () => {
           return HttpResponse.json({
-            modelVersion: `private model ${secret}`,
+            modelVersion: `K-model-${secret}`,
             usageMetadata: {
               promptTokenCount: 12,
               candidatesTokenCount: "65536",

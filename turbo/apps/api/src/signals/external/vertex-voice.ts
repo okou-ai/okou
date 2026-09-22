@@ -201,7 +201,7 @@ function property(value: unknown, key: string): unknown {
 
 function safeModelVersion(value: unknown): string | undefined {
   return typeof value === "string" &&
-    /^[a-z0-9][a-z0-9._/-]{0,127}$/iu.test(value)
+    /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/u.test(value)
     ? value
     : undefined;
 }
