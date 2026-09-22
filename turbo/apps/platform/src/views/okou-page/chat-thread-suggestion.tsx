@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, Ref } from "react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
@@ -19,6 +19,7 @@ function scrollSelectedSuggestionIntoView(
 }
 
 export function ComposerMentionSuggestionMenu({
+  menuRef,
   anchor,
   agents,
   chatThreads,
@@ -26,6 +27,7 @@ export function ComposerMentionSuggestionMenu({
   onSelectAgent,
   onSelectChatThread,
 }: {
+  readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
@@ -38,12 +40,14 @@ export function ComposerMentionSuggestionMenu({
   const { t } = useTranslation();
   return (
     <PopoverContent
+      ref={menuRef}
       anchor={anchor}
       side="top"
       align="start"
       sideOffset={8}
       updatePositionStrategy="always"
       initialFocus={false}
+      finalFocus={false}
       className="flex h-[min(16rem,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0 md:h-[min(20rem,var(--available-height))]"
       data-testid="chat-thread-suggestion-menu"
     >
@@ -66,8 +70,7 @@ export function ComposerMentionSuggestionMenu({
                     "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
                     selected ? "bg-accent" : "hover:bg-state-hover",
                   )}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
+                  onClick={() => {
                     onSelectAgent(agent);
                   }}
                 >
@@ -103,8 +106,7 @@ export function ComposerMentionSuggestionMenu({
                 "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors",
                 selected ? "bg-accent" : "hover:bg-state-hover",
               )}
-              onMouseDown={(event) => {
-                event.preventDefault();
+              onClick={() => {
                 onSelectChatThread(chatThread);
               }}
             >

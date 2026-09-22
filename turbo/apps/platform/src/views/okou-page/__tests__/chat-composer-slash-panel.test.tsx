@@ -681,3 +681,29 @@ test("Choosing a cover consumes the slash token that opened the panel", async ()
   expect(editor).not.toHaveTextContent("/");
   expect(editor).toHaveTextContent("Draft");
 });
+
+test("Activate a template cover with Space after a cancelled pointer press", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  const [template] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!template) {
+    throw new Error("Expected a presentation template");
+  }
+  const cover = slashButton(template.title);
+  await user.pointer({ target: cover, keys: "[MouseLeft>]" });
+  expect(cover).toHaveFocus();
+  expect(editor).toHaveTextContent("Draft /");
+  expect(screen.getByTestId("slash-workflow-menu")).toBeInTheDocument();
+  await user.pointer({ target: editor, keys: "[/MouseLeft]" });
+  await user.pointer({ target: cover, keys: "[MouseRight]" });
+  expect(editor).toHaveTextContent("Draft /");
+
+  await user.keyboard(" ");
+  await expectInlineTemplateInComposer(template.title);
+  expect(editor).not.toHaveTextContent("Draft /");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  await waitFor(() => {
+    expect(editor).toHaveFocus();
+  });
+});

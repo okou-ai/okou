@@ -181,3 +181,34 @@ test("A user can format and save agent instructions", async () => {
   expect(screen.getByLabelText("Instructions editor")).not.toHaveFocus();
   expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
 });
+
+test.each(["{Enter}", " "])(
+  "Activate instruction formatting with %s after cancelling a pointer press",
+  async (key) => {
+    await setupInstructionsPage("Selected instructions");
+    const user = userEvent.setup({ delay: null });
+    const editor = await instructionsEditor();
+    await user.click(editor);
+    await user.keyboard("{Control>}a{/Control}");
+    const bold = await screen.findByTitle("Bold");
+
+    await user.pointer({ target: bold, keys: "[MouseLeft>]" });
+    expect(bold).toHaveFocus();
+    expect(editor).toHaveTextContent("Selected instructions");
+    expect(editor.querySelector("strong")).toBeNull();
+    await user.pointer({ target: editor, keys: "[/MouseLeft]" });
+    await user.pointer({ target: bold, keys: "[MouseRight]" });
+    expect(editor.querySelector("strong")).toBeNull();
+
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(editor.querySelector("strong")).toHaveTextContent(
+        "Selected instructions",
+      );
+      expect(editor).toHaveFocus();
+    });
+    await user.keyboard("Replacement");
+    expect(editor.querySelector("strong")).toHaveTextContent("Replacement");
+    expect(editor).not.toHaveTextContent("Selected instructions");
+  },
+);

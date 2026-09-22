@@ -706,6 +706,9 @@ export function TiptapWorkflowComposer({
   });
   const handlePaste = useComposerPasteHandler(composer, onPaste);
   const setContainerRef = useSet(composer.editor.setContainerRef$);
+  const setSuggestionMenuRef = useSet(
+    composer.suggestion.setSuggestionMenuRef$,
+  );
 
   return (
     <Popover
@@ -778,6 +781,7 @@ export function TiptapWorkflowComposer({
       </div>
       {suggestionMenu.showWorkflows && (
         <SlashWorkflowMenu
+          menuRef={setSuggestionMenuRef}
           anchor={composerSuggestionCaretAnchor(
             composer.editor.editor,
             suggestionMenu.range,
@@ -790,6 +794,7 @@ export function TiptapWorkflowComposer({
           panel={
             suggestionMenu.showTemplatePanel ? (
               <SlashTemplatePanel
+                menuRef={setSuggestionMenuRef}
                 categories={suggestionMenu.panelCategories}
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
@@ -809,6 +814,7 @@ export function TiptapWorkflowComposer({
       )}
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu
+          menuRef={setSuggestionMenuRef}
           anchor={composerSuggestionCaretAnchor(
             composer.editor.editor,
             suggestionMenu.range,
