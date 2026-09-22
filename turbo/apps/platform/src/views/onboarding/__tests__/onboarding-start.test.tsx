@@ -59,13 +59,14 @@ function goBack() {
 }
 
 function selectWorkflowAutomation() {
-  const radio = queryAllByRoleFast("radio").find((candidate) => {
+  const choices = screen.getByRole("group", { name: "First project type" });
+  const button = queryAllByRoleFast("button", choices).find((candidate) => {
     return candidate.textContent?.includes("Workflow automation");
   });
-  if (!radio) {
+  if (!button) {
     throw new Error("Expected the Workflow automation option");
   }
-  click(radio);
+  click(button);
 }
 
 function onboardingNeeded() {
