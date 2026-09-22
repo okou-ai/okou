@@ -103,6 +103,16 @@ export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.352.7";
 export const releaseVersionSchema = z
   .string()
   .regex(/^\d+\.\d+\.\d+$/, "Release versions are MAJOR.MINOR.PATCH");
+/**
+ * Lowercase hex SHA-256 of the code-determined Pi session construction: the
+ * system prompt template and ordered tool schemas the runtime produces for
+ * fixed inputs. `@okouai/pi-agent-runtime` computes it at build time and
+ * commits it; it changes only when code that feeds the constructed session
+ * changes, in whichever package that code lives.
+ */
+export const piSessionConstructionDigestSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/, "Session construction digests are 64 lowercase hex");
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_CANDIDATES = 256;
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_UTF8_BYTES = 21_036_800;
 export const sessionHistoryEncodingSchema = z.enum([
@@ -171,12 +181,15 @@ export const runnerClaimCapabilitiesSchema = z
  * Versions of the Okou CLI bundle installed into a runner's rootfs at build
  * time. Advertised on claim so the API can observe (and, once the npx launch
  * path is retired, gate) API-first handoff parity. `piSdk` is informational.
+ * `piSessionConstructionDigest` is the parity key the guest compares; runners
+ * advertise it only once every serving API accepts it, so it stays optional.
  */
 export const runnerInstalledVersionsSchema = z
   .object({
     cli: releaseVersionSchema,
     piAgentRuntime: releaseVersionSchema,
     piSdk: z.string().min(1).max(64),
+    piSessionConstructionDigest: piSessionConstructionDigestSchema.optional(),
   })
   .strict()
   .readonly();
@@ -1053,6 +1066,16 @@ export const piApiFirstTurnConfigSchema = z
     requiredPiAgentRuntimeVersion: releaseVersionSchema.optional(),
     /** Lowest installed CLI release allowed to run this launch payload. */
     minCliVersion: releaseVersionSchema.optional(),
+    /**
+     * Digest of the session construction the API prepared this turn with. When
+     * present it replaces `requiredPiAgentRuntimeVersion` as the parity key:
+     * the guest execs the rootfs-installed CLI, and the CLI continues a
+     * pending-tool handoff, only when the digest bundled into that CLI is
+     * identical, so dependency-only runtime version bumps no longer force the
+     * `npx` launch. Absent until the API writer is enabled.
+     */
+    requiredPiSessionConstructionDigest:
+      piSessionConstructionDigestSchema.optional(),
   })
   .strict()
   .readonly();
