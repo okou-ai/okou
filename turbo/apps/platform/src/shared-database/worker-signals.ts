@@ -270,6 +270,11 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
         dataKey,
       });
     }
+    if (dataKey?.kind === "chat-event") {
+      // Dispatch the exact thread invalidation before the broader cache warm.
+      // Warming is detached and throttled, so it cannot hold this payload loop.
+      set(startChatEventWarming$);
+    }
     return false;
   },
 );
@@ -319,8 +324,6 @@ const reloadWorkerChatIndicatorsFromRealtime$ = command(
   async ({ set }, signal: AbortSignal): Promise<boolean> => {
     await set(refreshWorkerChatIndicators$, signal);
     set(reloadComputedForConnections$, "chat-thread-indicators");
-    // Notify tabs before optional warming starts in the background.
-    set(startChatEventWarming$);
     signal.throwIfAborted();
     return false;
   },
@@ -331,7 +334,6 @@ const reloadWorkerChatIndicatorsFromReadCursor$ = command(
     await set(refreshWorkerChatIndicators$, signal);
     set(forwardChatThreadReadCursorUpdated$, payload);
     set(reloadComputedForConnections$, "chat-thread-indicators");
-    set(startChatEventWarming$);
     signal.throwIfAborted();
     return false;
   },
