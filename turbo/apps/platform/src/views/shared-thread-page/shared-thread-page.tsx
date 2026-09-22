@@ -4,7 +4,7 @@ import type {
   SharedThreadResponse,
 } from "@okouai/api-contracts/contracts/shared-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
-import { Button, Card, CardContent, cn } from "@okouai/ui";
+import { Button, Card, CardContent, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
@@ -342,21 +342,26 @@ function SharedThreadHandoff({
                 </div>
                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                   {signInUrl !== null ? (
-                    <Button variant="quiet" size="sm" asChild>
-                      <a href={signInUrl}>
-                        {t(($) => {
-                          return $.sharedThread.signIn;
-                        })}
-                      </a>
-                    </Button>
-                  ) : null}
-                  <Button size="sm" asChild>
-                    <a href={handoffUrl}>
+                    <a
+                      href={signInUrl}
+                      className={buttonVariants({
+                        variant: "quiet",
+                        size: "sm",
+                      })}
+                    >
                       {t(($) => {
-                        return $.sharedThread.tryItYourself;
+                        return $.sharedThread.signIn;
                       })}
                     </a>
-                  </Button>
+                  ) : null}
+                  <a
+                    href={handoffUrl}
+                    className={buttonVariants({ size: "sm" })}
+                  >
+                    {t(($) => {
+                      return $.sharedThread.tryItYourself;
+                    })}
+                  </a>
                 </div>
               </div>
             </CardContent>
@@ -447,27 +452,24 @@ function SharedThreadHeader({
           </Button>
         ) : null}
         {signInUrl !== null ? (
-          <Button
-            variant="quiet"
-            size="sm"
-            className="hidden sm:inline-flex"
-            asChild
+          <a
+            href={signInUrl}
+            className={cn(
+              buttonVariants({ variant: "quiet", size: "sm" }),
+              "hidden sm:inline-flex",
+            )}
           >
-            <a href={signInUrl}>
-              {t(($) => {
-                return $.sharedThread.signIn;
-              })}
-            </a>
-          </Button>
+            {t(($) => {
+              return $.sharedThread.signIn;
+            })}
+          </a>
         ) : null}
         {signUpUrl !== null ? (
-          <Button size="sm" asChild>
-            <a href={signUpUrl}>
-              {t(($) => {
-                return $.sharedThread.signUp;
-              })}
-            </a>
-          </Button>
+          <a href={signUpUrl} className={buttonVariants({ size: "sm" })}>
+            {t(($) => {
+              return $.sharedThread.signUp;
+            })}
+          </a>
         ) : null}
       </div>
     </header>

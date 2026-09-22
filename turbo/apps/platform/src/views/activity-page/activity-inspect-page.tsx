@@ -2,7 +2,14 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Search, ChartLine, Upload } from "lucide-react";
-import { Button, Input, Tabs, TabsList, TabsTrigger } from "@okouai/ui";
+import {
+  Input,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  buttonVariants,
+  cn,
+} from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
@@ -127,26 +134,29 @@ function InspectEmptyState() {
             {loadError}
           </p>
         )}
-        <Button variant="outline" asChild>
-          <label className="cursor-pointer">
-            <Upload size={16} />
-            {t(($) => {
-              return $.activity.inspect.noLog.upload;
-            })}
-            <input
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  detach(loadFile(file, pageSignal), Reason.DomCallback);
-                }
-                e.target.value = "";
-              }}
-            />
-          </label>
-        </Button>
+        <label
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "cursor-pointer",
+          )}
+        >
+          <Upload size={16} />
+          {t(($) => {
+            return $.activity.inspect.noLog.upload;
+          })}
+          <input
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                detach(loadFile(file, pageSignal), Reason.DomCallback);
+              }
+              e.target.value = "";
+            }}
+          />
+        </label>
       </div>
     </div>
   );

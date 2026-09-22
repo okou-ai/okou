@@ -10,7 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { UserExportStatusResponse } from "@okouai/api-contracts/contracts/user-export";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { now } from "../../lib/time.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -288,14 +288,16 @@ function ExportActions({
   if (viewState === "download" && downloadUrl) {
     return (
       <div className="flex w-full flex-col gap-2">
-        <Button asChild className={PRIMARY_ACTION_BUTTON_CLASS}>
-          <a href={downloadUrl} download>
-            <Download size={16} />
-            {t(($) => {
-              return $.settings.export.actions.download;
-            })}
-          </a>
-        </Button>
+        <a
+          href={downloadUrl}
+          download
+          className={cn(buttonVariants(), PRIMARY_ACTION_BUTTON_CLASS)}
+        >
+          <Download size={16} />
+          {t(($) => {
+            return $.settings.export.actions.download;
+          })}
+        </a>
         {canExport && (
           <Button
             type="button"

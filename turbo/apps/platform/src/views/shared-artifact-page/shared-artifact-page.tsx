@@ -1,4 +1,14 @@
-import { Button, Card, IconButton, cn } from "@okouai/ui";
+import {
+  Button,
+  Card,
+  IconButton,
+  cn,
+  buttonVariants,
+  Tooltip,
+  TooltipProvider,
+  TooltipTrigger,
+  TooltipContent,
+} from "@okouai/ui";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -126,18 +136,28 @@ function ArtifactViewerActions({
         </Button>
       )}
       <ArtifactActionSeparator />
-      <Button
-        size="sm"
-        asChild
-        showTooltip
-        aria-label={continueLabel}
-        className="ml-1 h-8 w-8 p-0 sm:ml-2 sm:w-auto sm:px-3"
-      >
-        <a href={continueUrl.href}>
-          <span className="hidden sm:inline">{continueLabel}</span>
-          <ArrowUpRight size={18} className="sm:hidden" aria-hidden />
-        </a>
-      </Button>
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <a
+                href={continueUrl.href}
+                aria-label={continueLabel}
+                className={cn(
+                  buttonVariants({ size: "sm" }),
+                  "ml-1 h-8 w-8 p-0 sm:ml-2 sm:w-auto sm:px-3",
+                )}
+              >
+                <span className="hidden sm:inline">{continueLabel}</span>
+                <ArrowUpRight size={18} className="sm:hidden" aria-hidden />
+              </a>
+            }
+          />
+          <TooltipContent role="tooltip">
+            <p className="text-xs">{continueLabel}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }
@@ -360,17 +380,18 @@ export function SharedArtifactPage({
         {artifact !== null ? (
           <ArtifactViewerActions artifact={artifact} viewer={viewer} />
         ) : (
-          <Button asChild variant="quiet" size="sm">
-            <a href="/">
-              <ArrowLeft aria-hidden />
-              {t(
-                ($) => {
-                  return $.artifacts.access.backToBrand;
-                },
-                { brandName: BRAND_NAME },
-              )}
-            </a>
-          </Button>
+          <a
+            href="/"
+            className={buttonVariants({ variant: "quiet", size: "sm" })}
+          >
+            <ArrowLeft aria-hidden />
+            {t(
+              ($) => {
+                return $.artifacts.access.backToBrand;
+              },
+              { brandName: BRAND_NAME },
+            )}
+          </a>
         )}
       </header>
       <main

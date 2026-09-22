@@ -54,7 +54,14 @@ import {
   type ConcurrencyChangeMode,
   type ConcurrencyConfirmDialogState,
 } from "../../../../signals/okou-page/billing.ts";
-import { Badge, Button, DialogBody, Input } from "@okouai/ui";
+import {
+  Badge,
+  Button,
+  DialogBody,
+  Input,
+  buttonVariants,
+  cn,
+} from "@okouai/ui";
 import type {
   BillingStatusResponse,
   ConcurrencySubscriptionChangePreviewResponse,
@@ -1855,18 +1862,20 @@ function UsagePackMigrationAvailability({
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {migration.hostedInvoiceUrl && (
-            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-              <a
-                href={migration.hostedInvoiceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {i18n.t(($) => {
-                  return $.billing.plans.usagePacks.migration.invoice;
-                })}
-                <ExternalLink size={13} strokeWidth={1.5} />
-              </a>
-            </Button>
+            <a
+              href={migration.hostedInvoiceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-8 text-xs",
+              )}
+            >
+              {i18n.t(($) => {
+                return $.billing.plans.usagePacks.migration.invoice;
+              })}
+              <ExternalLink size={13} strokeWidth={1.5} />
+            </a>
           )}
           {configurable && onOpen && (
             <Button size="sm" className="h-8 text-xs" onClick={onOpen}>

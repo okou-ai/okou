@@ -74,6 +74,32 @@ test("An unknown route offers both of its destinations", async () => {
   });
 });
 
+test("A button-styled destination leaves its modified click to the browser", async () => {
+  mockAPIs();
+  context.mocks.browser.open();
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: "/missing-platform-route" });
+  const link = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.textContent?.trim() === "Browse workflows";
+  });
+  if (!link) {
+    throw new Error("Expected the workflows destination");
+  }
+  expect(link).toHaveAttribute("href", "/workflows");
+
+  await user.keyboard("{Meta>}");
+  await user.click(link);
+  await user.keyboard("{/Meta}");
+
+  // buttonVariants only styles the anchor, so the Router still leaves the
+  // modified click to the browser instead of navigating in place.
+  expect(pathname()).toBe("/missing-platform-route");
+  expect(link).toHaveAttribute("href", "/workflows");
+  expect(
+    screen.getByRole("heading", { name: "That page isn't here." }),
+  ).toBeInTheDocument();
+});
+
 test("The Okou error page uses Okou support", async () => {
   await setupPage({
     context,
