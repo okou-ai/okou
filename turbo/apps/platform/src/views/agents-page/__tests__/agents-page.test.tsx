@@ -2,7 +2,6 @@ import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -80,15 +79,6 @@ function configureAgentList(
   targetContext.mocks.data.onboardingStatus({
     defaultAgentId: agents[0]?.agentId ?? null,
   });
-}
-
-async function creatorPopup(creatorName: string): Promise<HTMLElement> {
-  const label = await screen.findByText(`Created by ${creatorName}`);
-  const popup = label.closest<HTMLElement>("[data-slot='tooltip-content']");
-  if (!popup) {
-    throw new Error(`Creator details for ${creatorName} were not found`);
-  }
-  return popup;
 }
 
 test("The Agents document title uses the Okou brand on a trusted host", async () => {
@@ -185,7 +175,6 @@ test("Unread indicators update after a thread-list event", async () => {
 });
 
 test("Agent visibility tabs show public creators without management data", async () => {
-  const user = userEvent.setup({ delay: null });
   context.mocks.api(orgMembersContract.members, ({ query, respond }) => {
     if (query.view !== "members") {
       return respond(503, {
@@ -251,15 +240,18 @@ test("Agent visibility tabs show public creators without management data", async
   await waitFor(() => {
     expect(agentCard(RESEARCH_AGENT_ID)).toBeVisible();
   });
-  const researchAgent = within(agentCard(RESEARCH_AGENT_ID)).getByText(
-    "Research Agent",
-  );
+  const card = agentCard(RESEARCH_AGENT_ID);
   expect(queryAgentCard(PRIVATE_AGENT_ID)).toBeUndefined();
 
-  await user.hover(researchAgent);
-
-  const popup = await creatorPopup("Alice Admin");
-  expect(within(popup).getByAltText("")).toHaveAttribute(
+  card.focus();
+  expect(card).toHaveAccessibleName("Research Agent");
+  expect(card).toHaveAccessibleDescription(
+    "Finds and summarizes evidence Created by Alice Admin",
+  );
+  expect(within(card).getByText("Created by Alice Admin")).toBeVisible();
+  expect(within(card).getByText("Finds and summarizes evidence")).toBeVisible();
+  expect(card).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}`);
+  expect(within(card).getByAltText("")).toHaveAttribute(
     "src",
     "https://example.com/alice.png",
   );
@@ -268,8 +260,7 @@ test("Agent visibility tabs show public creators without management data", async
   );
 });
 
-test("Creator tooltips preserve fallbacks for incomplete and missing profiles", async () => {
-  const user = userEvent.setup({ delay: null });
+test("Visible creator information preserves fallbacks for incomplete and missing profiles", async () => {
   context.mocks.data.orgMembers({
     members: [
       {
@@ -334,26 +325,20 @@ test("Creator tooltips preserve fallbacks for incomplete and missing profiles", 
     await waitFor(() => {
       expect(agentCard(creator.agentId)).toBeInTheDocument();
     });
-    const title = within(agentCard(creator.agentId)).getByText(
-      creator.displayName,
+    const card = agentCard(creator.agentId);
+    expect(card).toHaveAccessibleName(creator.displayName);
+    expect(card).toHaveAccessibleDescription(
+      expect.stringContaining(`Created by ${creator.expectedName}`),
     );
-    await user.hover(title);
-
-    const popup = await creatorPopup(creator.expectedName);
     expect(
-      within(popup).getByText(creator.expectedInitial),
-    ).toBeInTheDocument();
-    expect(within(popup).queryByAltText("")).not.toBeInTheDocument();
-
-    await user.unhover(title);
-    await waitFor(() => {
-      expect(popup).not.toBeInTheDocument();
-    });
+      within(card).getByText(`Created by ${creator.expectedName}`),
+    ).toBeVisible();
+    expect(within(card).getByText(creator.expectedInitial)).toBeInTheDocument();
+    expect(within(card).queryByAltText("")).not.toBeInTheDocument();
   }
 });
 
 test("Creator profiles work when an older API returns the full members response", async () => {
-  const user = userEvent.setup({ delay: null });
   context.mocks.api(orgMembersContract.members, ({ respond }) => {
     return respond(200, {
       name: "Test Org",
@@ -392,13 +377,9 @@ test("Creator profiles work when an older API returns the full members response"
     expect(agentCard(RESEARCH_AGENT_ID)).toBeInTheDocument();
   });
 
-  const researchAgent = within(agentCard(RESEARCH_AGENT_ID)).getByText(
-    "Research Agent",
-  );
-  await user.hover(researchAgent);
-
-  const popup = await creatorPopup("Legacy Creator");
-  expect(within(popup).getByAltText("")).toHaveAttribute(
+  const card = agentCard(RESEARCH_AGENT_ID);
+  expect(within(card).getByText("Created by Legacy Creator")).toBeVisible();
+  expect(within(card).getByAltText("")).toHaveAttribute(
     "src",
     "https://example.com/legacy-creator.png",
   );

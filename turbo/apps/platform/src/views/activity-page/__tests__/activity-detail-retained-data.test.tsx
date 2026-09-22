@@ -275,3 +275,25 @@ test("Diagnostic export remains available when run context was not retained", as
   expect(downloaded).not.toHaveProperty("context");
   expect(downloaded.networkLogs).toStrictEqual([]);
 });
+
+test("Read the selected model and provider without hovering", async () => {
+  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+    return respond(200, directProviderLogDetail());
+  });
+  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
+    return respond(200, {
+      events: [activityEvent()],
+      hasMore: false,
+      status: "completed",
+      lastEventSequence: 0,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/activities/${RUN_ID}`,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await expect(
+    screen.findByText("gpt-5.6-luna provided by ChatGPT (Codex)"),
+  ).resolves.toBeVisible();
+});

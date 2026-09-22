@@ -9,6 +9,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -231,5 +233,62 @@ describe("DropdownMenu", () => {
 
     expect(dialogPortal).toContainElement(menuPortal);
     expect(menuPortal).toContainElement(tooltipPortal);
+  });
+});
+
+describe("Menu option descriptions", () => {
+  it("preserves the short name and native keyboard selection with a visible explanation", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(
+      <>
+        <p id="provider-note">Uses workspace credits</p>
+        <DropdownMenu>
+          <DropdownMenuTrigger>Models</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuRadioGroup
+              defaultValue="alpha"
+              onValueChange={onValueChange}
+            >
+              <DropdownMenuRadioItem
+                value="alpha"
+                label="Alpha"
+                description="Economy model"
+              >
+                Alpha
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem
+                value="beta"
+                label="Beta"
+                description="Premium model"
+                aria-describedby="provider-note"
+                closeOnClick
+              >
+                Beta
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </>,
+    );
+    const trigger = screen.getByRole("button", { name: "Models" });
+    trigger.focus();
+    await user.keyboard("{ArrowDown}");
+    const alpha = await screen.findByRole("menuitemradio", { name: "Alpha" });
+    await waitFor(() => {
+      expect(alpha).toHaveFocus();
+    });
+    await user.keyboard("{ArrowDown}");
+    const beta = screen.getByRole("menuitemradio", { name: "Beta" });
+    expect(beta).toHaveFocus();
+    expect(beta).toHaveAccessibleDescription(
+      "Uses workspace credits Premium model",
+    );
+    expect(onValueChange).not.toHaveBeenCalled();
+    await user.keyboard("{Enter}");
+    expect(onValueChange).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
   });
 });

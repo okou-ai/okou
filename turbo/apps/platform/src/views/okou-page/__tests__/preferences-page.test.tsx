@@ -691,6 +691,18 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
   ).toBeTruthy();
 
   click(await within(dialog).findByRole("combobox", { name: "GPT 6 Astra" }));
+  const standardOption = await screen.findByRole("option", {
+    name: "GPT 6 Astra",
+  });
+  expect(standardOption).toHaveAccessibleDescription(
+    "Premium frontier model for the hardest tasks",
+  );
+  expect(
+    within(standardOption).getByText(
+      "Premium frontier model for the hardest tasks",
+    ),
+  ).toBeVisible();
+  expect(standardOption).toHaveAttribute("aria-selected", "true");
   click(await screen.findByRole("option", { name: "GPT 6 Astra Fast" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({

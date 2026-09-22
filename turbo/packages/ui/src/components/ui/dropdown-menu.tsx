@@ -144,21 +144,62 @@ function DropdownMenuRadioGroup(props: MenuPrimitive.RadioGroup.Props) {
 
 const DropdownMenuRadioItem = React.forwardRef<
   HTMLElement,
-  MenuPrimitive.RadioItem.Props
->(({ className, ...props }, ref) => {
-  return (
-    <MenuPrimitive.RadioItem
-      ref={ref}
-      data-slot="dropdown-menu-radio-item"
-      className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
-        MENU_ROW_HEIGHT_CLASS,
-        className,
-      )}
-      {...props}
-    />
-  );
-});
+  MenuPrimitive.RadioItem.Props & { description?: string }
+>(
+  (
+    {
+      className,
+      children,
+      description,
+      "aria-describedby": describedBy,
+      "aria-labelledby": labelledBy,
+      "aria-label": label,
+      ...props
+    },
+    ref,
+  ) => {
+    const id = React.useId();
+    const labelId = `${id}-label`;
+    const descriptionId = `${id}-description`;
+    return (
+      <MenuPrimitive.RadioItem
+        ref={ref}
+        data-slot="dropdown-menu-radio-item"
+        aria-label={label}
+        aria-labelledby={
+          labelledBy ?? (description && !label ? labelId : undefined)
+        }
+        aria-describedby={
+          [describedBy, description ? descriptionId : undefined]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        className={cn(
+          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          MENU_ROW_HEIGHT_CLASS,
+          className,
+        )}
+        {...props}
+      >
+        {description ? (
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span id={labelId} className="flex min-w-0 items-center gap-2">
+              {children}
+            </span>
+            <span
+              id={descriptionId}
+              className="whitespace-normal text-xs text-muted-foreground"
+            >
+              {description}
+            </span>
+          </span>
+        ) : (
+          children
+        )}
+      </MenuPrimitive.RadioItem>
+    );
+  },
+);
 DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem";
 
 const DropdownMenuRadioItemIndicator = MenuPrimitive.RadioItemIndicator;

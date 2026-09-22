@@ -1385,7 +1385,8 @@
         "title": "Crediti del pacchetto di utilizzo",
         "viewMembers": "Visualizza saldi membri"
       },
-      "used": "Usato"
+      "used": "Usato",
+      "viewBreakdown": "Composizione del saldo crediti"
     }
   },
   "browserSession": {
@@ -7078,7 +7079,8 @@
       "thread_one": "{{value}} conversazione",
       "thread_many": "{{value}} conversazioni",
       "thread_other": "{{value}} conversazioni"
-    }
+    },
+    "viewBreakdown": "Dettaglio utilizzo"
   },
   "vnc": {
     "accessDescription": "Scegli quali agenti possono visualizzare e controllare i tuoi desktop VNC. L’accesso è indipendente da SSH.",

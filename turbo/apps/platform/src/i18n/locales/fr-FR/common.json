@@ -1385,7 +1385,8 @@
         "title": "Crédits du forfait d’utilisation",
         "viewMembers": "Voir les soldes des membres"
       },
-      "used": "Utilisé"
+      "used": "Utilisé",
+      "viewBreakdown": "Répartition du solde de crédits"
     }
   },
   "browserSession": {
@@ -7078,7 +7079,8 @@
       "thread_one": "{{value}} fil",
       "thread_many": "{{value}} fils",
       "thread_other": "{{value}} fils"
-    }
+    },
+    "viewBreakdown": "Détail de l’utilisation"
   },
   "vnc": {
     "accessDescription": "Choisissez les agents autorisés à afficher et contrôler vos bureaux VNC. Cet accès est indépendant de SSH.",

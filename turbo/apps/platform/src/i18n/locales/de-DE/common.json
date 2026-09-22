@@ -1362,7 +1362,8 @@
         "title": "Nutzungspaket-Credits",
         "viewMembers": "Mitgliederguthaben anzeigen"
       },
-      "used": "Verwendet"
+      "used": "Verwendet",
+      "viewBreakdown": "Zusammensetzung des Guthabens"
     }
   },
   "browserSession": {
@@ -7009,7 +7010,8 @@
       "credit_other": "{{value}} Credits",
       "thread_one": "{{value}} Thread",
       "thread_other": "{{value}} Threads"
-    }
+    },
+    "viewBreakdown": "Nutzungsdetails"
   },
   "vnc": {
     "accessDescription": "Wähle aus, welche Agents deine VNC-Desktops anzeigen und steuern dürfen. Der Zugriff ist unabhängig von SSH.",

@@ -141,9 +141,9 @@ function category(name: "Chat" | "Image" | "Video"): HTMLElement {
   return control;
 }
 
-/** A row reads as its model followed by a price tier of one or more `$`. */
+/** Price descriptions are separate from the option's model name. */
 function mediaModelRowLabel(option: HTMLElement): string {
-  return (option.textContent ?? "").replace(/\$+$/u, "");
+  return option.getAttribute("aria-label") ?? "";
 }
 
 function mediaModelRowOrNull(label: string): HTMLElement | null {
@@ -321,6 +321,10 @@ test("Show the curated image model catalog", async () => {
   });
 
   await openCategory("Image");
+  expect(mediaModelRow("Nano Banana 2")).toHaveAccessibleName("Nano Banana 2");
+  expect(mediaModelRow("Nano Banana 2")).toHaveAccessibleDescription(
+    /cost per generation/u,
+  );
   expect(mediaModelRow("Nano Banana 2")).toHaveAttribute(
     "aria-checked",
     "true",

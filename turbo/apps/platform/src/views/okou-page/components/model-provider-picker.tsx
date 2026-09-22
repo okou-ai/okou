@@ -3,6 +3,7 @@ import {
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
 import type { ComponentProps, ReactNode } from "react";
+import { i18n } from "../../../i18n/index.ts";
 import {
   useGet,
   useLastLoadable,
@@ -188,12 +189,45 @@ const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
 const MEASURABLE_HIDDEN_SELECT_ITEM_CLASS =
   "absolute left-0 top-0 h-8 w-px overflow-hidden opacity-0 data-[disabled]:opacity-0 pointer-events-none";
 
+function byokDescription(subscriptionProvider?: ModelProviderType): string {
+  if (subscriptionProvider) {
+    return `${getModelProviderPresentationLabel(subscriptionProvider)}: ${i18n.t(
+      ($) => {
+        return $.settings.models.personal.description;
+      },
+    )}`;
+  }
+  return i18n.t(($) => {
+    return $.settings.models.picker.byokHelp;
+  });
+}
+
+function modelPolicyDescription(
+  policy: OrgModelPolicy,
+  modelCapabilities: ModelPlanCapabilities,
+): string {
+  const route = getMemberModelPolicyRoute(policy);
+  const tier = isBuiltInModelProviderType(route.providerType)
+    ? getBuiltInModelPriceTier(policy.model)
+    : undefined;
+  const description =
+    tier === undefined
+      ? byokDescription(
+          route.credentialScope === "member" ? route.providerType : undefined,
+        )
+      : getBuiltInModelPriceTierLabel(tier);
+  return memberModelPolicyAllowedForPlan(policy, modelCapabilities)
+    ? description
+    : `${description} · ${i18n.t(($) => {
+        return $.settings.models.picker.pro;
+      })}`;
+}
+
 function ByokBadge({
   subscriptionProvider,
 }: {
   subscriptionProvider?: ModelProviderType;
 }) {
-  const { t } = useTranslation();
   return (
     <TooltipProvider delay={300}>
       <Tooltip>
@@ -205,16 +239,7 @@ function ByokBadge({
           }
         />
         <TooltipContent side="top" className="text-xs">
-          {subscriptionProvider && (
-            <span>
-              {getModelProviderPresentationLabel(subscriptionProvider)}:{" "}
-            </span>
-          )}
-          {t(($) => {
-            return subscriptionProvider
-              ? $.settings.models.personal.description
-              : $.settings.models.picker.byokHelp;
-          })}
+          {byokDescription(subscriptionProvider)}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -535,12 +560,13 @@ function ModelFirstPolicyRow({
   selection: ModelProviderSelection | null;
 }) {
   const { t } = useTranslation();
+  const description = modelPolicyDescription(policy, modelCapabilities);
+  const modelLabel =
+    policy.modelLabel || getCanonicalModelDisplayName(policy.model);
   const fastAvailable =
     isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   if (fastAvailable) {
-    const modelLabel =
-      policy.modelLabel || getCanonicalModelDisplayName(policy.model);
     const selected = selection?.selectedModel === policy.model;
     const fastSelected = selected && selection.codexServiceTier === "fast";
     const fastLabel = t(($) => {
@@ -557,6 +583,8 @@ function ModelFirstPolicyRow({
         <SelectItem
           value={policy.model}
           aria-label={modelLabel}
+          label={modelLabel}
+          description={description}
           // Two fixed columns sit at this row's right edge: the checkmark's
           // (`pr-8`, shared with every other row) and the fast toggle's, which
           // `pr-16` reserves immediately left of it. Both are reserved whether
@@ -612,6 +640,9 @@ function ModelFirstPolicyRow({
     <SelectItem
       key={policy.id}
       value={policy.model}
+      aria-label={modelLabel}
+      label={modelLabel}
+      description={description}
       disabled={!isMemberModelPolicyConfigurable(policy)}
     >
       <ModelFirstPolicyRowContent
@@ -1262,6 +1293,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
             model: policy.model,
             label:
               policy.modelLabel || getCanonicalModelDisplayName(policy.model),
+            description: modelPolicyDescription(policy, modelCapabilities),
             content: (
               <ModelFirstPolicyRowContent
                 policy={policy}

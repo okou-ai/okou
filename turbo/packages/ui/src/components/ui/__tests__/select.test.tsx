@@ -268,3 +268,44 @@ describe("SelectItem", () => {
     );
   });
 });
+
+describe("Select option descriptions", () => {
+  it("reads visible explanations without selecting and keeps selected text concise", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(
+      <>
+        <p id="usage-pricing">Prices vary with usage</p>
+        <Select defaultValue="alpha" onValueChange={onValueChange}>
+          <SelectTrigger aria-label="Model">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="alpha" label="Alpha" description="Economy model">
+              Alpha
+            </SelectItem>
+            <SelectItem
+              value="beta"
+              label="Beta"
+              description="Premium model"
+              aria-describedby="usage-pricing"
+            >
+              Beta
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </>,
+    );
+    const trigger = screen.getByLabelText("Model");
+    await user.click(trigger);
+    const beta = await screen.findByRole("option", { name: "Beta" });
+    expect(beta).toHaveAccessibleDescription(
+      "Prices vary with usage Premium model",
+    );
+    expect(within(beta).getByText("Premium model")).toBeVisible();
+    expect(onValueChange).not.toHaveBeenCalled();
+    await user.click(beta);
+    expect(onValueChange).toHaveBeenCalledOnce();
+    expect(trigger).toHaveTextContent(/^Beta$/u);
+  });
+});

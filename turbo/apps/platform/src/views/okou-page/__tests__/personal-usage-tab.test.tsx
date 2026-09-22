@@ -1067,3 +1067,31 @@ test("Refresh all loaded usage pages after billing changes", async () => {
     ).not.toBeInTheDocument();
   });
 });
+
+test("Read personal usage details without hovering or opening a chat", async () => {
+  const user = userEvent.setup();
+  mockPersonalUsageStory();
+  await openUsageSettings("usage-records");
+  await screen.findByText("Quarterly planning chat");
+  const trigger = queryAllByRoleFast("button").find((button) => {
+    return button.textContent === "Usage breakdown";
+  });
+  if (!trigger) {
+    throw new Error("Usage breakdown button not found");
+  }
+  await user.pointer([
+    { keys: "[TouchA>]", target: trigger },
+    { keys: "[/TouchA]" },
+  ]);
+  const details = await screen.findByRole("dialog", {
+    name: "Usage breakdown",
+  });
+  expect(within(details).getByText("Other - 1,083")).toBeInTheDocument();
+  expect(within(details).getByText("Web Fetch")).toBeInTheDocument();
+  expect(within(details).getByText("180")).toBeInTheDocument();
+  expect(within(details).getByText("People Search")).toBeInTheDocument();
+  expect(within(details).getByText("80")).toBeInTheDocument();
+  expect(within(details).getByText("Translation")).toBeInTheDocument();
+  expect(within(details).getByText("3")).toBeInTheDocument();
+  expect(screen.getByText("Quarterly planning chat")).toBeInTheDocument();
+});

@@ -1361,7 +1361,8 @@
         "title": "用量包積分",
         "viewMembers": "檢視成員餘額"
       },
-      "used": "已用"
+      "used": "已用",
+      "viewBreakdown": "點數餘額組成"
     }
   },
   "browserSession": {
@@ -6991,7 +6992,8 @@
       "credit_other": "{{value}}積分",
       "thread_one": "{{value}}個會話",
       "thread_other": "{{value}}個會話"
-    }
+    },
+    "viewBreakdown": "用量明細"
   },
   "vnc": {
     "accessDescription": "選擇哪些智能體可以檢視和控制你的VNC桌面。此訪問權限與SSH分開管理。",

@@ -1361,7 +1361,8 @@
         "title": "Kredit paket penggunaan",
         "viewMembers": "Lihat saldo anggota"
       },
-      "used": "Digunakan"
+      "used": "Digunakan",
+      "viewBreakdown": "Rincian saldo kredit"
     }
   },
   "browserSession": {
@@ -6991,7 +6992,8 @@
       "credit_other": "{{value}} kredit",
       "thread_one": "{{value}} utas",
       "thread_other": "{{value}} utas"
-    }
+    },
+    "viewBreakdown": "Rincian penggunaan"
   },
   "vnc": {
     "accessDescription": "Pilih Agen yang dapat melihat dan mengendalikan desktop VNC Anda. Akses ini terpisah dari SSH.",

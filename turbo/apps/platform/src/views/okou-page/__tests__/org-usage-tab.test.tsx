@@ -433,3 +433,61 @@ test("Review workspace credit usage for the last seven days", async () => {
     screen.findByText("Models - 6,100"),
   ).resolves.toBeInTheDocument();
 });
+
+test("Open credit balance details with the keyboard without starting a purchase", async () => {
+  const user = userEvent.setup();
+  await setupCreditBalanceReview();
+  const trigger = queryAllByRoleFast("button").find((button) => {
+    return button.textContent === "Credit balance breakdown";
+  });
+  if (!trigger) {
+    throw new Error("Credit balance breakdown button not found");
+  }
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const details = await screen.findByRole("dialog", {
+    name: "Credit balance breakdown",
+  });
+  expect(within(details).getByText("Pro credits — 8,000")).toBeInTheDocument();
+  expect(
+    within(details).getByText(
+      "Monthly plan credits, resets each billing cycle",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(details).getByText("Purchased credits — 4,000"),
+  ).toBeInTheDocument();
+  expect(
+    within(details).getByText("Auto-recharge credits, never expire"),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Buy credits" }),
+  ).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+});
+
+test("Read all member usage categories from one details control", async () => {
+  const { user } = await setupTeamCreditUsage();
+  const row = screen.getByTestId("member-usage-test-user-123");
+  const controls = queryAllByRoleFast("button", row);
+  expect(controls).toHaveLength(1);
+  const trigger = controls[0];
+  if (!trigger) {
+    throw new Error("Usage breakdown button not found");
+  }
+  trigger.focus();
+  await user.keyboard(" ");
+  const details = await screen.findByRole("dialog", {
+    name: "Usage breakdown",
+  });
+  expect(within(details).getByText("Models - 6,000")).toBeInTheDocument();
+  expect(within(details).getByText("GPT 5.6 Sol")).toBeInTheDocument();
+  expect(within(details).getByText("Connectors - 1,500")).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+});

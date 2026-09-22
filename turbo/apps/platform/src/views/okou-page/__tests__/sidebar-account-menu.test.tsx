@@ -589,7 +589,6 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
 });
 
 test("Review personal subscription usage in the account menu", async () => {
-  const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
   mockAdminAccountSidebar();
@@ -653,10 +652,13 @@ test("Review personal subscription usage in the account menu", async () => {
     );
   });
   fireEvent.blur(codexFiveHour);
-  await user.hover(resetCredits);
-  await waitFor(() => {
-    expectVisibleText("2 resets left · expires in 3d");
-  });
+  expectVisibleText("2 resets left · expires in 3d");
+  expect(resetCredits).toHaveAccessibleDescription(
+    "2 resets left · expires in 3d",
+  );
+  expect(
+    screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
+  ).not.toBeInTheDocument();
 
   const credits = within(menu).getByText("12,500 credits");
   const codex = within(panel).getByRole("heading", { name: "Codex" });

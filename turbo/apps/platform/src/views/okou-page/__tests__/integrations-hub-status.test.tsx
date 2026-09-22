@@ -66,7 +66,10 @@ test("Integrations show current status and refresh after GitHub connects", async
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
   expect(screen.getByText(/update permissions/iu)).toBeInTheDocument();
-  expect(getIntegrationCard("Phone")).toHaveTextContent("+15555551212");
+  const phoneCard = getIntegrationCard("Phone");
+  expect(phoneCard).toHaveTextContent("+15555551212");
+  expect(within(phoneCard).getByText("Authorized sender")).toBeVisible();
+  expect(queryAction("button", "Connect phone", phoneCard)).toBeNull();
   const githubCard = getIntegrationCard("GitHub");
   expect(getAction("button", "Connect", githubCard)).toBeInTheDocument();
   expect(screen.queryByText("Feishu")).not.toBeInTheDocument();

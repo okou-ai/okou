@@ -457,6 +457,14 @@ type rail and its current-model rows pair a label with a summary line and state
 their own `h-11` and `h-12`; they sit outside this contract because they are not
 single-line list rows.
 
+`SelectItem` and `DropdownMenuRadioItem` accept a `description` string for
+information needed before choosing an option. It remains visible below the
+label and is associated with the actual option through an instance-specific
+`aria-describedby` ID. Existing accessible labels and descriptions are retained;
+the explanation does not enter Select's selected-value text. Complex option
+content should provide its short accessible name and native typeahead `label`.
+Descriptions add no focus stop or selection handler.
+
 ### Inline badges
 
 `Badge` from `@okouai/ui` owns the shared inline badge and tag treatment: role

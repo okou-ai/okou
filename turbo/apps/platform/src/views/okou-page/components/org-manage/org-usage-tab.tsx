@@ -1,5 +1,5 @@
 import { useLoadable } from "ccstate-react";
-import { Button } from "@okouai/ui";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { OrgMember } from "@okouai/api-contracts/contracts/org-members";
 import type { BillingStatusResponse } from "@okouai/api-contracts/contracts/billing";
@@ -459,6 +459,25 @@ function OrgCreditHeader({ total }: { total: number }) {
   );
 }
 
+function CreditSegmentDetails({
+  segment,
+  tier,
+}: {
+  segment: CreditSegment;
+  tier: string;
+}) {
+  return (
+    <div>
+      <div className="font-medium text-foreground">
+        {labelForSegment(segment)} — {formatLocalizedNumber(segment.credits)}
+      </div>
+      <div className="mt-0.5 text-muted-foreground">
+        {descriptionForSegment(segment, tier)}
+      </div>
+    </div>
+  );
+}
+
 /**
  * The composition of the balance. The segments are gapped so it cannot be
  * mistaken for the filled allowance meter above it.
@@ -472,6 +491,10 @@ function CreditBreakdownBar({
   tier: string;
   total: number;
 }) {
+  const { t } = useTranslation();
+  const detailsLabel = t(($) => {
+    return $.billing.usage.viewBreakdown;
+  });
   if (total <= 0 || segments.length === 0) {
     return null;
   }
@@ -480,7 +503,6 @@ function CreditBreakdownBar({
       <div className="mt-4 flex h-2 w-full gap-[3px]">
         {segments.map((s) => {
           const color = colorForSegment(s);
-          const desc = descriptionForSegment(s, tier);
           return (
             <Tooltip key={segmentKey(s)}>
               <TooltipTrigger
@@ -503,15 +525,36 @@ function CreditBreakdownBar({
                 }}
                 className="border shadow-md"
               >
-                <div className="font-medium text-foreground">
-                  {labelForSegment(s)} — {formatLocalizedNumber(s.credits)}
-                </div>
-                <div className="text-muted-foreground mt-0.5">{desc}</div>
+                <CreditSegmentDetails segment={s} tier={tier} />
               </TooltipContent>
             </Tooltip>
           );
         })}
       </div>
+      <Popover>
+        <PopoverTrigger
+          render={
+            <Button type="button" variant="quiet" size="xs" className="mt-2">
+              {detailsLabel}
+            </Button>
+          }
+        />
+        <PopoverContent
+          aria-label={detailsLabel}
+          align="start"
+          className="flex max-h-80 w-80 max-w-[calc(100vw-2rem)] flex-col gap-3 overflow-y-auto text-sm"
+        >
+          {segments.map((segment) => {
+            return (
+              <CreditSegmentDetails
+                key={segmentKey(segment)}
+                segment={segment}
+                tier={tier}
+              />
+            );
+          })}
+        </PopoverContent>
+      </Popover>
     </TooltipProvider>
   );
 }

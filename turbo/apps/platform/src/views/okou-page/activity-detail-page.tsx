@@ -378,32 +378,26 @@ export function ActivityHeaderCard({
                   })}
                 </span>
                 {showModelDetail && detail.selectedModel ? (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <span className="text-foreground whitespace-nowrap cursor-default">
-                            {detail.selectedModel}
-                          </span>
-                        }
-                      />
-                      <TooltipContent>
-                        {t(
-                          ($) => {
-                            return $.activity.detail.modelProvidedBy;
-                          },
-                          {
-                            model: detail.selectedModel,
-                            provider: detail.modelProvider
-                              ? (MODEL_PROVIDER_TYPES[
-                                  detail.modelProvider as ModelProviderType
-                                ]?.label ?? detail.modelProvider)
-                              : detail.framework,
-                          },
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-foreground">
+                      {detail.selectedModel}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {t(
+                        ($) => {
+                          return $.activity.detail.modelProvidedBy;
+                        },
+                        {
+                          model: detail.selectedModel,
+                          provider: detail.modelProvider
+                            ? (MODEL_PROVIDER_TYPES[
+                                detail.modelProvider as ModelProviderType
+                              ]?.label ?? detail.modelProvider)
+                            : detail.framework,
+                        },
+                      )}
+                    </span>
+                  </span>
                 ) : (
                   <span className="text-foreground whitespace-nowrap">
                     {detail.modelProvider

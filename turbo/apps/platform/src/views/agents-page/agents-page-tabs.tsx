@@ -297,25 +297,19 @@ function AgentGrid({
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {agents.map((agent) => {
         return (
-          <Link
+          <AgentCard
             key={agent.agentId}
-            pathname="/agents/:agentId"
-            options={{ pathParams: { agentId: agent.agentId } }}
-            className="block no-underline text-inherit"
-          >
-            <AgentCard
-              agent={agent}
-              creator={agentCreator(
-                agent,
-                membersById,
-                t(($) => {
-                  return $.list.cards.unknownCreator;
-                }),
-              )}
-              hasUnread={unreadAgentIds?.has(agent.agentId) ?? false}
-              showCreator={showCreator}
-            />
-          </Link>
+            agent={agent}
+            creator={agentCreator(
+              agent,
+              membersById,
+              t(($) => {
+                return $.list.cards.unknownCreator;
+              }),
+            )}
+            hasUnread={unreadAgentIds?.has(agent.agentId) ?? false}
+            showCreator={showCreator}
+          />
         );
       })}
     </div>
@@ -730,10 +724,11 @@ function CreatorAvatar({ creator }: { creator: AgentCreator }) {
   );
 }
 
-function AgentUnreadIndicator() {
+function AgentUnreadIndicator({ id }: { id: string }) {
   const { t } = useTranslation("agents");
   return (
     <span
+      id={id}
       aria-label={t(($) => {
         return $.status.unread;
       })}
@@ -744,6 +739,11 @@ function AgentUnreadIndicator() {
 
 function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
   const { t } = useTranslation("agents");
+  const cardId = `agent-card-${encodeURIComponent(agent.agentId)}`;
+  const nameId = `${cardId}-name`;
+  const descriptionId = `${cardId}-description`;
+  const creatorId = `${cardId}-creator`;
+  const unreadId = `${cardId}-unread`;
   const defaultAgentId = useLastResolved(defaultAgentId$);
   const lead = agent.agentId === defaultAgentId;
   const displayName = agent.displayName ?? agent.agentId;
@@ -758,84 +758,68 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
           }))
     : "";
   return (
-    <Card
-      className={surfaceVariants({
-        interactive: true,
-        className: "flex flex-col h-full",
-      })}
+    <Link
+      pathname="/agents/:agentId"
+      options={{ pathParams: { agentId: agent.agentId } }}
+      aria-labelledby={hasUnread ? `${nameId} ${unreadId}` : nameId}
+      aria-describedby={
+        [description ? descriptionId : "", showCreator ? creatorId : ""]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      className="block rounded-surface text-inherit no-underline outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <CardContent className="flex flex-1 flex-col gap-3 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <span className="relative h-10 w-10 shrink-0">
-            <AgentAvatarImg
-              name={agent.agentId}
-              alt={displayName}
-              className="h-10 w-10 rounded-full object-cover object-top"
-            />
-            {hasUnread && <AgentUnreadIndicator />}
-          </span>
-          <div className="flex-1 min-w-0">
-            {showCreator ? (
-              <TooltipProvider delay={200}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className="block w-fit max-w-full truncate text-sm font-medium text-foreground underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
-                        {displayName}
-                      </span>
-                    }
-                  />
-                  <TooltipContent
-                    side="bottom"
-                    align="start"
-                    className="w-64 rounded-lg border border-[hsl(var(--gray-400))] p-3 text-left font-normal"
-                    style={{
-                      backgroundColor: "hsl(var(--popover))",
-                      color: "hsl(var(--popover-foreground))",
-                      // The light value of --okou-card-shadow, spelled out.
-                      // The token is declared at :root and would resolve here;
-                      // adopting it is a visual change, because it carries a
-                      // gradient-palette override this literal does not.
-                      boxShadow:
-                        "0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
-                      whiteSpace: "normal",
-                    }}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full">
-                        <CreatorAvatar creator={creator} />
-                      </span>
-                      <span className="text-xs font-medium text-foreground">
-                        {t(
-                          ($) => {
-                            return $.list.cards.createdBy;
-                          },
-                          { creator: creator.name },
-                        )}
-                      </span>
-                    </span>
-                    {description && (
-                      <span className="mt-2 block text-xs leading-relaxed text-muted-foreground">
-                        {description}
-                      </span>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : (
+      <Card
+        className={surfaceVariants({
+          interactive: true,
+          className: "flex flex-col h-full",
+        })}
+      >
+        <CardContent className="flex flex-1 flex-col gap-3 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="relative h-10 w-10 shrink-0">
+              <AgentAvatarImg
+                name={agent.agentId}
+                alt={displayName}
+                className="h-10 w-10 rounded-full object-cover object-top"
+              />
+              {hasUnread && <AgentUnreadIndicator id={unreadId} />}
+            </span>
+            <div className="flex-1 min-w-0">
               <span
-                className="block truncate text-sm font-medium text-foreground"
-                title={displayName}
+                id={nameId}
+                className="block break-words text-sm font-medium text-foreground"
               >
                 {displayName}
               </span>
-            )}
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-              {description}
-            </p>
+              {showCreator && (
+                <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full"
+                  >
+                    <CreatorAvatar creator={creator} />
+                  </span>
+                  <span id={creatorId}>
+                    {t(
+                      ($) => {
+                        return $.list.cards.createdBy;
+                      },
+                      { creator: creator.name },
+                    )}
+                  </span>
+                </span>
+              )}
+              <p
+                id={descriptionId}
+                className="mt-0.5 break-words text-xs text-muted-foreground"
+              >
+                {description}
+              </p>
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

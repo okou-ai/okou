@@ -1362,7 +1362,8 @@
         "title": "Usage pack credits",
         "viewMembers": "View member balances"
       },
-      "used": "Used"
+      "used": "Used",
+      "viewBreakdown": "Credit balance breakdown"
     }
   },
   "browserSession": {
@@ -7001,7 +7002,8 @@
       "credit_other": "{{value}} credits",
       "thread_one": "{{value}} thread",
       "thread_other": "{{value}} threads"
-    }
+    },
+    "viewBreakdown": "Usage breakdown"
   },
   "vnc": {
     "accessDescription": "Choose which Agents can view and control your VNC desktops. Access is separate from SSH.",

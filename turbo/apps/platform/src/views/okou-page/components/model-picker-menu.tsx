@@ -38,6 +38,7 @@ interface ModelPickerMenuOption {
   readonly model: SupportedRunModel;
   readonly label: string;
   readonly content: ReactNode;
+  readonly description: string;
   readonly disabled: boolean;
   readonly fastAvailable: boolean;
   readonly fastImpact: ReactNode;
@@ -263,6 +264,7 @@ function ChatModelList({
               label={option.label}
               className="w-full shrink-0 pr-8 text-left font-normal text-foreground"
               aria-label={option.label}
+              description={option.description}
               disabled={option.disabled}
               onClick={() => {
                 chooseChat(option);
@@ -326,6 +328,7 @@ function MediaModelList({
               label={option.label}
               className="w-full shrink-0 pr-8 text-left font-normal text-foreground"
               aria-label={option.label}
+              description={getMediaModelPriceTierLabel(option.priceTier)}
               onClick={() => {
                 option.onSelect();
                 reset();
@@ -382,6 +385,8 @@ function ModelPickerFlyoutOptions({
               <DropdownMenuRadioItem
                 key={option.key}
                 value={option.key}
+                aria-label={option.label}
+                description={getMediaModelPriceTierLabel(option.priceTier)}
                 label={option.label}
                 closeOnClick
                 className="w-full shrink-0 pr-8 text-[13px] font-normal text-foreground"
@@ -411,6 +416,8 @@ function ModelPickerFlyoutOptions({
               <DropdownMenuRadioItem
                 key={option.model}
                 value={option.model}
+                aria-label={option.label}
+                description={option.description}
                 label={option.label}
                 disabled={option.disabled}
                 closeOnClick

@@ -1361,7 +1361,8 @@
         "title": "用量包积分",
         "viewMembers": "查看成员余额"
       },
-      "used": "已用"
+      "used": "已用",
+      "viewBreakdown": "积分余额构成"
     }
   },
   "browserSession": {
@@ -6991,7 +6992,8 @@
       "credit_other": "{{value}}积分",
       "thread_one": "{{value}}个会话",
       "thread_other": "{{value}}个会话"
-    }
+    },
+    "viewBreakdown": "用量明细"
   },
   "vnc": {
     "accessDescription": "选择哪些智能体可以查看和控制你的VNC桌面。此访问权限与SSH分开管理。",

@@ -614,15 +614,25 @@ test("Explain model availability by plan and provider", async () => {
   await expect(
     findModelMenuOption(/^DeepSeek V4 Flash/iu),
   ).resolves.toBeVisible();
-  // A row carries its cost glyphs and plan badge beside the model name, so it
-  // is addressed by that name as a prefix.
+  // Pricing and plan information describe the option without renaming it.
   expect(modelMenuOption(/^GPT 5\.6 Luna/iu)).toBeVisible();
-  expect(modelMenuOption(/^GPT 6 Astra.*Pro/iu)).toBeVisible();
+  const premium = modelMenuOption("GPT 6 Astra");
+  expect(premium).toHaveAccessibleName("GPT 6 Astra");
+  expect(premium).toHaveAccessibleDescription(
+    "Premium frontier model for the hardest tasks · Pro",
+  );
+  expect(within(premium).getByText("Pro")).toBeVisible();
   expect(screen.getAllByText("Pro")).toHaveLength(3);
   expect(screen.getByText("BYOK")).toBeVisible();
 
   const byokOption = modelMenuOption(/^Claude Sonnet 4\.6/iu);
   expect(within(byokOption).queryByText("Pro")).toBeNull();
+  expect(byokOption).toHaveAccessibleName("Claude Sonnet 4.6");
+  expect(byokOption).toHaveAccessibleDescription(
+    expect.stringContaining("Anthropic"),
+  );
+  const providerDescription = within(byokOption).getByText(/Anthropic:/u);
+  expect(providerDescription).toBeVisible();
   await user.click(byokOption);
   await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
   expect(
@@ -869,6 +879,10 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
   });
   await user.keyboard("{Enter}");
   const models = await screen.findByRole("region", { name: "Chat models" });
+  expect(buttonNamed("GPT 5.6 Sol", models)).toHaveAccessibleDescription(
+    "Frontier flagship model",
+  );
+  expect(within(models).getByText("Frontier flagship model")).toBeVisible();
   expect(buttonNamed("GPT 5.6 Sol", models)).toHaveAttribute(
     "aria-checked",
     "true",
@@ -931,6 +945,15 @@ test("Choose a model from the flyout without leaving the type list", async () =>
   await user.keyboard("{ArrowDown}");
   const next = modelMenuOption(/GPT 5\.6 Luna/u, list);
   expect(next).toHaveFocus();
+  expect(next).toHaveAccessibleName("GPT 5.6 Luna");
+  expect(next).toHaveAccessibleDescription(
+    "Economy tier for everyday simple tasks",
+  );
+  expect(
+    within(next).getByText("Economy tier for everyday simple tasks"),
+  ).toBeVisible();
+  expect(current).toHaveAttribute("aria-checked", "true");
+  expect(next).toHaveAttribute("aria-checked", "false");
   await user.keyboard("{Enter}");
   await expect(findButton("GPT 5.6 Luna")).resolves.toBeVisible();
   // Picking a model finishes the task, so the panel leaves with it.

@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import {
   Button,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -35,10 +38,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
   cn,
 } from "@okouai/ui";
 import {
@@ -416,22 +415,36 @@ function getPolicyDetail(policy: OrgModelPolicy): string | null {
   return null;
 }
 
-function PriceTierBadge({ tier }: { tier: ModelPriceTier }) {
+function PriceTierBadge({
+  tier,
+  model,
+}: {
+  tier: ModelPriceTier;
+  model: string;
+}) {
+  const { t } = useTranslation();
+  const label = `${model} · ${t(($) => {
+    return $.settings.models.policies.pricing;
+  })} ${tier}`;
   return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className="inline-flex h-7 min-w-10 shrink-0 cursor-help items-center justify-center rounded-lg px-2 text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 transition-colors hover:bg-state-hover hover:text-foreground hover:decoration-muted-foreground">
-              {tier}
-            </span>
-          }
-        />
-        <TooltipContent side="top" className="text-xs">
-          {getBuiltInModelPriceTierLabel(tier)}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            aria-label={label}
+            className="min-w-10 shrink-0 text-xs text-muted-foreground"
+          >
+            {tier}
+          </Button>
+        }
+      />
+      <PopoverContent aria-label={label} className="text-sm">
+        {getBuiltInModelPriceTierLabel(tier)}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -721,7 +734,12 @@ function PolicyRow({
         {builtInPriceTier === undefined ? (
           <span className="text-xs text-muted-foreground">—</span>
         ) : (
-          <PriceTierBadge tier={builtInPriceTier} />
+          <PriceTierBadge
+            tier={builtInPriceTier}
+            model={
+              policy.modelLabel || getCanonicalModelDisplayName(policy.model)
+            }
+          />
         )}
       </div>
     </div>

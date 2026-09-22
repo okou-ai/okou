@@ -214,12 +214,38 @@ const SelectLabel = React.forwardRef<
 });
 SelectLabel.displayName = "SelectLabel";
 
-const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
-  ({ className, children, ...props }, ref) => {
+const SelectItem = React.forwardRef<
+  HTMLElement,
+  SelectPrimitive.Item.Props & { description?: string }
+>(
+  (
+    {
+      className,
+      children,
+      description,
+      "aria-describedby": describedBy,
+      "aria-labelledby": labelledBy,
+      "aria-label": label,
+      ...props
+    },
+    ref,
+  ) => {
+    const id = React.useId();
+    const labelId = `${id}-label`;
+    const descriptionId = `${id}-description`;
     return (
       <SelectPrimitive.Item
         ref={ref}
         data-slot="select-item"
+        aria-label={label}
+        aria-labelledby={
+          labelledBy ?? (description && !label ? labelId : undefined)
+        }
+        aria-describedby={
+          [describedBy, description ? descriptionId : undefined]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         className={cn(
           "relative flex w-full cursor-pointer select-none items-center rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
           MENU_ROW_HEIGHT_CLASS,
@@ -227,7 +253,21 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         )}
         {...props}
       >
-        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        {description ? (
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <SelectPrimitive.ItemText id={labelId}>
+              {children}
+            </SelectPrimitive.ItemText>
+            <span
+              id={descriptionId}
+              className="whitespace-normal text-xs text-muted-foreground"
+            >
+              {description}
+            </span>
+          </span>
+        ) : (
+          <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        )}
         <SelectPrimitive.ItemIndicator
           render={
             <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center" />

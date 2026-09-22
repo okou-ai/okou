@@ -23,6 +23,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import {
   click,
@@ -1746,4 +1747,37 @@ test("Provider route keyboard actions edit the draft before submitting", async (
   expect(api).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByPlaceholderText("Enter your API key")).toBeInTheDocument();
   expect(dialog).toBeInTheDocument();
+});
+
+test("Read model pricing without editing the model route", async () => {
+  const user = userEvent.setup();
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000291",
+      "gpt-6-astra",
+      "GPT 6 Astra",
+      true,
+    ),
+  ]);
+  await openModelSettings();
+  const row = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
+  const trigger = within(row).getByLabelText("GPT 6 Astra · Pricing $$$$");
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const details = await screen.findByRole("dialog", {
+    name: "GPT 6 Astra · Pricing $$$$",
+  });
+  expect(
+    within(details).getByText("Premium frontier model for the hardest tasks"),
+  ).toBeInTheDocument();
+  expect(within(row).getByText("Built-in")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("textbox", { name: "API key" }),
+  ).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
 });

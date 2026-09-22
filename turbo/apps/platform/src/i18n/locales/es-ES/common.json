@@ -1385,7 +1385,8 @@
         "title": "Créditos del paquete de uso",
         "viewMembers": "Ver saldos de miembros"
       },
-      "used": "Usados"
+      "used": "Usados",
+      "viewBreakdown": "Desglose del saldo de créditos"
     }
   },
   "browserSession": {
@@ -7078,7 +7079,8 @@
       "thread_one": "{{value}} hilo",
       "thread_many": "{{value}} hilos",
       "thread_other": "{{value}} hilos"
-    }
+    },
+    "viewBreakdown": "Desglose de uso"
   },
   "vnc": {
     "accessDescription": "Elige qué agentes pueden ver y controlar tus escritorios VNC. El acceso es independiente de SSH.",

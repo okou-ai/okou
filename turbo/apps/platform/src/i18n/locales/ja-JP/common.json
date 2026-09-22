@@ -1361,7 +1361,8 @@
         "title": "使用量パックのクレジット",
         "viewMembers": "メンバー残高を表示"
       },
-      "used": "使用済み"
+      "used": "使用済み",
+      "viewBreakdown": "クレジット残高の内訳"
     }
   },
   "browserSession": {
@@ -6991,7 +6992,8 @@
       "credit_other": "{{value}}クレジット",
       "thread_one": "{{value}}件のスレッド",
       "thread_other": "{{value}}件のスレッド"
-    }
+    },
+    "viewBreakdown": "使用量の内訳"
   },
   "vnc": {
     "accessDescription": "VNC デスクトップを表示・操作できる Agent を選択します。SSH とは別の権限です。",

@@ -1361,7 +1361,8 @@
         "title": "사용량 팩 크레딧",
         "viewMembers": "구성원 잔액 보기"
       },
-      "used": "사용됨"
+      "used": "사용됨",
+      "viewBreakdown": "크레딧 잔액 내역"
     }
   },
   "browserSession": {
@@ -6991,7 +6992,8 @@
       "credit_other": "{{value}} 크레딧",
       "thread_one": "{{value}}개 스레드",
       "thread_other": "{{value}}개 스레드"
-    }
+    },
+    "viewBreakdown": "사용량 내역"
   },
   "vnc": {
     "accessDescription": "VNC 데스크톱을 보고 제어할 Agent를 선택하세요. SSH 권한과는 별개입니다.",

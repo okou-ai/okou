@@ -7,12 +7,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@okouai/ui/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
@@ -52,32 +46,29 @@ function AgentPhoneCardActions({
   return (
     <>
       {isConnected ? (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  data-testid="agentphone-connected-indicator"
-                  className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
-                >
-                  <CircleCheck className="h-3 w-3 text-green-600" />
-                  <span className="min-w-0 truncate">
-                    {connectedPhone ??
-                      t(($) => {
-                        return $.connectors.providerSettings.works.connected;
-                      })}
-                  </span>
-                </span>
-              }
-            />
-            <TooltipContent>
+        <span
+          data-testid="agentphone-connected-indicator"
+          className="inline-flex min-w-0 max-w-52 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground"
+        >
+          <CircleCheck
+            className="h-3 w-3 shrink-0 text-green-600"
+            aria-hidden
+          />
+          <span className="min-w-0">
+            <span className="block text-muted-foreground">
               {t(($) => {
                 return $.connectors.providerSettings.agentphone
                   .authorizedSender;
               })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+            </span>
+            <span className="block truncate">
+              {connectedPhone ??
+                t(($) => {
+                  return $.connectors.providerSettings.works.connected;
+                })}
+            </span>
+          </span>
+        </span>
       ) : null}
       {status !== null && !isConnected && canConnect ? (
         <Button

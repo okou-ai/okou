@@ -7,9 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
   DropdownMenuItem,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
   cn,
 } from "@okouai/ui";
 import { RotateCcw } from "lucide-react";
@@ -67,12 +64,14 @@ function formatCodexResetCreditsDisplay(value: number | null): string {
 
 export function CodexResetCreditsButton({
   className,
+  descriptionId,
   resetCredits,
   resetCreditsNextExpiresAt,
   resetPending,
   onReset,
 }: {
   readonly className?: string;
+  readonly descriptionId: string;
   readonly resetCredits: number | null;
   readonly resetCreditsNextExpiresAt?: string | null;
   readonly resetPending: boolean;
@@ -80,49 +79,46 @@ export function CodexResetCreditsButton({
 }) {
   const label = formatCodexResetCredits(resetCredits);
   const displayLabel = formatCodexResetCreditsDisplay(resetCredits);
+  const description = formatCodexResetCredits(
+    resetCredits,
+    resetCreditsNextExpiresAt,
+  );
+  const showDescription = description !== displayLabel;
   const resetDisabled =
     resetPending || resetCredits === 0 || onReset === undefined;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant="quiet"
-            size="xs"
-            aria-label={label}
-            aria-disabled={resetDisabled || undefined}
-            className={cn(
-              "h-7 min-w-0 gap-1.5 rounded-md px-1 text-xs tabular-nums",
-              className,
-              resetDisabled &&
-                "cursor-default opacity-50 hover:bg-transparent active:bg-transparent",
-            )}
-            onClick={() => {
-              if (!resetDisabled) {
-                onReset?.();
-              }
-            }}
-          >
-            <RotateCcw size={14} className="shrink-0" aria-hidden />
-            <span className="truncate">{displayLabel}</span>
-          </Button>
-        }
-      />
-      <TooltipContent
-        side="bottom"
-        align="end"
-        sideOffset={8}
-        className="border shadow-md"
-        style={{
-          backgroundColor: "hsl(var(--popover))",
-          color: "hsl(var(--popover-foreground))",
+    <div className={cn("flex min-w-0 flex-col items-end gap-0.5", className)}>
+      <Button
+        type="button"
+        variant="quiet"
+        size="xs"
+        aria-label={label}
+        aria-describedby={showDescription ? descriptionId : undefined}
+        aria-disabled={resetDisabled || undefined}
+        className={cn(
+          "h-7 min-w-0 gap-1.5 rounded-md px-1 text-xs tabular-nums",
+          resetDisabled &&
+            "cursor-default opacity-50 hover:bg-transparent active:bg-transparent",
+        )}
+        onClick={() => {
+          if (!resetDisabled) {
+            onReset?.();
+          }
         }}
       >
-        {formatCodexResetCredits(resetCredits, resetCreditsNextExpiresAt)}
-      </TooltipContent>
-    </Tooltip>
+        <RotateCcw size={14} className="shrink-0" aria-hidden />
+        <span className="truncate">{displayLabel}</span>
+      </Button>
+      {showDescription && (
+        <span
+          id={descriptionId}
+          className="max-w-52 text-right text-xs text-muted-foreground"
+        >
+          {description}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -139,49 +135,47 @@ export function CodexResetCreditsMenuItem({
   readonly resetPending: boolean;
   readonly onReset?: () => void;
 }) {
+  const descriptionId = "account-menu-codex-reset-credit-description";
   const label = formatCodexResetCredits(resetCredits);
   const displayLabel = formatCodexResetCreditsDisplay(resetCredits);
+  const description = formatCodexResetCredits(
+    resetCredits,
+    resetCreditsNextExpiresAt,
+  );
+  const showDescription = description !== displayLabel;
   const resetDisabled =
     resetPending || resetCredits === 0 || onReset === undefined;
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <DropdownMenuItem
-            aria-label={label}
-            aria-disabled={resetDisabled || undefined}
-            className={cn(
-              "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
-              className,
-              resetDisabled &&
-                "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
-            )}
-            closeOnClick={!resetDisabled}
-            onClick={() => {
-              if (!resetDisabled) {
-                onReset?.();
-              }
-            }}
-          >
-            <RotateCcw size={14} className="shrink-0" aria-hidden />
-            <span className="truncate">{displayLabel}</span>
-          </DropdownMenuItem>
-        }
-      />
-      <TooltipContent
-        side="bottom"
-        align="end"
-        sideOffset={8}
-        className="border shadow-md"
-        style={{
-          backgroundColor: "hsl(var(--popover))",
-          color: "hsl(var(--popover-foreground))",
+    <div className={cn("flex min-w-0 flex-col items-end gap-0.5", className)}>
+      <DropdownMenuItem
+        aria-label={label}
+        aria-describedby={showDescription ? descriptionId : undefined}
+        aria-disabled={resetDisabled || undefined}
+        className={cn(
+          "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
+          resetDisabled &&
+            "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
+        )}
+        closeOnClick={!resetDisabled}
+        onClick={() => {
+          if (!resetDisabled) {
+            onReset?.();
+          }
         }}
       >
-        {formatCodexResetCredits(resetCredits, resetCreditsNextExpiresAt)}
-      </TooltipContent>
-    </Tooltip>
+        <RotateCcw size={14} className="shrink-0" aria-hidden />
+        <span className="truncate">{displayLabel}</span>
+      </DropdownMenuItem>
+      {showDescription && (
+        <span
+          id={descriptionId}
+          className="max-w-52 text-right text-xs text-muted-foreground"
+        >
+          {description}
+        </span>
+      )}
+    </div>
   );
 }
 

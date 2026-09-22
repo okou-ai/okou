@@ -1362,7 +1362,8 @@
         "title": "उपयोग पैक क्रेडिट",
         "viewMembers": "सदस्य बैलेंस देखें"
       },
-      "used": "इस्तेमाल किया गया"
+      "used": "इस्तेमाल किया गया",
+      "viewBreakdown": "क्रेडिट शेष का विवरण"
     }
   },
   "browserSession": {
@@ -7009,7 +7010,8 @@
       "credit_other": "{{value}} क्रेडिट",
       "thread_one": "{{value}} थ्रेड",
       "thread_other": "{{value}} थ्रेड"
-    }
+    },
+    "viewBreakdown": "उपयोग का विवरण"
   },
   "vnc": {
     "accessDescription": "चुनें कि कौन से एजेंट आपके VNC डेस्कटॉप देख और नियंत्रित कर सकते हैं। यह पहुँच SSH से अलग है।",

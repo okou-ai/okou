@@ -528,6 +528,7 @@ function OAuthAccountTableRow({
         )}
         {account.type === "codex-oauth-token" ? (
           <CodexResetCreditsButton
+            descriptionId={`codex-account-reset-credit-${account.id}`}
             className="ml-auto"
             resetCredits={account.subscriptionResetCredits ?? null}
             resetCreditsNextExpiresAt={
