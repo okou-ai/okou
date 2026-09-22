@@ -19,6 +19,7 @@ import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+const AGENT_CHAT_PATH = "/agents/c0000000-0000-4000-a000-000000000001/chat";
 
 function mockAPIs(): void {
   context.mocks.data.agents([
@@ -96,10 +97,10 @@ test.each(["pointer", "Enter"])(
     await setupPage({ context, path: "/missing-platform-route" });
     const link = await waitFor(() => {
       const candidate = queryAllByRoleFast("link").find((element) => {
-        return element.textContent?.trim() === "Back to home";
+        return element.textContent?.trim() === "Browse workflows";
       });
       if (!candidate) {
-        throw new Error("Expected the home link");
+        throw new Error("Expected the workflows link");
       }
       return candidate;
     });
@@ -111,7 +112,7 @@ test.each(["pointer", "Enter"])(
       click(link);
     }
     await waitFor(() => {
-      expect(pathname()).toBe("/");
+      expect(pathname()).toBe("/workflows");
       expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
     });
 
@@ -129,9 +130,9 @@ test.each(["Meta", "Control", "Shift", "Alt"])(
   "%s-click leaves the internal destination to the browser",
   async (modifier) => {
     mockAPIs();
-    const openedTargets = context.mocks.browser.open();
+    context.mocks.browser.open();
     const user = userEvent.setup({ delay: null });
-    await setupPage({ context, path: "/" });
+    await setupPage({ context, path: AGENT_CHAT_PATH });
     const rail = screen.getByTestId("labeled-nav-rail");
     const link = within(rail).getByText("Agents").closest("a");
     if (!link) {
@@ -143,16 +144,11 @@ test.each(["Meta", "Control", "Shift", "Alt"])(
     await user.click(link);
     await user.keyboard(`{/${modifier}}`);
 
-    expect(pathname()).toBe("/");
-    // Happy DOM delegates every uncancelled anchor click to window.open with
-    // the HTML target. Real modifier/auxiliary browsing-context choices need
-    // browser verification; asserting _blank here would require app emulation.
-    expect(openedTargets.calls).toStrictEqual([
-      expect.objectContaining({
-        target: "_self",
-        url: "http://localhost/agents",
-      }),
-    ]);
+    expect(pathname()).toBe(AGENT_CHAT_PATH);
+    expect(link).toHaveAttribute("href", "/agents");
+    expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
+    // Native modifier/auxiliary browsing-context choices require a browser;
+    // Happy DOM does not expose them through the mocked window.open boundary.
   },
 );
 

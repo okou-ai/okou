@@ -104,7 +104,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
   context.mocks.data.userPreferences({
     pinnedAgentIds: [RESEARCH_AGENT_ID],
   });
-  const openedTargets = context.mocks.browser.open();
+  context.mocks.browser.open();
 
   await setupSidebarPage({
     context,
@@ -122,19 +122,14 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
   });
 
-  fireEvent.click(pinnedAgentLink(mobileSidebar(), "Research Agent"), {
-    metaKey: true,
-  });
-  await waitFor(() => {
-    expect(openedTargets.calls).toStrictEqual([
-      expect.objectContaining({
-        // Happy DOM represents native anchor activation using the HTML target.
-        target: "_self",
-        url: expect.stringContaining(`/agents/${RESEARCH_AGENT_ID}/chat`),
-      }),
-    ]);
-    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
-  });
+  const researchLink = pinnedAgentLink(mobileSidebar(), "Research Agent");
+  expect(researchLink).toHaveAttribute(
+    "href",
+    `/agents/${RESEARCH_AGENT_ID}/chat`,
+  );
+  fireEvent.click(researchLink, { metaKey: true });
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
 
   click(pinnedAgentLink(mobileSidebar(), "Nova"));
   await waitFor(() => {

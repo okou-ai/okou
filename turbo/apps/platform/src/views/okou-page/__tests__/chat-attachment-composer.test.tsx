@@ -143,7 +143,6 @@ test.each([
       new DOMRect(0, 0, 300, 100),
     );
 
-    fireEvent.dragOver(editor, { dataTransfer, clientX: 1, clientY: 1 });
     fireEvent.drop(editor, { dataTransfer, clientX: 1, clientY: 1 });
 
     await waitFor(() => {

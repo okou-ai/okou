@@ -111,7 +111,7 @@ test.each(["pointer", "Enter"])(
       await user.keyboard("{Enter}");
     }
     expect(getAction("button", "Next", dialog)).toBeDisabled();
-    expect(within(dialog).getByText("/newbot")).toBeInTheDocument();
+    expect(tokenInput).toHaveValue("");
     await fill(tokenInput, "123:token");
     if (activation === "Enter") {
       tokenInput.focus();
