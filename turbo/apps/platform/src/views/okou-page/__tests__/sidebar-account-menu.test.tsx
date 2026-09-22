@@ -589,6 +589,7 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
 });
 
 test("Review personal subscription usage in the account menu", async () => {
+  const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
   mockAdminAccountSidebar();
@@ -631,8 +632,9 @@ test("Review personal subscription usage in the account menu", async () => {
   expect(within(panel).getByText("55%")).toBeInTheDocument();
   expect(within(panel).getByText("88%")).toBeInTheDocument();
   expect(within(panel).getByText("76%")).toBeInTheDocument();
-  const resetCredits = within(panel).getByText("2 resets left · expires in 3d");
-  expect(resetCredits).toBeInTheDocument();
+  const resetCredits = within(panel).getByLabelText("2 resets left");
+  expect(within(resetCredits).getByText("2 resets left")).toBeInTheDocument();
+  expect(within(panel).queryByText("Reset")).not.toBeInTheDocument();
   expect(within(panel).queryByText(/^resets /)).not.toBeInTheDocument();
   expect(
     within(panel).queryByText(/codex\.user@example\.com/),
@@ -650,18 +652,22 @@ test("Review personal subscription usage in the account menu", async () => {
       formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
     );
   });
-  fireEvent.focus(resetCredits);
+  fireEvent.blur(codexFiveHour);
+  await user.hover(resetCredits);
   await waitFor(() => {
-    expectVisibleText(
-      `Soonest reset expires ${formatResetInTimeZone(
-        "2030-01-04T00:48:00.000Z",
-        "America/New_York",
-      )}`,
-    );
+    expectVisibleText("2 resets left · expires in 3d");
   });
 
   const credits = within(menu).getByText("12,500 credits");
   const codex = within(panel).getByRole("heading", { name: "Codex" });
+  expect(
+    codex.compareDocumentPosition(resetCredits) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(
+    resetCredits.compareDocumentPosition(codexFiveHour) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
     credits.compareDocumentPosition(codex) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
@@ -696,12 +702,14 @@ test("Reset Codex usage from the account menu", async () => {
 
   let menu = await openAccountMenu();
   let panel = await within(menu).findByTestId("account-menu-subscriptions");
-  expect(within(panel).getByText("2 resets left")).toBeInTheDocument();
-  click(within(panel).getByText("Reset"));
+  const resetCredits = within(panel).getByLabelText("2 resets left");
+  expect(resetCredits).toBeInTheDocument();
+  click(resetCredits);
 
   const confirmDialog = await screen.findByRole("dialog", {
     name: "Reset Codex usage?",
   });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(within(confirmDialog).getByText(/2 resets left/)).toBeInTheDocument();
   const resetButton = queryAllByRoleFast("button", confirmDialog).find(
     (button) => {
@@ -721,7 +729,39 @@ test("Reset Codex usage from the account menu", async () => {
 
   menu = await openAccountMenu();
   panel = await within(menu).findByTestId("account-menu-subscriptions");
-  expect(within(panel).getByText("1 reset left")).toBeInTheDocument();
+  expect(within(panel).getByLabelText("1 reset left")).toBeInTheDocument();
+});
+
+test("Keep exhausted Codex resets disabled in the account menu", async () => {
+  mockAdminAccountSidebar();
+  context.mocks.data.personalModelProviders([
+    connectedPersonalCodexProvider({ subscriptionResetCredits: 0 }),
+  ]);
+
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: {
+      user: {
+        id: "test-user-123",
+        fullName: "Alex Rivera",
+        email: "alex.rivera@example.test",
+      },
+    },
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
+
+  const menu = await openAccountMenu();
+  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  const resetCredits = within(panel).getByLabelText("0 resets left");
+  expect(resetCredits).toHaveAttribute("aria-disabled", "true");
+
+  click(resetCredits);
+
+  expect(menu).toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
+  ).not.toBeInTheDocument();
 });
 
 test("Reuse recent subscription usage, then refresh without blanking it", async () => {

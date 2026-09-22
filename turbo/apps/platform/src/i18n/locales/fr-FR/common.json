@@ -5936,7 +5936,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Réinitialiser",
         "resetTimeUnavailable": "Réinitialisation du temps indisponible",
         "usage": "Utilisation de {{provider}}",
         "usageRemaining": "Il reste {{provider}} {{window}}",
@@ -6272,7 +6271,6 @@
       },
       "reset": {
         "confirmDescription": "Utilisez une réinitialisation de Codex pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
-        "expiresAt": "La réinitialisation la plus proche expire {{date}}",
         "progress": "Réinitialisation en cours...",
         "remaining_one": "{{value}} réinitialisation restante",
         "remaining_many": "{{value}} réinitialisations restantes",
