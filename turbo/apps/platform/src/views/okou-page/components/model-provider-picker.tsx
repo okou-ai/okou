@@ -1448,13 +1448,6 @@ function ComposerModelMenu({
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        key={
-          flyoutLayout
-            ? "flyout"
-            : page.kind === "models"
-              ? page.category
-              : page.kind
-        }
         side="top"
         align="end"
         collisionPadding={8}

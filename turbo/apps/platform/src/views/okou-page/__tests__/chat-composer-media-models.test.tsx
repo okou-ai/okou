@@ -203,10 +203,14 @@ async function chooseMenuMediaModel(
   label: string,
 ): Promise<void> {
   await openMenuCategory(name);
-  click(menuRow(label));
+  await userEvent.setup({ delay: null }).click(menuRow(label));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: `${name} models` })).toBeNull();
   });
+  await expect(
+    screen.findByRole("region", { name: "Models" }),
+  ).resolves.toBeVisible();
+  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
 }
 
 /** The menu's rows, which name themselves for a narrow viewport's pages. */
@@ -809,12 +813,10 @@ test("Selecting an image model in the desktop picker shows the disabled tool not
   expect(screen.queryByLabelText("Remove Image")).not.toBeInTheDocument();
 
   await openCategory("Chat");
-  const chatModel = await screen.findByRole("option", {
-    name: /Claude Fable 5\.1/u,
-  });
-  click(chatModel);
+  const chatModel = await findModelMenuOption(/Claude Fable 5\.1/u);
+  await userEvent.setup({ delay: null }).click(chatModel);
   await waitFor(() => {
-    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "Models" })).toBeNull();
   });
   expect(
     screen.queryByText("Image generation is off for you"),
@@ -1044,7 +1046,7 @@ test("Choose image and video models from the compact overview", async () => {
   click(menuRow("Change Image model, Nano Banana 2"));
   await screen.findByRole("region", { name: "Image models" });
   expectMenuSelected("Nano Banana 2");
-  click(menuRow("GPT Image 1"));
+  await userEvent.setup({ delay: null }).click(menuRow("GPT Image 1"));
   await waitFor(() => {
     expect(images).toStrictEqual(["gpt-image-1"]);
   });
@@ -1053,8 +1055,10 @@ test("Choose image and video models from the compact overview", async () => {
       screen.queryByRole("region", { name: "Image models" }),
     ).not.toBeInTheDocument();
   });
-  click(menuRow("Claude Fable 5.1"));
-  await screen.findByRole("region", { name: "Models" });
+  await expect(
+    screen.findByRole("region", { name: "Models" }),
+  ).resolves.toBeVisible();
+  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Image model, GPT Image 1")).toBeVisible();
   click(
     menuRow(
@@ -1062,7 +1066,7 @@ test("Choose image and video models from the compact overview", async () => {
     ),
   );
   await screen.findByRole("region", { name: "Video models" });
-  click(menuRow("Seedance 2.0"));
+  await userEvent.setup({ delay: null }).click(menuRow("Seedance 2.0"));
   await waitFor(() => {
     expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
   });
@@ -1071,8 +1075,10 @@ test("Choose image and video models from the compact overview", async () => {
       screen.queryByRole("region", { name: "Video models" }),
     ).not.toBeInTheDocument();
   });
-  click(menuRow("Claude Fable 5.1"));
-  await screen.findByRole("region", { name: "Models" });
+  await expect(
+    screen.findByRole("region", { name: "Models" }),
+  ).resolves.toBeVisible();
+  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Video model, Seedance 2.0")).toBeVisible();
   expect(menuRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
 });
