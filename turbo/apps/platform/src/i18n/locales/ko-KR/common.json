@@ -2374,7 +2374,6 @@
       },
       "ideasLabel": "시작 아이디어",
       "label": "시작할 작업",
-      "moreIdeas": "다른 아이디어",
       "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
@@ -2384,7 +2383,8 @@
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
         "previousPage": "이전 페이지",
-        "website": "웹사이트 템플릿"
+        "website": "웹사이트 템플릿",
+        "workflows": "워크플로"
       },
       "tasks": {
         "image": "이미지",
@@ -2518,7 +2518,6 @@
         "browse": "워크플로 둘러보기",
         "close": "닫기",
         "contextPrefix": "중요한 사항: {{context}}",
-        "heading": "어떤 일을 맡기고 싶으세요?",
         "items": {
           "competitors": {
             "cadence": "매일 또는 매주",

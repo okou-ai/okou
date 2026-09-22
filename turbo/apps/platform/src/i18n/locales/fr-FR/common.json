@@ -2428,7 +2428,6 @@
       },
       "ideasLabel": "Idées pour démarrer",
       "label": "Tâches pour démarrer",
-      "moreIdeas": "Autres idées",
       "moreTemplates": "Autres modèles",
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
@@ -2438,7 +2437,8 @@
         "image": "Styles d'image",
         "nextPage": "Page suivante",
         "previousPage": "Page précédente",
-        "website": "Modèles de site web"
+        "website": "Modèles de site web",
+        "workflows": "Workflows"
       },
       "tasks": {
         "image": "Image",
@@ -2572,7 +2572,6 @@
         "browse": "Parcourir les workflows",
         "close": "Fermer",
         "contextPrefix": "Ce qui compte pour moi : {{context}}",
-        "heading": "Quelle tâche souhaitez-vous déléguer ?",
         "items": {
           "competitors": {
             "cadence": "Chaque jour ou chaque semaine",

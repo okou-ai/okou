@@ -192,7 +192,7 @@ function ComposerTemplateCover({
     >
       <span
         className={cn(
-          "block overflow-hidden rounded-lg border border-border bg-muted",
+          "block overflow-hidden rounded-xl border border-border bg-muted",
           ratio,
         )}
       >
