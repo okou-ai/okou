@@ -2382,7 +2382,6 @@
       },
       "ideasLabel": "Ideas to get started",
       "label": "Tasks to get started",
-      "moreIdeas": "More ideas",
       "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
@@ -2392,7 +2391,8 @@
         "image": "Image styles",
         "nextPage": "Next page",
         "previousPage": "Previous page",
-        "website": "Website templates"
+        "website": "Website templates",
+        "workflows": "Workflows"
       },
       "tasks": {
         "image": "Image",
@@ -2526,7 +2526,6 @@
         "browse": "Browse workflows",
         "close": "Close",
         "contextPrefix": "What matters to me: {{context}}",
-        "heading": "What would you like to take off your plate?",
         "items": {
           "competitors": {
             "cadence": "Daily or weekly",

@@ -2428,7 +2428,6 @@
       },
       "ideasLabel": "Ideias para começar",
       "label": "Tarefas para começar",
-      "moreIdeas": "Mais ideias",
       "moreTemplates": "Mais modelos",
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
@@ -2438,7 +2437,8 @@
         "image": "Estilos de imagem",
         "nextPage": "Próxima página",
         "previousPage": "Página anterior",
-        "website": "Modelos de site"
+        "website": "Modelos de site",
+        "workflows": "Fluxos de trabalho"
       },
       "tasks": {
         "image": "Imagem",
@@ -2572,7 +2572,6 @@
         "browse": "Explorar workflows",
         "close": "Fechar",
         "contextPrefix": "O que importa para mim: {{context}}",
-        "heading": "Qual tarefa você gostaria de delegar?",
         "items": {
           "competitors": {
             "cadence": "Diariamente ou semanalmente",

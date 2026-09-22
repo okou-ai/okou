@@ -49,10 +49,11 @@ function railItemEnterDelay(index: number): string {
  * Every shelf tile across the types: art in its own box, caption underneath and
  * outside it. `quiet` paints a fill on hover, which on a tile this tall draws a
  * grey slab around the artwork and its caption instead of pointing at either;
- * the art carries the hover itself.
+ * the art carries the hover itself. The radius is the prompt card's
+ * `rounded-xl`, so a cover and the idea card beside it share one corner.
  */
 export const RAIL_TILE = cn(
-  "group/tile block h-auto rounded-lg p-0 text-left font-normal",
+  "group/tile block h-auto rounded-xl p-0 text-left font-normal",
   "hover:bg-transparent active:bg-transparent",
 );
 /** The caption sits under the art and outside it, on every type's shelf. */

@@ -5194,7 +5194,7 @@ function ComposerPresentationSuggestion({
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "block aspect-video rounded-lg group-hover/tile:opacity-90",
+          "block aspect-video group-hover/tile:opacity-90",
         )}
       >
         {children}

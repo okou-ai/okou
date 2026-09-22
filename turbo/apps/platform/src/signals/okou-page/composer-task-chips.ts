@@ -107,24 +107,6 @@ export function createComposerTaskChipsSignals(
     }
     set(applyTask$, task);
   });
-  const internalIdeaPages$ = state({
-    image: 0,
-    workflow: 0,
-    website: 0,
-    presentation: 0,
-  });
-  const ideaPages$ = computed((get) => {
-    return get(internalIdeaPages$);
-  });
-  const nextIdeas$ = command(
-    ({ get, set }, task: ComposerIdeaTask, pageCount: number) => {
-      const pages = get(internalIdeaPages$);
-      set(internalIdeaPages$, {
-        ...pages,
-        [task]: (pages[task] + 1) % pageCount,
-      });
-    },
-  );
   /**
    * How far a rail can still travel, per rail. A rail that has never reported
    * is assumed to fit, which hides both pagers until a measurement proves
@@ -163,8 +145,6 @@ export function createComposerTaskChipsSignals(
     task$,
     selectTask$,
     openTask$,
-    ideaPages$,
-    nextIdeas$,
     railTravel$,
     setRailTravel$,
     bindRail$,
