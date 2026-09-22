@@ -696,6 +696,16 @@ function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   return isDesktop ? <DesktopChatThreadHeader thread={thread} /> : null;
 }
 
+export function SettledChatThreadActions({
+  thread,
+  children,
+}: {
+  thread: ChatPanelSignals;
+  children: ReactNode;
+}) {
+  return useGet(thread.optimisticCreateUnsettled$) ? null : children;
+}
+
 function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const headerActionsEnabled =
@@ -745,43 +755,45 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       ) : (
         <ChatThreadHeaderTitle thread={thread} />
       )}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  onClick={() => {
-                    detach(
-                      startSharing(pageSignal),
-                      Reason.DomCallback,
-                      "start shared thread selection",
-                    );
-                  }}
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className="shrink-0 duration-150"
-                  aria-label={t(($) => {
-                    return $.chat.sharing.start;
-                  })}
-                >
-                  <Share2 size={18} />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.sharing.start;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <AutomationMenuButton thread={thread} />
-        <BrowserMenuButton thread={thread} />
-        <ArtifactsButton thread={thread} />
-      </div>
+      <SettledChatThreadActions thread={thread}>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      detach(
+                        startSharing(pageSignal),
+                        Reason.DomCallback,
+                        "start shared thread selection",
+                      );
+                    }}
+                    variant="quiet"
+                    size="icon-sm"
+                    iconSize="md"
+                    className="shrink-0 duration-150"
+                    aria-label={t(($) => {
+                      return $.chat.sharing.start;
+                    })}
+                  >
+                    <Share2 size={18} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.sharing.start;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <AutomationMenuButton thread={thread} />
+          <BrowserMenuButton thread={thread} />
+          <ArtifactsButton thread={thread} />
+        </div>
+      </SettledChatThreadActions>
     </header>
   );
 }

@@ -1,9 +1,12 @@
 import { command, computed } from "ccstate";
-
-import { env } from "../../lib/env";
+import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+
+import { env } from "../../lib/env";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   generateArtifactPreviewUrl,
@@ -11,6 +14,7 @@ import {
   tryListMultipartS3Parts,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
+import { db$ } from "../external/db";
 import {
   allocateArtifactObject$,
   resolvedArtifactObject,
@@ -71,6 +75,34 @@ interface UploadedArtifactIdentity {
   readonly orgId: string | undefined;
   readonly filenameHint?: string;
   readonly variant?: string;
+}
+
+/** Resolve poster metadata without consulting a chat-thread artifact list. */
+export function uploadedArtifactPreviewImageUrl(
+  args: Pick<UploadedArtifactIdentity, "id" | "userId" | "orgId">,
+) {
+  return computed(async (get): Promise<string | null> => {
+    const externalIdMatches = eq(runUploadedFiles.externalId, args.id);
+    const identityMatches = z.uuid().safeParse(args.id).success
+      ? or(eq(runUploadedFiles.id, args.id), externalIdMatches)
+      : externalIdMatches;
+    const [row] = await get(db$)
+      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.userId, args.userId),
+          args.orgId
+            ? eq(runUploadedFiles.orgId, args.orgId)
+            : isNull(runUploadedFiles.orgId),
+          identityMatches,
+          isNotNull(runUploadedFiles.previewImageUrl),
+        ),
+      )
+      .orderBy(desc(runUploadedFiles.updatedAt))
+      .limit(1);
+    return row?.previewImageUrl ?? null;
+  });
 }
 
 export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
