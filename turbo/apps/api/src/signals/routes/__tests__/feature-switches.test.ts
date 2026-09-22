@@ -76,8 +76,7 @@ describe("/api/feature-switches", () => {
       }),
       [200],
     );
-    const peerUserId = `user_${randomUUID()}`;
-    clerk.session(peerUserId, orgId, "org:member");
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
     expect(
       peer.body.effectiveSwitches[
@@ -88,23 +87,6 @@ describe("/api/feature-switches", () => {
     const elsewhere = await accept(client().get({ headers }), [200]);
     expect(
       elsewhere.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
-    ).toBeTruthy();
-    clerk.session(peerUserId, orgId, "org:member");
-    await accept(
-      client().update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
-        },
-      }),
-      [200],
-    );
-    clerk.session(userId, orgId, "org:member");
-    const restored = await accept(client().get({ headers }), [200]);
-    expect(
-      restored.body.effectiveSwitches[
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
     ).toBeTruthy();

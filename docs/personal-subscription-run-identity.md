@@ -142,7 +142,7 @@ The repair adds no schema, request, persisted-payload or credential format. Exis
 
 ## Preparation, activation and rollback gates
 
-`PersonalSubscriptionPriority` is organization consistent, defaults to false for everyone (including staff), and has no automatic allowlist. This PR writes new exact bindings with the flag off. Ordinary disconnect and identity retirement remain destructive until the controller explicitly enables retention. Canonical connections preserve identity with the switch off: replacement deletes A and selects a different B record instead of mutating A into B. `_multipleSubscriptions` continues to control only its existing UI surface.
+`PersonalSubscriptionPriority` is organization consistent and now defaults to true for every workspace, with no allowlist; #34012 wrote its new exact bindings with the flag off, and #34453 ran it as a staff-only default in between. Retention is therefore the default: ordinary disconnect and identity retirement keep a replaced account while an exact `queued`, `pending` or `running` reference survives, and they are destructive only for an organization that has written `false` under `__org__`. With the switch off, canonical connections still preserve identity — replacement deletes A and selects a different B record instead of mutating A into B. `_multipleSubscriptions` continues to control only its existing UI surface.
 
 The migration adds only nullable `disconnected_at`. Apply the additive migration before the new API serves traffic. The previous API can read the expanded schema; existing logical rows, mirrors, encrypted secret format and auth-state locks remain compatible. During mixed versions the old singleton writer and sourceId-less reader still exist. The current sourceId-less refresh writer synchronizes active concrete token and expiry/reconnect state under the same lock. Preparation is not the activation gate: old API writers can still perform the previous mutable/destructive operations.
 
@@ -168,7 +168,8 @@ singleton-only server writers. It is active independently of the account UI and
 priority switches because account seeding/capture already runs with both off.
 It adds no schema, migration, backfill, trigger, credential history, per-run
 secret copy, or eager production repair. Retention remains gated by
-`PersonalSubscriptionPriority`, default-off including staff.
+`PersonalSubscriptionPriority`, which was default-off including staff when this
+bridge shipped and is now on by default for every workspace.
 
 ### Supported producer audit
 
