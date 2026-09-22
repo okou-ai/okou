@@ -2212,39 +2212,40 @@ no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
-#34081 owns Access management UI; #34370 records integrated real-Run acceptance
-and the owner-approved evidence boundaries at closure.
-The retained management UI stays inside `/connectors/ssh`, and #36038 adds the
-standalone `/connectors/cloudflare-access` entry after SSH and VNC. Access is reusable owner configuration, not a separately
+#34081 originally owned Access management UI; #34370 records integrated real-Run
+acceptance and the owner-approved evidence boundaries at closure. #36038 added
+the standalone `/connectors/cloudflare-access` entry after SSH and VNC, and
+#36150 / PR #36152 removed the duplicate top-level management tab from
+`/connectors/ssh`. Access is reusable owner configuration, not a separately
 authorized Agent service. SSH remains its first consumer under the existing SSH
 Agent grant; general availability does not replace that permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-The deployed SSH management UI initially uses the temporary
-`/api/ssh/cloudflare-access/configs` rollout bridge. The standalone owner boundary
-adds `/api/cloudflare-access/configs` over the same rows, revisions and mutation
-service; its response names current references `sshHosts`, while the bridge keeps
-`hosts`. During this phase, configuration mutations publish both
-`cloudflare-access:changed` and `ssh:changed` with `{ orgId }` only so the
-replacement and deployed Apps can refresh. Neither event contains a token,
-configuration ID or host ID.
+#36037 introduced `/api/cloudflare-access/configs` over the existing rows,
+revisions and mutation service while temporarily retaining
+`/api/ssh/cloudflare-access/configs`, its `hosts` projection and dual
+`cloudflare-access:changed` / `ssh:changed` publication for the deployed App.
+#36038 moved the standalone page and the retained SSH host form to the canonical
+API, `sshHosts` response and canonical event. Both rollout phases operated on the
+same encrypted records; there was no feature switch, schema migration, data copy
+or Runner contract change.
 
-Deploy #36037's additive API before #36038's App. A new API/old App continues
-using the SSH path and event unchanged. #36038 adds the standalone page and moves
-the retained SSH flow to the canonical API, state and event without removing its
-selector, inline creation, nested management or CRUD behavior. Both phases operate
-on the same encrypted records. There is no feature switch, schema migration, data
-copy or Runner contract change.
+Production `app.okou.ai` was verified at App `0.944.0`, commit
+`3ffd0d5086a02cd8328cf60defab7a242b682273`. That commit contains #36038 and is
+tagged `app-v0.944.0`. #36068 therefore raises the minimum supported App version
+to `0.944.0` and retires the SSH-prefixed route, `hosts` projection, SSH error
+adapter and Access-only `ssh:changed` publication together. Identified App
+clients below the floor receive `426` before route matching. This floor increase
+is deliberately separate from the release that first published the replacement
+App, because production promotes the API before the App.
 
-After the App build containing #36038 is verified live in production, #36068
-raises the minimum supported App version to that exact build and removes the
-SSH-prefixed route, `hosts` projection, error adapter and Access-only legacy
-event publication. Do not combine that floor increase with the release that first
-publishes the replacement App: production promotes the API before the App, so a
-user could accept a `426` prompt while refresh still serves the previous build.
-Actual SSH host writes continue publishing `ssh:changed`; inline Access creation
-also publishes `cloudflare-access:changed` because it changes both resources.
+Standalone Access mutations now publish only `cloudflare-access:changed`.
+Effective Service Token replacement still invalidates Runner authority for every
+referencing protected host. Actual SSH host writes continue publishing
+`ssh:changed` and invalidating Runner authority; inline Access creation also
+publishes `cloudflare-access:changed` because it changes both resources. Neither
+browser event contains a token, configuration ID or host ID.
 
 Unified host forms also accept inline Access creation in the host write request.
 Existing `configId` selections remain valid; responses still return only the
