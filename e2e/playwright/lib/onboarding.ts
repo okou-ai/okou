@@ -242,7 +242,10 @@ async function submitExploreOnboarding(page: Page): Promise<void> {
 }
 
 async function chooseMakeOption(page: Page, name: string): Promise<void> {
-  await page.getByRole("radio", { name }).click();
+  await page
+    .getByRole("group", { name: "First project type" })
+    .getByRole("button", { name })
+    .click();
 }
 
 async function clickOnboardingButton(page: Page, name: RegExp): Promise<void> {
