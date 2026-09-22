@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACCOUNT_OWNERSHIP_INVENTORY,
+  DESCENDANT_REACH,
+  UNATTRIBUTABLE_DESCENDANTS,
   NON_OWNERSHIP_COLUMNS,
   applicationOwnershipTables,
   assertOwnershipInventoryCoverage,
@@ -315,15 +317,59 @@ describe("account erasure ownership coverage guard", () => {
         expect(ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage).toBe("user_root");
       }
     }
-    // Mail arrives from a run, an automation and a Morning Brief delivery, so
-    // a collector sweeping only one of them would leave the rest behind.
+    // Mail arrives from a run and from an automation, and Morning Brief
+    // delivery is linked through the automation like any other: no column
+    // ever carried a delivery id, so listing one as a parent described a
+    // sweep that could not be written.
     expect(ACCOUNT_OWNERSHIP_INVENTORY.email_outbox).toStrictEqual({
       coverage: "user_descendant",
-      parents: [
-        "agent_runs",
-        "workflow_automations",
-        "morning_brief_deliveries",
-      ],
+      parents: ["agent_runs", "workflow_automations"],
     });
+  });
+
+  it("checks every declared reach against the columns the schema has", () => {
+    expect(Object.keys(DESCENDANT_REACH).length).toBeGreaterThan(0);
+
+    for (const [table, reaches] of Object.entries(DESCENDANT_REACH)) {
+      const entry = ACCOUNT_OWNERSHIP_INVENTORY[table];
+      expect(entry?.coverage).toBe("user_descendant");
+      expect(reaches.length).toBeGreaterThan(0);
+      for (const reach of reaches) {
+        // A reach without a reason is a guess about which rows are the
+        // account's, so the guard requires one.
+        expect(reach.basis.length).toBeGreaterThan(0);
+        const last = reach.path[reach.path.length - 1];
+        if (entry?.coverage === "user_descendant") {
+          expect(entry.parents).toContain(last?.parent);
+        }
+      }
+    }
+    // A reach and an unattributable declaration disagree about whether the
+    // rows can be deleted, so a table may not carry both.
+    for (const table of Object.keys(UNATTRIBUTABLE_DESCENDANTS)) {
+      expect(table in DESCENDANT_REACH).toBeFalsy();
+      expect(ACCOUNT_OWNERSHIP_INVENTORY[table]?.coverage).toBe(
+        "user_descendant",
+      );
+    }
+  });
+
+  it("fails when a declared reach names a column the schema does not have", () => {
+    const renamed = schemaTables.map((table) => {
+      return table.name === "browser_session_screenshots"
+        ? {
+            name: table.name,
+            columns: table.columns.filter((column) => {
+              return column !== "chat_thread_id";
+            }),
+          }
+        : table;
+    });
+
+    expect(() => {
+      return assertOwnershipInventoryCoverage(renamed);
+    }).toThrow(
+      "account_erasure_inventory:reach_column_missing:browser_session_screenshots.chat_thread_id",
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
@@ -17,7 +17,10 @@ import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import {
   ACCOUNT_OWNERSHIP_INVENTORY,
+  DESCENDANT_REACH,
+  UNATTRIBUTABLE_DESCENDANTS,
   userOwnedErasureRoots,
+  type DescendantReachHop,
 } from "./account-erasure-ownership-inventory";
 import {
   decryptErasureSelector,
@@ -122,16 +125,54 @@ export interface RelationalErasureRoot {
   readonly owners: readonly RelationalErasureOwner[];
 }
 
+/** One join step of a descendant path, resolved against the live catalogue. */
+export interface RelationalDescendantHop {
+  readonly childColumns: readonly string[];
+  readonly parent: string;
+  readonly parentColumns: readonly string[];
+}
+
+/** How the sweep reaches one declared descendant from the root that names the
+ * account.
+ *
+ * `catalogue` paths are a single foreign key the server enforces. `declared`
+ * paths come from `DESCENDANT_REACH`, where the schema deliberately declines
+ * the key — a durable receipt, a retryable cleanup intent or a projection has
+ * to outlive its producer — and `basis` records why the join key is still
+ * right. Both are the same shape so the sweep has one code path, and a path
+ * may be longer than one hop when the only key lands on an intermediate that
+ * is itself a descendant.
+ */
+export interface RelationalDescendantPath {
+  readonly child: string;
+  /** The account-owned root the path terminates at. */
+  readonly root: string;
+  /** Ordered child to root. `hops[0].childColumns` are columns on `child`. */
+  readonly hops: readonly RelationalDescendantHop[];
+  readonly source: "catalogue" | "declared";
+  readonly basis: string | null;
+}
+
 export interface RelationalErasurePlan {
   /** Account-owned roots, every root ordered before the roots it references. */
   readonly order: readonly RelationalErasureRoot[];
-  /** Declared descendants reachable through a parent root's ownership. */
-  readonly descendants: readonly RelationalForeignKey[];
-  /** Declared descendants with no catalogue foreign key to any declared
-   * parent. Nothing in this sink can prove those rows are gone, so they are
-   * reported as an explicit residual rather than silently omitted.
+  /** Declared descendants reachable through a parent root's ownership, deepest
+   * path first so a path's intermediate still exists when it runs.
+   */
+  readonly descendants: readonly RelationalDescendantPath[];
+  /** Declared descendants with neither a catalogue foreign key to a declared
+   * parent nor a declared reach. Nothing in this sink can prove those rows are
+   * gone, so they are reported as an explicit residual rather than silently
+   * omitted.
    */
   readonly unreachableDescendants: readonly string[];
+  /** Declared descendants whose account attribution does not exist in the
+   * schema at all, listed with their basis in `UNATTRIBUTABLE_DESCENDANTS`.
+   * Separated from `unreachableDescendants` because the remedy is a schema
+   * change rather than a selector, but it blocks a completion claim the same
+   * way: the rows hold account data and no join identifies whose.
+   */
+  readonly unattributableDescendants: readonly string[];
   /** Roots whose declared ownership column can hold no account id and has no
    * resolvable link to a root that does. The sweep cannot reach them, so they
    * are reported rather than swept on a predicate that never matches.
@@ -356,6 +397,107 @@ function topologicalRootOrder(
   return { order, cycles };
 }
 
+/** Whether the live catalogue has every column a declared reach names.
+ *
+ * `ownershipColumnTypes` reads `pg_attribute`, so a column present there is a
+ * column the server actually has. The inventory guard checks the declaration
+ * against the schema modules; this checks it against the database, which is
+ * the same two-source rule `assertCatalogueInventoryCoverage` applies to
+ * tables. A reach that fails here is reported as unreachable rather than
+ * emitted as a `DELETE` on a column that does not exist.
+ */
+function catalogueResolves(
+  child: string,
+  path: readonly DescendantReachHop[],
+  types: ReadonlyMap<string, string>,
+): boolean {
+  let below = child;
+  for (const hop of path) {
+    const resolved =
+      hop.childColumns.length === hop.parentColumns.length &&
+      hop.childColumns.every((column) => {
+        return types.has(`${below}.${column}`);
+      }) &&
+      hop.parentColumns.every((column) => {
+        return types.has(`${hop.parent}.${column}`);
+      });
+    if (!resolved) {
+      return false;
+    }
+    below = hop.parent;
+  }
+  return path.length > 0;
+}
+
+/** Resolves every declared descendant to the paths the sweep can delete it by.
+ *
+ * A catalogue foreign key to a declared parent is the ordinary case. Where the
+ * schema deliberately declines the key, the inventory's declared reach supplies
+ * the same join with a recorded basis, and it is only trusted as far as the
+ * catalogue confirms it: every column it names must exist on the table it
+ * names, or the descendant stays unreachable rather than becoming a `DELETE`
+ * on a column the server does not have.
+ */
+function resolveDescendantPaths(
+  keys: readonly RelationalForeignKey[],
+  types: ReadonlyMap<string, string>,
+): {
+  readonly descendants: RelationalDescendantPath[];
+  readonly unreachable: string[];
+  readonly unattributable: string[];
+} {
+  const descendants: RelationalDescendantPath[] = [];
+  const unreachable: string[] = [];
+  const unattributable: string[] = [];
+  for (const [table, entry] of Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)) {
+    if (entry.coverage !== "user_descendant") {
+      continue;
+    }
+    if (table in UNATTRIBUTABLE_DESCENDANTS) {
+      unattributable.push(table);
+      continue;
+    }
+    const resolved: RelationalDescendantPath[] = keys
+      .filter((key) => {
+        return key.child === table && entry.parents.includes(key.parent);
+      })
+      .map((key) => {
+        return {
+          child: table,
+          root: key.parent,
+          hops: [
+            {
+              childColumns: key.childColumns,
+              parent: key.parent,
+              parentColumns: key.parentColumns,
+            },
+          ],
+          source: "catalogue" as const,
+          basis: null,
+        };
+      });
+    for (const reach of DESCENDANT_REACH[table] ?? []) {
+      const last = reach.path[reach.path.length - 1];
+      if (!last || !catalogueResolves(table, reach.path, types)) {
+        continue;
+      }
+      resolved.push({
+        child: table,
+        root: last.parent,
+        hops: reach.path,
+        source: "declared",
+        basis: reach.basis,
+      });
+    }
+    if (resolved.length === 0) {
+      unreachable.push(table);
+      continue;
+    }
+    descendants.push(...resolved);
+  }
+  return { descendants, unreachable, unattributable };
+}
+
 /** Derives what an account's relational sweep must delete, and in what order.
  *
  * Order is derived, never declared. A hand-written order rots the moment
@@ -424,24 +566,10 @@ export async function planRelationalErasure(
     ownership.set(root.table, owners);
   }
 
-  // Every declared descendant is swept through a real foreign key to one of
-  // its declared parents. A cascade usually does it, but relying on the
-  // cascade would leave a descendant whose foreign key is `NO ACTION` behind.
-  const descendants: RelationalForeignKey[] = [];
-  const unreachableDescendants: string[] = [];
-  for (const [table, entry] of Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)) {
-    if (entry.coverage !== "user_descendant") {
-      continue;
-    }
-    const edges = keys.filter((key) => {
-      return key.child === table && entry.parents.includes(key.parent);
-    });
-    if (edges.length === 0) {
-      unreachableDescendants.push(table);
-      continue;
-    }
-    descendants.push(...edges);
-  }
+  const { descendants, unreachable, unattributable } = resolveDescendantPaths(
+    keys,
+    types,
+  );
 
   const reachable = roots
     .filter((root) => {
@@ -463,8 +591,21 @@ export async function planRelationalErasure(
     order: order.map((table) => {
       return { table, owners: ownership.get(table) ?? [] };
     }),
-    descendants,
-    unreachableDescendants: unreachableDescendants.sort(),
+    // Deepest path first. A path longer than one hop passes through an
+    // intermediate that is itself a descendant, and that intermediate is
+    // always reachable in strictly fewer hops than the path through it, so
+    // ordering by descending length deletes every child before the row it
+    // joins through. The remaining keys only make the order deterministic.
+    descendants: descendants.sort((left, right) => {
+      return (
+        right.hops.length - left.hops.length ||
+        left.child.localeCompare(right.child) ||
+        left.root.localeCompare(right.root) ||
+        left.source.localeCompare(right.source)
+      );
+    }),
+    unreachableDescendants: unreachable.sort(),
+    unattributableDescendants: unattributable.sort(),
     unreachableRoots: unreachableRoots.sort(),
     rewritingEdges,
     cycles,
@@ -492,6 +633,16 @@ export function assertRelationalSweepComplete(
       `account_erasure_relational:descendant_unreachable:${descendant}`,
     );
   }
+  // A descendant whose account attribution does not exist in the schema is
+  // still a descendant this sink cannot prove clean. It gets its own code so
+  // the remedy is legible — a schema change, not another selector — but it
+  // blocks a completion claim exactly as an unreachable one does.
+  const [unattributable] = plan.unattributableDescendants;
+  if (unattributable !== undefined) {
+    throw new Error(
+      `account_erasure_relational:descendant_unattributable:${unattributable}`,
+    );
+  }
 }
 
 function subjectPredicate(root: RelationalErasureRoot, id: string) {
@@ -515,6 +666,36 @@ function subjectPredicate(root: RelationalErasureRoot, id: string) {
     }),
     sql` OR `,
   );
+}
+
+/** The descendant's own membership test, built from the path's hops.
+ *
+ * One nested `IN` per hop, innermost first, so the deepest subquery is the
+ * root's ownership predicate and each enclosing level selects the key column
+ * of the row above. A single-hop catalogue path renders exactly the statement
+ * this sink issued before paths existed.
+ */
+function descendantPredicate(path: RelationalDescendantPath, owned: SQL): SQL {
+  const columns = (names: readonly string[]): SQL => {
+    return sql.join(
+      names.map((name) => {
+        return sql.identifier(name);
+      }),
+      sql`, `,
+    );
+  };
+  let predicate = owned;
+  for (let index = path.hops.length - 1; index >= 0; index -= 1) {
+    const hop = path.hops[index];
+    if (!hop) {
+      continue;
+    }
+    predicate = sql`(${columns(hop.childColumns)}) IN (
+      SELECT ${columns(hop.parentColumns)} FROM ${sql.identifier(hop.parent)}
+      WHERE ${predicate}
+    )`;
+  }
+  return predicate;
 }
 
 async function subjectRowCount(
@@ -563,7 +744,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "b1c7e4d2-3f80-4a19-8d5e-2c9f6a0b4517";
+  "0a4f9d63-2b17-45c8-9e0a-7f31c6d8b204";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -639,42 +820,38 @@ export async function sweepRelationalErasure(
       },
       binding.required,
     );
+    const roots = new Map(
+      plan.order.map((root) => {
+        return [root.table, subjectPredicate(root, subject.subjectId)];
+      }),
+    );
     let deleted = 0;
-    for (const root of plan.order) {
-      const owned = subjectPredicate(root, subject.subjectId);
-      for (const edge of plan.descendants) {
-        if (edge.parent !== root.table) {
-          continue;
-        }
-        const childKey = sql.join(
-          edge.childColumns.map((column) => {
-            return sql.identifier(column);
-          }),
-          sql`, `,
-        );
-        const parentKey = sql.join(
-          edge.parentColumns.map((column) => {
-            return sql.identifier(column);
-          }),
-          sql`, `,
-        );
-        // Swept through the key explicitly, not left to a cascade: a declared
-        // descendant whose key is `NO ACTION` would otherwise stay behind.
-        deleted +=
-          (
-            await tx.execute(
-              sql`DELETE FROM ${sql.identifier(edge.child)}
-                  WHERE (${childKey}) IN (
-                    SELECT ${parentKey} FROM ${sql.identifier(root.table)}
-                    WHERE ${owned}
-                  )`,
-            )
-          ).rowCount ?? 0;
+    // Descendants first, every one of them, before any root is deleted. A
+    // path joins upwards through rows that must still be there, and a path
+    // longer than one hop passes through an intermediate owned by a different
+    // root than the one it ends at. Deleting each root's descendants just
+    // before that root would leave those paths matching nothing.
+    for (const path of plan.descendants) {
+      const owned = roots.get(path.root);
+      if (!owned) {
+        continue;
       }
+      // Swept through the key explicitly, not left to a cascade: a declared
+      // descendant whose key is `NO ACTION` would otherwise stay behind.
       deleted +=
         (
           await tx.execute(
-            sql`DELETE FROM ${sql.identifier(root.table)} WHERE ${owned}`,
+            sql`DELETE FROM ${sql.identifier(path.child)}
+                WHERE ${descendantPredicate(path, owned)}`,
+          )
+        ).rowCount ?? 0;
+    }
+    for (const root of plan.order) {
+      deleted +=
+        (
+          await tx.execute(
+            sql`DELETE FROM ${sql.identifier(root.table)}
+                WHERE ${roots.get(root.table) ?? sql`false`}`,
           )
         ).rowCount ?? 0;
     }
@@ -689,8 +866,15 @@ function enumerationReference(plan: RelationalErasurePlan): string {
     plan.order.map((root) => {
       return [root.table, root.owners];
     }),
-    plan.descendants.map((edge) => {
-      return [edge.child, edge.parent, edge.childColumns, edge.parentColumns];
+    plan.descendants.map((path) => {
+      return [
+        path.child,
+        path.root,
+        path.source,
+        path.hops.map((hop) => {
+          return [hop.childColumns, hop.parent, hop.parentColumns];
+        }),
+      ];
     }),
   ]);
 }
@@ -750,7 +934,8 @@ async function verifyRelationalErasure(
   // disposition rather than an exception the engine has to interpret.
   if (
     plan.unreachableRoots.length > 0 ||
-    plan.unreachableDescendants.length > 0
+    plan.unreachableDescendants.length > 0 ||
+    plan.unattributableDescendants.length > 0
   ) {
     return unresolved("ownership_unknown");
   }
