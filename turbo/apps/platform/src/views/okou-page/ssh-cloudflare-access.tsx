@@ -211,12 +211,15 @@ function accessCredentialField(
   headerName: string,
 ): keyof AccessCredentials | null {
   switch (headerName.toLowerCase()) {
-    case "cf-access-client-id":
+    case "cf-access-client-id": {
       return "clientId";
-    case "cf-access-client-secret":
+    }
+    case "cf-access-client-secret": {
       return "clientSecret";
-    default:
+    }
+    default: {
       return null;
+    }
   }
 }
 
@@ -241,7 +244,7 @@ function accessCredentialsFromClipboard(
   let clientSecret: string | undefined;
   for (const line of lines) {
     const separator = line.indexOf(":");
-    if (separator < 0) {
+    if (separator === -1) {
       return null;
     }
     const field = accessCredentialField(line.slice(0, separator));
