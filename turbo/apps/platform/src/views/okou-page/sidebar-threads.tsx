@@ -1021,22 +1021,19 @@ function ChatThreadFilterMenuItems({
         ) : null}
       </DropdownMenuItem>
       {archiveEnabled ? (
-        <>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => {
-              setArchivedFilter();
-            }}
-          >
-            <Check
-              size={16}
-              className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
-            />
-            {t(($) => {
-              return $.chat.sidebar.archived;
-            })}
-          </DropdownMenuItem>
-        </>
+        <DropdownMenuItem
+          onClick={() => {
+            setArchivedFilter();
+          }}
+        >
+          <Check
+            size={16}
+            className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
+          />
+          {t(($) => {
+            return $.chat.sidebar.archived;
+          })}
+        </DropdownMenuItem>
       ) : null}
     </>
   );
