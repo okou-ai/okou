@@ -559,7 +559,7 @@ test("A hovered category's template stays selectable when the pointer enters its
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("A category row keeps no mark once the pointer is in its covers", async () => {
+test("A category row stays marked while the pointer is in its covers", async () => {
   await openSlashMenu();
   const presentation = slashButton("Presentation");
   const website = slashButton("Website");
@@ -581,11 +581,32 @@ test("A category row keeps no mark once the pointer is in its covers", async () 
   fireEvent.mouseOver(cover, { relatedTarget: website });
   fireEvent.mouseMove(cover);
 
-  // Neither the row the pointer left nor the row it started on stays marked,
-  // so the left column never argues with the covers on the right.
-  expect(website).not.toHaveAttribute("data-active");
+  // The left column identifies the category whose covers remain on the right.
+  expect(website).toHaveAttribute("data-active", "true");
   expect(presentation).not.toHaveAttribute("data-active");
   expect(detailPane()).toHaveAttribute("data-category", "website");
+
+  const illustration = slashButton("Illustration");
+  fireEvent.mouseOut(cover, { relatedTarget: illustration });
+  fireEvent.mouseOver(illustration, { relatedTarget: cover });
+  fireEvent.mouseMove(illustration);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+  });
+  expect(illustration).toHaveAttribute("data-active", "true");
+  expect(website).not.toHaveAttribute("data-active");
+
+  const [firstIllustration] = ILLUSTRATION_TEMPLATE_ITEMS;
+  if (!firstIllustration) {
+    throw new Error("Expected an illustration template");
+  }
+  const illustrationCover = slashButton(firstIllustration.title);
+  fireEvent.mouseOut(illustration, { relatedTarget: illustrationCover });
+  fireEvent.mouseOver(illustrationCover, { relatedTarget: illustration });
+  fireEvent.mouseMove(illustrationCover);
+  expect(illustration).toHaveAttribute("data-active", "true");
+  expect(website).not.toHaveAttribute("data-active");
+  expect(detailPane()).toHaveAttribute("data-category", "illustration");
 });
 
 test("The keyboard selection is marked again once the pointer leaves", async () => {
@@ -596,13 +617,15 @@ test("The keyboard selection is marked again once the pointer leaves", async () 
 
   await user.hover(website);
   await waitFor(() => {
-    expect(presentation).not.toHaveAttribute("data-active");
+    expect(website).toHaveAttribute("data-active", "true");
   });
+  expect(presentation).not.toHaveAttribute("data-active");
 
   await user.unhover(website);
   await waitFor(() => {
     expect(presentation).toHaveAttribute("data-active", "true");
   });
+  expect(website).not.toHaveAttribute("data-active");
   expect(detailPane()).toHaveAttribute("data-category", "slides");
 });
 
