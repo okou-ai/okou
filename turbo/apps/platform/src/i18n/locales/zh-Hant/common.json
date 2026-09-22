@@ -1910,6 +1910,11 @@
       "threads": "聊天",
       "title": "轉發到"
     },
+    "homeTasks": {
+      "existingThread": "繼續聊天",
+      "heading": "從近期工作中提取",
+      "newThread": "新增聊天"
+    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",

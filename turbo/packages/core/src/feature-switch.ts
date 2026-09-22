@@ -90,7 +90,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
-      "Recommend personalized tasks on the agent home page from recent chat activity and the connected connector inventory.",
+      "Recommend personalized tasks from Agent-visible threads and authorized Gmail evidence.",
     enabled: false,
   },
   [FeatureSwitchKey.CustomTemplates]: {
