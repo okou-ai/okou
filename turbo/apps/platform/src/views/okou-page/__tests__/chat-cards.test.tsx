@@ -321,7 +321,7 @@ test("Action-looking URLs embedded in structural text remain content", async () 
   );
 
   await screen.findByText(/Word: prefix/u);
-  expect(screen.queryByTestId("permission-action-card")).toBeNull();
+  expect(screen.queryAllByTestId("permission-action-card")).toHaveLength(0);
   expect(screen.getByText(/Identifier: prefix_/u)).toBeInTheDocument();
   expect(
     screen.getByText(/Hyphenated identifier: prefix-/u),
