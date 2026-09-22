@@ -28,6 +28,8 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
+import { authRoute } from "../auth/auth-route";
+import type { SignalRouteHandler } from "../context/route";
 import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { db$, type Db, type ReadonlyDb, writeDb$ } from "../external/db";
@@ -40,9 +42,9 @@ import {
 } from "../services/built-in-model-key-fixture";
 import { chatEventTypeIn } from "../services/chat-event-type.service";
 import {
-  isTestEndpointAllowed,
-  testEndpointNotFoundResponse,
-} from "./test-endpoint-helpers";
+  isPreviewEndpointAllowed,
+  previewEndpointNotFoundResponse,
+} from "./preview-endpoint-access";
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
 
@@ -594,8 +596,8 @@ async function seedUserVariablesForTest(
 
 const getSlackState$ = computed(async (get) => {
   const request = get(request$);
-  if (!isTestEndpointAllowed(request)) {
-    return testEndpointNotFoundResponse();
+  if (!isPreviewEndpointAllowed(request)) {
+    return previewEndpointNotFoundResponse();
   }
 
   const query = get(queryOf(testSlackStateContract.get));
@@ -815,8 +817,8 @@ async function seedPostSlackUserData(
 
 const postSlackState$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$);
-  if (!isTestEndpointAllowed(request)) {
-    return testEndpointNotFoundResponse();
+  if (!isPreviewEndpointAllowed(request)) {
+    return previewEndpointNotFoundResponse();
   }
 
   const bodyResult = await get(postSlackStateBody$);
@@ -1033,8 +1035,8 @@ async function deleteSlackOrgState(
 
 const deleteSlackState$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$);
-  if (!isTestEndpointAllowed(request)) {
-    return testEndpointNotFoundResponse();
+  if (!isPreviewEndpointAllowed(request)) {
+    return previewEndpointNotFoundResponse();
   }
 
   const query = get(queryOf(testSlackStateContract.delete));
@@ -1088,5 +1090,35 @@ export const testSlackStateRoutes: readonly RouteEntry[] = [
   {
     route: testSlackStateContract.delete,
     handler: deleteSlackState$,
+  },
+];
+
+const previewSlackStateAuth = {
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+} as const;
+
+function previewSlackStateRoute<T>(handler$: SignalRouteHandler<T>) {
+  const authenticatedHandler$ = authRoute(previewSlackStateAuth, handler$);
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (!isPreviewEndpointAllowed(get(request$))) {
+      return previewEndpointNotFoundResponse();
+    }
+    return await set(authenticatedHandler$, signal);
+  });
+}
+
+export const slackStatePreviewRoutes: readonly RouteEntry[] = [
+  {
+    route: testSlackStateContract.get,
+    handler: previewSlackStateRoute(getSlackState$),
+  },
+  {
+    route: testSlackStateContract.post,
+    handler: previewSlackStateRoute(postSlackState$),
+  },
+  {
+    route: testSlackStateContract.delete,
+    handler: previewSlackStateRoute(deleteSlackState$),
   },
 ];

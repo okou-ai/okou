@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   SocialDataJobs = "socialDataJobs",
-  DurableUserExport = "durableUserExport",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
@@ -58,7 +57,6 @@ export enum FeatureSwitchKey {
   AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
-  McpServer = "mcpServer",
   VncAccess = "vncAccess",
   RunUsage = "runUsage",
   PiLoop = "piLoop",

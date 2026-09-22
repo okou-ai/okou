@@ -67,7 +67,7 @@ test("Paid tool guidance requires both UI rollouts", async () => {
   ).not.toBeInTheDocument();
 });
 
-async function selectCreation(mode: "image" | "video") {
+async function selectCreation() {
   const user = userEvent.setup({ delay: null });
   const editor = await screen.findByRole("textbox", { name: "Message" });
   await user.click(editor);
@@ -79,32 +79,23 @@ async function selectCreation(mode: "image" | "video") {
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  await screen.findByTestId("composer-create-mode");
-  if (mode === "video") {
-    click(screen.getByRole("combobox", { name: "Choose a type" }));
-    click(await screen.findByRole("option", { name: "Video" }));
-  }
+  await screen.findByLabelText("Remove Image");
 }
 
-test.each(["image", "video"] as const)(
-  "Explicit %s creation remains blocked when the settings rollout is off",
-  async (mode) => {
-    const capture = mockTemplateChat();
-    context.mocks.api(paidToolsContract.get, ({ respond }) => {
-      return respond(200, { disabledTools: [`${mode}-generation`] });
-    });
-    const editor = await setupComposer(false);
-    await selectCreation(mode);
-    await fill(editor, "Create a launch scene");
-    expect(screen.queryByText("Open settings")).not.toBeInTheDocument();
-    click(button("Send"));
-    await screen.findByText(
-      `${mode === "image" ? "Image" : "Video"} generation is off for you`,
-    );
-    expect(capture.runPrompts).toStrictEqual([]);
-    expect(editor).toHaveTextContent("Create a launch scene");
-  },
-);
+test("Explicit image creation remains blocked when the settings rollout is off", async () => {
+  const capture = mockTemplateChat();
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  const editor = await setupComposer(false);
+  await selectCreation();
+  await fill(editor, "Create a launch scene");
+  expect(screen.queryByText("Open settings")).not.toBeInTheDocument();
+  click(button("Send"));
+  await screen.findByText("Image generation is off for you");
+  expect(capture.runPrompts).toStrictEqual([]);
+  expect(editor).toHaveTextContent("Create a launch scene");
+});
 
 test("An image creation notice opens settings and a confirmed save restores creation", async () => {
   const capture = mockTemplateChat();
@@ -153,7 +144,7 @@ test("An image creation notice opens settings and a confirmed save restores crea
   });
 });
 
-test("A pending creation check keeps its submitted intent while the picker changes", async () => {
+test("A pending creation check keeps its submitted intent while the type changes", async () => {
   const capture = mockTemplateChat();
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
@@ -163,7 +154,7 @@ test("A pending creation check keeps its submitted intent while the picker chang
     return respond(200, { disabledTools: ["video-generation"] });
   });
   const editor = await setupComposer(false);
-  await selectCreation("image");
+  await selectCreation();
   await fill(editor, "Create a launch scene");
   const send = button("Send");
   click(send);
@@ -171,8 +162,7 @@ test("A pending creation check keeps its submitted intent while the picker chang
   await waitFor(() => {
     expect(button("Send")).toBeDisabled();
   });
-  click(screen.getByRole("combobox", { name: "Choose a type" }));
-  click(await screen.findByRole("option", { name: "Video" }));
+  click(button("Remove Image"));
   release.resolve();
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -181,9 +171,6 @@ test("A pending creation check keeps its submitted intent while the picker chang
     type: "additional_info",
     text: "Create an image.",
   });
-  expect(JSON.stringify(capture.sentMessages[0])).not.toContain(
-    "Create a video.",
-  );
 });
 
 test("A failed preference read blocks explicit creation but ordinary chat remains available", async () => {
@@ -197,12 +184,12 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
     });
   });
   const editor = await setupComposer(false);
-  await selectCreation("image");
+  await selectCreation();
   await fill(editor, "Explain the launch plan");
   click(button("Send"));
   await screen.findByText("Tool settings are temporarily unavailable");
   expect(capture.runPrompts).toStrictEqual([]);
-  click(button("Exit create mode"));
+  click(button("Remove Image"));
   click(button("Send"));
   await waitFor(() => {
     return expect(capture.runPrompts).toHaveLength(1);
@@ -250,7 +237,6 @@ test("A selected disabled video template can still be discussed without a Create
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(screen.queryByTestId("composer-create-mode")).not.toBeInTheDocument();
   await userEvent.setup({ delay: null }).click(editor);
   await userEvent
     .setup({ delay: null })
@@ -277,7 +263,7 @@ test("A stale workspace preference response never replaces the current owner's n
     return respond(200, { disabledTools: ["video-generation"] });
   });
   await setupComposer();
-  await selectCreation("image");
+  await selectCreation();
   await firstRequest.promise;
   act(() => {
     context.mocks.clerk().organization({
@@ -295,7 +281,12 @@ test("A stale workspace preference response never replaces the current owner's n
   expect(
     screen.queryByText("Image generation is off for you"),
   ).not.toBeInTheDocument();
-  click(screen.getByRole("combobox", { name: "Choose a type" }));
-  click(await screen.findByRole("option", { name: "Video" }));
-  await screen.findByText("Video generation is off for you");
+  // The second workspace disables video instead, and its own template tab is
+  // where that answer shows: a stale read would still be naming image here.
+  click(button("Remove Image"));
+  const dialog = await openTemplatePicker(
+    userEvent.setup({ delay: null }),
+    "Video",
+  );
+  await within(dialog).findByText("Video generation is off for you");
 });

@@ -378,11 +378,13 @@ export function ActivityHeaderCard({
                 {showModelDetail && detail.selectedModel ? (
                   <TooltipProvider>
                     <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-foreground whitespace-nowrap cursor-default">
-                          {detail.selectedModel}
-                        </span>
-                      </TooltipTrigger>
+                      <TooltipTrigger
+                        render={
+                          <span className="text-foreground whitespace-nowrap cursor-default">
+                            {detail.selectedModel}
+                          </span>
+                        }
+                      />
                       <TooltipContent>
                         {t(
                           ($) => {
@@ -442,25 +444,27 @@ export function ActivityHeaderCard({
             {(logDetail || onDownload) && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t(($) => {
-                        return $.activity.detail.downloadRawData;
-                      })}
-                      className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground p-0"
-                      onClick={() => {
-                        if (onDownload) {
-                          onDownload();
-                        } else if (logDetail) {
-                          downloadJson(events, detail.id, logDetail);
-                        }
-                      }}
-                    >
-                      <Download size={14} />
-                    </Button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={t(($) => {
+                          return $.activity.detail.downloadRawData;
+                        })}
+                        className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground p-0"
+                        onClick={() => {
+                          if (onDownload) {
+                            onDownload();
+                          } else if (logDetail) {
+                            downloadJson(events, detail.id, logDetail);
+                          }
+                        }}
+                      >
+                        <Download size={14} />
+                      </Button>
+                    }
+                  />
                   <TooltipContent side="left">
                     <p className="text-xs">
                       {t(($) => {

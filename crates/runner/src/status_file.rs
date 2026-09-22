@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::RunnerError;
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const STATUS_FILE_NAME: &str = "status.json";
 

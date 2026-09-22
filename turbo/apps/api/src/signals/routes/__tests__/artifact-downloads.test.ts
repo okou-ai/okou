@@ -11,10 +11,7 @@ import {
   artifactSharesContract,
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import {
-  hostContract,
-  type HostedSiteFilesResponse,
-} from "@okouai/api-contracts/contracts/host";
+import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
@@ -120,9 +117,17 @@ async function rejectDownload(actor: ApiTestUser, url: string) {
 const siteFiles = Object.freeze([
   hostedTextFile("/index.html", '<a href="pages/report.html">Report</a>'),
   hostedTextFile("/pages/report.html", "<main>Report details</main>"),
-  hostedTextFile("/assets/site.css", "main { color: green }", "text/css"),
-  hostedTextFile("/assets/site.js", "console.log('report')", "text/javascript"),
-  hostedTextFile("/assets/chart.svg", "<svg></svg>", "image/svg+xml"),
+  hostedTextFile(
+    "/assets/site-1a9b3c57.css",
+    "main { color: green }",
+    "text/css",
+  ),
+  hostedTextFile(
+    "/assets/site-6d2e8f31.js",
+    "console.log('report')",
+    "text/javascript",
+  ),
+  hostedTextFile("/assets/chart-2b7e10d4.svg", "<svg></svg>", "image/svg+xml"),
 ]);
 
 async function fixture(privateArtifacts = true) {
@@ -275,274 +280,6 @@ function expectCompleteSite(
   );
 }
 
-function expectSharedSnapshot(site: HostedSiteFilesResponse) {
-  const prefix = storageKey(site.files[0]!.downloadUrl).slice(
-    0,
-    -site.files[0]!.path.length,
-  );
-  expect(prefix).toMatch(
-    /^shared-artifacts\/okou\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/u,
-  );
-  expect(prefix.endsWith(`/${site.deploymentId}`)).toBeTruthy();
-  for (const file of site.files) {
-    expect(storageKey(file.downloadUrl)).toBe(`${prefix}${file.path}`);
-  }
-}
-
-test("downloads every page and asset in an owner-only site", async () => {
-  const { actor, host, deploy } = await fixture();
-  const site = await deploy();
-  const result = await download(actor, site.url);
-  expect(result.headers.get("cache-control")).toBe("private, no-store");
-  expect(result.body.kind).toBe("html");
-  if (result.body.kind !== "html") {
-    throw new Error("Expected a hosted-site download");
-  }
-  expectCompleteSite(result.body.site, site.deploymentId);
-  for (const file of result.body.site.files) {
-    expect(storageKey(file.downloadUrl)).toBe(
-      `private-sites/okou/${site.deploymentId}${file.path}`,
-    );
-  }
-  const cloned = await host.readHostedSiteFiles(
-    actor,
-    `dpl-${site.deploymentId}`,
-  );
-  expectCompleteSite(cloned, site.deploymentId);
-  const runDownload = await accept(
-    api()(artifactDownloadsContract).download({
-      headers: runHeaders(actor, ["artifact:read"]),
-      params: { reference: reference(site.url) },
-    }),
-    [200],
-  );
-  expect(runDownload.body).toStrictEqual(result.body);
-  const runClone = await accept(cloneReference(actor, site.url), [200]);
-  expect(runClone.headers.get("cache-control")).toBe("private, no-store");
-  expect(runClone.body).toStrictEqual(result.body.site);
-});
-
-test("only-me sites deny other members and outsiders without exposing a manifest", async () => {
-  const { actor, bdd, host, members, deploy } = await fixture();
-  const site = await deploy();
-  const colleague = bdd.user({ orgId: actor.orgId });
-  members.add(colleague.userId);
-  for (const reader of [colleague, bdd.user()]) {
-    await rejectDownload(reader, site.url);
-    await accept(cloneReference(reader, site.url), [404]);
-    for (const slug of [site.publicSlug, `dpl-${site.deploymentId}`]) {
-      const response = await host.requestHostedSiteFiles(reader, slug, [404]);
-      expect(response.body).not.toHaveProperty("files");
-    }
-  }
-});
-
-test("organization downloads and clones use current membership across active organizations", async () => {
-  const { actor, bdd, host, members, deploy, share } = await fixture();
-  const site = await deploy();
-  const target = { kind: "html" as const, id: site.deploymentId };
-  const shared = await share(target, "organization");
-  const recipient = bdd.user();
-  members.add(recipient.userId);
-  const runClone = await accept(cloneReference(recipient, shared.url!), [200]);
-  expectCompleteSite(runClone.body, site.deploymentId);
-  expectSharedSnapshot(runClone.body);
-
-  for (const reader of [recipient, { ...recipient, orgId: null }]) {
-    const result = await download(reader, shared.url!);
-    if (result.body.kind !== "html") {
-      throw new Error("Expected a shared-site download");
-    }
-    expectCompleteSite(result.body.site, site.deploymentId);
-    expectSharedSnapshot(result.body.site);
-    const cloned = await host.readHostedSiteFiles(
-      reader,
-      `dpl-${site.deploymentId}`,
-    );
-    expectCompleteSite(cloned, site.deploymentId);
-    expectSharedSnapshot(cloned);
-    expect(cloned).toStrictEqual(result.body.site);
-  }
-
-  members.delete(recipient.userId);
-  await rejectDownload(recipient, site.url);
-  await host.requestHostedSiteFiles(
-    recipient,
-    `dpl-${site.deploymentId}`,
-    [404],
-  );
-  members.add(recipient.userId);
-  await share(target, "private");
-  await rejectDownload(recipient, shared.url!);
-  await accept(cloneReference(recipient, shared.url!), [404]);
-  await host.requestHostedSiteFiles(
-    recipient,
-    `dpl-${site.deploymentId}`,
-    [404],
-  );
-  await download(actor, site.url);
-});
-
-test("public snapshots remain independent when the same preferred slug is published again", async () => {
-  const { actor, bdd, host, deploy, share } = await fixture();
-  const first = await deploy();
-  const target = { kind: "html" as const, id: first.deploymentId };
-  const published = await share(target, "public");
-  const hostname = new URL(published.url!).hostname;
-  const alias = hostname.split(".")[0]!;
-  function clonePublished(reader: ApiTestUser) {
-    session(reader);
-    return api()(hostContract).files({
-      headers,
-      params: { publicSlug: alias },
-      query: { hostname },
-    });
-  }
-  const second = await deploy(first.site);
-  expect(second.siteId).not.toBe(first.siteId);
-  expect(second.publicSlug).toMatch(
-    new RegExp(`^${first.site}-[a-z0-9]{4}$`, "u"),
-  );
-  expect(second.deploymentVersion).toBe(1);
-  const outsider = bdd.user({ orgId: null });
-  const publicRunner = bdd.user();
-  const runClone = await accept(cloneReference(publicRunner, first.url), [200]);
-  expectCompleteSite(runClone.body, first.deploymentId);
-  expectSharedSnapshot(runClone.body);
-
-  const selected = await download(outsider, first.url);
-  if (selected.body.kind !== "html") {
-    throw new Error("Expected a public-site download");
-  }
-  expectCompleteSite(selected.body.site, first.deploymentId);
-  expectSharedSnapshot(selected.body.site);
-  const outsiderClone = await host.readHostedSiteFiles(outsider, alias);
-  expectCompleteSite(outsiderClone, first.deploymentId);
-  expectSharedSnapshot(outsiderClone);
-  for (const reader of [outsider, actor]) {
-    const cloned = await accept(clonePublished(reader), [200]);
-    expectCompleteSite(cloned.body, first.deploymentId);
-    expectSharedSnapshot(cloned.body);
-  }
-  expectCompleteSite(
-    await host.readHostedSiteFiles(actor, first.publicSlug),
-    first.deploymentId,
-  );
-  expectCompleteSite(
-    await host.readHostedSiteFiles(actor, second.publicSlug),
-    second.deploymentId,
-  );
-  await rejectDownload(outsider, second.url);
-  await host.requestHostedSiteFiles(outsider, second.publicSlug, [404]);
-  await host.requestHostedSiteFiles(
-    outsider,
-    `dpl-${second.deploymentId}`,
-    [404],
-  );
-  await host.requestHostedSiteFiles(outsider, alias, [404], 2);
-
-  const secondTarget = { kind: "html" as const, id: second.deploymentId };
-  const secondPublished = await share(secondTarget, "public");
-  const secondAlias = new URL(secondPublished.url!).hostname.split(".")[0]!;
-  expect(secondAlias).not.toBe(alias);
-  expect((await download(outsider, first.url)).body).toStrictEqual(
-    selected.body,
-  );
-  expectCompleteSite(
-    await host.readHostedSiteFiles(outsider, `dpl-${first.deploymentId}`),
-    first.deploymentId,
-  );
-  const original = await host.readHostedSiteFiles(outsider, alias);
-  expectCompleteSite(original, first.deploymentId);
-  expectSharedSnapshot(original);
-  const updated = await host.readHostedSiteFiles(outsider, secondAlias);
-  expectCompleteSite(updated, second.deploymentId);
-  expectSharedSnapshot(updated);
-
-  await share(target, "private");
-  await rejectDownload(outsider, first.url);
-  await accept(cloneReference(publicRunner, first.url), [404]);
-  await host.requestHostedSiteFiles(outsider, alias, [404]);
-  const revoked = await accept(clonePublished(actor), [404]);
-  expect(revoked.body).not.toHaveProperty("files");
-  const retained = await accept(
-    cloneReference(publicRunner, second.url),
-    [200],
-  );
-  expectCompleteSite(retained.body, second.deploymentId);
-  expectSharedSnapshot(retained.body);
-  expectCompleteSite(
-    await host.readHostedSiteFiles(outsider, secondAlias),
-    second.deploymentId,
-  );
-
-  await share(secondTarget, "private");
-  await rejectDownload(outsider, second.url);
-  await accept(cloneReference(publicRunner, second.url), [404]);
-  await host.requestHostedSiteFiles(outsider, secondAlias, [404]);
-  expectCompleteSite(
-    await host.readHostedSiteFiles(actor, first.publicSlug),
-    first.deploymentId,
-  );
-  expectCompleteSite(
-    await host.readHostedSiteFiles(actor, second.publicSlug),
-    second.deploymentId,
-  );
-});
-
-test("public downloads still require authentication and the matching read capability", async () => {
-  const { actor, host, deploy, share } = await fixture();
-  const site = await deploy();
-  const published = await share(
-    { kind: "html", id: site.deploymentId },
-    "public",
-  );
-  const alias = new URL(published.url!).hostname.split(".")[0]!;
-
-  const insufficientCapability = await accept(
-    api()(artifactDownloadsContract).download({
-      headers: runHeaders(actor, ["host:read", "file:read", "artifact:write"]),
-      params: { reference: reference(site.url) },
-    }),
-    [403],
-  );
-  expect(insufficientCapability.body).not.toHaveProperty("site");
-  expect(insufficientCapability.body).not.toHaveProperty("url");
-  await accept(
-    api()(hostContract).files({
-      headers: runHeaders(actor, ["artifact:read"]),
-      params: { publicSlug: alias },
-      query: {},
-    }),
-    [403],
-  );
-  await accept(
-    api()(artifactDownloadsContract).files({
-      headers: runHeaders(actor, ["artifact:read"]),
-      params: { reference: reference(site.url) },
-    }),
-    [403],
-  );
-  context.mocks.clerk.authenticateRequest.mockResolvedValue({
-    isAuthenticated: false,
-  });
-  await accept(
-    api()(artifactDownloadsContract).download({
-      headers: {},
-      params: { reference: reference(site.url) },
-    }),
-    [401],
-  );
-  await accept(
-    api()(artifactDownloadsContract).files({
-      headers: {},
-      params: { reference: reference(site.url) },
-    }),
-    [401],
-  );
-  await host.requestHostedSiteFiles(null, alias, [401]);
-});
-
 test.each([
   { filename: "report.pdf", contentType: "application/pdf" },
   { filename: "standalone.html", contentType: "text/html" },
@@ -611,51 +348,6 @@ test("legacy public sites are cloneable outside their originating organization",
     const result = await host.readHostedSiteFiles(outsider, slug);
     expectCompleteSite(result, site.deploymentId);
     for (const file of result.files) {
-      expect(storageKey(file.downloadUrl)).toMatch(/^sites\//u);
-    }
-  }
-});
-
-test("legacy public sources stay readable when the same preferred slug creates a private site", async () => {
-  const { actor, bdd, host, deploy } = await fixture(false);
-  const published = await deploy();
-  await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.PrivateArtifacts]: true,
-  });
-  const privateSite = await deploy(published.site);
-  expect(privateSite.siteId).not.toBe(published.siteId);
-  expect(privateSite.publicSlug).toMatch(
-    new RegExp(`^${published.site}-[a-z0-9]{4}$`, "u"),
-  );
-  expect(privateSite.deploymentVersion).toBe(1);
-  expect(
-    (await host.readHostedSiteFiles(actor, published.publicSlug)).deploymentId,
-  ).toBe(published.deploymentId);
-  expectCompleteSite(
-    await host.readHostedSiteFiles(actor, privateSite.publicSlug),
-    privateSite.deploymentId,
-  );
-
-  const outsider = bdd.user({ orgId: null });
-  await rejectDownload(outsider, privateSite.url);
-  for (const slug of [
-    privateSite.publicSlug,
-    `dpl-${privateSite.deploymentId}`,
-  ]) {
-    await host.requestHostedSiteFiles(outsider, slug, [404]);
-  }
-  for (const reader of [actor, outsider]) {
-    session(reader);
-    const cloned = await accept(
-      api()(hostContract).files({
-        headers,
-        params: { publicSlug: published.publicSlug },
-        query: { hostname: new URL(published.url).hostname },
-      }),
-      [200],
-    );
-    expectCompleteSite(cloned.body, published.deploymentId);
-    for (const file of cloned.body.files) {
       expect(storageKey(file.downloadUrl)).toMatch(/^sites\//u);
     }
   }

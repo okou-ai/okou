@@ -1725,6 +1725,45 @@
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
       "upgradeWorkspace": "Upgrade your workspace"
     },
+    "browserInput": {
+      "applyFailed": "Couldn't add the information. Your entries are still here. Try again.",
+      "applying": "Adding information",
+      "applyingDescription": "The browser is finishing this request.",
+      "callbackFailed": "The agent wasn't notified. Try Continue again.",
+      "cancel": "Cancel",
+      "cancelFailed": "Couldn't cancel this request. Try again.",
+      "cancelled": "Request cancelled",
+      "cancelledDescription": "No information was added. Continue to notify the agent.",
+      "cancelling": "Cancelling…",
+      "completed": "Information added",
+      "completedDescription": "The information was added to the browser. Continue to notify the agent.",
+      "continue": "Continue",
+      "continuing": "Continuing…",
+      "delivered": "Agent notified",
+      "deliveredDescription": "The agent can continue now.",
+      "description": "Enter the information requested for this site.",
+      "documentTitle": "Browser input",
+      "expired": "Request expired",
+      "expiredDescription": "The browser closed or this request is no longer active.",
+      "loadFailed": "Couldn't load this request",
+      "loadFailedDescription": "Try again in a moment.",
+      "loading": "Loading browser input",
+      "loadingDescription": "Checking this request…",
+      "open": "Enter information",
+      "optional": "(Optional)",
+      "required": "(Required)",
+      "retry": "Retry",
+      "site": "Site",
+      "stale": "Fields changed",
+      "staleDescription": "Ask the agent to create a new request.",
+      "submit": "Add to browser",
+      "submitting": "Adding…",
+      "title": "Enter information in browser",
+      "unavailable": "Request unavailable",
+      "unavailableDescription": "This browser input request is invalid or no longer available.",
+      "uncertain": "Check the browser",
+      "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
+    },
     "cards": {
       "viewDetails": "View details"
     },
@@ -1735,21 +1774,12 @@
       "create": {
         "addStyle": "Add style",
         "addTemplate": "Add template",
-        "chooseType": "Choose a type",
-        "exit": "Exit create mode",
-        "image": "Create image",
-        "imageDescription": "Turn an idea into a visual",
         "imagePlaceholder": "Describe the image you want to create…",
-        "presentation": "Create presentation",
-        "presentationDescription": "Slides for your story",
         "presentationPlaceholder": "What is your presentation about?",
         "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
-        "slideCountRange": "{{range}} slides",
-        "video": "Create video",
-        "videoDescription": "Bring your ideas to motion",
-        "videoPlaceholder": "Describe the video you want to create…"
+        "slideCountRange": "{{range}} slides"
       },
       "createWorkflow": "Create workflow",
       "imageModelForThisChat": "Image model for this chat",
@@ -2110,6 +2140,7 @@
       "allCaughtUp": "All caught up",
       "allChats": "All chats",
       "archive": "Archive chat",
+      "archived": "Archived",
       "chatsWith": "Chats with {{agentName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
@@ -2121,6 +2152,7 @@
       "movePinDown": "Move down",
       "movePinUp": "Move up",
       "newChatWith": "New chat with {{agentName}}",
+      "noArchived": "No archived chats",
       "noUnread": "No unread chats",
       "openChatMenu": "Open chat menu",
       "openListMenu": "Open chat list menu",
@@ -2129,13 +2161,12 @@
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
       "showAllChats": "Show all chats",
-      "showArchived": "Show archived",
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
       "unarchive": "Unarchive chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
-      "unreadOnly": "Unread only"
+      "unreadOnly": "Unread"
     },
     "startCards": {
       "kinds": {
@@ -2280,40 +2311,6 @@
             "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Turn a photo into a video",
-            "prompt": "Animate a photo I provide with natural movement. Keep the subject recognizable and ask what should move."
-          },
-          "brandIntro": {
-            "label": "Make a brand intro",
-            "prompt": "Create a short opening video for my brand. Use the logo and brand details I provide and help me choose the mood."
-          },
-          "eventPromo": {
-            "label": "Promote my event",
-            "prompt": "Create a short promotional video for my event. Ask about the event, audience, and details to include."
-          },
-          "loopingBackground": {
-            "label": "Create a looping background",
-            "prompt": "Create a seamless looping video background with gentle motion. Ask what scene and mood I want."
-          },
-          "productDemo": {
-            "label": "Show my product in motion",
-            "prompt": "Create a short product showcase from my product photo. Keep its appearance consistent and highlight the feature I choose."
-          },
-          "socialClip": {
-            "label": "Make a clip for social media",
-            "prompt": "Create a short video for social media. Help me choose a clear message and a visual style for my audience."
-          },
-          "videoGreeting": {
-            "label": "Create a video greeting",
-            "prompt": "Create a short video greeting for a birthday, holiday, or celebration. Ask about the occasion, recipient, and message."
-          },
-          "visualExplainer": {
-            "label": "Explain an idea visually",
-            "prompt": "Create a short video that makes one idea easy to understand. Ask which idea to explain and who it is for."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Give people a place to book me",
@@ -2395,13 +2392,11 @@
         "image": "Image styles",
         "nextPage": "Next page",
         "previousPage": "Previous page",
-        "video": "Video templates",
         "website": "Website templates"
       },
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",
-        "video": "Video",
         "visualization": "Visualization",
         "website": "Website",
         "workflow": "Workflow"
@@ -3419,13 +3414,24 @@
         "connectTitle": "Connect to Lark"
       },
       "slack": {
+        "accountInUseDescription": "This Slack account is connected to another Okou account. Disconnect it there before trying again.",
+        "accountInUseTitle": "Slack account already connected",
+        "accountMismatchDescription": "Your Okou account currently uses Slack account {{currentAccount}} here. Switch to {{requestedAccount}}, the account that opened this link?",
+        "accountMismatchDescriptionWorkspace": "Your Okou account currently uses Slack account {{currentAccount}} in {{workspace}}. Switch to {{requestedAccount}}, the account that opened this link?",
+        "accountMismatchTitle": "Switch Slack account?",
         "connectDescription": "Link your account to this Slack workspace so you can interact with your agent directly from Slack.",
         "connectTitle": "Connect to Slack",
+        "errorFallback": "Could not check or start the Slack connection. Try again.",
         "invalidDescription": "This page is meant to be opened from a Slack connect link.",
+        "keepAccount": "Keep {{account}}",
         "open": "Open Slack",
         "successDescription": "Mention the installed bot in any channel or send a DM to start chatting.",
         "successDescriptionWorkspace": "You're connected to {{workspace}}. Mention the installed bot in any channel or send a DM to start chatting.",
-        "successTitle": "Connected to Slack!"
+        "successTitle": "Connected to Slack!",
+        "switchAccount": "Switch to {{account}}",
+        "workspaceMismatchDescription": "This Slack workspace is not available to your current Okou organization. Switch organizations or ask an admin for help.",
+        "workspaceMismatchDescriptionNamed": "Your current Okou organization is connected to {{workspace}}. Switch organizations or ask an admin to uninstall it before connecting this Slack workspace.",
+        "workspaceMismatchTitle": "Slack workspace doesn't match"
       },
       "teams": {
         "connectDescription": "Link your Teams account so you can interact with your agent directly from Microsoft Teams.",
@@ -5836,8 +5842,7 @@
     "status": {
       "availableNow": "Available now",
       "inUse_one": "{{active}} of {{limit}} slot in use",
-      "inUse_other": "{{active}} of {{limit}} slots in use",
-      "waitingForSandbox": "Waiting for Sandbox"
+      "inUse_other": "{{active}} of {{limit}} slots in use"
     },
     "tiers": {
       "custom": "Custom",
@@ -5915,7 +5920,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Reset",
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
@@ -6251,7 +6255,6 @@
       },
       "reset": {
         "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
-        "expiresAt": "Soonest reset expires {{date}}",
         "progress": "Resetting...",
         "remaining_one": "{{value}} reset left",
         "remaining_other": "{{value}} resets left",

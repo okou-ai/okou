@@ -4,7 +4,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
-import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { eq } from "drizzle-orm";
 
@@ -359,6 +358,7 @@ const notifyAfterConnect$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly pendingPrompt: string | null;
+      readonly replacedSlackUserIds?: readonly string[];
     },
     signal: AbortSignal,
   ): void => {
@@ -374,6 +374,9 @@ const notifyAfterConnect$ = command(
               userId: args.userId,
               ...(args.pendingPrompt
                 ? { pendingPrompt: args.pendingPrompt }
+                : {}),
+              ...(args.replacedSlackUserIds
+                ? { replacedSlackUserIds: args.replacedSlackUserIds }
                 : {}),
             },
             signal,
@@ -438,16 +441,22 @@ const handlePlatformInstall$ = command(
       );
     }
 
-    const writeDb = set(writeDb$);
-    await writeDb
-      .insert(slackOrgConnections)
-      .values({
-        slackUserId: args.authedUserId,
-        slackWorkspaceId: args.installation.slackWorkspaceId,
+    const connectionResult = await set(
+      connectSlackWorkspace$,
+      {
         userId: args.state.userId,
-      })
-      .onConflictDoNothing();
+        orgId: args.state.orgId,
+        orgRole: "admin",
+        workspaceId: args.installation.slackWorkspaceId,
+        slackUserId: args.authedUserId,
+        connectionIntent: "connect",
+      },
+      signal,
+    );
     signal.throwIfAborted();
+    if (connectionResult.kind !== "ok") {
+      return settingsErrorRedirect(connectionResult.message);
+    }
 
     set(
       notifyAfterConnect$,
@@ -457,6 +466,7 @@ const handlePlatformInstall$ = command(
         orgId: args.state.orgId,
         userId: args.state.userId,
         pendingPrompt: args.state.prompt,
+        replacedSlackUserIds: connectionResult.replacedSlackUserIds,
       },
       signal,
     );
@@ -725,6 +735,7 @@ const handleConnectCallback$ = command(
         orgRole: member.role,
         workspaceId: installation.slackWorkspaceId,
         slackUserId: oauthResult.authedUserId,
+        connectionIntent: "connect",
       },
       signal,
     );
@@ -749,6 +760,7 @@ const handleConnectCallback$ = command(
         orgId: args.state.orgId,
         userId: args.state.userId,
         pendingPrompt: args.state.prompt,
+        replacedSlackUserIds: connectionResult.replacedSlackUserIds,
       },
       signal,
     );

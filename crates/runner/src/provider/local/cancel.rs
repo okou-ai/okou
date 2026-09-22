@@ -9,12 +9,12 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::ids::RunId;
 use crate::local_queue;
 use crate::local_queue::{CancelTargetState, LocalQueue};
 #[cfg(test)]
 use crate::run_cancellation::RunCancellationRegistration;
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
+use runner_types::ids::RunId;
 
 #[cfg(test)]
 use super::ScanObserver;

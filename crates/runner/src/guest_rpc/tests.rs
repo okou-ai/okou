@@ -57,7 +57,7 @@ impl GuestRpcAcceptor for Acceptor {
 }
 
 struct Harness {
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     run: Option<Run>,
     incoming: mpsc::Sender<AcceptedGuestRpc>,
     cancelled: CancellationToken,
@@ -76,7 +76,7 @@ impl Harness {
     fn start(with_usage: bool) -> Self {
         let (incoming, receiver) = mpsc::channel(16);
         let cancelled = CancellationToken::new();
-        let run_id = crate::ids::RunId::new_v4();
+        let run_id = runner_types::ids::RunId::new_v4();
         let runtime = Runtime {
             ssh: None,
             vnc: None,

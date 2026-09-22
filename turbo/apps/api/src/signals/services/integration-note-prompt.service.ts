@@ -22,15 +22,16 @@ interface IntegrationNotePromptInputs {
 
 /**
  * A private artifact address is owner-scoped and is not resolved by the chat
- * surface, so linking one in the final reply hands the user something they
- * cannot open there. Uploading the file is the only delivery that survives the
- * hop — except for a site or page, which has no single renderable file.
+ * surface, so linking one alone does not deliver the artifact there. Uploading
+ * gives the external surface a displayable copy — except for a site or page,
+ * which has no single renderable file — while retaining the private address
+ * lets the owner open the artifact after returning to the web app.
  */
 function privateArtifactFinalReplyLine(args: {
   readonly surface: string;
   readonly uploadCommand: string;
 }): string {
-  return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the final reply carries something the user can open.`;
+  return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private artifact address in the final reply so the owner can open it after returning to the web app.`;
 }
 
 function integrationNoteLines(

@@ -6,7 +6,6 @@ use sandbox::SandboxId;
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
-use crate::ids::RunId;
 use crate::paths::RunnerPaths;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
@@ -15,6 +14,7 @@ use crate::workspace_image_cache::{
     WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest, WorkspaceImagePromotionContext,
     WorkspaceImagePromotionOutcome, WorkspaceImagePromotionRequest,
 };
+use runner_types::ids::RunId;
 
 pub(crate) const TEST_COMPLETED_AT: &str = "2026-06-03T00:00:00.000Z";
 const TEST_WORKSPACE_IMAGE: &[u8] = b"workspace image";

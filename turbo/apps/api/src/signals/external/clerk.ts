@@ -381,6 +381,44 @@ export function isClerkResourceNotFound(error: unknown): boolean {
   return isClerkAPIResponseError(error) && error.status === 404;
 }
 
+export type ClerkOrganizationInvitationConflict =
+  | "already_member"
+  | "already_invited";
+
+/**
+ * Clerk rejects an invitation when the address is already a member or still
+ * has an active invitation. Keep this narrower than a general Clerk 4xx so
+ * configuration, authorization, and validation failures remain server errors.
+ */
+export function clerkOrganizationInvitationConflict(
+  error: unknown,
+): ClerkOrganizationInvitationConflict | null {
+  if (
+    !isClerkAPIResponseError(error) ||
+    (error.status !== 400 && error.status !== 409 && error.status !== 422)
+  ) {
+    return null;
+  }
+  if (
+    error.errors.some(({ code }) => {
+      return code === "already_a_member_in_organization";
+    })
+  ) {
+    return "already_member";
+  }
+  if (
+    error.errors.some(({ code }) => {
+      return (
+        code === "duplicate_record" ||
+        code === "organization_invitation_not_unique"
+      );
+    })
+  ) {
+    return "already_invited";
+  }
+  return null;
+}
+
 interface ClerkReadRetry {
   readonly delayMs: number;
   readonly providerStatus: number | null;

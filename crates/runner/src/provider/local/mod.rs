@@ -20,8 +20,8 @@ use tracing::{info, warn};
 use super::{ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate, JobProvider};
 use crate::local_queue::{LocalClaimResult, LocalDiscoveredJob, LocalQueue};
 use crate::run_cancellation::RunCancellationRegistry;
-use crate::types::{CompleteRequest, ExecutionContext, HeartbeatState};
 use cancel::{LocalCancelScanner, LocalCancelWatcher};
+use runner_types::types::{CompleteRequest, ExecutionContext, HeartbeatState};
 use watch::{QueueFileKind, RECONCILE_INTERVAL, ensure_watcher, next_change_or_pending};
 
 #[cfg(test)]
@@ -273,7 +273,7 @@ impl JobProvider for LocalProvider {
             resume_session: req
                 .session_id
                 .as_ref()
-                .map(|id| crate::types::ResumeSession::inline(id.clone(), String::new())),
+                .map(|id| runner_types::types::ResumeSession::inline(id.clone(), String::new())),
             secret_values: environment_merge.secret_values,
             local_secret_env_keys: environment_merge.local_secret_env_keys,
             encrypted_secrets: None,

@@ -1,6 +1,6 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { EllipsisVertical, Plus, RotateCcw } from "lucide-react";
+import { EllipsisVertical, Plus } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -50,6 +50,7 @@ import { PersonalCodexDeviceAuthDialog } from "../settings/codex-device-auth-dia
 import { SettingsSectionHeading } from "../settings/settings-section-heading.tsx";
 import { formatSubscriptionUsageReset } from "../../subscription-usage-format.ts";
 import {
+  CodexResetCreditsButton,
   CodexResetUsageDialog,
   formatCodexResetCredits,
 } from "./codex-reset-usage-dialog.tsx";
@@ -393,14 +394,16 @@ function OAuthAccountRow({
           ) : null}
           {detail ? (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  tabIndex={0}
-                  className="min-w-0 truncate rounded-md px-1 py-0.5 -mx-1 -my-0.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
-                >
-                  {identity}
-                </span>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <span
+                    tabIndex={0}
+                    className="min-w-0 truncate rounded-md px-1 py-0.5 -mx-1 -my-0.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
+                  >
+                    {identity}
+                  </span>
+                }
+              />
               <TooltipContent side="bottom" align="start" sideOffset={8}>
                 {detail}
               </TooltipContent>
@@ -420,9 +423,13 @@ function OAuthAccountRow({
         </div>
         <div className="col-start-2 flex min-w-0 items-center justify-end gap-3 sm:ml-auto sm:shrink-0">
           {account.type === "codex-oauth-token" ? (
-            <OAuthAccountResetCredits
-              account={account}
-              actionPending={actionPending}
+            <CodexResetCreditsButton
+              className="mr-auto sm:mr-0"
+              resetCredits={account.subscriptionResetCredits ?? null}
+              resetCreditsNextExpiresAt={
+                account.subscriptionResetCreditsNextExpiresAt
+              }
+              resetPending={actionPending}
               onReset={onReset}
             />
           ) : null}
@@ -437,64 +444,6 @@ function OAuthAccountRow({
         </div>
       </div>
     </div>
-  );
-}
-
-function OAuthAccountResetCredits({
-  account,
-  actionPending,
-  onReset,
-}: {
-  readonly account: ModelProviderResponse;
-  readonly actionPending: boolean;
-  readonly onReset: () => void;
-}) {
-  const { t } = useTranslation();
-  const resetCredits = account.subscriptionResetCredits ?? null;
-  const label = formatCodexResetCredits(resetCredits);
-  const resetDisabled = actionPending || resetCredits === 0;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          aria-label={label}
-          aria-disabled={resetDisabled || undefined}
-          className={`mr-auto h-7 min-w-0 gap-1.5 rounded-md px-1 text-xs tabular-nums sm:mr-0 ${resetDisabled ? "cursor-default opacity-50 hover:bg-transparent active:bg-transparent" : ""}`}
-          onClick={() => {
-            if (!resetDisabled) {
-              onReset();
-            }
-          }}
-        >
-          <RotateCcw size={14} className="shrink-0" aria-hidden />
-          <span className="truncate">
-            {resetCredits === null
-              ? t(($) => {
-                  return $.settings.models.reset.remainingUnknown;
-                })
-              : label}
-          </span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent
-        side="bottom"
-        align="end"
-        sideOffset={8}
-        className="border shadow-md"
-        style={{
-          backgroundColor: "hsl(var(--popover))",
-          color: "hsl(var(--popover-foreground))",
-        }}
-      >
-        {formatCodexResetCredits(
-          resetCredits,
-          account.subscriptionResetCreditsNextExpiresAt,
-        )}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -1167,52 +1116,54 @@ function SubscriptionUsageRing({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          role="progressbar"
-          aria-label={t(
-            ($) => {
-              return $.settings.accountMenu.subscriptions.usageRemaining;
-            },
-            { provider: identity, window: windowLabel },
-          )}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={remainingPercent ?? undefined}
-          className="relative flex h-7 w-7 shrink-0 cursor-default items-center justify-center rounded-full outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 28 28"
-            className="h-7 w-7 -rotate-90"
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            role="progressbar"
+            aria-label={t(
+              ($) => {
+                return $.settings.accountMenu.subscriptions.usageRemaining;
+              },
+              { provider: identity, window: windowLabel },
+            )}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={remainingPercent ?? undefined}
+            className="relative flex h-7 w-7 shrink-0 cursor-default items-center justify-center rounded-full outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <circle
-              cx="14"
-              cy="14"
-              r="11"
-              fill="none"
-              strokeWidth="3"
-              className={tone.ringTrackClassName}
-            />
-            <circle
-              cx="14"
-              cy="14"
-              r="11"
-              fill="none"
-              pathLength="100"
-              strokeDasharray="100"
-              strokeDashoffset={100 - progress}
-              strokeLinecap="round"
-              strokeWidth="3"
-              className={`${tone.ringClassName} transition-[stroke-dashoffset]`}
-            />
-          </svg>
-          <span className="absolute max-w-5 truncate text-[7px] font-semibold leading-none text-muted-foreground">
-            {shortWindowLabel}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 28 28"
+              className="h-7 w-7 -rotate-90"
+            >
+              <circle
+                cx="14"
+                cy="14"
+                r="11"
+                fill="none"
+                strokeWidth="3"
+                className={tone.ringTrackClassName}
+              />
+              <circle
+                cx="14"
+                cy="14"
+                r="11"
+                fill="none"
+                pathLength="100"
+                strokeDasharray="100"
+                strokeDashoffset={100 - progress}
+                strokeLinecap="round"
+                strokeWidth="3"
+                className={`${tone.ringClassName} transition-[stroke-dashoffset]`}
+              />
+            </svg>
+            <span className="absolute max-w-5 truncate text-[7px] font-semibold leading-none text-muted-foreground">
+              {shortWindowLabel}
+            </span>
           </span>
-        </span>
-      </TooltipTrigger>
+        }
+      />
       <TooltipContent
         side="bottom"
         sideOffset={8}

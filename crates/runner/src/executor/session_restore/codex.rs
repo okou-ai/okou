@@ -7,7 +7,7 @@ use api_contracts::generated::constants::runners::paths::CANONICAL_CODEX_SESSION
 
 use super::{MaterializedResumeSession, SessionRestoreDiagnostics, write_session_history_file};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
-use crate::types::{ExecutionContext, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 use super::super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult};
 use guest_contracts::{

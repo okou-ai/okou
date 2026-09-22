@@ -854,12 +854,15 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       deploymentVersion: 1,
       aliasUrl: first.url,
     });
+    // Redeploying keeps one site and one alias; each publication still owns an
+    // immutable artifact URL and its own thread-artifact row.
     expect(second).toMatchObject({
-      deploymentVersion: 1,
+      publicSlug: site,
+      deploymentVersion: 2,
       aliasUrl: second.url,
     });
-    expect(second.publicSlug).toMatch(new RegExp(`^${site}-[a-z0-9]{4}$`, "u"));
-    expect(second.siteId).not.toBe(first.siteId);
+    expect(second.siteId).toBe(first.siteId);
+    expect(second.aliasUrl).toBe(first.aliasUrl);
     expect(second.deploymentId).not.toBe(first.deploymentId);
     expect(second.artifactUrl).not.toBe(first.artifactUrl);
 
@@ -881,103 +884,91 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
 });
 
 describe("hosted Artifact previews", () => {
-  it.each([false, true])(
-    "renders a private site through an authorized origin and keeps its screenshot private (rollback=%s)",
-    async (rollback) => {
-      const owner = await artifactActor("Private site screenshot");
-      if (!owner.actor.orgId) {
-        throw new Error("Expected organization");
-      }
-      const actor = { ...owner.actor, orgId: owner.actor.orgId };
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.PrivateArtifacts]: true,
-      });
-      mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
-      mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
-      const snapshots = mockCloudflareSnapshot([
-        {
-          beforeResponse: async () => {
-            if (rollback) {
-              await updateFeatureSwitchesForUser(context, actor, {
-                [FeatureSwitchKey.PrivateArtifacts]: false,
-              });
-            }
-          },
-        },
-      ]);
-      const site = `private-preview-${randomUUID().slice(0, 8)}`;
-      const artifact = await createHostedArtifact({
-        actor,
-        agentId: owner.agentId,
-        runnerGroup: owner.runnerGroup,
-        objectStore: owner.objectStore,
-        site,
-      });
-      await flushWaitUntilForTest();
-      expect(snapshots).toHaveLength(1);
-      expect(snapshots[0]?.body).toMatchObject({
-        url: expect.stringMatching(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u),
-      });
-      const catalogArtifact = await findCatalogArtifact(actor, site);
-      const reference = await resolvePrivatePreviewReference(
-        catalogArtifact?.thumbnail?.url ?? "",
-      );
-      const filename = `preview-v3-${artifact.deploymentId}.webp`;
-      expect(
-        owner.objectStore.puts.filter((put) => {
-          return put.contentType === "image/webp";
-        }),
-      ).toStrictEqual([
-        expect.objectContaining({
-          bucket: "test-private-artifacts",
-          key: `private-artifacts/${reference.id}/${filename}`,
-          ifNoneMatch: "*",
-        }),
-      ]);
-      const thread = await chat.listThreadArtifacts(actor, artifact.threadId);
-      expect(thread.runs[0]?.files).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            url: artifact.url,
-            previewImageUrl: catalogArtifact?.thumbnail?.url,
-          }),
-        ]),
-      );
-      const catalog = await chat.listArtifactCatalog(actor);
-      expect(catalog.artifacts).toHaveLength(1);
-      owner.objectStore.addObject({
+  // A hosted site is a public publication, so its screenshot renders from the
+  // publication URL and follows the owner's current artifact storage.
+  it("renders a hosted site from its publication URL into private storage", async () => {
+    const owner = await artifactActor("Hosted site screenshot");
+    if (!owner.actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const actor = { ...owner.actor, orgId: owner.actor.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshots = mockCloudflareSnapshot([{}]);
+    const site = `hosted-preview-${randomUUID().slice(0, 8)}`;
+    const artifact = await createHostedArtifact({
+      actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.body).toMatchObject({
+      url: `https://dpl-${artifact.deploymentId}.okou.app`,
+    });
+    const catalogArtifact = await findCatalogArtifact(actor, site);
+    const reference = await resolvePrivatePreviewReference(
+      catalogArtifact?.thumbnail?.url ?? "",
+    );
+    const filename = `preview-v3-${artifact.deploymentId}.webp`;
+    expect(
+      owner.objectStore.puts.filter((put) => {
+        return put.contentType === "image/webp";
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
         bucket: "test-private-artifacts",
         key: `private-artifacts/${reference.id}/${filename}`,
-        size: 3,
-      });
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.PrivateArtifacts]: false,
-      });
-      const preview = await accept(
-        setupApp({ context, routes: webFileUrlRoutes })(
-          webFilesContract,
-        ).fileUrl({
+        ifNoneMatch: "*",
+      }),
+    ]);
+    const thread = await chat.listThreadArtifacts(actor, artifact.threadId);
+    expect(thread.runs[0]?.files).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: artifact.url,
+          previewImageUrl: catalogArtifact?.thumbnail?.url,
+        }),
+      ]),
+    );
+    const catalog = await chat.listArtifactCatalog(actor);
+    expect(catalog.artifacts).toHaveLength(1);
+    owner.objectStore.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${reference.id}/${filename}`,
+      size: 3,
+    });
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: false,
+    });
+    const preview = await accept(
+      setupApp({ context, routes: webFileUrlRoutes })(webFilesContract).fileUrl(
+        {
           headers: { authorization: "Bearer clerk-session" },
           query: { file_id: reference.id },
-        }),
-        [200],
-      );
-      expect(new URL(preview.body.url).searchParams.get("object")).toBe(
-        `test-private-artifacts/private-artifacts/${reference.id}/${filename}`,
-      );
-      await chat.listArtifactCatalog(bdd.user());
-      await accept(
-        setupApp({ context, routes: webFileUrlRoutes })(
-          webFilesContract,
-        ).fileUrl({
+        },
+      ),
+      [200],
+    );
+    expect(new URL(preview.body.url).searchParams.get("object")).toBe(
+      `test-private-artifacts/private-artifacts/${reference.id}/${filename}`,
+    );
+    await chat.listArtifactCatalog(bdd.user());
+    await accept(
+      setupApp({ context, routes: webFileUrlRoutes })(webFilesContract).fileUrl(
+        {
           headers: { authorization: "Bearer clerk-session" },
           query: { file_id: reference.id },
-        }),
-        [404],
-      );
-    },
-    120_000,
-  );
+        },
+      ),
+      [404],
+    );
+  }, 120_000);
 
   it("renders Okou deployments from their branded hosted-site domain", async () => {
     const owner = await artifactActor("Artifacts API Okou preview image agent");

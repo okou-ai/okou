@@ -1754,6 +1754,45 @@
       "upgradeToRun": "Passa a Pro per eseguire {{assistantName}}",
       "upgradeWorkspace": "Aggiorna l'area di lavoro"
     },
+    "browserInput": {
+      "applyFailed": "Impossibile aggiungere le informazioni. I dati inseriti sono ancora presenti. Riprova.",
+      "applying": "Aggiunta delle informazioni",
+      "applyingDescription": "Il browser sta completando questa richiesta.",
+      "callbackFailed": "L’agente non è stato avvisato. Riprova con Continua.",
+      "cancel": "Annulla",
+      "cancelFailed": "Impossibile annullare la richiesta. Riprova.",
+      "cancelled": "Richiesta annullata",
+      "cancelledDescription": "Non è stata aggiunta alcuna informazione. Continua per avvisare l’agente.",
+      "cancelling": "Annullamento…",
+      "completed": "Informazioni aggiunte",
+      "completedDescription": "Le informazioni sono state aggiunte al browser. Continua per avvisare l’agente.",
+      "continue": "Continua",
+      "continuing": "Continuazione…",
+      "delivered": "Agente avvisato",
+      "deliveredDescription": "L’agente ora può continuare.",
+      "description": "Inserisci le informazioni richieste per questo sito.",
+      "documentTitle": "Input del browser",
+      "expired": "Richiesta scaduta",
+      "expiredDescription": "Il browser è stato chiuso o questa richiesta non è più attiva.",
+      "loadFailed": "Impossibile caricare questa richiesta",
+      "loadFailedDescription": "Riprova tra poco.",
+      "loading": "Caricamento dell’input del browser",
+      "loadingDescription": "Verifica della richiesta…",
+      "open": "Inserisci le informazioni",
+      "optional": "(Facoltativo)",
+      "required": "(Obbligatorio)",
+      "retry": "Riprova",
+      "site": "Sito",
+      "stale": "I campi sono cambiati",
+      "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
+      "submit": "Aggiungi al browser",
+      "submitting": "Aggiunta…",
+      "title": "Inserisci informazioni nel browser",
+      "unavailable": "Richiesta non disponibile",
+      "unavailableDescription": "Questa richiesta di input del browser non è valida o non è più disponibile.",
+      "uncertain": "Controlla il browser",
+      "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di controllare prima di riprovare."
+    },
     "cards": {
       "viewDetails": "Visualizza dettagli"
     },
@@ -1764,21 +1803,12 @@
       "create": {
         "addStyle": "Aggiungi stile",
         "addTemplate": "Aggiungi modello",
-        "chooseType": "Scegli un tipo",
-        "exit": "Esci dalla modalità creazione",
-        "image": "Crea immagine",
-        "imageDescription": "Trasforma un'idea in un'immagine",
         "imagePlaceholder": "Descrivi l’immagine che vuoi creare…",
-        "presentation": "Crea presentazione",
-        "presentationDescription": "Diapositive per la tua storia",
         "presentationPlaceholder": "Di cosa tratta la tua presentazione?",
         "settingsAdjusted": "Alcune impostazioni video sono state adattate a questo modello",
         "slideCount": "Numero di diapositive",
         "slideCountAuto": "Automatico",
-        "slideCountRange": "{{range}} diapositive",
-        "video": "Crea video",
-        "videoDescription": "Metti in movimento le tue idee",
-        "videoPlaceholder": "Descrivi il video che vuoi creare…"
+        "slideCountRange": "{{range}} diapositive"
       },
       "createWorkflow": "Crea flusso di lavoro",
       "imageModelForThisChat": "Modello di immagini per questa chat",
@@ -2156,6 +2186,7 @@
       "allCaughtUp": "Tutto fatto",
       "allChats": "Tutte le chat",
       "archive": "Archivia chat",
+      "archived": "Archiviate",
       "chatsWith": "Chatta con {{agentName}}",
       "chatThreads": "Thread di chat",
       "delete": "Elimina la chat",
@@ -2167,6 +2198,7 @@
       "movePinDown": "Sposta giù",
       "movePinUp": "Sposta su",
       "newChatWith": "Nuova chat con {{agentName}}",
+      "noArchived": "Nessuna chat archiviata",
       "noUnread": "Nessuna chat non letta",
       "openChatMenu": "Apri il menu della chat",
       "openListMenu": "Apri il menu dell'elenco chat",
@@ -2175,13 +2207,12 @@
       "rename": "Rinomina la chat",
       "renameDescription": "Inserisci un nuovo nome per questo thread di chat.",
       "showAllChats": "Mostra tutte le chat",
-      "showArchived": "Mostra archiviate",
       "showArchivedChats": "Mostra chat archiviate",
       "titlePlaceholder": "Titolo della chat",
       "unarchive": "Rimuovi dall'archivio",
       "unpin": "Rimuovi la chat",
       "unread": "Non letto",
-      "unreadOnly": "Solo non letto"
+      "unreadOnly": "Non letto"
     },
     "startCards": {
       "kinds": {
@@ -2326,40 +2357,6 @@
             "prompt": "Crea una presentazione di formazione su un tema che scelgo io. Chiedimi chi viene formato e cosa dovrà saper fare dopo."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Trasformare una foto in un video",
-            "prompt": "Anima una foto che fornisco con movimenti naturali. Mantieni riconoscibile il soggetto e chiedi cosa deve muoversi."
-          },
-          "brandIntro": {
-            "label": "Creare un'introduzione per il mio brand",
-            "prompt": "Crea una breve apertura video usando logo e dettagli del brand che fornisco. Aiutami a scegliere l'atmosfera."
-          },
-          "eventPromo": {
-            "label": "Promuovere il mio evento",
-            "prompt": "Crea un breve video promozionale per il mio evento. Chiedi informazioni sull'evento, sul pubblico e sui dettagli da includere."
-          },
-          "loopingBackground": {
-            "label": "Creare uno sfondo video in loop",
-            "prompt": "Crea uno sfondo video con movimenti delicati e un loop continuo. Chiedi quale scena e atmosfera desidero."
-          },
-          "productDemo": {
-            "label": "Mostrare il mio prodotto in movimento",
-            "prompt": "Crea un breve video dalla foto del mio prodotto. Mantieni il suo aspetto e metti in evidenza la caratteristica che scelgo."
-          },
-          "socialClip": {
-            "label": "Creare un video per i social",
-            "prompt": "Crea un breve video per i social. Aiutami a scegliere un messaggio chiaro e uno stile adatto al mio pubblico."
-          },
-          "videoGreeting": {
-            "label": "Creare un video di auguri",
-            "prompt": "Crea un breve video di auguri per un compleanno, una festa o una celebrazione. Chiedi occasione, destinatario e messaggio."
-          },
-          "visualExplainer": {
-            "label": "Spiegare un'idea con le immagini",
-            "prompt": "Crea un breve video che renda facile capire un'idea. Chiedi quale idea spiegare e a chi è destinata."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Creare una pagina per prenotare i miei servizi",
@@ -2441,13 +2438,11 @@
         "image": "Stili immagine",
         "nextPage": "Pagina successiva",
         "previousPage": "Pagina precedente",
-        "video": "Modelli video",
         "website": "Modelli sito web"
       },
       "tasks": {
         "image": "Immagine",
         "presentation": "Diapositive",
-        "video": "Video",
         "visualization": "Visualizzazione",
         "website": "Sito web",
         "workflow": "Workflow"
@@ -3481,13 +3476,24 @@
         "connectTitle": "Connetti a Lark"
       },
       "slack": {
+        "accountInUseDescription": "Questo account Slack è connesso a un altro account Okou. Disconnettilo da quell'account prima di riprovare.",
+        "accountInUseTitle": "Account Slack già connesso",
+        "accountMismatchDescription": "Il tuo account Okou usa attualmente l'account Slack {{currentAccount}} qui. Vuoi passare a {{requestedAccount}}, l'account che ha aperto questo link?",
+        "accountMismatchDescriptionWorkspace": "Il tuo account Okou usa attualmente l'account Slack {{currentAccount}} in {{workspace}}. Vuoi passare a {{requestedAccount}}, l'account che ha aperto questo link?",
+        "accountMismatchTitle": "Cambiare account Slack?",
         "connectDescription": "Collega il tuo account a questa area di lavoro Slack per interagire con il tuo agente direttamente da Slack.",
         "connectTitle": "Connetti a Slack",
+        "errorFallback": "Impossibile verificare o avviare la connessione Slack. Riprova.",
         "invalidDescription": "Questa pagina deve essere aperta da un collegamento di connessione Slack.",
+        "keepAccount": "Mantieni {{account}}",
         "open": "Apri Slack",
         "successDescription": "Menziona il bot installato in qualsiasi canale o invia un messaggio diretto per iniziare a chattare.",
         "successDescriptionWorkspace": "Sei connesso a {{workspace}}. Menziona il bot installato in qualsiasi canale o invia un messaggio diretto per iniziare a chattare.",
-        "successTitle": "Connesso a Slack!"
+        "successTitle": "Connesso a Slack!",
+        "switchAccount": "Passa a {{account}}",
+        "workspaceMismatchDescription": "Questo spazio di lavoro Slack non è disponibile per la tua organizzazione Okou attuale. Cambia organizzazione o chiedi assistenza a un amministratore.",
+        "workspaceMismatchDescriptionNamed": "La tua organizzazione Okou attuale è connessa a {{workspace}}. Cambia organizzazione o chiedi a un amministratore di disinstallarlo prima di connettere questo spazio di lavoro Slack.",
+        "workspaceMismatchTitle": "Lo spazio di lavoro Slack non corrisponde"
       },
       "teams": {
         "connectDescription": "Collega il tuo account Teams per poter interagire con il tuo agente direttamente da Microsoft Teams.",
@@ -5901,8 +5907,7 @@
       "availableNow": "Disponibili ora",
       "inUse_one": "{{active}} di {{limit}} slot in uso",
       "inUse_many": "{{active}} di {{limit}} slot in uso",
-      "inUse_other": "{{active}} di {{limit}} slot in uso",
-      "waitingForSandbox": "In attesa di Sandbox"
+      "inUse_other": "{{active}} di {{limit}} slot in uso"
     },
     "tiers": {
       "custom": "Personalizzato",
@@ -5981,7 +5986,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Ripristina",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
         "usageRemaining": "{{provider}} {{window}} rimanente",
@@ -6317,7 +6321,6 @@
       },
       "reset": {
         "confirmDescription": "Usa un ripristino Codex per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
-        "expiresAt": "Il ripristino più vicino scade {{date}}",
         "progress": "Reimpostazione...",
         "remaining_one": "{{value}} ripristino rimasto",
         "remaining_many": "{{value}} ripristini rimasti",

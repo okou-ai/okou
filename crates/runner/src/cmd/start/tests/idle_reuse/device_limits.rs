@@ -4,7 +4,7 @@ use super::super::support::{
     shutdown, test_profiles, wait_budget_count,
 };
 
-use crate::types::SandboxReuseResult;
+use runner_types::types::SandboxReuseResult;
 
 fn device_rate_limits() -> sandbox::DeviceRateLimits {
     sandbox::DeviceRateLimits {

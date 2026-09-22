@@ -81,10 +81,30 @@ interface SeoErrorResult {
   readonly error: SeoErrorResponse;
 }
 
-interface SeoRetryableErrorResult {
-  readonly kind: "retryable-error";
-  readonly error: SeoErrorResponse;
+interface DataForSeoDiagnostics {
+  readonly providerStatusCode?: number;
+  readonly providerStatusMessage?: string;
+  readonly providerCostUsd?: number;
+  readonly tasksCount?: number;
+  readonly tasksError?: number;
+  readonly taskId?: string;
+  readonly taskStatusCode?: number;
+  readonly taskStatusMessage?: string;
+  readonly taskCostUsd?: number;
 }
+
+type SeoRetryableErrorResult =
+  | {
+      readonly kind: "retryable-error";
+      readonly reason: "backlinks-http";
+      readonly error: SeoErrorResponse;
+    }
+  | {
+      readonly kind: "retryable-error";
+      readonly reason: "serp-task-40101";
+      readonly error: SeoErrorResponse;
+      readonly diagnostics: DataForSeoDiagnostics;
+    };
 
 type DataForSeoFetchResult =
   | SeoErrorResult
@@ -124,6 +144,9 @@ const dataForSeoResponseSchema = z.object({
   tasks_error: z.number().int().nonnegative(),
   tasks: z.array(dataForSeoTaskSchema).max(1),
 });
+
+type ParsedDataForSeoTask = z.infer<typeof dataForSeoTaskSchema>;
+type ParsedDataForSeoResponse = z.infer<typeof dataForSeoResponseSchema>;
 
 function errorBody(message: string, code: string) {
   return { error: { message, code } };
@@ -175,17 +198,7 @@ function parseResponseText(text: string): unknown {
   return parsed === undefined ? text : parsed;
 }
 
-function dataForSeoDiagnostics(body: unknown): {
-  readonly providerStatusCode?: number;
-  readonly providerStatusMessage?: string;
-  readonly providerCostUsd?: number;
-  readonly tasksCount?: number;
-  readonly tasksError?: number;
-  readonly taskId?: string;
-  readonly taskStatusCode?: number;
-  readonly taskStatusMessage?: string;
-  readonly taskCostUsd?: number;
-} {
+function dataForSeoDiagnostics(body: unknown): DataForSeoDiagnostics {
   if (!isRecord(body)) {
     return {};
   }
@@ -288,6 +301,46 @@ function dataForSeoFailure(
   );
 }
 
+function dataForSeoTaskFailure(
+  statusCode: number,
+  statusMessage: string,
+): SeoErrorResponse {
+  if (statusCode === 40_101) {
+    return badGateway(
+      "The search engine temporarily failed to return results. Please try again later.",
+      "SEO_SEARCH_ENGINE_UNAVAILABLE",
+    );
+  }
+  return dataForSeoFailure(statusCode, statusMessage);
+}
+
+function serpTaskRetryError(
+  request: DataForSeoRequest,
+  response: ParsedDataForSeoResponse,
+  task: ParsedDataForSeoTask,
+  diagnostics: DataForSeoDiagnostics,
+): SeoRetryableErrorResult | undefined {
+  if (
+    request.operation !== "serp" ||
+    response.status_code !== 20_000 ||
+    response.tasks_count !== 1 ||
+    response.tasks_error !== 0 ||
+    response.tasks.length !== 1 ||
+    task.status_code !== 40_101
+  ) {
+    return undefined;
+  }
+  return {
+    kind: "retryable-error",
+    reason: "serp-task-40101",
+    diagnostics,
+    error: dataForSeoTaskFailure(
+      task.status_code,
+      sanitizedErrorMessage(task.status_message),
+    ),
+  };
+}
+
 async function fetchDataForSeoJson(
   url: URL,
   init: RequestInit,
@@ -354,7 +407,11 @@ async function fetchDataForSeoJson(
           canRetryDataForSeoStatus(diagnostics.providerStatusCode) &&
           canRetryDataForSeoStatus(diagnostics.taskStatusCode)
         ) {
-          return { kind: "retryable-error" as const, error };
+          return {
+            kind: "retryable-error" as const,
+            reason: "backlinks-http" as const,
+            error,
+          };
         }
         return errorResult(error);
       }
@@ -519,7 +576,6 @@ async function fetchDataForSeoOnce(
   if (result.kind !== "body") {
     return result;
   }
-
   const providerStatus = dataForSeoDiagnostics(result.body);
   if (
     providerStatus.providerStatusCode !== undefined &&
@@ -536,7 +592,6 @@ async function fetchDataForSeoOnce(
       ),
     );
   }
-
   const parsed = dataForSeoResponseSchema.safeParse(result.body);
   if (!parsed.success) {
     L.warn("DataForSEO API returned an invalid response", {
@@ -579,6 +634,10 @@ async function fetchDataForSeoOnce(
       ),
     );
   }
+  const retry = serpTaskRetryError(request, parsed.data, task, providerStatus);
+  if (retry) {
+    return retry;
+  }
   // SERP 40102 is a completed, potentially billable search with no items.
   // Preserve its status and metadata through the normal response and billing path.
   const hasNoSearchResults =
@@ -592,7 +651,7 @@ async function fetchDataForSeoOnce(
       ...providerStatus,
     });
     return errorResult(
-      dataForSeoFailure(
+      dataForSeoTaskFailure(
         task.status_code,
         sanitizedErrorMessage(task.status_message),
       ),
@@ -625,6 +684,10 @@ async function fetchDataForSeo(
   request: DataForSeoRequest,
   signal: AbortSignal,
 ): Promise<DataForSeoBodyResult> {
+  const logContext = {
+    operation: request.operation,
+    endpoint: dataForSeoPath(request),
+  };
   const firstResult = await fetchDataForSeoOnce(
     login,
     password,
@@ -637,12 +700,15 @@ async function fetchDataForSeo(
   }
 
   if (firstResult.kind === "empty") {
-    L.warn("DataForSEO returned an empty task list; retrying", {
-      operation: request.operation,
-      endpoint: dataForSeoPath(request),
+    L.warn("DataForSEO returned an empty task list; retrying", logContext);
+  } else if (firstResult.reason === "serp-task-40101") {
+    L.debug("DataForSEO SERP task failed; retrying", {
+      ...logContext,
+      attempt: 1,
+      ...firstResult.diagnostics,
     });
   }
-  // Empty-task and transient HTTP failures share one retry, even when mixed.
+  // Empty-task and eligible provider failures share one retry, even when mixed.
   signal.throwIfAborted();
   const retryResult = await fetchDataForSeoOnce(
     login,
@@ -652,16 +718,30 @@ async function fetchDataForSeo(
     signal,
   );
   if (retryResult.kind === "retryable-error") {
+    if (retryResult.reason === "serp-task-40101") {
+      L.warn("DataForSEO SERP task failed after retry", {
+        ...logContext,
+        attempt: 2,
+        ...retryResult.diagnostics,
+      });
+    }
     return errorResult(retryResult.error);
+  }
+  if (
+    firstResult.kind === "retryable-error" &&
+    firstResult.reason === "serp-task-40101" &&
+    retryResult.kind === "body"
+  ) {
+    L.debug("DataForSEO SERP task recovered after retry", {
+      ...logContext,
+      attempt: 2,
+    });
   }
   if (retryResult.kind !== "empty") {
     return retryResult;
   }
 
-  L.warn("DataForSEO returned an empty task list after retry", {
-    operation: request.operation,
-    endpoint: dataForSeoPath(request),
-  });
+  L.warn("DataForSEO returned an empty task list after retry", logContext);
   return errorResult(
     badGateway("DataForSEO returned no task", "DATAFORSEO_EMPTY_TASKS"),
   );

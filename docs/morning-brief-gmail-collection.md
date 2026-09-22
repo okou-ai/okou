@@ -71,16 +71,15 @@ credential is decrypted **lazily, behind the first endpoint a live policy
 allowed**, so a credential is never touched on the strength of connector
 presence alone.
 
-The pass runs **before the credential is decrypted or refreshed**, **before
-every request**, and **again after `collect` returns** as a release fence. Clerk
-is always queried before the short final local transaction, so no network call
-runs under erasure or database locks. That transaction is the local decision
-point; it does not make Clerk and PostgreSQL globally atomic or recall a payload
-after a later revocation. The release fence re-evaluates identity plus **every
-distinct permission whose
-result the source still holds**, not only the last request's. A source that read
-a list under one permission and bodies under another withholds everything if the
-list permission is denied while the final body request is in flight.
+The pass runs **before the credential is decrypted or refreshed** and **before
+every request**. Clerk is always queried before the short final local
+transaction, so no network call runs under erasure or database locks. That
+transaction is the local decision point; it does not make Clerk and PostgreSQL
+globally atomic or recall a payload after a later revocation.
+
+There is no check after the read. A request that was authorized when it was
+issued produced evidence the owner was entitled to, and re-asking once the bytes
+are held cannot un-send the request — it can only discard the answer (#35949).
 
 The policy map is keyed by the connector's runtime target key, because that is
 the firewall name `matchFirewallRequestDecision` looks a policy up by. Keying it
@@ -169,13 +168,13 @@ bit is still false. Every decision about whether the source may continue
 compares the absolute deadline; the timer is left to do the one thing a clock
 cannot, which is interrupt I/O already in flight.
 
-That includes the last decision of all. The release fence re-derives identity
-and every retained permission, which takes real time and can outlast the budget.
-Its local erasure, complete-binding and Agent-visibility transaction spends the
-same deadline as the external membership read, so an external answer that
-arrives just inside the boundary does not create a fresh allowance for those
-queries. The clock is compared again **after** the whole fence and before any
-payload is handed back. A collection accepted after its absolute deadline is
+That includes the last decision of all. Each authorization re-derives identity
+and the effective policy for the endpoint it admits, which takes real time and
+can outlast the budget. Its local erasure, complete-binding and Agent-visibility
+transaction spends the same deadline as the external membership read, so an
+external answer that arrives just inside the boundary does not create a fresh
+allowance for those queries. The clock is compared again before any payload is
+handed back. A collection accepted after its absolute deadline is
 late content, not a healthy read. The boundary is inclusive: the whole fence
 must finish before it, while equality is already too late.
 

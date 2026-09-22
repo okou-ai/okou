@@ -138,8 +138,8 @@ test("A refused address shows why, and the step continues anyway", async () => {
   context.mocks.api(orgInviteContract.invite, ({ respond }) => {
     return respond(409, {
       error: {
-        message: "This person is already a member or has a pending invitation.",
-        code: "CONFLICT",
+        message: "This person already has a pending invitation.",
+        code: "INVITATION_ALREADY_EXISTS",
       },
     });
   });
@@ -149,9 +149,7 @@ test("A refused address shows why, and the step continues anyway", async () => {
   click(getButtonByName("Send invite"));
 
   await expect(
-    screen.findByText(
-      "This person is already a member or has a pending invitation.",
-    ),
+    screen.findByText("This person already has a pending invitation."),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Not sent")).toBeInTheDocument();
   expect(screen.queryByText("Invited")).not.toBeInTheDocument();

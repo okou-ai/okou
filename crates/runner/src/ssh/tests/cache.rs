@@ -10,7 +10,7 @@ use super::{
     harness::{self, Harness, Reply, params, read_http_request, respond},
     terminal,
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 fn notify(h: &Harness, data: Value) {
     assert!(h.runtime.ably_message(&ably_subscriber::Message {

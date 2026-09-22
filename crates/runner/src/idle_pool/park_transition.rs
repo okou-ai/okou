@@ -68,7 +68,6 @@ use sandbox::{
 
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_reuse_preparation::IdleReusePreparation;
-use crate::ids::RunId;
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
@@ -76,6 +75,7 @@ use crate::workspace_image_cache::{
     WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityRequest,
 };
 use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
+use runner_types::ids::RunId;
 
 use super::entry::{
     IdleDestroyJob, IdleDestroyPayload, IdleEntry, IdleSandboxMetadata, IdleSandboxResources,

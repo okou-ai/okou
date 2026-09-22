@@ -73,13 +73,13 @@ pub(crate) use telemetry::{
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency, record_reuse_result};
 
-use crate::ids::RunId;
 use crate::run_cancellation::RunCancellationSignals;
 use api_contracts::generated::constants::runners::{
     AGENT_EXECUTION_TIMEOUT_SECONDS, RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
     paths::{CANONICAL_GUEST_HOME_DIR, CANONICAL_WORKING_DIR},
 };
 use guest_contracts::exec_terminal::EXEC_TERMINAL_CLEANUP_BUDGET;
+use runner_types::ids::RunId;
 
 /// Maximum guest-side runtime budget for a single agent process.
 const JOB_TIMEOUT: Duration = Duration::from_secs(AGENT_EXECUTION_TIMEOUT_SECONDS);
@@ -164,7 +164,6 @@ use crate::network_log_manager::NetworkLogSession;
 use crate::paths::{HomePaths, LogPaths};
 use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
-use crate::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 use crate::workspace_image_cache::{
     WorkspaceImageActiveLeaseRequest, WorkspaceImageCache, WorkspaceImageLease,
     WorkspaceImageLeaseIdentity, WorkspaceImagePrepareLockPolicy, WorkspaceImagePromotionContext,
@@ -172,6 +171,7 @@ use crate::workspace_image_cache::{
     WorkspaceImagePromotionIdentityRequest,
 };
 use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
+use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {
     let run_id = run_id.to_string();

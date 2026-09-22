@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Toolbar } from "@base-ui/react/toolbar";
 import { useGet, type LoadableState } from "ccstate-react";
 import { connectorConnectionPending$ } from "../../../../signals/connector-connection-progress.ts";
 import { useTranslation } from "react-i18next";
@@ -98,7 +99,6 @@ type DirectoryConnectorCardProps = {
   readonly accountCount?: number;
   readonly accountLabel?: string;
   readonly unavailable?: boolean;
-  readonly active?: boolean;
   readonly connect: ConnectorConnectHandlers;
   readonly onOpenDetail?: () => void;
 };
@@ -306,7 +306,6 @@ function DirectoryConnectorCard({
   accountCount = 0,
   accountLabel,
   unavailable = false,
-  active = false,
   connect,
   onOpenDetail,
 }: DirectoryConnectorCardProps) {
@@ -324,11 +323,11 @@ function DirectoryConnectorCard({
   };
 
   return (
-    <div
-      role="button"
-      tabIndex={interactive ? 0 : -1}
+    <Toolbar.Button
+      type="button"
+      disabled={!interactive}
+      focusableWhenDisabled={false}
       data-connector-slug={connector.slug}
-      data-active={active ? "true" : undefined}
       aria-label={
         connected
           ? t(
@@ -344,23 +343,15 @@ function DirectoryConnectorCard({
               { connector: connector.label },
             )
       }
-      aria-disabled={!interactive}
       className={cn(
         DIRECTORY_SURFACE,
-        "flex flex-col overflow-hidden text-left",
+        "flex flex-col overflow-hidden text-left focus:bg-state-selected",
         interactive ? "cursor-pointer hover:bg-card-hover" : "cursor-default",
         unavailable && "opacity-60",
-        active && "bg-state-selected",
       )}
       onClick={activate}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          activate();
-        }
-      }}
     >
-      <div className="flex items-center gap-3 px-4 pb-2 pt-3.5">
+      <span className="flex items-center gap-3 px-4 pb-2 pt-3.5">
         <ConnectorIconTile icon={connector.icon} />
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span
@@ -385,27 +376,27 @@ function DirectoryConnectorCard({
             <Plus size={14} />
           )}
         </span>
-      </div>
+      </span>
       {connected || unavailable ? (
-        <div className="flex h-10 items-center gap-2 border-t border-border/50 px-4 text-xs">
+        <span className="flex h-10 items-center gap-2 border-t border-border/50 px-4 text-xs">
           <DirectoryConnectorStatusLine
             connector={connector}
             accountCount={accountCount}
             accountLabel={accountLabel}
             unavailable={unavailable}
           />
-        </div>
+        </span>
       ) : (
-        <div className="px-4 pb-3.5">
-          <div
+        <span className="px-4 pb-3.5">
+          <span
             data-testid="connector-help-text"
             className="line-clamp-2 text-xs text-muted-foreground"
           >
             {connector.description}
-          </div>
-        </div>
+          </span>
+        </span>
       )}
-    </div>
+    </Toolbar.Button>
   );
 }
 

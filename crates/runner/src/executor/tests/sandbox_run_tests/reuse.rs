@@ -6,7 +6,7 @@ use httpmock::MockServer;
 use tokio_util::sync::CancellationToken;
 
 use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
-use crate::types::ExecutionContext;
+use runner_types::types::ExecutionContext;
 
 // -----------------------------------------------------------------------
 // Keep-alive sandbox reuse integration tests
@@ -31,10 +31,10 @@ async fn execute_job_reuse_succeeds() {
 }
 
 async fn assert_reused_connector_projection(clear_accounts: bool) {
-    use crate::types::ConnectorRuntimeTargetRegistration;
     use guest_contracts::connector_account_context::{
         RunConnectorAccountContext, RunConnectorAccountTarget,
     };
+    use runner_types::types::ConnectorRuntimeTargetRegistration;
 
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
@@ -337,8 +337,8 @@ async fn execute_reused_sandbox_drains_archive_when_guest_state_restore_fails() 
             &config,
             RunStart {
                 restore_guest_state: true,
-                reuse_result: crate::types::SandboxReuseResult::Reused,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+                reuse_result: runner_types::types::SandboxReuseResult::Reused,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
                 prev_storage: Some(&previous_storage),
             },
             &mut telemetry,

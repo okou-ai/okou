@@ -402,23 +402,25 @@ export function CreditAdditionTable({
         {grants.map((grant) => {
           return (
             <Tooltip key={grant.id}>
-              <TooltipTrigger asChild>
-                <div
-                  tabIndex={0}
-                  data-testid={`${testIdPrefix}-${grant.id}`}
-                  className={`${GRANT_ROW_GRID} cursor-default border-t border-border/50 py-2.5 outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
-                >
-                  <span className="whitespace-nowrap text-[13px] text-foreground">
-                    {formatCreditDate(grant.createdAt)}
-                  </span>
-                  <span className="text-right text-[13px] font-semibold tabular-nums text-foreground">
-                    {`+${formatLocalizedNumber(grant.amount)}`}
-                  </span>
-                  <span className="text-right text-[13px] tabular-nums text-muted-foreground">
-                    {formatLocalizedNumber(grant.remaining)}
-                  </span>
-                </div>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <div
+                    tabIndex={0}
+                    data-testid={`${testIdPrefix}-${grant.id}`}
+                    className={`${GRANT_ROW_GRID} cursor-default border-t border-border/50 py-2.5 outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
+                  >
+                    <span className="whitespace-nowrap text-[13px] text-foreground">
+                      {formatCreditDate(grant.createdAt)}
+                    </span>
+                    <span className="text-right text-[13px] font-semibold tabular-nums text-foreground">
+                      {`+${formatLocalizedNumber(grant.amount)}`}
+                    </span>
+                    <span className="text-right text-[13px] tabular-nums text-muted-foreground">
+                      {formatLocalizedNumber(grant.remaining)}
+                    </span>
+                  </div>
+                }
+              />
               <TooltipContent
                 side="top"
                 sideOffset={8}
@@ -481,15 +483,17 @@ function CreditBreakdownBar({
           const desc = descriptionForSegment(s, tier);
           return (
             <Tooltip key={segmentKey(s)}>
-              <TooltipTrigger asChild>
-                <div
-                  data-testid={`credit-balance-segment-${segmentKey(s)}`}
-                  className={`h-2 first:rounded-l-full last:rounded-r-full ${color} cursor-default ring-0 hover:ring-2 hover:ring-foreground/30 hover:z-10 transition-shadow`}
-                  style={{
-                    width: `${(s.credits / total) * 100}%`,
-                  }}
-                />
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <div
+                    data-testid={`credit-balance-segment-${segmentKey(s)}`}
+                    className={`h-2 first:rounded-l-full last:rounded-r-full ${color} cursor-default ring-0 hover:ring-2 hover:ring-foreground/30 hover:z-10 transition-shadow`}
+                    style={{
+                      width: `${(s.credits / total) * 100}%`,
+                    }}
+                  />
+                }
+              />
               <TooltipContent
                 side="top"
                 sideOffset={8}

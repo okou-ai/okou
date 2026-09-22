@@ -9,7 +9,7 @@ use tokio::sync::{OnceCell, OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use super::{FailureReason, authority::PreparedCredential};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const CAPACITY: usize = 256;
 

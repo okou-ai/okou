@@ -1,4 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use guest_control_client::{
@@ -12,12 +11,12 @@ use crate::support::Harness;
 
 #[tokio::test]
 async fn test_control_guest_timeout_retains_diagnostics_and_terminal_ownership() {
-    let program_dir = tempfile::tempdir().unwrap();
-    let program = program_dir.path().join("agent.sh");
     // The controlled Agent stays alive without connecting its input sink. The
     // real Guest server must return its deadline status, not a fabricated reply.
-    std::fs::write(&program, b"#!/bin/sh\nexec sleep 60\n").unwrap();
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let program = std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/controlled-agent-timeout.sh"
+    ));
     let h = Harness::new_with_guest_agent_program(program).await;
     let diagnostic_path = h.dir.join("diagnostic.txt");
     std::fs::write(&diagnostic_path, b"retained diagnostics").unwrap();

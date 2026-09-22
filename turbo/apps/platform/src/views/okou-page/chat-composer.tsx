@@ -8,7 +8,6 @@ import {
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
-  ComposerCreatePicker,
   ComposerCreateImageModelPicker,
   ComposerCreateVideoModelPicker,
   ComposerTaskControls,
@@ -25,6 +24,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
+  RefCallback,
 } from "react";
 import {
   useGet,
@@ -2343,6 +2343,9 @@ function TemplatePreview({
   const html = useLoadable(signals.template.previewTemplateHtml$);
   const selectPreview = useSet(signals.template.selectPreviewTemplate$);
   const clearPreview = useSet(signals.template.clearPreviewTemplate$);
+  const restorePreviewTrigger = useSet(
+    signals.template.restoreTemplatePreviewTriggerRef$,
+  );
   const active = previewId === item.slug;
   const loadedTemplate =
     template.state === "hasData" && template.data?.item.slug === item.slug
@@ -2432,6 +2435,8 @@ function TemplatePreview({
         </div>
       ) : null}
       <button
+        ref={restorePreviewTrigger}
+        data-template-preview-id={`built-in:${item.slug}`}
         type="button"
         aria-label={t(
           ($) => {
@@ -2448,56 +2453,6 @@ function TemplatePreview({
       />
     </div>
   );
-}
-
-const TEMPLATE_DETAIL_FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button",
-  "input",
-  "select",
-  "textarea",
-  '[tabindex]:not([tabindex="-1"]):not([role="group"])',
-].join(",");
-
-function templateDetailFocusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(
-    root.querySelectorAll<HTMLElement>(TEMPLATE_DETAIL_FOCUSABLE_SELECTOR),
-  ).filter((element) => {
-    return (
-      element.tabIndex >= 0 &&
-      !element.hasAttribute("disabled") &&
-      !element.closest("[inert]")
-    );
-  });
-}
-
-function handleTemplateDetailTabKeyDown(
-  event: ReactKeyboardEvent<HTMLElement>,
-): void {
-  if (event.key !== "Tab") {
-    return;
-  }
-
-  const candidates = templateDetailFocusableElements(event.currentTarget);
-  if (candidates.length === 0) {
-    return;
-  }
-
-  const target =
-    event.target instanceof HTMLElement ? event.target : document.activeElement;
-  const currentIndex = candidates.findIndex((candidate) => {
-    return target instanceof Node && candidate.contains(target);
-  });
-  const direction = event.shiftKey ? -1 : 1;
-  const nextIndex =
-    currentIndex === -1
-      ? event.shiftKey
-        ? candidates.length - 1
-        : 0
-      : (currentIndex + direction + candidates.length) % candidates.length;
-
-  event.preventDefault();
-  candidates[nextIndex]?.focus();
 }
 
 function templateDetailPreviewMatchesItem(
@@ -2522,6 +2477,7 @@ function TemplatePreviewPage({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
   const detailPreview = useGet(signals.template.openedTemplateSelection$);
   const template = useLoadable(signals.template.openedTemplate$);
   const html = useLoadable(signals.template.openedTemplateHtml$);
@@ -2626,6 +2582,7 @@ function TemplatePreviewPage({
       <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3">
           <div
+            ref={focusPreview}
             role="group"
             aria-label={t(
               ($) => {
@@ -2974,11 +2931,13 @@ function PptCard({
       <div className={TEMPLATE_TILE_CAPTION}>
         <TooltipProvider delayDuration={300}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-                {item.title}
-              </p>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                  {item.title}
+                </p>
+              }
+            />
             <TooltipContent side="bottom">{item.title}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -4017,18 +3976,22 @@ function ImportedPptCardMediaControls({
   selected,
   loading,
   onPreview,
+  previewRef,
   onSelect,
 }: {
   template: PresentationTemplateSummary;
   selected: boolean;
   loading: boolean;
   onPreview: () => void;
+  previewRef: RefCallback<HTMLButtonElement>;
   onSelect: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <>
       <button
+        ref={previewRef}
+        data-template-preview-id={`imported:${template.id}`}
         type="button"
         aria-label={t(
           ($) => {
@@ -4265,6 +4228,7 @@ function ImportedPptCardMedia({
   onRequestDetail,
   onHover,
   onPreview,
+  previewRef,
   onSelect,
 }: {
   template: PresentationTemplateSummary;
@@ -4277,6 +4241,7 @@ function ImportedPptCardMedia({
   onRequestDetail: () => void;
   onHover: (index: number | null) => void;
   onPreview: () => void;
+  previewRef: RefCallback<HTMLButtonElement>;
   onSelect: () => void;
 }) {
   return (
@@ -4319,6 +4284,7 @@ function ImportedPptCardMedia({
         selected={selected}
         loading={loading}
         onPreview={onPreview}
+        previewRef={previewRef}
         onSelect={onSelect}
       />
     </div>
@@ -4334,11 +4300,13 @@ function ImportedPptCardCaption({
     <div className={TEMPLATE_TILE_CAPTION}>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-              {template.title}
-            </p>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                {template.title}
+              </p>
+            }
+          />
           <TooltipContent side="bottom">{template.title}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -4362,6 +4330,9 @@ function ImportedPptCard({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const restorePreviewTrigger = useSet(
+    signals.template.restoreTemplatePreviewTriggerRef$,
+  );
   const detailLoadable = useLoadable(
     signals.template.importedPresentationTemplateDetail$,
   );
@@ -4407,6 +4378,7 @@ function ImportedPptCard({
       data-imported-presentation-template={template.id}
     >
       <ImportedPptCardMedia
+        previewRef={restorePreviewTrigger}
         template={template}
         selected={selected}
         activeSlideIndex={activeSlideIndex}
@@ -4540,18 +4512,20 @@ function ImportedPresentationTemplateRenameControl({
       </div>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="submit"
-              variant="quiet"
-              size="icon-sm"
-              disabled={updating}
-              aria-label={label}
-              className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
-            >
-              {updating ? <Loader2 className="animate-spin" /> : <Check />}
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                type="submit"
+                variant="quiet"
+                size="icon-sm"
+                disabled={updating}
+                aria-label={label}
+                className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
+              >
+                {updating ? <Loader2 className="animate-spin" /> : <Check />}
+              </Button>
+            }
+          />
           <TooltipContent side="bottom">{label}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -4857,6 +4831,7 @@ function ImportedPresentationTemplateMainPreview({
   loading,
   onChange,
   onKeyDown,
+  previewRef,
 }: {
   title: string;
   activeSlideIndex: number;
@@ -4865,6 +4840,7 @@ function ImportedPresentationTemplateMainPreview({
   loading: boolean;
   onChange: (index: number) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+  previewRef: RefCallback<HTMLDivElement>;
 }) {
   const { t } = useTranslation();
   const previewLabel = t(
@@ -4875,6 +4851,7 @@ function ImportedPresentationTemplateMainPreview({
   );
   return (
     <div
+      ref={previewRef}
       role="group"
       aria-label={previewLabel}
       data-testid={`${title} imported detail image preview`}
@@ -5007,6 +4984,7 @@ function ImportedPresentationTemplatePreviewPage({
   onSelect: (template: PresentationTemplateSummary) => void;
   signals: ComposerSignals;
 }) {
+  const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
   const detailLoadable = useLoadable(
     signals.template.importedPresentationTemplateDetail$,
   );
@@ -5069,6 +5047,7 @@ function ImportedPresentationTemplatePreviewPage({
       <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3 lg:overflow-y-auto">
           <ImportedPresentationTemplateMainPreview
+            previewRef={focusPreview}
             title={title}
             activeSlideIndex={activeSlideIndex}
             imageSignals={imageBuffers.detail}
@@ -5437,38 +5416,26 @@ function TemplatePickerDialog({
   const importedPreviewId = useGet(
     signals.template.importedPresentationTemplatePreviewId$,
   );
-  const importedPreviewSlideIndex = useGet(
-    signals.template.importedPresentationTemplatePreviewSlideIndex$,
-  );
-  const importedDetailLoadable = useLoadable(
-    signals.template.importedPresentationTemplateDetail$,
-  );
   const openImportedPreview = useSet(
     signals.template.openImportedPresentationTemplatePreview$,
   );
   const closeImportedPreview = useSet(
     signals.template.closeImportedPresentationTemplatePreview$,
   );
-  const selectImportedPreviewSlide = useSet(
-    signals.template.selectImportedPresentationTemplatePreviewSlide$,
-  );
   const resetImportedTemplatePicker = useSet(
     signals.template.resetImportedPresentationTemplatePicker$,
   );
   const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
   const restorePresentationGridScroll = useSet(
-    signals.template.restoreTemplatePickerPresentationScroll$,
+    signals.template.restoreTemplatePickerPresentationScrollRef$,
   );
   const setPresentationGridScrollTop = useSet(
     signals.template.setTemplatePickerPresentationScrollTop$,
   );
-  const detailPreview = useGet(signals.template.openedTemplateSelection$);
-  const openedTemplate = useLoadable(signals.template.openedTemplate$);
   const clearPresentationPreviews = useSet(
     signals.template.clearPresentationTemplatePreviews$,
   );
   const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
-  const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const closeDetailPreview = useSet(signals.template.closeOpenedTemplate$);
   const openWebsiteTemplatePreview = useSet(
     signals.template.openWebsiteTemplatePreview$,
@@ -5493,11 +5460,6 @@ function TemplatePickerDialog({
     importedTemplateItems.find((item) => {
       return item.template.id === importedPreviewId;
     }) ?? null;
-  const importedPreviewDetail =
-    importedDetailLoadable.state === "hasData" &&
-    importedDetailLoadable.data?.id === importedPreviewId
-      ? importedDetailLoadable.data
-      : null;
   const isPreviewing = Boolean(previewItem ?? importedPreviewItem);
   const dialogContentClassName = cn(
     "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
@@ -5655,92 +5617,6 @@ function TemplatePickerDialog({
     openImportedPreview(templateId, Math.max(0, Math.floor(slideIndex)));
   };
 
-  const previewDetailNavigationState = () => {
-    if (previewItem === null) {
-      return null;
-    }
-    const activeDetailPreview =
-      detailPreview?.slug === previewItem.slug &&
-      detailPreview.embedUrl === previewItem.embedUrl
-        ? detailPreview
-        : null;
-    const selectedThemeId =
-      activeDetailPreview?.themeId ??
-      cardThemeIdBySlug[previewItem.slug] ??
-      defaultPresentationTemplateThemeId(previewItem);
-    const selectedTheme = findPresentationTemplateTheme(selectedThemeId);
-    const detailSlideCount =
-      openedTemplate.state === "hasData" &&
-      openedTemplate.data?.item.slug === previewItem.slug
-        ? openedTemplate.data.draft.slides.length
-        : presentationTemplateSlideCount(previewItem);
-    return {
-      activeSlideIndex: activeDetailPreview?.index ?? 0,
-      detailSlideCount,
-      selectedTheme,
-    };
-  };
-
-  const selectPreviewDetailSlide = (index: number) => {
-    if (previewItem === null) {
-      return;
-    }
-    const navigationState = previewDetailNavigationState();
-    if (navigationState === null) {
-      return;
-    }
-    selectDetailPreview({
-      item: previewItem,
-      index: Math.max(0, Math.min(navigationState.detailSlideCount - 1, index)),
-      themeCss: presentationTemplateThemeCss(navigationState.selectedTheme),
-      themeId: navigationState.selectedTheme.id,
-    });
-  };
-
-  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!isPreviewing || event.defaultPrevented) {
-      return;
-    }
-    if (importedPreviewItem !== null) {
-      const slideCount = Math.max(
-        1,
-        importedPreviewDetail?.pageCount ??
-          importedPreviewItem.template.pageCount,
-      );
-      if (event.key === "ArrowLeft" && importedPreviewSlideIndex > 0) {
-        event.preventDefault();
-        selectImportedPreviewSlide(importedPreviewSlideIndex - 1);
-      }
-      if (
-        event.key === "ArrowRight" &&
-        importedPreviewSlideIndex < slideCount - 1
-      ) {
-        event.preventDefault();
-        selectImportedPreviewSlide(importedPreviewSlideIndex + 1);
-      }
-      return;
-    }
-    const navigationState = previewDetailNavigationState();
-    if (navigationState === null) {
-      return;
-    }
-    if (event.key === "ArrowLeft") {
-      if (navigationState.activeSlideIndex > 0) {
-        event.preventDefault();
-        selectPreviewDetailSlide(navigationState.activeSlideIndex - 1);
-      }
-    }
-    if (event.key === "ArrowRight") {
-      if (
-        navigationState.activeSlideIndex <
-        navigationState.detailSlideCount - 1
-      ) {
-        event.preventDefault();
-        selectPreviewDetailSlide(navigationState.activeSlideIndex + 1);
-      }
-    }
-  };
-
   const handleCategoryChange = (nextCategory: string) => {
     if (nextCategory !== "avatar") {
       clearAvatarVoiceSelection();
@@ -5759,13 +5635,6 @@ function TemplatePickerDialog({
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(selectedCategory);
     }
-  };
-
-  const restorePresentationGridScrollNode = (node: HTMLDivElement | null) => {
-    if (node === null) {
-      return;
-    }
-    restorePresentationGridScroll(node);
   };
 
   return (
@@ -5807,11 +5676,6 @@ function TemplatePickerDialog({
         // like every other preview instead of against the grid it came from.
         hideWhenNestedOpen
         aria-describedby={undefined}
-        onKeyDown={handleDialogKeyDown}
-        onKeyDownCapture={
-          isPreviewing ? handleTemplateDetailTabKeyDown : undefined
-        }
-        initialFocus={false}
       >
         {!isPreviewing ? (
           <div className="min-h-0 flex flex-1 flex-col">
@@ -5864,9 +5728,7 @@ function TemplatePickerDialog({
                   value={value}
                   illustrationVariantIndex={illustrationVariantIndex}
                   onPresentationScroll={setPresentationGridScrollTop}
-                  onRestorePresentationScroll={
-                    restorePresentationGridScrollNode
-                  }
+                  onRestorePresentationScroll={restorePresentationGridScroll}
                   onSelectPresentation={handleSelectPresentation}
                   onSelectImportedPresentation={
                     handleSelectImportedPresentation
@@ -5955,7 +5817,7 @@ function TemplatePickerCategoryContent({
   value: GenerationTemplateRequest | undefined;
   illustrationVariantIndex: Readonly<Record<string, number>>;
   onPresentationScroll: (value: number) => void;
-  onRestorePresentationScroll: (node: HTMLDivElement | null) => void;
+  onRestorePresentationScroll: RefCallback<HTMLDivElement>;
   onSelectPresentation: (
     item: PresentationTemplateItem,
     colorSystemId?: string,
@@ -6305,26 +6167,28 @@ function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={label}
-            aria-pressed={false}
-            onPointerEnter={prewarm}
-            onFocus={prewarm}
-            onPointerDown={prewarm}
-            onClick={open}
-          >
-            {/* The label stays in the tooltip and the accessible name; the
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={label}
+              aria-pressed={false}
+              onPointerEnter={prewarm}
+              onFocus={prewarm}
+              onPointerDown={prewarm}
+              onClick={open}
+            >
+              {/* The label stays in the tooltip and the accessible name; the
                 row beside it is all icons, and one worded control in it read
                 as a different kind of thing. */}
-            <SwatchBook size={18} aria-hidden="true" />
-          </Button>
-        </TooltipTrigger>
+              <SwatchBook size={18} aria-hidden="true" />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {label}
         </TooltipContent>
@@ -6405,21 +6269,23 @@ function CreateWorkflowPromptButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.composer.createWorkflow;
-            })}
-            onClick={onCreateWorkflowPrompt}
-          >
-            <Route size={18} aria-hidden="true" />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.composer.createWorkflow;
+              })}
+              onClick={onCreateWorkflowPrompt}
+            >
+              <Route size={18} aria-hidden="true" />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
             return $.chat.composer.createWorkflow;
@@ -7224,17 +7090,19 @@ function ComposerConnectorAccountMenu({
     >
       <Tooltip>
         <PopoverTrigger asChild>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-2xs"
-              className="shrink-0"
-              aria-label={accessibleLabel}
-            >
-              {explicit ? <UserCheck size={14} /> : <User size={14} />}
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="quiet"
+                size="icon-2xs"
+                className="shrink-0"
+                aria-label={accessibleLabel}
+              >
+                {explicit ? <UserCheck size={14} /> : <User size={14} />}
+              </Button>
+            }
+          />
         </PopoverTrigger>
         <TooltipContent side="top" className="text-xs">
           {accessibleLabel}
@@ -7937,28 +7805,30 @@ function ConnectorsPopoverButton({
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <PopoverTrigger asChild>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
-                  COMPOSER_CONTROL_FOCUS_CLASS,
-                )}
-                aria-label={t(($) => {
-                  return $.chat.connectors.title;
-                })}
-              >
-                {!waitingForConnectors && (
-                  <ComposerConnectorTriggerIcons
-                    connectors={agentConnectors}
-                    customConnectors={agentCustomConnectors}
-                    computerUse={computerUse}
-                    sshAccess={sshAccess}
-                    vncAccess={vncAccess}
-                  />
-                )}
-              </button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
+                    COMPOSER_CONTROL_FOCUS_CLASS,
+                  )}
+                  aria-label={t(($) => {
+                    return $.chat.connectors.title;
+                  })}
+                >
+                  {!waitingForConnectors && (
+                    <ComposerConnectorTriggerIcons
+                      connectors={agentConnectors}
+                      customConnectors={agentCustomConnectors}
+                      computerUse={computerUse}
+                      sshAccess={sshAccess}
+                      vncAccess={vncAccess}
+                    />
+                  )}
+                </button>
+              }
+            />
           </PopoverTrigger>
           <TooltipContent side="top" className="text-xs">
             {t(($) => {
@@ -8445,35 +8315,37 @@ function MicButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn("relative shrink-0", {
-              // Background draft checks should not dim the mic on thread switches.
-              "disabled:opacity-100": draftLoading && !actionDisabled,
-              "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                starting,
-            })}
-            data-composer-voice-toggle
-            onClick={handleClick}
-            disabled={actionDisabled || draftLoading}
-            aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting}
-            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
-          >
-            {starting ? (
-              <span
-                className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Mic size={18} />
-            )}
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className={cn("relative shrink-0", {
+                // Background draft checks should not dim the mic on thread switches.
+                "disabled:opacity-100": draftLoading && !actionDisabled,
+                "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
+                  starting,
+              })}
+              data-composer-voice-toggle
+              onClick={handleClick}
+              disabled={actionDisabled || draftLoading}
+              aria-label={micButtonAriaLabel(status)}
+              aria-busy={starting}
+              aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
+            >
+              {starting ? (
+                <span
+                  className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Mic size={18} />
+              )}
+            </Button>
+          }
+        />
         <TooltipContent
           role="tooltip"
           side="top"
@@ -8671,23 +8543,25 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.attachments.attach;
-            })}
-            onClick={() => {
-              fileInput?.click();
-            }}
-          >
-            <Paperclip size={18} />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.attachments.attach;
+              })}
+              onClick={() => {
+                fileInput?.click();
+              }}
+            >
+              <Paperclip size={18} />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
             return $.chat.attachments.attach;
@@ -9015,7 +8889,6 @@ function ComposerInputSlot({
   actions: ComposerActions;
   minimumHeightClassName: string;
 }) {
-  const createPickerOpen = useGet(signals.create.pickerOpen$);
   const sending = useLastResolved(signals.submission.sending$) ?? false;
   const notifyDraftChanged = useComposerDraftChange(signals);
   const restoreAttachments = useSet(signals.draft.restoreAttachments$);
@@ -9122,34 +8995,25 @@ function ComposerInputSlot({
 
   return (
     <div
-      className={cn(
-        "grid flex-1 grid-cols-1 grid-rows-1",
-        minimumHeightClassName,
-      )}
+      className={cn("min-h-0 flex-1", minimumHeightClassName)}
+      data-slot="chat-composer-input"
+      onClick={(event) => {
+        const target = event.target;
+        if (
+          target instanceof Node &&
+          !signals.editor.editor.view.dom.contains(target)
+        ) {
+          focusEditor();
+        }
+      }}
     >
-      <div
-        className="col-start-1 row-start-1 min-h-0"
-        data-slot="chat-composer-input"
-        hidden={createPickerOpen}
-        onClick={(event) => {
-          const target = event.target;
-          if (
-            target instanceof Node &&
-            !signals.editor.editor.view.dom.contains(target)
-          ) {
-            focusEditor();
-          }
-        }}
-      >
-        <TiptapWorkflowComposer
-          signals={signals}
-          onDraftChange={notifyDraftChanged}
-          sending={sending}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-        />
-      </div>
-      <ComposerCreatePicker signals={signals} />
+      <TiptapWorkflowComposer
+        signals={signals}
+        onDraftChange={notifyDraftChanged}
+        sending={sending}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+      />
     </div>
   );
 }
@@ -9261,19 +9125,21 @@ function ModelConfigurationWarning({
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={blocker.onAction}
-            aria-label={`${blocker.actionLabel}: ${blocker.message}`}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-          >
-            <AlertTriangle size={15} />
-            <span className="hidden composer-wide:inline">
-              {blocker.actionLabel}
-            </span>
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={blocker.onAction}
+              aria-label={`${blocker.actionLabel}: ${blocker.message}`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+            >
+              <AlertTriangle size={15} />
+              <span className="hidden composer-wide:inline">
+                {blocker.actionLabel}
+              </span>
+            </button>
+          }
+        />
         <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
           {blocker.message}
         </TooltipContent>
@@ -9361,6 +9227,8 @@ function ComposerRunModelPickerControl({
   const { t } = useTranslation();
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
+  const flyoutCategory = useGet(signals.model.menu.flyoutCategory$);
+  const setMediaModelCategory = useSet(signals.model.setMediaModelCategory$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
     <div
@@ -9382,6 +9250,9 @@ function ComposerRunModelPickerControl({
         // the menu's pages until the sheet layout lands.
         flyoutLayout={desktopLayout}
         onSelected={() => {
+          setMediaModelCategory(
+            flyoutCategory === "chat" ? null : flyoutCategory,
+          );
           setModelPickerOpen(false);
         }}
         compactTrigger
@@ -10608,6 +10479,15 @@ function ComposerFooter({
   );
 }
 
+function containsFiles(dataTransfer: DataTransfer): boolean {
+  return (
+    dataTransfer.types.includes("Files") ||
+    Array.from(dataTransfer.items).some((item) => {
+      return item.kind === "file";
+    })
+  );
+}
+
 function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
@@ -10631,6 +10511,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {
+        if (!containsFiles(event.dataTransfer)) {
+          return;
+        }
         event.preventDefault();
         setDragOver(false);
         let uploaded = false;
@@ -10642,6 +10525,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
         }
       }}
       onDragOver={(event) => {
+        if (!containsFiles(event.dataTransfer)) {
+          return;
+        }
         event.preventDefault();
         setDragOver(true);
       }}

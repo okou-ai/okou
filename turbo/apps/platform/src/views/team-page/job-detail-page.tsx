@@ -993,21 +993,23 @@ function AgentHeader({
             {showProfileAndInstructions && isDefaultAgent === false && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onTabChange("profile");
-                        openMaker(avatarUrl, pageSignal);
-                      }}
-                      className="absolute -right-0.5 -bottom-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border opacity-0 group-hover:opacity-100 hover:text-foreground transition-colors"
-                      aria-label={t(($) => {
-                        return $.avatar.actions.customize;
-                      })}
-                    >
-                      <Wand size={12} />
-                    </button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onTabChange("profile");
+                          openMaker(avatarUrl, pageSignal);
+                        }}
+                        className="absolute -right-0.5 -bottom-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border opacity-0 group-hover:opacity-100 hover:text-foreground transition-colors"
+                        aria-label={t(($) => {
+                          return $.avatar.actions.customize;
+                        })}
+                      >
+                        <Wand size={12} />
+                      </button>
+                    }
+                  />
                   <TooltipContent side="bottom">
                     <p className="text-xs">
                       {t(($) => {

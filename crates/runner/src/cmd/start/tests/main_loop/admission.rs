@@ -16,9 +16,9 @@ use crate::provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
 use crate::runner_process_identity::RunnerProcessIdentity;
-use crate::types::SandboxReuseResult;
-use crate::types::WorkspaceReuseResult;
 use crate::workspace_image_cache::{WorkspaceImageCache, WorkspaceImagePrepareLockTestGate};
+use runner_types::types::SandboxReuseResult;
+use runner_types::types::WorkspaceReuseResult;
 
 const NON_SELECTED_RUNNER_ID: u128 = 1;
 const FINALIZING_TEST_PREFERENCE_LIFETIME: Duration = Duration::from_secs(30);
@@ -117,7 +117,7 @@ fn finalizing_candidate_until(
         ))
 }
 
-fn context_with_reuse_key(run_id: RunId, reuse_key: &str) -> crate::types::ExecutionContext {
+fn context_with_reuse_key(run_id: RunId, reuse_key: &str) -> runner_types::types::ExecutionContext {
     let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.to_owned());
     context

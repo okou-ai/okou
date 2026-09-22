@@ -696,3 +696,42 @@ describe("Hidden restore teardown", () => {
     ]);
   });
 });
+
+/**
+ * `prepareForQuitAndInstall` ends the lifetime and `quitAndInstall()` only
+ * then closes the windows, so the update quit normally reaches the session
+ * first. What suppresses the report is the lifetime read when the attempt
+ * settles, never the rejection's identity, so it has to hold either way round.
+ */
+describe("Update quit teardown", () => {
+  it("cancels the hidden restore the update quit reaches first", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    const window = currentWindow();
+
+    session.abortForQuit();
+    // The abort settles the attempt through the window's own cancel path and
+    // closes the window with it, so the teardown `quitAndInstall()` performs
+    // next — here the load rejecting on a destroyed window — is inert.
+    expect(window.destroyed).toBe(true);
+    window.load.reject(new Error("Object has been destroyed"));
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([]);
+  });
+
+  it("stops reporting a window close that outruns the update quit", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    const window = currentWindow();
+
+    // `closed` settles the attempt synchronously, so this close is the
+    // outcome the caller sees and would report `cancelled` on its own. The
+    // lifetime still ended before the rejection reached classification.
+    window.close();
+    session.abortForQuit();
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([]);
+  });
+});

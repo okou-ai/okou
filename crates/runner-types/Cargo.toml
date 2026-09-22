@@ -1,0 +1,19 @@
+[package]
+name = "runner-types"
+version = "0.1.1"
+edition.workspace = true
+description = "Shared Runner identifiers, API payloads, and validation types"
+
+[dependencies]
+api-contracts.workspace = true
+sandbox.workspace = true
+
+idna = { workspace = true, features = ["compiled_data", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+unicode-normalization = { workspace = true, features = ["std"] }
+url = { workspace = true, features = ["std"] }
+uuid = { workspace = true, features = ["serde", "std", "v4"] }
+
+[lints]
+workspace = true

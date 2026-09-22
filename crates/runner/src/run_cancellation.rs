@@ -63,7 +63,7 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 #[derive(Clone, Debug, Default)]
 /// Registry of cancellation handles for active runs.

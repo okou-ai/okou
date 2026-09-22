@@ -1722,6 +1722,45 @@
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",
       "upgradeWorkspace": "升级你的工作区"
     },
+    "browserInput": {
+      "applyFailed": "无法添加信息。你填写的内容仍然保留，请重试。",
+      "applying": "正在添加信息",
+      "applyingDescription": "浏览器正在完成这个请求。",
+      "callbackFailed": "未能通知 Agent，请再次点击“继续”。",
+      "cancel": "取消",
+      "cancelFailed": "无法取消这个请求，请重试。",
+      "cancelled": "请求已取消",
+      "cancelledDescription": "没有添加任何信息。继续以通知 Agent。",
+      "cancelling": "正在取消…",
+      "completed": "信息已添加",
+      "completedDescription": "信息已添加到浏览器。继续以通知 Agent。",
+      "continue": "继续",
+      "continuing": "正在继续…",
+      "delivered": "已通知 Agent",
+      "deliveredDescription": "Agent 现在可以继续了。",
+      "description": "请输入这个网站所需的信息。",
+      "documentTitle": "浏览器信息输入",
+      "expired": "请求已过期",
+      "expiredDescription": "浏览器已关闭，或这个请求已不再有效。",
+      "loadFailed": "无法加载这个请求",
+      "loadFailedDescription": "请稍后重试。",
+      "loading": "正在加载浏览器输入",
+      "loadingDescription": "正在检查这个请求…",
+      "open": "输入信息",
+      "optional": "（选填）",
+      "required": "（必填）",
+      "retry": "重试",
+      "site": "网站",
+      "stale": "字段已变化",
+      "staleDescription": "请让 Agent 创建一个新请求。",
+      "submit": "添加到浏览器",
+      "submitting": "正在添加…",
+      "title": "在浏览器中输入信息",
+      "unavailable": "请求不可用",
+      "unavailableDescription": "这个浏览器信息输入请求无效或已不可用。",
+      "uncertain": "请检查浏览器",
+      "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
+    },
     "cards": {
       "viewDetails": "查看详情"
     },
@@ -1732,21 +1771,12 @@
       "create": {
         "addStyle": "添加风格",
         "addTemplate": "添加模板",
-        "chooseType": "选择类型",
-        "exit": "退出创作模式",
-        "image": "生成图片",
-        "imageDescription": "把想法变成画面",
         "imagePlaceholder": "描述你想生成的图片…",
-        "presentation": "生成演示文稿",
-        "presentationDescription": "把你要讲的内容做成幻灯片",
         "presentationPlaceholder": "你的演示文稿要讲什么？",
         "settingsAdjusted": "部分视频设置已针对这个模型做了调整",
         "slideCount": "幻灯片数量",
         "slideCountAuto": "自动",
-        "slideCountRange": "{{range}} 页",
-        "video": "生成视频",
-        "videoDescription": "让你的想法动起来",
-        "videoPlaceholder": "描述你想生成的视频…"
+        "slideCountRange": "{{range}} 页"
       },
       "createWorkflow": "创建工作流",
       "imageModelForThisChat": "本次对话使用的图片模型",
@@ -2102,6 +2132,7 @@
       "allCaughtUp": "已全部看完",
       "allChats": "全部聊天",
       "archive": "归档聊天",
+      "archived": "已归档",
       "chatsWith": "与{{agentName}}的聊天",
       "chatThreads": "聊天会话",
       "delete": "删除聊天",
@@ -2113,6 +2144,7 @@
       "movePinDown": "下移",
       "movePinUp": "上移",
       "newChatWith": "与{{agentName}}新建聊天",
+      "noArchived": "没有已归档的聊天",
       "noUnread": "没有未读聊天",
       "openChatMenu": "打开聊天菜单",
       "openListMenu": "打开聊天列表菜单",
@@ -2121,13 +2153,12 @@
       "rename": "重命名聊天",
       "renameDescription": "为这个聊天会话输入新名称。",
       "showAllChats": "显示全部聊天",
-      "showArchived": "显示已归档",
       "showArchivedChats": "显示已归档的聊天",
       "titlePlaceholder": "聊天标题",
       "unarchive": "取消归档",
       "unpin": "取消置顶",
       "unread": "未读",
-      "unreadOnly": "仅看未读"
+      "unreadOnly": "未读"
     },
     "startCards": {
       "kinds": {
@@ -2272,40 +2303,6 @@
             "prompt": "围绕我选的主题搭建一份培训演示文稿。向我了解培训对象，以及他们学完后应该会做什么。"
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "把照片变成视频",
-            "prompt": "让我提供的照片自然地动起来。保持主体可辨认，并问我哪些部分要动。"
-          },
-          "brandIntro": {
-            "label": "做一支品牌片头",
-            "prompt": "为我的品牌创建一支短片头。使用我提供的logo和品牌信息，并帮我确定整体调性。"
-          },
-          "eventPromo": {
-            "label": "为我的活动做宣传",
-            "prompt": "为我的活动创建一支宣传短片。向我了解活动、受众和需要包含的信息。"
-          },
-          "loopingBackground": {
-            "label": "做一段循环播放的背景",
-            "prompt": "创建一段可无缝循环、动态柔和的视频背景。问我想要什么场景和氛围。"
-          },
-          "productDemo": {
-            "label": "让我的产品动起来",
-            "prompt": "根据我的产品照片创建一支产品展示短片。保持产品外观一致，并突出我选定的卖点。"
-          },
-          "socialClip": {
-            "label": "做一条社交媒体短片",
-            "prompt": "创建一支用于社交媒体的短视频。帮我确定清晰的信息点和契合受众的视觉风格。"
-          },
-          "videoGreeting": {
-            "label": "做一支祝福视频",
-            "prompt": "创建一支用于生日、节日或庆祝场合的祝福短片。问我场合、对象和想说的话。"
-          },
-          "visualExplainer": {
-            "label": "用画面讲清一个概念",
-            "prompt": "创建一支短片，把一个概念讲得一看就懂。问我要解释什么，以及讲给谁听。"
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "给别人一个预约我的入口",
@@ -2387,13 +2384,11 @@
         "image": "图片风格",
         "nextPage": "下一页",
         "previousPage": "上一页",
-        "video": "视频模板",
         "website": "网站模板"
       },
       "tasks": {
         "image": "图片",
         "presentation": "演示文稿",
-        "video": "视频",
         "visualization": "可视化",
         "website": "网站",
         "workflow": "工作流"
@@ -3415,13 +3410,24 @@
         "connectTitle": "连接到Lark"
       },
       "slack": {
+        "accountInUseDescription": "这个Slack账号已连接到另一个Okou账号。请先在原账号中断开连接，然后重试。",
+        "accountInUseTitle": "Slack账号已被连接",
+        "accountMismatchDescription": "你的Okou账号当前在这里使用Slack账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
+        "accountMismatchDescriptionWorkspace": "你的Okou账号当前在{{workspace}}使用Slack账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
+        "accountMismatchTitle": "切换Slack账号？",
         "connectDescription": "把你的账号关联到这个Slack工作区，就可以直接在Slack里与你的智能体交流。",
         "connectTitle": "连接到Slack",
+        "errorFallback": "无法检查或开始Slack连接，请重试。",
         "invalidDescription": "此页面需要从Slack连接链接打开。",
+        "keepAccount": "保留{{account}}",
         "open": "打开Slack",
         "successDescription": "在任意频道@已安装的机器人，或给它发私信，即可开始对话。",
         "successDescriptionWorkspace": "你已连接到{{workspace}}。在任意频道@已安装的机器人，或给它发私信，即可开始对话。",
-        "successTitle": "已连接到Slack！"
+        "successTitle": "已连接到Slack！",
+        "switchAccount": "切换到{{account}}",
+        "workspaceMismatchDescription": "此Slack工作区不属于你当前的Okou组织。请切换组织，或联系管理员处理。",
+        "workspaceMismatchDescriptionNamed": "你当前的Okou组织已连接到{{workspace}}。请切换组织，或让管理员先卸载，再连接此Slack工作区。",
+        "workspaceMismatchTitle": "Slack工作区不匹配"
       },
       "teams": {
         "connectDescription": "关联你的Teams账号，就可以直接在Microsoft Teams里与你的智能体交流。",
@@ -5832,8 +5838,7 @@
     "status": {
       "availableNow": "当前可用",
       "inUse_one": "{{limit}}个名额中已使用{{active}}个",
-      "inUse_other": "{{limit}}个名额中已使用{{active}}个",
-      "waitingForSandbox": "等待沙箱"
+      "inUse_other": "{{limit}}个名额中已使用{{active}}个"
     },
     "tiers": {
       "custom": "自定义",
@@ -5911,7 +5916,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "重置",
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",
@@ -6247,7 +6251,6 @@
       },
       "reset": {
         "confirmDescription": "消耗一次Codex重置额度，重置当前的用量周期。你还有{{remaining}}。",
-        "expiresAt": "最早的重置额度{{date}}过期",
         "progress": "正在重置…",
         "remaining_one": "还剩{{value}}次重置",
         "remaining_other": "还剩{{value}}次重置",

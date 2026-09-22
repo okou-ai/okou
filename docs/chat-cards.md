@@ -244,6 +244,7 @@ Current link-backed card patterns include:
 - `/?settings=billing&billingView=plans`
 - `/mail/drafts/:mailDraftId`
 - `/browsers/:threadId`
+- `/browser/actions/:requestToken` with exact Agent, thread, and callback claims
 - platform artifact URLs such as legacy `/f/...` and `/artifacts/.../.../...`
   paths, plus hosted site URLs that support a preview. Flat V2 artifact
   paths such as `/artifacts/97ngzkxdyn.mp4` require a complete URL with an
@@ -650,6 +651,30 @@ provider's CDP URL is reserved for the Okou CLI to connect `agent-browser` and
 is never returned by the card read, lease, or resume endpoints, nor printed in
 CLI output.
 
+### Stateful action: Browser input
+
+A Browser input action matches `/browser/actions/:requestToken` with exact
+`agentId`, `threadId`, and `callbackPrompt` query claims. The parser accepts it
+only in an authoritative assistant event and binds the claims to the current
+chat context. The API read then verifies the same ownership, current request
+state, safe site origin, and display-field metadata before the card becomes
+actionable. Malformed, mismatched, unsupported, expired, or feature-disabled
+requests render an inert state.
+
+The fixed-height transcript card opens its native controls in
+`ChatCardDetails`; the authenticated full-page route renders the same form and
+signals directly. Repeated occurrences of an equivalent action share one
+thread-scoped signals object, including the in-memory draft and mutation lock.
+Closing the dialog preserves text, username, and one-time-code fields for that
+page lifetime but clears password fields. Terminal and non-retryable states
+clear the complete draft, and nothing is persisted across page reload.
+
+Apply or cancel completes before the card sends its normal chat callback.
+Request-owned event IDs make callback-only Continue retries idempotent without
+repeating the Browser mutation or retaining submitted values. The Platform and
+API both enforce `BrowserNativeInput`; direct Browser interaction is a separate
+action kind and surface.
+
 ## Adding a Card Type
 
 When adding a new link-backed card:
@@ -687,11 +712,13 @@ registry.
 - `turbo/apps/platform/src/signals/chat-page/permission-card-signals.ts`
 - `turbo/apps/platform/src/signals/chat-page/mail-draft.ts`
 - `turbo/apps/platform/src/signals/chat-page/browser-session-block.ts`
+- `turbo/apps/platform/src/signals/chat-page/browser-user-action-block.ts`
 - `turbo/apps/platform/src/signals/chat-page/platform-action-url.ts`
 - `turbo/apps/platform/src/signals/chat-page/computer-use-authorization-block.ts`
 - `turbo/apps/platform/src/signals/chat-page/plan-upgrade-block.ts`
 - `turbo/apps/platform/src/views/okou-page/chat-thread-page.tsx`
 - `turbo/apps/platform/src/views/okou-page/browser-session-card.tsx`
+- `turbo/apps/platform/src/views/okou-page/browser-user-action-card.tsx`
 - `turbo/apps/platform/src/views/okou-page/connector-account-action-card.tsx`
 - `turbo/apps/platform/src/views/okou-page/chat-body-cards.tsx`
 - `turbo/apps/platform/src/views/browser-session/browser-session-page.tsx`

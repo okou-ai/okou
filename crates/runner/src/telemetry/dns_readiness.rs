@@ -53,9 +53,9 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     use super::*;
-    use crate::ids::RunId;
     use crate::telemetry::tests::http_client_for_api_url;
     use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+    use runner_types::ids::RunId;
 
     #[tokio::test]
     async fn dns_readiness_flush_preserves_numeric_pairs_and_missing_measurements() {
@@ -66,7 +66,7 @@ mod tests {
         .await;
         let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&server.url()),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "test-token".into(),
             None,
         );

@@ -1,5 +1,35 @@
 # Changelog
 
+## [8.698.0](https://github.com/okou-ai/okou/compare/core-v8.697.2...core-v8.698.0) (2026-09-22)
+
+
+### Features
+
+* **core:** enable okou models for staff ([#35986](https://github.com/okou-ai/okou/issues/35986)) ([aadef7c](https://github.com/okou-ai/okou/commit/aadef7cf19b0227dcd7e5d0b642fcf6697bcd457))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.1
+
+## [8.697.2](https://github.com/okou-ai/okou/compare/core-v8.697.1...core-v8.697.2) (2026-09-22)
+
+
+### Refactoring
+
+* remove mcp server feature switch ([#35957](https://github.com/okou-ai/okou/issues/35957)) ([9cd2d93](https://github.com/okou-ai/okou/commit/9cd2d935892c86e50dfd39319ac75411f77f677e))
+
+## [8.697.1](https://github.com/okou-ai/okou/compare/core-v8.697.0...core-v8.697.1) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.0
+
 ## [8.697.0](https://github.com/okou-ai/okou/compare/core-v8.696.0...core-v8.697.0) (2026-09-22)
 
 

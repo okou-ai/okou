@@ -51,7 +51,7 @@ async fn idle_pool_park_and_reuse_cycle() {
     // Execute reuse
     let cancel = tokio_util::sync::CancellationToken::new();
     let (idle_sandbox, _lease) = match reuse_entry
-        .try_unpark_for_run(crate::ids::RunId::new_v4())
+        .try_unpark_for_run(runner_types::ids::RunId::new_v4())
         .await
     {
         crate::idle_pool::IdleUnparkResult::Reused {

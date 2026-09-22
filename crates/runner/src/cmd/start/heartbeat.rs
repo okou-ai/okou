@@ -13,12 +13,12 @@ use crate::lifecycle::RunnerMode;
 use crate::provider::JobProvider;
 use crate::resource_budget::ResourceBudget;
 use crate::runner_process_identity::RunnerProcessIdentity;
-use crate::types::{
-    HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
-    MAX_WORKSPACE_CACHES_PER_REUSE_KEY,
-};
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceImageCache, cap_held_workspace_states,
+};
+use runner_types::types::{
+    HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
+    MAX_WORKSPACE_CACHES_PER_REUSE_KEY,
 };
 
 /// Period between routine heartbeat ticks sent to the server. First tick is
@@ -812,11 +812,13 @@ mod tests {
     };
     use crate::paths::RunnerPaths;
     use crate::provider::mock::MockJobProvider;
-    use crate::types::{MAX_HELD_WORKSPACE_STATES, ReusableSandboxState, WorkspaceCacheCapability};
     use crate::workspace_image_cache::{
         WorkspaceCacheTerminalStatus, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
     };
     use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+    use runner_types::types::{
+        MAX_HELD_WORKSPACE_STATES, ReusableSandboxState, WorkspaceCacheCapability,
+    };
     use sandbox::SandboxId;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -871,7 +873,7 @@ mod tests {
     fn workspace_cache(profile: &str) -> WorkspaceCacheCapability {
         WorkspaceCacheCapability {
             profile: profile.to_owned(),
-            workspace_affinity_version: crate::types::WORKSPACE_AFFINITY_VERSION,
+            workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
         }
     }
 
@@ -896,7 +898,7 @@ mod tests {
         reuse_key: &str,
         completed_at: &str,
     ) {
-        let run_id = crate::ids::RunId::new_v4();
+        let run_id = runner_types::ids::RunId::new_v4();
         let sandbox_id = SandboxId::new_v4();
         let lease = cache
             .prepare(WorkspaceImagePrepareRequest {
@@ -1288,7 +1290,7 @@ mod tests {
         );
         let active_runs = test_active_runs();
         let active_guard = active_runs.register(
-            crate::ids::RunId::new_v4(),
+            runner_types::ids::RunId::new_v4(),
             Some("sess-active".into()),
             "vm0/default".into(),
         );
@@ -1420,7 +1422,7 @@ mod tests {
     fn held_sandbox_states_filter_active_reuse_keys() {
         let active_runs = test_active_runs();
         let active_guard = active_runs.register(
-            crate::ids::RunId::new_v4(),
+            runner_types::ids::RunId::new_v4(),
             Some("thread-active".into()),
             "vm0/default".into(),
         );

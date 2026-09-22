@@ -129,22 +129,28 @@ still use 502. A received non-2xx status remains authoritative even if its body
 is unreadable. Caller cancellation retains its original outcome.
 
 App quota 402/429, no-speech 204, and successful usage accounting retain their
-existing route contracts. Terminal native errors log sanitized
+existing route contracts. Terminal native errors retain sanitized
 model/location/operation/status and a fixed reason, including truncation,
-blocking, empty output, invalid response/schema, and oversized responses. Auth
-diagnostics include the failing stage and fixed reason. Neither diagnostics nor
-public errors include tokens, audio, transcripts, raw provider responses, or
-unbounded provider-supplied reason strings. Auth, native validation/transport,
-and exhausted HTTP recovery retain separate diagnostic owners; successful
-recovery and caller cancellation do not produce terminal-error warnings.
+blocking, empty output, invalid response/schema, and oversized responses.
+Native errors from segment operations are owned by the segment diagnostic
+described below; independent text polish keeps the `VertexVoice` provider
+owner. Auth diagnostics include the failing stage and fixed reason. Diagnostics
+may include the bounded provider metadata listed below, but neither diagnostics
+nor public errors include audio, transcripts, generated text, raw provider
+responses, or unbounded provider-supplied strings. Auth, native
+validation/transport, and exhausted HTTP recovery retain one explicit
+diagnostic owner; successful recovery and caller cancellation do not produce
+terminal-error warnings.
 
 ## Segment failure diagnostics
 
 The segment service emits `VoiceSegment` / `voice_transcription_failure` for
-terminal failures that do not already have a provider diagnostic. Existing
-Google authentication, native Google response/transport, permanent OpenRouter
-and ASR rejection, and exhausted recovery retain their diagnostic owners.
-Accepted no-speech and caller cancellation do not add a failure record.
+terminal failures that it owns. Vertex calls through the segment completion
+path explicitly select this owner, while standalone `/api/voice-io/polish`
+retains `VertexVoice`. Existing Google authentication, permanent OpenRouter and
+ASR rejection, and exhausted recovery retain their diagnostic owners. Each
+failure has one owner and one terminal record. Accepted no-speech and caller
+cancellation do not add a failure record.
 
 `stage` identifies audio reading, transcription, combined finalization, overlap
 reconciliation, stitching, standalone polish, or output validation. `reason`
@@ -163,13 +169,48 @@ Available correlation is limited to a valid active trace ID, a UUID-shaped
 credentials, audio, transcripts, reference context, and provider bodies are
 excluded. Diagnostic sink failures cannot replace the handled HTTP result.
 
+When a Vertex response was parsed far enough to expose metadata, the same
+record may include `location`, `operation`, `prompt_tokens`,
+`candidate_tokens`, `thought_tokens`, `tool_use_prompt_tokens`,
+`cached_content_tokens`, `total_tokens`, `candidate_chars`, `thought_chars`,
+and `provider_model_version`. Token fields accept only nonnegative finite safe
+integers. Character counts are derived inside the bounded response parser and
+do not retain part text. Model versions are limited to 128 characters from a
+narrow identifier allowlist. Every field is optional: missing or malformed
+provider telemetry is omitted independently and never changes response
+validity, retry behavior, or the public result.
+
+For an `output_truncated` investigation, replace the three literals below with
+the exact deployed commit and a UTC interval no wider than 30 minutes, then run
+this query against Axiom. Use the deployment's ready time as the initial lower
+bound, and never mix commits in one causal sample.
+
+```apl
+['vm0-web-logs-prod']
+| where ['_time'] >= datetime(2026-09-22T00:00:00Z)
+| where ['_time'] < datetime(2026-09-22T00:30:00Z)
+| where ['fields.type'] == "voice_transcription_failure"
+| where ['fields.reason'] == "output_truncated"
+| where ['fields.deployment_commit_sha'] == "0000000000000000000000000000000000000000"
+| project ['_time'], ['fields.deployment_commit_sha'], ['fields.model'], ['fields.provider'], ['fields.location'], ['fields.operation'], ['fields.stage'], ['fields.final'], ['fields.has_audio'], ['fields.audio_duration_seconds'], ['fields.total_duration_seconds'], ['fields.previous_transcript_chars'], ['fields.prompt_tokens'], ['fields.candidate_tokens'], ['fields.thought_tokens'], ['fields.tool_use_prompt_tokens'], ['fields.cached_content_tokens'], ['fields.total_tokens'], ['fields.candidate_chars'], ['fields.thought_chars'], ['fields.provider_model_version'], ['fields.trace_id'], ['fields.x_client_request_id']
+| order by ['_time'] asc
+```
+
+Compare the prompt, candidate, thought, and total counts with audio duration and
+the previous-transcript size. A large audio or cumulative transcript is not the
+cause unless those dimensions and the provider usage support it. If no
+truncation recurs in the first interval, extend the exact-commit window once to
+at most 24 hours and report insufficient recurrence rather than a causal
+conclusion. Count requests, client sessions, and Sentry users separately.
+
 For [#34193](https://github.com/vm0-ai/vm0/issues/34193), inspect a bounded
 metadata-only interval on the deployed commit. Correlate the new categories
-with exact segment POSTs and the existing provider owners. Count requests,
-client sessions, and Sentry events separately; OPTIONS 204 is not evidence of
-accepted no-speech. These diagnostics cannot reconstruct the historical
-provider output or prove that a saved recording survived or was recovered.
-Keep the incident open until production evidence supports its outcome.
+with exact segment POSTs, segment-owned Vertex failures, and the retained auth,
+OpenRouter, ASR, and exhausted-recovery owners. Count requests, client sessions,
+and Sentry events separately; OPTIONS 204 is not evidence of accepted no-speech.
+These diagnostics cannot reconstruct the historical provider output or prove
+that a saved recording survived or was recovered. Keep the incident open until
+production evidence supports its outcome.
 
 ## Runtime verification
 

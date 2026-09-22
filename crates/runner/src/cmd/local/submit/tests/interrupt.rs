@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use super::super::run_submit_with_home;
 use super::support::submit_args_for_test;
-use crate::ids::RunId;
 use crate::local_queue::{self, JobRequest, JobResponse};
 use crate::paths::HomePaths;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_types::ids::RunId;
 
 const INTERRUPT_CHILD_ENV: &str = "OKOU_RUNNER_LOCAL_SUBMIT_INTERRUPT_TEST";
 const INTERRUPT_CHILD_VALUE: &str = "after-job-publication";

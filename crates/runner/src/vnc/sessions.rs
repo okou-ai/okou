@@ -14,7 +14,7 @@ use super::{
     Failure, Scope, VncRuntime, network,
     protocol::{Info, Start},
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) type Engine = rfb_client::Session<TcpStream>;
 type Registry = Arc<Mutex<HashMap<Uuid, Arc<Session>>>>;

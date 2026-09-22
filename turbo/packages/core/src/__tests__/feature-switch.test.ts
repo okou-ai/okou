@@ -237,14 +237,8 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("keeps Okou models off for everyone until an explicit override enables them", () => {
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: staffOrgId },
-      { orgId: staffOrgId, userId: "staff-user", email: "staff@okou.ai" },
-    ]) {
+  it("enables Okou models for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, context)).toBe(
         false,
       );
@@ -255,11 +249,21 @@ describe("isFeatureEnabled", () => {
         }),
       ).toBe(true);
     }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.OkouModels, staffContext)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OkouModels, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.OkouModels]: false },
+      }),
+    ).toBe(false);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.OkouModels]).toEqual({
       maintainer: "liangyou@okou.ai",
       description:
-        "Show the Okou 1.0 model family in Add Model for explicitly enabled users. Off for everyone by default, including the staff org.",
-      rolloutStage: "alpha",
+        "Show the Okou 1.0 model family in Add Model for the staff organization.",
+      rolloutStage: "beta",
     });
   });
 
@@ -402,21 +406,39 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
-  it("should admit durable exports for every owner and accept an opt-out", () => {
-    expect(FeatureSwitchKey.DurableUserExport).toBe("durableUserExport");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+  it("should release chat unread shortcuts and optimistic message spinners", () => {
+    for (const key of [
+      FeatureSwitchKey.ChatUnreadOnlyShortcut,
+      FeatureSwitchKey.OptimisticMessageSpinner,
+    ]) {
+      expect(isFeatureEnabled(key, {})).toBe(true);
+      expect(isFeatureEnabled(key, { orgId: "org_nonexistent" })).toBe(true);
       expect(
-        isFeatureEnabled(FeatureSwitchKey.DurableUserExport, context),
-      ).toBe(true);
+        isFeatureEnabled(key, {
+          overrides: { [key]: false },
+        }),
+      ).toBe(false);
+      expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
+    }
+  });
+
+  it("should link user message urls for every reader and accept an opt-out", () => {
+    expect(FeatureSwitchKey.UserMessageLinks).toBe("userMessageLinks");
+    // A share link is read without a session, so the signed-out visitor's
+    // empty context has to carry the feature too.
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, context)).toBe(
+        true,
+      );
     }
     expect(
-      isFeatureEnabled(FeatureSwitchKey.DurableUserExport, {
+      isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, {
         orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.DurableUserExport]: false },
+        overrides: { [FeatureSwitchKey.UserMessageLinks]: false },
       }),
     ).toBe(false);
     expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.DurableUserExport]
+      getFeatureSwitchMetadata()[FeatureSwitchKey.UserMessageLinks]
         .rolloutStage,
     ).toBe("released");
   });
@@ -585,7 +607,7 @@ describe("getAllFeatureStates", () => {
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
@@ -602,9 +624,9 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
-      false,
+      true,
     );
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });

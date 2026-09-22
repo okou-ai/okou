@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.209.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.1...runner-rs-v0.209.2) (2026-09-22)
+
+
+### Refactoring
+
+* **runner:** extract shared runner types ([#35988](https://github.com/okou-ai/okou/issues/35988)) ([91eeb09](https://github.com/okou-ai/okou/commit/91eeb0904bbbbcebcd05b0b31c8b42f71d12f5e0))
+
+## [0.209.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.0...runner-rs-v0.209.1) (2026-09-22)
+
+
+### Performance Improvements
+
+* **runner:** attribute blank pool selection outcomes ([#35895](https://github.com/okou-ai/okou/issues/35895)) ([eb82d74](https://github.com/okou-ai/okou/commit/eb82d74e69e3a614d18de300a189618575d951a4))
+
 ## [0.209.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.208.0...runner-rs-v0.209.0) (2026-09-22)
 
 

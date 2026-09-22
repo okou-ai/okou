@@ -5,12 +5,16 @@ import type {
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
-import type {
-  HostedArtifactKind,
-  HostedSiteFilesResponse,
-  HostedSiteDeploymentsResponse,
-  HostedSitePrepareRequest,
+import {
+  hostedSiteAssetContentError,
+  hostedSiteAssetNameError,
+  isMutableHostedSitePath,
+  type HostedArtifactKind,
+  type HostedSiteFilesResponse,
+  type HostedSiteDeploymentsResponse,
+  type HostedSitePrepareRequest,
 } from "@okouai/api-contracts/contracts/host";
+import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -18,6 +22,7 @@ import {
   privateHostedDeployments,
   hostedSites,
 } from "@okouai/db/runtime/hosted-site";
+import type { HostedDeploymentStatus } from "@okouai/db/schema/hosted-site";
 import { and, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
@@ -29,6 +34,7 @@ import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
 } from "../../lib/db-structured-result";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { type Db, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import type { Tx } from "../../lib/db-types";
@@ -38,12 +44,7 @@ import {
   putHostedSitesS3Object,
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import {
-  privateArtifactCreationEnabled,
-  privateArtifactReferenceUrl,
-} from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
-import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
   scheduleArtifactPreviewRender$,
   type RenderArtifactPreviewArgs,
@@ -80,7 +81,6 @@ interface PrepareDeploymentArgs {
 
 interface ScopedPrepareDeploymentArgs extends PrepareDeploymentArgs {
   readonly chatThreadId: string | null;
-  readonly privateArtifacts: boolean;
 }
 
 interface CompleteDeploymentArgs {
@@ -190,12 +190,23 @@ type SiteDeploymentCreationResult =
       readonly deployment: HostedDeploymentRow;
     }
   | { readonly kind: "slug_conflict" }
-  | { readonly kind: "scope_conflict"; readonly message: string };
+  | { readonly kind: "owner_conflict" }
+  | { readonly kind: "scope_conflict"; readonly message: string }
+  | { readonly kind: "content_conflict"; readonly message: string };
+
+type HostedSiteResolution =
+  | { readonly kind: "ok"; readonly site: HostedSiteRow }
+  | { readonly kind: "slug_conflict" }
+  | { readonly kind: "owner_conflict" };
+
+interface HostedSiteAllocation {
+  readonly site: HostedSiteRow;
+  readonly deploymentVersion: number;
+}
 
 interface CreateHostedSiteDeploymentContext {
   readonly now: Date;
   readonly deploymentId: string;
-  readonly privateReference: string | null;
 }
 
 type HostedSiteFilesTargetResult =
@@ -281,8 +292,77 @@ function immutableDeploymentPointerKey(
   return `${pointerNamespace(publicBrand)}/deployments/${deploymentId}.json`;
 }
 
+function deploymentPrefix(publicBrand: PublicBrand, deploymentId: string) {
+  return `${pointerNamespace(publicBrand)}/publications/${deploymentId}`;
+}
+
+function hostedSiteScopeKey(args: ScopedPrepareDeploymentArgs): string {
+  return args.chatThreadId ?? "organization";
+}
+
 function hostedSiteRequestedSlug(site: HostedSiteRow): string {
   return site.requestedSlug ?? site.slug;
+}
+
+async function findScopedHostedSite(
+  db: Db | Tx,
+  args: ScopedPrepareDeploymentArgs,
+  lock: boolean,
+): Promise<HostedSiteRow | undefined> {
+  const scopeCondition =
+    args.chatThreadId === null
+      ? isNull(hostedSites.chatThreadId)
+      : eq(hostedSites.chatThreadId, args.chatThreadId);
+  const query = db
+    .select()
+    .from(hostedSites)
+    .where(
+      and(
+        eq(hostedSites.orgId, args.orgId),
+        eq(hostedSites.requestedSlug, args.body.site),
+        // A publication brand is part of the site's identity; a name reserved
+        // under another brand stays reserved rather than being redeployed.
+        eq(hostedSites.publicBrand, args.publicBrand),
+        scopeCondition,
+        isNull(hostedSites.deletedAt),
+      ),
+    );
+  const [site] = lock
+    ? await query.for("update").limit(1)
+    : await query.limit(1);
+  return site;
+}
+
+async function hasUnscopedHostedSiteConflict(
+  db: Tx,
+  args: ScopedPrepareDeploymentArgs,
+): Promise<boolean> {
+  if (args.chatThreadId === null) {
+    return false;
+  }
+  const scopedSite = await findScopedHostedSite(db, args, false);
+  if (scopedSite) {
+    return false;
+  }
+  const [unscopedSite] = await db
+    .select({ id: hostedSites.id })
+    .from(hostedSites)
+    .where(
+      and(
+        eq(hostedSites.orgId, args.orgId),
+        isNull(hostedSites.chatThreadId),
+        or(
+          eq(hostedSites.requestedSlug, args.body.site),
+          and(
+            isNull(hostedSites.requestedSlug),
+            eq(hostedSites.slug, args.body.site),
+          ),
+        ),
+        isNull(hostedSites.deletedAt),
+      ),
+    )
+    .limit(1);
+  return unscopedSite !== undefined;
 }
 
 async function resolveChatThreadId(
@@ -457,6 +537,10 @@ function validateFiles(
       return `Duplicate hosted-site path: ${file.path}`;
     }
     seen.add(file.path);
+    const nameError = hostedSiteAssetNameError(file);
+    if (nameError) {
+      return nameError;
+    }
     if (file.size > MAX_HOSTED_SITE_FILE_BYTES) {
       return `Hosted-site file too large: ${file.path}`;
     }
@@ -530,7 +614,6 @@ function artifactPreviewArgs(
     contentType: "text/html",
     publicBrand: deployment.publicBrand,
     deploymentId: deployment.id,
-    privateHosted: deployment.manifest.access === "owner-private-v1",
   };
 }
 
@@ -558,23 +641,67 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
   };
 }
 
-async function createHostedSite(
+function resolvedHostedSite(
+  site: HostedSiteRow,
+  args: ScopedPrepareDeploymentArgs,
+): HostedSiteResolution {
+  // Redeploying replaces what a site serves, so only its creator may do it.
+  // Organization membership alone never carries that authority.
+  return site.userId === args.userId
+    ? { kind: "ok", site }
+    : { kind: "owner_conflict" };
+}
+
+/** Adopt the candidate that lost the insert when this scope already owns it. */
+async function findScopedHostedSiteBySlug(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
-  context: CreateHostedSiteDeploymentContext,
-): Promise<HostedSiteRow | null> {
+  publicSlug: string,
+): Promise<HostedSiteRow | undefined> {
+  const [site] = await db
+    .select()
+    .from(hostedSites)
+    .where(
+      and(
+        eq(hostedSites.orgId, args.orgId),
+        eq(hostedSites.slug, publicSlug),
+        eq(hostedSites.publicBrand, args.publicBrand),
+        args.chatThreadId === null
+          ? isNull(hostedSites.chatThreadId)
+          : eq(hostedSites.chatThreadId, args.chatThreadId),
+        isNull(hostedSites.deletedAt),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  return site;
+}
+
+async function findOrCreateHostedSite(
+  db: Tx,
+  args: ScopedPrepareDeploymentArgs,
+  now: Date,
+): Promise<HostedSiteResolution> {
+  const existingSite = await findScopedHostedSite(db, args, true);
+  if (existingSite) {
+    return resolvedHostedSite(existingSite, args);
+  }
+
+  const scopeKey = hostedSiteScopeKey(args);
   for (let attempt = 0; attempt < MAX_PUBLIC_SLUG_ATTEMPTS; attempt += 1) {
     const publicSlug = publicSlugCandidate(
       args.body.site,
       args.orgId,
-      context.deploymentId,
+      scopeKey,
       attempt,
     );
     const scope = await canonicalizeHostedSiteScope(db, {
       orgId: args.orgId,
       slug: publicSlug,
-      // Each publication owns its resolved name, including for older readers.
-      requestedSlug: publicSlug,
+      // The preferred name stays the site's identity so later publications
+      // redeploy it. A fallback site owns its resolved name instead, which
+      // keeps names reserved by deleted sites permanently unavailable.
+      requestedSlug: attempt === 0 ? args.body.site : publicSlug,
       chatThreadId: args.chatThreadId,
       createdFromRunId: args.runId,
     });
@@ -588,55 +715,158 @@ async function createHostedSite(
         publicBrand: args.publicBrand,
         publicSlug,
         createdFromRunId: args.runId,
-        updatedAt: context.now,
+        updatedAt: now,
       })
       .onConflictDoNothing()
       .returning();
     if (createdSite) {
-      return createdSite;
+      return { kind: "ok", site: createdSite };
+    }
+
+    const concurrentSite =
+      (await findScopedHostedSite(db, args, true)) ??
+      (await findScopedHostedSiteBySlug(db, args, publicSlug));
+    if (concurrentSite) {
+      return resolvedHostedSite(concurrentSite, args);
     }
   }
-  return null;
+  return { kind: "slug_conflict" };
+}
+
+/** The locked site row serializes version allocation across redeploys. */
+async function maxHostedDeploymentVersion(
+  db: Tx,
+  siteId: string,
+  status?: HostedDeploymentStatus,
+): Promise<number> {
+  const publicVersion = await db
+    .select({
+      version:
+        sql`max((${hostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
+    })
+    .from(hostedDeployments)
+    .where(
+      status === undefined
+        ? eq(hostedDeployments.siteId, siteId)
+        : and(
+            eq(hostedDeployments.siteId, siteId),
+            eq(hostedDeployments.status, status),
+          ),
+    );
+  const privateVersion = await db
+    .select({
+      version:
+        sql`max((${privateHostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
+    })
+    .from(privateHostedDeployments)
+    .where(
+      status === undefined
+        ? eq(privateHostedDeployments.siteId, siteId)
+        : and(
+            eq(privateHostedDeployments.siteId, siteId),
+            eq(privateHostedDeployments.status, status),
+          ),
+    );
+  return Math.max(
+    publicVersion[0]?.version ?? 0,
+    privateVersion[0]?.version ?? 0,
+  );
+}
+
+async function allocateHostedSite(
+  db: Tx,
+  args: ScopedPrepareDeploymentArgs,
+  now: Date,
+): Promise<
+  HostedSiteAllocation | Exclude<HostedSiteResolution, { kind: "ok" }>
+> {
+  const resolution = await findOrCreateHostedSite(db, args, now);
+  if (resolution.kind !== "ok") {
+    return resolution;
+  }
+  const { site } = resolution;
+  return {
+    site,
+    deploymentVersion: (await maxHostedDeploymentVersion(db, site.id)) + 1,
+  };
+}
+
+const publishedAssetRowSchema = z.object({ path: z.string() });
+
+/**
+ * Immutable assets are addressed by name, so a name published once must keep
+ * its bytes. Only mutable paths may differ between publications of one site.
+ */
+async function republishedAssetConflict(
+  db: Tx,
+  siteId: string,
+  files: readonly HostedSiteFile[],
+): Promise<string | null> {
+  const assets: Record<string, string> = {};
+  for (const file of files) {
+    if (!isMutableHostedSitePath(file)) {
+      assets[file.path] = file.sha256;
+    }
+  }
+  if (Object.keys(assets).length === 0) {
+    return null;
+  }
+  const rows = await executeRawRows(
+    db,
+    sql`
+      select requested.key as path
+      from (
+        select ${hostedDeployments.manifest} as manifest
+        from ${hostedDeployments}
+        where ${eq(hostedDeployments.siteId, siteId)}
+        union all
+        select ${privateHostedDeployments.manifest} as manifest
+        from ${privateHostedDeployments}
+        where ${eq(privateHostedDeployments.siteId, siteId)}
+      ) published
+      cross join lateral jsonb_each_text(
+        ${sql.param(JSON.stringify(assets))}::jsonb
+      ) as requested
+      where published.manifest->'files'->requested.key->>'sha256' is distinct from null
+        and published.manifest->'files'->requested.key->>'sha256' <> requested.value
+      limit 1
+    `,
+    publishedAssetRowSchema,
+  );
+  const conflicting = rows[0]?.path;
+  return conflicting === undefined
+    ? null
+    : hostedSiteAssetContentError(conflicting);
 }
 
 async function insertHostedDeployment(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
-  site: HostedSiteRow,
+  allocation: HostedSiteAllocation,
 ): Promise<HostedDeploymentRow> {
-  // Retained wire/storage projection for pinned CLIs and old API readers.
-  // Publication identity and storage paths use deploymentId, never this value.
-  const deploymentVersion = 1;
+  const { deploymentVersion, site } = allocation;
   const { deploymentId } = context;
-  if (args.privateArtifacts !== (context.privateReference !== null)) {
-    throw new Error("Deployment reference does not match its storage policy");
-  }
-  const artifactUrl =
-    context.privateReference === null
-      ? deploymentUrl(site.publicBrand, deploymentId)
-      : privateArtifactReferenceUrl(context.privateReference, "index.html");
-  const aliasUrl = args.privateArtifacts
-    ? artifactUrl
-    : publicUrl(site.publicBrand, site.publicSlug);
-  const prefix = args.privateArtifacts
-    ? `private-sites/${site.publicBrand}/${deploymentId}`
-    : `${pointerNamespace(site.publicBrand)}/publications/${deploymentId}`;
-  const manifest: HostedSiteManifest = {
-    ...buildManifest({
-      deploymentId,
-      siteId: site.id,
-      site: args.body.site,
-      publicSlug: site.publicSlug,
-      deploymentVersion,
-      artifactKind: args.body.artifactKind,
-      spaFallback: args.body.spaFallback,
-      files: args.body.files,
-      createdAt: context.now,
-      publicBrand: site.publicBrand,
-    }),
-    ...(args.privateArtifacts ? { access: "owner-private-v1" as const } : {}),
-  };
+  // Every publication owns its bytes; only the site's alias is reused.
+  const artifactUrl = deploymentUrl(site.publicBrand, deploymentId);
+  const aliasUrl = publicUrl(site.publicBrand, site.publicSlug);
+  const prefix = deploymentPrefix(site.publicBrand, deploymentId);
+  const manifest: HostedSiteManifest = buildManifest({
+    deploymentId,
+    siteId: site.id,
+    site: args.body.site,
+    publicSlug: site.publicSlug,
+    deploymentVersion,
+    artifactKind: args.body.artifactKind,
+    spaFallback: args.body.spaFallback,
+    files: args.body.files,
+    createdAt: context.now,
+    publicBrand: site.publicBrand,
+  });
   const files = Object.values(manifest.files);
   await assertHostedDeploymentScope(db, {
     siteId: site.id,
@@ -644,9 +874,7 @@ async function insertHostedDeployment(
     runId: args.runId,
   });
   const [deployment] = await db
-    .insert(
-      args.privateArtifacts ? privateHostedDeployments : hostedDeployments,
-    )
+    .insert(hostedDeployments)
     .values({
       id: deploymentId,
       siteId: site.id,
@@ -678,7 +906,7 @@ async function insertHostedDeployment(
 
 export async function createHostedSiteDeployment(
   writeDb: Db,
-  args: PrepareDeploymentArgs & { readonly privateArtifacts: boolean },
+  args: PrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
 ): Promise<SiteDeploymentCreationResult> {
   const result = await settle(
@@ -687,17 +915,31 @@ export async function createHostedSiteDeployment(
       // FOR SHARE also blocks non-key metadata updates and run cleanup.
       const chatThreadId = await lockHostedRunChatThreadId(tx, args.runId);
       const scopedArgs = { ...args, chatThreadId };
-      const site = await createHostedSite(tx, scopedArgs, context);
-      if (!site) {
-        return { kind: "slug_conflict" };
+      if (await hasUnscopedHostedSiteConflict(tx, scopedArgs)) {
+        return {
+          kind: "scope_conflict",
+          message: `Hosted site slug "${args.body.site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
+        };
+      }
+      const allocation = await allocateHostedSite(tx, scopedArgs, context.now);
+      if (!("site" in allocation)) {
+        return allocation;
+      }
+      const assetConflict = await republishedAssetConflict(
+        tx,
+        allocation.site.id,
+        args.body.files,
+      );
+      if (assetConflict) {
+        return { kind: "content_conflict", message: assetConflict };
       }
       const deployment = await insertHostedDeployment(
         tx,
         scopedArgs,
         context,
-        site,
+        allocation,
       );
-      return { kind: "ok", site, deployment };
+      return { kind: "ok", site: allocation.site, deployment };
     }),
   );
   if (!result.ok) {
@@ -725,34 +967,28 @@ export const prepareHostedSiteDeployment$ = command(
       return { status: "bad_request", message: fileError };
     }
 
-    const writeDb = set(writeDb$);
-    const creationArgs = {
-      ...args,
-      privateArtifacts: await get(
-        privateArtifactCreationEnabled(args.orgId, args.userId),
-      ),
-    };
-    signal.throwIfAborted();
-    if (args.body.requirePrivateArtifact && !creationArgs.privateArtifacts) {
+    // Hosted sites are public publications. A site's alias is its durable
+    // address, so it never takes a private artifact reference.
+    if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
-    const now = nowDate();
-    const deploymentId = crypto.randomUUID();
-    const privateReference = creationArgs.privateArtifacts
-      ? await set(
-          allocateArtifactReference$,
-          { kind: "html", id: deploymentId },
-          signal,
-        )
-      : null;
-    const siteAndDeployment = await createHostedSiteDeployment(
-      writeDb,
-      creationArgs,
-      { now, deploymentId, privateReference },
-    );
+    const writeDb = set(writeDb$);
+    const siteAndDeployment = await createHostedSiteDeployment(writeDb, args, {
+      now: nowDate(),
+      deploymentId: crypto.randomUUID(),
+    });
     signal.throwIfAborted();
-    if (siteAndDeployment.kind === "scope_conflict") {
+    if (
+      siteAndDeployment.kind === "scope_conflict" ||
+      siteAndDeployment.kind === "content_conflict"
+    ) {
       return { status: "conflict", message: siteAndDeployment.message };
+    }
+    if (siteAndDeployment.kind === "owner_conflict") {
+      return {
+        status: "conflict",
+        message: `Hosted site "${args.body.site}" belongs to another owner. Choose a different --site value and rerun the same okou host command.`,
+      };
     }
     if (siteAndDeployment.kind === "slug_conflict") {
       return {
@@ -908,17 +1144,14 @@ const bindHostedSiteDeployment$ = command(
       const deploymentVersion = legacyHostedDeploymentVersion(
         args.deployment.manifest,
       );
+      // A redeploy moves the site alias forward; uploads that complete out of
+      // order never replace a newer publication.
       const shouldBind =
         !args.deployment.manifest.access &&
-        (args.deployment.manifest.immutableContent
-          ? site.activeDeploymentId === null ||
-            site.activeDeploymentId === args.deployment.id
-          : // Historical pending uploads can still complete out of order.
-            // Keep their alias selection until the #35240 migration/drain gate.
-            deploymentVersion === null
-            ? activeDeploymentVersion === null
-            : activeDeploymentVersion === null ||
-              deploymentVersion >= activeDeploymentVersion);
+        (deploymentVersion === null
+          ? activeDeploymentVersion === null
+          : activeDeploymentVersion === null ||
+            deploymentVersion >= activeDeploymentVersion);
       if (shouldBind) {
         await set(
           registerLegacyHostedSite$,
@@ -967,7 +1200,6 @@ const bindHostedSiteDeployment$ = command(
           })
           .where(eq(hostedSites.id, args.deployment.siteId));
       }
-
       return {
         activeDeploymentId: shouldBind
           ? args.deployment.id

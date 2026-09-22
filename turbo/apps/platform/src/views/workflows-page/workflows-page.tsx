@@ -1,5 +1,5 @@
 // Workflow list surfaces for agent-scoped tabs and the workspace index page.
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Avatar } from "@base-ui/react/avatar";
 import {
   useGet,
@@ -217,14 +217,16 @@ function VisibilityIcon({ workflow }: { readonly workflow: WorkflowSummary }) {
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span aria-label={label} className="flex shrink-0">
-            <Icon
-              size={15}
-              className={isPublic ? "text-blue-500" : "text-[#45A7A8]"}
-            />
-          </span>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <span aria-label={label} className="flex shrink-0">
+              <Icon
+                size={15}
+                className={isPublic ? "text-blue-500" : "text-[#45A7A8]"}
+              />
+            </span>
+          }
+        />
         <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -353,36 +355,38 @@ function ConnectorCell({
     <Popover>
       <TooltipProvider delayDuration={200}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  connectorPillClassName({ interactive: true }),
-                  actionRequiredEntry &&
-                    "border-amber-300/80 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50",
-                )}
-              >
-                {actionRequiredEntry ? (
-                  <ConnectorPillMarker dotClassName="bg-amber-500" />
-                ) : lead ? (
-                  <ConnectorPillMarker
-                    dotClassName={automationDotClass(lead)}
-                  />
-                ) : null}
-                <span>
-                  {actionRequiredEntry
-                    ? i18n.t(($) => {
-                        return $.workflows.list.actionRequired;
-                      })
-                    : connectorNames(entries)}
-                </span>
-                {!actionRequiredEntry && remaining > 0 ? (
-                  <span className="text-muted-foreground">+{remaining}</span>
-                ) : null}
-              </button>
-            </PopoverTrigger>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    connectorPillClassName({ interactive: true }),
+                    actionRequiredEntry &&
+                      "border-amber-300/80 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50",
+                  )}
+                >
+                  {actionRequiredEntry ? (
+                    <ConnectorPillMarker dotClassName="bg-amber-500" />
+                  ) : lead ? (
+                    <ConnectorPillMarker
+                      dotClassName={automationDotClass(lead)}
+                    />
+                  ) : null}
+                  <span>
+                    {actionRequiredEntry
+                      ? i18n.t(($) => {
+                          return $.workflows.list.actionRequired;
+                        })
+                      : connectorNames(entries)}
+                  </span>
+                  {!actionRequiredEntry && remaining > 0 ? (
+                    <span className="text-muted-foreground">+{remaining}</span>
+                  ) : null}
+                </button>
+              </PopoverTrigger>
+            }
+          />
           <TooltipContent side="bottom">
             {i18n.t(($) => {
               return $.workflows.list.viewAutomations;
@@ -502,7 +506,7 @@ export function WorkflowTooltip({
   children,
 }: {
   readonly workflow: WorkflowSummary;
-  readonly children: ReactNode;
+  readonly children: ReactElement;
 }) {
   const scope = useLoadable(workflowOwnerProfileIdentity$);
   const pageSignal = useGet(pageSignal$);
@@ -523,7 +527,7 @@ export function WorkflowTooltip({
           }
         }}
       >
-        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipTrigger render={children} />
         <TooltipContent
           role="tooltip"
           side="bottom"

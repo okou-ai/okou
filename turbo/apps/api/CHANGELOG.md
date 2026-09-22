@@ -8,6 +8,77 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.656.1](https://github.com/okou-ai/okou/compare/api-v1.656.0...api-v1.656.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **api:** handle retryable telemetry ingest failures ([#35953](https://github.com/okou-ai/okou/issues/35953)) ([785a8de](https://github.com/okou-ai/okou/commit/785a8de9dc834b02d596aa35ec49feef71d61d02))
+* **api:** map Clerk invitation conflicts ([#35991](https://github.com/okou-ai/okou/issues/35991)) ([b052a84](https://github.com/okou-ai/okou/commit/b052a841d0c194a14174374b84dd8f8ea1550d70))
+* **slack:** handle connection identity conflicts ([#35994](https://github.com/okou-ai/okou/issues/35994)) ([bcfc8f3](https://github.com/okou-ai/okou/commit/bcfc8f36a5b43b7fd1fe2c6c70de594f7d42160b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.1
+    * @okouai/core bumped to 8.698.0
+    * @okouai/db bumped to 1.286.2
+    * @okouai/pi-agent-runtime bumped to 1.35.4
+
+## [1.656.0](https://github.com/okou-ai/okou/compare/api-v1.655.1...api-v1.656.0) (2026-09-22)
+
+
+### Features
+
+* **api:** execute the relational erasure sweep behind the capture fence ([#35985](https://github.com/okou-ai/okou/issues/35985)) ([ea73a18](https://github.com/okou-ai/okou/commit/ea73a1816194e55b353ec016356ffe7271b9c44c)), closes [#35874](https://github.com/okou-ai/okou/issues/35874) [#33745](https://github.com/okou-ai/okou/issues/33745)
+
+## [1.655.1](https://github.com/okou-ai/okou/compare/api-v1.655.0...api-v1.655.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **api:** require every ownership column to declare whose identity it holds ([#35966](https://github.com/okou-ai/okou/issues/35966)) ([2d1f7d7](https://github.com/okou-ai/okou/commit/2d1f7d7e02f135e4ecd4133fd2c42fdbf918c1bc)), closes [#35874](https://github.com/okou-ai/okou/issues/35874) [#33745](https://github.com/okou-ai/okou/issues/33745)
+* **api:** retain vertex voice truncation diagnostics ([#35952](https://github.com/okou-ai/okou/issues/35952)) ([00e8312](https://github.com/okou-ai/okou/commit/00e83128edf0a39361ec3eef3b9fbd2980af4695))
+
+
+### Refactoring
+
+* remove mcp server feature switch ([#35957](https://github.com/okou-ai/okou/issues/35957)) ([9cd2d93](https://github.com/okou-ai/okou/commit/9cd2d935892c86e50dfd39319ac75411f77f677e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.697.2
+    * @okouai/db bumped to 1.286.1
+    * @okouai/pi-agent-runtime bumped to 1.35.3
+
+## [1.655.0](https://github.com/okou-ai/okou/compare/api-v1.654.0...api-v1.655.0) (2026-09-22)
+
+
+### Features
+
+* **api:** add the account-erasure ownership coverage guard ([#35906](https://github.com/okou-ai/okou/issues/35906)) ([0d80c64](https://github.com/okou-ai/okou/commit/0d80c64cb11754a5a382decefff834791a93bb15))
+* **vnc:** add typed ssh transport to saved connections ([#35910](https://github.com/okou-ai/okou/issues/35910)) ([79069cb](https://github.com/okou-ai/okou/commit/79069cbbc0f48136df9520306aa06a6990e056c2))
+
+
+### Bug Fixes
+
+* **api:** give image recognition a reasoning setting and a deadline ([#35861](https://github.com/okou-ai/okou/issues/35861)) ([82bd731](https://github.com/okou-ai/okou/commit/82bd7316f7475a5bf8abcc50387089554baa1cec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.0
+    * @okouai/core bumped to 8.697.1
+    * @okouai/db bumped to 1.286.0
+    * @okouai/pi-agent-runtime bumped to 1.35.2
+
 ## [1.654.0](https://github.com/okou-ai/okou/compare/api-v1.653.0...api-v1.654.0) (2026-09-22)
 
 

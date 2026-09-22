@@ -21,7 +21,7 @@ fn assert_event_field(event: &CapturedEvent, field: &str, expected: &str) {
 fn proxy_register_fast_success_logs_info() {
     let events = capture_proxy_register_events(|| {
         log_proxy_register_success(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SandboxId::from(uuid::Uuid::nil()),
             "vm0/default",
             Duration::from_secs(1),
@@ -45,7 +45,7 @@ fn proxy_register_fast_success_logs_info() {
 fn proxy_register_slow_success_warns_with_stable_fields() {
     let events = capture_proxy_register_events(|| {
         log_proxy_register_success(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SandboxId::from(uuid::Uuid::nil()),
             "vm0/default",
             Duration::from_secs(3),
@@ -69,7 +69,7 @@ fn proxy_register_slow_success_warns_with_stable_fields() {
 fn proxy_register_failure_warns_with_error() {
     let events = capture_proxy_register_events(|| {
         log_proxy_register_failure(
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             SandboxId::from(uuid::Uuid::nil()),
             "vm0/default",
             Duration::from_millis(25),
@@ -291,8 +291,8 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
             &config,
             RunStart {
                 restore_guest_state: true,
-                reuse_result: crate::types::SandboxReuseResult::Reused,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::SandboxReused,
+                reuse_result: runner_types::types::SandboxReuseResult::Reused,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::SandboxReused,
                 prev_storage: Some(&prev_storage),
             },
             &mut telemetry,
@@ -380,7 +380,7 @@ async fn execute_inner_proxy_unregister_failure_marks_successful_run_failed() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

@@ -74,13 +74,13 @@ use crate::executor::{
     FinalizingHandoffReason, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 use crate::idle_pool::{ExactIdleReservationMiss, FinalizingHandoffCandidate};
-use crate::ids::RunId;
 use crate::provider::ClaimedJob;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::run_cancellation::RunCancellationRegistration;
 use crate::telemetry::JobTelemetry;
-use crate::types::{CompleteRequest, SandboxReuseResult};
 use crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
+use runner_types::ids::RunId;
+use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
 pub(super) const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(1500);
 

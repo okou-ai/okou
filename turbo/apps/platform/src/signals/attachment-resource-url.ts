@@ -7,9 +7,7 @@ import {
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
-import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
@@ -95,25 +93,6 @@ function createArtifactReferencePresignedToken$(
   });
 }
 
-function createPrivateHostedPresignedToken$(
-  url: string,
-  deploymentId: string,
-): Computed<Promise<AttachmentPresignedToken | null>> {
-  return computed(async (get) => {
-    const response = await accept(
-      get(apiClient$)(hostContract).privatePreview({
-        params: { deploymentId },
-      }),
-      [200],
-    );
-    return {
-      token: withFragment(response.body.url, new URL(url).hash),
-      expiresAt: response.body.expiresAt,
-      publicUrl: null,
-    };
-  });
-}
-
 function createWebFilePresignedToken$(
   url: string,
 ): Computed<Promise<AttachmentPresignedToken | null>> {
@@ -144,10 +123,6 @@ function createAttachmentPresignedToken$(
   const reference = parseArtifactReference(url, location.origin);
   if (reference) {
     return createArtifactReferencePresignedToken$(reference);
-  }
-  const deploymentId = privateHostedDeploymentId(url, resolveApiBase());
-  if (deploymentId) {
-    return createPrivateHostedPresignedToken$(url, deploymentId);
   }
   if (isAuthenticatedAttachmentUrl(url)) {
     return createWebFilePresignedToken$(url);

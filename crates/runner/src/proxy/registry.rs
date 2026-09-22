@@ -14,7 +14,7 @@ use super::registry_application::{RegistryDigest, RegistryPublication};
 use crate::error::{RunnerError, RunnerResult};
 use crate::lock;
 use crate::state_file::PROXY_REGISTRY_MAX_BYTES;
-use crate::types::{
+use runner_types::types::{
     ConnectorRuntimeTarget, ConnectorRuntimeTargetRegistration, FirewallEntry, NetworkPolicy,
     SecretConnectorMetadata,
 };
@@ -1035,7 +1035,9 @@ pub(super) async fn write_empty_registry(path: &Path) -> RunnerResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Firewall, FirewallApi, FirewallAuth, FirewallEntry, FirewallPermission};
+    use runner_types::types::{
+        Firewall, FirewallApi, FirewallAuth, FirewallEntry, FirewallPermission,
+    };
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     struct RegistryHarness {

@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const DRAIN_STATUS_NOT_CONFIGURED: &str = "not_configured";
@@ -379,11 +379,11 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::ids::RunId;
+    use runner_types::ids::RunId;
 
     fn drain_context(path: &Path) -> NetworkLogDrainContext<'_> {
         NetworkLogDrainContext {
-            run_id: RunId::nil(),
+            run_id: RunId::from(uuid::Uuid::nil()),
             source_ip: "10.0.0.1",
             path,
             generation: 1,

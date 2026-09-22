@@ -1,5 +1,5 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -29,9 +29,7 @@ import {
   toggleSidebarOff$,
   sidebarExpanded$,
   setSidebarExpanded$,
-  handleNavSelect$,
   handleAccountAction$,
-  type SidebarNavId,
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { ROUTES, type RouteKey } from "../../signals/route-paths.ts";
@@ -69,6 +67,7 @@ type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 const slackIcon = settingsIconAssetUrl("slack");
 
 type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
+type SidebarNavId = ManageNavId | "chat" | "works";
 
 interface ManageNavItem {
   readonly id: ManageNavId;
@@ -177,12 +176,18 @@ function useResolvedNavItems() {
   return { manageNav, footerNav };
 }
 
-function useNavSelect() {
-  const rawOnSelect = useSet(handleNavSelect$);
+function useSidebarLinkClick() {
   const setExpanded = useSet(setSidebarExpanded$);
-  return (id: SidebarNavId) => {
-    rawOnSelect(id);
-    setExpanded(false);
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.button === 0 &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    ) {
+      setExpanded(false);
+    }
   };
 }
 
@@ -264,19 +269,21 @@ function ExpandedHeader() {
         </div>
         <TooltipProvider delayDuration={200}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="quiet"
-                size="icon-sm"
-                iconSize="md"
-                className="shrink-0"
-                onClick={onCollapse}
-                aria-label={collapseLabel}
-              >
-                <PanelLeftClose className="opacity-50" size={18} />
-              </Button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="icon-sm"
+                  iconSize="md"
+                  className="shrink-0"
+                  onClick={onCollapse}
+                  aria-label={collapseLabel}
+                >
+                  <PanelLeftClose className="opacity-50" size={18} />
+                </Button>
+              }
+            />
             <TooltipContent side="bottom">
               <p className="text-xs">{collapseLabel}</p>
             </TooltipContent>
@@ -304,7 +311,7 @@ function ExpandedMainNav() {
 
 function ExpandedManageSection() {
   const activeId = useGet(activeRoute$);
-  const onSelect = useNavSelect();
+  const onLinkClick = useSidebarLinkClick();
   const { manageNav } = useResolvedNavItems();
   const manageCollapsed = useGet(manageSectionCollapsed$);
   const setManageCollapsed = useSet(setManageSectionCollapsed$);
@@ -340,13 +347,7 @@ function ExpandedManageSection() {
                 <Link
                   key={id}
                   pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-                  onClick={(e) => {
-                    if (e.metaKey || e.ctrlKey || e.shiftKey) {
-                      return;
-                    }
-                    e.preventDefault();
-                    onSelect(id);
-                  }}
+                  onClick={onLinkClick}
                   aria-current={isActive ? "page" : undefined}
                   className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
                     isActive
@@ -395,7 +396,7 @@ function ExpandedUpgradeSection() {
 
 function ExpandedFooter() {
   const activeId = useGet(activeRoute$);
-  const onSelect = useNavSelect();
+  const onLinkClick = useSidebarLinkClick();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
   const { footerNav } = useResolvedNavItems();
   return (
@@ -417,13 +418,7 @@ function ExpandedFooter() {
               <Link
                 key={id}
                 pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey || e.shiftKey) {
-                    return;
-                  }
-                  e.preventDefault();
-                  onSelect(id);
-                }}
+                onClick={onLinkClick}
                 className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
                   isActive
                     ? "bg-state-selected text-sidebar-foreground font-medium"
@@ -482,7 +477,7 @@ function LabeledRailLink({
   iconImg,
   isActive,
   showBadge,
-  onSelect,
+  onClick,
 }: {
   id: SidebarNavId;
   navPath: string;
@@ -492,7 +487,7 @@ function LabeledRailLink({
   iconImg?: string | undefined;
   isActive: boolean;
   showBadge?: boolean;
-  onSelect: (id: SidebarNavId) => void;
+  onClick: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const { t } = useTranslation();
   const caption = (() => {
@@ -521,13 +516,7 @@ function LabeledRailLink({
     <Link
       pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
       options={navOptions}
-      onClick={(e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey) {
-          return;
-        }
-        e.preventDefault();
-        onSelect(id);
-      }}
+      onClick={onClick}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       title={caption}
@@ -606,8 +595,7 @@ function LabeledNavRail() {
   const activeId = useGet(activeRoute$);
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
-  const onNavSelect = useNavSelect();
-  const navigate = useSet(detachedNavigateTo$);
+  const onLinkClick = useSidebarLinkClick();
   const { manageNav, footerNav } = useResolvedNavItems();
   const { t } = useTranslation();
   const navItems: {
@@ -634,18 +622,6 @@ function LabeledNavRail() {
     ...manageNav,
     ...footerNav,
   ];
-  const onSelect = (id: SidebarNavId) => {
-    if (id === "chat") {
-      if (!defaultAgentId) {
-        return;
-      }
-      navigate(ROUTES.agentChat, {
-        pathParams: { agentId: defaultAgentId },
-      });
-      return;
-    }
-    onNavSelect(id);
-  };
   return (
     <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
       <div className="mb-3 shrink-0">
@@ -691,7 +667,7 @@ function LabeledNavRail() {
               iconImg={item.iconImg}
               isActive={isActive}
               showBadge={item.id === "works" && slackScopeMismatch}
-              onSelect={onSelect}
+              onClick={onLinkClick}
             />
           );
         })}

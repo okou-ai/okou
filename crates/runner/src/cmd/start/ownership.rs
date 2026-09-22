@@ -11,8 +11,8 @@ use tracing::warn;
 use super::idle_lifecycle::set_idle_status_snapshot;
 use super::orphan_reap::OrphanedActiveRuns;
 use crate::idle_pool::IdlePoolSnapshot;
-use crate::ids::RunId;
 use crate::status::StatusTracker;
+use runner_types::ids::RunId;
 
 /// Identity proving which sandbox a run cleanup path is allowed to affect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

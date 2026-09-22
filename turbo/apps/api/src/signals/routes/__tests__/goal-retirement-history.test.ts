@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import {
   GetObjectCommand,
@@ -15,7 +16,8 @@ import {
   CHAT_EVENT_SCHEMA_VERSION_HEADER,
   CURRENT_CHAT_EVENT_SCHEMA_VERSION,
 } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
+import AdmZip from "adm-zip";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -30,20 +32,18 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { sharedThreadRoutes } from "../shared-threads";
 import { chatThreadRoutes } from "../chat-threads";
+import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import {
-  installUserExportStorage,
-  readExportChatRows,
-  readUserExportZip,
-} from "./helpers/user-export-storage";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { readDurableExportChatRows } from "./helpers/user-export-storage";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installFakeChatEventR2,
+  readFakeChatEventObject,
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 
@@ -65,6 +65,30 @@ describe("retired Goal logical history", () => {
       throw new Error("Expected snapshot and instruction storage mocks");
     }
     context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (
+        (command instanceof HeadObjectCommand ||
+          (command instanceof GetObjectCommand && command.input.Range)) &&
+        command.input.Key?.startsWith("chat-events/")
+      ) {
+        const bytes = readFakeChatEventObject(command.input.Key);
+        if (!bytes) {
+          throw new Error("Expected an immutable snapshot object");
+        }
+        const range = command.input.Range
+          ? /^bytes=(\d+)-(\d+)$/u.exec(command.input.Range)
+          : null;
+        const start = range ? Number(range[1]) : 0;
+        const end = range ? Number(range[2]) + 1 : bytes.length;
+        const body = bytes.subarray(start, end);
+        return Promise.resolve({
+          Body: Readable.from([body]),
+          ContentLength: body.length,
+          ContentRange: range
+            ? `bytes ${start}-${end - 1}/${bytes.length}`
+            : undefined,
+          ETag: `"${createHash("sha256").update(bytes).digest("hex")}"`,
+        });
+      }
       if (
         (command instanceof GetObjectCommand ||
           command instanceof HeadObjectCommand ||
@@ -300,30 +324,33 @@ describe("retired Goal logical history", () => {
         cursor,
       );
       const exports = createOpsLogsApi(context);
-      // Retired goal history is read back through the legacy streaming
-      // exporter, which a new export reaches only when its owner opts out of
-      // durable admission.
-      if (!actor.orgId) {
-        throw new Error("Expected organization-scoped actor");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { orgId: actor.orgId, userId: actor.userId },
-        { [FeatureSwitchKey.DurableUserExport]: false },
-      );
-      installUserExportStorage(context);
+      const storage = installDurableUserExportStorage(context);
       const started = await exports.requestPostUserExport(actor, [202]);
       await flushWaitUntilForTest();
+      await accept(
+        setupApp({ context, routes: testUserExportWorkRoutes })(
+          testUserExportWorkContract,
+        ).action({
+          body: {
+            action: "run",
+            userId: actor.userId,
+            jobId: started.body.jobId,
+            maxSteps: 200,
+          },
+        }),
+        [200],
+      );
       const exportStatus = await exports.requestGetUserExport(actor, [200]);
       expect(exportStatus.body.job).toMatchObject({
         id: started.body.jobId,
         status: "completed",
       });
-      const zip = readUserExportZip(
-        context,
-        `exports/${actor.userId}/${started.body.jobId}.zip`,
-      );
-      const rows = readExportChatRows(zip, thread.id);
+      const downloadUrl = exportStatus.body.job?.downloadUrl;
+      if (!downloadUrl) {
+        throw new Error("Expected a downloadable goal-history export");
+      }
+      const zip = new AdmZip(storage.download(downloadUrl));
+      const rows = readDurableExportChatRows(zip, thread.id);
       expect(rows).toStrictEqual([...snapshotRows, ...continuedRows]);
       expect(
         rows.filter((row) => {

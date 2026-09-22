@@ -58,19 +58,8 @@ import {
   type MorningBriefGenerationAdmission,
 } from "./morning-brief-generation-store.service";
 import { MORNING_BRIEF_GENERATION_MODEL } from "./morning-brief-generation-prompt";
-import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
 import { bindNativeGenerationAttempt } from "./morning-brief-native-schedule.service";
-import {
-  morningBriefDescriptorRetainUntil,
-  morningBriefSourcesToRevalidate,
-  type MorningBriefRetainedSourceDescriptor,
-} from "./morning-brief-source-authority";
-import {
-  morningBriefRetainedCheckBudgetMs,
-  revalidateMorningBriefRetainedSources,
-} from "./morning-brief-source-revalidation.service";
-import { slackUserInstallation } from "./slack-data.service";
 
 /**
  * The real source-independent Morning Brief generation.
@@ -82,7 +71,7 @@ import { slackUserInstallation } from "./slack-data.service";
  * accepted-result lifecycle the Slack-only entry already used. There is no
  * second engine, no second result store and no second authorization path.
  *
- * Three orderings are load-bearing:
+ * Two orderings are load-bearing:
  *
  * - **Every network read finishes before the reservation.** Composition owns
  *   the provider reads, the language archive read and the request assembly; the
@@ -90,10 +79,6 @@ import { slackUserInstallation } from "./slack-data.service";
  * - **The single POST follows the reservation COMMIT.** The reservation is
  *   durable before any provider contact, so a crash resolves to an unknown
  *   outcome rather than to a second request.
- * - **The retained sources are revalidated after that COMMIT and before the
- *   POST.** A revocation that lands while the reservation commits stops the
- *   request where nothing has been sent. The committed request is never edited
- *   or recollected to get past that fence.
  *
  * Okou pays. Nothing here reads the owner's model provider, checks a credit
  * balance, reserves an allowance or writes a usage event, and nothing starts a
@@ -287,64 +272,11 @@ async function composedAdmission(
   };
 }
 
-/**
- * Prove the sources this request was built from are still the owner's to read.
- *
- * It consumes the one shared admission rather than a second authorizer: the
- * feature switch, canonical installation, Agent and Clerk membership are
- * resolved again against live state and compared with what the descriptors
- * recorded. Every supplied source is checked, cited or not, because the model
- * may have used material without citing it.
- */
-async function retainedSourcesStillAuthorized(
-  args: {
-    readonly db: Db;
-    readonly clerk: ClerkClient;
-    readonly scope: MorningBriefCollectionScope;
-    readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
-    readonly slack: {
-      readonly botToken: string;
-      readonly workspaceId: string;
-      readonly slackUserId: string;
-    } | null;
-  },
-  signal: AbortSignal,
-): Promise<"owner_revoked" | "binding_changed" | null> {
-  const supplied = morningBriefSourcesToRevalidate(args.descriptors);
-  if (supplied.length === 0) {
-    return null;
-  }
-  const checked = await revalidateMorningBriefRetainedSources(
-    {
-      db: args.db,
-      clerk: args.clerk,
-      scope: args.scope,
-      descriptors: supplied,
-      slack: args.slack,
-      // Sized for the sources this request actually carries. The admission
-      // budget is one source's allowance, and spending it on five is how a
-      // healthy multi-source brief refused its own committed reservation.
-      deadline: startMorningBriefSourceDeadline(
-        morningBriefRetainedCheckBudgetMs(supplied.length),
-      ),
-    },
-    signal,
-  );
-  if (checked.kind !== "checked") {
-    // Pre-POST and post-POST this fence is fail-closed: an exhausted or
-    // unavailable check is not evidence that the retained material may still
-    // be released, so it withholds exactly as a revocation does.
-    return "owner_revoked";
-  }
-  return checked.revoked.length > 0 ? "binding_changed" : null;
-}
-
 function generationAdmissionOf(args: {
   readonly admission: MorningBriefCollectionAdmission;
   readonly scope: MorningBriefCollectionScope;
   readonly transport: MorningBriefCompositionTransport;
   readonly language: MorningBriefLanguagePlan;
-  readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
   readonly at: Date;
   readonly occurrenceCreatedAt: Date;
   readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
@@ -373,13 +305,6 @@ function generationAdmissionOf(args: {
       args.language.instructions.state === "available"
         ? args.language.instructions.digest
         : null,
-    // Frozen with the reservation, because it describes the request that is
-    // about to be sent. No source body, prompt or credential is in it.
-    retainedSources: [...args.descriptors],
-    // The proof outlives the body. No email obligation exists yet, so this is
-    // the result's own validity; a later obligation extends it from its own
-    // original deadline rather than by resetting this one.
-    retainedUntil: morningBriefDescriptorRetainUntil(at, null),
     inputDigest: transport.inputDigest,
     inputItems: transport.inputItems,
     includedItems: transport.includedItems,
@@ -583,17 +508,6 @@ export const executeMorningBriefComposedGeneration$ = command(
         admission,
         claimed.occurrence,
         args,
-        async (attemptId) => {
-          return await set(
-            revalidateMorningBriefStoredGenerationSources$,
-            {
-              owner: args.owner,
-              resultAttemptId: attemptId,
-              purpose: args.purpose,
-            },
-            signal,
-          );
-        },
       );
       signal.throwIfAborted();
       // This attempt collected nothing: it read back a morning an earlier
@@ -674,7 +588,6 @@ async function resolveExisting(
   args: {
     readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
   },
-  revalidate: (attemptId: string) => Promise<string | null>,
 ): Promise<MorningBriefComposedOutcome> {
   const row = await readMorningBriefGeneration(
     db,
@@ -691,9 +604,6 @@ async function resolveExisting(
       kind: "collection-completed-without-generation",
       occurrence: occurrenceView(occurrence),
     };
-  }
-  if (row.state === "succeeded" && (await revalidate(row.attemptId)) !== null) {
-    return { kind: "authority-changed", reason: "sources-revoked" };
   }
   return {
     kind: "already-generated",
@@ -794,7 +704,6 @@ async function admitComposedGeneration(
       // rather than an authority nothing resolved. A composed request, by
       // contrast, must carry the exact language plan that built its body.
       language,
-      descriptors: args.composed.result.descriptors,
       at: result.at,
       occurrenceCreatedAt: result.occurrence.createdAt,
       purpose: args.purpose,
@@ -851,7 +760,7 @@ async function admitComposedGeneration(
 /** Send the one transport body after its source-independent reservation. */
 const invokeComposedTransport$ = command(
   async (
-    { get, set },
+    { set },
     input: {
       readonly db: Db;
       readonly apiKey: string;
@@ -868,37 +777,9 @@ const invokeComposedTransport$ = command(
     },
     signal: AbortSignal,
   ): Promise<MorningBriefComposedOutcome> => {
-    const clerk = get(clerk$);
     const requestedLanguage = requiredComposedLanguage(
       input.composed,
     ).fallbackLanguage;
-    const installation = await get(
-      slackUserInstallation({
-        orgId: input.scope.orgId,
-        userId: input.scope.userId,
-      }),
-    );
-    signal.throwIfAborted();
-    const slack =
-      installation.kind === "connected"
-        ? {
-            botToken: installation.botToken,
-            workspaceId: installation.workspaceId,
-            slackUserId: installation.slackUserId,
-          }
-        : null;
-    const revalidate = async (revalidationSignal: AbortSignal) => {
-      return await retainedSourcesStillAuthorized(
-        {
-          db: input.db,
-          clerk,
-          scope: input.scope,
-          descriptors: input.composed.result.descriptors,
-          slack,
-        },
-        revalidationSignal,
-      );
-    };
     return await set(
       invokeAndPersist$,
       {
@@ -921,8 +802,6 @@ const invokeComposedTransport$ = command(
             language: requestedLanguage,
           });
         },
-        preflight: revalidate,
-        postflight: revalidate,
       },
       signal,
     );

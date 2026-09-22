@@ -1,6 +1,5 @@
 import { useGet, useLoadable } from "ccstate-react";
 import {
-  DropdownMenuItem,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -18,11 +17,8 @@ import {
   type AccountMenuSubscriptionUsageWindow,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
-import { formatCodexResetCredits } from "./components/preferences/codex-reset-usage-dialog.tsx";
-import {
-  formatCodexResetCreditExpiry,
-  formatSubscriptionUsageReset,
-} from "./subscription-usage-format.ts";
+import { CodexResetCreditsMenuItem } from "./components/preferences/codex-reset-usage-dialog.tsx";
+import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 type SubscriptionUsage = AccountMenuSubscriptionUsage;
@@ -145,15 +141,6 @@ function AccountMenuSubscriptionProviderSection({
 }) {
   const { t } = useTranslation();
   const windows = accountMenuSubscriptionUsageWindows(usage);
-  const resetExpiry = formatCodexResetCreditExpiry(
-    (resetCredits ?? 0) > 0 ? resetCreditsNextExpiresAt : null,
-  );
-  const canResetCodex =
-    type === "codex-oauth-token" &&
-    onResetCodexUsage !== undefined &&
-    resetCredits !== null &&
-    resetCredits !== undefined &&
-    resetCredits > 0;
 
   return (
     <section
@@ -166,9 +153,26 @@ function AccountMenuSubscriptionProviderSection({
       )}
     >
       {divided && <div className="-mx-3 h-px bg-divider" />}
-      <h3 className="truncate text-xs font-medium leading-4 text-foreground">
-        {label}
-      </h3>
+      <div className="flex min-w-0 items-center gap-2">
+        <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 text-foreground">
+          {label}
+        </h3>
+        {type === "codex-oauth-token" ? (
+          <CodexResetCreditsMenuItem
+            className="ml-auto"
+            resetCredits={resetCredits ?? null}
+            resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
+            resetPending={resetPending}
+            onReset={
+              onResetCodexUsage
+                ? () => {
+                    onResetCodexUsage(resetCredits ?? null);
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+      </div>
       <div className="flex flex-col gap-1">
         {windows.map(({ kind, window }) => {
           const windowLabel =
@@ -189,64 +193,7 @@ function AccountMenuSubscriptionProviderSection({
           );
         })}
       </div>
-      {type === "codex-oauth-token" ? (
-        <DropdownMenuItem
-          disabled={!canResetCodex || resetPending}
-          onClick={() => {
-            onResetCodexUsage?.(resetCredits ?? null);
-          }}
-          className="mt-1 flex items-center justify-between gap-2 rounded-md px-2 text-xs"
-        >
-          <ResetCreditsLabel
-            resetCredits={resetCredits}
-            resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
-            expiryTooltip={resetExpiry?.absoluteText ?? null}
-          />
-          <span className="shrink-0 font-medium text-foreground">
-            {t(($) => {
-              return $.settings.accountMenu.subscriptions.reset;
-            })}
-          </span>
-        </DropdownMenuItem>
-      ) : null}
     </section>
-  );
-}
-
-function ResetCreditsLabel({
-  resetCredits,
-  resetCreditsNextExpiresAt,
-  expiryTooltip,
-}: {
-  readonly resetCredits?: number | null;
-  readonly resetCreditsNextExpiresAt?: string | null;
-  readonly expiryTooltip: string | null;
-}) {
-  const { t } = useTranslation();
-  // The menu is narrow enough that the inline deadline truncates, so the exact
-  // date stays reachable through the tooltip.
-  const label = (
-    <span className="min-w-0 flex-1 truncate text-muted-foreground">
-      {formatCodexResetCredits(resetCredits, resetCreditsNextExpiresAt)}
-    </span>
-  );
-
-  if (!expiryTooltip) {
-    return label;
-  }
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{label}</TooltipTrigger>
-      <TooltipContent>
-        {t(
-          ($) => {
-            return $.settings.models.reset.expiresAt;
-          },
-          { date: expiryTooltip },
-        )}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -281,27 +228,29 @@ function AccountMenuSubscriptionUsageBar({
         {windowLabel}
       </span>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            role="progressbar"
-            aria-label={t(
-              ($) => {
-                return $.settings.accountMenu.subscriptions.usageRemaining;
-              },
-              { provider: providerLabel, window: windowLabel },
-            )}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={remainingPercent ?? undefined}
-            className={`block h-1.5 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
-          >
+        <TooltipTrigger
+          render={
             <span
-              className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
-              style={{ width: `${width}%` }}
-            />
-          </span>
-        </TooltipTrigger>
+              tabIndex={0}
+              role="progressbar"
+              aria-label={t(
+                ($) => {
+                  return $.settings.accountMenu.subscriptions.usageRemaining;
+                },
+                { provider: providerLabel, window: windowLabel },
+              )}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={remainingPercent ?? undefined}
+              className={`block h-1.5 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
+            >
+              <span
+                className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
+                style={{ width: `${width}%` }}
+              />
+            </span>
+          }
+        />
         <TooltipContent side="right" align="center" className="max-w-56">
           {reset === null ? (
             <p className="text-xs">

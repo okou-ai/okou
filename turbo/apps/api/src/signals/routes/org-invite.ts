@@ -1,6 +1,7 @@
 import {
-  prepareGetStartedInvitation,
+  invalidateGetStartedInvitationClaim,
   linkGetStartedInvitation,
+  prepareGetStartedInvitation,
   revokeGetStartedInvitation,
 } from "../services/get-started-invitation.service";
 import { command } from "ccstate";
@@ -21,7 +22,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { requestSignal$ } from "../context/hono";
-import { clerk$ } from "../external/clerk";
+import { clerk$, clerkOrganizationInvitationConflict } from "../external/clerk";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { parseBillingPaymentMethodPreviewToken } from "../services/billing-purchase-preview-token.service";
@@ -40,6 +41,7 @@ import {
   type BillingPurchasePaymentMethod,
 } from "../services/billing-payment-method.service";
 import type { RouteEntry } from "../route-entry";
+import { settle } from "../utils";
 import { withBillingClerkRateLimit } from "./billing-clerk-rate-limit";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
@@ -64,6 +66,26 @@ const activePlanRequired = Object.freeze({
     }),
   }),
 });
+
+const INVITATION_CONFLICT_ERRORS = {
+  already_member: {
+    code: "INVITEE_ALREADY_MEMBER",
+    message: "This person is already a member.",
+  },
+  already_invited: {
+    code: "INVITATION_ALREADY_EXISTS",
+    message: "This person already has a pending invitation.",
+  },
+} as const;
+
+function invitationConflictError(
+  reason: keyof typeof INVITATION_CONFLICT_ERRORS,
+) {
+  return {
+    status: 409 as const,
+    body: { error: INVITATION_CONFLICT_ERRORS[reason] },
+  };
+}
 
 type InvitationPurchaseErrorReason =
   | UsagePackInvitationPurchaseConflictReason
@@ -226,17 +248,38 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userId: auth.userId,
   });
   signal.throwIfAborted();
-  const invitation = await client.organizations.createOrganizationInvitation({
-    organizationId: auth.orgId,
-    emailAddress: body.data.email,
-    inviterUserId: auth.userId,
-    role: body.data.role === "admin" ? "org:admin" : "org:member",
-    redirectUrl: env("APP_URL"),
-    ...(rewardClaim
-      ? { privateMetadata: { getStartedClaimId: rewardClaim.id } }
-      : {}),
-  });
-  signal.throwIfAborted();
+  const invitationResult = await settle(
+    client.organizations.createOrganizationInvitation({
+      organizationId: auth.orgId,
+      emailAddress: body.data.email,
+      inviterUserId: auth.userId,
+      role: body.data.role === "admin" ? "org:admin" : "org:member",
+      redirectUrl: env("APP_URL"),
+      ...(rewardClaim
+        ? { privateMetadata: { getStartedClaimId: rewardClaim.id } }
+        : {}),
+    }),
+    signal,
+  );
+  if (!invitationResult.ok) {
+    const conflictReason = clerkOrganizationInvitationConflict(
+      invitationResult.error,
+    );
+    if (rewardClaim) {
+      await invalidateGetStartedInvitationClaim(set(writeDb$), {
+        claimId: rewardClaim.id,
+        reason: conflictReason
+          ? "invitee_unavailable"
+          : "invitation_create_failed",
+      });
+      signal.throwIfAborted();
+    }
+    if (conflictReason) {
+      return invitationConflictError(conflictReason);
+    }
+    throw invitationResult.error;
+  }
+  const invitation = invitationResult.value;
   if (rewardClaim) {
     await linkGetStartedInvitation(
       set(writeDb$),

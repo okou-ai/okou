@@ -17,6 +17,24 @@ import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { setGetStartedEnabled } from "./helpers/get-started";
 
 const context = testContext();
+
+class ClerkInvitationTestError extends Error {
+  static readonly kind = "ClerkAPIResponseError";
+  readonly errors: readonly {
+    readonly code: string;
+    readonly message: string;
+    readonly longMessage: string;
+  }[];
+
+  constructor(
+    code: string,
+    readonly status: number,
+  ) {
+    super(`Clerk invitation failed: ${code}`);
+    this.errors = [{ code, message: code, longMessage: code }];
+  }
+}
+
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const secret = `whsec_${Buffer.from("get-started-synthetic-secret").toString("base64")}`;
 const sentInvitation = z.object({
@@ -115,6 +133,72 @@ async function progress() {
     return q.key === "invite";
   });
 }
+
+test.each([
+  [
+    "already_a_member_in_organization",
+    400,
+    "INVITEE_ALREADY_MEMBER",
+    "This person is already a member.",
+  ],
+  [
+    "duplicate_record",
+    422,
+    "INVITATION_ALREADY_EXISTS",
+    "This person already has a pending invitation.",
+  ],
+  [
+    "organization_invitation_not_unique",
+    409,
+    "INVITATION_ALREADY_EXISTS",
+    "This person already has a pending invitation.",
+  ],
+] as const)(
+  "maps Clerk invitation conflict %s to a stable 409",
+  async (code, status, errorCode, message) => {
+    await org();
+    context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
+      new ClerkInvitationTestError(code, status),
+    );
+
+    const response = await accept(
+      setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
+        headers,
+        body: { email: `${randomUUID()}@example.com`, role: "member" },
+      }),
+      [409],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: { code: errorCode, message },
+    });
+    await expect(progress()).resolves.toMatchObject({
+      claimedCount: 0,
+      pendingCount: 0,
+    });
+  },
+);
+
+test("keeps unrelated Clerk invitation failures as server errors", async () => {
+  await org();
+  context.mocks.clerk.organizations.createOrganizationInvitation.mockRejectedValueOnce(
+    new ClerkInvitationTestError("invalid_clerk_configuration", 400),
+  );
+
+  const response = await accept(
+    setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).invite({
+      headers,
+      body: { email: `${randomUUID()}@example.com`, role: "member" },
+    }),
+    [500],
+  );
+
+  expect(response.body).toStrictEqual({ error: "Internal server error" });
+  await expect(progress()).resolves.toMatchObject({
+    claimedCount: 0,
+    pendingCount: 0,
+  });
+});
 
 test("revoking an invitation removes pending progress without consuming a reward slot", async () => {
   const actor = await org();

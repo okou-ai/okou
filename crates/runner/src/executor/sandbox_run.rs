@@ -39,7 +39,6 @@ use super::{
 };
 use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
-use crate::ids::RunId;
 use crate::network_log_manager::NetworkLogSession;
 use crate::provider::ConnectorRuntimeSyncRegistration;
 use crate::proxy;
@@ -48,13 +47,14 @@ use crate::storage_cache::PreparedStorage;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::storage_plan::build_storage_plan;
 use crate::telemetry::JobTelemetry;
-use crate::types::{ExecutionContext, WorkspaceReuseResult};
 use crate::workspace_image_cache::{
     WorkspaceCacheCheckoutResult, WorkspaceImageLease, WorkspaceImageLeaseIdentity,
     WorkspaceImagePrepareLockPolicy, WorkspaceImagePrepareRequest,
 };
 use crate::workspace_mount::ensure_workspace_drive_mounted;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+use runner_types::ids::RunId;
+use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
 
 const SLOW_PROXY_REGISTER_THRESHOLD: Duration = Duration::from_secs(3);
 const WORKSPACE_DRIVE_MOUNT: &str = "workspace_drive_mount";

@@ -86,8 +86,6 @@ export interface NativeMorningBriefOwnerPreflight {
   readonly purpose: "preview" | "production";
   /** The member's current Clerk membership, or null when they are not one. */
   readonly membershipId: string | null;
-  /** A retained-source refusal resolved outside the claim transaction. */
-  readonly sourceRefusal?: string;
   /** True when the remote lookup itself could not be completed. */
   readonly unavailable?: boolean;
 }
@@ -270,11 +268,6 @@ function checkPreflight(
       kind: "deferred",
       reason: "Morning Brief email has no live-owner evidence for this pass",
     };
-  }
-  if (preflight.sourceRefusal !== undefined) {
-    return rejected(
-      `Morning Brief retained source authority was revoked: ${preflight.sourceRefusal}`,
-    );
   }
   if (preflight.membershipId === null) {
     return rejected(

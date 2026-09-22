@@ -574,12 +574,13 @@ function createPaidToolHints(
   create: ComposerCreateSignals,
   draft: DraftSignals,
   composer: WorkflowComposerSignals,
+  ui: ComposerUiSignalGroups,
 ) {
   return computed((get) => {
     const mode = get(create.mode$);
     const tools = new Set<PaidToolId>();
-    if (mode === "image" || mode === "video") {
-      tools.add(mode === "image" ? "image-generation" : "video-generation");
+    if (mode === "image" || get(ui.model.mediaModelCategory$) === "image") {
+      tools.add("image-generation");
     }
     const selectedTemplate = get(draft.generationTemplate$);
     const templates = get(composer.templateRequests$);
@@ -679,7 +680,7 @@ export function createComposerSignals(
 
   return {
     agentId: options.agentId,
-    paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
+    paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
     create,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options),
@@ -861,7 +862,6 @@ function createComposerPrimaryActionSignal(args: {
   readonly eventSignals: ReturnType<typeof createComposerChatEventSignals>;
   readonly workflowComposer: WorkflowComposerSignals;
   readonly voiceState$: ComposerVoiceInputSignals["state$"];
-  readonly createPickerOpen$: ComposerCreateSignals["pickerOpen$"];
 }): Computed<Promise<ComposerPrimaryAction>> {
   const { options, eventSignals, workflowComposer } = args;
   const draft = options.draft.signals;
@@ -877,7 +877,7 @@ function createComposerPrimaryActionSignal(args: {
     const attachments = get(draft.attachments$);
     const hasContent =
       get(workflowComposer.hasInput$) || attachments.length > 0;
-    const canSend = !get(args.createPickerOpen$) && uploadsReady && hasContent;
+    const canSend = uploadsReady && hasContent;
     const sending = await get(eventSignals.sending$);
     if (sending && !canSend) {
       return "stop";
@@ -1050,7 +1050,6 @@ function createComposerSubmissionSignals(
     eventSignals,
     workflowComposer,
     voiceState$,
-    createPickerOpen$: create.pickerOpen$,
   });
   const submitCurrentInput$ = createSubmitCurrentInput({
     options,

@@ -35,7 +35,6 @@ use crate::idle_pool::{
     IdleParkFailureParts, IdleParkRequest, IdleParkRequestParts, ParkResult, ParkedIdleCandidate,
     ParkingGate,
 };
-use crate::ids::RunId;
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogSession;
 use crate::resource_budget::BudgetLease;
@@ -44,15 +43,16 @@ use crate::run_cancellation::RunCancellationHandle;
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
-use crate::types::reuse_key_kind;
-use crate::types::{
-    HeldWorkspaceState, SandboxReuseResult, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
-};
 use crate::workspace_image_cache::{
     WorkspaceCacheTerminalStatus, WorkspaceImageLease, WorkspaceImagePromotionContext,
     WorkspaceImagePromotionRequest,
 };
 use crate::workspace_promotion::prepare_workspace_image_from_active_sandbox;
+use runner_types::ids::RunId;
+use runner_types::types::reuse_key_kind;
+use runner_types::types::{
+    HeldWorkspaceState, SandboxReuseResult, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
+};
 
 struct FinalizationTelemetry<'a> {
     telemetry: Option<&'a mut JobTelemetry>,
@@ -1259,7 +1259,6 @@ mod tests {
     use crate::idle_reuse_preparation::{
         add_healthy_reuse_preparation_matcher, mock_sandbox_ready_for_idle_reuse,
     };
-    use crate::ids::RunId;
     use crate::network_log_drain::NetworkLogDrainCoordinator;
     use crate::network_log_manager::NetworkLogManager;
     use crate::paths::RunnerPaths;
@@ -1267,15 +1266,16 @@ mod tests {
     use crate::restored_session_identity::RestoredSessionIdentity;
     use crate::status::StatusTracker;
     use crate::storage_fingerprints::StorageFingerprint;
-    use crate::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
     use crate::storage_plan::build_storage_plan;
-    use crate::types::SandboxReuseResult;
     use crate::workspace_image_cache::{
         WorkspaceImageCache, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
         WorkspaceImagePromotionContext, WorkspaceImagePromotionIdentityRequest,
         WorkspaceImagePromotionOutcome, WorkspaceImagePromotionRequest,
         WorkspaceSessionHistorySidecarRepresentation,
     };
+    use runner_types::ids::RunId;
+    use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
+    use runner_types::types::SandboxReuseResult;
 
     fn test_active_runs() -> ActiveRuns {
         ActiveRuns::new(Arc::new(tokio::sync::Notify::new()))

@@ -2,12 +2,18 @@ import {
   browserContract,
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
+import {
+  browserUserActionsContract,
+  type BrowserUserActionResponse,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
 import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -35,6 +41,78 @@ const SUSPENDED_SCREENSHOT_URL =
   "https://images.example.test/browser-suspended.png";
 const ACTIVE_BROWSER_URL = "https://browser.example.test/live/initial";
 const RESUMED_BROWSER_URL = "https://browser.example.test/live/resumed";
+const BROWSER_INPUT_TOKEN = `vm0_browser_user_action_${"a".repeat(43)}`;
+const BROWSER_INPUT_SUCCESS_CLIENT_ID = "10000000-0000-4000-a000-000000001104";
+const BROWSER_INPUT_SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001105";
+const BROWSER_INPUT_CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001106";
+const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
+const BROWSER_INPUT_CALLBACK = "Continue after browser input";
+
+function browserInputAction(
+  state: BrowserUserActionResponse["state"],
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    kind: "input",
+    requestToken: BROWSER_INPUT_TOKEN,
+    state,
+    completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
+    agentId: CAPABILITY_AGENT_ID,
+    threadId: RUN_THREAD_ID,
+    siteOrigin: "https://accounts.example.test",
+    fields: [
+      {
+        key: "username",
+        label: "Account email",
+        description: "The email used for this account",
+        fieldKind: "username",
+        required: true,
+      },
+      {
+        key: "password",
+        label: "Password",
+        fieldKind: "password",
+        required: true,
+      },
+      {
+        key: "code",
+        label: "Verification code",
+        fieldKind: "one_time_code",
+        required: false,
+      },
+    ],
+    callbackIds: {
+      success: {
+        clientEventId: BROWSER_INPUT_SUCCESS_CLIENT_ID,
+        chatThreadSortEventId: BROWSER_INPUT_SUCCESS_SORT_ID,
+      },
+      cancellation: {
+        clientEventId: BROWSER_INPUT_CANCEL_CLIENT_ID,
+        chatThreadSortEventId: BROWSER_INPUT_CANCEL_SORT_ID,
+      },
+    },
+  };
+}
+
+function browserInputUrl(
+  args: {
+    readonly agentId?: string;
+    readonly threadId?: string;
+  } = {},
+): string {
+  const url = new URL(
+    `/browser/actions/${BROWSER_INPUT_TOKEN}`,
+    "https://app.okou.ai",
+  );
+  url.searchParams.set("agentId", args.agentId ?? CAPABILITY_AGENT_ID);
+  url.searchParams.set("threadId", args.threadId ?? RUN_THREAD_ID);
+  url.searchParams.set("callbackPrompt", BROWSER_INPUT_CALLBACK);
+  return url.href;
+}
+
+function browserInputRelativeUrl(): string {
+  const url = new URL(browserInputUrl());
+  return `${url.pathname}${url.search}`;
+}
 
 /**
  * The chat card surface is Tailwind utilities on the element itself, so the
@@ -364,10 +442,12 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   const userText = [
     `[User plan action](${trustedPlan})`,
     `[User computer action](${trustedComputer})`,
+    `[User browser input](${browserInputUrl()})`,
   ].join("\n\n");
   const assistantText = [
     `[Assistant plan action](${trustedPlan})`,
     `[Assistant computer action](${trustedComputer})`,
+    `[Malformed browser input](${browserInputUrl()}&extra=unexpected)`,
     `[Forged action](${computerAuthorizationUrl("https://app.okou.ai.evil.test", "forged")})`,
     "Wrong agent:",
     connectorAuthorizationUrl({
@@ -419,6 +499,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   }
   expect(userMessage).toHaveTextContent("User plan action");
   expect(userMessage).toHaveTextContent("User computer action");
+  expect(userMessage).toHaveTextContent("User browser input");
   expect(within(userMessage).queryByText("Upgrade your workspace")).toBeNull();
   expect(
     within(userMessage).queryByText("Computer Use authorization"),
@@ -426,7 +507,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(linkByName("Forged action")).toBeVisible();
 
   await waitFor(() => {
-    expect(screen.getAllByText("Action unavailable")).toHaveLength(4);
+    expect(screen.getAllByText("Action unavailable")).toHaveLength(5);
   });
   const unavailableCards = screen
     .getAllByText("Action unavailable")
@@ -450,4 +531,221 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
     screen.findByRole("dialog", { name: "Choose a plan" }),
   ).resolves.toBeVisible();
   expect(window.location.hostname).toBe("app.okou.ai");
+});
+
+test("Apply native browser input before continuing with stable callback IDs", async () => {
+  const ordering: string[] = [];
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let submittedValues: readonly { key: string; value: string }[] = [];
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+    onSend(send) {
+      ordering.push("callback");
+      expect(send.prompt).toBe(BROWSER_INPUT_CALLBACK);
+      expect(send.clientEventId).toBe(BROWSER_INPUT_SUCCESS_CLIENT_ID);
+      expect(send.chatThreadSortEventId).toBe(BROWSER_INPUT_SUCCESS_SORT_ID);
+    },
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(
+    browserUserActionsContract.apply,
+    ({ body, params, respond }) => {
+      expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
+      ordering.push("apply");
+      submittedValues = body.values;
+      state = "succeeded";
+      return respond(200, browserInputAction(state));
+    },
+  );
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  const form = within(dialog).getByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(within(form).getByText("https://accounts.example.test")).toBeVisible();
+  const username = within(form).getByLabelText(/Account email/u);
+  const password = within(form).getByLabelText(/Password/u);
+  const code = within(form).getByLabelText(/Verification code/u);
+  expect(username).toHaveAttribute("autocomplete", "username");
+  expect(username).toHaveAccessibleName("Account email");
+  expect(username).toHaveAccessibleDescription(
+    "(Required) The email used for this account",
+  );
+  expect(password).toHaveAttribute("type", "password");
+  expect(password).toHaveAttribute("autocomplete", "current-password");
+  expect(code).toHaveAttribute("autocomplete", "one-time-code");
+
+  await fill(username, "user@example.test");
+  await fill(password, "local-only-secret");
+  click(await findButton("Add to browser"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(ordering).toStrictEqual(["apply", "callback"]);
+  expect(submittedValues).toStrictEqual([
+    { key: "username", value: "user@example.test" },
+    { key: "password", value: "local-only-secret" },
+  ]);
+  expect(screen.queryByDisplayValue("local-only-secret")).toBeNull();
+});
+
+test("Share one action state across equivalent absolute and relative URLs", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        `[Absolute input](${browserInputUrl()})`,
+        `[Relative input](${browserInputRelativeUrl()})`,
+      ].join("\n\n"),
+    ),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    state = "succeeded";
+    return respond(200, browserInputAction(state));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(buttonsByName("Enter information")[0]!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await fill(
+    within(dialog).getByLabelText("Account email"),
+    "user@example.test",
+  );
+  await fill(within(dialog).getByLabelText("Password"), "local-only-secret");
+  click(buttonsByName("Add to browser", dialog)[0]!);
+
+  await waitFor(() => {
+    expect(screen.getAllByText("Agent notified")).toHaveLength(2);
+  });
+});
+
+test("Closing the browser input dialog keeps non-password values only", async () => {
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(await findButton("Enter information"));
+  const firstDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await fill(
+    within(firstDialog).getByLabelText("Account email"),
+    "user@example.test",
+  );
+  await fill(
+    within(firstDialog).getByLabelText("Password"),
+    "local-only-secret",
+  );
+  await fill(within(firstDialog).getByLabelText("Verification code"), "A1B2");
+  click(within(firstDialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Enter information in browser" }),
+    ).toBeNull();
+  });
+
+  click(await findButton("Enter information"));
+  const reopenedDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  expect(within(reopenedDialog).getByLabelText("Account email")).toHaveValue(
+    "user@example.test",
+  );
+  expect(within(reopenedDialog).getByLabelText("Password")).toHaveValue("");
+  expect(
+    within(reopenedDialog).getByLabelText("Verification code"),
+  ).toHaveValue("A1B2");
+});
+
+test("Cancel browser input before sending the fixed cancellation callback", async () => {
+  const ordering: string[] = [];
+  let state: BrowserUserActionResponse["state"] = "pending";
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+    onSend(send) {
+      ordering.push("callback");
+      expect(send.prompt).toBe("The user cancelled the browser input request.");
+      expect(send.clientEventId).toBe(BROWSER_INPUT_CANCEL_CLIENT_ID);
+      expect(send.chatThreadSortEventId).toBe(BROWSER_INPUT_CANCEL_SORT_ID);
+    },
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
+    ordering.push("cancel");
+    state = "cancelled";
+    return respond(200, browserInputAction(state));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  click(await findButton("Enter information"));
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  click(await findButton("Cancel"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(ordering).toStrictEqual(["cancel", "callback"]);
+});
+
+test("Keep feature-disabled and foreign browser input actions inert", async () => {
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        `[Disabled input](${browserInputUrl()})`,
+        `[Foreign input](${browserInputUrl({ threadId: OTHER_THREAD_ID })})`,
+      ].join("\n\n"),
+    ),
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: false },
+  });
+  await readyChat();
+  await waitFor(() => {
+    expect(screen.getAllByText("Request unavailable")).toHaveLength(1);
+    expect(screen.getAllByText("Action unavailable")).toHaveLength(1);
+  });
 });

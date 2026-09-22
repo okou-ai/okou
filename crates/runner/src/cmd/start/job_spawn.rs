@@ -38,7 +38,6 @@ use crate::executor::{
 };
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_pool::{ParkingGate, ReusableIdleSandbox};
-use crate::ids::RunId;
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_logs;
 use crate::provider::{ClaimedJob, CompletionReportTiming, JobProvider};
@@ -49,7 +48,8 @@ use crate::run_cancellation::{
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
-use crate::types::{ExecutionContext, SandboxReuseResult};
+use runner_types::ids::RunId;
+use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
@@ -937,11 +937,11 @@ mod tests {
         test_support::ParkedIdleCandidateBuilder,
     };
     use crate::idle_reuse_preparation::mock_sandbox_ready_for_idle_reuse;
-    use crate::ids::RunId;
     use crate::resource_budget::ResourceBudget;
     use crate::restored_session_identity::RestoredSessionIdentity;
     use crate::run_cancellation::RunCancellationRegistry;
     use crate::status::StatusTracker;
+    use runner_types::ids::RunId;
 
     fn test_http_client() -> HttpClient {
         HttpClient::new(HttpClientConfig {

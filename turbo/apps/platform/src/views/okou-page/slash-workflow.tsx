@@ -2,13 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 // Slash-workflow domain helpers and the suggestion menu, shared by the chat
 // composer. Kept in its own module so the textarea composer and the TipTap
 // workflow composer can both reuse them without an import cycle.
-import {
-  ChevronRight,
-  FileText,
-  Image,
-  Presentation,
-  Video,
-} from "lucide-react";
+import { ChevronRight, FileText, Image, Presentation } from "lucide-react";
 import { cn, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -20,7 +14,6 @@ import type {
 
 export const COMPOSER_CREATE_ICONS = {
   image: Image,
-  video: Video,
   presentation: Presentation,
 } as const;
 

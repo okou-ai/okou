@@ -83,6 +83,13 @@ interface ManifestFile {
   readonly immutable?: boolean;
 }
 
+function isHtmlManifestFile(file: ManifestFile): boolean {
+  return (
+    /\.html?$/iu.test(file.path) ||
+    file.contentType.toLowerCase().startsWith("text/html")
+  );
+}
+
 interface HostedSiteManifest {
   readonly version: 1;
   readonly immutableContent?: true;
@@ -392,11 +399,13 @@ function resolveFilePath(
 }
 
 function cacheControl(file: ManifestFile): string {
+  // A redeploy replaces the documents behind one address while every other
+  // published path keeps its original bytes. Never reuse stored markup.
+  if (isHtmlManifestFile(file)) {
+    return "no-store";
+  }
   if (file.immutable) {
     return "public, max-age=31536000, immutable";
-  }
-  if (file.path === "/index.html" || file.contentType.startsWith("text/html")) {
-    return "public, max-age=0, must-revalidate";
   }
   return "public, max-age=3600";
 }
@@ -565,7 +574,11 @@ async function serveGrantedArtifactDelivery(
     policy,
     execution,
   );
-  if (record.kind === "thread-resource" && response.ok)
+  if (
+    record.kind === "thread-resource" &&
+    response.ok &&
+    !response.headers.get("Content-Type")?.toLowerCase().startsWith("text/html")
+  )
     response.headers.set(
       "Cache-Control",
       "private, max-age=31536000, immutable",
@@ -904,9 +917,15 @@ function privateResponse(
   immutableContent = false,
 ): Response {
   const headers = new Headers(response.headers);
+  // HTML documents follow their site's newest publication under one address,
+  // so they are always fetched even behind a long-lived credential.
+  const html = response.headers
+    .get("Content-Type")
+    ?.toLowerCase()
+    .startsWith("text/html");
   headers.set(
     "Cache-Control",
-    immutableContent && response.ok
+    immutableContent && response.ok && !html
       ? PRIVATE_ARTIFACT_CACHE_CONTROL
       : PRIVATE_NO_STORE_CACHE_CONTROL,
   );

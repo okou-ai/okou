@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use reqwest::StatusCode;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunnerError {
@@ -283,7 +283,7 @@ mod tests {
         let err = ActiveJobsError {
             unit: "vm0-runner-v0.3.0".into(),
             suffix: "v0.3.0".into(),
-            run_ids: vec![RunId::nil()],
+            run_ids: vec![RunId::from(uuid::Uuid::nil())],
             runner_uptime: Duration::from_secs(600),
             command_name: "stop",
             draining: false,
@@ -305,7 +305,10 @@ mod tests {
         let err = ActiveJobsError {
             unit: "vm0-runner-v0.3.0".into(),
             suffix: "v0.3.0".into(),
-            run_ids: vec![RunId::nil(), RunId::nil()],
+            run_ids: vec![
+                RunId::from(uuid::Uuid::nil()),
+                RunId::from(uuid::Uuid::nil()),
+            ],
             runner_uptime: Duration::from_secs(7260),
             command_name: "uninstall",
             draining: false,
@@ -322,7 +325,7 @@ mod tests {
         let err = ActiveJobsError {
             unit: "vm0-runner-v0.3.0".into(),
             suffix: "v0.3.0".into(),
-            run_ids: vec![RunId::nil()],
+            run_ids: vec![RunId::from(uuid::Uuid::nil())],
             runner_uptime: Duration::from_secs(1800),
             command_name: "stop",
             draining: true,

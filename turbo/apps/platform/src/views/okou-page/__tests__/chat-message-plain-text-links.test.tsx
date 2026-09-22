@@ -77,11 +77,7 @@ test("A link a user typed is clickable in the message and in its feedback note",
     },
   ]);
 
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
-  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -106,11 +102,7 @@ test("A sentence typed onto the end of a link stays outside it", async () => {
   const prompt = `${url}二额，另见 https://zh.example.com/wiki/中文 和 https://example.com/搜索?q=中文`;
   installPrompt(prompt);
 
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
-  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -133,11 +125,7 @@ test("An ordinal written without a space still leaves a link", async () => {
   const prompt = `1.${url} and 2. ${url}?second=1`;
   installPrompt(prompt);
 
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
-  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -154,11 +142,7 @@ test("A link glued to a word or a digit stays plain text", async () => {
     "ahttps://example.com/one and 3https://example.com/two stay text.";
   installPrompt(prompt);
 
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
-  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -176,11 +160,7 @@ test("Text that only looks like a link stays plain text", async () => {
   ].join(" ");
   installPrompt(prompt);
 
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
-  });
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -190,10 +170,12 @@ test("Text that only looks like a link stays plain text", async () => {
   expect(queryAllByRoleFast("link", message)).toHaveLength(0);
 });
 
-test("With the switch off a link stays plain text", async () => {
+test("A reader who opted out reads a link as plain text", async () => {
   const prompt = "Start from https://example.com/brief and keep reading.";
   installPrompt(prompt);
 
+  // The switch is on for everyone now, so an override is the only way back to
+  // the single span the message used to render.
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,

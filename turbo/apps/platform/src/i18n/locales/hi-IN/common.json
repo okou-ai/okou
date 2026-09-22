@@ -1725,6 +1725,45 @@
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
       "upgradeWorkspace": "अपने वर्कस्पेस को अपग्रेड करें"
     },
+    "browserInput": {
+      "applyFailed": "जानकारी जोड़ी नहीं जा सकी। आपकी प्रविष्टियाँ अभी भी यहाँ हैं। फिर से प्रयास करें।",
+      "applying": "जानकारी जोड़ी जा रही है",
+      "applyingDescription": "ब्राउज़र इस अनुरोध को पूरा कर रहा है।",
+      "callbackFailed": "एजेंट को सूचना नहीं मिली। जारी रखें पर फिर से प्रयास करें।",
+      "cancel": "रद्द करें",
+      "cancelFailed": "अनुरोध रद्द नहीं किया जा सका। फिर से प्रयास करें।",
+      "cancelled": "अनुरोध रद्द किया गया",
+      "cancelledDescription": "कोई जानकारी नहीं जोड़ी गई। एजेंट को सूचित करने के लिए जारी रखें।",
+      "cancelling": "रद्द किया जा रहा है…",
+      "completed": "जानकारी जोड़ दी गई",
+      "completedDescription": "जानकारी ब्राउज़र में जोड़ दी गई। एजेंट को सूचित करने के लिए जारी रखें।",
+      "continue": "जारी रखें",
+      "continuing": "जारी है…",
+      "delivered": "एजेंट को सूचित किया गया",
+      "deliveredDescription": "एजेंट अब जारी रख सकता है।",
+      "description": "इस साइट के लिए माँगी गई जानकारी दर्ज करें।",
+      "documentTitle": "ब्राउज़र इनपुट",
+      "expired": "अनुरोध की अवधि समाप्त",
+      "expiredDescription": "ब्राउज़र बंद हो गया है या यह अनुरोध अब सक्रिय नहीं है।",
+      "loadFailed": "यह अनुरोध लोड नहीं हो सका",
+      "loadFailedDescription": "कुछ देर में फिर से प्रयास करें।",
+      "loading": "ब्राउज़र इनपुट लोड हो रहा है",
+      "loadingDescription": "इस अनुरोध की जाँच हो रही है…",
+      "open": "जानकारी दर्ज करें",
+      "optional": "(वैकल्पिक)",
+      "required": "(आवश्यक)",
+      "retry": "फिर से प्रयास करें",
+      "site": "साइट",
+      "stale": "फ़ील्ड बदल गए हैं",
+      "staleDescription": "एजेंट से नया अनुरोध बनाने के लिए कहें।",
+      "submit": "ब्राउज़र में जोड़ें",
+      "submitting": "जोड़ा जा रहा है…",
+      "title": "ब्राउज़र में जानकारी दर्ज करें",
+      "unavailable": "अनुरोध उपलब्ध नहीं है",
+      "unavailableDescription": "यह ब्राउज़र इनपुट अनुरोध अमान्य है या अब उपलब्ध नहीं है।",
+      "uncertain": "ब्राउज़र जाँचें",
+      "uncertainDescription": "ब्राउज़र को जानकारी मिल गई हो सकती है। दोबारा प्रयास करने से पहले एजेंट से जाँच करने को कहें।"
+    },
     "cards": {
       "viewDetails": "विवरण देखें"
     },
@@ -1735,21 +1774,12 @@
       "create": {
         "addStyle": "शैली जोड़ें",
         "addTemplate": "टेम्पलेट जोड़ें",
-        "chooseType": "एक प्रकार चुनें",
-        "exit": "बनाने के मोड से बाहर निकलें",
-        "image": "छवि बनाएँ",
-        "imageDescription": "किसी विचार को चित्र में बदलें",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
-        "presentation": "प्रस्तुति बनाएँ",
-        "presentationDescription": "आपकी कहानी के लिए स्लाइड",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
         "settingsAdjusted": "इस मॉडल के लिए कुछ वीडियो सेटिंग समायोजित की गई हैं",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
-        "slideCountRange": "{{range}} स्लाइड",
-        "video": "वीडियो बनाएँ",
-        "videoDescription": "अपने विचारों को गति दें",
-        "videoPlaceholder": "आप जो वीडियो बनाना चाहते हैं उसका वर्णन करें…"
+        "slideCountRange": "{{range}} स्लाइड"
       },
       "createWorkflow": "वर्कफ़्लो बनाएँ",
       "imageModelForThisChat": "इस चैट के लिए इमेज मॉडल",
@@ -2110,6 +2140,7 @@
       "allCaughtUp": "सब पूरा हो गया",
       "allChats": "सभी चैट",
       "archive": "चैट आर्काइव करें",
+      "archived": "आर्काइव की गई",
       "chatsWith": "{{agentName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
       "delete": "चैट हटाएं",
@@ -2121,6 +2152,7 @@
       "movePinDown": "नीचे ले जाएँ",
       "movePinUp": "ऊपर ले जाएँ",
       "newChatWith": "{{agentName}} के साथ नई चैट",
+      "noArchived": "कोई आर्काइव की गई चैट नहीं",
       "noUnread": "कोई अपठित चैट नहीं",
       "openChatMenu": "चैट मेनू खोलें",
       "openListMenu": "चैट सूची मेनू खोलें",
@@ -2129,13 +2161,12 @@
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
       "showAllChats": "सभी चैट दिखाएं",
-      "showArchived": "आर्काइव की गई चैट दिखाएं",
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
       "unarchive": "आर्काइव से निकालें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
-      "unreadOnly": "केवल अपठित"
+      "unreadOnly": "अपठित"
     },
     "startCards": {
       "kinds": {
@@ -2280,40 +2311,6 @@
             "prompt": "मेरे चुने विषय पर प्रशिक्षण डेक बनाएं। किसे प्रशिक्षित किया जा रहा है और उसके बाद वे क्या कर सकें, यह पूछें।"
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "फ़ोटो को वीडियो में बदलें",
-            "prompt": "मेरी दी हुई फ़ोटो में प्राकृतिक गति जोड़ें। विषय की पहचान बनाए रखें और पूछें कि क्या चलना चाहिए।"
-          },
-          "brandIntro": {
-            "label": "मेरे ब्रांड का परिचय वीडियो बनाएँ",
-            "prompt": "मेरे लोगो और ब्रांड की जानकारी से छोटा शुरुआती वीडियो बनाएँ। माहौल चुनने में मदद करें।"
-          },
-          "eventPromo": {
-            "label": "मेरे कार्यक्रम का प्रचार करें",
-            "prompt": "मेरे कार्यक्रम के लिए छोटा प्रचार वीडियो बनाएँ। कार्यक्रम, दर्शकों और शामिल करने वाली जानकारी के बारे में पूछें।"
-          },
-          "loopingBackground": {
-            "label": "लूप में चलने वाली पृष्ठभूमि बनाएँ",
-            "prompt": "हल्की गति वाली वीडियो पृष्ठभूमि बनाएँ जो बिना रुकावट दोहराई जाए। मनचाहा दृश्य और माहौल पूछें।"
-          },
-          "productDemo": {
-            "label": "मेरे उत्पाद को गति में दिखाएँ",
-            "prompt": "मेरे उत्पाद की फ़ोटो से छोटा प्रदर्शन वीडियो बनाएँ। उसका रूप बनाए रखें और मेरे चुने गुण को प्रमुखता दें।"
-          },
-          "socialClip": {
-            "label": "सोशल मीडिया के लिए क्लिप बनाएँ",
-            "prompt": "सोशल मीडिया के लिए छोटा वीडियो बनाएँ। मेरे दर्शकों के लिए स्पष्ट संदेश और उपयुक्त दृश्य शैली चुनने में मदद करें।"
-          },
-          "videoGreeting": {
-            "label": "वीडियो में शुभकामना संदेश बनाएँ",
-            "prompt": "जन्मदिन, त्योहार या उत्सव के लिए छोटा शुभकामना वीडियो बनाएँ। अवसर, पाने वाले व्यक्ति और संदेश के बारे में पूछें।"
-          },
-          "visualExplainer": {
-            "label": "विचार को वीडियो से समझाएँ",
-            "prompt": "एक विचार को आसानी से समझाने वाला छोटा वीडियो बनाएँ। विचार और दर्शकों के बारे में पूछें।"
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "मेरी सेवाएँ बुक करने का पेज बनाएँ",
@@ -2395,13 +2392,11 @@
         "image": "चित्र शैलियाँ",
         "nextPage": "अगला पृष्ठ",
         "previousPage": "पिछला पृष्ठ",
-        "video": "वीडियो टेम्पलेट",
         "website": "वेबसाइट टेम्पलेट"
       },
       "tasks": {
         "image": "चित्र",
         "presentation": "स्लाइड",
-        "video": "वीडियो",
         "visualization": "विज़ुअलाइज़ेशन",
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
@@ -3427,13 +3422,24 @@
         "connectTitle": "Lark से कनेक्ट करें"
       },
       "slack": {
+        "accountInUseDescription": "यह Slack खाता किसी अन्य Okou खाते से जुड़ा है। दोबारा कोशिश करने से पहले वहां से इसका कनेक्शन हटाएं।",
+        "accountInUseTitle": "Slack खाता पहले से जुड़ा है",
+        "accountMismatchDescription": "आपका Okou खाता अभी यहां Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
+        "accountMismatchDescriptionWorkspace": "आपका Okou खाता अभी {{workspace}} में Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
+        "accountMismatchTitle": "Slack खाता बदलें?",
         "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
         "connectTitle": "Slack से कनेक्ट करें",
+        "errorFallback": "Slack कनेक्शन की जांच या शुरुआत नहीं हो सकी। फिर से कोशिश करें।",
         "invalidDescription": "यह पेज Slack कनेक्ट लिंक से खोला जाना है।",
+        "keepAccount": "{{account}} बनाए रखें",
         "open": "Slack खोलें",
         "successDescription": "किसी भी चैनल में इंस्टॉल किए गए बॉट का उल्लेख करें या चैट शुरू करने के लिए DM भेजें।",
         "successDescriptionWorkspace": "आप {{workspace}} से कनेक्ट हैं. किसी भी चैनल में इंस्टॉल किए गए बॉट का उल्लेख करें या चैट शुरू करने के लिए DM भेजें।",
-        "successTitle": "Slack से जुड़ा!"
+        "successTitle": "Slack से जुड़ा!",
+        "switchAccount": "{{account}} पर स्विच करें",
+        "workspaceMismatchDescription": "यह Slack वर्कस्पेस आपके वर्तमान Okou संगठन के लिए उपलब्ध नहीं है। संगठन बदलें या किसी एडमिन से मदद मांगें।",
+        "workspaceMismatchDescriptionNamed": "आपका वर्तमान Okou संगठन {{workspace}} से जुड़ा है। संगठन बदलें या इस Slack वर्कस्पेस को जोड़ने से पहले किसी एडमिन से इसे अनइंस्टॉल करने के लिए कहें।",
+        "workspaceMismatchTitle": "Slack वर्कस्पेस मेल नहीं खाता"
       },
       "teams": {
         "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
@@ -5844,8 +5850,7 @@
     "status": {
       "availableNow": "अभी उपलब्ध",
       "inUse_one": "{{limit}} स्लॉट का {{active}} उपयोग में है",
-      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है",
-      "waitingForSandbox": "Sandbox की प्रतीक्षा"
+      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
     },
     "tiers": {
       "custom": "कस्टम",
@@ -5923,7 +5928,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "रीसेट करें",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
         "usageRemaining": "{{provider}} {{window}} शेष",
@@ -6259,7 +6263,6 @@
       },
       "reset": {
         "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक Codex रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
-        "expiresAt": "निकटतम रीसेट {{date}} को समाप्त होगा",
         "progress": "रीसेट किया जा रहा है...",
         "remaining_one": "{{value}} रीसेट बचे हैं",
         "remaining_other": "{{value}} रीसेट बचे हैं",

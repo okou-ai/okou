@@ -187,15 +187,17 @@ function CustomTemplateMeta({
         : Users;
     return (
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            tabIndex={0}
-            className="shrink-0 rounded-sm text-muted-foreground"
-          >
-            <Icon size={13} aria-hidden />
-            <span className="sr-only">{label}</span>
-          </span>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <span
+              tabIndex={0}
+              className="shrink-0 rounded-sm text-muted-foreground"
+            >
+              <Icon size={13} aria-hidden />
+              <span className="sr-only">{label}</span>
+            </span>
+          }
+        />
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
     );
@@ -430,18 +432,20 @@ function CustomTemplateImportButton({
   return (
     <>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="max-[374px]:px-2 max-[374px]:text-xs"
-            onClick={openImport}
-          >
-            <Upload aria-hidden />
-            {label}
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="max-[374px]:px-2 max-[374px]:text-xs"
+              onClick={openImport}
+            >
+              <Upload aria-hidden />
+              {label}
+            </Button>
+          }
+        />
         <TooltipContent>
           {t(($) => {
             return $.templates.importHint;

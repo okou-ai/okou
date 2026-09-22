@@ -22,6 +22,7 @@ interface CloneHostedSiteResult {
   readonly deploymentId: string;
   readonly publicSlug: string;
   readonly url: string;
+  readonly deploymentVersion?: number;
   readonly artifactUrl?: string;
   readonly destination: string;
   readonly fileCount: number;
@@ -31,6 +32,7 @@ interface CloneHostedSiteResult {
 interface CloneHostedSiteOptions {
   readonly site: string;
   readonly destination?: string;
+  readonly version?: number;
   readonly onProgress?: (progress: CloneHostedSiteProgress) => void;
 }
 
@@ -56,6 +58,7 @@ async function siteFilesFromSource(options: CloneHostedSiteOptions) {
   if (!reference) {
     return getHostedSiteFiles(
       await publicSlugFromSite(source),
+      options.version,
       URL.canParse(source)
         ? new URL(source).hostname
         : source.includes(".")
@@ -63,7 +66,16 @@ async function siteFilesFromSource(options: CloneHostedSiteOptions) {
           : undefined,
     );
   }
-  return readHostedArtifactFiles(`${reference.hash}${reference.extension}`);
+  const site = await readHostedArtifactFiles(
+    `${reference.hash}${reference.extension}`,
+  );
+  if (
+    options.version !== undefined &&
+    site.deploymentVersion !== options.version
+  ) {
+    throw new Error(`Hosted deployment version not found: ${options.version}`);
+  }
+  return site;
 }
 
 function isInsideDirectory(parent: string, target: string): boolean {
@@ -182,6 +194,9 @@ export async function cloneHostedSite(
     deploymentId: hostedSite.deploymentId,
     publicSlug: hostedSite.publicSlug,
     url: hostedSite.url,
+    ...(hostedSite.deploymentVersion === undefined
+      ? {}
+      : { deploymentVersion: hostedSite.deploymentVersion }),
     ...(hostedSite.artifactUrl === undefined
       ? {}
       : { artifactUrl: hostedSite.artifactUrl }),

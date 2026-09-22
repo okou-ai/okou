@@ -308,7 +308,7 @@ export async function clearMorningBriefInstructionsHead(
 /**
  * Pause delivery of one Agent's real canonical instruction-version SELECT.
  *
- * There is no product input that pauses a read after retained-source authority
+ * There is no product input that pauses a read after source authority
  * and before request admission. Arm this infrastructure barrier after the
  * initial language read. The query and its result remain real, but only this
  * Agent's result delivery pauses: a global table lock would block unrelated
@@ -357,6 +357,55 @@ export async function withMorningBriefInstructionVersionReadFixture<T>(
           arm: () => {
             armed = true;
           },
+          waitForArrival: async () => {
+            await barrier.entered;
+          },
+          release: barrier.release,
+        });
+      },
+    },
+    signal,
+  );
+}
+
+/**
+ * Pause delivery of one member's real Morning Brief locale SELECT.
+ *
+ * The locale read is the one statement that always sits between the frozen
+ * language context and the final instruction-version fence: it runs for every
+ * owner, including one with no instructions storage at all, and it reaches no
+ * network. That makes it the only place a test can suspend an attempt in that
+ * window now that no membership lookup survives past collection.
+ *
+ * The query and its result remain real, and only this member's delivery
+ * pauses, so unrelated traffic against the same table is never blocked.
+ */
+export async function withMorningBriefMemberLocaleReadFixture<T>(
+  owner: MorningBriefCollectionOwner,
+  work: (read: {
+    readonly waitForArrival: () => Promise<void>;
+    readonly release: () => void;
+  }) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        const text = barrierQueryText(queryArgs);
+        return (
+          text.startsWith("select") &&
+          text.includes('from "org_members_metadata"') &&
+          text.includes('"locale"') &&
+          barrierQueryBinds(queryArgs, owner.orgId) &&
+          barrierQueryBinds(queryArgs, owner.userId)
+        );
+      },
+      stopAt: (_queryArgs, selectingStatement) => {
+        return selectingStatement;
+      },
+      pauseAfter: true,
+      work: async (barrier) => {
+        return await work({
           waitForArrival: async () => {
             await barrier.entered;
           },

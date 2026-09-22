@@ -19,8 +19,8 @@ use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
     RunnerResourceBudgetOccupancy, RunnerStartupPath,
 };
-use crate::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 use crate::workspace_image_cache::{WorkspaceCacheCheckoutResult, WorkspaceImageLease};
+use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);
 

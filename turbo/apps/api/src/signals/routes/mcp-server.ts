@@ -1,6 +1,4 @@
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -16,7 +14,7 @@ import type { McpPrincipal } from "../../types/mcp";
 import type { ApiOrgRole } from "../../types/auth";
 import { request$ } from "../context/hono";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
@@ -24,7 +22,6 @@ import {
   getMcpChatThread,
   listMcpChatThreads,
 } from "../services/mcp-chat-threads.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
 import { getMcpChatStatus } from "../services/mcp-chat-status.service";
 import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
@@ -64,16 +61,6 @@ function unavailable() {
       error_description: "MCP is temporarily unavailable",
     },
     { status: 503, headers: { "Cache-Control": "no-store" } },
-  );
-}
-
-function featureDenied() {
-  return Response.json(
-    {
-      error: "access_denied",
-      error_description: "MCP is not enabled for this account",
-    },
-    { status: 403, headers: { "Cache-Control": "no-store" } },
   );
 }
 
@@ -168,15 +155,6 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
     return challenge(config.metadataUrl, "invalid_token");
   }
   const orgRole = membership.value.role;
-  const features = await loadUserFeatureSwitchContext(
-    get(db$),
-    principal.orgId,
-    principal.userId,
-  );
-  signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.McpServer, features)) {
-    return featureDenied();
-  }
   return set(
     serveAuthorizedMcp$,
     {

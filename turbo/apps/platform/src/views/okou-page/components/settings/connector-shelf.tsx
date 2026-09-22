@@ -1,3 +1,4 @@
+import { Toolbar } from "@base-ui/react/toolbar";
 import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@okouai/ui";
@@ -71,12 +72,20 @@ export function ConnectorShelfSection({
   columns,
   onOpenCategory,
   children,
+  keyboardNavigation = false,
 }: {
   readonly shelf: ConnectorShelf<PlatformConnectorCatalogStatusItem>;
   readonly columns: 2 | 3;
   readonly onOpenCategory: (category: string) => void;
   readonly children: React.ReactNode;
+  readonly keyboardNavigation?: boolean;
 }) {
+  const gridClassName = cn(
+    "grid gap-3",
+    columns === 3
+      ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+      : "grid-cols-1 sm:grid-cols-2",
+  );
   return (
     <div
       className="mb-4 last:mb-0"
@@ -85,16 +94,22 @@ export function ConnectorShelfSection({
       <h3 className="mb-2 text-xs font-medium text-muted-foreground">
         {shelf.label}
       </h3>
-      <div
-        className={cn(
-          "grid gap-3",
-          columns === 3
-            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-            : "grid-cols-1 sm:grid-cols-2",
-        )}
-      >
-        {children}
-      </div>
+      {keyboardNavigation ? (
+        <Toolbar.Root
+          key={shelf.connectors
+            .map((connector) => {
+              return connector.slug;
+            })
+            .join(",")}
+          aria-label={shelf.label}
+          orientation="vertical"
+          className={gridClassName}
+        >
+          {children}
+        </Toolbar.Root>
+      ) : (
+        <div className={gridClassName}>{children}</div>
+      )}
       {shelf.tail.length > 0 &&
         shelf.remaining > 0 &&
         shelf.category !== null && (

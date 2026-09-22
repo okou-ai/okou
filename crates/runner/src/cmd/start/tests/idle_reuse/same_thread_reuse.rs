@@ -5,7 +5,7 @@ use super::super::support::{
     wait_idle_pool_reuse_keys,
 };
 
-use crate::types::{SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::types::{SandboxReuseResult, WorkspaceReuseResult};
 
 // -----------------------------------------------------------------------
 // Test 13: Same-thread work reuses an idle sandbox
@@ -117,7 +117,7 @@ async fn invalid_reserved_resume_session_fails_before_reuse() {
     let run_id = RunId::new_v4();
     let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.to_string());
-    context.resume_session = Some(crate::types::ResumeSession::inline(
+    context.resume_session = Some(runner_types::types::ResumeSession::inline(
         invalid_session_id.to_string(),
         String::new(),
     ));
@@ -163,7 +163,7 @@ async fn invalid_resume_session_fails_before_fresh_sandbox_creation() {
     let invalid_session_id = "../invalid-fresh-session";
     let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.to_string());
-    context.resume_session = Some(crate::types::ResumeSession::inline(
+    context.resume_session = Some(runner_types::types::ResumeSession::inline(
         invalid_session_id.to_string(),
         String::new(),
     ));

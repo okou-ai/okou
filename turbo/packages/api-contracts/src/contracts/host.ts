@@ -54,6 +54,88 @@ export const hostedSiteFileSchema = z.object({
   immutable: z.boolean().optional(),
 });
 
+/**
+ * HTML documents are a publication's mutable entry points: a redeploy replaces
+ * them in place under the same address, so delivery never caches them and their
+ * bytes may differ between publications of one site.
+ */
+export function isHostedSiteDocument(file: {
+  readonly path: string;
+  readonly contentType: string;
+}): boolean {
+  return (
+    /\.html?$/iu.test(file.path) ||
+    file.contentType.toLowerCase().startsWith("text/html")
+  );
+}
+
+/**
+ * Agents and browsers address these by a fixed name, so they cannot carry a
+ * content hash. They keep the ordinary revalidating cache policy rather than
+ * the immutable one, which bounds how long a changed copy can look stale.
+ */
+const HOSTED_SITE_FIXED_PATHS: ReadonlySet<string> = new Set([
+  "/robots.txt",
+  "/humans.txt",
+  "/ads.txt",
+  "/sitemap.xml",
+  "/sitemap-index.xml",
+  "/favicon.ico",
+  "/favicon.svg",
+  "/favicon.png",
+  "/apple-touch-icon.png",
+  "/apple-touch-icon-precomposed.png",
+  "/browserconfig.xml",
+  "/site.webmanifest",
+  "/manifest.webmanifest",
+  "/_headers",
+  "/_redirects",
+]);
+
+function hasFixedHostedSitePath(path: string): boolean {
+  const normalized = path.toLowerCase();
+  return (
+    HOSTED_SITE_FIXED_PATHS.has(normalized) ||
+    normalized.startsWith("/.well-known/")
+  );
+}
+
+/** `app-4f3a9c12.js` and `app.4f3a9c12.css` both name their own content. */
+function hasContentHashedName(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/u.test(name);
+}
+
+/**
+ * A mutable path may differ between publications of one site: documents because
+ * a redeploy replaces them, fixed paths because their name cannot change.
+ */
+export function isMutableHostedSitePath(file: {
+  readonly path: string;
+  readonly contentType: string;
+}): boolean {
+  return isHostedSiteDocument(file) || hasFixedHostedSitePath(file.path);
+}
+
+/**
+ * Every cacheable asset must name its own content, so one published path always
+ * means one byte string across every publication of a site.
+ */
+export function hostedSiteAssetNameError(file: {
+  readonly path: string;
+  readonly contentType: string;
+}): string | null {
+  if (isMutableHostedSitePath(file) || hasContentHashedName(file.path)) {
+    return null;
+  }
+  return `Hosted-site asset must carry a content hash in its file name: ${file.path}. Rename non-HTML files as <name>-<contenthash>.<ext>, for example /assets/app-4f3a9c12.js, and update every HTML/CSS reference to the new name.`;
+}
+
+/** A path that already exists in this site must keep serving the same bytes. */
+export function hostedSiteAssetContentError(path: string): string {
+  return `Hosted-site asset changed without a new file name: ${path}. A published path keeps its original bytes forever. Rename the changed file with its new content hash, update every reference to it, and publish again.`;
+}
+
 export const hostedSiteDownloadFileSchema = hostedSiteFileSchema.extend({
   downloadUrl: z.string().url(),
 });
@@ -166,38 +248,6 @@ const creationRoute = {
 } as const;
 
 export const hostContract = c.router({
-  privatePreview: {
-    method: "GET",
-    path: "/api/host/private-deployments/:deploymentId/preview",
-    pathParams: z.object({ deploymentId: z.string().uuid() }),
-    headers: authHeadersSchema,
-    responses: {
-      200: z.object({
-        url: z.string().url(),
-        expiresAt: z.string().datetime(),
-      }),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Authorize an isolated private HTML preview",
-  },
-  privateView: {
-    method: "GET",
-    path: "/api/host/private-deployments/:deploymentId/view",
-    pathParams: z.object({ deploymentId: z.string().uuid() }),
-    headers: authHeadersSchema,
-    responses: {
-      302: c.otherResponse({ contentType: "text/plain", body: z.unknown() }),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Redirect an authorized owner to isolated HTML content",
-  },
-
   prepare: creationRoute,
   preparePrivate: {
     ...creationRoute,

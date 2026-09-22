@@ -10,9 +10,9 @@ use tracing::{info, warn};
 
 use crate::duration::duration_ms;
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::storage_fingerprints::StorageFingerprints;
-use crate::types::{
+use runner_types::ids::RunId;
+use runner_types::types::{
     HeldWorkspaceState, MAX_HELD_WORKSPACE_STATES, MAX_WORKSPACE_CACHES_PER_HEARTBEAT,
     MAX_WORKSPACE_CACHES_PER_REUSE_KEY, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
 };
@@ -1785,7 +1785,7 @@ impl WorkspaceImagePromotionContext {
                 sandbox_id = %sandbox_id,
                 profile_name,
                 reuse_key_fingerprint = %crate::paths::short_digest(&reuse_key),
-                reuse_key_kind = crate::types::reuse_key_kind(&reuse_key),
+                reuse_key_kind = runner_types::types::reuse_key_kind(&reuse_key),
                 cache_key,
                 reason,
                 "workspace image cache promotion context abandoned without entry lock"

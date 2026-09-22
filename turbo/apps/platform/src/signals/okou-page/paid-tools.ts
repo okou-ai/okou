@@ -75,10 +75,10 @@ export function paidToolDisabledMessage(toolId: PaidToolId): string {
 /** Explicit creation checks fresh preferences; ordinary chat does not depend on this read. */
 export const checkPaidToolForCreation$ = command(
   async ({ get }, mode: ComposerCreateMode | null, signal: AbortSignal) => {
-    if (mode !== "image" && mode !== "video") {
+    if (mode !== "image") {
       return true;
     }
-    const toolId = mode === "image" ? "image-generation" : "video-generation";
+    const toolId: PaidToolId = "image-generation";
     const { client, assertCurrent } = await get(paidToolsClient$);
     signal.throwIfAborted();
     assertCurrent();

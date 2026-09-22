@@ -9,7 +9,7 @@ use tracing::warn;
 use super::super::{
     STDOUT_STREAM_INCOMPLETE_MARKER, STDOUT_STREAM_LIMIT_MARKER, STDOUT_STREAM_OVERFLOW_MARKER,
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::executor) struct AgentStdoutStreamDiagnostics {

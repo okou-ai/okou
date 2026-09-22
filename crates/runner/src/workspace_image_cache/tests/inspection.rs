@@ -11,9 +11,9 @@ use super::super::{
     WorkspaceCacheTerminalStatus, WorkspaceImageCache, WorkspaceImageCacheInspectionStatus,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::ids::RunId;
 use crate::paths::{RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
+use runner_types::ids::RunId;
 
 #[tokio::test]
 async fn inspect_missing_cache_dir_returns_empty_summary() {

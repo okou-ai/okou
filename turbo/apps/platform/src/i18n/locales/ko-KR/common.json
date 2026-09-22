@@ -1722,6 +1722,45 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "browserInput": {
+      "applyFailed": "정보를 추가하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도하세요.",
+      "applying": "정보 추가 중",
+      "applyingDescription": "브라우저에서 이 요청을 완료하고 있습니다.",
+      "callbackFailed": "에이전트에게 알리지 못했습니다. 계속을 다시 시도하세요.",
+      "cancel": "취소",
+      "cancelFailed": "요청을 취소하지 못했습니다. 다시 시도하세요.",
+      "cancelled": "요청이 취소됨",
+      "cancelledDescription": "추가된 정보가 없습니다. 계속하여 에이전트에게 알리세요.",
+      "cancelling": "취소 중…",
+      "completed": "정보가 추가됨",
+      "completedDescription": "브라우저에 정보가 추가되었습니다. 계속하여 에이전트에게 알리세요.",
+      "continue": "계속",
+      "continuing": "계속하는 중…",
+      "delivered": "에이전트에게 알림",
+      "deliveredDescription": "이제 에이전트가 계속할 수 있습니다.",
+      "description": "이 사이트에서 요청한 정보를 입력하세요.",
+      "documentTitle": "브라우저 입력",
+      "expired": "요청이 만료됨",
+      "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
+      "loadFailed": "이 요청을 불러오지 못했습니다",
+      "loadFailedDescription": "잠시 후 다시 시도하세요.",
+      "loading": "브라우저 입력 불러오는 중",
+      "loadingDescription": "요청을 확인하고 있습니다…",
+      "open": "정보 입력",
+      "optional": "(선택)",
+      "required": "(필수)",
+      "retry": "다시 시도",
+      "site": "사이트",
+      "stale": "필드가 변경됨",
+      "staleDescription": "에이전트에게 새 요청을 만들도록 요청하세요.",
+      "submit": "브라우저에 추가",
+      "submitting": "추가 중…",
+      "title": "브라우저에 정보 입력",
+      "unavailable": "요청을 사용할 수 없음",
+      "unavailableDescription": "이 브라우저 입력 요청은 유효하지 않거나 더 이상 사용할 수 없습니다.",
+      "uncertain": "브라우저를 확인하세요",
+      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
+    },
     "cards": {
       "viewDetails": "세부 정보 보기"
     },
@@ -1732,21 +1771,12 @@
       "create": {
         "addStyle": "스타일 추가",
         "addTemplate": "템플릿 추가",
-        "chooseType": "유형 선택",
-        "exit": "만들기 모드 종료",
-        "image": "이미지 만들기",
-        "imageDescription": "아이디어를 이미지로 표현",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
-        "presentation": "프레젠테이션 만들기",
-        "presentationDescription": "이야기를 담은 슬라이드",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
         "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
-        "slideCountRange": "{{range}}장",
-        "video": "동영상 만들기",
-        "videoDescription": "아이디어를 영상으로 표현",
-        "videoPlaceholder": "만들고 싶은 동영상을 설명하세요…"
+        "slideCountRange": "{{range}}장"
       },
       "createWorkflow": "워크플로 생성",
       "imageModelForThisChat": "이 채팅의 이미지 모델",
@@ -2102,6 +2132,7 @@
       "allCaughtUp": "모두 정리했어요",
       "allChats": "모든 채팅",
       "archive": "채팅 보관",
+      "archived": "보관됨",
       "chatsWith": "{{agentName}}와의 채팅",
       "chatThreads": "채팅 스레드",
       "delete": "채팅 삭제",
@@ -2113,6 +2144,7 @@
       "movePinDown": "아래로 이동",
       "movePinUp": "위로 이동",
       "newChatWith": "{{agentName}}와 새 채팅",
+      "noArchived": "보관된 채팅 없음",
       "noUnread": "읽지 않은 채팅 없음",
       "openChatMenu": "채팅 메뉴 열기",
       "openListMenu": "채팅 목록 메뉴 열기",
@@ -2121,13 +2153,12 @@
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
       "showAllChats": "모든 채팅 보기",
-      "showArchived": "보관된 채팅 표시",
       "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
       "unarchive": "보관 해제",
       "unpin": "채팅 고정 해제",
       "unread": "읽지 않음",
-      "unreadOnly": "읽지 않은 항목만"
+      "unreadOnly": "읽지 않음"
     },
     "startCards": {
       "kinds": {
@@ -2272,40 +2303,6 @@
             "prompt": "제가 정한 주제로 교육용 덱을 만들어 주세요. 교육 대상과 교육 후 할 수 있어야 하는 일을 물어봐 주세요."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "사진을 동영상으로 만들기",
-            "prompt": "제공한 사진에 자연스러운 움직임을 더해 주세요. 피사체의 특징을 유지하고 무엇을 움직일지 확인해 주세요."
-          },
-          "brandIntro": {
-            "label": "브랜드 인트로 만들기",
-            "prompt": "제공한 로고와 브랜드 정보로 짧은 오프닝 영상을 만들어 주세요. 분위기를 정하는 것도 도와주세요."
-          },
-          "eventPromo": {
-            "label": "내 행사 홍보하기",
-            "prompt": "행사를 홍보하는 짧은 영상을 만들어 주세요. 행사 내용, 대상, 포함할 정보를 확인해 주세요."
-          },
-          "loopingBackground": {
-            "label": "반복 재생되는 배경 만들기",
-            "prompt": "잔잔한 움직임이 자연스럽게 반복되는 배경 영상을 만들어 주세요. 원하는 장면과 분위기를 확인해 주세요."
-          },
-          "productDemo": {
-            "label": "제품을 움직이는 영상으로 보여주기",
-            "prompt": "제품 사진으로 짧은 소개 영상을 만들어 주세요. 제품 외형을 유지하고 제가 고른 특징을 강조해 주세요."
-          },
-          "socialClip": {
-            "label": "소셜 미디어용 짧은 영상 만들기",
-            "prompt": "소셜 미디어용 짧은 영상을 만들어 주세요. 대상 시청자에 맞는 메시지와 영상 스타일을 함께 정해 주세요."
-          },
-          "videoGreeting": {
-            "label": "축하 영상 만들기",
-            "prompt": "생일, 명절, 기념일을 위한 짧은 축하 영상을 만들어 주세요. 행사, 받는 사람, 메시지를 확인해 주세요."
-          },
-          "visualExplainer": {
-            "label": "아이디어를 영상으로 설명하기",
-            "prompt": "한 가지 아이디어를 쉽게 설명하는 짧은 영상을 만들어 주세요. 설명할 내용과 대상을 확인해 주세요."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "서비스 예약 페이지 만들기",
@@ -2387,13 +2384,11 @@
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
         "previousPage": "이전 페이지",
-        "video": "동영상 템플릿",
         "website": "웹사이트 템플릿"
       },
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",
-        "video": "동영상",
         "visualization": "시각화",
         "website": "웹사이트",
         "workflow": "워크플로"
@@ -3415,13 +3410,24 @@
         "connectTitle": "Lark 연결"
       },
       "slack": {
+        "accountInUseDescription": "이 Slack 계정은 다른 Okou 계정에 연결되어 있습니다. 다시 시도하기 전에 해당 계정에서 연결을 해제하세요.",
+        "accountInUseTitle": "Slack 계정이 이미 연결됨",
+        "accountMismatchDescription": "현재 Okou 계정은 여기에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
+        "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
+        "accountMismatchTitle": "Slack 계정을 전환할까요?",
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
         "connectTitle": "Slack에 연결하기",
+        "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다. 다시 시도하세요.",
         "invalidDescription": "이 페이지는 Slack 연결 링크에서 열어야 합니다.",
+        "keepAccount": "{{account}} 유지",
         "open": "Slack 열기",
         "successDescription": "어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
         "successDescriptionWorkspace": "{{workspace}}에 연결되었습니다. 어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
-        "successTitle": "Slack에 연결되었습니다!"
+        "successTitle": "Slack에 연결되었습니다!",
+        "switchAccount": "{{account}}(으)로 전환",
+        "workspaceMismatchDescription": "이 Slack 워크스페이스는 현재 Okou 조직에서 사용할 수 없습니다. 조직을 전환하거나 관리자에게 도움을 요청하세요.",
+        "workspaceMismatchDescriptionNamed": "현재 Okou 조직은 {{workspace}}에 연결되어 있습니다. 조직을 전환하거나 관리자에게 제거를 요청한 후 이 Slack 워크스페이스를 연결하세요.",
+        "workspaceMismatchTitle": "Slack 워크스페이스가 일치하지 않음"
       },
       "teams": {
         "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
@@ -5832,8 +5838,7 @@
     "status": {
       "availableNow": "현재 사용 가능",
       "inUse_one": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "waitingForSandbox": "Sandbox 대기 중"
+      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯"
     },
     "tiers": {
       "custom": "맞춤형",
@@ -5911,7 +5916,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "재설정",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
         "usage": "{{provider}} 사용량",
         "usageRemaining": "{{provider}} {{window}} 남음",
@@ -6247,7 +6251,6 @@
       },
       "reset": {
         "confirmDescription": "현재 사용량 창을 재설정하려면 Codex 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
-        "expiresAt": "가장 빠른 재설정 만료: {{date}}",
         "progress": "재설정 중...",
         "remaining_one": "{{value}}회 재설정 가능",
         "remaining_other": "{{value}}회 재설정 가능",

@@ -19,6 +19,7 @@ import {
   type MorningBriefReadOutcome,
   type MorningBriefResponseMetadata,
 } from "./morning-brief-connector-reader.service";
+import type { MorningBriefCalendarCollectionWithAccount } from "./morning-brief-calendar-source";
 import {
   checkAllDayRange,
   checkTimedRange,
@@ -1342,7 +1343,7 @@ export async function collectMorningBriefCalendar(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
-    /** The account choice frozen for this attempt, and this read's proof. */
+    /** The account choice frozen for this attempt. */
     readonly authority: MorningBriefSourceAuthorityLedger;
     /**
      * The source deadline the caller started before admitting this source. It
@@ -1352,7 +1353,7 @@ export async function collectMorningBriefCalendar(
     readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
-): Promise<MorningBriefCalendarCollection> {
+): Promise<MorningBriefCalendarCollectionWithAccount> {
   const collectedAt = nowDate();
   const resolved = resolveMorningBriefCalendarWindow({
     anchor: args.scope.anchor,
@@ -1382,6 +1383,7 @@ export async function collectMorningBriefCalendar(
         retryAfterMs: null,
       },
       failure: "provider-failed",
+      accountRef: null,
     };
   }
   const window = resolved.window;
@@ -1404,21 +1406,27 @@ export async function collectMorningBriefCalendar(
       authority: args.authority,
     },
     async (reader) => {
-      return await collectCalendarsWithReader({ reader, window });
+      const collected = await collectCalendarsWithReader({ reader, window });
+      // Read inside the reader, where the pinned account is resolved. It names
+      // which calendar account an item belongs to; it authorizes nothing.
+      return { ...collected, accountRef: reader.accountRef };
     },
     signal,
   );
 
   if (access.kind === "unavailable") {
-    return unavailable({
-      scope: args.scope,
-      window,
-      collectedAt,
-      failure: access.reason,
-    });
+    return {
+      ...unavailable({
+        scope: args.scope,
+        window,
+        collectedAt,
+        failure: access.reason,
+      }),
+      accountRef: null,
+    };
   }
 
-  const { items, listCoverage, readable, state } = access.value;
+  const { items, listCoverage, readable, state, accountRef } = access.value;
   if (access.truncatedTotalBytes) {
     state.truncations.add("total-response-bytes");
   }
@@ -1448,6 +1456,7 @@ export async function collectMorningBriefCalendar(
       status === "unavailable"
         ? sourceFailure({ listCoverage, readable, state, truncations })
         : null,
+    accountRef,
   };
 }
 

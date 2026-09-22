@@ -22,9 +22,11 @@ use super::support::{
     build_env_for_test_with_host_env, context_with_env, minimal_context,
 };
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
-use crate::storage_manifest::StorageManifest;
-use crate::types::{ExecutionContext, ResumeSession, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::ids::RunId;
+use runner_types::storage_manifest::StorageManifest;
+use runner_types::types::{
+    ExecutionContext, ResumeSession, SandboxReuseResult, WorkspaceReuseResult,
+};
 
 fn validate_context_for_test(ctx: &ExecutionContext) -> Result<(), String> {
     let sandbox_id = SandboxId::new_v4().to_string();
@@ -494,7 +496,7 @@ fn build_env_json_required_keys() {
     );
     assert_eq!(
         env.get(guest_contracts::env::RUN_ID_ENV).unwrap(),
-        &RunId::nil().to_string()
+        &RunId::from(uuid::Uuid::nil()).to_string()
     );
     assert_eq!(
         env.get(guest_contracts::env::CANONICAL_API_TOKEN_ENV)
@@ -1903,7 +1905,7 @@ fn execution_context_deserializes_with_firewalls() {
     let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
     let svcs = ctx.firewalls.unwrap();
     assert_eq!(svcs.len(), 1);
-    let crate::types::FirewallEntry::Inline { firewall, .. } = &svcs[0] else {
+    let runner_types::types::FirewallEntry::Inline { firewall, .. } = &svcs[0] else {
         panic!("expected inline firewall entry");
     };
     assert_eq!(firewall.name, "github");

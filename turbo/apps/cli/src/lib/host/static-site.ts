@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, relative, resolve, sep, dirname, posix } from "node:path";
+import { hostedSiteAssetNameError } from "@okouai/api-contracts/contracts/host";
 
 interface StaticSiteFile {
   readonly absolutePath?: string;
@@ -301,6 +302,12 @@ export async function scanStaticSite(
 
   await assertReferencesExist(files);
   const publishFiles = [...ensureDefaultRobots(files, options)];
+  for (const file of publishFiles) {
+    const nameError = hostedSiteAssetNameError(file);
+    if (nameError) {
+      throw new Error(nameError);
+    }
+  }
 
   return {
     root,

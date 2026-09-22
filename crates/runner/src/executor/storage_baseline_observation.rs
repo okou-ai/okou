@@ -15,9 +15,9 @@ use std::sync::Mutex;
 
 use super::JobParams;
 use super::cli_framework::{EffectiveCliFramework, effective_cli_framework};
-use crate::storage_manifest::StorageEntry;
 use crate::telemetry::JobTelemetry;
-use crate::types::ExecutionContext;
+use runner_types::storage_manifest::StorageEntry;
+use runner_types::types::ExecutionContext;
 
 const STABILITY_ACTION: &str = "runner_storage_baseline_candidate_stability";
 const CANDIDATE_COUNT_ACTION: &str = "runner_storage_baseline_candidate_count";

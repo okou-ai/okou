@@ -18,11 +18,6 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
 import {
-  morningBriefProvenAuthority,
-  type MorningBriefSourceAuthorityProof,
-  type MorningBriefRetainedSourceDescriptor,
-} from "./morning-brief-source-authority";
-import {
   morningBriefItemFacts,
   type MorningBriefSourceCollection,
   type MorningBriefSourceCoverage,
@@ -174,46 +169,5 @@ export function normalizeMorningBriefGmail(
         collection.coverage.recent !== "complete" ||
         collection.coverage.unread !== "complete",
     },
-  };
-}
-
-/**
- * The credential-free descriptor a later phase revalidates Gmail against.
- *
- * `accountRef` is the exact mailbox the shared reader resolved from the
- * member's selected connection — never a process account or an environment
- * token's identity. `containers` names the threads that actually contributed,
- * so a later check can ask about the real scope of this input rather than
- * trusting a digest of constants.
- */
-export function morningBriefGmailDescriptor(args: {
-  /**
-   * The exact mailbox the shared reader resolved, from the collection.
-   *
-   * Null means the reader never resolved one. It never means "any mailbox": a
-   * later check treats a descriptor without an account reference as unproven
-   * rather than allowed.
-   */
-  readonly accountEmail: string | null;
-  /** What this source's reads were actually authorized by, or null. */
-  readonly proof: MorningBriefSourceAuthorityProof | null;
-  readonly membershipId: string;
-  readonly agentId: string;
-  readonly capturedAt: Date;
-  readonly contributed: boolean;
-  readonly containers: readonly string[];
-}): MorningBriefRetainedSourceDescriptor {
-  const proven = morningBriefProvenAuthority(args.proof);
-  return {
-    source: "gmail",
-    connectionId: proven.connectionId,
-    accountRef: args.accountEmail ?? args.proof?.accountRef ?? null,
-    scopeDigest: proven.scopeDigest,
-    endpoints: proven.endpoints,
-    membershipId: args.membershipId,
-    agentId: args.agentId,
-    capturedAt: args.capturedAt.toISOString(),
-    contributed: args.contributed,
-    containers: args.containers,
   };
 }

@@ -11,6 +11,77 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.941.2](https://github.com/okou-ai/okou/compare/app-v0.941.1...app-v0.941.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **api:** map Clerk invitation conflicts ([#35991](https://github.com/okou-ai/okou/issues/35991)) ([b052a84](https://github.com/okou-ai/okou/commit/b052a841d0c194a14174374b84dd8f8ea1550d70))
+* **platform:** align provider connection rows with models ([#36009](https://github.com/okou-ai/okou/issues/36009)) ([800714f](https://github.com/okou-ai/okou/commit/800714f546187cea1308ea2ac650809dc949583b))
+* **platform:** make archived a dedicated chat filter ([#35999](https://github.com/okou-ai/okou/issues/35999)) ([6ff9462](https://github.com/okou-ai/okou/commit/6ff94623c0730df7888dc9c425ce33dfe978061c))
+* **platform:** preserve preview access for oauth starts ([#35965](https://github.com/okou-ai/okou/issues/35965)) ([f2e669a](https://github.com/okou-ai/okou/commit/f2e669a4293eab3fec0ca39a412ecce67c1ae3c5))
+* **platform:** scope template preview keyboard handling ([#35969](https://github.com/okou-ai/okou/issues/35969)) ([02664c7](https://github.com/okou-ai/okou/commit/02664c7788deca8d47b7d78fad5728f2820ecf0f))
+* **slack:** handle connection identity conflicts ([#35994](https://github.com/okou-ai/okou/issues/35994)) ([bcfc8f3](https://github.com/okou-ai/okou/commit/bcfc8f36a5b43b7fd1fe2c6c70de594f7d42160b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.1
+    * @okouai/core bumped to 8.698.0
+
+## [0.941.1](https://github.com/okou-ai/okou/compare/app-v0.941.0...app-v0.941.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **platform:** move Codex reset control into usage header ([#35961](https://github.com/okou-ai/okou/issues/35961)) ([22f085a](https://github.com/okou-ai/okou/commit/22f085a14ce8fe7d7bb467645aed1979bdf223b7))
+* **platform:** scope connector directory keyboard actions ([#35971](https://github.com/okou-ai/okou/issues/35971)) ([8b33098](https://github.com/okou-ai/okou/commit/8b33098582390e25734cc63620c92a236ebd8849))
+
+## [0.941.0](https://github.com/okou-ai/okou/compare/app-v0.940.0...app-v0.941.0) (2026-09-22)
+
+
+### Features
+
+* **platform:** give the quest steps two panels and one width ([#35954](https://github.com/okou-ai/okou/issues/35954)) ([f7eb439](https://github.com/okou-ai/okou/commit/f7eb439d3a5df1ba4cd3d3297b62bf9738b5ea3a))
+
+
+### Bug Fixes
+
+* **app:** retain slash category highlight in template flyout ([#35963](https://github.com/okou-ai/okou/issues/35963)) ([95d25a5](https://github.com/okou-ai/okou/commit/95d25a5596e5d4fed4fac1a61aeda61498055ebd))
+* **app:** state the composer's task with one chip for both rollouts ([#35897](https://github.com/okou-ai/okou/issues/35897)) ([d7f7df7](https://github.com/okou-ai/okou/commit/d7f7df79ddddccc6d463febeeeebd02e8fe8a31c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.697.2
+
+## [0.940.0](https://github.com/okou-ai/okou/compare/app-v0.939.0...app-v0.940.0) (2026-09-22)
+
+
+### Features
+
+* **platform:** toggle unread chats from pinned agents ([#35923](https://github.com/okou-ai/okou/issues/35923)) ([1d63e4e](https://github.com/okou-ai/okou/commit/1d63e4e0a4a1e1461e29fdfc860bb9786f680e58))
+
+
+### Bug Fixes
+
+* **platform:** center the compact composer model icon ([#35846](https://github.com/okou-ai/okou/issues/35846)) ([fe0a66a](https://github.com/okou-ai/okou/commit/fe0a66a87248caff0404d53c2a3711b76c8f7c54))
+* **platform:** drop the redundant permission card details dialog ([#35862](https://github.com/okou-ai/okou/issues/35862)) ([89fedb2](https://github.com/okou-ai/okou/commit/89fedb22212b6888348f00f62a10c8501d4f53a5))
+* **platform:** prevent dropdown menu shortcut conflicts ([#35945](https://github.com/okou-ai/okou/issues/35945)) ([a8fc533](https://github.com/okou-ai/okou/commit/a8fc533bf24118381f053b5a8718c6ce49206e7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.0
+    * @okouai/core bumped to 8.697.1
+    * @okouai/ui bumped to 1.11.4
+
 ## [0.939.0](https://github.com/okou-ai/okou/compare/app-v0.938.0...app-v0.939.0) (2026-09-22)
 
 

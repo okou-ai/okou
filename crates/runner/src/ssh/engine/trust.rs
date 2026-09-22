@@ -20,7 +20,7 @@ use super::super::{
     authority::{Authority, PreparedCredential},
     keys,
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(in crate::ssh) struct HostTrust {
     authority: Arc<Authority>,
