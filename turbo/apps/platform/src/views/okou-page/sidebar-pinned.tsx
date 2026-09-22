@@ -261,7 +261,7 @@ function PinnedAgentGridCard({
           return;
         }
         e.preventDefault();
-        selectPinnedAgent(agent.agentId);
+        selectPinnedAgent({ agentId: agent.agentId, hasUnread });
       }}
       onDragStart={(e) => {
         e.dataTransfer.clearData();
@@ -619,7 +619,7 @@ export function PinnedAgentListSection({
                         return;
                       }
                       e.preventDefault();
-                      selectPinnedAgent(agent.agentId);
+                      selectPinnedAgent({ agentId: agent.agentId, hasUnread });
                       setExpanded(false);
                     }}
                     className={`flex w-full h-8 shrink-0 items-center gap-2 rounded-lg text-left text-sm leading-5 no-underline transition-colors duration-200 ${

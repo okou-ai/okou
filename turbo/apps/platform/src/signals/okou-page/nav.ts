@@ -90,20 +90,27 @@ const navigateAdjacentPinnedAgent$ = command(
 );
 
 export const selectPinnedAgent$ = command(
-  ({ get, set }, targetAgentId: string) => {
+  (
+    { get, set },
+    selection: { readonly agentId: string; readonly hasUnread: boolean },
+  ) => {
     const routeAgentId = get(pathParams$)?.agentId;
     if (
       get(activeRoute$) === "agentChat" &&
       typeof routeAgentId === "string" &&
-      routeAgentId === targetAgentId
+      routeAgentId === selection.agentId
     ) {
-      set(toggleChatThreadUnreadFilter$);
+      if (selection.hasUnread) {
+        set(toggleChatThreadUnreadFilter$);
+      } else {
+        set(setChatThreadUnreadFilter$, false);
+      }
       return;
     }
 
     set(setChatThreadUnreadFilter$, false);
     set(detachedNavigateTo$, ROUTES.agentChat, {
-      pathParams: { agentId: targetAgentId },
+      pathParams: { agentId: selection.agentId },
     });
   },
 );
