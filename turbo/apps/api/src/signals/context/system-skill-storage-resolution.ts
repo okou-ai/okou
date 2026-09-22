@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 
-/** Request-owned overrides layered over database-bound official skill Storage. */
+/** Request-owned lookup identities; production uses the canonical skill storage. */
 export type SystemSkillStorageResolution = Readonly<
   Partial<Record<string, string>>
 >;

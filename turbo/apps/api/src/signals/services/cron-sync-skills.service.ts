@@ -10,9 +10,6 @@ import {
   DEFAULT_SKILLS_BRANCH,
   DEFAULT_SKILLS_OWNER,
   DEFAULT_SKILLS_REPO,
-  getOfficialSkillIdentityFullPath,
-  getOfficialSkillIdentityUrl,
-  getOfficialSkillSourceUrl,
   resolveSkillRef,
 } from "@okouai/core/github-url";
 import {
@@ -52,7 +49,6 @@ import {
   publishPiResourceVersionIndex,
   readPiResourceVersionIndexes,
 } from "./pi-resource-version-index.service";
-import { resolveOfficialSkillStorageBindings } from "./official-skill-storage.service";
 
 interface SyncSkillsResult {
   readonly commitSha: string;
@@ -246,14 +242,15 @@ function computeSystemSkillHash(
     .digest("hex");
 }
 
-function buildSkillSyncContext(
-  extracted: ExtractedSkill,
-  storageName: string,
-): SkillSyncContext {
+function skillUrl(skillName: string): string {
+  return `https://github.com/${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${skillName}`;
+}
+
+function buildSkillSyncContext(extracted: ExtractedSkill): SkillSyncContext {
   const skillName = extracted.skillName;
   const files = extracted.files;
-  const url = getOfficialSkillSourceUrl(skillName);
-  const fullPath = url.replace("https://github.com/", "");
+  const url = skillUrl(skillName);
+  const fullPath = `${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${skillName}`;
   const skillMd = files.find((file) => {
     return file.path === "SKILL.md";
   });
@@ -276,12 +273,9 @@ function buildSkillSyncContext(
     files,
     url,
     fullPath,
-    storageName,
+    storageName: getSkillStorageName(fullPath),
     frontmatter,
-    versionHash: computeSystemSkillHash(
-      getOfficialSkillIdentityUrl(skillName),
-      fileEntries,
-    ),
+    versionHash: computeSystemSkillHash(url, fileEntries),
     totalSize,
   };
 }
@@ -573,18 +567,7 @@ function syncSingleSkill(
   signal: AbortSignal,
 ): Computed<Promise<boolean>> {
   return computed(async (get): Promise<boolean> => {
-    const bindings = await resolveOfficialSkillStorageBindings(
-      db,
-      [extracted.skillName],
-      signal,
-    );
-    const context = buildSkillSyncContext(
-      extracted,
-      bindings.get(extracted.skillName)?.name ??
-        getSkillStorageName(
-          getOfficialSkillIdentityFullPath(extracted.skillName),
-        ),
-    );
+    const context = buildSkillSyncContext(extracted);
 
     if (
       await hasCurrentSkillVersion(
@@ -664,7 +647,7 @@ function removeOrphanedSkills(
   return computed(async (get): Promise<number> => {
     const tarballUrls = new Set(
       extractedSkills.map((skill) => {
-        return getOfficialSkillSourceUrl(skill.skillName);
+        return skillUrl(skill.skillName);
       }),
     );
     const existingSkills = await db

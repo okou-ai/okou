@@ -16,7 +16,6 @@ import {
 } from "./agent-run-storage.service";
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
-import { resolveOfficialSkillStorageBindings } from "./official-skill-storage.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import {
   measurePiPreparation,
@@ -149,11 +148,7 @@ import {
   IMAGE_MODEL_CONFIGS,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import {
-  parseGitHubTreeUrl,
-  resolveOfficialSkillIdentityFullPath,
-  resolveSkillRef,
-} from "@okouai/core/github-url";
+import { resolveSkillRef, parseGitHubTreeUrl } from "@okouai/core/github-url";
 import {
   getCustomConnectorSkillName,
   getCustomConnectorSkillStorageName,
@@ -1347,45 +1342,15 @@ function buildLegacySystemSkillVolumes(
     if (!parsed) {
       return [];
     }
-    const identityFullPath =
-      resolveOfficialSkillIdentityFullPath(url) ?? parsed.fullPath;
     return [
       {
         name:
-          storageResolution[skillName] ??
-          storageResolution[parsed.skillName] ??
-          getSkillStorageName(identityFullPath),
+          storageResolution[skillName] ?? getSkillStorageName(parsed.fullPath),
         mountPath: skillMountPath(skillsRoot, parsed.skillName),
         system: true,
       },
     ];
   });
-}
-
-async function resolvePreparedSystemSkillStorageResolution(
-  db: Db,
-  injectSkillVolumes: CreateAgentRunArgs["injectSkillVolumes"],
-  requestResolution: SystemSkillStorageResolution,
-  signal: AbortSignal,
-): Promise<SystemSkillStorageResolution> {
-  if (!injectSkillVolumes) {
-    return requestResolution;
-  }
-
-  const unresolvedSkillNames = SEED_SKILLS.filter((skillName) => {
-    return requestResolution[skillName] === undefined;
-  });
-  const bindings = await resolveOfficialSkillStorageBindings(
-    db,
-    unresolvedSkillNames,
-    signal,
-  );
-  const persistedResolution = Object.fromEntries(
-    [...bindings].map(([skillName, binding]) => {
-      return [skillName, binding.name];
-    }),
-  );
-  return { ...persistedResolution, ...requestResolution };
 }
 
 function buildConnectorSkillVolumes(
@@ -10941,33 +10906,22 @@ async function prepareRunIndependentObservations(
   input: PrepareRunContextInput,
   framework: SupportedFramework,
   piSandbox: PiModelConfig | undefined,
-  requestSystemSkillStorageResolution: SystemSkillStorageResolution,
   signal: AbortSignal,
 ) {
-  // Preserve historical error precedence, then surface Storage resolution,
-  // while settling every branch started under this request owner.
-  const [
-    userTimezoneResult,
-    mediaModelsResult,
-    officialWorkflowRunResult,
-    systemSkillStorageResolutionResult,
-  ] = await Promise.allSettled([
-    resolvePreparedUserTimezone(input),
-    resolvePreparedMediaModels(input.db, input.args, signal),
-    resolvePreparedOfficialWorkflowRun(
-      input.db,
-      input.args,
-      framework,
-      piSandbox,
-      signal,
-    ),
-    resolvePreparedSystemSkillStorageResolution(
-      input.db,
-      input.args.injectSkillVolumes,
-      requestSystemSkillStorageResolution,
-      signal,
-    ),
-  ]);
+  // Preserve the historical timezone -> cancellation -> media -> workflow
+  // precedence while settling every branch started under this request owner.
+  const [userTimezoneResult, mediaModelsResult, officialWorkflowRunResult] =
+    await Promise.allSettled([
+      resolvePreparedUserTimezone(input),
+      resolvePreparedMediaModels(input.db, input.args, signal),
+      resolvePreparedOfficialWorkflowRun(
+        input.db,
+        input.args,
+        framework,
+        piSandbox,
+        signal,
+      ),
+    ]);
   if (userTimezoneResult.status === "rejected") {
     throw userTimezoneResult.reason;
   }
@@ -10978,15 +10932,11 @@ async function prepareRunIndependentObservations(
   if (officialWorkflowRunResult.status === "rejected") {
     throw officialWorkflowRunResult.reason;
   }
-  if (systemSkillStorageResolutionResult.status === "rejected") {
-    throw systemSkillStorageResolutionResult.reason;
-  }
   signal.throwIfAborted();
   return {
     userTimezone: userTimezoneResult.value,
     mediaModels: mediaModelsResult.value,
     officialWorkflowRun: officialWorkflowRunResult.value,
-    systemSkillStorageResolution: systemSkillStorageResolutionResult.value,
   };
 }
 
@@ -11055,7 +11005,6 @@ function prepareRunContext(
         input,
         runtimeContext.framework,
         piSandbox,
-        get(systemSkillStorageResolution$),
         signal,
       );
       const validationAndObservations = await joinRunValidationAndObservations(
@@ -11097,8 +11046,7 @@ function prepareRunContext(
           return await Promise.resolve(
             prepareRunOutputMetadata({
               createArgs: args,
-              systemSkillStorageResolution:
-                validationAndObservations.systemSkillStorageResolution,
+              systemSkillStorageResolution: get(systemSkillStorageResolution$),
               connectorScope: runtimeContext.connectorScope,
               connectorCatalogSelection:
                 runtimeContext.connectorCatalogSelection,
