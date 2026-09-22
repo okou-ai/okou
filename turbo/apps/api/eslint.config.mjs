@@ -460,6 +460,24 @@ export default [
     },
   },
   {
+    files: ["src/signals/routes/desktop-updates.ts"],
+    rules: {
+      // An exhausted manifest read is a bounded, recovered outcome that needs
+      // no intervention, so `warn` only put every single one into the
+      // production error review. A sustained rate is still the real signal and
+      // the record carries the `failure_class`, `attempts` and
+      // `provider_status` a genuine GitHub outage needs, so it has to survive
+      // Axiom's info default; debug would drop it and the request log's `503`
+      // is retained for too few days to stand in for it.
+      "api/no-logger-info": [
+        "error",
+        {
+          allowedMessages: ["Desktop update manifest upstream unavailable"],
+        },
+      ],
+    },
+  },
+  {
     files: ["src/**/*.ts"],
     ignores: [
       "src/**/__tests__/**",
