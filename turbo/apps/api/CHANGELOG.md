@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.653.0](https://github.com/okou-ai/okou/compare/api-v1.652.0...api-v1.653.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+    * @okouai/core bumped to 8.696.0
+    * @okouai/db bumped to 1.284.0
+    * @okouai/pi-agent-runtime bumped to 1.35.0
+
 ## [1.652.0](https://github.com/okou-ai/okou/compare/api-v1.651.0...api-v1.652.0) (2026-09-21)
 
 

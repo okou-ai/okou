@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.696.0](https://github.com/okou-ai/okou/compare/core-v8.695.0...core-v8.696.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+
 ## [8.695.0](https://github.com/okou-ai/okou/compare/core-v8.694.0...core-v8.695.0) (2026-09-21)
 
 
