@@ -27,7 +27,7 @@ import {
 
 testContext();
 const store = createStore();
-const BENCH_SIZES = [1, 17, 64, 500, 501] as const;
+const BENCH_SIZES = [1, 4, 17, 64, 500, 501] as const;
 const BACKGROUND_ROW_COUNT = 5000;
 const INSERT_CHUNK_SIZE = 500;
 const benchOptions = {
